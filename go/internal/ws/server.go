@@ -1,9 +1,12 @@
 package ws
 
 import (
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 
@@ -18,6 +21,7 @@ type Server struct {
 	stopChan   chan struct{}
 	httpServer *http.Server
 	conns      map[*websocket.Conn]struct{}
+	dispatcher *Dispatcher
 }
 
 // isLocalOrigin reports whether the request origin is localhost, 127.0.0.1,
@@ -33,12 +37,44 @@ func isLocalOrigin(r *http.Request) bool {
 
 // NewServer constructs a Server that only accepts connections from localhost origins.
 func NewServer() *Server {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	return &Server{
 		upgrader: websocket.Upgrader{
 			CheckOrigin: isLocalOrigin,
 		},
-		stopChan: make(chan struct{}),
-		conns:    make(map[*websocket.Conn]struct{}),
+		stopChan:   make(chan struct{}),
+		conns:      make(map[*websocket.Conn]struct{}),
+		dispatcher: NewDispatcher(logger),
+	}
+}
+
+// NewServerWithLogger constructs a Server with a custom logger.
+func NewServerWithLogger(logger *slog.Logger) *Server {
+	return &Server{
+		upgrader: websocket.Upgrader{
+			CheckOrigin: isLocalOrigin,
+		},
+		stopChan:   make(chan struct{}),
+		conns:      make(map[*websocket.Conn]struct{}),
+		dispatcher: NewDispatcher(logger),
+	}
+}
+
+// RegisterHandler associates a message type with a handler on the dispatcher.
+func (s *Server) RegisterHandler(messageType string, handler MessageHandler) {
+	s.dispatcher.Register(messageType, handler)
+}
+
+// Broadcast sends a message to all connected WebSocket clients.
+func (s *Server) Broadcast(msg interface{}) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for conn := range s.conns {
+		conn.WriteMessage(websocket.TextMessage, data) //nolint:errcheck
 	}
 }
 
@@ -125,9 +161,22 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		case <-s.stopChan:
 			return
 		default:
-			var msg map[string]interface{}
-			if err := conn.ReadJSON(&msg); err != nil {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
 				return
+			}
+			response, dispatchErr := s.dispatcher.Dispatch(raw)
+			if dispatchErr != nil {
+				s.dispatcher.logger.Error("dispatch error", "error", dispatchErr)
+				continue
+			}
+			if response != nil {
+				responseBytes, marshalErr := json.Marshal(response)
+				if marshalErr != nil {
+					s.dispatcher.logger.Error("marshal response error", "error", marshalErr)
+					continue
+				}
+				conn.WriteMessage(websocket.TextMessage, responseBytes) //nolint:errcheck
 			}
 		}
 	}

@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/samuelasvanyi/bistro/internal/keychain"
+	github "github.com/samuelasvanyi/bistro/internal/provider/github"
 	"github.com/samuelasvanyi/bistro/internal/server"
 )
 
@@ -39,6 +41,24 @@ func main() {
 	)
 
 	app := server.NewWithLogger(*wsPort, *dbPath, log)
+
+	// Read GitHub OAuth client ID from environment.
+	clientID := os.Getenv("GITHUB_CLIENT_ID")
+	if clientID == "" {
+		log.Warn("GITHUB_CLIENT_ID not set — OAuth device flow will fail until configured")
+	}
+	app.SetGitHubClientID(clientID)
+
+	// Check keychain for an existing GitHub token — skip the device flow if found.
+	tm := keychain.NewTokenManager()
+	existingToken, err := tm.GetGitHubToken()
+	if err == nil && existingToken != "" {
+		log.Info("found existing GitHub token in keychain — skipping OAuth flow")
+		client := github.NewClient(existingToken)
+		app.SetProvider(client)
+	} else {
+		log.Info("no GitHub token in keychain — waiting for OAuth device flow")
+	}
 
 	if *replayQueue {
 		log.Info("replaying offline queue")
