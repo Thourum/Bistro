@@ -2,8 +2,9 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
+	gosync "sync"
 	"time"
 
 	"log/slog"
@@ -21,6 +22,7 @@ type Orchestrator struct {
 	store          *store.DB
 	git            *git.Client
 	emitter        *EventEmitter
+	rateLimitMu    gosync.RWMutex
 	rateLimitState *provider.RateLimitState
 	queue          *ActionQueue
 }
@@ -43,6 +45,8 @@ func NewOrchestrator(
 
 // IsRateLimited reports whether the orchestrator is currently rate limited.
 func (o *Orchestrator) IsRateLimited() bool {
+	o.rateLimitMu.RLock()
+	defer o.rateLimitMu.RUnlock()
 	if o.rateLimitState == nil {
 		return false
 	}
@@ -179,11 +183,11 @@ func isRateLimitError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if pe, ok := err.(*provider.ProviderError); ok {
+	var pe *provider.ProviderError
+	if errors.As(err, &pe) {
 		return pe.Type == provider.ErrorTypeRateLimit
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "429") || strings.Contains(msg, "rate limit")
+	return false
 }
 
 // GetEventChannel returns a read-only channel for subscribing to sync events.
@@ -364,20 +368,19 @@ func (o *Orchestrator) syncPRList(ctx context.Context, req *SyncRequest) ([]*pro
 	prs, err := o.provider.ListPRs(ctx, filters)
 	if err != nil {
 		if isRateLimitError(err) {
-			if pe, ok := err.(*provider.ProviderError); ok {
-				_ = pe // ProviderError does not carry RateLimitState directly; use type to set state
-			}
-			// Record a rate limit state so subsequent calls are gated
-			o.rateLimitState = &provider.RateLimitState{
+			state := &provider.RateLimitState{
 				ResetAt: time.Now().Add(60 * time.Second),
 			}
+			o.rateLimitMu.Lock()
+			o.rateLimitState = state
+			o.rateLimitMu.Unlock()
 			if o.log != nil {
-				o.log.Warn("rate limited", "reset_at", o.rateLimitState.ResetAt)
+				o.log.Warn("rate limited", "reset_at", state.ResetAt)
 			}
 			o.emitter.Emit(&SyncEvent{
 				Type: "rate_limited",
 				Data: map[string]interface{}{
-					"reset_in": o.rateLimitState.ResetIn().Seconds(),
+					"reset_in": state.ResetIn().Seconds(),
 				},
 				Timestamp: time.Now(),
 			})

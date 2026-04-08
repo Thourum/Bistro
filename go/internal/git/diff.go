@@ -143,10 +143,12 @@ func (c *Client) WritePatchFiles(diffResult *DiffResult, baseSHA, headSHA string
 
 	for _, file := range diffResult.Files {
 		safePath := strings.ReplaceAll(file.Path, "/", "_")
-		patchFile := filepath.Join(patchDir, safePath+".patch")
+		safePath = strings.ReplaceAll(safePath, "..", "_")
+		patchFile := filepath.Clean(filepath.Join(patchDir, safePath+".patch"))
 
-		if err := os.MkdirAll(filepath.Dir(patchFile), 0755); err != nil {
-			return fmt.Errorf("failed to create patch subdirectory: %w", err)
+		// Verify the resolved path stays inside patchDir to prevent traversal
+		if !strings.HasPrefix(patchFile, filepath.Clean(patchDir)+string(os.PathSeparator)) {
+			return fmt.Errorf("path traversal detected for file: %s", file.Path)
 		}
 
 		if err := os.WriteFile(patchFile, []byte(file.Patch), 0644); err != nil {

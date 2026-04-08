@@ -43,21 +43,26 @@ func NewWorkerPool(workerCount int, log *slog.Logger) *WorkerPool {
 }
 
 // worker drains tasks from taskCh until the channel is closed.
-// A deferred recover ensures that a panicking task does not prevent wg.Done()
-// from running, which would cause Wait to hang forever.
+// Each task is executed inside a recover so that a panicking task does not kill
+// the worker goroutine — the worker continues processing remaining tasks.
 func (p *WorkerPool) worker() {
+	defer p.wg.Done()
+
+	for task := range p.taskCh {
+		p.safeRun(task)
+	}
+}
+
+// safeRun executes a single task with panic recovery so the worker survives.
+func (p *WorkerPool) safeRun(task func()) {
 	defer func() {
 		if r := recover(); r != nil {
 			if p.log != nil {
 				p.log.Error("worker panic recovered", "panic", fmt.Sprintf("%v", r))
 			}
 		}
-		p.wg.Done()
 	}()
-
-	for task := range p.taskCh {
-		task()
-	}
+	task()
 }
 
 // Submit enqueues a task for execution by the pool.

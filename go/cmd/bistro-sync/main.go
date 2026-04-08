@@ -21,9 +21,13 @@ func main() {
 	flag.Parse()
 
 	// Setup logging
-	if err := setupLogging(*logLevel, *logFile); err != nil {
+	logCloser, err := setupLogging(*logLevel, *logFile)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to setup logging: %v\n", err)
 		os.Exit(1)
+	}
+	if logCloser != nil {
+		defer logCloser.Close()
 	}
 
 	log := slog.Default()
@@ -50,7 +54,9 @@ func main() {
 }
 
 // setupLogging configures slog with the given level and optional file output.
-func setupLogging(level, logFile string) error {
+// Returns an io.Closer for the log file (nil when no file is used). The caller
+// must close it when the process exits.
+func setupLogging(level, logFile string) (io.Closer, error) {
 	// Parse log level
 	var logLevel slog.Level
 	switch level {
@@ -63,7 +69,7 @@ func setupLogging(level, logFile string) error {
 	case "error":
 		logLevel = slog.LevelError
 	default:
-		return fmt.Errorf("invalid log level: %s (must be debug, info, warn, error)", level)
+		return nil, fmt.Errorf("invalid log level: %s (must be debug, info, warn, error)", level)
 	}
 
 	opts := &slog.HandlerOptions{
@@ -73,24 +79,27 @@ func setupLogging(level, logFile string) error {
 
 	var out io.Writer = os.Stderr
 
+	var closer io.Closer
+
 	// If log file specified, write to both stderr and file
 	if logFile != "" {
 		// Ensure log directory exists
 		logDir := filepath.Dir(logFile)
 		if logDir != "." && logDir != "" {
 			if err := os.MkdirAll(logDir, 0755); err != nil {
-				return fmt.Errorf("failed to create log directory: %w", err)
+				return nil, fmt.Errorf("failed to create log directory: %w", err)
 			}
 		}
 
 		// Open log file for appending
 		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
-			return fmt.Errorf("failed to open log file: %w", err)
+			return nil, fmt.Errorf("failed to open log file: %w", err)
 		}
 
 		// Log to both stderr and file
 		out = io.MultiWriter(os.Stderr, f)
+		closer = f
 
 		// Log file location to stderr immediately
 		fmt.Fprintf(os.Stderr, "Logs written to: %s\n", logFile)
@@ -100,5 +109,5 @@ func setupLogging(level, logFile string) error {
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 
-	return nil
+	return closer, nil
 }

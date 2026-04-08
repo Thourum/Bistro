@@ -54,10 +54,18 @@ func (s *Server) Start(addr string) error {
 	return nil
 }
 
-// Stop shuts down the HTTP server, closing all active connections.
+// Stop signals all WebSocket handlers to return and shuts down the HTTP server.
 func (s *Server) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Signal all handlers to stop before closing the server
+	select {
+	case <-s.stopChan:
+		// Already closed
+	default:
+		close(s.stopChan)
+	}
 
 	if s.httpServer != nil {
 		return s.httpServer.Close()
