@@ -56,9 +56,10 @@ Electron renderer updates list (preserves scroll position, selection)
 2. **SQLite returns results**
    - Column schema:
      ```sql
-     id, provider, repo_full_name, number, title, author, state,
-     base_branch, head_branch, created_at, updated_at, review_status,
-     comment_count, approved_by, changes_requested_by
+     id, provider, owner, repo, number, title, body, author, state,
+     created_at, updated_at, merged_at, base_branch, head_branch,
+     base_sha, head_sha, comment_count, ci_status, draft,
+     review_status, approved_by, changes_requested_by
      ```
    - Result: ~50 rows (~100KB)
 
@@ -269,10 +270,10 @@ Electron renderer updates list (preserves scroll position, selection)
 prs.provider = 'github' OR 'gitlab' OR 'gitea'
 
 -- Example: PR from GitHub
-{ id: 1, provider: 'github', repo_full_name: 'org/repo', number: 123, ... }
+{ id: 1, provider: 'github', owner: 'org', repo: 'repo', number: 123, ... }
 
 -- Example: PR from GitLab
-{ id: 2, provider: 'gitlab', repo_full_name: 'group/project', number: 456, ... }
+{ id: 2, provider: 'gitlab', owner: 'group', repo: 'project', number: 456, ... }
 ```
 
 **Sync loop (parallel for each provider):**
@@ -285,7 +286,7 @@ prs.provider = 'github' OR 'gitlab' OR 'gitea'
    - PR list query: `SELECT * FROM prs WHERE provider IN ('github', 'gitlab')`
    - OR filter by single provider: `SELECT * FROM prs WHERE provider = 'github'`
 
-**No conflicts:** PK is `(provider, repo_full_name, number)`, not just `number`.
+**No conflicts:** PK is `(provider, owner, repo, number)`, not just `number`.
 
 ---
 
@@ -346,22 +347,29 @@ Quick reference:
 ```sql
 -- PRs table
 CREATE TABLE prs (
-  id TEXT PRIMARY KEY,
-  provider TEXT NOT NULL,
-  repo_full_name TEXT NOT NULL,
-  number INTEGER NOT NULL,
-  title TEXT NOT NULL,
-  state TEXT NOT NULL,
-  author TEXT NOT NULL,
-  base_branch TEXT,
-  head_branch TEXT,
-  created_at TEXT,
-  updated_at TEXT,
-  review_status TEXT,
-  approved_by TEXT,
-  changes_requested_by TEXT,
-  comment_count INTEGER DEFAULT 0,
-  UNIQUE(provider, repo_full_name, number)
+    id              TEXT     PRIMARY KEY,
+    provider        TEXT     NOT NULL,
+    owner           TEXT     NOT NULL,
+    repo            TEXT     NOT NULL,
+    number          INTEGER  NOT NULL,
+    title           TEXT     NOT NULL,
+    body            TEXT,
+    author          TEXT     NOT NULL,
+    state           TEXT     NOT NULL,
+    created_at      DATETIME NOT NULL,
+    updated_at      DATETIME NOT NULL,
+    merged_at       DATETIME,
+    base_branch     TEXT     NOT NULL,
+    head_branch     TEXT     NOT NULL,
+    base_sha        TEXT     NOT NULL,
+    head_sha        TEXT     NOT NULL,
+    comment_count   INTEGER  DEFAULT 0,
+    ci_status       TEXT,
+    draft           INTEGER  DEFAULT 0,
+    review_status   TEXT,
+    approved_by     TEXT,
+    changes_requested_by TEXT,
+    UNIQUE(provider, owner, repo, number)
 );
 
 -- Diffs table
@@ -417,4 +425,4 @@ A: Compare `head_commit` in DB with GitHub PR. If different, invalidate cache an
 
 ---
 
-**Last updated:** 2025-04-08
+**Last updated:** 2026-04-08

@@ -650,7 +650,7 @@ describe('IPC Handlers', () => {
 
   it('should mock db:query handler', () => {
     const request: DBQueryRequest = {
-      sql: 'SELECT * FROM pull_requests LIMIT 1',
+      sql: 'SELECT * FROM prs LIMIT 1',
       params: [],
     };
 
@@ -1048,23 +1048,31 @@ git commit -m "feat(phase-2): add React entry point and global dark mode styles"
 `src/renderer/types/index.ts`:
 ```typescript
 /**
- * PR domain model (mirrors Go backend)
+ * PR domain model — matches Go `prs` table schema exactly.
  */
 export interface PR {
   id: string;
-  provider_id: string;
-  title: string;
+  provider: string;
+  owner: string;
+  repo: string;
   number: number;
-  state: 'open' | 'closed' | 'draft' | 'merged';
+  title: string;
+  body: string | null;
   author: string;
+  state: 'open' | 'closed' | 'merged';
   created_at: string;
   updated_at: string;
+  merged_at: string | null;
   base_branch: string;
   head_branch: string;
-  additions: number;
-  deletions: number;
-  changed_files: number;
-  body: string;
+  base_sha: string;
+  head_sha: string;
+  comment_count: number;
+  ci_status: string | null;
+  draft: number; // 0 or 1 from SQLite
+  review_status: string | null; // 'pending' | 'approved' | 'changes_requested'
+  approved_by: string | null;
+  changes_requested_by: string | null;
 }
 
 export interface Comment {
@@ -1086,7 +1094,7 @@ export interface File {
   deletions: number;
 }
 
-export interface CIStatus {
+export interface CICheck {
   name: string;
   state: 'pending' | 'success' | 'failure';
   description?: string;
@@ -1096,8 +1104,7 @@ export interface CIStatus {
 export interface PRDetail extends PR {
   files: File[];
   comments: Comment[];
-  ci_status: CIStatus[];
-  approval_status: 'pending' | 'approved' | 'changes_requested';
+  ci_checks: CICheck[];
 }
 ```
 
@@ -1213,19 +1220,19 @@ import { useQuery } from '@tanstack/react-query';
 import { useSQLiteQuery } from '../hooks/useSQLiteQuery';
 import type { PR } from '../types';
 
-export function usePRList(providerId: string, filterState: 'open' | 'draft' | 'all' = 'open') {
+export function usePRList(provider: string, filterState: 'open' | 'draft' | 'all' = 'open') {
   const { query } = useSQLiteQuery();
 
   return useQuery({
-    queryKey: ['prs', providerId, filterState],
+    queryKey: ['prs', provider, filterState],
     queryFn: async () => {
-      let sql = 'SELECT * FROM pull_requests WHERE provider_id = ?';
-      const params: unknown[] = [providerId];
+      let sql = 'SELECT * FROM prs WHERE provider = ?';
+      const params: unknown[] = [provider];
 
       if (filterState === 'open') {
-        sql += " AND state IN ('open')";
+        sql += " AND state = 'open' AND draft = 0";
       } else if (filterState === 'draft') {
-        sql += " AND state IN ('draft')";
+        sql += " AND draft = 1";
       }
 
       sql += ' ORDER BY updated_at DESC LIMIT 100';
@@ -1252,13 +1259,13 @@ import { describe, it, expect, vi } from 'vitest';
 
 describe('usePRList', () => {
   it('should construct SQL with filter', () => {
-    const sql = "SELECT * FROM pull_requests WHERE provider_id = ? AND state IN ('open')";
-    expect(sql).toContain('provider_id');
+    const sql = "SELECT * FROM prs WHERE provider = ? AND state = 'open' AND draft = 0";
+    expect(sql).toContain('provider');
     expect(sql).toContain('state');
   });
 
   it('should construct SQL for draft filter', () => {
-    const sql = "SELECT * FROM pull_requests WHERE provider_id = ? AND state IN ('draft')";
+    const sql = "SELECT * FROM prs WHERE provider = ? AND draft = 1";
     expect(sql).toContain('draft');
   });
 });
@@ -1320,7 +1327,7 @@ import { appStore } from '../store';
 
 export default function PRList() {
   const filterState = useStore(appStore, (state) => state.filterState);
-  const { data: prs = [], isLoading, error } = usePRList('github:default', filterState);
+  const { data: prs = [], isLoading, error } = usePRList('github', filterState);
 
   if (error) {
     return (
@@ -1448,7 +1455,7 @@ export default function PRListItem({ pr, isSelected }: Props) {
         </span>
       </div>
       <div className="pr-item-meta">
-        <span className="pr-repo">{pr.provider_id}</span>
+        <span className="pr-repo">{pr.owner}/{pr.repo}</span>
         <span className="separator">•</span>
         <span className="pr-author">@{pr.author}</span>
         <span className="separator">•</span>
@@ -1871,7 +1878,7 @@ export default function PRList() {
 
   const filterState = useStore(appStore, (state) => state.filterState);
   const selectedIndex = useStore(appStore, (state) => state.selectedPRIndex);
-  const { data: prs = [], isLoading, error } = usePRList('github:default', filterState);
+  const { data: prs = [], isLoading, error } = usePRList('github', filterState);
 
   const handlePRClick = (index: number) => {
     appStore.setState((s) => ({

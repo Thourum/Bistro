@@ -74,13 +74,21 @@ Main process ↔ Renderer process communication. Both run as same user, messages
       {
         "id": "github-123",
         "provider": "github",
-        "repo": "org/repo",
+        "owner": "org",
+        "repo": "repo",
         "number": 123,
         "title": "Fix auth bug",
         "author": "alice",
         "state": "open",
+        "draft": false,
         "review_status": "pending",
-        "created_at": "2025-04-08T14:00:00Z"
+        "comment_count": 0,
+        "created_at": "2025-04-08T14:00:00Z",
+        "updated_at": "2025-04-08T14:00:00Z",
+        "base_branch": "main",
+        "head_branch": "fix/auth",
+        "base_sha": "abc123",
+        "head_sha": "def456"
       }
     ],
     "total": 42,
@@ -126,20 +134,30 @@ Main process ↔ Renderer process communication. Both run as same user, messages
   "payload": {
     "pr": {
       "id": "github-123",
+      "provider": "github",
+      "owner": "org",
+      "repo": "repo",
       "number": 123,
       "title": "Fix auth bug",
-      "description": "...",
+      "body": "...",
       "author": "alice",
+      "state": "open",
+      "draft": false,
+      "created_at": "2025-04-08T14:00:00Z",
+      "updated_at": "2025-04-08T14:00:00Z",
       "base_branch": "main",
       "head_branch": "fix/auth",
-      "state": "open",
-      "review_status": "pending",
+      "base_sha": "abc123",
+      "head_sha": "def456",
+      "comment_count": 1,
       "ci_status": "pending",
       "ci_checks": [
         { "name": "Tests", "status": "success" },
         { "name": "Lint", "status": "pending" }
       ],
-      "created_at": "2025-04-08T14:00:00Z"
+      "review_status": "pending",
+      "approved_by": null,
+      "changes_requested_by": null
     },
     "diff": "--- a/file.js\n+++ b/file.js\n@@ ... @@",
     "comments": [
@@ -459,19 +477,26 @@ INTERNAL
 interface PR {
   id: string;                 // provider-number (e.g., "github-123")
   provider: 'github' | 'gitlab' | 'gitea';
-  repo: string;               // org/repo
+  owner: string;              // org or user (e.g., "org")
+  repo: string;               // repository name (e.g., "repo")
   number: number;             // PR number in that repo
   title: string;
-  description?: string;
+  body?: string;
   author: string;             // username
   state: 'open' | 'closed' | 'merged';
-  review_status: 'pending' | 'approved' | 'changes_requested';
-  base_branch: string;
-  head_branch: string;
   created_at: string;         // ISO 8601
   updated_at: string;
   merged_at?: string;
+  base_branch: string;
+  head_branch: string;
+  base_sha: string;
+  head_sha: string;
+  comment_count: number;
   ci_status?: 'pending' | 'success' | 'failure';
+  draft: boolean;
+  review_status: 'pending' | 'approved' | 'changes_requested';
+  approved_by?: string;
+  changes_requested_by?: string;
 }
 ```
 
@@ -632,6 +657,6 @@ A: Yes, but document it here first. Coordinate with both teams.
 
 ---
 
-**Last updated:** 2025-04-08
+**Last updated:** 2026-04-08
 
 **Breaking change policy:** Bump API version, require both teams to update simultaneously.
