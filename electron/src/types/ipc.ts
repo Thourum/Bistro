@@ -49,6 +49,7 @@ export interface GoCommandRequest {
   pr_id: string;
   comment?: string;
   line?: number;
+  file?: string;
 }
 
 export interface GoCommandResponse {

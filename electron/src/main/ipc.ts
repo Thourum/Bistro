@@ -14,6 +14,14 @@ import type { WebSocketClient } from './websocket-client';
 let db: Database.Database | null = null;
 let dbPath: string | null = null;
 
+const ACTION_TYPE_MAP: Record<string, string> = {
+  approve_pr: 'approve',
+  request_changes: 'request_changes',
+  post_comment: 'post_comment',
+  // Accept Go-native names as passthrough
+  approve: 'approve',
+};
+
 /**
  * Lazily opens the SQLite database on first query.
  * This allows the Go process to create the DB file before Electron reads it.
@@ -70,7 +78,26 @@ export function setupIPC(path: string, logger: Logger, wsClient: WebSocketClient
   // ---- go:command handler ----
   ipcMain.handle('go:command', async (_event, request: GoCommandRequest) => {
     try {
-      logger.info(`Go command received: ${request.type}`);
+      if (!wsClient.isConnected()) {
+        return { err: 'WebSocket not connected — action queued for retry' };
+      }
+
+      const action = ACTION_TYPE_MAP[request.type];
+      if (action === undefined) {
+        return { err: `Unknown action type: ${request.type}` };
+      }
+
+      logger.info(`Forwarding go:command: ${action} for PR ${request.pr_id}`);
+
+      wsClient.send({
+        type: 'ACTION_REQUEST',
+        action,
+        pr_id: request.pr_id,
+        body: request.comment ?? '',
+        line: request.line ?? 0,
+        file: request.file ?? '',
+      });
+
       return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -91,11 +118,15 @@ export function setupIPC(path: string, logger: Logger, wsClient: WebSocketClient
         return { err: 'WebSocket not connected' };
       }
 
+      const syncAction = ACTION_TYPE_MAP[request.type] ?? request.type;
+
       wsClient.send({
-        type: request.type,
+        type: 'ACTION_REQUEST',
+        action: syncAction,
         pr_id: request.pr_id,
-        ...(request.comment !== undefined ? { comment: request.comment } : {}),
-        ...(request.line !== undefined ? { line: request.line } : {}),
+        body: request.comment ?? '',
+        line: request.line ?? 0,
+        file: '',
       });
 
       return { ok: { success: true } };
