@@ -82,10 +82,10 @@ describe('useKeyboardIntegration', () => {
     expect(appStore.state.filterMenuOpen).toBe(false);
   });
 
-  it('sets confirmingAction to "command" on ":"', () => {
+  it('sets mode to "command" on ":"', () => {
     renderHook(() => useKeyboardIntegration());
     act(() => { fireKey(':'); });
-    expect(appStore.state.confirmingAction).toBe('command');
+    expect(appStore.state.mode).toBe('command');
   });
 
   it('returns from detail mode to list on Escape', () => {

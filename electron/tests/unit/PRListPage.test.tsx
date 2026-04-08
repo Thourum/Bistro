@@ -60,7 +60,7 @@ describe('PRListPage', () => {
 
   it('renders toolbar with search and filter', () => {
     render(<PRListPage />);
-    expect(screen.getByPlaceholderText('Search PRs...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search PRs... (/ to focus)')).toBeInTheDocument();
     expect(screen.getByText('Filter')).toBeInTheDocument();
   });
 });
