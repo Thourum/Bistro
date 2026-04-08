@@ -1,0 +1,28 @@
+# Binaries
+bistro-sync
+*.exe
+*.dll
+*.dylib
+
+# Test binaries
+*.test
+
+# Go cache
+.go/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Database & patches
+data/sqlite.db
+data/patches/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
