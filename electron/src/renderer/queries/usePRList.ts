@@ -28,5 +28,7 @@ export function usePRList(filterState: 'open' | 'draft' | 'all' = 'open') {
     },
     staleTime: 30 * 1000, // 30s
     gcTime: 5 * 60 * 1000, // 5m
+    retry: 3,
+    retryDelay: (attemptIndex: number) => Math.min(1000 * Math.pow(2, attemptIndex), 30000),
   });
 }
