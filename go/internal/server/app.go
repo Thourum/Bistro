@@ -38,7 +38,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	defer a.db.Close()
 
-	if err := store.Migrate(a.db); err != nil {
+	if err := store.NewMigrationRunner(a.log, a.db.DB).Run(ctx); err != nil {
 		return fmt.Errorf("failed to migrate: %w", err)
 	}
 

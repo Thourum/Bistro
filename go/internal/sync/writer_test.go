@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -82,7 +83,7 @@ func openTestDB(t *testing.T) *store.DB {
 	if err != nil {
 		t.Fatalf("openTestDB: %v", err)
 	}
-	if err := store.Migrate(db); err != nil {
+	if err := store.NewMigrationRunner(nil, db.DB).Run(context.Background()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
