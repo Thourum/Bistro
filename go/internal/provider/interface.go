@@ -37,3 +37,13 @@ type PRFilters struct {
 	Limit  int    // max results per page
 	Offset int    // pagination offset
 }
+
+// RateLimitTracker manages rate limit state persistence.
+type RateLimitTracker interface {
+	// Store persists rate limit state.
+	Store(ctx context.Context, state *RateLimitState) error
+	// Load retrieves last known rate limit state.
+	Load(ctx context.Context) (*RateLimitState, error)
+	// Clear resets stored rate limit state.
+	Clear(ctx context.Context) error
+}
