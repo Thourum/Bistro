@@ -4,7 +4,7 @@ export interface UIState {
   selectedPRIndex: number;
   selectedFileIndex: number;
   searchQuery: string;
-  mode: 'list' | 'detail' | 'search' | 'help';
+  mode: 'list' | 'detail' | 'search' | 'help' | 'command' | 'filter';
   paneLayout: 'list' | 'detail' | 'split';
   sortBy: 'updated' | 'created';
   filterState: 'open' | 'draft' | 'all';
