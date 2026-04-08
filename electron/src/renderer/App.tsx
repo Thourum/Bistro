@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { appStore } from './store';
 import { useStore } from './hooks/useStore';
+import { useKeyboard } from './hooks/useKeyboard';
 import type { UIState } from './store/ui';
 import PRList from './pages/PRList';
 import PRDetail from './pages/PRDetail';
@@ -8,7 +9,8 @@ import './App.css';
 
 const queryClient = new QueryClient();
 
-function AppContent() {
+export function AppContent() {
+  useKeyboard();
   const mode = useStore(appStore, (state: UIState) => state.mode);
 
   return (
