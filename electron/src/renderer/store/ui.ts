@@ -1,4 +1,5 @@
 import { Store } from '@tanstack/store';
+import type { PendingAction, ActionResult } from '../types';
 
 export interface SyncStats {
   prCount: number;
@@ -22,6 +23,8 @@ export interface UIState {
   filterState: 'open' | 'draft' | 'all';
   confirmingAction: string | null;
   filterMenuOpen: boolean;
+  pendingAction: PendingAction | null;
+  actionResult: ActionResult | null;
   // Legacy sync state (kept for compatibility)
   isSyncing: boolean;
   syncProgress: number;
@@ -72,6 +75,8 @@ const initialUIState: UIState = {
   filterState: 'open',
   confirmingAction: null,
   filterMenuOpen: false,
+  pendingAction: null,
+  actionResult: null,
   isAuthenticated: false,
   isSyncing: false,
   syncProgress: 0,

@@ -69,3 +69,22 @@ export interface PRDetail extends PR {
   comments: Comment[];
   ci_checks: CICheck[];
 }
+
+/**
+ * A PR action in progress.
+ */
+export interface PendingAction {
+  type: 'approve' | 'request_changes' | 'post_comment';
+  prId: string;
+  startedAt: number;
+}
+
+/**
+ * Result of a completed PR action.
+ */
+export interface ActionResult {
+  type: 'approve' | 'request_changes' | 'post_comment';
+  prId: string;
+  success: boolean;
+  message: string;
+}
