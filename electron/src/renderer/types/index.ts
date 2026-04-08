@@ -88,3 +88,13 @@ export interface ActionResult {
   success: boolean;
   message: string;
 }
+
+/**
+ * A toast notification for the UI.
+ */
+export interface Toast {
+  id: string;
+  type: 'info' | 'success' | 'error' | 'warning';
+  message: string;
+  dismissible: boolean;
+}

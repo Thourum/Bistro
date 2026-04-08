@@ -1,5 +1,5 @@
 import { Store } from '@tanstack/store';
-import type { PendingAction, ActionResult } from '../types';
+import type { PendingAction, ActionResult, Toast } from '../types';
 
 export interface SyncStats {
   prCount: number;
@@ -34,6 +34,8 @@ export interface UIState {
   syncError: string | null;
   lastSyncAt: string | null;
   syncStats: SyncStats | null;
+  toasts: Toast[];
+  isOffline: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'bistro-settings';
@@ -85,6 +87,8 @@ const initialUIState: UIState = {
   syncError: null,
   lastSyncAt: null,
   syncStats: null,
+  toasts: [],
+  isOffline: false,
   ...loadPersistedSettings(),
 };
 

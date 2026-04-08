@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { UIState } from '../../src/renderer/store/ui';
 import { createUIStore } from '../../src/renderer/store/ui';
+import type { Toast } from '../../src/renderer/types';
 
 describe('UIState action fields', () => {
   it('initializes with null pendingAction and actionResult', () => {
@@ -31,6 +32,42 @@ describe('UIState action fields', () => {
     expect(store.state.actionResult).toEqual(
       expect.objectContaining({ success: true, message: 'Approved' })
     );
+  });
+});
+
+describe('UIState toast fields', () => {
+  it('initializes with empty toasts array and isOffline false', () => {
+    const store = createUIStore();
+    expect(store.state.toasts).toEqual([]);
+    expect(store.state.isOffline).toBe(false);
+  });
+
+  it('adds a toast immutably', () => {
+    const store = createUIStore();
+    const prev = store.state;
+    store.setState((s) => ({
+      ...s,
+      toasts: [...s.toasts, { id: 't1', type: 'error' as const, message: 'Oops', dismissible: true }],
+    }));
+    expect(store.state.toasts).toHaveLength(1);
+    expect(prev.toasts).toHaveLength(0);
+  });
+
+  it('caps toasts at 3 (removes oldest)', () => {
+    const store = createUIStore();
+    const toasts: Toast[] = [
+      { id: 't1', type: 'error', message: 'A', dismissible: true },
+      { id: 't2', type: 'error', message: 'B', dismissible: true },
+      { id: 't3', type: 'error', message: 'C', dismissible: true },
+    ];
+    store.setState((s) => ({ ...s, toasts }));
+    const newToast: Toast = { id: 't4', type: 'info', message: 'D', dismissible: true };
+    store.setState((s) => ({
+      ...s,
+      toasts: [...s.toasts.slice(-2), newToast],
+    }));
+    expect(store.state.toasts).toHaveLength(3);
+    expect(store.state.toasts[0].id).toBe('t2');
   });
 });
 
