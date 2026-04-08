@@ -6,8 +6,9 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
-	"path/filepath"
+	"path"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -88,12 +89,22 @@ func (mr *MigrationRunner) loadMigrationFiles() ([]Migration, error) {
 			continue
 		}
 
-		content, err := migrationsFS.ReadFile(filepath.Join(dir, name))
+		content, err := migrationsFS.ReadFile(path.Join(dir, name))
 		if err != nil {
 			return nil, fmt.Errorf("read migration file %s: %w", name, err)
 		}
 
-		version := parseVersion(name)
+		version, err := parseVersion(name)
+		if err != nil {
+			return nil, fmt.Errorf("parse version for migration file %s: %w", name, err)
+		}
+
+		for _, existing := range migrations {
+			if existing.Version == version {
+				return nil, fmt.Errorf("duplicate migration version %d: files %s and %s", version, existing.Name, name)
+			}
+		}
+
 		description := extractDescription(string(content))
 
 		migrations = append(migrations, Migration{
@@ -112,14 +123,16 @@ func (mr *MigrationRunner) loadMigrationFiles() ([]Migration, error) {
 }
 
 // parseVersion extracts the leading integer from a filename like "001_init.sql".
-func parseVersion(name string) int {
+func parseVersion(name string) (int, error) {
 	parts := strings.SplitN(name, "_", 2)
 	if len(parts) == 0 {
-		return 0
+		return 0, fmt.Errorf("migration filename %q has no version prefix", name)
 	}
-	var v int
-	fmt.Sscanf(parts[0], "%d", &v)
-	return v
+	v, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, fmt.Errorf("migration filename %q has non-integer version prefix %q: %w", name, parts[0], err)
+	}
+	return v, nil
 }
 
 // extractDescription finds the "-- Description:" comment line in SQL content.

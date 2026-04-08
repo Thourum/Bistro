@@ -31,7 +31,7 @@ Phases 1-6 are **complete and verified**. Phase 5 (Actions & PR Modifications) w
 **Action:**
 ```bash
 # Phase 5 Implementation Plan ready at:
-/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/docs/superpowers/plans/2026-04-08-go-sync-phase-5.md
+docs/superpowers/plans/2026-04-08-go-sync-phase-5.md
 
 # To execute Phase 5:
 # 1. Use superpowers:subagent-driven-development
@@ -314,12 +314,12 @@ View with: git log --oneline | head -20
 **E2E Test the System:**
 ```bash
 # Terminal 1: Start sync engine
-cd /Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/go
+cd go
 go build ./cmd/bistro-sync
 ./bistro-sync --ws-port 8080 --db-path ./sync.db
 
 # Terminal 2: Start Electron UI
-cd /Users/samuelasvanyi/dev/bistro/electron
+cd ../electron
 pnpm dev
 ```
 Then test: click sync → approve PRs → request changes → post comments → verify real-time updates
@@ -339,15 +339,15 @@ Then test: click sync → approve PRs → request changes → post comments → 
 ## Resources
 
 ### Key Files
-- **Project Status:** `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/PROJECT_STATUS.md`
-- **Phase 5 Plan:** `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/docs/superpowers/plans/2026-04-08-go-sync-phase-5.md`
-- **Remediation Details:** `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/REMEDIATION_COMPLETE.md`
-- **Code Reviews:** `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/PHASE_*_CODE_REVIEW.md`
+- **Project Status:** `PROJECT_STATUS.md`
+- **Phase 5 Plan:** `docs/superpowers/plans/2026-04-08-go-sync-phase-5.md`
+- **Remediation Details:** `REMEDIATION_COMPLETE.md`
+- **Code Reviews:** `PHASE_*_CODE_REVIEW.md`
 
 ### Test Running
 ```bash
 # Full suite
-cd /Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/go
+cd go
 go test ./... -v
 
 # With race detector

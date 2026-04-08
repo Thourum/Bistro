@@ -286,4 +286,4 @@ Phase 1 provides a solid foundation. Phase 2 will implement:
 
 **Reviewed by:** Claude Code
 **Date:** 2025-04-08
-**Worktree:** `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine`
+**Worktree:** `.worktrees/go-sync-engine`

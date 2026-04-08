@@ -131,9 +131,12 @@ func TestSubmitContextCancellation(t *testing.T) {
 	}
 	<-started // worker is now busy
 
-	// Fill the remaining buffer slot.
+	// Fill the remaining buffer slots (buffer size = workerCount*2 = 2).
 	if err := pool.Submit(ctx, func() {}); err != nil {
-		t.Fatalf("unexpected error filling buffer: %v", err)
+		t.Fatalf("unexpected error filling buffer slot 1: %v", err)
+	}
+	if err := pool.Submit(ctx, func() {}); err != nil {
+		t.Fatalf("unexpected error filling buffer slot 2: %v", err)
 	}
 
 	// Cancel the context now; the next Submit must return immediately.

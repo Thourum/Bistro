@@ -52,6 +52,10 @@ func (c *Client) postComment(ctx context.Context, owner, repo string, number, li
 		return fmt.Errorf("invalid PR parameters: owner=%q, repo=%q, number=%d", owner, repo, number)
 	}
 
+	if line > 0 {
+		return fmt.Errorf("line-level review comments not yet supported")
+	}
+
 	if body == "" {
 		return fmt.Errorf("comment body cannot be empty")
 	}

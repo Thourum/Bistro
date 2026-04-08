@@ -38,6 +38,13 @@ func NewActionExecutor(
 // Execute performs a single action (no retries).
 // Errors are returned inside ActionResult rather than as the error return value.
 func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*ActionResult, error) {
+	if req == nil {
+		return &ActionResult{
+			Success:   false,
+			Error:     "nil request",
+			Timestamp: time.Now(),
+		}, nil
+	}
 	if err := req.Validate(); err != nil {
 		return &ActionResult{
 			PRID:      req.PRID,
@@ -78,6 +85,13 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 
 // ExecuteWithRetry performs an action with automatic retries using exponential backoff.
 func (ae *ActionExecutor) ExecuteWithRetry(ctx context.Context, req *ActionRequest, maxAttempts int) (*ActionResult, error) {
+	if req == nil {
+		return &ActionResult{
+			Success:   false,
+			Error:     "nil request",
+			Timestamp: time.Now(),
+		}, nil
+	}
 	if err := req.Validate(); err != nil {
 		return &ActionResult{
 			PRID:      req.PRID,
@@ -102,6 +116,14 @@ func (ae *ActionExecutor) ExecuteMultiple(ctx context.Context, requests []*Actio
 	results := make([]*ActionResult, len(requests))
 
 	for i, req := range requests {
+		if req == nil {
+			results[i] = &ActionResult{
+				Success:   false,
+				Error:     "nil request",
+				Timestamp: time.Now(),
+			}
+			continue
+		}
 		result, err := ae.Execute(ctx, req)
 		if err != nil {
 			results[i] = &ActionResult{

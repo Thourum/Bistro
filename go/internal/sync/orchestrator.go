@@ -319,16 +319,9 @@ func (o *Orchestrator) ApplyActions(ctx context.Context, requests []*actions.Act
 		Timestamp: time.Now(),
 	})
 
-	executor := actions.NewActionExecutor(o.log, o.provider, o.store, o.emitter)
-
 	results := make([]*actions.ActionResult, 0, len(requests))
 	for _, req := range requests {
-		result, err := executor.ExecuteWithRetry(ctx, req, 3)
-		if err != nil {
-			if o.log != nil {
-				o.log.Error("action execution error", "pr", req.PRID, "error", err)
-			}
-		}
+		result := o.ApplyAction(ctx, req)
 		if result != nil {
 			results = append(results, result)
 		}

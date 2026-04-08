@@ -20,6 +20,7 @@ type ExponentialBackoff struct {
 	MaxDelay     time.Duration
 	JitterFactor float64 // 0.0-1.0, percentage variance
 	current      time.Duration
+	attempt      int
 }
 
 // CalculateDelay returns delay for attempt N with optional jitter.
@@ -52,19 +53,14 @@ func NewExponentialBackoff(initial, max time.Duration, multiplier float64) *Expo
 	}
 }
 
-// Next returns the current backoff duration and advances internal state for the next call
+// Next returns the delay for the current attempt (with jitter) and advances internal state for the next call.
 func (eb *ExponentialBackoff) Next() time.Duration {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
 
-	result := eb.current
-
-	next := time.Duration(float64(eb.current) * eb.Multiplier)
-	if next > eb.MaxDelay {
-		next = eb.MaxDelay
-	}
-
-	eb.current = next
+	result := eb.CalculateDelay(eb.attempt)
+	eb.attempt++
+	eb.current = result
 	return result
 }
 

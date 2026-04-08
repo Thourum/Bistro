@@ -145,14 +145,25 @@ func (q *ActionQueue) MarkCompleted(ctx context.Context, id string) error {
 	return nil
 }
 
-// MarkFailed sets the status of an action to 'failed' and records the error and retry count.
+// MaxRetryCount is the maximum number of attempts before an action is
+// permanently marked as failed.
+const MaxRetryCount = 3
+
+// MarkFailed increments the retry count and records the error.
+// When retry_count < MaxRetryCount the action stays 'pending' so it will be
+// picked up by the next replay pass.  Once retries are exhausted the status
+// is set to 'failed' and the action will not be retried again.
 func (q *ActionQueue) MarkFailed(ctx context.Context, id string, errMsg string, retryCount int) error {
+	status := "pending"
+	if retryCount >= MaxRetryCount {
+		status = "failed"
+	}
 	const query = `
 		UPDATE action_queue
-		SET status = 'failed', last_error = ?, retry_count = ?
+		SET status = ?, last_error = ?, retry_count = ?
 		WHERE id = ?
 	`
-	result, err := q.db.ExecContext(ctx, query, errMsg, retryCount, id)
+	result, err := q.db.ExecContext(ctx, query, status, errMsg, retryCount, id)
 	if err != nil {
 		return fmt.Errorf("mark failed %s: %w", id, err)
 	}
@@ -168,6 +179,12 @@ func (q *ActionQueue) MarkFailed(ctx context.Context, id string, errMsg string, 
 
 // DeleteCompleted removes completed actions older than the given duration.
 // Returns the number of rows deleted.
+//
+// Note: the schema has no updated_at column, so created_at is used as the
+// cutoff timestamp. This means the retention window is measured from when
+// the action was first created, not when it completed. Actions that spend a
+// long time in the queue before completing may be deleted sooner than
+// expected relative to their completion time.
 func (q *ActionQueue) DeleteCompleted(ctx context.Context, olderThan time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-olderThan)
 	const query = `DELETE FROM action_queue WHERE status = 'completed' AND created_at <= ?`
@@ -183,6 +200,10 @@ func (q *ActionQueue) DeleteCompleted(ctx context.Context, olderThan time.Durati
 }
 
 // DeleteFailed removes failed actions older than the given duration.
+//
+// Note: the schema has no updated_at column, so created_at is used as the
+// cutoff timestamp. This means the retention window is measured from when
+// the action was first created, not when it reached the failed state.
 func (q *ActionQueue) DeleteFailed(ctx context.Context, olderThan time.Duration) error {
 	cutoff := time.Now().Add(-olderThan)
 	const query = `DELETE FROM action_queue WHERE status = 'failed' AND created_at <= ?`

@@ -78,6 +78,9 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 		prCount++
 
 		for _, comment := range result.Comments {
+			if comment == nil {
+				continue
+			}
 			if err := w.writeComment(ctx, tx, result.PR.ID, comment); err != nil {
 				if w.log != nil {
 					w.log.Error("failed to write comment", "comment_id", comment.ID, "err", err)
@@ -117,6 +120,10 @@ func (w *Writer) writePR(ctx context.Context, tx *sql.Tx, pr *provider.PR) error
 			state         = excluded.state,
 			updated_at    = excluded.updated_at,
 			merged_at     = excluded.merged_at,
+			base_branch   = excluded.base_branch,
+			head_branch   = excluded.head_branch,
+			base_sha      = excluded.base_sha,
+			head_sha      = excluded.head_sha,
 			comment_count = excluded.comment_count,
 			ci_status     = excluded.ci_status,
 			draft         = excluded.draft

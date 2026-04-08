@@ -9,14 +9,14 @@
 ### Build the Project
 
 ```bash
-cd /Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/go
+cd go
 go build -o bistro-sync ./cmd/bistro-sync
 ```
 
 ### Run Tests
 
 ```bash
-cd /Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/go
+cd go
 go test ./...
 ```
 
@@ -120,10 +120,10 @@ After Phase 2 completes, Phase 3 will add:
 
 Refer to the design directory for full specifications:
 
-- `/Users/samuelasvanyi/dev/bistro/design/api-contracts.md` — IPC & WebSocket message schemas
-- `/Users/samuelasvanyi/dev/bistro/design/error-handling.md` — Error types and user messages
-- `/Users/samuelasvanyi/dev/bistro/design/security-model.md` — Token storage, auth
-- `/Users/samuelasvanyi/dev/bistro/design/data-flow.md` — Complete data lifecycle
+- `design/api-contracts.md` — IPC & WebSocket message schemas
+- `design/error-handling.md` — Error types and user messages
+- `design/security-model.md` — Token storage, auth
+- `design/data-flow.md` — Complete data lifecycle
 
 ---
 
@@ -209,7 +209,7 @@ go build ./...
 To verify Phase 1 is complete:
 
 ```bash
-cd /Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/go
+cd go
 
 # Build
 go build -o bistro-sync ./cmd/bistro-sync
@@ -240,6 +240,6 @@ Refer to the relevant design document or implementation plan:
 ---
 
 **Last Updated:** 2025-04-08
-**Worktree:** `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine`
+**Worktree:** `.`
 **Branch:** `feature/go-sync-engine`
 

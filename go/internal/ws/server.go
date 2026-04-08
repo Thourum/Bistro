@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -16,17 +17,28 @@ type Server struct {
 	mu         sync.Mutex
 	stopChan   chan struct{}
 	httpServer *http.Server
+	conns      map[*websocket.Conn]struct{}
 }
 
-// NewServer constructs a Server with permissive origin checking (localhost only in production).
+// isLocalOrigin reports whether the request origin is localhost, 127.0.0.1,
+// or absent (non-browser client). This keeps the server safe for a local
+// desktop app while still allowing development tooling.
+func isLocalOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // non-browser client (e.g. Electron IPC, tests)
+	}
+	return strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1")
+}
+
+// NewServer constructs a Server that only accepts connections from localhost origins.
 func NewServer() *Server {
 	return &Server{
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return true // Allow all origins (localhost only in production)
-			},
+			CheckOrigin: isLocalOrigin,
 		},
 		stopChan: make(chan struct{}),
+		conns:    make(map[*websocket.Conn]struct{}),
 	}
 }
 
@@ -54,23 +66,39 @@ func (s *Server) Start(addr string) error {
 	return nil
 }
 
-// Stop signals all WebSocket handlers to return and shuts down the HTTP server.
+// Stop signals all WebSocket handlers to return, closes all active connections,
+// and shuts down the HTTP server.
 func (s *Server) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Signal all handlers to stop before closing the server
+	// Signal all handlers to stop before closing the server.
 	select {
 	case <-s.stopChan:
-		// Already closed
+		// Already closed.
 	default:
 		close(s.stopChan)
+	}
+
+	// Close every tracked connection so goroutines blocked on ReadJSON unblock.
+	for conn := range s.conns {
+		conn.Close()
 	}
 
 	if s.httpServer != nil {
 		return s.httpServer.Close()
 	}
 	return nil
+}
+
+// registerConn adds conn to the tracked set. Must be called with s.mu held.
+func (s *Server) registerConn(conn *websocket.Conn) {
+	s.conns[conn] = struct{}{}
+}
+
+// deregisterConn removes conn from the tracked set. Must be called with s.mu held.
+func (s *Server) deregisterConn(conn *websocket.Conn) {
+	delete(s.conns, conn)
 }
 
 // handleWebSocket upgrades an HTTP connection to WebSocket and keeps it open
@@ -80,7 +108,17 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+
+	s.mu.Lock()
+	s.registerConn(conn)
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		s.deregisterConn(conn)
+		s.mu.Unlock()
+		conn.Close()
+	}()
 
 	for {
 		select {

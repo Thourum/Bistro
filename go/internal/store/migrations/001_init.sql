@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS comments (
     updated_at  DATETIME NOT NULL,
     line_number INTEGER,
     file_path   TEXT,
-    FOREIGN KEY(pr_id) REFERENCES prs(id)
+    FOREIGN KEY(pr_id) REFERENCES prs(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS files (
@@ -44,6 +44,6 @@ CREATE TABLE IF NOT EXISTS files (
     additions  INTEGER DEFAULT 0,
     deletions  INTEGER DEFAULT 0,
     patch_path TEXT,
-    FOREIGN KEY(pr_id) REFERENCES prs(id),
+    FOREIGN KEY(pr_id) REFERENCES prs(id) ON DELETE CASCADE,
     UNIQUE(pr_id, file_path)
 );

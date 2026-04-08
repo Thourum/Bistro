@@ -23,11 +23,20 @@ type App struct {
 	wsPort       int
 	dbPath       string
 	orchestrator *sync.Orchestrator
+	prov         provider.Provider
+	gitClient    *git.Client
 }
 
-// setupOrchestrator wires the sync orchestrator into the app using the given provider and git client.
-func (a *App) setupOrchestrator(prov provider.Provider, gitClient *git.Client) {
-	a.orchestrator = sync.NewOrchestrator(a.log, prov, a.db, gitClient)
+// SetProvider configures the GitHub provider used by the sync orchestrator.
+// Must be called before Run.
+func (a *App) SetProvider(prov provider.Provider) {
+	a.prov = prov
+}
+
+// SetGitClient configures the git client used by the sync orchestrator.
+// Must be called before Run.
+func (a *App) SetGitClient(gitClient *git.Client) {
+	a.gitClient = gitClient
 }
 
 // ReplayQueuedActions replays any pending offline queue actions.
@@ -76,6 +85,10 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	a.log.Info("database initialized")
+
+	if a.prov != nil && a.gitClient != nil {
+		a.orchestrator = sync.NewOrchestrator(a.log, a.prov, a.db, a.gitClient)
+	}
 
 	wsAddr := fmt.Sprintf(":%d", a.wsPort)
 	if err := a.wsServer.Start(wsAddr); err != nil {

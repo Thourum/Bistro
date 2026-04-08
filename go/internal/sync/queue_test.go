@@ -99,38 +99,55 @@ func TestQueueMarkCompleted(t *testing.T) {
 	}
 }
 
-// TestQueueMarkFailed verifies that MarkFailed sets status to 'failed' and records error info.
+// TestQueueMarkFailed verifies that MarkFailed keeps the action pending while
+// retries remain, and only moves it to 'failed' once retries are exhausted.
 func TestQueueMarkFailed(t *testing.T) {
 	db := openTestDB(t)
 	q := NewActionQueue(db.DB)
 	ctx := context.Background()
 
-	action := &QueuedAction{
-		ID:         "action-fail",
-		ActionType: "request_changes",
-		PRID:       "pr-2",
-		Payload:    "{}",
-	}
-	if err := q.Enqueue(ctx, action); err != nil {
-		t.Fatalf("Enqueue error: %v", err)
+	enqueue := func(id string) {
+		t.Helper()
+		if err := q.Enqueue(ctx, &QueuedAction{
+			ID:         id,
+			ActionType: "request_changes",
+			PRID:       "pr-2",
+			Payload:    "{}",
+		}); err != nil {
+			t.Fatalf("Enqueue error: %v", err)
+		}
 	}
 
-	if err := q.MarkFailed(ctx, "action-fail", "network timeout", 1); err != nil {
+	// retryCount < MaxRetryCount → action stays pending for another attempt.
+	enqueue("action-retry")
+	if err := q.MarkFailed(ctx, "action-retry", "network timeout", 1); err != nil {
 		t.Fatalf("MarkFailed error: %v", err)
 	}
-
-	got, err := q.GetByID(ctx, "action-fail")
+	got, err := q.GetByID(ctx, "action-retry")
 	if err != nil {
 		t.Fatalf("GetByID error: %v", err)
 	}
-	if got.Status != "failed" {
-		t.Errorf("expected status 'failed', got %q", got.Status)
+	if got.Status != "pending" {
+		t.Errorf("expected status 'pending' when retries remain, got %q", got.Status)
 	}
 	if got.LastError != "network timeout" {
 		t.Errorf("expected LastError 'network timeout', got %q", got.LastError)
 	}
 	if got.RetryCount != 1 {
 		t.Errorf("expected RetryCount 1, got %d", got.RetryCount)
+	}
+
+	// retryCount >= MaxRetryCount → action is permanently failed.
+	enqueue("action-exhausted")
+	if err := q.MarkFailed(ctx, "action-exhausted", "too many failures", MaxRetryCount); err != nil {
+		t.Fatalf("MarkFailed error: %v", err)
+	}
+	got, err = q.GetByID(ctx, "action-exhausted")
+	if err != nil {
+		t.Fatalf("GetByID error: %v", err)
+	}
+	if got.Status != "failed" {
+		t.Errorf("expected status 'failed' when retries exhausted, got %q", got.Status)
 	}
 }
 

@@ -15,15 +15,21 @@ func (c *Client) getComments(ctx context.Context, owner, repo string, number int
 		ListOptions: ghlib.ListOptions{PerPage: 100},
 	}
 
-	ghComments, _, err := c.gh.Issues.ListComments(ctx, owner, repo, number, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get comments for %s/%s#%d: %w", owner, repo, number, err)
-	}
-
 	prID := "github:" + owner + "/" + repo + ":" + strconv.Itoa(number)
-	result := make([]*provider.Comment, 0, len(ghComments))
-	for _, ghComment := range ghComments {
-		result = append(result, normalizeComment(prID, ghComment))
+	var result []*provider.Comment
+
+	for {
+		ghComments, resp, err := c.gh.Issues.ListComments(ctx, owner, repo, number, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get comments for %s/%s#%d: %w", owner, repo, number, err)
+		}
+		for _, ghComment := range ghComments {
+			result = append(result, normalizeComment(prID, ghComment))
+		}
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
 	}
 
 	return result, nil

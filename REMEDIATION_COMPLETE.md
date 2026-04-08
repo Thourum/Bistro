@@ -192,7 +192,7 @@ Three parallel Opus 4.6 agents executed MAX EFFORT fixes across Phases 2, 3, and
 ## Next Steps
 
 **Phase 5 Implementation Ready:**
-- Execute Phase 5 plan: `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/docs/superpowers/plans/2026-04-08-go-sync-phase-5.md`
+- Execute Phase 5 plan: `docs/superpowers/plans/2026-04-08-go-sync-phase-5.md`
 - Remove logger wrapper prerequisite (slog direct usage)
 - Implement actions package with TDD discipline
 - Expected effort: 3-4 hours for all 5 tasks

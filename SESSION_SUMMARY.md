@@ -210,21 +210,21 @@ Expected: +20 tests, 186+ cumulative tests passing
 ## Artifacts Created This Session
 
 **Code Reviews:**
-- `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/PHASE_2_CODE_REVIEW.md`
-- `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/PHASE_3_CODE_REVIEW.md`
-- `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/PHASE_4_CODE_REVIEW.md`
-- `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/CODE_REVIEW_SUMMARY.md`
+- `PHASE_2_CODE_REVIEW.md`
+- `PHASE_3_CODE_REVIEW.md`
+- `PHASE_4_CODE_REVIEW.md`
+- `CODE_REVIEW_SUMMARY.md`
 
 **Status Documents:**
-- `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/REMEDIATION_COMPLETE.md`
-- `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/PROJECT_STATUS.md`
+- `REMEDIATION_COMPLETE.md`
+- `PROJECT_STATUS.md`
 
 **Implementation Plans:**
-- `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/docs/superpowers/plans/2026-04-08-go-sync-phase-5.md`
-- `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/docs/superpowers/plans/2026-04-08-migration-refactoring.md`
+- `docs/superpowers/plans/2026-04-08-go-sync-phase-5.md`
+- `docs/superpowers/plans/2026-04-08-migration-refactoring.md`
 
 **This Summary:**
-- `/Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/SESSION_SUMMARY.md`
+- `SESSION_SUMMARY.md`
 
 ---
 
