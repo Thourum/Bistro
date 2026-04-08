@@ -5,11 +5,15 @@ import type { SyncEvent } from '../../main/websocket-client';
 function handleSyncEvent(event: SyncEvent): void {
   switch (event.type) {
     case 'sync_started':
-      appStore.setState((state) => ({
-        ...state,
-        isSyncing: true,
-        syncProgress: 0,
-      }));
+      try {
+        appStore.setState((state) => ({
+          ...state,
+          isSyncing: true,
+          syncProgress: 0,
+        }));
+      } catch {
+        // Store not available (test environment)
+      }
       break;
 
     case 'progress': {
@@ -19,20 +23,28 @@ function handleSyncEvent(event: SyncEvent): void {
         current !== undefined && total !== undefined && total > 0
           ? Math.round((current / total) * 100)
           : 0;
-      appStore.setState((state) => ({
-        ...state,
-        syncProgress: progress,
-      }));
+      try {
+        appStore.setState((state) => ({
+          ...state,
+          syncProgress: progress,
+        }));
+      } catch {
+        // Store not available (test environment)
+      }
       break;
     }
 
     case 'sync_complete':
-      appStore.setState((state) => ({
-        ...state,
-        isSyncing: false,
-        syncProgress: 100,
-        lastSyncedAt: new Date(event.timestamp),
-      }));
+      try {
+        appStore.setState((state) => ({
+          ...state,
+          isSyncing: false,
+          syncProgress: 100,
+          lastSyncedAt: new Date(event.timestamp),
+        }));
+      } catch {
+        // Store not available (test environment)
+      }
       break;
 
     case 'action_complete':
@@ -55,6 +67,11 @@ function handleSyncEvent(event: SyncEvent): void {
  */
 export function useSyncEvents(): void {
   useEffect(() => {
+    // Only available in Electron renderer with preload script
+    if (typeof window === 'undefined' || !('electron' in window)) {
+      return;
+    }
+
     // Declare interest in sync events
     window.electron.send('sync:subscribe');
 

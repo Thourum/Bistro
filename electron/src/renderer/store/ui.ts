@@ -1,5 +1,11 @@
 import { Store } from '@tanstack/store';
 
+export interface SyncStats {
+  prCount: number;
+  newPRs: number;
+  updatedPRs: number;
+}
+
 export interface UIState {
   selectedPRIndex: number;
   selectedFileIndex: number;
@@ -16,10 +22,15 @@ export interface UIState {
   filterState: 'open' | 'draft' | 'all';
   confirmingAction: string | null;
   filterMenuOpen: boolean;
-  // Sync state
+  // Legacy sync state (kept for compatibility)
   isSyncing: boolean;
   syncProgress: number;
   lastSyncedAt: Date | null;
+  // WebSocket sync state
+  syncStatus: 'disconnected' | 'connecting' | 'connected' | 'ready' | 'error' | 'rate_limited';
+  syncError: string | null;
+  lastSyncAt: string | null;
+  syncStats: SyncStats | null;
 }
 
 const SETTINGS_STORAGE_KEY = 'bistro-settings';
@@ -65,6 +76,10 @@ const initialUIState: UIState = {
   isSyncing: false,
   syncProgress: 0,
   lastSyncedAt: null,
+  syncStatus: 'disconnected',
+  syncError: null,
+  lastSyncAt: null,
+  syncStats: null,
   ...loadPersistedSettings(),
 };
 

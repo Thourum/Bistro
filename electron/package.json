@@ -4,10 +4,10 @@
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:main\"",
+    "dev": "concurrently \"pnpm run dev:renderer\" \"pnpm run dev:main\"",
     "dev:renderer": "vite",
     "dev:main": "tsc -p tsconfig.main.json --watch",
-    "build": "npm run build:renderer && npm run build:main",
+    "build": "pnpm run build:renderer && pnpm run build:main",
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.main.json",
     "type-check": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
@@ -16,7 +16,7 @@
     "test:coverage": "vitest run --config vitest.config.ts --coverage",
     "lint": "eslint src --ext .ts,.tsx",
     "electron": "electron .",
-    "electron:dev": "concurrently \"npm run dev:renderer\" \"wait-on http://localhost:5173 && npm run dev:main && electron .\""
+    "electron:dev": "concurrently \"pnpm run dev:renderer\" \"wait-on http://localhost:5173 && pnpm run dev:main && electron .\""
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.3",

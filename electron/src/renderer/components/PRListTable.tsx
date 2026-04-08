@@ -8,9 +8,11 @@ import {
   TableRow,
 } from '@renderer/components/ui/table';
 import { Badge } from '@renderer/components/ui/badge';
+import { Button } from '@renderer/components/ui/button';
 import { usePRList } from '../queries/usePRList';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
+import { useWebSocket } from '../hooks/useWebSocket';
 import type { UIState } from '../store/ui';
 
 type PRState = 'open' | 'closed' | 'draft' | 'merged';
@@ -43,6 +45,12 @@ export function PRListTable() {
   const filterState = useStore(appStore, (state: UIState) => state.filterState);
   const selectedIndex = useStore(appStore, (state: UIState) => state.selectedPRIndex);
   const { data: prs = [], isLoading, error } = usePRList('github:default', filterState);
+  const { send } = useWebSocket();
+
+  const handleApprove = (prId: string, event: React.MouseEvent): void => {
+    event.stopPropagation();
+    send('APPROVE_PR', { pr_id: prId });
+  };
 
   if (isLoading) {
     return (
@@ -69,6 +77,7 @@ export function PRListTable() {
             <TableHead>Title</TableHead>
             <TableHead className="text-right w-[120px]">Updated</TableHead>
             <TableHead className="text-right w-[100px]">Author</TableHead>
+            <TableHead className="w-[90px]"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -105,6 +114,18 @@ export function PRListTable() {
               </TableCell>
               <TableCell className="text-right font-mono text-[11px] text-primary">
                 {pr.author}
+              </TableCell>
+              <TableCell className="text-right">
+                {pr.state === 'open' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-[10px] h-6 px-2"
+                    onClick={(e) => handleApprove(pr.id, e)}
+                  >
+                    Approve
+                  </Button>
+                )}
               </TableCell>
             </TableRow>
           ))}

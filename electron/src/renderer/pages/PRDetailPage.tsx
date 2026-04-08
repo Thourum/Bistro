@@ -1,17 +1,43 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../layouts/MainLayout';
 import { DiffViewer } from '../components/DiffViewer';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import { usePRList } from '../queries/usePRList';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 export function PRDetailPage() {
   const selectedIndex = useStore(appStore, (s) => s.selectedPRIndex);
   const filterState = useStore(appStore, (s) => s.filterState);
+  const [diff, setDiff] = useState<string>('');
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState<string | null>(null);
 
-  // TODO: Replace with usePRDetail hook once backend diff endpoint is available
   const { data: prs = [], isLoading, error } = usePRList('github:default', filterState);
   const pr = prs[selectedIndex];
+  const { request } = useWebSocket();
+
+  useEffect(() => {
+    if (pr === undefined) {
+      return;
+    }
+
+    setDiffLoading(true);
+    setDiffError(null);
+
+    request('REQUEST_DIFF', { pr_id: pr.id, repo: pr.provider_id })
+      .then((data) => {
+        const payload = data as { diff?: string };
+        setDiff(payload.diff ?? '');
+        setDiffLoading(false);
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        console.error('Failed to fetch diff:', message);
+        setDiffError(message);
+        setDiffLoading(false);
+      });
+  }, [selectedIndex, request]);
 
   return (
     <MainLayout
@@ -50,8 +76,13 @@ export function PRDetailPage() {
             </p>
           )}
         </div>
-        {/* TODO: Replace empty string with real diff from backend */}
-        <DiffViewer diff="" className="h-96" />
+        {diffLoading && (
+          <p className="text-sm text-on-surface-variant">Loading diff...</p>
+        )}
+        {diffError !== null && (
+          <p className="text-sm text-error">Failed to load diff: {diffError}</p>
+        )}
+        <DiffViewer diff={diff} className="h-96" />
       </div>
     </MainLayout>
   );
