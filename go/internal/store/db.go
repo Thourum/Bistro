@@ -25,6 +25,10 @@ func OpenDB(dsn string) (*DB, error) {
 		return nil, fmt.Errorf("ping sqlite3 %q: %w", dsn, err)
 	}
 
+	// SQLite pragmas are per-connection. Pin the pool to one connection so
+	// pragmas set below apply to every subsequent query.
+	sqlDB.SetMaxOpenConns(1)
+
 	// Enable foreign key enforcement (disabled by default per SQLite connection).
 	if _, err := sqlDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		sqlDB.Close()
