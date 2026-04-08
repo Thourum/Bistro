@@ -4,25 +4,21 @@ package actions
 import (
 	"context"
 	"math"
-	"math/rand"
+	"math/rand/v2"
+	"sync"
 	"time"
 )
 
 // ExponentialBackoff implements exponential backoff with configurable parameters.
-// Public fields (InitialDelay, Multiplier, MaxDelay, JitterFactor) support the
-// stateless CalculateDelay method. Private fields support the stateful Next() method
-// via NewExponentialBackoff.
+// All fields are shared between the stateful Next() method and the stateless
+// CalculateDelay method. Use NewExponentialBackoff to construct for Next() usage,
+// or initialize public fields directly for CalculateDelay usage.
 type ExponentialBackoff struct {
-	// Public fields for stateless CalculateDelay usage
+	mu           sync.Mutex
 	InitialDelay time.Duration
 	Multiplier   float64
 	MaxDelay     time.Duration
 	JitterFactor float64 // 0.0-1.0, percentage variance
-
-	// Private fields for stateful Next() usage
-	initialDelay time.Duration
-	maxDelay     time.Duration
-	multiplier   float64
 	current      time.Duration
 }
 
@@ -49,20 +45,23 @@ func (eb *ExponentialBackoff) CalculateDelay(attempt int) time.Duration {
 // NewExponentialBackoff creates a new backoff calculator
 func NewExponentialBackoff(initial, max time.Duration, multiplier float64) *ExponentialBackoff {
 	return &ExponentialBackoff{
-		initialDelay: initial,
-		maxDelay:     max,
-		multiplier:   multiplier,
+		InitialDelay: initial,
+		MaxDelay:     max,
+		Multiplier:   multiplier,
 		current:      initial,
 	}
 }
 
 // Next returns the current backoff duration and advances internal state for the next call
 func (eb *ExponentialBackoff) Next() time.Duration {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+
 	result := eb.current
 
-	next := time.Duration(float64(eb.current) * eb.multiplier)
-	if next > eb.maxDelay {
-		next = eb.maxDelay
+	next := time.Duration(float64(eb.current) * eb.Multiplier)
+	if next > eb.MaxDelay {
+		next = eb.MaxDelay
 	}
 
 	eb.current = next
