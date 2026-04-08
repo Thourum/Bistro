@@ -47,6 +47,18 @@ interface RateLimitedData {
   reset_at: string;
 }
 
+interface ActionCompleteData {
+  action_type: string;
+  pr_id: string;
+  message: string;
+}
+
+interface ActionFailedData {
+  action_type: string;
+  pr_id: string;
+  error: string;
+}
+
 const WS_URL = 'ws://localhost:8080';
 const REQUEST_TIMEOUT_MS = 5000;
 const RECONNECT_DELAY_MS = 3000;
@@ -129,6 +141,43 @@ function handleRateLimited(data: RateLimitedData): void {
   }
 }
 
+function handleActionComplete(data: ActionCompleteData): void {
+  try {
+    appStore.setState((s) => ({
+      ...s,
+      pendingAction: null,
+      actionResult: {
+        type: data.action_type as 'approve' | 'request_changes' | 'post_comment',
+        prId: data.pr_id,
+        success: true,
+        message: data.message,
+      },
+      confirmingAction: null,
+      lastSyncAt: new Date().toISOString(),
+    }));
+  } catch {
+    // Store not available (test environment)
+  }
+}
+
+function handleActionFailed(data: ActionFailedData): void {
+  try {
+    appStore.setState((s) => ({
+      ...s,
+      pendingAction: null,
+      actionResult: {
+        type: data.action_type as 'approve' | 'request_changes' | 'post_comment',
+        prId: data.pr_id,
+        success: false,
+        message: data.error,
+      },
+      confirmingAction: null,
+    }));
+  } catch {
+    // Store not available (test environment)
+  }
+}
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const messageHandlersRef = useRef<Map<string, (data: unknown) => void>>(new Map());
@@ -188,6 +237,12 @@ export function useWebSocket() {
             break;
           case 'RATE_LIMITED':
             handleRateLimited(message.data as RateLimitedData);
+            break;
+          case 'ACTION_COMPLETE':
+            handleActionComplete(message.data as ActionCompleteData);
+            break;
+          case 'ACTION_FAILED':
+            handleActionFailed(message.data as ActionFailedData);
             break;
           case 'DIFF_READY':
           case 'COMMENTS_READY': {
