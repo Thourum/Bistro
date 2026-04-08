@@ -717,6 +717,31 @@ describe('detail view scroll bindings', () => {
 });
 
 // ---------------------------------------------------------------------------
+// useKeyboard filter mode integration
+// ---------------------------------------------------------------------------
+
+describe('useKeyboard filter mode support', () => {
+  it('filter mode is not blocked by search mode guard', () => {
+    // The hook only guards 'search' mode; 'filter' mode should process bindings normally
+    const filterEscBinding = KEYBOARD_BINDING_GROUPS.find(
+      (b) => b.keys[0] === 'Escape' && b.modes.includes('filter')
+    );
+    expect(filterEscBinding).toBeDefined();
+    const store = makeStore({ mode: 'filter', filterMenuOpen: true });
+    filterEscBinding!.action(store);
+    expect(store.state.mode).toBe('list');
+    expect(store.state.filterMenuOpen).toBe(false);
+  });
+
+  it('all filter mode bindings are in KEYBOARD_BINDING_GROUPS', () => {
+    const filterModeBindings = KEYBOARD_BINDING_GROUPS.filter((b) =>
+      b.modes.includes('filter')
+    );
+    expect(filterModeBindings.length).toBeGreaterThanOrEqual(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Immutability — store state is never mutated in place
 // ---------------------------------------------------------------------------
 
