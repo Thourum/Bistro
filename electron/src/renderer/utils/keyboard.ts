@@ -154,7 +154,12 @@ const listBindings: BindingDefinition[] = [
     description: 'Toggle filter menu',
     modes: ['list'],
     action: (store) => {
-      store.setState((s) => ({ ...s, filterMenuOpen: !s.filterMenuOpen }));
+      const isOpen = store.state.filterMenuOpen;
+      store.setState((s) => ({
+        ...s,
+        filterMenuOpen: !isOpen,
+        mode: isOpen ? 'list' : 'filter',
+      }));
     },
   },
   {
@@ -284,6 +289,51 @@ const detailBindings: BindingDefinition[] = [
   },
 ];
 
+// ─── Filter mode bindings (active when filter menu is open) ──────────────────
+
+const filterBindings: BindingDefinition[] = [
+  {
+    keys: ['o'],
+    description: 'Set filter to Open',
+    modes: ['filter'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, filterState: 'open' }));
+    },
+  },
+  {
+    keys: ['d'],
+    description: 'Set filter to Draft',
+    modes: ['filter'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, filterState: 'draft' }));
+    },
+  },
+  {
+    keys: ['a'],
+    description: 'Set filter to All',
+    modes: ['filter'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, filterState: 'all' }));
+    },
+  },
+  {
+    keys: ['Escape'],
+    description: 'Close filter menu',
+    modes: ['filter'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, filterMenuOpen: false, mode: 'list' }));
+    },
+  },
+  {
+    keys: ['f'],
+    description: 'Close filter menu',
+    modes: ['filter'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, filterMenuOpen: false, mode: 'list' }));
+    },
+  },
+];
+
 // ─── Detail View scroll bindings ─────────────────────────────────────────────
 
 const detailScrollBindings: BindingDefinition[] = [
@@ -360,6 +410,7 @@ export const KEYBOARD_BINDING_GROUPS: BindingDefinition[] = [
   ...listBindings,
   ...detailBindings,
   ...detailScrollBindings,
+  ...filterBindings,
 ];
 
 /**

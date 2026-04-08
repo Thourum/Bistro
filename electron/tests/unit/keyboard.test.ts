@@ -207,18 +207,20 @@ describe('/ binding — focus search', () => {
 });
 
 describe('f binding — toggle filter menu', () => {
-  it('opens filter menu when closed', () => {
-    const store = makeStore({ filterMenuOpen: false });
+  it('opens filter menu and sets mode to filter when closed', () => {
+    const store = makeStore({ filterMenuOpen: false, mode: 'list' });
     const b = findBinding(['f'])!;
     b.action(store);
     expect(store.state.filterMenuOpen).toBe(true);
+    expect(store.state.mode).toBe('filter');
   });
 
-  it('closes filter menu when open', () => {
-    const store = makeStore({ filterMenuOpen: true });
+  it('closes filter menu and returns to list mode when open', () => {
+    const store = makeStore({ filterMenuOpen: true, mode: 'filter' });
     const b = findBinding(['f'])!;
     b.action(store);
     expect(store.state.filterMenuOpen).toBe(false);
+    expect(store.state.mode).toBe('list');
   });
 });
 
@@ -390,6 +392,54 @@ describe(': binding — command mode', () => {
     const b = findBinding([':'])!;
     b.action(store);
     expect(store.state.mode).toBe('command');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Filter mode keyboard bindings
+// ---------------------------------------------------------------------------
+
+describe('filter mode keyboard flow', () => {
+  it('o binding sets filterState to open in filter mode', () => {
+    const result = findBindingFn('o', 'filter', undefined, undefined);
+    expect(result).not.toBeNull();
+    const store = makeStore({ mode: 'filter', filterState: 'all' });
+    result!.binding.action(store);
+    expect(store.state.filterState).toBe('open');
+  });
+
+  it('d binding sets filterState to draft in filter mode', () => {
+    const result = findBindingFn('d', 'filter', undefined, undefined);
+    expect(result).not.toBeNull();
+    const store = makeStore({ mode: 'filter', filterState: 'open' });
+    result!.binding.action(store);
+    expect(store.state.filterState).toBe('draft');
+  });
+
+  it('a binding sets filterState to all in filter mode', () => {
+    const result = findBindingFn('a', 'filter', undefined, undefined);
+    expect(result).not.toBeNull();
+    const store = makeStore({ mode: 'filter', filterState: 'open' });
+    result!.binding.action(store);
+    expect(store.state.filterState).toBe('all');
+  });
+
+  it('f binding closes filter menu in filter mode', () => {
+    const result = findBindingFn('f', 'filter', undefined, undefined);
+    expect(result).not.toBeNull();
+    const store = makeStore({ mode: 'filter', filterMenuOpen: true });
+    result!.binding.action(store);
+    expect(store.state.filterMenuOpen).toBe(false);
+    expect(store.state.mode).toBe('list');
+  });
+
+  it('Escape binding closes filter menu in filter mode', () => {
+    const result = findBindingFn('Escape', 'filter', undefined, undefined);
+    expect(result).not.toBeNull();
+    const store = makeStore({ mode: 'filter', filterMenuOpen: true });
+    result!.binding.action(store);
+    expect(store.state.filterMenuOpen).toBe(false);
+    expect(store.state.mode).toBe('list');
   });
 });
 
