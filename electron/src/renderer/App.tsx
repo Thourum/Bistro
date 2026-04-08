@@ -51,16 +51,19 @@ export function AppContent(): React.ReactElement {
 }
 
 export function AuthGate(): React.ReactElement {
-  // LoginPage is shown when there are no connected providers.
-  // For now we render it as a standalone route at the 'login' confirmingAction.
-  // Full OAuth flow integration is handled in a subsequent task.
-  return <LoginPage />;
+  const isAuthenticated = useStore(appStore, (state: UIState) => state.isAuthenticated);
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  return <AppContent />;
 }
 
 export default function App(): React.ReactElement {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppContent />
+      <AuthGate />
     </QueryClientProvider>
   );
 }
