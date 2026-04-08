@@ -5,8 +5,10 @@ import CommandBar from '../components/CommandBar';
 import StatusBar from '../components/StatusBar';
 import PRListItem from '../components/PRListItem';
 import { appStore } from '../store';
+import { useStoreSync } from '../hooks/useStoreSync';
 
 export default function PRList() {
+  useStoreSync(appStore);
   const filterState = useStore(appStore, (state: UIState) => state.filterState);
   const selectedIndex = useStore(appStore, (state: UIState) => state.selectedPRIndex);
   const { data: prs = [], isLoading, error } = usePRList('github:default', filterState);
