@@ -2,24 +2,23 @@ import { useQuery } from '@tanstack/react-query';
 import { useSQLiteQuery } from '../hooks/useSQLiteQuery';
 import type { PR } from '../types';
 
-export function usePRList(providerId: string, filterState: 'open' | 'draft' | 'all' = 'open') {
+export function usePRList(filterState: 'open' | 'draft' | 'all' = 'open') {
   const { query } = useSQLiteQuery();
 
   return useQuery({
-    queryKey: ['prs', providerId, filterState],
+    queryKey: ['prs', filterState],
     queryFn: async () => {
-      let sql = 'SELECT * FROM pull_requests WHERE provider_id = ?';
-      const params: unknown[] = [providerId];
+      let sql = 'SELECT * FROM prs WHERE 1=1';
 
       if (filterState === 'open') {
-        sql += " AND state IN ('open')";
+        sql += " AND state = 'open' AND draft = 0";
       } else if (filterState === 'draft') {
-        sql += " AND state IN ('draft')";
+        sql += " AND draft = 1";
       }
 
       sql += ' ORDER BY updated_at DESC LIMIT 100';
 
-      const result = await query<PR & Record<string, unknown>>(sql, params);
+      const result = await query<PR & Record<string, unknown>>(sql);
 
       if (result.isErr()) {
         throw new Error(result.error);

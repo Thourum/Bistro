@@ -44,7 +44,7 @@ function formatDate(dateStr: string): string {
 export function PRListTable() {
   const filterState = useStore(appStore, (state: UIState) => state.filterState);
   const selectedIndex = useStore(appStore, (state: UIState) => state.selectedPRIndex);
-  const { data: prs = [], isLoading, error } = usePRList('github:default', filterState);
+  const { data: prs = [], isLoading, error } = usePRList(filterState);
   const { send } = useWebSocket();
 
   const handleApprove = (prId: string, event: React.MouseEvent): void => {

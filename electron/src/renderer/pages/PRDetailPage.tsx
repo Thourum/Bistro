@@ -13,7 +13,7 @@ export function PRDetailPage() {
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffError, setDiffError] = useState<string | null>(null);
 
-  const { data: prs = [], isLoading, error } = usePRList('github:default', filterState);
+  const { data: prs = [], isLoading, error } = usePRList(filterState);
   const pr = prs[selectedIndex];
   const { request } = useWebSocket();
 
@@ -25,7 +25,7 @@ export function PRDetailPage() {
     setDiffLoading(true);
     setDiffError(null);
 
-    request('REQUEST_DIFF', { pr_id: pr.id, repo: pr.provider_id })
+    request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` })
       .then((data) => {
         const payload = data as { diff?: string };
         setDiff(payload.diff ?? '');

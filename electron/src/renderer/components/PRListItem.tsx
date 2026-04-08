@@ -8,9 +8,8 @@ interface Props {
 }
 
 export default function PRListItem({ pr, isSelected }: Props) {
-  const stateColor = {
+  const stateColor: Record<string, string> = {
     open: 'green',
-    draft: 'gray',
     closed: 'red',
     merged: 'purple',
   };
@@ -18,23 +17,28 @@ export default function PRListItem({ pr, isSelected }: Props) {
   return (
     <li className={`pr-list-item ${isSelected ? 'selected' : ''}`}>
       <div className="pr-item-header">
-        <span className={`state-badge state-${stateColor[pr.state]}`}>{pr.state.toUpperCase()}</span>
+        <span className={`state-badge state-${pr.draft ? 'gray' : (stateColor[pr.state] || 'gray')}`}>
+          {pr.draft ? 'DRAFT' : pr.state.toUpperCase()}
+        </span>
         <span className="pr-title">
           {pr.title} <span className="pr-number">#{pr.number}</span>
         </span>
       </div>
       <div className="pr-item-meta">
-        <span className="pr-repo">{pr.provider_id}</span>
+        <span className="pr-repo">{pr.owner}/{pr.repo}</span>
         <span className="separator">•</span>
         <span className="pr-author">@{pr.author}</span>
         <span className="separator">•</span>
         <span className="pr-date">{formatDate(pr.updated_at)}</span>
       </div>
       <div className="pr-item-stats">
-        <span className="additions">+{pr.additions}</span>
-        <span className="deletions">-{pr.deletions}</span>
-        <span className="separator">|</span>
-        <span className="files">{pr.changed_files} files</span>
+        <span className="files">{pr.comment_count} comments</span>
+        {pr.ci_status !== null && (
+          <>
+            <span className="separator">|</span>
+            <span className="files">CI: {pr.ci_status}</span>
+          </>
+        )}
       </div>
     </li>
   );

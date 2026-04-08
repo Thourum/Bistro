@@ -11,7 +11,7 @@ export default function PRList() {
   useStoreSync(appStore);
   const filterState = useStore(appStore, (state: UIState) => state.filterState);
   const selectedIndex = useStore(appStore, (state: UIState) => state.selectedPRIndex);
-  const { data: prs = [], isLoading, error } = usePRList('github:default', filterState);
+  const { data: prs = [], isLoading, error } = usePRList(filterState);
 
   const handlePRClick = (index: number) => {
     appStore.setState((s) => ({

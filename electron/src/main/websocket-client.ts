@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import WebSocket from 'ws';
 import type { Logger } from 'electron-log';
 
 export interface SyncEvent {
@@ -30,34 +31,35 @@ export class WebSocketClient extends EventEmitter {
     try {
       this.ws = new WebSocket(this.url);
 
-      this.ws.onopen = () => {
-        this.logger.info('WebSocket connected');
+      this.ws.on('open', () => {
+        this.logger.info('WebSocket connected to Go sync engine');
         this.reconnectAttempts = 0;
         this.emit('connected');
-      };
+      });
 
-      this.ws.onmessage = (event) => {
+      this.ws.on('message', (data: WebSocket.Data) => {
         try {
-          const syncEvent: SyncEvent = JSON.parse(event.data as string);
+          const syncEvent: SyncEvent = JSON.parse(data.toString());
           this.emit('event', syncEvent);
         } catch (error) {
           this.logger.error('Failed to parse sync event', error);
         }
-      };
+      });
 
-      this.ws.onerror = (error) => {
-        this.logger.error('WebSocket error', error);
+      this.ws.on('error', (error: Error) => {
+        this.logger.error('WebSocket error:', error.message);
         this.emit('error', error);
-      };
+      });
 
-      this.ws.onclose = () => {
+      this.ws.on('close', () => {
         this.logger.info('WebSocket disconnected');
         this.ws = null;
         this.emit('disconnected');
         this.scheduleReconnect();
-      };
+      });
     } catch (error) {
-      this.logger.error('Failed to create WebSocket', error);
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to create WebSocket:', message);
       this.scheduleReconnect();
     }
   }
