@@ -18,9 +18,11 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
     },
   });
 
+  // __dirname at runtime = dist/main/main/
+  // renderer is at dist/renderer/index.html (3 levels up then into renderer)
   const startUrl = isDev
     ? 'http://localhost:5173'
-    : `file://${join(__dirname, '../renderer/index.html')}`;
+    : `file://${join(__dirname, '..', '..', 'renderer', 'index.html')}`;
 
   mainWindow.loadURL(startUrl);
 

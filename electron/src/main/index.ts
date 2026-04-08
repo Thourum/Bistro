@@ -15,11 +15,18 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
  * Dev: uses <project>/go/ directory (where the binary lives)
  * Prod: uses app.getPath('userData') for stable, writable location
  */
+/**
+ * __dirname at runtime = dist/main/main/
+ * Project root (bistro/) = 4 levels up: main/ → main/ → dist/ → electron/ → bistro/
+ * Electron root (electron/) = 3 levels up: main/ → main/ → dist/ → electron/
+ */
+const ELECTRON_ROOT = join(__dirname, '..', '..', '..');
+const PROJECT_ROOT = join(ELECTRON_ROOT, '..');
+
 function resolveDataDir(): string {
   if (isDev) {
     // In dev, store data alongside the Go binary
-    const goDir = join(__dirname, '..', '..', '..', 'go');
-    return goDir;
+    return join(PROJECT_ROOT, 'go');
   }
   return app.getPath('userData');
 }
@@ -27,8 +34,7 @@ function resolveDataDir(): string {
 function resolveGoBinaryPath(): string {
   if (isDev) {
     // In dev, the Go binary is at <project>/go/bistro-sync
-    const binaryPath = join(__dirname, '..', '..', '..', 'go', 'bistro-sync');
-    return binaryPath;
+    return join(PROJECT_ROOT, 'go', 'bistro-sync');
   }
   // In prod, binary is bundled alongside the app
   return join(process.resourcesPath, 'go-bin', 'bistro-sync');
