@@ -7,6 +7,7 @@ import { appStore } from '../store';
 import { usePRList } from '../queries/usePRList';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { parseMultiFileDiff } from '../utils/diff-parser';
+import { useActionDispatch } from '../hooks/useActionDispatch';
 import type { Comment } from '../types';
 
 function extractFileName(filePath: string): string {
@@ -23,9 +24,18 @@ export function PRDetailPage() {
   const [commentsError, setCommentsError] = useState<string | null>(null);
   const [commentTarget, setCommentTarget] = useState<{ fileIndex: number; lineNumber: number } | null>(null);
 
+  const confirmingAction = useStore(appStore, (s) => s.confirmingAction);
   const { data: prs = [], isLoading, error } = usePRList(filterState);
   const pr = prs[selectedIndex];
   const { request, send } = useWebSocket();
+  const { dispatchApprove } = useActionDispatch(pr?.id);
+
+  // Dispatch approve when keyboard flow signals approve_confirmed
+  useEffect(() => {
+    if (confirmingAction === 'approve_confirmed') {
+      dispatchApprove();
+    }
+  }, [confirmingAction, dispatchApprove]);
 
   // Fetch diff when selected PR changes
   useEffect(() => {

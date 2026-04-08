@@ -263,10 +263,10 @@ const detailBindings: BindingDefinition[] = [
     action: (store) => {
       const { confirmingAction } = store.state;
       if (confirmingAction === 'approve') {
-        // Second tap: confirm approve
-        store.setState((s) => ({ ...s, confirmingAction: null }));
-        // Actual API call is handled by a separate effect watching confirmingAction
+        // Second tap: signal confirmation — PRDetailPage effect dispatches the actual action
+        store.setState((s) => ({ ...s, confirmingAction: 'approve_confirmed' }));
       } else {
+        // First tap: enter confirmation state
         store.setState((s) => ({ ...s, confirmingAction: 'approve' }));
       }
     },

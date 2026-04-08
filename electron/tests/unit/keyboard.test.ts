@@ -254,11 +254,11 @@ describe('aa binding — approve PR (double-tap)', () => {
     expect(store.state.confirmingAction).toBe('approve');
   });
 
-  it('clears confirmingAction when already set to "approve" (second tap confirms)', () => {
+  it('sets confirmingAction to "approve_confirmed" when already set to "approve" (second tap)', () => {
     const store = makeStore({ mode: 'detail', confirmingAction: 'approve' });
     const b = findBinding(['a', 'a'])!;
     b.action(store);
-    expect(store.state.confirmingAction).toBeNull();
+    expect(store.state.confirmingAction).toBe('approve_confirmed');
   });
 });
 
