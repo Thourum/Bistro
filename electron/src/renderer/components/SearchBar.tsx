@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Input } from '@renderer/components/ui/input';
+import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
+import type { UIState } from '../store/ui';
 
 export function SearchBar() {
-  const [query, setQuery] = useState('');
+  const query = useStore(appStore, (s: UIState) => s.searchQuery);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    setQuery(value);
     appStore.setState((s) => ({ ...s, searchQuery: value }));
   };
 

@@ -1,43 +1,31 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs';
 import { Checkbox } from '@renderer/components/ui/checkbox';
 import { Button } from '@renderer/components/ui/button';
 import { SettingsLayout } from '../layouts/SettingsLayout';
-
-interface AppearanceSettings {
-  darkMode: boolean;
-  showFileTree: boolean;
-}
-
-interface SyncSettings {
-  autoSync: boolean;
-  syncInterval: number;
-  notifications: boolean;
-}
+import { useStore } from '../hooks/useStore';
+import { appStore } from '../store';
+import { persistSettings } from '../store/ui';
+import type { UIState } from '../store/ui';
 
 export function SettingsPage() {
-  const [appearance, setAppearance] = useState<AppearanceSettings>({
-    darkMode: true,
-    showFileTree: false,
-  });
+  const darkMode = useStore(appStore, (s: UIState) => s.darkMode);
+  const showFileTree = useStore(appStore, (s: UIState) => s.showFileTree);
+  const autoSync = useStore(appStore, (s: UIState) => s.autoSync);
+  const syncInterval = useStore(appStore, (s: UIState) => s.syncInterval);
+  const notifications = useStore(appStore, (s: UIState) => s.notifications);
 
-  const [sync, setSync] = useState<SyncSettings>({
-    autoSync: true,
-    syncInterval: 60,
-    notifications: true,
-  });
-
-  const toggleAppearance = (key: keyof AppearanceSettings) => {
-    setAppearance((prev) => ({ ...prev, [key]: !prev[key] }));
+  const updateSetting = <K extends keyof UIState>(key: K, value: UIState[K]): void => {
+    appStore.setState((s) => {
+      const next = { ...s, [key]: value };
+      persistSettings(next);
+      return next;
+    });
   };
 
-  const toggleSync = (key: keyof Pick<SyncSettings, 'autoSync' | 'notifications'>) => {
-    setSync((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const handleOpenShortcuts = () => {
+  const handleOpenShortcuts = (): void => {
     // TODO: Integrate with HelpOverlay via keyboard bindings
-    console.log('Opening shortcuts overlay...');
+    appStore.setState((s) => ({ ...s, mode: 'help' }));
   };
 
   return (
@@ -71,8 +59,8 @@ export function SettingsPage() {
           <div className="flex items-center space-x-3">
             <Checkbox
               id="dark-mode"
-              checked={appearance.darkMode}
-              onCheckedChange={() => toggleAppearance('darkMode')}
+              checked={darkMode}
+              onCheckedChange={() => updateSetting('darkMode', !darkMode)}
             />
             <label
               htmlFor="dark-mode"
@@ -84,8 +72,8 @@ export function SettingsPage() {
           <div className="flex items-center space-x-3">
             <Checkbox
               id="file-tree"
-              checked={appearance.showFileTree}
-              onCheckedChange={() => toggleAppearance('showFileTree')}
+              checked={showFileTree}
+              onCheckedChange={() => updateSetting('showFileTree', !showFileTree)}
             />
             <label
               htmlFor="file-tree"
@@ -100,21 +88,43 @@ export function SettingsPage() {
           <div className="flex items-center space-x-3">
             <Checkbox
               id="auto-sync"
-              checked={sync.autoSync}
-              onCheckedChange={() => toggleSync('autoSync')}
+              checked={autoSync}
+              onCheckedChange={() => updateSetting('autoSync', !autoSync)}
             />
             <label
               htmlFor="auto-sync"
               className="text-sm cursor-pointer text-on-surface font-medium"
             >
-              Auto-sync every {sync.syncInterval} seconds
+              Auto-sync
             </label>
+          </div>
+          <div className="flex items-center space-x-3 gap-3">
+            <label
+              htmlFor="sync-interval"
+              className="text-sm text-on-surface font-medium"
+            >
+              Sync interval (seconds)
+            </label>
+            <input
+              id="sync-interval"
+              type="number"
+              min={10}
+              max={3600}
+              value={syncInterval}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                if (!Number.isNaN(val) && val >= 10 && val <= 3600) {
+                  updateSetting('syncInterval', val);
+                }
+              }}
+              className="w-20 px-2 py-1 border border-outline-variant bg-surface-container-lowest text-on-surface font-mono text-sm"
+            />
           </div>
           <div className="flex items-center space-x-3">
             <Checkbox
               id="notifications"
-              checked={sync.notifications}
-              onCheckedChange={() => toggleSync('notifications')}
+              checked={notifications}
+              onCheckedChange={() => updateSetting('notifications', !notifications)}
             />
             <label
               htmlFor="notifications"
