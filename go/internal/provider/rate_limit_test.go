@@ -1,19 +1,24 @@
 package provider
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
 
-func TestRateLimitStateIsLimited(t *testing.T) {
+func TestRateLimitStateIsLimitedActive(t *testing.T) {
 	state := &RateLimitState{
 		ResetAt: time.Now().Add(1 * time.Minute),
 	}
 	if !state.IsLimited() {
 		t.Error("expected rate limit to be active")
 	}
+}
 
-	state.ResetAt = time.Now().Add(-1 * time.Minute)
+func TestRateLimitStateIsLimitedExpired(t *testing.T) {
+	state := &RateLimitState{
+		ResetAt: time.Now().Add(-1 * time.Minute),
+	}
 	if state.IsLimited() {
 		t.Error("expected rate limit to be expired")
 	}
@@ -30,8 +35,9 @@ func TestRateLimitStateResetIn(t *testing.T) {
 }
 
 func TestDetectRateLimitFrom429(t *testing.T) {
+	futureUnix := time.Now().Add(5 * time.Minute).Unix()
 	headers := map[string]string{
-		"X-RateLimit-Reset": "1712600400",
+		"X-RateLimit-Reset": strconv.FormatInt(futureUnix, 10),
 	}
 	state, ok := DetectRateLimitFrom429(headers)
 	if !ok {
@@ -48,6 +54,19 @@ func TestDetectRateLimitFromMissingHeaders(t *testing.T) {
 	state, ok := DetectRateLimitFrom429(headers)
 	if ok {
 		t.Error("expected no detection with missing headers")
+	}
+	if state != nil {
+		t.Error("expected nil state")
+	}
+}
+
+func TestDetectRateLimitFromMalformedHeader(t *testing.T) {
+	headers := map[string]string{
+		"X-RateLimit-Reset": "not-a-number",
+	}
+	state, ok := DetectRateLimitFrom429(headers)
+	if ok {
+		t.Error("expected no detection with malformed header")
 	}
 	if state != nil {
 		t.Error("expected nil state")
