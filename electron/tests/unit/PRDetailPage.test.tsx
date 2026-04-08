@@ -5,6 +5,10 @@ import * as matchers from '@testing-library/jest-dom/matchers';
 import { PRDetailPage } from '../../src/renderer/pages/PRDetailPage';
 import * as storeModule from '../../src/renderer/store';
 
+vi.mock('../../src/renderer/queries/usePRList', () => ({
+  usePRList: () => ({ data: [], isLoading: false, error: null }),
+}));
+
 expect.extend(matchers);
 
 const mockStore = {

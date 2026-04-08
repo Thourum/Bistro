@@ -31,13 +31,34 @@ function getBadgeVariant(state: PRState): BadgeVariant {
 }
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString();
+  // Use en-US with numeric (non-padded) month/day for consistent cross-platform output
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    month: 'numeric',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 export function PRListTable() {
   const filterState = useStore(appStore, (state: UIState) => state.filterState);
   const selectedIndex = useStore(appStore, (state: UIState) => state.selectedPRIndex);
-  const { data: prs = [] } = usePRList('github:default', filterState);
+  const { data: prs = [], isLoading, error } = usePRList('github:default', filterState);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-32 text-on-surface-variant">
+        Loading PRs...
+      </div>
+    );
+  }
+
+  if (error !== null) {
+    return (
+      <div className="flex items-center justify-center h-32 text-error">
+        Failed to load PRs: {(error as Error).message}
+      </div>
+    );
+  }
 
   return (
     <div className="w-full border border-outline-variant shadow-ambient">
@@ -54,11 +75,20 @@ export function PRListTable() {
           {prs.map((pr, idx) => (
             <TableRow
               key={pr.id}
+              tabIndex={0}
               className={
                 selectedIndex === idx
                   ? 'cursor-pointer bg-surface-container-low border-l-[3px] border-l-primary'
                   : 'cursor-pointer hover:bg-surface-container-low transition-colors'
               }
+              onClick={() => {
+                appStore.setState((s) => ({ ...s, selectedPRIndex: idx, mode: 'detail' }));
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  appStore.setState((s) => ({ ...s, selectedPRIndex: idx, mode: 'detail' }));
+                }
+              }}
             >
               <TableCell>
                 <Badge variant={getBadgeVariant(pr.state)}>
