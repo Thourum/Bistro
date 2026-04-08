@@ -65,4 +65,46 @@ describe('CommandPalette', () => {
     const input = screen.getByPlaceholderText(':');
     expect(input).toHaveClass('font-mono');
   });
+
+  it('displays :about command', () => {
+    appStore.setState((s) => ({ ...s, mode: 'command' }));
+    render(<CommandPalette />);
+    expect(screen.getByText('about')).toBeInTheDocument();
+  });
+
+  it(':clear command clears filters and search', async () => {
+    appStore.setState((s) => ({
+      ...s,
+      mode: 'command',
+      searchQuery: 'hello',
+      filterState: 'draft',
+      filterMenuOpen: true,
+    }));
+    render(<CommandPalette />);
+    const input = screen.getByPlaceholderText(':') as HTMLInputElement;
+    await userEvent.type(input, 'clear');
+    await userEvent.keyboard('{Enter}');
+    expect(appStore.state.searchQuery).toBe('');
+    expect(appStore.state.filterState).toBe('open');
+    expect(appStore.state.filterMenuOpen).toBe(false);
+  });
+
+  it('arrow down moves selection down', async () => {
+    appStore.setState((s) => ({ ...s, mode: 'command' }));
+    render(<CommandPalette />);
+    const input = screen.getByPlaceholderText(':') as HTMLInputElement;
+    await userEvent.type(input, '{ArrowDown}');
+    // Second item (settings) should now be highlighted
+    const settingsItem = screen.getByText('settings').closest('[role="button"]');
+    expect(settingsItem).toHaveClass('bg-surface-container-low');
+  });
+
+  it('Enter executes selected command', async () => {
+    appStore.setState((s) => ({ ...s, mode: 'command' }));
+    render(<CommandPalette />);
+    const input = screen.getByPlaceholderText(':') as HTMLInputElement;
+    await userEvent.type(input, 'help');
+    await userEvent.keyboard('{Enter}');
+    expect(appStore.state.mode).toBe('help');
+  });
 });

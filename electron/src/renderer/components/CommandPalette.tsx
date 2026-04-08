@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,15 +19,17 @@ interface Command {
 const COMMANDS: readonly Command[] = [
   { id: 'help', name: 'help', description: 'Show keyboard shortcuts' },
   { id: 'settings', name: 'settings', description: 'Open settings' },
-  { id: 'clear', name: 'clear', description: 'Clear cache' },
+  { id: 'clear', name: 'clear', description: 'Clear all filters and search' },
   { id: 'focus-list', name: 'focus list', description: 'Focus PR list' },
   { id: 'focus-detail', name: 'focus detail', description: 'Focus PR detail' },
+  { id: 'about', name: 'about', description: 'Show app version and credits' },
 ] as const;
 
 export function CommandPalette(): React.ReactElement | null {
   const mode = useStore(appStore, (s) => s.mode);
   const isOpen = mode === 'command';
   const [query, setQuery] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
   const filteredCommands = useMemo(
     () =>
@@ -38,6 +40,11 @@ export function CommandPalette(): React.ReactElement | null {
       ),
     [query],
   );
+
+  // Reset selection when query changes
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
 
   const handleClose = (): void => {
     appStore.setState((s) => ({ ...s, mode: 'list' }));
@@ -62,8 +69,21 @@ export function CommandPalette(): React.ReactElement | null {
         appStore.setState((s) => ({ ...s, mode: 'detail' }));
         setQuery('');
         return;
+      case 'clear':
+        appStore.setState((s) => ({
+          ...s,
+          mode: 'list',
+          searchQuery: '',
+          filterState: 'open',
+          filterMenuOpen: false,
+        }));
+        setQuery('');
+        return;
+      case 'about':
+        // TODO: Show about dialog with version info
+        handleClose();
+        return;
       default:
-        // TODO: Implement remaining commands (clear cache, etc.)
         handleClose();
     }
   };
@@ -71,6 +91,15 @@ export function CommandPalette(): React.ReactElement | null {
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Escape') {
       handleClose();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex((i) => Math.min(i + 1, filteredCommands.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter' && filteredCommands.length > 0) {
+      e.preventDefault();
+      handleExecute(filteredCommands[selectedIndex]);
     }
   };
 
@@ -93,11 +122,15 @@ export function CommandPalette(): React.ReactElement | null {
 
         <ScrollArea className="h-64">
           <div className="divide-y divide-outline-variant">
-            {filteredCommands.map((cmd) => (
+            {filteredCommands.map((cmd, idx) => (
               <div
                 key={cmd.id}
                 onClick={() => handleExecute(cmd)}
-                className="px-4 py-3 hover:bg-surface-container-low cursor-pointer transition-colors"
+                className={`px-4 py-3 cursor-pointer transition-colors ${
+                  idx === selectedIndex
+                    ? 'bg-surface-container-low border-l-2 border-l-primary'
+                    : 'hover:bg-surface-container-low'
+                }`}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => e.key === 'Enter' && handleExecute(cmd)}
