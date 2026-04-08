@@ -13,12 +13,14 @@ interface ActionFeedbackProps {
   pendingAction: PendingAction | null;
   actionResult: ActionResult | null;
   onDismiss: () => void;
+  onRetry?: () => void;
 }
 
 export default function ActionFeedback({
   pendingAction,
   actionResult,
   onDismiss,
+  onRetry,
 }: ActionFeedbackProps) {
   // Auto-dismiss successful results after timeout
   useEffect(() => {
@@ -49,12 +51,23 @@ export default function ActionFeedback({
         <span className={colorClass}>{icon}</span>
         <span className={colorClass}>{actionResult.message}</span>
         {!actionResult.success && (
-          <button
-            onClick={onDismiss}
-            className="ml-auto text-xs text-on-surface-variant hover:text-on-surface"
-          >
-            Dismiss
-          </button>
+          <span className="ml-auto flex items-center gap-2">
+            {onRetry != null && (
+              <button
+                onClick={onRetry}
+                className="text-xs font-medium text-primary hover:underline"
+                aria-label="Retry"
+              >
+                Retry
+              </button>
+            )}
+            <button
+              onClick={onDismiss}
+              className="text-xs text-on-surface-variant hover:text-on-surface"
+            >
+              Dismiss
+            </button>
+          </span>
         )}
       </div>
     );

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ActionFeedback from '../../src/renderer/components/ActionFeedback';
 
@@ -88,5 +88,33 @@ describe('ActionFeedback', () => {
       />
     );
     expect(screen.getByText(/requesting changes/i)).toBeInTheDocument();
+  });
+});
+
+describe('ActionFeedback retry', () => {
+  it('renders retry button on failure when onRetry is provided', () => {
+    const onRetry = vi.fn();
+    render(
+      <ActionFeedback
+        pendingAction={null}
+        actionResult={{ type: 'approve', prId: 'pr-1', success: false, message: 'Failed' }}
+        onDismiss={vi.fn()}
+        onRetry={onRetry}
+      />
+    );
+    const retryBtn = screen.getByRole('button', { name: /retry/i });
+    fireEvent.click(retryBtn);
+    expect(onRetry).toHaveBeenCalled();
+  });
+
+  it('does not render retry button when onRetry is not provided', () => {
+    render(
+      <ActionFeedback
+        pendingAction={null}
+        actionResult={{ type: 'approve', prId: 'pr-1', success: false, message: 'Failed' }}
+        onDismiss={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();
   });
 });
