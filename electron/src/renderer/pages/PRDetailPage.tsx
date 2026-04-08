@@ -8,6 +8,8 @@ import { usePRList } from '../queries/usePRList';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { parseMultiFileDiff } from '../utils/diff-parser';
 import { useActionDispatch } from '../hooks/useActionDispatch';
+import ActionFeedback from '../components/ActionFeedback';
+import StatusSidebar from '../components/StatusSidebar';
 import type { Comment } from '../types';
 
 function extractFileName(filePath: string): string {
@@ -28,7 +30,9 @@ export function PRDetailPage() {
   const { data: prs = [], isLoading, error } = usePRList(filterState);
   const pr = prs[selectedIndex];
   const { request, send } = useWebSocket();
-  const { dispatchApprove } = useActionDispatch(pr?.id);
+  const pendingAction = useStore(appStore, (s) => s.pendingAction);
+  const actionResult = useStore(appStore, (s) => s.actionResult);
+  const { dispatchApprove, clearActionResult } = useActionDispatch(pr?.id);
 
   // Dispatch approve when keyboard flow signals approve_confirmed
   useEffect(() => {
@@ -166,6 +170,12 @@ export function PRDetailPage() {
           )}
         </div>
 
+        <ActionFeedback
+          pendingAction={pendingAction}
+          actionResult={actionResult}
+          onDismiss={clearActionResult}
+        />
+
         {diffLoading && (
           <p className="text-sm text-on-surface-variant px-4 py-2">Loading diff...</p>
         )}
@@ -176,13 +186,18 @@ export function PRDetailPage() {
           <p className="text-sm text-error px-4 py-2">Failed to load comments: {commentsError}</p>
         )}
 
-        <div className="flex-1 min-h-0">
-          <DiffViewer
-            diff={diff}
-            className="h-full"
-            comments={comments}
-            onLineClick={handleLineClick}
-          />
+        <div className="flex flex-1 min-h-0">
+          <div className="flex-1 min-h-0">
+            <DiffViewer
+              diff={diff}
+              className="h-full"
+              comments={comments}
+              onLineClick={handleLineClick}
+            />
+          </div>
+          {pr !== undefined && (
+            <StatusSidebar pr={pr} ciChecks={[]} />
+          )}
         </div>
 
         {commentTarget !== null && (

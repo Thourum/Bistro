@@ -12,7 +12,13 @@ vi.mock('../../src/renderer/queries/usePRList', () => ({
 expect.extend(matchers);
 
 const mockStore = {
-  state: { selectedPRIndex: 0, filterState: 'open' },
+  state: {
+    selectedPRIndex: 0,
+    filterState: 'open',
+    confirmingAction: null,
+    pendingAction: null,
+    actionResult: null,
+  },
   subscribe: vi.fn(() => () => {}),
 };
 
@@ -40,5 +46,20 @@ describe('PRDetailPage', () => {
   it('displays diff viewer', () => {
     render(<PRDetailPage />);
     expect(screen.getByText(/No changes/i)).toBeInTheDocument();
+  });
+
+  it('renders ActionFeedback when pendingAction is set', () => {
+    const storeWithPending = {
+      ...mockStore,
+      state: {
+        ...mockStore.state,
+        pendingAction: { type: 'approve', prId: 'pr-1', startedAt: Date.now() },
+      },
+    };
+    vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue(
+      storeWithPending as unknown as typeof storeModule.appStore,
+    );
+    render(<PRDetailPage />);
+    expect(screen.getByText(/approving/i)).toBeInTheDocument();
   });
 });
