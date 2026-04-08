@@ -45,9 +45,27 @@ export function CommandPalette(): React.ReactElement | null {
   };
 
   const handleExecute = (command: Command): void => {
-    // TODO: Dispatch command action based on command.id
-    console.log(`Executing command: ${command.name}`);
-    handleClose();
+    switch (command.id) {
+      case 'settings':
+        appStore.setState((s) => ({ ...s, mode: 'settings' }));
+        setQuery('');
+        return;
+      case 'help':
+        appStore.setState((s) => ({ ...s, mode: 'help' }));
+        setQuery('');
+        return;
+      case 'focus-list':
+        appStore.setState((s) => ({ ...s, mode: 'list' }));
+        setQuery('');
+        return;
+      case 'focus-detail':
+        appStore.setState((s) => ({ ...s, mode: 'detail' }));
+        setQuery('');
+        return;
+      default:
+        // TODO: Implement remaining commands (clear cache, etc.)
+        handleClose();
+    }
   };
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {

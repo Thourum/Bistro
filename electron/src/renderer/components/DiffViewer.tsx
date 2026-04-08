@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ScrollArea } from './ui/scroll-area';
 import { parseDiff } from '../utils/diff-parser';
 import type { DiffLine } from '../utils/diff-parser';
@@ -34,7 +34,7 @@ export function DiffViewer({ diff, className = '' }: DiffViewerProps) {
     );
   }
 
-  const parsed = parseDiff(diff);
+  const parsed = useMemo(() => parseDiff(diff), [diff]);
 
   return (
     <ScrollArea className={`w-full h-full border border-outline-variant overflow-auto ${className}`}>
@@ -51,7 +51,7 @@ export function DiffViewer({ diff, className = '' }: DiffViewerProps) {
         )}
 
         {parsed.hunks.map((hunk, hunkIdx) => (
-          <div key={hunkIdx}>
+          <div key={`hunk-${hunk.header}-${hunkIdx}`}>
             <div className="bg-surface-container px-4 py-1 text-on-surface-variant font-bold border-b border-outline-variant">
               {hunk.header}
             </div>
@@ -62,7 +62,7 @@ export function DiffViewer({ diff, className = '' }: DiffViewerProps) {
 
               return (
                 <div
-                  key={lineIdx}
+                  key={`line-${line.type}-${lineIdx}`}
                   className={`diff-${line.type} flex border-b border-outline-variant/30 ${bg}`}
                 >
                   <div className="w-12 flex-shrink-0 px-2 py-1 text-right text-on-surface-variant border-r border-outline-variant/50 select-none bg-surface-container-low">

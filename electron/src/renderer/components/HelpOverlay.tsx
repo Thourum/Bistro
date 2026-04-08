@@ -33,7 +33,7 @@ const SHORTCUT_SECTIONS: readonly ShortcutSection[] = [
     shortcuts: [
       { key: 'Enter', description: 'Open selected PR' },
       { key: 'a', description: 'Approve PR' },
-      { key: 'Esc', description: 'Close overlay / go back' },
+      { key: 'Escape', description: 'Close overlay / go back' },
     ],
   },
   {

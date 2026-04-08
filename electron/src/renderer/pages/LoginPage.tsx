@@ -16,8 +16,9 @@ const PROVIDERS: Array<{
 ];
 
 function handleProviderClick(provider: OAuthProvider): void {
-  // TODO: Trigger OAuth flow via IPC
-  console.log(`Authenticating with ${provider}`);
+  // TODO: Trigger OAuth flow via IPC — window.electronAPI.startOAuth(provider)
+  // Once OAuth completes, set isAuthenticated: true in the store
+  void provider;
 }
 
 export function LoginPage() {
