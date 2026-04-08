@@ -1,5 +1,5 @@
 export interface DiffLine {
-  type: 'context' | 'added' | 'removed' | 'hunk-header' | 'file-header';
+  type: 'context' | 'added' | 'removed';
   content: string;
   oldLineNumber?: number;
   newLineNumber?: number;

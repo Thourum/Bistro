@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { MainLayout } from '../layouts/MainLayout';
 import { DiffViewer } from '../components/DiffViewer';
 import { CommentInput } from '../components/CommentInput';
@@ -6,7 +6,12 @@ import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import { usePRList } from '../queries/usePRList';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { parseMultiFileDiff } from '../utils/diff-parser';
 import type { Comment } from '../types';
+
+function extractFileName(filePath: string): string {
+  return filePath.replace(/^[ab]\//, '');
+}
 
 export function PRDetailPage() {
   const selectedIndex = useStore(appStore, (s) => s.selectedPRIndex);
@@ -15,6 +20,7 @@ export function PRDetailPage() {
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
   const [commentTarget, setCommentTarget] = useState<{ fileIndex: number; lineNumber: number } | null>(null);
 
   const { data: prs = [], isLoading, error } = usePRList(filterState);
@@ -44,17 +50,23 @@ export function PRDetailPage() {
       });
   }, [selectedIndex, request, pr]);
 
+  // Parse diff sections so we can resolve fileIndex → filename
+  const diffSections = useMemo(() => parseMultiFileDiff(diff), [diff]);
+
   // Fetch comments when selected PR changes
   useEffect(() => {
     if (pr === undefined) return;
 
+    setCommentsError(null);
     request('REQUEST_COMMENTS', { pr_id: pr.id })
       .then((data) => {
         const payload = data as { comments?: Comment[] };
         setComments(payload.comments ?? []);
       })
       .catch((err: unknown) => {
-        console.error('Failed to fetch comments:', err);
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        console.error('Failed to fetch comments:', message);
+        setCommentsError(message);
       });
   }, [selectedIndex, request, pr]);
 
@@ -66,12 +78,19 @@ export function PRDetailPage() {
     (body: string) => {
       if (pr === undefined || commentTarget === null) return;
 
+      // Resolve filename from fileIndex so inline comment anchors correctly
+      const section = diffSections[commentTarget.fileIndex];
+      const file = section != null
+        ? extractFileName(section.newFile || section.oldFile)
+        : undefined;
+
       // Optimistic update — add immediately, server confirms via COMMENT_POSTED event
       const optimisticComment: Comment = {
         id: `optimistic-${Date.now()}`,
         pr_id: pr.id,
         author: 'you',
         body,
+        file,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         line: commentTarget.lineNumber,
@@ -82,10 +101,11 @@ export function PRDetailPage() {
       send('POST_COMMENT', {
         pr_id: pr.id,
         body,
+        file,
         line: commentTarget.lineNumber,
       });
     },
-    [pr, commentTarget, send],
+    [pr, commentTarget, send, diffSections],
   );
 
   const handleCommentCancel = useCallback(() => {
@@ -141,6 +161,9 @@ export function PRDetailPage() {
         )}
         {diffError !== null && (
           <p className="text-sm text-error px-4 py-2">Failed to load diff: {diffError}</p>
+        )}
+        {commentsError !== null && (
+          <p className="text-sm text-error px-4 py-2">Failed to load comments: {commentsError}</p>
         )}
 
         <div className="flex-1 min-h-0">
