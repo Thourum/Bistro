@@ -22,5 +22,6 @@
       "@shared/*": ["src/shared/*"]
     }
   },
+  "include": ["src/main/**/*.ts", "src/shared/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

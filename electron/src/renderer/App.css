@@ -1,0 +1,130 @@
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-bg);
+}
+
+.pr-list-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 0;
+}
+
+.command-bar {
+  padding: var(--space-md);
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  gap: var(--space-md);
+  align-items: center;
+}
+
+.search-input {
+  flex: 1;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.mode-indicator {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  padding: 0 var(--space-md);
+}
+
+.pr-list-pane {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.pr-list {
+  list-style: none;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.loading,
+.empty-state {
+  padding: var(--space-lg);
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.error-state {
+  padding: var(--space-lg);
+  color: var(--color-error);
+}
+
+.status-bar {
+  padding: var(--space-sm) var(--space-md);
+  background-color: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.status-left,
+.status-center,
+.status-right {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.separator {
+  color: var(--color-border);
+}
+
+.pr-detail-view {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+}
+
+.detail-header {
+  padding: var(--space-md);
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  gap: var(--space-md);
+  align-items: center;
+}
+
+.detail-content {
+  display: flex;
+  flex: 1;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  overflow: hidden;
+}
+
+.diff-viewer-placeholder,
+.comments-pane-placeholder,
+.status-sidebar-placeholder {
+  padding: var(--space-lg);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+}
+
+.diff-viewer-placeholder {
+  flex: 2;
+  overflow-y: auto;
+}
+
+.comments-pane-placeholder {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.status-sidebar-placeholder {
+  width: 200px;
+  overflow-y: auto;
+}
