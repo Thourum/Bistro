@@ -13,8 +13,10 @@ type PR struct {
 	Description  string
 	Author       string
 	State        string // "open", "closed", "merged"
-	ReviewStatus string // "pending", "approved", "changes_requested"
-	BaseBranch   string
+	ReviewStatus          string // "pending", "approved", "changes_requested"
+	ApprovedBy            string // username who approved
+	ChangesRequestedBy    string // username who requested changes
+	BaseBranch            string
 	HeadBranch   string
 	BaseSHA      string
 	HeadSHA      string

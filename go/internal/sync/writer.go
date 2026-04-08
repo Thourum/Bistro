@@ -112,21 +112,25 @@ func (w *Writer) writePR(ctx context.Context, tx *sql.Tx, pr *provider.PR) error
 			id, provider, owner, repo, number, title, body, author, state,
 			created_at, updated_at, merged_at,
 			base_branch, head_branch, base_sha, head_sha,
-			comment_count, ci_status, draft
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			comment_count, ci_status, draft,
+			review_status, approved_by, changes_requested_by
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
-			title         = excluded.title,
-			body          = excluded.body,
-			state         = excluded.state,
-			updated_at    = excluded.updated_at,
-			merged_at     = excluded.merged_at,
-			base_branch   = excluded.base_branch,
-			head_branch   = excluded.head_branch,
-			base_sha      = excluded.base_sha,
-			head_sha      = excluded.head_sha,
-			comment_count = excluded.comment_count,
-			ci_status     = excluded.ci_status,
-			draft         = excluded.draft
+			title                  = excluded.title,
+			body                   = excluded.body,
+			state                  = excluded.state,
+			updated_at             = excluded.updated_at,
+			merged_at              = excluded.merged_at,
+			base_branch            = excluded.base_branch,
+			head_branch            = excluded.head_branch,
+			base_sha               = excluded.base_sha,
+			head_sha               = excluded.head_sha,
+			comment_count          = excluded.comment_count,
+			ci_status              = excluded.ci_status,
+			draft                  = excluded.draft,
+			review_status          = excluded.review_status,
+			approved_by            = excluded.approved_by,
+			changes_requested_by   = excluded.changes_requested_by
 	`
 
 	draft := 0
@@ -154,6 +158,9 @@ func (w *Writer) writePR(ctx context.Context, tx *sql.Tx, pr *provider.PR) error
 		pr.CommentCount,
 		pr.CIStatus,
 		draft,
+		pr.ReviewStatus,
+		pr.ApprovedBy,
+		pr.ChangesRequestedBy,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write PR %s: %w", pr.ID, err)

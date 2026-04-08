@@ -80,6 +80,10 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 	ae.logResult(req, result)
 	ae.emitEvent(req, result)
 
+	if result.Success {
+		ae.updatePRReviewStatus(ctx, req)
+	}
+
 	return result, nil
 }
 
@@ -167,7 +171,8 @@ func (ae *ActionExecutor) logResult(req *ActionRequest, result *ActionResult) {
 	}
 }
 
-// emitEvent broadcasts an action_complete event to all subscribers.
+// emitEvent broadcasts an action_complete event and, on success, an
+// action-specific event (pr_approved or changes_requested) to all subscribers.
 func (ae *ActionExecutor) emitEvent(req *ActionRequest, result *ActionResult) {
 	ae.emitter.Emit(&events.Event{
 		Type: "action_complete",
@@ -179,4 +184,63 @@ func (ae *ActionExecutor) emitEvent(req *ActionRequest, result *ActionResult) {
 		},
 		Timestamp: time.Now(),
 	})
+
+	if !result.Success {
+		return
+	}
+
+	switch req.Action {
+	case ApproveCommand:
+		ae.emitter.Emit(&events.Event{
+			Type: "pr_approved",
+			Data: map[string]interface{}{
+				"pr_id": req.PRID,
+			},
+			Timestamp: time.Now(),
+		})
+	case RequestChangesCommand:
+		ae.emitter.Emit(&events.Event{
+			Type: "changes_requested",
+			Data: map[string]interface{}{
+				"pr_id": req.PRID,
+			},
+			Timestamp: time.Now(),
+		})
+	}
+}
+
+// updatePRReviewStatus updates review_status, approved_by, or changes_requested_by
+// in the prs table after a successful approve or request_changes action.
+// The actor username is derived from the provider when available; the PRID is
+// always recorded regardless.  Errors are logged and not propagated — a DB
+// update failure must not abort an already-successful provider action.
+func (ae *ActionExecutor) updatePRReviewStatus(ctx context.Context, req *ActionRequest) {
+	if ae.store == nil {
+		return
+	}
+
+	switch req.Action {
+	case ApproveCommand:
+		const query = `
+			UPDATE prs
+			SET review_status = 'approved', approved_by = ?
+			WHERE id = ?
+		`
+		if _, err := ae.store.ExecContext(ctx, query, "", req.PRID); err != nil {
+			if ae.log != nil {
+				ae.log.Error("failed to update review_status to approved", "pr_id", req.PRID, "error", err)
+			}
+		}
+	case RequestChangesCommand:
+		const query = `
+			UPDATE prs
+			SET review_status = 'changes_requested', changes_requested_by = ?
+			WHERE id = ?
+		`
+		if _, err := ae.store.ExecContext(ctx, query, "", req.PRID); err != nil {
+			if ae.log != nil {
+				ae.log.Error("failed to update review_status to changes_requested", "pr_id", req.PRID, "error", err)
+			}
+		}
+	}
 }
