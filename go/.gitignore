@@ -19,6 +19,9 @@ bistro-sync
 # Database & patches
 data/sqlite.db
 data/patches/
+data/repos/
+*.db-wal
+*.db-shm
 
 # OS
 .DS_Store

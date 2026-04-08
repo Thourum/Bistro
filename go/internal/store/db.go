@@ -25,6 +25,18 @@ func OpenDB(dsn string) (*DB, error) {
 		return nil, fmt.Errorf("ping sqlite3 %q: %w", dsn, err)
 	}
 
+	// Enable foreign key enforcement (disabled by default per SQLite connection).
+	if _, err := sqlDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("enable foreign_keys pragma: %w", err)
+	}
+
+	// Enable WAL mode for better concurrent read/write performance.
+	if _, err := sqlDB.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("set journal_mode WAL pragma: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
 }
 

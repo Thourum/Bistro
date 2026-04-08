@@ -14,10 +14,13 @@ func TestNewServer(t *testing.T) {
 
 func TestStartServer(t *testing.T) {
 	server := NewServer()
+	startErr := make(chan error, 1)
 	go func() {
 		err := server.Start(":0") // Random port
 		if err != nil && err.Error() != "server stopped" {
-			t.Errorf("unexpected error: %v", err)
+			startErr <- err
+		} else {
+			startErr <- nil
 		}
 	}()
 
@@ -26,5 +29,9 @@ func TestStartServer(t *testing.T) {
 	err := server.Stop()
 	if err != nil {
 		t.Errorf("failed to stop server: %v", err)
+	}
+
+	if goroutineErr := <-startErr; goroutineErr != nil {
+		t.Errorf("unexpected error from server goroutine: %v", goroutineErr)
 	}
 }

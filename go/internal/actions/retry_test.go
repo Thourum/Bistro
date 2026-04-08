@@ -58,10 +58,12 @@ func TestRetryWithBackoff(t *testing.T) {
 }
 
 func TestRetryMaxAttemptsExceeded(t *testing.T) {
+	// Use a transient error so IsRecoverable returns true and retries are attempted.
+	// This tests that the retry loop stops after maxAttempts regardless.
 	handler := func() (*ActionResult, error) {
 		return &ActionResult{
 			Success: false,
-			Error:   "always fails",
+			Error:   "rate limit exceeded",
 		}, nil
 	}
 

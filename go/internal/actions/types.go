@@ -2,6 +2,7 @@ package actions
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -57,14 +58,48 @@ type ActionResult struct {
 	Retries   int // number of retries before success/failure
 }
 
-// IsRecoverable determines if an error should be retried
+// permanentErrorKeywords are substrings that indicate a permanent failure
+// which should not be retried.
+var permanentErrorKeywords = []string{
+	"401", "unauthorized", "403", "forbidden",
+	"404", "not found",
+	"400", "422", "bad request", "unprocessable",
+	"validation", "invalid",
+}
+
+// transientErrorKeywords are substrings that indicate a transient failure
+// which is worth retrying.
+var transientErrorKeywords = []string{
+	"429", "rate limit",
+	"500", "502", "503", "service unavailable",
+	"timeout", "timed out",
+	"temporary", "connection reset", "connection refused",
+	"network",
+}
+
+// IsRecoverable determines if a failed action should be retried.
+// Only transient errors (rate limit, timeout, 5xx, network) are recoverable.
+// Permanent errors (auth, not found, validation) are not retried.
 func (ar *ActionResult) IsRecoverable() bool {
-	// Rate limits, timeouts, temporary network errors are recoverable
-	// Authorization, not found, invalid requests are not
-	if !ar.Success && ar.Error != "" {
-		// Simple heuristic: assume transient unless explicitly not
-		// Phase 5+ can refine with error code mapping
-		return true
+	if ar.Success || ar.Error == "" {
+		return false
 	}
+
+	lower := strings.ToLower(ar.Error)
+
+	// Explicit permanent errors take priority over transient matches.
+	for _, kw := range permanentErrorKeywords {
+		if strings.Contains(lower, kw) {
+			return false
+		}
+	}
+
+	for _, kw := range transientErrorKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+
+	// Unknown errors: do not retry to avoid wasting API quota.
 	return false
 }

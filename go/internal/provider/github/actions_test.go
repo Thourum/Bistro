@@ -6,17 +6,18 @@ import (
 )
 
 func TestApprove(t *testing.T) {
+	t.Skip("requires GitHub API or transport stub")
 	client := NewClient("test-token")
 	ctx := context.Background()
 
 	// Just verify method exists and validates inputs
 	err := client.approve(ctx, "owner", "repo", 123, "Looks good!")
-	// In Phase 3, we'll test with real GitHub API
-	// For now, just check the method structure works
 	if client == nil {
 		t.Error("client should not be nil")
 	}
-	_ = err
+	if err != nil {
+		t.Logf("approve returned error (expected without real API): %v", err)
+	}
 }
 
 func TestApprove_ValidationErrors(t *testing.T) {
@@ -46,6 +47,7 @@ func TestApprove_ValidationErrors(t *testing.T) {
 }
 
 func TestRequestChanges(t *testing.T) {
+	t.Skip("requires GitHub API or transport stub")
 	client := NewClient("test-token")
 	ctx := context.Background()
 
@@ -53,7 +55,9 @@ func TestRequestChanges(t *testing.T) {
 	if client == nil {
 		t.Error("client should not be nil")
 	}
-	_ = err
+	if err != nil {
+		t.Logf("requestChanges returned error (expected without real API): %v", err)
+	}
 }
 
 func TestRequestChanges_ValidationErrors(t *testing.T) {
@@ -83,6 +87,7 @@ func TestRequestChanges_ValidationErrors(t *testing.T) {
 }
 
 func TestPostComment(t *testing.T) {
+	t.Skip("requires GitHub API or transport stub")
 	client := NewClient("test-token")
 	ctx := context.Background()
 
@@ -90,7 +95,9 @@ func TestPostComment(t *testing.T) {
 	if client == nil {
 		t.Error("client should not be nil")
 	}
-	_ = err
+	if err != nil {
+		t.Logf("postComment returned error (expected without real API): %v", err)
+	}
 }
 
 func TestPostComment_ValidationErrors(t *testing.T) {

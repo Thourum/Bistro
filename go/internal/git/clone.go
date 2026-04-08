@@ -22,11 +22,12 @@ func NewClient(cache *Cache) *Client {
 	return &Client{cache: cache}
 }
 
-// ShallowClone fetches both baseSHA and headSHA into a local clone.
-// It uses a full clone + explicit ref fetch so both commits are guaranteed
-// to be present, regardless of how many commits separate them.
+// Clone fetches both baseSHA and headSHA into a local clone.
+// A full clone is required because diff generation needs both commit objects
+// present in the repository; the base and head commits can be arbitrarily far
+// apart in history, so a shallow clone with Depth:1 would miss one or both.
 // Returns cached result when both SHAs already exist in the cache.
-func (c *Client) ShallowClone(ctx context.Context, repoURL, baseSHA, headSHA string) (*CloneResult, error) {
+func (c *Client) Clone(ctx context.Context, repoURL, baseSHA, headSHA string) (*CloneResult, error) {
 	if repoURL == "" {
 		return nil, fmt.Errorf("repository URL cannot be empty")
 	}

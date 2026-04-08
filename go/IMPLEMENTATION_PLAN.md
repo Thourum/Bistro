@@ -6,7 +6,7 @@
 
 **Architecture:** The engine runs as a sidecar process spawned by Electron on app startup. It listens on a WebSocket server, receives sync commands, orchestrates concurrent goroutines to fetch PR data from GitHub API, generates diffs via go-git, writes normalized data to SQLite, and streams progress events back to the UI. The engine exits cleanly when the parent Electron process exits.
 
-**Tech Stack:** Go 1.21+, go-git (pure Go Git operations), go-octokit (GitHub API), zalando/go-keyring (OS keychain), gorilla/websocket, better-sqlite3 (via CGO), slog (structured logging).
+**Tech Stack:** Go 1.21+, go-git (pure Go Git operations), go-octokit (GitHub API), zalando/go-keyring (OS keychain), gorilla/websocket, github.com/mattn/go-sqlite3 (CGO SQLite driver), slog (structured logging).
 
 ---
 

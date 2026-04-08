@@ -361,6 +361,8 @@ func (o *Orchestrator) syncPRList(ctx context.Context, req *SyncRequest) ([]*pro
 	}
 
 	filters := provider.PRFilters{
+		Owner: req.Owner,
+		Repo:  req.Repo,
 		State: req.State,
 		Limit: 100,
 	}

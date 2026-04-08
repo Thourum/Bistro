@@ -21,40 +21,40 @@ func TestClientHasCache(t *testing.T) {
 	}
 }
 
-func TestShallowCloneEmptyURL(t *testing.T) {
+func TestCloneEmptyURL(t *testing.T) {
 	cache := NewCache()
 	client := NewClient(cache)
 	ctx := context.Background()
 
-	_, err := client.ShallowClone(ctx, "", "base", "head")
+	_, err := client.Clone(ctx, "", "base", "head")
 	if err == nil {
 		t.Error("expected error for empty URL")
 	}
 }
 
-func TestShallowCloneEmptyBaseSHA(t *testing.T) {
+func TestCloneEmptyBaseSHA(t *testing.T) {
 	cache := NewCache()
 	client := NewClient(cache)
 	ctx := context.Background()
 
-	_, err := client.ShallowClone(ctx, "https://github.com/org/repo", "", "head")
+	_, err := client.Clone(ctx, "https://github.com/org/repo", "", "head")
 	if err == nil {
 		t.Error("expected error for empty baseSHA")
 	}
 }
 
-func TestShallowCloneEmptyHeadSHA(t *testing.T) {
+func TestCloneEmptyHeadSHA(t *testing.T) {
 	cache := NewCache()
 	client := NewClient(cache)
 	ctx := context.Background()
 
-	_, err := client.ShallowClone(ctx, "https://github.com/org/repo", "base", "")
+	_, err := client.Clone(ctx, "https://github.com/org/repo", "base", "")
 	if err == nil {
 		t.Error("expected error for empty headSHA")
 	}
 }
 
-func TestShallowCloneWithCachedRepo(t *testing.T) {
+func TestCloneWithCachedRepo(t *testing.T) {
 	cache := NewCache()
 
 	entry := &RepoEntry{
@@ -68,7 +68,7 @@ func TestShallowCloneWithCachedRepo(t *testing.T) {
 	client := NewClient(cache)
 	ctx := context.Background()
 
-	result, err := client.ShallowClone(ctx, entry.URL, entry.BaseSHA, entry.HeadSHA)
+	result, err := client.Clone(ctx, entry.URL, entry.BaseSHA, entry.HeadSHA)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestShallowCloneWithCachedRepo(t *testing.T) {
 	}
 }
 
-func TestShallowCloneCachesResult(t *testing.T) {
+func TestCloneCachesResult(t *testing.T) {
 	cache := NewCache()
 
 	entry := &RepoEntry{
@@ -92,7 +92,7 @@ func TestShallowCloneCachesResult(t *testing.T) {
 	client := NewClient(cache)
 	ctx := context.Background()
 
-	result, err := client.ShallowClone(ctx, entry.URL, entry.BaseSHA, entry.HeadSHA)
+	result, err := client.Clone(ctx, entry.URL, entry.BaseSHA, entry.HeadSHA)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -105,8 +105,8 @@ func TestShallowCloneCachesResult(t *testing.T) {
 	}
 }
 
-// TestShallowCloneDifferentSHAsMissCache verifies that a cache hit requires both SHAs to match
-func TestShallowCloneDifferentSHAsMissCache(t *testing.T) {
+// TestCloneDifferentSHAsMissCache verifies that a cache hit requires both SHAs to match
+func TestCloneDifferentSHAsMissCache(t *testing.T) {
 	cache := NewCache()
 	url := "https://github.com/org/repo"
 

@@ -8,7 +8,7 @@ import (
 // non-nil github client is created. The oauth2 transport is wired internally;
 // we confirm the token is preserved so Authenticate can return it.
 func TestNewClientWithToken(t *testing.T) {
-	const token = "ghp_test-token-value"
+	const token = "test-token-value"
 	client := NewClient(token)
 	if client == nil {
 		t.Fatal("expected non-nil client")
@@ -45,7 +45,7 @@ func TestNewClientWithEmptyToken(t *testing.T) {
 // TestNewClientTokenStored verifies the token field is preserved for
 // use by Authenticate.
 func TestNewClientTokenStored(t *testing.T) {
-	const want = "ghp_abc123"
+	const want = "fake-token-abc123"
 	client := NewClient(want)
 	if client.token != want {
 		t.Errorf("token stored: want %q, got %q", want, client.token)

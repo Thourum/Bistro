@@ -157,14 +157,27 @@ func (o *Orchestrator) FetchPRDetails(
 			}
 
 			if includeDiff && o.git != nil {
-				diffResult, err := o.git.GenerateDiff("data/repos/temp", prCopy.BaseSHA, prCopy.HeadSHA)
-				if err != nil {
-					errs = append(errs, fmt.Sprintf("diff: %v", err))
+				// Construct the clone URL from the PR's owner/repo and provider.
+				// For GitHub PRs the URL follows the standard HTTPS pattern;
+				// other providers are not yet supported and will produce a diff error
+				// captured in PRFetchResult.Error rather than aborting the whole batch.
+				cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", prCopy.Owner, prCopy.Repo)
+				cloneResult, cloneErr := o.git.Clone(ctx, cloneURL, prCopy.BaseSHA, prCopy.HeadSHA)
+				if cloneErr != nil {
+					errs = append(errs, fmt.Sprintf("diff clone: %v", cloneErr))
 					if o.log != nil {
-						o.log.Error("diff generation failed", "pr_id", prCopy.ID, "err", err)
+						o.log.Error("repo clone failed", "pr_id", prCopy.ID, "repo", cloneURL, "err", cloneErr)
 					}
-				} else if diffResult != nil {
-					result.DiffSize = diffResult.Size
+				} else {
+					diffResult, err := o.git.GenerateDiff(cloneResult.LocalPath, prCopy.BaseSHA, prCopy.HeadSHA)
+					if err != nil {
+						errs = append(errs, fmt.Sprintf("diff: %v", err))
+						if o.log != nil {
+							o.log.Error("diff generation failed", "pr_id", prCopy.ID, "err", err)
+						}
+					} else if diffResult != nil {
+						result.DiffSize = diffResult.Size
+					}
 				}
 			}
 
@@ -195,7 +208,7 @@ func (o *Orchestrator) FetchPRDetails(
 
 	if err := pool.Wait(ctx); err != nil {
 		// Context cancelled while draining; remaining slots stay nil.
-		return results, nil
+		return results, err
 	}
 	return results, nil
 }
@@ -211,6 +224,8 @@ func (o *Orchestrator) SyncPRsWithDetails(
 	}
 
 	filters := provider.PRFilters{
+		Owner: req.Owner,
+		Repo:  req.Repo,
 		State: req.State,
 		Limit: 100,
 	}
