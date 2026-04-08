@@ -7,6 +7,7 @@ import (
 	gosync "sync"
 
 	"github.com/samuelasvanyi/bistro/internal/provider"
+	"github.com/samuelasvanyi/bistro/internal/store"
 )
 
 // DefaultWorkers is the default number of concurrent workers used in the pool.
@@ -177,6 +178,22 @@ func (o *Orchestrator) FetchPRDetails(
 						}
 					} else if diffResult != nil {
 						result.DiffSize = diffResult.Size
+						if o.diffStore != nil {
+							diffFiles := make([]store.DiffFile, 0, len(diffResult.Files))
+							for _, f := range diffResult.Files {
+								diffFiles = append(diffFiles, store.DiffFile{
+									FilePath:  f.Path,
+									Patch:     f.Patch,
+									Additions: f.AddedLines,
+									Deletions: f.RemovedLines,
+								})
+							}
+							if saveErr := o.diffStore.SaveDiffs(prCopy.ID, diffFiles); saveErr != nil {
+								if o.log != nil {
+									o.log.Error("failed to persist diffs", "pr_id", prCopy.ID, "err", saveErr)
+								}
+							}
+						}
 					}
 				}
 			}

@@ -15,6 +15,12 @@ import (
 	"github.com/samuelasvanyi/bistro/internal/store"
 )
 
+// diffStorer is the subset of store.DiffStore used by the orchestrator,
+// enabling test substitution without importing the concrete type.
+type diffStorer interface {
+	SaveDiffs(prID string, diffs []store.DiffFile) error
+}
+
 // Orchestrator coordinates sync operations
 type Orchestrator struct {
 	log            *slog.Logger
@@ -25,6 +31,7 @@ type Orchestrator struct {
 	rateLimitMu    gosync.RWMutex
 	rateLimitState *provider.RateLimitState
 	queue          *ActionQueue
+	diffStore      diffStorer
 }
 
 // NewOrchestrator creates a new sync orchestrator
@@ -41,6 +48,13 @@ func NewOrchestrator(
 		git:      gitClient,
 		emitter:  NewEventEmitter(),
 	}
+}
+
+// WithDiffStore attaches a DiffStore so diffs are persisted during sync.
+// This is optional; if not set, diffs are generated but not stored.
+func (o *Orchestrator) WithDiffStore(ds diffStorer) *Orchestrator {
+	o.diffStore = ds
+	return o
 }
 
 // IsRateLimited reports whether the orchestrator is currently rate limited.
