@@ -17,9 +17,16 @@ Phases 1-4 are **complete and verified**. All critical blockers identified in co
 
 ## Immediate Next Steps (Choose One)
 
-### Option A: Execute Phase 5 Now (Recommended)
-**Time Estimate:** 3-4 hours
-**Approach:** Dispatch Opus 4.6 subagent to execute Phase 5 plan
+### Option A: Execute Phase 5 Now (Recommended) ✅ READY
+**Time Estimate:** 5-6 hours (includes logger prerequisite + 5 core tasks)
+**Approach:** Dispatch Opus 4.6 subagent with superpowers:subagent-driven-development
+
+**Plan Status:** Updated 2026-04-08 with all recent changes
+- ✅ Logger wrapper removal documented as prerequisite
+- ✅ All 5 core tasks with exact code examples
+- ✅ All tests with slog initialization
+- ✅ Full integration with orchestrator
+- ✅ Expected: 186+ cumulative tests, 0 races
 
 **Action:**
 ```bash
@@ -27,9 +34,10 @@ Phases 1-4 are **complete and verified**. All critical blockers identified in co
 /Users/samuelasvanyi/dev/bistro/.worktrees/go-sync-engine/docs/superpowers/plans/2026-04-08-go-sync-phase-5.md
 
 # To execute Phase 5:
-# 1. Read the plan file
-# 2. Dispatch an Opus 4.6 subagent to execute tasks 1-5 with TDD discipline
-# 3. Monitor progress via task status updates
+# 1. Use superpowers:subagent-driven-development
+# 2. Dispatch Opus 4.6 subagent for each task
+# 3. Two-stage review per task (spec compliance, then code quality)
+# 4. Expected completion: 5-6 hours
 ```
 
 ### Option B: Review & Refine First

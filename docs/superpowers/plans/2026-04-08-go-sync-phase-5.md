@@ -8,7 +8,35 @@
 
 **Tech Stack:** Go 1.21+, SQLite, WebSocket pub/sub pattern established in Phase 4, `log/slog` for logging (no wrapper).
 
-**CRITICAL REFACTOR FIRST:** Before Phase 5, remove `internal/logger` wrapper and use `slog` directly across all packages.
+**Status:** Updated 2026-04-08 with all remediation changes. Ready for immediate execution.
+
+---
+
+## What Changed from Previous Version
+
+**Remediation Phase Complete (10 blockers fixed, 61 tests added):**
+- ✅ Phase 2: Auth token wired, ListPRs interface fixed, typed errors added
+- ✅ Phase 3: Multi-ref fetch, absolute paths, cache key collisions fixed
+- ✅ Phase 4: SQL persistence, context cancellation, panic recovery fixed
+- ✅ Logger wrapper removal completed (use slog directly)
+- ✅ 166+ cumulative tests passing, 0 race conditions
+
+**Plan Updates:**
+- All logger imports changed from `internal/logger` to `log/slog`
+- All function signatures use `*slog.Logger` instead of `*logger.Logger`
+- All test code includes proper slog initialization
+- Prerequisite: Logger wrapper removal already documented in this plan
+- Full file structure and exact code examples provided for all 5 tasks
+
+---
+
+## CRITICAL REFACTOR FIRST: Remove Logger Wrapper
+
+**Status:** This refactor must complete BEFORE Phase 5 tasks begin.
+
+**Scope:** Delete `internal/logger/` package, update 3 files to use `slog` directly.
+
+**Expected effort:** 30 minutes (included in Task Prerequisite below)
 
 ---
 
@@ -832,10 +860,11 @@ package actions
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"testing"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/logger"
 	"github.com/samuelasvanyi/bistro/internal/provider/mock"
 	"github.com/samuelasvanyi/bistro/internal/store"
 	"github.com/samuelasvanyi/bistro/internal/sync"
@@ -1150,10 +1179,11 @@ package actions
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"testing"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/logger"
 	gosync "github.com/samuelasvanyi/bistro/internal/sync"
 	"github.com/samuelasvanyi/bistro/internal/provider/mock"
 )
@@ -1348,6 +1378,11 @@ import (
 
 ```go
 // Add to go/internal/sync/orchestrator_test.go
+import (
+	"github.com/samuelasvanyi/bistro/internal/actions"
+	"github.com/samuelasvanyi/bistro/internal/git"
+	"github.com/samuelasvanyi/bistro/internal/provider/mock"
+)
 
 func TestOrchestratorApplyActions(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
