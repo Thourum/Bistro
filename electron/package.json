@@ -1,0 +1,45 @@
+{
+  "name": "bistro-electron",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:main\"",
+    "dev:renderer": "vite",
+    "dev:main": "tsc -p tsconfig.main.json --watch",
+    "build": "npm run build:renderer && npm run build:main",
+    "build:renderer": "vite build",
+    "build:main": "tsc -p tsconfig.main.json",
+    "type-check": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .ts,.tsx",
+    "electron": "electron .",
+    "electron:dev": "concurrently \"npm run dev:renderer\" \"wait-on http://localhost:5173 && npm run dev:main && electron .\""
+  },
+  "dependencies": {
+    "@tanstack/query-core": "^5.56.2",
+    "@tanstack/react-query": "^5.56.2",
+    "@tanstack/store": "^0.5.5",
+    "better-sqlite3": "^11.3.0",
+    "neverthrow": "^8.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.5.5",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "@vitest/coverage-v8": "^2.1.1",
+    "concurrently": "^9.0.1",
+    "electron": "^32.1.0",
+    "electron-builder": "^25.0.5",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.6",
+    "vitest": "^2.1.1",
+    "wait-on": "^8.0.1"
+  }
+}
