@@ -2,6 +2,9 @@ import { useEffect } from 'react';
 import { useStore } from './useStore';
 import type { AppStore } from '../store';
 import type { UIState } from '../store/ui';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('StoreSync');
 
 export function useStoreSync(store: AppStore) {
   const selectedIndex = useStore(store, (s: UIState) => s.selectedPRIndex);
@@ -16,7 +19,7 @@ export function useStoreSync(store: AppStore) {
         sortBy: state.sortBy,
       }));
     } catch (e) {
-      console.warn('Failed to save state to localStorage', e);
+      log.warn({ err: e }, 'failed to save state to localStorage');
     }
   }, [selectedIndex]);
 
@@ -34,7 +37,7 @@ export function useStoreSync(store: AppStore) {
         }
       }
     } catch (e) {
-      console.warn('Failed to load state from localStorage', e);
+      log.warn({ err: e }, 'failed to load state from localStorage');
     }
   }, []);
 }

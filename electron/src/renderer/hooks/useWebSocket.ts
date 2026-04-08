@@ -2,6 +2,9 @@ import { useEffect, useRef, useCallback } from 'react';
 import { appStore } from '../store';
 import { addToast } from '../components/ToastContainer';
 import { formatErrorMessage } from '../utils/error';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('WebSocket');
 
 interface WSMessage {
   id: string;
@@ -190,17 +193,18 @@ export function useWebSocket() {
 
   useEffect(() => {
     function connect() {
+      log.info({ url: WS_URL }, 'attempting connection');
       try {
         appStore.setState((s) => ({ ...s, syncStatus: 'connecting' }));
       } catch {
-        // Store not available (e.g., in test environment)
+        log.warn('store not available — skipping connection');
         return;
       }
 
       const ws = new WebSocket(WS_URL);
 
       ws.onopen = () => {
-        console.log('WebSocket connected');
+        log.info({ url: WS_URL }, 'connected');
         reconnectAttemptRef.current = 0;
         try {
           appStore.setState((s) => ({
@@ -220,11 +224,11 @@ export function useWebSocket() {
         try {
           message = JSON.parse(event.data) as WSMessage;
         } catch (error) {
-          console.error('WebSocket parse error:', error);
+          log.error({ err: error }, 'message parse error');
           return;
         }
 
-        console.log('WebSocket event:', message.type, message.data);
+        log.debug({ type: message.type, data: message.data }, 'received event');
 
         switch (message.type) {
           case 'SYNC_COMPLETE':
@@ -304,12 +308,12 @@ export function useWebSocket() {
             break;
           }
           default:
-            console.warn('Unhandled WebSocket event type:', message.type);
+            log.warn({ type: message.type }, 'unhandled event type');
         }
       };
 
       ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        log.error({ err: error }, 'connection error');
         try {
           appStore.setState((s) => ({
             ...s,
@@ -322,7 +326,7 @@ export function useWebSocket() {
       };
 
       ws.onclose = () => {
-        console.log('WebSocket disconnected');
+        log.info('disconnected');
         const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
         try {
           appStore.setState((s) => ({
@@ -340,12 +344,12 @@ export function useWebSocket() {
             MAX_RECONNECT_DELAY_MS
           );
           reconnectAttemptRef.current += 1;
-          console.log(`WebSocket reconnecting in ${delay}ms (attempt ${reconnectAttemptRef.current}/${MAX_RECONNECT_ATTEMPTS})`);
+          log.info({ delay, attempt: reconnectAttemptRef.current, maxAttempts: MAX_RECONNECT_ATTEMPTS }, 'scheduling reconnect');
           reconnectTimerRef.current = setTimeout(() => {
             connect();
           }, delay);
         } else {
-          console.error('WebSocket max reconnect attempts reached');
+          log.error({ maxAttempts: MAX_RECONNECT_ATTEMPTS }, 'max reconnect attempts reached');
           try {
             appStore.setState((s) => ({
               ...s,
@@ -374,8 +378,11 @@ export function useWebSocket() {
   }, []);
 
   const send = useCallback((type: string, data: unknown): string | undefined => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.error('WebSocket not connected');
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      const state = ws ? ws.readyState : 'null';
+      log.error({ type, ref: ws ? 'exists' : 'null', readyState: state, expected: WebSocket.OPEN }, 'send failed — not connected');
+      log.error({ type, data }, 'dropped message');
       return undefined;
     }
 
@@ -387,7 +394,8 @@ export function useWebSocket() {
       timestamp: new Date().toISOString(),
     };
 
-    wsRef.current.send(JSON.stringify(message));
+    log.info({ type, id }, 'sending message');
+    ws.send(JSON.stringify(message));
     return id;
   }, []);
 

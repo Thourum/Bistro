@@ -8,6 +8,9 @@ import { usePRList } from '../queries/usePRList';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { parseMultiFileDiff } from '../utils/diff-parser';
 import { useActionDispatch } from '../hooks/useActionDispatch';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('PRDetailPage');
 import ActionFeedback from '../components/ActionFeedback';
 import StatusSidebar from '../components/StatusSidebar';
 import type { Comment } from '../types';
@@ -58,7 +61,7 @@ export function PRDetailPage() {
       })
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : 'Unknown error';
-        console.error('Failed to fetch diff:', message);
+        log.error({ err: message }, 'failed to fetch diff');
         setDiffError(message);
         setDiffLoading(false);
       });
@@ -79,7 +82,7 @@ export function PRDetailPage() {
       })
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : 'Unknown error';
-        console.error('Failed to fetch comments:', message);
+        log.error({ err: message }, 'failed to fetch comments');
         setCommentsError(message);
       });
   }, [selectedIndex, request, pr]);

@@ -5,6 +5,9 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('LoginPage');
 
 type OAuthProvider = 'github' | 'gitlab' | 'gitea';
 
@@ -30,7 +33,20 @@ export function LoginPage() {
   const authError = useStore(appStore, (s: UIState) => s.authError);
 
   const handleProviderClick = (provider: OAuthProvider): void => {
-    send('AUTH_START', { provider });
+    log.info({ provider, syncStatus, authLoading }, 'provider clicked');
+
+    const msgId = send('AUTH_START', { provider });
+
+    if (msgId === undefined) {
+      log.error({ provider, syncStatus }, 'send returned undefined — WebSocket not connected');
+      appStore.setState((s) => ({
+        ...s,
+        authError: `Cannot connect to sync engine (status: ${syncStatus}). Make sure the Go process is running.`,
+      }));
+    } else {
+      log.info({ provider, msgId }, 'AUTH_START sent');
+      appStore.setState((s) => ({ ...s, authLoading: true, authError: null }));
+    }
   };
 
   return (

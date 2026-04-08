@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 import { appStore } from '../store';
 import type { SyncEvent } from '../../main/websocket-client';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('SyncEvents');
 
 function handleSyncEvent(event: SyncEvent): void {
   switch (event.type) {
@@ -48,15 +51,15 @@ function handleSyncEvent(event: SyncEvent): void {
       break;
 
     case 'action_complete':
-      console.log('[useSyncEvents] action_complete:', event.data);
+      log.info({ data: event.data }, 'action complete');
       break;
 
     case 'action_failed':
-      console.error('[useSyncEvents] action_failed:', event.data);
+      log.error({ data: event.data }, 'action failed');
       break;
 
     default:
-      console.warn('[useSyncEvents] unknown event type:', (event as SyncEvent).type);
+      log.warn({ type: (event as SyncEvent).type }, 'unknown event type');
   }
 }
 
