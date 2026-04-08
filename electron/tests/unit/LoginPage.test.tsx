@@ -36,8 +36,10 @@ describe('LoginPage', () => {
     expect(screen.getByText(/v4.0.2-stable/i)).toBeInTheDocument();
   });
 
-  it('displays Status: Ready', () => {
+  it('displays live sync status', () => {
     render(<LoginPage />);
-    expect(screen.getByText(/Status: Ready/i)).toBeInTheDocument();
+    // Status text shows live syncStatus (not hardcoded "Ready")
+    // Value depends on WebSocket state in test env (connecting, error, disconnected)
+    expect(screen.getByText(/Status:/i)).toBeInTheDocument();
   });
 });

@@ -2,7 +2,7 @@
   "name": "bistro-electron",
   "version": "0.1.0",
   "private": true,
-  "main": "dist/main/index.js",
+  "main": "dist/main/main/index.js",
   "scripts": {
     "dev": "concurrently \"pnpm run dev:renderer\" \"pnpm run dev:main\"",
     "dev:renderer": "vite",

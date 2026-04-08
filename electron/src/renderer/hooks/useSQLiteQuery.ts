@@ -4,12 +4,23 @@ import type { DBQueryRequest } from '../../types/ipc';
 
 export type QueryResult<T> = ResultAsync<T[], string>;
 
+function isElectronAvailable(): boolean {
+  return typeof window !== 'undefined' && 'electron' in window && window.electron !== undefined;
+}
+
 export function useSQLiteQuery() {
   const query = useCallback(
     <T extends Record<string, unknown>>(
       sql: string,
       params?: unknown[]
     ): QueryResult<T> => {
+      if (!isElectronAvailable()) {
+        return ResultAsync.fromPromise(
+          Promise.resolve([] as T[]),
+          () => 'SQLite not available in browser mode'
+        );
+      }
+
       return ResultAsync.fromPromise(
         (async () => {
           const request: DBQueryRequest = params !== undefined ? { sql, params } : { sql };
