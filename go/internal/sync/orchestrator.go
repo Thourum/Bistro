@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"log/slog"
@@ -15,11 +16,13 @@ import (
 
 // Orchestrator coordinates sync operations
 type Orchestrator struct {
-	log      *slog.Logger
-	provider provider.Provider
-	store    *store.DB
-	git      *git.Client
-	emitter  *EventEmitter
+	log            *slog.Logger
+	provider       provider.Provider
+	store          *store.DB
+	git            *git.Client
+	emitter        *EventEmitter
+	rateLimitState *provider.RateLimitState
+	queue          *ActionQueue
 }
 
 // NewOrchestrator creates a new sync orchestrator
@@ -36,6 +39,151 @@ func NewOrchestrator(
 		git:      gitClient,
 		emitter:  NewEventEmitter(),
 	}
+}
+
+// IsRateLimited reports whether the orchestrator is currently rate limited.
+func (o *Orchestrator) IsRateLimited() bool {
+	if o.rateLimitState == nil {
+		return false
+	}
+	return o.rateLimitState.IsLimited()
+}
+
+// ApplyAction executes an action immediately or queues it when rate limited.
+func (o *Orchestrator) ApplyAction(ctx context.Context, req *actions.ActionRequest) *actions.ActionResult {
+	if o.IsRateLimited() {
+		if o.log != nil {
+			o.log.Info("rate limited, queueing action", "pr_id", req.PRID)
+		}
+
+		queuedAction := &QueuedAction{
+			ID:         req.PRID + "-" + string(req.Action),
+			ActionType: string(req.Action),
+			PRID:       req.PRID,
+			Payload:    req.Body,
+		}
+		if o.queue != nil {
+			if err := o.queue.Enqueue(ctx, queuedAction); err != nil {
+				if o.log != nil {
+					o.log.Error("failed to queue action", "error", err)
+				}
+				return &actions.ActionResult{
+					PRID:      req.PRID,
+					Action:    req.Action,
+					Success:   false,
+					Error:     err.Error(),
+					Timestamp: time.Now(),
+				}
+			}
+		}
+		return &actions.ActionResult{
+			PRID:      req.PRID,
+			Action:    req.Action,
+			Success:   false,
+			Error:     "rate limited: action queued for later replay",
+			Timestamp: time.Now(),
+		}
+	}
+
+	return o.executeAction(ctx, req)
+}
+
+// executeAction runs an action via the executor immediately.
+func (o *Orchestrator) executeAction(ctx context.Context, req *actions.ActionRequest) *actions.ActionResult {
+	executor := actions.NewActionExecutor(o.log, o.provider, o.store, o.emitter)
+	result, err := executor.ExecuteWithRetry(ctx, req, 3)
+	if err != nil {
+		if o.log != nil {
+			o.log.Error("action execution error", "pr", req.PRID, "error", err)
+		}
+		return &actions.ActionResult{
+			PRID:      req.PRID,
+			Action:    req.Action,
+			Success:   false,
+			Error:     err.Error(),
+			Timestamp: time.Now(),
+		}
+	}
+	if result == nil {
+		return &actions.ActionResult{
+			PRID:      req.PRID,
+			Action:    req.Action,
+			Success:   false,
+			Error:     "executor returned nil result",
+			Timestamp: time.Now(),
+		}
+	}
+	return result
+}
+
+// ReplayQueuedActions replays pending actions after a rate limit clears.
+func (o *Orchestrator) ReplayQueuedActions(ctx context.Context) error {
+	if o.queue == nil {
+		return nil
+	}
+
+	pending, err := o.queue.GetPending(ctx, 10)
+	if err != nil {
+		return err
+	}
+
+	for _, action := range pending {
+		if o.log != nil {
+			o.log.Info("replaying queued action", "id", action.ID)
+		}
+
+		req := &actions.ActionRequest{
+			PRID:   action.PRID,
+			Action: actions.ActionCommand(action.ActionType),
+			Body:   action.Payload,
+		}
+
+		result := o.executeAction(ctx, req)
+		if result.Success {
+			if err := o.queue.MarkCompleted(ctx, action.ID); err != nil && o.log != nil {
+				o.log.Error("failed to mark action completed", "id", action.ID, "error", err)
+			}
+		} else {
+			errMsg := result.Error
+			if errMsg == "" {
+				errMsg = "unknown error"
+			}
+			if err := o.queue.MarkFailed(ctx, action.ID, errMsg, action.RetryCount+1); err != nil && o.log != nil {
+				o.log.Error("failed to mark action failed", "id", action.ID, "error", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// CleanupQueue removes old completed and failed actions from the queue.
+func (o *Orchestrator) CleanupQueue(ctx context.Context) error {
+	if o.queue == nil {
+		return nil
+	}
+
+	deleted, err := o.queue.DeleteCompleted(ctx, 7*24*time.Hour)
+	if err != nil {
+		return err
+	}
+	if o.log != nil {
+		o.log.Debug("cleaned up queue", "deleted", deleted)
+	}
+
+	return o.queue.DeleteFailed(ctx, 24*time.Hour)
+}
+
+// isRateLimitError reports whether err signals an HTTP 429 rate limit.
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if pe, ok := err.(*provider.ProviderError); ok {
+		return pe.Type == provider.ErrorTypeRateLimit
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "429") || strings.Contains(msg, "rate limit")
 }
 
 // GetEventChannel returns a read-only channel for subscribing to sync events.
@@ -215,6 +363,26 @@ func (o *Orchestrator) syncPRList(ctx context.Context, req *SyncRequest) ([]*pro
 
 	prs, err := o.provider.ListPRs(ctx, filters)
 	if err != nil {
+		if isRateLimitError(err) {
+			if pe, ok := err.(*provider.ProviderError); ok {
+				_ = pe // ProviderError does not carry RateLimitState directly; use type to set state
+			}
+			// Record a rate limit state so subsequent calls are gated
+			o.rateLimitState = &provider.RateLimitState{
+				ResetAt: time.Now().Add(60 * time.Second),
+			}
+			if o.log != nil {
+				o.log.Warn("rate limited", "reset_at", o.rateLimitState.ResetAt)
+			}
+			o.emitter.Emit(&SyncEvent{
+				Type: "rate_limited",
+				Data: map[string]interface{}{
+					"reset_in": o.rateLimitState.ResetIn().Seconds(),
+				},
+				Timestamp: time.Now(),
+			})
+			return nil, err
+		}
 		return nil, fmt.Errorf("failed to list PRs: %w", err)
 	}
 
