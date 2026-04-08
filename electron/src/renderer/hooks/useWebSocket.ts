@@ -1,5 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { appStore } from '../store';
+import { addToast } from '../components/ToastContainer';
+import { formatErrorMessage } from '../utils/error';
 
 interface WSMessage {
   id: string;
@@ -236,9 +238,11 @@ export function useWebSocket() {
             break;
           case 'SYNC_ERROR':
             handleSyncError(message.data as SyncErrorData);
+            addToast({ type: 'error', message: formatErrorMessage((message.data as SyncErrorData).error_code), dismissible: true });
             break;
           case 'AUTH_TOKEN_EXPIRED':
             handleAuthExpired(message.data as AuthExpiredData);
+            addToast({ type: 'error', message: formatErrorMessage('AUTH_TOKEN_EXPIRED'), dismissible: true });
             break;
           case 'RATE_LIMITED':
             handleRateLimited(message.data as RateLimitedData);
@@ -248,6 +252,7 @@ export function useWebSocket() {
             break;
           case 'ACTION_FAILED':
             handleActionFailed(message.data as ActionFailedData);
+            addToast({ type: 'error', message: formatErrorMessage((message.data as ActionFailedData).error), dismissible: true });
             break;
           case 'DIFF_READY':
           case 'COMMENTS_READY': {

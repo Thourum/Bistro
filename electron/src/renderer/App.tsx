@@ -10,6 +10,7 @@ import { PRDetailPage } from './pages/PRDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { CommandPalette } from './components/CommandPalette';
 import { HelpOverlay } from './components/HelpOverlay';
+import ToastContainer from './components/ToastContainer';
 import './App.css';
 
 const queryClient = new QueryClient();
@@ -46,6 +47,7 @@ export function AppContent(): React.ReactElement {
       {renderPage()}
       <CommandPalette />
       <HelpOverlay />
+      <ToastContainer />
     </div>
   );
 }
