@@ -115,6 +115,8 @@ function isInputFocused(): boolean {
   const tag = active.tagName.toLowerCase();
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
   if (active.isContentEditable) return true;
+  // Explicit attribute check for jsdom compatibility
+  if ((active as HTMLElement & { contentEditable?: string }).contentEditable === 'true') return true;
   return false;
 }
 
@@ -153,7 +155,7 @@ export function useKeyboard(): void {
       const key = resolveEventKey(event);
 
       // Special case: digit keys 1–9 jump directly to the Nth PR.
-      if (mode === 'list' && /^[1-9]$/.test(key)) {
+      if (mode === 'list' && /^[1-9]$/.test(key) && !isInputFocused()) {
         event.preventDefault();
         appStore.setState((s) => ({ ...s, selectedPRIndex: parseInt(key, 10) - 1 }));
         stateRef.current = { lastAction: key };
