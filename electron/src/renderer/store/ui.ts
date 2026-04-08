@@ -36,6 +36,11 @@ export interface UIState {
   syncStats: SyncStats | null;
   toasts: Toast[];
   isOffline: boolean;
+  // OAuth device flow state
+  deviceCode: string | null;
+  verificationUri: string | null;
+  authLoading: boolean;
+  authError: string | null;
 }
 
 const SETTINGS_STORAGE_KEY = 'bistro-settings';
@@ -89,6 +94,10 @@ const initialUIState: UIState = {
   syncStats: null,
   toasts: [],
   isOffline: false,
+  deviceCode: null,
+  verificationUri: null,
+  authLoading: false,
+  authError: null,
   ...loadPersistedSettings(),
 };
 

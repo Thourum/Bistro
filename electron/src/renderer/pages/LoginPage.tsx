@@ -24,13 +24,13 @@ export function LoginPage() {
   const syncStatus = useStore(appStore, (s: UIState) => s.syncStatus);
   const syncError = useStore(appStore, (s: UIState) => s.syncError);
   const lastSyncAt = useStore(appStore, (s: UIState) => s.lastSyncAt);
+  const deviceCode = useStore(appStore, (s: UIState) => s.deviceCode);
+  const verificationUri = useStore(appStore, (s: UIState) => s.verificationUri);
+  const authLoading = useStore(appStore, (s: UIState) => s.authLoading);
+  const authError = useStore(appStore, (s: UIState) => s.authError);
 
   const handleProviderClick = (provider: OAuthProvider): void => {
-    // TODO: Trigger full OAuth flow via IPC — window.electronAPI.startOAuth(provider)
-    // Notify sync engine that auth is starting
     send('AUTH_START', { provider });
-    // Optimistically mark as authenticated (replace with real callback once IPC OAuth is wired)
-    appStore.setState((s) => ({ ...s, isAuthenticated: true }));
   };
 
   return (
@@ -46,19 +46,48 @@ export function LoginPage() {
           </p>
         </header>
 
-        {/* Provider buttons */}
-        <div className="space-y-3">
-          {PROVIDERS.map(({ provider, icon, label, keyHint }) => (
-            <ProviderButton
-              key={provider}
-              provider={provider}
-              icon={icon}
-              label={label}
-              keyHint={keyHint}
-              onClick={() => handleProviderClick(provider)}
-            />
-          ))}
-        </div>
+        {/* Device code flow UI */}
+        {deviceCode !== null && verificationUri !== null ? (
+          <div className="text-center space-y-4">
+            <p className="text-sm text-on-surface-variant">
+              Enter this code at GitHub:
+            </p>
+            <p className="text-3xl font-mono font-bold text-primary tracking-widest">
+              {deviceCode}
+            </p>
+            <a
+              href={verificationUri}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-primary hover:underline"
+            >
+              Open {verificationUri}
+            </a>
+            <p className="text-xs text-on-surface-variant animate-pulse">
+              Waiting for authorization...
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Provider buttons */}
+            <div className="space-y-3">
+              {PROVIDERS.map(({ provider, icon, label, keyHint }) => (
+                <ProviderButton
+                  key={provider}
+                  provider={provider}
+                  icon={icon}
+                  label={label}
+                  keyHint={keyHint}
+                  onClick={() => { if (!authLoading) { handleProviderClick(provider); } }}
+                />
+              ))}
+            </div>
+
+            {authError !== null && (
+              <p className="mt-4 text-sm text-error">{authError}</p>
+            )}
+          </>
+        )}
 
         {/* Footer */}
         <div className="mt-16 flex items-end justify-between">

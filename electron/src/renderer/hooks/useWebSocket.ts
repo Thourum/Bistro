@@ -254,6 +254,46 @@ export function useWebSocket() {
             handleActionFailed(message.data as ActionFailedData);
             addToast({ type: 'error', message: formatErrorMessage((message.data as ActionFailedData).error), dismissible: true });
             break;
+          case 'AUTH_DEVICE_CODE': {
+            const payload = message.data as { user_code: string; verification_uri: string };
+            try {
+              appStore.setState((s) => ({
+                ...s,
+                deviceCode: payload.user_code,
+                verificationUri: payload.verification_uri,
+                authLoading: true,
+                authError: null,
+              }));
+            } catch { /* test env */ }
+            break;
+          }
+          case 'AUTH_SUCCESS': {
+            try {
+              appStore.setState((s) => ({
+                ...s,
+                isAuthenticated: true,
+                authLoading: false,
+                deviceCode: null,
+                verificationUri: null,
+                authError: null,
+              }));
+            } catch { /* test env */ }
+            break;
+          }
+          case 'AUTH_FAILED': {
+            const payload = message.data as { error: string };
+            try {
+              appStore.setState((s) => ({
+                ...s,
+                authLoading: false,
+                authError: payload.error,
+                deviceCode: null,
+                verificationUri: null,
+              }));
+            } catch { /* test env */ }
+            addToast({ type: 'error', message: payload.error, dismissible: true });
+            break;
+          }
           case 'DIFF_READY':
           case 'COMMENTS_READY': {
             const handler = messageHandlersRef.current.get(message.id);
