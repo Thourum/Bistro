@@ -17,13 +17,17 @@ type App struct {
 	log      *slog.Logger
 	db       *store.DB
 	wsServer *ws.Server
+	wsPort   int
+	dbPath   string
 }
 
-// New returns a new App with a logger and WebSocket server.
-func New() *App {
+// New returns a new App configured with the given WebSocket port and database path.
+func New(wsPort int, dbPath string) *App {
 	return &App{
 		log:      slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
 		wsServer: ws.NewServer(),
+		wsPort:   wsPort,
+		dbPath:   dbPath,
 	}
 }
 
@@ -32,7 +36,7 @@ func New() *App {
 func (a *App) Run(ctx context.Context) error {
 	var err error
 
-	a.db, err = store.OpenDB("data/sqlite.db")
+	a.db, err = store.OpenDB(a.dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
@@ -44,11 +48,12 @@ func (a *App) Run(ctx context.Context) error {
 
 	a.log.Info("database initialized")
 
-	if err := a.wsServer.Start(":0"); err != nil {
+	wsAddr := fmt.Sprintf(":%d", a.wsPort)
+	if err := a.wsServer.Start(wsAddr); err != nil {
 		return fmt.Errorf("failed to start ws server: %w", err)
 	}
 
-	a.log.Info("websocket server started")
+	a.log.Info("WebSocket server listening", "addr", wsAddr)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
