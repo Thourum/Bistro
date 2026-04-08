@@ -3,15 +3,47 @@ package actions
 
 import (
 	"context"
+	"math"
+	"math/rand"
 	"time"
 )
 
-// ExponentialBackoff implements exponential backoff with configurable parameters
+// ExponentialBackoff implements exponential backoff with configurable parameters.
+// Public fields (InitialDelay, Multiplier, MaxDelay, JitterFactor) support the
+// stateless CalculateDelay method. Private fields support the stateful Next() method
+// via NewExponentialBackoff.
 type ExponentialBackoff struct {
+	// Public fields for stateless CalculateDelay usage
+	InitialDelay time.Duration
+	Multiplier   float64
+	MaxDelay     time.Duration
+	JitterFactor float64 // 0.0-1.0, percentage variance
+
+	// Private fields for stateful Next() usage
 	initialDelay time.Duration
 	maxDelay     time.Duration
 	multiplier   float64
 	current      time.Duration
+}
+
+// CalculateDelay returns delay for attempt N with optional jitter.
+func (eb *ExponentialBackoff) CalculateDelay(attempt int) time.Duration {
+	base := time.Duration(float64(eb.InitialDelay) * math.Pow(eb.Multiplier, float64(attempt)))
+	if base > eb.MaxDelay {
+		base = eb.MaxDelay
+	}
+
+	// Apply jitter if configured
+	if eb.JitterFactor > 0 {
+		jitterRange := float64(base) * eb.JitterFactor
+		jitterAmount := time.Duration(rand.Float64()*jitterRange - jitterRange/2)
+		base = base + jitterAmount
+		if base < 0 {
+			base = 0
+		}
+	}
+
+	return base
 }
 
 // NewExponentialBackoff creates a new backoff calculator

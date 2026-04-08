@@ -3,6 +3,7 @@ package actions
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 )
@@ -95,4 +96,69 @@ func TestRetryContextCancellation(t *testing.T) {
 		t.Error("expected result even with cancelled context")
 	}
 	// Context cancellation should stop retries immediately
+}
+
+func TestExponentialBackoffWithJitter(t *testing.T) {
+	eb := &ExponentialBackoff{
+		InitialDelay: 100 * time.Millisecond,
+		Multiplier:   2.0,
+		MaxDelay:     5 * time.Second,
+		JitterFactor: 0.1, // 10% jitter
+	}
+
+	// Run calculation multiple times, expect variation
+	durations := make([]time.Duration, 10)
+	for i := 0; i < 10; i++ {
+		durations[i] = eb.CalculateDelay(i)
+	}
+
+	// Check that not all durations are identical (jitter applied)
+	unique := make(map[time.Duration]bool)
+	for _, d := range durations {
+		unique[d] = true
+	}
+	if len(unique) < 3 {
+		t.Errorf("expected jitter to create variation, got %d unique values", len(unique))
+	}
+}
+
+func TestJitterWithinBounds(t *testing.T) {
+	eb := &ExponentialBackoff{
+		InitialDelay: 100 * time.Millisecond,
+		Multiplier:   2.0,
+		MaxDelay:     5 * time.Second,
+		JitterFactor: 0.5, // 50% jitter
+	}
+
+	for i := 0; i < 20; i++ {
+		d := eb.CalculateDelay(i)
+		base := time.Duration(float64(100*time.Millisecond) * math.Pow(2.0, float64(i)))
+		if base > 5*time.Second {
+			base = 5 * time.Second
+		}
+
+		// With 50% jitter, should be 50-150% of base
+		minExpected := base / 2
+		maxExpected := base + base/2
+
+		if d < minExpected || d > maxExpected {
+			t.Errorf("jitter out of bounds for attempt %d: %v not in [%v, %v]", i, d, minExpected, maxExpected)
+		}
+	}
+}
+
+func TestZeroJitterNoDrift(t *testing.T) {
+	eb := &ExponentialBackoff{
+		InitialDelay: 100 * time.Millisecond,
+		Multiplier:   2.0,
+		MaxDelay:     5 * time.Second,
+		JitterFactor: 0.0, // No jitter
+	}
+
+	// Without jitter, same attempt should always give same delay
+	d1 := eb.CalculateDelay(2)
+	d2 := eb.CalculateDelay(2)
+	if d1 != d2 {
+		t.Errorf("expected deterministic delay without jitter: %v vs %v", d1, d2)
+	}
 }
