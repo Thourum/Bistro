@@ -66,6 +66,32 @@ const globalBindings: BindingDefinition[] = [
       window.electronAPI?.quitApp?.();
     },
   },
+  {
+    keys: ['meta+/'],
+    description: 'Toggle search box (macOS)',
+    modes: ['list', 'detail'],
+    action: (store) => {
+      const { mode } = store.state;
+      if (mode === 'search') {
+        store.setState((s) => ({ ...s, mode: 'list', searchQuery: '' }));
+      } else {
+        store.setState((s) => ({ ...s, mode: 'search' }));
+      }
+    },
+  },
+  {
+    keys: ['ctrl+/'],
+    description: 'Toggle search box (Linux/Windows)',
+    modes: ['list', 'detail'],
+    action: (store) => {
+      const { mode } = store.state;
+      if (mode === 'search') {
+        store.setState((s) => ({ ...s, mode: 'list', searchQuery: '' }));
+      } else {
+        store.setState((s) => ({ ...s, mode: 'search' }));
+      }
+    },
+  },
 ];
 
 // ─── PR List bindings (active in list mode only) ──────────────────────────────

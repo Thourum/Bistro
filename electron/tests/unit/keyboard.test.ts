@@ -394,6 +394,44 @@ describe(': binding — command mode', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Platform search toggle bindings
+// ---------------------------------------------------------------------------
+
+describe('meta+/ binding — search toggle (macOS)', () => {
+  it('enters search mode from list', () => {
+    const store = makeStore({ mode: 'list' });
+    const b = findBinding(['meta+/'])!;
+    b.action(store);
+    expect(store.state.mode).toBe('search');
+  });
+
+  it('exits search mode back to list and clears query', () => {
+    const store = makeStore({ mode: 'search', searchQuery: 'test' });
+    const b = findBinding(['meta+/'])!;
+    b.action(store);
+    expect(store.state.mode).toBe('list');
+    expect(store.state.searchQuery).toBe('');
+  });
+});
+
+describe('ctrl+/ binding — search toggle (Linux/Windows)', () => {
+  it('enters search mode from list', () => {
+    const store = makeStore({ mode: 'list' });
+    const b = findBinding(['ctrl+/'])!;
+    b.action(store);
+    expect(store.state.mode).toBe('search');
+  });
+
+  it('exits search mode back to list and clears query', () => {
+    const store = makeStore({ mode: 'search', searchQuery: 'hello' });
+    const b = findBinding(['ctrl+/'])!;
+    b.action(store);
+    expect(store.state.mode).toBe('list');
+    expect(store.state.searchQuery).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // resolveEventKey — modifier combo resolution
 // ---------------------------------------------------------------------------
 
