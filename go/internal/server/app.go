@@ -40,9 +40,20 @@ func (a *App) ReplayQueuedActions(ctx context.Context) error {
 }
 
 // New returns a new App configured with the given WebSocket port and database path.
+// Uses default Info-level stderr logging.
 func New(wsPort int, dbPath string) *App {
 	return &App{
 		log:      slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		wsServer: ws.NewServer(),
+		wsPort:   wsPort,
+		dbPath:   dbPath,
+	}
+}
+
+// NewWithLogger returns a new App with a custom logger.
+func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
+	return &App{
+		log:      logger,
 		wsServer: ws.NewServer(),
 		wsPort:   wsPort,
 		dbPath:   dbPath,
