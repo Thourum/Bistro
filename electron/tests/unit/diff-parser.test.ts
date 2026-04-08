@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { parseDiff } from '../../src/renderer/utils/diff-parser';
+import { parseDiff, parseMultiFileDiff } from '../../src/renderer/utils/diff-parser';
 
 describe('diff-parser', () => {
   it('parses file headers', () => {
@@ -85,5 +85,67 @@ describe('diff-parser', () => {
 \\ No newline at end of file`;
     const result = parseDiff(diff);
     expect(result.hunks[0]?.lines).toHaveLength(1);
+  });
+});
+
+describe('parseMultiFileDiff', () => {
+  it('returns empty array for empty input', () => {
+    expect(parseMultiFileDiff('')).toHaveLength(0);
+    expect(parseMultiFileDiff('   ')).toHaveLength(0);
+  });
+
+  it('parses a single-file git diff', () => {
+    const diff = `diff --git a/foo.ts b/foo.ts
+--- a/foo.ts
++++ b/foo.ts
+@@ -1 +1 @@
+-old
++new`;
+    const sections = parseMultiFileDiff(diff);
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.newFile).toBe('b/foo.ts');
+    expect(sections[0]?.hunks[0]?.lines).toHaveLength(2);
+  });
+
+  it('parses a two-file git diff into two sections', () => {
+    const diff = `diff --git a/foo.ts b/foo.ts
+--- a/foo.ts
++++ b/foo.ts
+@@ -1 +1 @@
+-old
++new
+diff --git a/bar.ts b/bar.ts
+--- a/bar.ts
++++ b/bar.ts
+@@ -1 +1 @@
+-old
++new`;
+    const sections = parseMultiFileDiff(diff);
+    expect(sections).toHaveLength(2);
+    expect(sections[0]?.newFile).toBe('b/foo.ts');
+    expect(sections[1]?.newFile).toBe('b/bar.ts');
+  });
+
+  it('handles index lines in git diff', () => {
+    const diff = `diff --git a/src/app.ts b/src/app.ts
+index abc123..def456 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1 +1 @@
+-old
++new`;
+    const sections = parseMultiFileDiff(diff);
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.hunks[0]?.lines).toHaveLength(2);
+  });
+
+  it('falls back to git header file names when --- / +++ lines are absent', () => {
+    const diff = `diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..abc1234`;
+    const sections = parseMultiFileDiff(diff);
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.oldFile).toBe('a/README.md');
+    expect(sections[0]?.newFile).toBe('b/README.md');
   });
 });
