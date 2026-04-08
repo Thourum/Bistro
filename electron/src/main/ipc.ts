@@ -7,12 +7,14 @@ import type {
   DBQueryRequest,
   FSReadPatchRequest,
   GoCommandRequest,
+  SyncActionRequest,
 } from '../types/ipc';
 import type { IPCHandler } from './types';
+import type { WebSocketClient } from './websocket-client';
 
 let db: Database.Database | null = null;
 
-export function setupIPC(dbPath: string, logger: Logger): void {
+export function setupIPC(dbPath: string, logger: Logger, wsClient: WebSocketClient): void {
   // Initialize database
   try {
     db = new Database(dbPath);
@@ -64,7 +66,35 @@ export function setupIPC(dbPath: string, logger: Logger): void {
     }
   });
 
-  logger.info('IPC handlers registered');
+  // ---- sync:subscribe handler ----
+  ipcMain.on('sync:subscribe', (_event) => {
+    // Renderer subscribes to all sync events. Main process broadcasts via webContents.send.
+    logger.info('Renderer subscribed to sync events');
+  });
+
+  // ---- sync:action handler ----
+  ipcMain.handle('sync:action', async (_event, request: SyncActionRequest) => {
+    try {
+      if (!wsClient.isConnected()) {
+        return { err: 'WebSocket not connected' };
+      }
+
+      wsClient.send({
+        type: request.type,
+        pr_id: request.pr_id,
+        ...(request.comment !== undefined ? { comment: request.comment } : {}),
+        ...(request.line !== undefined ? { line: request.line } : {}),
+      });
+
+      return { ok: { success: true } };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error(`sync:action error: ${message}`);
+      return { err: message };
+    }
+  });
+
+  logger.info('IPC handlers registered (sync:subscribe, sync:action, db:query, fs:read-patch, go:command)');
 }
 
 export function closeDatabase(): void {

@@ -54,3 +54,22 @@ export interface GoCommandRequest {
 export interface GoCommandResponse {
   ok: boolean;
 }
+
+// ---- Sync Subscribe Channel ----
+
+export interface SyncSubscribeRequest {
+  // No params — subscribes renderer to all sync events
+}
+
+// ---- Sync Action Channel ----
+
+export interface SyncActionRequest {
+  type: 'approve_pr' | 'request_changes' | 'post_comment';
+  pr_id: string;
+  comment?: string;
+  line?: number;
+}
+
+export interface SyncActionResponse {
+  ok: { success: boolean; message?: string };
+}

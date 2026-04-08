@@ -16,6 +16,10 @@ export interface UIState {
   filterState: 'open' | 'draft' | 'all';
   confirmingAction: string | null;
   filterMenuOpen: boolean;
+  // Sync state
+  isSyncing: boolean;
+  syncProgress: number;
+  lastSyncedAt: Date | null;
 }
 
 const SETTINGS_STORAGE_KEY = 'bistro-settings';
@@ -58,6 +62,9 @@ const initialUIState: UIState = {
   confirmingAction: null,
   filterMenuOpen: false,
   isAuthenticated: false,
+  isSyncing: false,
+  syncProgress: 0,
+  lastSyncedAt: null,
   ...loadPersistedSettings(),
 };
 
