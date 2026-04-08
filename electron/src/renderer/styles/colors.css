@@ -1,0 +1,27 @@
+:root {
+  /* Light mode (fallback) */
+  --color-bg: #0d1117;
+  --color-surface: #161b22;
+  --color-text-primary: #e6edf3;
+  --color-text-secondary: #8b949e;
+  --color-border: #30363d;
+  --color-accent: #58a6ff;
+  --color-success: #3fb950;
+  --color-warning: #d29922;
+  --color-error: #f85149;
+}
+
+/* Optional: light mode support */
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-bg: #ffffff;
+    --color-surface: #f6f8fa;
+    --color-text-primary: #24292f;
+    --color-text-secondary: #57606a;
+    --color-border: #d0d7de;
+    --color-accent: #0969da;
+    --color-success: #2da44e;
+    --color-warning: #9e6a03;
+    --color-error: #cf222e;
+  }
+}
