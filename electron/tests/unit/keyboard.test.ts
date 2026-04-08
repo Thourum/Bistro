@@ -385,11 +385,11 @@ describe('s binding — star PR', () => {
 });
 
 describe(': binding — command mode', () => {
-  it('sets confirmingAction to command', () => {
+  it('sets mode to command', () => {
     const store = makeStore({ mode: 'list' });
     const b = findBinding([':'])!;
     b.action(store);
-    expect(store.state.confirmingAction).toBe('command');
+    expect(store.state.mode).toBe('command');
   });
 });
 

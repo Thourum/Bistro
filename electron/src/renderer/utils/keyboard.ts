@@ -45,7 +45,7 @@ const globalBindings: BindingDefinition[] = [
     description: 'Open command mode',
     modes: ['list', 'detail'],
     action: (store) => {
-      store.setState((s) => ({ ...s, confirmingAction: 'command' }));
+      store.setState((s) => ({ ...s, mode: 'command' }));
     },
   },
   {
