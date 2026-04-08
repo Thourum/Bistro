@@ -1,12 +1,5 @@
 /**
  * PR domain model — matches Go `prs` table schema exactly.
- *
- * Deviations from api-contracts.md (to be reconciled):
- * - `repo` is split into `owner` + `repo` (Go stores separately)
- * - `description` is called `body` (Go naming)
- * - `review_status` is missing (not yet in Go schema)
- * - `draft` is a separate integer column (not a state value)
- * - Extra columns: base_sha, head_sha, comment_count
  */
 export interface PR {
   id: string;
@@ -27,7 +20,10 @@ export interface PR {
   head_sha: string;
   comment_count: number;
   ci_status: string | null;
-  draft: number; // 0 or 1
+  draft: number; // 0 or 1 from SQLite
+  review_status: string | null; // 'pending' | 'approved' | 'changes_requested'
+  approved_by: string | null;
+  changes_requested_by: string | null;
 }
 
 /**

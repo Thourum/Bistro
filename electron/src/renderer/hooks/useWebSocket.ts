@@ -12,15 +12,25 @@ interface SyncCompleteData {
   pr_count: number;
   new_prs: number;
   updated_prs: number;
+  deleted_prs: number;
+  duration_ms: number;
 }
 
 interface PRApprovedData {
+  pr_id: string;
+  repo: string;
   number: number;
   approved_by: string;
+  timestamp: string;
 }
 
 interface CommentPostedData {
   pr_id: string;
+  comment_id: string;
+  author: string;
+  body: string;
+  line?: number;
+  created_at: string;
 }
 
 interface SyncErrorData {
@@ -59,11 +69,27 @@ function handleSyncComplete(data: SyncCompleteData): void {
 }
 
 function handlePRApproved(data: PRApprovedData): void {
-  console.log(`PR ${data.number} approved by ${data.approved_by}`);
+  try {
+    // Bump lastSyncAt so query subscribers know to re-fetch PR data
+    appStore.setState((s) => ({
+      ...s,
+      lastSyncAt: data.timestamp,
+    }));
+  } catch {
+    // Store not available (test environment)
+  }
 }
 
 function handleCommentPosted(data: CommentPostedData): void {
-  console.log(`Comment posted on PR ${data.pr_id}`);
+  try {
+    // Bump lastSyncAt so query subscribers know to re-fetch comment data
+    appStore.setState((s) => ({
+      ...s,
+      lastSyncAt: new Date().toISOString(),
+    }));
+  } catch {
+    // Store not available (test environment)
+  }
 }
 
 function handleSyncError(data: SyncErrorData): void {
