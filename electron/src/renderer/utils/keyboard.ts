@@ -258,12 +258,82 @@ const detailBindings: BindingDefinition[] = [
   },
 ];
 
-// Help overlay bindings (j/k scroll) are deferred to the HelpOverlay task.
+// ─── Detail View scroll bindings ─────────────────────────────────────────────
+
+const detailScrollBindings: BindingDefinition[] = [
+  {
+    keys: ['h'],
+    description: 'Scroll left in diff',
+    modes: ['detail'],
+    action: (_store) => {
+      document.querySelector('[data-diff-viewport]')?.scrollBy({ left: -80 });
+    },
+  },
+  {
+    keys: ['j'],
+    description: 'Scroll down in diff',
+    modes: ['detail'],
+    action: (_store) => {
+      document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 40 });
+    },
+  },
+  {
+    keys: ['k'],
+    description: 'Scroll up in diff',
+    modes: ['detail'],
+    action: (_store) => {
+      document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -40 });
+    },
+  },
+  {
+    keys: ['l'],
+    description: 'Scroll right in diff',
+    modes: ['detail'],
+    action: (_store) => {
+      document.querySelector('[data-diff-viewport]')?.scrollBy({ left: 80 });
+    },
+  },
+  {
+    keys: ['ctrl+d'],
+    description: 'Page down in diff',
+    modes: ['detail'],
+    action: (_store) => {
+      document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 300 });
+    },
+  },
+  {
+    keys: ['ctrl+u'],
+    description: 'Page up in diff',
+    modes: ['detail'],
+    action: (_store) => {
+      document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -300 });
+    },
+  },
+  {
+    keys: ['0'],
+    description: 'Jump to top of diff',
+    modes: ['detail'],
+    action: (_store) => {
+      const el = document.querySelector('[data-diff-viewport]') as HTMLElement | null;
+      if (el) el.scrollTop = 0;
+    },
+  },
+  {
+    keys: ['$'],
+    description: 'Jump to bottom of diff',
+    modes: ['detail'],
+    action: (_store) => {
+      const el = document.querySelector('[data-diff-viewport]') as HTMLElement | null;
+      if (el) el.scrollTop = el.scrollHeight;
+    },
+  },
+];
 
 export const KEYBOARD_BINDING_GROUPS: BindingDefinition[] = [
   ...globalBindings,
   ...listBindings,
   ...detailBindings,
+  ...detailScrollBindings,
 ];
 
 /**

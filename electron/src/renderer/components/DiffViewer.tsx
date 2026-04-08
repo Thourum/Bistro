@@ -37,7 +37,7 @@ export function DiffViewer({ diff, className = '' }: DiffViewerProps) {
   const parsed = useMemo(() => parseDiff(diff), [diff]);
 
   return (
-    <ScrollArea className={`w-full h-full border border-outline-variant overflow-auto ${className}`}>
+    <ScrollArea data-diff-viewport className={`w-full h-full border border-outline-variant overflow-auto ${className}`}>
       <div className="font-mono text-sm bg-surface-container-lowest">
         {parsed.oldFile && (
           <div className="bg-surface-container-low border-b border-outline-variant px-4 py-2 text-on-surface-variant">

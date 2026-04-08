@@ -437,9 +437,10 @@ describe('findBinding (hook utility)', () => {
     expect(result!.binding.keys).toEqual(['ctrl+d']);
   });
 
-  it('returns null for ctrl+d in detail mode (list-only binding)', () => {
+  it('matches ctrl+d in detail mode (detail scroll binding)', () => {
     const result = findBindingFn('ctrl+d', 'detail', undefined, undefined);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.binding.modes).toContain('detail');
   });
 
   it('does not treat modifier combos as sequence starters', () => {
@@ -558,6 +559,72 @@ describe('input focus guard', () => {
     document.body.removeChild(input);
     // Reset store mode for subsequent tests
     appStore.setState((s) => ({ ...s, mode: 'list' }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Detail view scroll bindings
+// ---------------------------------------------------------------------------
+
+describe('detail view scroll bindings', () => {
+  it('h binding exists for detail mode (scroll left)', () => {
+    const b = KEYBOARD_BINDING_GROUPS.find(
+      (b) => b.keys[0] === 'h' && b.modes.includes('detail')
+    );
+    expect(b).toBeDefined();
+    expect(b!.description).toContain('left');
+  });
+
+  it('j binding exists for detail mode (scroll down)', () => {
+    const b = KEYBOARD_BINDING_GROUPS.find(
+      (b) => b.keys[0] === 'j' && b.modes.includes('detail')
+    );
+    expect(b).toBeDefined();
+  });
+
+  it('k binding exists for detail mode (scroll up)', () => {
+    const b = KEYBOARD_BINDING_GROUPS.find(
+      (b) => b.keys[0] === 'k' && b.modes.includes('detail')
+    );
+    expect(b).toBeDefined();
+  });
+
+  it('l binding exists for detail mode (scroll right)', () => {
+    const b = KEYBOARD_BINDING_GROUPS.find(
+      (b) => b.keys[0] === 'l' && b.modes.includes('detail')
+    );
+    expect(b).toBeDefined();
+    expect(b!.description).toContain('right');
+  });
+
+  it('0 binding jumps to top of diff', () => {
+    const b = KEYBOARD_BINDING_GROUPS.find(
+      (b) => b.keys[0] === '0' && b.modes.includes('detail')
+    );
+    expect(b).toBeDefined();
+    expect(b!.description).toContain('top');
+  });
+
+  it('$ binding jumps to bottom of diff', () => {
+    const b = KEYBOARD_BINDING_GROUPS.find(
+      (b) => b.keys[0] === '$' && b.modes.includes('detail')
+    );
+    expect(b).toBeDefined();
+    expect(b!.description).toContain('bottom');
+  });
+
+  it('ctrl+d binding exists for detail mode (page down)', () => {
+    const b = KEYBOARD_BINDING_GROUPS.find(
+      (b) => b.keys[0] === 'ctrl+d' && b.modes.includes('detail')
+    );
+    expect(b).toBeDefined();
+  });
+
+  it('ctrl+u binding exists for detail mode (page up)', () => {
+    const b = KEYBOARD_BINDING_GROUPS.find(
+      (b) => b.keys[0] === 'ctrl+u' && b.modes.includes('detail')
+    );
+    expect(b).toBeDefined();
   });
 });
 
