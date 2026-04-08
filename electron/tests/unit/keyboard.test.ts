@@ -495,6 +495,73 @@ describe('useKeyboard cleanup', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Input focus guard — keydown ignored when editable element has focus
+// ---------------------------------------------------------------------------
+
+describe('input focus guard', () => {
+  it('ignores keydown when an <input> has focus', async () => {
+    const { useKeyboard } = await import('../../src/renderer/hooks/useKeyboard');
+    const { renderHook } = await import('@testing-library/react');
+
+    renderHook(() => useKeyboard());
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+
+    // Dispatch 'j' — would normally increment selectedPRIndex
+    const { appStore } = await import('../../src/renderer/store');
+    const before = appStore.state.selectedPRIndex;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true }));
+    expect(appStore.state.selectedPRIndex).toBe(before);
+
+    document.body.removeChild(input);
+  });
+
+  it('ignores keydown when a contenteditable element has focus', async () => {
+    const { useKeyboard } = await import('../../src/renderer/hooks/useKeyboard');
+    const { renderHook } = await import('@testing-library/react');
+
+    renderHook(() => useKeyboard());
+
+    const div = document.createElement('div');
+    div.contentEditable = 'true';
+    div.tabIndex = 0; // required for jsdom to accept focus on a div
+    document.body.appendChild(div);
+    div.focus();
+
+    const { appStore } = await import('../../src/renderer/store');
+    const before = appStore.state.selectedPRIndex;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true }));
+    expect(appStore.state.selectedPRIndex).toBe(before);
+
+    document.body.removeChild(div);
+  });
+
+  it('still processes Escape even when an <input> has focus', async () => {
+    const { useKeyboard } = await import('../../src/renderer/hooks/useKeyboard');
+    const { renderHook } = await import('@testing-library/react');
+
+    renderHook(() => useKeyboard());
+
+    // Put store in help mode so Escape has an observable effect
+    const { appStore } = await import('../../src/renderer/store');
+    appStore.setState((s) => ({ ...s, mode: 'help' }));
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(appStore.state.mode).toBe('list');
+
+    document.body.removeChild(input);
+    // Reset store mode for subsequent tests
+    appStore.setState((s) => ({ ...s, mode: 'list' }));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Immutability — store state is never mutated in place
 // ---------------------------------------------------------------------------
 

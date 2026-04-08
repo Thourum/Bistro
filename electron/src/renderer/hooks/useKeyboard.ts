@@ -106,14 +106,16 @@ export function findBinding(
 }
 
 /**
- * Returns true when the keyboard event originates from an input element.
- * In search mode the search input should handle its own characters.
+ * Returns true when the keyboard event originates from an editable element.
+ * Covers standard form controls, contenteditable nodes, and ARIA textboxes.
  */
 function isInputFocused(): boolean {
-  const active = document.activeElement;
+  const active = document.activeElement as HTMLElement | null;
   if (active === null) return false;
   const tag = active.tagName.toLowerCase();
-  return tag === 'input' || tag === 'textarea' || tag === 'select';
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  if (active.isContentEditable) return true;
+  return false;
 }
 
 /**

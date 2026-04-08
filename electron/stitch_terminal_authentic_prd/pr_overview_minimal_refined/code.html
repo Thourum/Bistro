@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-background": "#191c1d",
+                    "surface-tint": "#0053db",
+                    "on-primary-fixed": "#00174b",
+                    "secondary-fixed-dim": "#b4c5ff",
+                    "secondary-fixed": "#dbe1ff",
+                    "outline-variant": "#c3c6d7",
+                    "primary": "#004ac6",
+                    "on-surface": "#191c1d",
+                    "tertiary-fixed": "#ffdbcd",
+                    "primary-container": "#2563eb",
+                    "outline": "#737686",
+                    "background": "#f8f9fa",
+                    "primary-fixed-dim": "#b4c5ff",
+                    "tertiary-container": "#bc4800",
+                    "error-container": "#ffdad6",
+                    "tertiary": "#943700",
+                    "surface-bright": "#f8f9fa",
+                    "error": "#ba1a1a",
+                    "surface-dim": "#d9dadb",
+                    "secondary": "#495c95",
+                    "inverse-surface": "#2e3132",
+                    "surface-container": "#edeeef",
+                    "on-tertiary": "#ffffff",
+                    "on-secondary-container": "#394c84",
+                    "on-primary-fixed-variant": "#003ea8",
+                    "on-tertiary-container": "#ffede6",
+                    "on-primary-container": "#eeefff",
+                    "on-error": "#ffffff",
+                    "inverse-on-surface": "#f0f1f2",
+                    "inverse-primary": "#b4c5ff",
+                    "on-secondary-fixed-variant": "#31447b",
+                    "primary-fixed": "#dbe1ff",
+                    "on-secondary": "#ffffff",
+                    "surface-variant": "#e1e3e4",
+                    "on-surface-variant": "#434655",
+                    "on-primary": "#ffffff",
+                    "on-secondary-fixed": "#00174b",
+                    "surface-container-highest": "#e1e3e4",
+                    "on-tertiary-fixed": "#360f00",
+                    "on-error-container": "#93000a",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed-dim": "#ffb596",
+                    "on-tertiary-fixed-variant": "#7d2d00",
+                    "secondary-container": "#acbfff",
+                    "surface-container-high": "#e7e8e9",
+                    "surface-container-low": "#f3f4f5",
+                    "surface": "#f8f9fa"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "0px"
+            },
+            "fontFamily": {
+                    "headline": ["Geist", "sans-serif"],
+                    "body": ["Geist", "sans-serif"],
+                    "label": ["JetBrains Mono", "monospace"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Geist', sans-serif; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+        }
+        /* Tonal Boundary Implementation */
+        .tonal-boundary { background-color: #f8f9fa; }
+        .surface-lowest { background-color: #ffffff; }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col">
+<!-- MAIN CANVAS -->
+<main class="flex-grow flex flex-row">
+<!-- CONTENT SECTION (90% Width) -->
+<div class="w-[90%] min-h-screen p-12 lg:p-20 flex flex-col space-y-12">
+<!-- HEADER AREA -->
+<header class="space-y-4">
+<div class="flex items-center space-x-3 mb-2">
+<span class="mono text-[10px] tracking-widest text-primary font-bold">PR-2048</span>
+<div class="h-px flex-grow bg-outline-variant opacity-20"></div>
+</div>
+<h1 class="text-4xl lg:text-5xl font-black tracking-tighter text-on-surface leading-none">
+                    refactor: core/engine logic for multi-tenant isolation
+                </h1>
+<!-- METADATA -->
+<div class="flex flex-wrap gap-x-8 gap-y-4 pt-2">
+<div class="flex flex-col">
+<span class="mono text-[10px] uppercase text-outline tracking-widest">Author</span>
+<span class="mono text-xs font-medium">@alex_mercer</span>
+</div>
+<div class="flex flex-col">
+<span class="mono text-[10px] uppercase text-outline tracking-widest">Date</span>
+<span class="mono text-xs font-medium">2023-10-24 14:02:11</span>
+</div>
+<div class="flex flex-col">
+<span class="mono text-[10px] uppercase text-outline tracking-widest">Source</span>
+<span class="mono text-xs font-medium bg-surface-container px-2 py-0.5">feat/isolation-v2</span>
+</div>
+<div class="flex flex-col">
+<span class="mono text-[10px] uppercase text-outline tracking-widest">Target</span>
+<span class="mono text-xs font-medium bg-surface-container px-2 py-0.5">main</span>
+</div>
+<!-- RELOCATED STATS -->
+<div class="flex flex-col">
+<span class="mono text-[10px] uppercase text-outline tracking-widest">Files</span>
+<span class="mono text-xs font-bold">12</span>
+</div>
+<div class="flex flex-col">
+<span class="mono text-[10px] uppercase text-outline tracking-widest">Added</span>
+<span class="mono text-xs font-bold text-primary">+842</span>
+</div>
+<div class="flex flex-col">
+<span class="mono text-[10px] uppercase text-outline tracking-widest">Removed</span>
+<span class="mono text-xs font-bold text-error">-156</span>
+</div>
+</div>
+</header>
+<!-- DESCRIPTION -->
+<section class="max-w-3xl space-y-6">
+<div class="border-l-2 border-primary-container pl-6 py-2">
+<p class="text-lg leading-relaxed text-on-surface-variant font-medium">
+                        This PR implements the structural changes required to support hard isolation between tenants at the engine layer. It removes the shared memory buffer and introduces a keyed proxy pattern for all state access.
+                    </p>
+</div>
+<div class="grid grid-cols-1 gap-4">
+<div class="p-6 bg-surface-container-lowest border-0">
+<h3 class="mono text-[10px] uppercase tracking-[0.2em] mb-4 text-outline">Technical Impact</h3>
+<ul class="space-y-3 mono text-xs">
+<li class="flex items-start">
+<span class="material-symbols-outlined text-primary text-sm mr-2" data-icon="check_small">check_small</span>
+                                Decreases cold-boot latency by 14%
+                            </li>
+<li class="flex items-start">
+<span class="material-symbols-outlined text-primary text-sm mr-2" data-icon="check_small">check_small</span>
+                                Fixed CVE-2023-9812 context leakage
+                            </li>
+<li class="flex items-start">
+<span class="material-symbols-outlined text-primary text-sm mr-2" data-icon="check_small">check_small</span>
+                                Deprecates old `BufferManager` instance
+                            </li>
+</ul>
+</div>
+</div>
+</section>
+<!-- RECENT COMMENTS -->
+<section class="space-y-6">
+<div class="flex items-center justify-between">
+<h2 class="mono text-[11px] font-bold tracking-[0.25em] uppercase">Recent Comments</h2>
+<span class="mono text-[10px] text-outline">03 UNRESOLVED</span>
+</div>
+<div class="space-y-4">
+<!-- Comment 1 -->
+<div class="group p-6 bg-white hover:bg-surface-container-low transition-colors duration-150 border-0 flex flex-col space-y-3">
+<div class="flex justify-between items-center">
+<span class="mono text-[10px] font-bold text-on-surface uppercase">@sarah_dev</span>
+<span class="mono text-[10px] text-outline">2H AGO</span>
+</div>
+<p class="text-sm text-on-surface-variant font-medium leading-relaxed">
+                            Should we consider adding a fallback for legacy tenants that haven't migrated to the new key structure? I'm worried about breaking the SDK.
+                        </p>
+<div class="flex space-x-4 pt-2">
+<span class="mono text-[10px] text-primary cursor-pointer hover:underline">REPLY</span>
+<span class="mono text-[10px] text-outline cursor-pointer hover:text-on-background">RESOLVE</span>
+</div>
+</div>
+<!-- Comment 2 -->
+<div class="group p-6 bg-white hover:bg-surface-container-low transition-colors duration-150 border-0 flex flex-col space-y-3">
+<div class="flex justify-between items-center">
+<span class="mono text-[10px] font-bold text-on-surface uppercase">@system_ci</span>
+<span class="mono text-[10px] text-outline">5H AGO</span>
+</div>
+<p class="text-sm text-on-surface-variant font-medium leading-relaxed">
+                            Unit tests passed. Integration tests pending for <code class="bg-surface-container px-1">pkg/driver/v2</code>.
+                        </p>
+</div>
+</div>
+</section>
+<!-- FILE NAVIGATION HINT -->
+<footer class="mt-auto pt-12 pb-8">
+<div class="inline-flex items-center space-x-3 bg-surface-container-high px-4 py-2">
+<span class="material-symbols-outlined text-base" data-icon="keyboard_command_key">keyboard_command_key</span>
+<span class="mono text-[10px] uppercase tracking-widest text-on-surface">Press <span class="font-black text-primary">[SPACE]</span> on any file to view diff</span>
+</div>
+</footer>
+</div>
+<!-- SIDEBAR (10% Width) -->
+<aside class="w-[10%] min-h-screen bg-surface-container-low flex flex-col border-l border-outline-variant/10">
+<!-- CI/REVIEW STATUS ONLY -->
+<div class="flex-1 flex flex-col items-center justify-center space-y-16 py-12">
+<div class="flex flex-col items-center space-y-2">
+<div class="w-8 h-8 rounded-full border-2 border-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-lg animate-spin" data-icon="sync">sync</span>
+</div>
+<span class="mono text-[9px] font-bold tracking-widest text-primary uppercase text-center px-2">Checks Running</span>
+</div>
+<div class="flex flex-col items-center space-y-2">
+<div class="w-8 h-8 rounded-full border-2 border-outline-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-outline text-lg" data-icon="person">person</span>
+</div>
+<span class="mono text-[9px] font-bold tracking-widest text-outline uppercase text-center px-2">Awaiting Review</span>
+</div>
+</div>
+<!-- EMPTY SPACE AT BOTTOM INSTEAD OF ACTION TAB -->
+<div class="h-24"></div>
+</aside>
+</main>
+<!-- FOOTER (System Bar) -->
+<footer class="h-8 flex items-center px-6 tonal-boundary bg-surface-container-high justify-between border-t border-outline-variant/20 flex-shrink-0">
+<div class="flex items-center space-x-6">
+<span class="mono text-[10px] uppercase tracking-widest text-[#004ac6] font-bold">SYSTEM_STATUS: OPERATIONAL // V.01</span>
+</div>
+<nav class="flex items-center space-x-8">
+<a class="mono text-[10px] uppercase tracking-widest text-[#737686] hover:text-[#004ac6] cursor-crosshair" href="#">COMMAND_PALETTE</a>
+<a class="mono text-[10px] uppercase tracking-widest text-[#737686] hover:text-[#004ac6] cursor-crosshair" href="#">LOGS</a>
+<a class="mono text-[10px] uppercase tracking-widest text-[#737686] hover:text-[#004ac6] cursor-crosshair" href="#">BREADCRUMBS</a>
+</nav>
+</footer>
+</body></html>
