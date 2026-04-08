@@ -5,19 +5,20 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/samuelasvanyi/bistro/internal/logger"
+	"log/slog"
+
 	"github.com/samuelasvanyi/bistro/internal/provider"
 	"github.com/samuelasvanyi/bistro/internal/store"
 )
 
 // Writer handles database writes for sync results.
 type Writer struct {
-	log *logger.Logger
+	log *slog.Logger
 	db  *store.DB
 }
 
 // NewWriter creates a new database writer.
-func NewWriter(log *logger.Logger, db *store.DB) *Writer {
+func NewWriter(log *slog.Logger, db *store.DB) *Writer {
 	return &Writer{
 		log: log,
 		db:  db,

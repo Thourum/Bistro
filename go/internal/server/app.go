@@ -3,18 +3,18 @@ package server
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/samuelasvanyi/bistro/internal/logger"
 	"github.com/samuelasvanyi/bistro/internal/store"
 	"github.com/samuelasvanyi/bistro/internal/ws"
 )
 
 // App is the top-level orchestrator for the bistro-sync process.
 type App struct {
-	log      *logger.Logger
+	log      *slog.Logger
 	db       *store.DB
 	wsServer *ws.Server
 }
@@ -22,7 +22,7 @@ type App struct {
 // New returns a new App with a logger and WebSocket server.
 func New() *App {
 	return &App{
-		log:      logger.New(),
+		log:      slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
 		wsServer: ws.NewServer(),
 	}
 }

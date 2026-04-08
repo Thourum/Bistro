@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"time"
 
+	"log/slog"
+
 	"github.com/samuelasvanyi/bistro/internal/git"
-	"github.com/samuelasvanyi/bistro/internal/logger"
 	"github.com/samuelasvanyi/bistro/internal/provider"
 	"github.com/samuelasvanyi/bistro/internal/store"
 )
 
 // Orchestrator coordinates sync operations
 type Orchestrator struct {
-	log      *logger.Logger
+	log      *slog.Logger
 	provider provider.Provider
 	store    *store.DB
 	git      *git.Client
@@ -22,7 +23,7 @@ type Orchestrator struct {
 
 // NewOrchestrator creates a new sync orchestrator
 func NewOrchestrator(
-	log *logger.Logger,
+	log *slog.Logger,
 	prov provider.Provider,
 	db *store.DB,
 	gitClient *git.Client,
