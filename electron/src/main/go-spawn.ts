@@ -5,13 +5,25 @@ import type { GoProcessConfig } from './types';
 let goProcess: ChildProcess | null = null;
 
 const GO_READY_TIMEOUT_MS = 15_000;
+const MAX_RESTARTS = 3;
+const RESTART_DELAY_MS = 2000;
+
+let restartCount = 0;
+
+export interface GoSpawnOptions {
+  config: GoProcessConfig;
+  logger: Logger;
+  onCrash?: (code: number | null, signal: string | null) => void;
+  maxRestarts?: number;
+}
 
 /**
  * Spawns the Go sync engine binary and waits for it to signal readiness.
  * Resolves when Go prints a line containing "listening" or "started" (case-insensitive),
  * or after a timeout (proceeds anyway with a warning).
  */
-export function spawnGoProcess(config: GoProcessConfig, logger: Logger): Promise<void> {
+export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
+  const { config, logger, onCrash, maxRestarts = MAX_RESTARTS } = options;
   return new Promise((resolve, reject) => {
     if (goProcess) {
       logger.warn('Go process already running');
@@ -100,6 +112,26 @@ export function spawnGoProcess(config: GoProcessConfig, logger: Logger): Promise
         resolved = true;
         clearTimeout(readyTimeout);
         reject(new Error(`Go process exited prematurely: code=${code}, signal=${signal}`));
+        return;
+      }
+
+      // Process exited after initial startup — this is a crash
+      if (onCrash != null) {
+        onCrash(code, signal);
+      }
+
+      // Auto-restart if under limit
+      if (restartCount < maxRestarts) {
+        restartCount += 1;
+        logger.info(`Auto-restarting Go process (attempt ${restartCount}/${maxRestarts}) in ${RESTART_DELAY_MS}ms`);
+        setTimeout(() => {
+          spawnGoProcess(options).catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            logger.error(`Failed to restart Go process: ${message}`);
+          });
+        }, RESTART_DELAY_MS);
+      } else {
+        logger.error(`Go process crashed ${restartCount} times — not restarting`);
       }
     });
 

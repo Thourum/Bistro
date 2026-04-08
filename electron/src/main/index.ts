@@ -84,7 +84,19 @@ app.on('ready', async () => {
   try {
     // 1. Spawn Go process and wait for readiness
     log.info('Spawning Go sync engine...');
-    await spawnGoProcess(appConfig.goProcess, log);
+    await spawnGoProcess({
+      config: appConfig.goProcess,
+      logger: log,
+      onCrash: (code, signal) => {
+        log.error(`Go process crashed: code=${code}, signal=${signal}`);
+        const { BrowserWindow } = require('electron');
+        (BrowserWindow.getAllWindows() as Electron.BrowserWindow[]).forEach((win) => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('go:crashed', { code, signal });
+          }
+        });
+      },
+    });
     log.info('Go sync engine is running');
 
     // 2. Create WebSocket client and connect (Go is now ready)
