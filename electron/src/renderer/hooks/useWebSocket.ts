@@ -61,7 +61,9 @@ interface ActionFailedData {
 
 const WS_URL = 'ws://localhost:8080';
 const REQUEST_TIMEOUT_MS = 5000;
-const RECONNECT_DELAY_MS = 3000;
+const BASE_RECONNECT_DELAY_MS = 1000;
+const MAX_RECONNECT_DELAY_MS = 30000;
+const MAX_RECONNECT_ATTEMPTS = 10;
 
 function handleSyncComplete(data: SyncCompleteData): void {
   try {
@@ -182,6 +184,7 @@ export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const messageHandlersRef = useRef<Map<string, (data: unknown) => void>>(new Map());
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
 
   useEffect(() => {
     function connect() {
@@ -196,12 +199,14 @@ export function useWebSocket() {
 
       ws.onopen = () => {
         console.log('WebSocket connected');
+        reconnectAttemptRef.current = 0;
         try {
           appStore.setState((s) => ({
             ...s,
             syncStatus: 'connected',
             syncError: null,
             lastSyncAt: new Date().toISOString(),
+            isOffline: false,
           }));
         } catch {
           // Store not available (test environment)
@@ -273,16 +278,39 @@ export function useWebSocket() {
 
       ws.onclose = () => {
         console.log('WebSocket disconnected');
+        const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
         try {
-          appStore.setState((s) => ({ ...s, syncStatus: 'disconnected' }));
+          appStore.setState((s) => ({
+            ...s,
+            syncStatus: 'disconnected',
+            isOffline: !isOnline,
+          }));
         } catch {
           // Store not available (test environment)
         }
 
-        reconnectTimerRef.current = setTimeout(() => {
-          console.log('Attempting WebSocket reconnect...');
-          connect();
-        }, RECONNECT_DELAY_MS);
+        if (reconnectAttemptRef.current < MAX_RECONNECT_ATTEMPTS) {
+          const delay = Math.min(
+            BASE_RECONNECT_DELAY_MS * Math.pow(2, reconnectAttemptRef.current),
+            MAX_RECONNECT_DELAY_MS
+          );
+          reconnectAttemptRef.current += 1;
+          console.log(`WebSocket reconnecting in ${delay}ms (attempt ${reconnectAttemptRef.current}/${MAX_RECONNECT_ATTEMPTS})`);
+          reconnectTimerRef.current = setTimeout(() => {
+            connect();
+          }, delay);
+        } else {
+          console.error('WebSocket max reconnect attempts reached');
+          try {
+            appStore.setState((s) => ({
+              ...s,
+              syncStatus: 'error',
+              syncError: 'Connection lost. Please restart the app.',
+            }));
+          } catch {
+            // Store not available (test environment)
+          }
+        }
       };
 
       wsRef.current = ws;

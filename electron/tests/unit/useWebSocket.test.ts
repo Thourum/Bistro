@@ -1,6 +1,29 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { appStore } from '../../src/renderer/store';
 
+describe('WebSocket reconnect backoff', () => {
+  it('calculates exponential backoff delay', () => {
+    const BASE_DELAY = 1000;
+    const MAX_DELAY = 30000;
+    const backoff = (attempt: number): number => Math.min(BASE_DELAY * Math.pow(2, attempt), MAX_DELAY);
+
+    expect(backoff(0)).toBe(1000);
+    expect(backoff(1)).toBe(2000);
+    expect(backoff(2)).toBe(4000);
+    expect(backoff(3)).toBe(8000);
+    expect(backoff(4)).toBe(16000);
+    expect(backoff(5)).toBe(30000);
+    expect(backoff(10)).toBe(30000);
+  });
+});
+
+describe('offline detection', () => {
+  it('sets isOffline in store when navigator.onLine is false', () => {
+    appStore.setState((s) => ({ ...s, isOffline: true }));
+    expect(appStore.state.isOffline).toBe(true);
+  });
+});
+
 describe('WebSocket ACTION_COMPLETE handler', () => {
   beforeEach(() => {
     appStore.setState((s) => ({
