@@ -8,17 +8,35 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/samuelasvanyi/bistro/internal/git"
+	"github.com/samuelasvanyi/bistro/internal/provider"
 	"github.com/samuelasvanyi/bistro/internal/store"
+	"github.com/samuelasvanyi/bistro/internal/sync"
 	"github.com/samuelasvanyi/bistro/internal/ws"
 )
 
 // App is the top-level orchestrator for the bistro-sync process.
 type App struct {
-	log      *slog.Logger
-	db       *store.DB
-	wsServer *ws.Server
-	wsPort   int
-	dbPath   string
+	log          *slog.Logger
+	db           *store.DB
+	wsServer     *ws.Server
+	wsPort       int
+	dbPath       string
+	orchestrator *sync.Orchestrator
+}
+
+// setupOrchestrator wires the sync orchestrator into the app using the given provider and git client.
+func (a *App) setupOrchestrator(prov provider.Provider, gitClient *git.Client) {
+	a.orchestrator = sync.NewOrchestrator(a.log, prov, a.db, gitClient)
+}
+
+// ReplayQueuedActions replays any pending offline queue actions.
+// It is a no-op when the orchestrator has not been set up.
+func (a *App) ReplayQueuedActions(ctx context.Context) error {
+	if a.orchestrator == nil {
+		return nil
+	}
+	return a.orchestrator.ReplayQueuedActions(ctx)
 }
 
 // New returns a new App configured with the given WebSocket port and database path.
