@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MainLayout } from '../layouts/MainLayout';
 import { DiffViewer } from '../components/DiffViewer';
+import { CommentInput } from '../components/CommentInput';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import { usePRList } from '../queries/usePRList';
 import { useWebSocket } from '../hooks/useWebSocket';
+import type { Comment } from '../types';
 
 export function PRDetailPage() {
   const selectedIndex = useStore(appStore, (s) => s.selectedPRIndex);
@@ -12,11 +14,14 @@ export function PRDetailPage() {
   const [diff, setDiff] = useState<string>('');
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffError, setDiffError] = useState<string | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentTarget, setCommentTarget] = useState<{ fileIndex: number; lineNumber: number } | null>(null);
 
   const { data: prs = [], isLoading, error } = usePRList(filterState);
   const pr = prs[selectedIndex];
-  const { request } = useWebSocket();
+  const { request, send } = useWebSocket();
 
+  // Fetch diff when selected PR changes
   useEffect(() => {
     if (pr === undefined) {
       return;
@@ -37,52 +42,124 @@ export function PRDetailPage() {
         setDiffError(message);
         setDiffLoading(false);
       });
-  }, [selectedIndex, request]);
+  }, [selectedIndex, request, pr]);
+
+  // Fetch comments when selected PR changes
+  useEffect(() => {
+    if (pr === undefined) return;
+
+    request('REQUEST_COMMENTS', { pr_id: pr.id })
+      .then((data) => {
+        const payload = data as { comments?: Comment[] };
+        setComments(payload.comments ?? []);
+      })
+      .catch((err: unknown) => {
+        console.error('Failed to fetch comments:', err);
+      });
+  }, [selectedIndex, request, pr]);
+
+  const handleLineClick = useCallback((fileIndex: number, lineNumber: number) => {
+    setCommentTarget({ fileIndex, lineNumber });
+  }, []);
+
+  const handleCommentSubmit = useCallback(
+    (body: string) => {
+      if (pr === undefined || commentTarget === null) return;
+
+      // Optimistic update — add immediately, server confirms via COMMENT_POSTED event
+      const optimisticComment: Comment = {
+        id: `optimistic-${Date.now()}`,
+        pr_id: pr.id,
+        author: 'you',
+        body,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        line: commentTarget.lineNumber,
+      };
+      setComments((prev) => [...prev, optimisticComment]);
+      setCommentTarget(null);
+
+      send('POST_COMMENT', {
+        pr_id: pr.id,
+        body,
+        line: commentTarget.lineNumber,
+      });
+    },
+    [pr, commentTarget, send],
+  );
+
+  const handleCommentCancel = useCallback(() => {
+    setCommentTarget(null);
+  }, []);
 
   return (
     <MainLayout
       toolbar={
         <div className="flex items-center gap-2">
           <span className="font-mono text-sm text-on-surface-variant">
-            PR #{selectedIndex + 1}
+            PR #{pr?.number ?? selectedIndex + 1}
           </span>
           {pr !== undefined && (
             <span className="text-sm text-on-surface truncate max-w-xs">
               {pr.title}
             </span>
           )}
+          {pr !== undefined && (
+            <span className="text-xs text-on-surface-variant font-mono ml-auto">
+              {pr.author} · {pr.state}
+              {pr.review_status != null && ` · ${pr.review_status}`}
+            </span>
+          )}
         </div>
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col h-full">
         <div>
-          <h2 className="text-lg font-bold text-on-surface mb-2">PR Details</h2>
+          <h2 className="text-lg font-bold text-on-surface mb-2 px-4 pt-4">PR Details</h2>
           {isLoading && (
-            <p className="text-sm text-on-surface-variant">Loading PR details...</p>
+            <p className="text-sm text-on-surface-variant px-4">Loading PR details...</p>
           )}
           {error !== null && (
-            <p className="text-sm text-error">
+            <p className="text-sm text-error px-4">
               Failed to load PR: {(error as Error).message}
             </p>
           )}
           {!isLoading && error === null && pr !== undefined && (
-            <p className="text-sm text-on-surface-variant font-mono">
+            <p className="text-sm text-on-surface-variant font-mono px-4">
               {pr.author} · {pr.state}
             </p>
           )}
           {!isLoading && error === null && pr === undefined && (
-            <p className="text-sm text-on-surface-variant">
+            <p className="text-sm text-on-surface-variant px-4">
               Open PR details sidebar to view review status, comments, and metadata.
             </p>
           )}
         </div>
+
         {diffLoading && (
-          <p className="text-sm text-on-surface-variant">Loading diff...</p>
+          <p className="text-sm text-on-surface-variant px-4 py-2">Loading diff...</p>
         )}
         {diffError !== null && (
-          <p className="text-sm text-error">Failed to load diff: {diffError}</p>
+          <p className="text-sm text-error px-4 py-2">Failed to load diff: {diffError}</p>
         )}
-        <DiffViewer diff={diff} className="h-96" />
+
+        <div className="flex-1 min-h-0">
+          <DiffViewer
+            diff={diff}
+            className="h-full"
+            comments={comments}
+            onLineClick={handleLineClick}
+          />
+        </div>
+
+        {commentTarget !== null && (
+          <CommentInput
+            fileIndex={commentTarget.fileIndex}
+            lineNumber={commentTarget.lineNumber}
+            onSubmit={handleCommentSubmit}
+            onCancel={handleCommentCancel}
+          />
+        )}
       </div>
     </MainLayout>
   );
