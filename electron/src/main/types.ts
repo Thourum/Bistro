@@ -10,6 +10,9 @@ export interface GoProcessConfig {
   binaryPath: string;
   dbPath: string;
   wsPort: number;
+  logLevel: 'debug' | 'info' | 'warn' | 'error';
+  logFile: string;
+  replayQueue: boolean;
 }
 
 export interface AppConfig {

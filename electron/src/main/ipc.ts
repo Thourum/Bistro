@@ -1,7 +1,6 @@
 import { ipcMain } from 'electron';
 import Database from 'better-sqlite3';
 import { readFileSync } from 'fs';
-import { join } from 'path';
 import { Logger } from 'electron-log';
 import type {
   DBQueryRequest,
@@ -13,25 +12,41 @@ import type { IPCHandler } from './types';
 import type { WebSocketClient } from './websocket-client';
 
 let db: Database.Database | null = null;
+let dbPath: string | null = null;
 
-export function setupIPC(dbPath: string, logger: Logger, wsClient: WebSocketClient): void {
-  // Initialize database
+/**
+ * Lazily opens the SQLite database on first query.
+ * This allows the Go process to create the DB file before Electron reads it.
+ */
+function getDatabase(logger: Logger): Database.Database {
+  if (db !== null) {
+    return db;
+  }
+
+  if (dbPath === null) {
+    throw new Error('Database path not configured');
+  }
+
   try {
     db = new Database(dbPath);
     logger.info(`Connected to SQLite: ${dbPath}`);
+    return db;
   } catch (e) {
-    logger.error(`Failed to open database: ${e}`);
+    logger.error(`Failed to open database at ${dbPath}: ${e}`);
     throw e;
   }
+}
+
+export function setupIPC(path: string, logger: Logger, wsClient: WebSocketClient): void {
+  dbPath = path;
+  logger.info(`IPC database path set to: ${dbPath}`);
 
   // ---- db:query handler ----
-  ipcMain.handle('db:query', async (event, request: DBQueryRequest) => {
+  ipcMain.handle('db:query', async (_event, request: DBQueryRequest) => {
     try {
-      if (!db) throw new Error('Database not initialized');
-
-      const stmt = db.prepare(request.sql);
+      const database = getDatabase(logger);
+      const stmt = database.prepare(request.sql);
       const result = stmt.all(...(request.params || []));
-
       return { ok: result };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -41,7 +56,7 @@ export function setupIPC(dbPath: string, logger: Logger, wsClient: WebSocketClie
   });
 
   // ---- fs:read-patch handler ----
-  ipcMain.handle('fs:read-patch', async (event, request: FSReadPatchRequest) => {
+  ipcMain.handle('fs:read-patch', async (_event, request: FSReadPatchRequest) => {
     try {
       const content = readFileSync(request.path, 'utf-8');
       return { ok: content };
@@ -53,10 +68,8 @@ export function setupIPC(dbPath: string, logger: Logger, wsClient: WebSocketClie
   });
 
   // ---- go:command handler ----
-  ipcMain.handle('go:command', async (event, request: GoCommandRequest) => {
+  ipcMain.handle('go:command', async (_event, request: GoCommandRequest) => {
     try {
-      // TODO: Send command via WebSocket to Go backend
-      // For now, just acknowledge
       logger.info(`Go command received: ${request.type}`);
       return { ok: true };
     } catch (error) {
@@ -68,7 +81,6 @@ export function setupIPC(dbPath: string, logger: Logger, wsClient: WebSocketClie
 
   // ---- sync:subscribe handler ----
   ipcMain.on('sync:subscribe', (_event) => {
-    // Renderer subscribes to all sync events. Main process broadcasts via webContents.send.
     logger.info('Renderer subscribed to sync events');
   });
 
@@ -94,11 +106,11 @@ export function setupIPC(dbPath: string, logger: Logger, wsClient: WebSocketClie
     }
   });
 
-  logger.info('IPC handlers registered (sync:subscribe, sync:action, db:query, fs:read-patch, go:command)');
+  logger.info('IPC handlers registered');
 }
 
 export function closeDatabase(): void {
-  if (db) {
+  if (db !== null) {
     db.close();
     db = null;
   }
