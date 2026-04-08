@@ -16,6 +16,9 @@ declare global {
       go: (request: GoCommandRequest) => Promise<GoCommandResponse | IPCError>;
       onGoEvent: (callback: (event: Record<string, unknown>) => void) => void;
     };
+    electronAPI?: {
+      quitApp?: () => void;
+    };
   }
 }
 

@@ -19,7 +19,8 @@
     "paths": {
       "@main/*": ["src/main/*"],
       "@renderer/*": ["src/renderer/*"],
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["src/shared/*"],
+      "@/*": ["src/*"]
     }
   },
   "include": ["src/main/**/*.ts", "src/shared/**/*.ts"],
