@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>BISTRO // Login</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-highest": "#e1e3e4",
+                    "primary-fixed": "#dbe1ff",
+                    "on-surface-variant": "#434655",
+                    "inverse-surface": "#2e3132",
+                    "surface-container-lowest": "#ffffff",
+                    "error": "#ba1a1a",
+                    "on-tertiary": "#ffffff",
+                    "background": "#f8f9fa",
+                    "surface-container-high": "#e7e8e9",
+                    "on-error": "#ffffff",
+                    "surface-dim": "#d9dadb",
+                    "surface-variant": "#e1e3e4",
+                    "primary-container": "#2563eb",
+                    "on-primary-container": "#eeefff",
+                    "secondary": "#495c95",
+                    "primary": "#004ac6",
+                    "surface-bright": "#f8f9fa",
+                    "outline": "#737686",
+                    "surface": "#f8f9fa",
+                    "surface-container": "#edeeef",
+                    "outline-variant": "#c3c6d7",
+                    "surface-container-low": "#f3f4f5",
+                    "on-background": "#191c1d",
+                    "on-primary": "#ffffff",
+                    "on-surface": "#191c1d",
+                    "tertiary": "#943700",
+            },
+            "borderRadius": {
+                    "none": "0px",
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "0px"
+            },
+            "fontFamily": {
+                    "sans": ["Geist", "sans-serif"],
+                    "mono": ["JetBrains Mono", "monospace"],
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Geist', sans-serif; }
+        .mono-text { font-family: 'JetBrains Mono', monospace; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col">
+<!-- Top Navigation Suppression: Not rendered per Destination Rule for Onboarding -->
+<main class="flex-grow flex items-center justify-center px-6">
+<!-- Minimalist Centered Card -->
+<div class="w-full max-w-md bg-surface-container-lowest border border-outline-variant/40 p-12 shadow-[0_10px_30px_rgba(25,28,29,0.04)]">
+<header class="mb-12">
+<h1 class="text-4xl font-extrabold tracking-tighter text-on-background mb-4 uppercase">BISTRO</h1>
+<p class="text-on-surface-variant text-sm font-medium tracking-tight">Connect your platform to begin reviewing code</p>
+</header>
+<div class="space-y-4">
+<!-- GitHub Connection -->
+<button class="w-full h-14 flex items-center justify-between px-5 bg-surface-container-lowest border border-outline hover:bg-surface-container-highest transition-colors group">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-on-surface">terminal</span>
+<span class="font-sans font-bold text-sm tracking-tight">GitHub</span>
+</div>
+<div class="mono-text text-[10px] text-outline flex items-center gap-2">
+<span class="px-1.5 py-0.5 border border-outline-variant/50">G</span>
+<span class="uppercase opacity-60">Key Hint</span>
+</div>
+</button>
+<!-- GitLab Connection -->
+<button class="w-full h-14 flex items-center justify-between px-5 bg-surface-container-lowest border border-outline hover:bg-surface-container-highest transition-colors group">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-on-surface">source</span>
+<span class="font-sans font-bold text-sm tracking-tight">GitLab</span>
+</div>
+<div class="mono-text text-[10px] text-outline flex items-center gap-2">
+<span class="px-1.5 py-0.5 border border-outline-variant/50">L</span>
+<span class="uppercase opacity-60">Key Hint</span>
+</div>
+</button>
+<!-- Gitea Connection -->
+<button class="w-full h-14 flex items-center justify-between px-5 bg-surface-container-lowest border border-outline hover:bg-surface-container-highest transition-colors group">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-on-surface">coffee</span>
+<span class="font-sans font-bold text-sm tracking-tight">Gitea</span>
+</div>
+<div class="mono-text text-[10px] text-outline flex items-center gap-2">
+<span class="px-1.5 py-0.5 border border-outline-variant/50">T</span>
+<span class="uppercase opacity-60">Key Hint</span>
+</div>
+</button>
+</div>
+<!-- Asymmetric Data Decoration -->
+<div class="mt-16 flex items-end justify-between">
+<div class="mono-text text-[10px] text-outline-variant flex flex-col">
+<span class="uppercase tracking-widest mb-1">Status: Ready</span>
+<span>v4.0.2-stable</span>
+</div>
+<div class="w-24 h-[1px] bg-outline-variant/30"></div>
+</div>
+</div>
+</main>
+<!-- Footer: Mandatory Shell from JSON -->
+<footer class="fixed bottom-0 w-full border-t border-slate-200 bg-slate-100 flex items-center justify-between px-4 h-8 z-50">
+<div class="flex items-center gap-4">
+<span class="mono-text text-[10px] uppercase tracking-widest text-slate-900 font-bold">BISTRO // TECHNICAL ATELIER</span>
+<span class="mono-text text-[10px] uppercase tracking-widest text-slate-400">© 2024</span>
+</div>
+<nav class="flex gap-4">
+<a class="mono-text text-[10px] uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-colors" href="#">Documentation</a>
+<a class="mono-text text-[10px] uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-colors" href="#">Support</a>
+<a class="mono-text text-[10px] uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-colors" href="#">Status</a>
+</nav>
+</footer>
+<!-- Aesthetic Ambient Background Element -->
+<div class="fixed top-0 left-0 w-full h-full -z-10 pointer-events-none overflow-hidden opacity-30">
+<div class="absolute top-[10%] left-[5%] w-[40%] h-[1px] bg-gradient-to-r from-transparent via-outline-variant/20 to-transparent"></div>
+<div class="absolute top-0 right-[20%] w-[1px] h-screen bg-gradient-to-b from-transparent via-outline-variant/20 to-transparent"></div>
+</div>
+</body></html>

@@ -1,0 +1,68 @@
+import { useEffect } from 'react';
+import { appStore } from '../store';
+import type { SyncEvent } from '../../main/websocket-client';
+
+function handleSyncEvent(event: SyncEvent): void {
+  switch (event.type) {
+    case 'sync_started':
+      appStore.setState((state) => ({
+        ...state,
+        isSyncing: true,
+        syncProgress: 0,
+      }));
+      break;
+
+    case 'progress': {
+      const current = event.data?.current as number | undefined;
+      const total = event.data?.total as number | undefined;
+      const progress =
+        current !== undefined && total !== undefined && total > 0
+          ? Math.round((current / total) * 100)
+          : 0;
+      appStore.setState((state) => ({
+        ...state,
+        syncProgress: progress,
+      }));
+      break;
+    }
+
+    case 'sync_complete':
+      appStore.setState((state) => ({
+        ...state,
+        isSyncing: false,
+        syncProgress: 100,
+        lastSyncedAt: new Date(event.timestamp),
+      }));
+      break;
+
+    case 'action_complete':
+      console.log('[useSyncEvents] action_complete:', event.data);
+      break;
+
+    case 'action_failed':
+      console.error('[useSyncEvents] action_failed:', event.data);
+      break;
+
+    default:
+      console.warn('[useSyncEvents] unknown event type:', (event as SyncEvent).type);
+  }
+}
+
+/**
+ * Subscribes to sync events from the Go backend (via Electron main process).
+ * Updates the app store with real-time sync state.
+ * Call this once at the top of PRListPage to activate event listening.
+ */
+export function useSyncEvents(): void {
+  useEffect(() => {
+    // Declare interest in sync events
+    window.electron.send('sync:subscribe');
+
+    // Subscribe to incoming sync events
+    const unsubscribe = window.electron.on('sync:event', handleSyncEvent);
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+}

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>THE MONOLITH // DIFF_VIEWER</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-background": "#191c1d",
+                    "surface-tint": "#0053db",
+                    "on-primary-fixed": "#00174b",
+                    "secondary-fixed-dim": "#b4c5ff",
+                    "secondary-fixed": "#dbe1ff",
+                    "outline-variant": "#c3c6d7",
+                    "primary": "#004ac6",
+                    "on-surface": "#191c1d",
+                    "tertiary-fixed": "#ffdbcd",
+                    "primary-container": "#2563eb",
+                    "outline": "#737686",
+                    "background": "#f8f9fa",
+                    "primary-fixed-dim": "#b4c5ff",
+                    "tertiary-container": "#bc4800",
+                    "error-container": "#ffdad6",
+                    "tertiary": "#943700",
+                    "surface-bright": "#f8f9fa",
+                    "error": "#ba1a1a",
+                    "surface-dim": "#d9dadb",
+                    "secondary": "#495c95",
+                    "inverse-surface": "#2e3132",
+                    "surface-container": "#edeeef",
+                    "on-tertiary": "#ffffff",
+                    "on-secondary-container": "#394c84",
+                    "on-primary-fixed-variant": "#003ea8",
+                    "on-tertiary-container": "#ffede6",
+                    "on-primary-container": "#eeefff",
+                    "on-error": "#ffffff",
+                    "inverse-on-surface": "#f0f1f2",
+                    "inverse-primary": "#b4c5ff",
+                    "on-secondary-fixed-variant": "#31447b",
+                    "primary-fixed": "#dbe1ff",
+                    "on-secondary": "#ffffff",
+                    "surface-variant": "#e1e3e4",
+                    "on-surface-variant": "#434655",
+                    "on-primary": "#ffffff",
+                    "on-secondary-fixed": "#00174b",
+                    "surface-container-highest": "#e1e3e4",
+                    "on-tertiary-fixed": "#360f00",
+                    "on-error-container": "#93000a",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed-dim": "#ffb596",
+                    "on-tertiary-fixed-variant": "#7d2d00",
+                    "secondary-container": "#acbfff",
+                    "surface-container-high": "#e7e8e9",
+                    "surface-container-low": "#f3f4f5",
+                    "surface": "#f8f9fa"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Geist"],
+                    "body": ["Geist"],
+                    "label": ["JetBrains Mono"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            font-size: 18px;
+        }
+        .diff-added { background-color: #e6ffec; color: #24292e; }
+        .diff-added-content { color: #22863a; }
+        .diff-removed { background-color: #ffeef0; color: #24292e; }
+        .diff-removed-content { color: #d73a49; }
+        .active-line { border-left: 2px solid #004ac6 !important; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f8f9fa; }
+        ::-webkit-scrollbar-thumb { background: #e1e3e4; }
+        ::-webkit-scrollbar-thumb:hover { background: #737686; }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body overflow-hidden h-screen flex flex-col">
+<!-- Top Bar Utility (Functional Only) -->
+<header class="h-10 flex items-center justify-between px-4 bg-surface-container-low border-b border-outline-variant/20 z-10">
+<div class="flex items-center gap-4">
+<span class="font-label text-[10px] text-outline font-bold tracking-widest uppercase">PR_#1042 // COMMIT_ID: 8F2A9C</span>
+<div class="h-4 w-[1px] bg-outline-variant/30"></div>
+<span class="font-label text-[11px] text-primary">MERGE: FEATURE/ARCH-REFACTOR -&gt; MAIN</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="font-label text-[10px] text-outline uppercase">Press 'C' to comment</span>
+<div class="flex items-center gap-1 px-2 py-1 bg-surface-container-lowest border border-outline-variant/30">
+<span class="material-symbols-outlined scale-75 text-outline">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-[10px] font-label p-0 w-32 uppercase" placeholder="FIND_SYMBOL" type="text"/>
+</div>
+</div>
+</header>
+<main class="flex-1 flex overflow-hidden">
+<!-- File List (25%) -->
+<aside class="w-1/4 bg-surface-container-low border-r border-outline-variant/20 overflow-y-auto">
+<div class="p-4">
+<h3 class="font-label text-[10px] font-bold text-outline tracking-widest uppercase mb-4">FILES_CHANGED (12)</h3>
+<nav class="space-y-1">
+<a class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-lowest text-primary border-l-2 border-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-[16px]">description</span>
+<span class="font-label text-[11px] truncate">src/core/monolith_engine.rs</span>
+</a>
+<a class="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-container-highest/50 text-on-surface transition-colors" href="#">
+<span class="material-symbols-outlined text-[16px] text-outline">description</span>
+<span class="font-label text-[11px] truncate">src/ui/layout_grid.tsx</span>
+</a>
+<a class="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-container-highest/50 text-on-surface transition-colors" href="#">
+<span class="material-symbols-outlined text-[16px] text-outline">description</span>
+<span class="font-label text-[11px] truncate">config/system_params.yaml</span>
+</a>
+<a class="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-container-highest/50 text-on-surface transition-colors" href="#">
+<span class="material-symbols-outlined text-[16px] text-outline">description</span>
+<span class="font-label text-[11px] truncate">tests/unit/protocol_tests.rs</span>
+</a>
+<a class="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-container-highest/50 text-on-surface transition-colors" href="#">
+<span class="material-symbols-outlined text-[16px] text-outline">description</span>
+<span class="font-label text-[11px] truncate">scripts/deploy_monolith.sh</span>
+</a>
+</nav>
+</div>
+</aside>
+<!-- Diff Content (75%) -->
+<section class="w-3/4 bg-surface-container-lowest overflow-auto relative">
+<div class="min-w-full font-label text-[12px] leading-relaxed select-none">
+<!-- Code Header -->
+<div class="sticky top-0 bg-surface-container-lowest border-b border-outline-variant/10 px-4 py-2 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="text-outline">src/core/monolith_engine.rs</span>
+<span class="bg-surface-container px-2 py-0.5 text-[10px] text-outline">RUST</span>
+</div>
+<div class="flex gap-4">
+<span class="text-[#22863a] font-bold">+24</span>
+<span class="text-[#d73a49] font-bold">-12</span>
+</div>
+</div>
+<!-- Diff Table -->
+<table class="w-full border-collapse">
+<tbody>
+<!-- Line 41-45 (Unchanged) -->
+<tr class="hover:bg-surface-container-low">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">41</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">41</td>
+<td class="px-4 whitespace-pre text-on-surface/80">    pub fn initialize_kernel(&amp;mut self) -&gt; Result&lt;(), EngineError&gt; {</td>
+</tr>
+<tr class="hover:bg-surface-container-low">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">42</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">42</td>
+<td class="px-4 whitespace-pre text-on-surface/80">        log::info!("Starting Monolith Kernel...");</td>
+</tr>
+<!-- Line 43 (Removal) -->
+<tr class="diff-removed">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">-</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">43</td>
+<td class="px-4 whitespace-pre diff-removed-content">        self.status = EngineStatus::Initializing;</td>
+</tr>
+<!-- Line 43-44 (Addition) -->
+<tr class="diff-added">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">43</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">+</td>
+<td class="px-4 whitespace-pre diff-added-content">        self.set_state(EngineStatus::Initializing)?;</td>
+</tr>
+<tr class="diff-added active-line">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">44</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">+</td>
+<td class="px-4 whitespace-pre diff-added-content">        self.verify_integrity_hash()?;</td>
+</tr>
+<!-- Inline Comment Box (Triggered by 'c') -->
+<tr>
+<td class="p-4 bg-surface-container-low" colspan="3">
+<div class="bg-surface-container-lowest border border-outline p-4 shadow-sm max-w-2xl mx-auto">
+<div class="flex items-center gap-2 mb-3">
+<div class="w-6 h-6 bg-primary text-white flex items-center justify-center text-[10px] font-bold">JD</div>
+<span class="text-[10px] font-bold text-on-surface uppercase">J_DOE_SYSTEM_ARCH</span>
+<span class="text-[9px] text-outline ml-auto">ACTIVE_DRAFT</span>
+</div>
+<textarea class="w-full bg-transparent border-none focus:ring-0 text-[11px] font-label p-0 resize-none mb-3" placeholder="TYPE_COMMENT_HERE..." rows="3"></textarea>
+<div class="flex justify-end gap-2">
+<button class="px-3 py-1.5 text-[10px] font-label font-bold text-outline hover:text-on-surface uppercase transition-colors">Cancel</button>
+<button class="px-3 py-1.5 text-[10px] font-label font-bold bg-primary text-white uppercase transition-opacity hover:opacity-90">Comment</button>
+</div>
+</div>
+</td>
+</tr>
+<!-- More Code -->
+<tr class="hover:bg-surface-container-low">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">45</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">45</td>
+<td class="px-4 whitespace-pre text-on-surface/80">        self.runtime.spawn(async move {</td>
+</tr>
+<tr class="hover:bg-surface-container-low">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">46</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">46</td>
+<td class="px-4 whitespace-pre text-on-surface/80">            match self.execute_bootstrap().await {</td>
+</tr>
+<!-- Added Block -->
+<tr class="diff-added">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">47</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">+</td>
+<td class="px-4 whitespace-pre diff-added-content">                Ok(_) =&gt; log::debug!("Bootstrap sequence verified."),</td>
+</tr>
+<tr class="diff-added">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">48</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">+</td>
+<td class="px-4 whitespace-pre diff-added-content">                Err(e) =&gt; {</td>
+</tr>
+<tr class="diff-added">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">49</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">+</td>
+<td class="px-4 whitespace-pre diff-added-content">                    log::error!("Critical failure during bootstrap: {:?}", e);</td>
+</tr>
+<tr class="diff-added">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">50</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">+</td>
+<td class="px-4 whitespace-pre diff-added-content">                    std::process::exit(1);</td>
+</tr>
+<tr class="diff-added">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">51</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">+</td>
+<td class="px-4 whitespace-pre diff-added-content">                }</td>
+</tr>
+<tr class="hover:bg-surface-container-low">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">52</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">52</td>
+<td class="px-4 whitespace-pre text-on-surface/80">            }</td>
+</tr>
+<tr class="hover:bg-surface-container-low">
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">53</td>
+<td class="w-12 px-2 text-right text-outline/50 border-r border-outline-variant/10">53</td>
+<td class="px-4 whitespace-pre text-on-surface/80">        });</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Absolute Position Overlay for Focused Element Indication -->
+<div class="fixed bottom-12 right-8 flex flex-col items-end pointer-events-none">
+<div class="bg-inverse-surface text-inverse-on-surface px-3 py-1 text-[10px] font-label font-bold">LINE_FOCUS: 44</div>
+<div class="bg-surface-container-highest text-on-surface px-3 py-1 text-[9px] font-label">SRC/CORE/MONOLITH_ENGINE.RS</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="h-8 flex items-center justify-between px-6 bg-surface-container-high border-t border-outline-variant/30 z-20">
+<div class="flex items-center gap-6">
+<span class="font-label text-[10px] text-on-surface font-bold tracking-widest uppercase">SYSTEM_STATUS: OPERATIONAL // V.01</span>
+<div class="flex items-center gap-4">
+<span class="font-label text-[10px] text-outline hover:text-primary cursor-crosshair transition-colors">COMMAND_PALETTE</span>
+<span class="font-label text-[10px] text-outline hover:text-primary cursor-crosshair transition-colors">LOGS</span>
+<span class="font-label text-[10px] text-primary hover:text-primary cursor-crosshair transition-colors">BREADCRUMBS</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-1.5">
+<div class="w-1.5 h-1.5 bg-primary"></div>
+<span class="font-label text-[10px] text-on-surface">LOC: 44:0</span>
+</div>
+<div class="w-[1px] h-3 bg-outline-variant"></div>
+<span class="font-label text-[10px] text-outline">UTF-8</span>
+<span class="font-label text-[10px] text-outline">CRLF</span>
+</div>
+</footer>
+</body></html>
