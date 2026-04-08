@@ -40,6 +40,32 @@ const globalBindings: BindingDefinition[] = [
       }
     },
   },
+  {
+    keys: [':'],
+    description: 'Open command mode',
+    modes: ['list', 'detail'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, confirmingAction: 'command' }));
+    },
+  },
+  {
+    // macOS: Cmd+Q  — triggers window.close() via IPC; store signals intent
+    keys: ['meta+q'],
+    description: 'Quit app (macOS)',
+    modes: ['list', 'detail', 'help', 'search'],
+    action: (_store) => {
+      window.electronAPI?.quitApp?.();
+    },
+  },
+  {
+    // Linux/Windows: Alt+F4 — same quit intent
+    keys: ['alt+F4'],
+    description: 'Quit app (Linux/Windows)',
+    modes: ['list', 'detail', 'help', 'search'],
+    action: (_store) => {
+      window.electronAPI?.quitApp?.();
+    },
+  },
 ];
 
 // ─── PR List bindings (active in list mode only) ──────────────────────────────
@@ -105,6 +131,76 @@ const listBindings: BindingDefinition[] = [
       store.setState((s) => ({ ...s, filterMenuOpen: !s.filterMenuOpen }));
     },
   },
+  {
+    keys: ['ctrl+d'],
+    description: 'Page down (5 PRs at a time)',
+    modes: ['list'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, selectedPRIndex: s.selectedPRIndex + 5 }));
+    },
+  },
+  {
+    keys: ['ctrl+u'],
+    description: 'Page up (5 PRs at a time)',
+    modes: ['list'],
+    action: (store) => {
+      store.setState((s) => ({
+        ...s,
+        selectedPRIndex: Math.max(0, s.selectedPRIndex - 5),
+      }));
+    },
+  },
+  {
+    keys: ['o'],
+    description: 'Open selected PR in browser',
+    modes: ['list'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, confirmingAction: 'open-browser' }));
+    },
+  },
+  {
+    keys: [' '],
+    description: 'Preview PR metadata tooltip',
+    modes: ['list'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, confirmingAction: 'preview' }));
+    },
+  },
+  {
+    keys: ['d'],
+    description: 'Mark PR as draft / un-draft',
+    modes: ['list'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, confirmingAction: 'draft' }));
+    },
+  },
+  {
+    keys: ['m'],
+    description: 'Toggle mute (hide PR from list)',
+    modes: ['list'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, confirmingAction: 'mute' }));
+    },
+  },
+  {
+    keys: ['s'],
+    description: 'Star / unstar PR',
+    modes: ['list'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, confirmingAction: 'star' }));
+    },
+  },
+  {
+    // Digit keys 1–9: jump directly to the Nth PR in the visible list.
+    // The hook resolves the actual index from event.key at dispatch time;
+    // the binding entry acts as the canonical definition for the group.
+    keys: ['1-9'],
+    description: 'Jump to Nth PR (1 = first, 9 = ninth)',
+    modes: ['list'],
+    action: (_store) => {
+      // Resolved by the hook via resolveDigitBinding(); no-op placeholder.
+    },
+  },
 ];
 
 // ─── Detail View bindings (active in detail mode only) ────────────────────────
@@ -162,32 +258,12 @@ const detailBindings: BindingDefinition[] = [
   },
 ];
 
-// ─── Help overlay bindings ────────────────────────────────────────────────────
-
-const helpBindings: BindingDefinition[] = [
-  {
-    keys: ['j'],
-    description: 'Scroll help text down',
-    modes: ['help'],
-    action: (_store) => {
-      // Scroll is handled by the HelpOverlay component via CSS/DOM
-    },
-  },
-  {
-    keys: ['k'],
-    description: 'Scroll help text up',
-    modes: ['help'],
-    action: (_store) => {
-      // Scroll is handled by the HelpOverlay component via CSS/DOM
-    },
-  },
-];
+// Help overlay bindings (j/k scroll) are deferred to the HelpOverlay task.
 
 export const KEYBOARD_BINDING_GROUPS: BindingDefinition[] = [
   ...globalBindings,
   ...listBindings,
   ...detailBindings,
-  ...helpBindings,
 ];
 
 /**

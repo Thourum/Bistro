@@ -11,6 +11,28 @@ export interface KeyboardState {
   lastAction?: string;
 }
 
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta']);
+
+/**
+ * Resolves the canonical key string from a KeyboardEvent.
+ *
+ * Modifier combos are expressed as prefix+key strings:
+ *   ctrl+d, meta+q, alt+F4
+ * Plain keys are returned as event.key.
+ */
+export function resolveEventKey(event: KeyboardEvent): string {
+  if (event.ctrlKey && !MODIFIER_KEYS.has(event.key)) {
+    return `ctrl+${event.key}`;
+  }
+  if (event.metaKey && !MODIFIER_KEYS.has(event.key)) {
+    return `meta+${event.key}`;
+  }
+  if (event.altKey && !MODIFIER_KEYS.has(event.key)) {
+    return `alt+${event.key}`;
+  }
+  return event.key;
+}
+
 /**
  * Determines whether a binding is active for the given mode.
  * Bindings with an empty modes array are active in all modes.
@@ -21,26 +43,40 @@ function isBindingActiveForMode(binding: BindingDefinition, mode: AppMode): bool
 }
 
 /**
- * Finds a matching binding for a key or key sequence.
- * Returns the binding if found, or null.
+ * Finds a matching binding for a resolved key string.
  *
  * Matching strategy:
- * - If pendingKey is set and within timeout: try two-key sequence first.
- * - Fall back to single-key binding.
+ * 1. Modifier combos (keys[0] contains '+') — always single-entry, matched directly.
+ * 2. Two-plain-key timed sequences — pendingKey + key within timeout.
+ * 3. Single plain-key binding.
  */
-function findBinding(
+export function findBinding(
   key: string,
   mode: AppMode,
   pendingKey: string | undefined,
   pendingKeyTime: number | undefined
 ): { binding: BindingDefinition; consumed: boolean } | null {
+  // 1. Modifier combo (e.g. 'ctrl+d', 'meta+q')
+  if (key.includes('+')) {
+    const modifierBinding = KEYBOARD_BINDING_GROUPS.find(
+      (b) =>
+        isBindingActiveForMode(b, mode) &&
+        b.keys.length === 1 &&
+        b.keys[0] === key
+    );
+    if (modifierBinding !== undefined) {
+      return { binding: modifierBinding, consumed: false };
+    }
+    return null;
+  }
+
   const now = Date.now();
   const withinTimeout =
     pendingKey !== undefined &&
     pendingKeyTime !== undefined &&
     now - pendingKeyTime <= SEQUENCE_TIMEOUT_MS;
 
-  // Try two-key sequence first when a pending key exists
+  // 2. Two-plain-key timed sequence
   if (withinTimeout && pendingKey !== undefined) {
     const sequence = pendingKey + key;
     const seqBinding = KEYBOARD_BINDING_GROUPS.find(
@@ -54,7 +90,7 @@ function findBinding(
     }
   }
 
-  // Try single-key binding
+  // 3. Single plain-key binding
   const singleBinding = KEYBOARD_BINDING_GROUPS.find(
     (b) =>
       isBindingActiveForMode(b, mode) &&
@@ -109,11 +145,18 @@ export function useKeyboard(): void {
       if (isInputFocused() && event.key !== 'Escape') return;
 
       // Skip modifier-only key presses (Shift, Control, Alt, Meta alone)
-      const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta']);
       if (MODIFIER_KEYS.has(event.key)) return;
 
       const { lastKey, lastKeyTime } = stateRef.current;
-      const key = event.key;
+      const key = resolveEventKey(event);
+
+      // Special case: digit keys 1–9 jump directly to the Nth PR.
+      if (mode === 'list' && /^[1-9]$/.test(key)) {
+        event.preventDefault();
+        appStore.setState((s) => ({ ...s, selectedPRIndex: parseInt(key, 10) - 1 }));
+        stateRef.current = { lastAction: key };
+        return;
+      }
 
       const result = findBinding(key, mode, lastKey, lastKeyTime);
 
@@ -124,17 +167,20 @@ export function useKeyboard(): void {
         return;
       }
 
-      // Check if this key could be the start of a multi-key sequence.
-      const couldStartSequence = KEYBOARD_BINDING_GROUPS.some(
-        (b) =>
-          isBindingActiveForMode(b, mode) &&
-          b.keys.length === 2 &&
-          b.keys[0] === key
-      );
+      // Check if this plain key could be the start of a two-key sequence.
+      // Modifier combos never start sequences.
+      if (!key.includes('+')) {
+        const couldStartSequence = KEYBOARD_BINDING_GROUPS.some(
+          (b) =>
+            isBindingActiveForMode(b, mode) &&
+            b.keys.length === 2 &&
+            b.keys[0] === key
+        );
 
-      if (couldStartSequence) {
-        stateRef.current = { lastKey: key, lastKeyTime: Date.now() };
-        return;
+        if (couldStartSequence) {
+          stateRef.current = { lastKey: key, lastKeyTime: Date.now() };
+          return;
+        }
       }
 
       // Unbound key: reset pending state.
