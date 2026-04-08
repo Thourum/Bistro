@@ -2,7 +2,13 @@ package sync
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"testing"
+
+	"github.com/samuelasvanyi/bistro/internal/actions"
+	"github.com/samuelasvanyi/bistro/internal/provider"
+	"github.com/samuelasvanyi/bistro/internal/provider/mock"
 )
 
 func TestNewOrchestrator(t *testing.T) {
@@ -112,5 +118,61 @@ func TestSyncWithProgressCallback(t *testing.T) {
 	}
 	if stages[0] != "starting" {
 		t.Errorf("expected first stage 'starting', got %s", stages[0])
+	}
+}
+
+func TestOrchestratorApplyActions(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	mockProv := mock.NewMockProvider().WithPRs([]*provider.PR{
+		{ID: "github:owner/repo:42"},
+	})
+	orch := NewOrchestrator(log, mockProv, nil, nil)
+
+	results := orch.ApplyActions(context.Background(), []*actions.ActionRequest{
+		{
+			PRID:   "github:owner/repo:42",
+			Action: actions.ApproveCommand,
+		},
+	})
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Success {
+		t.Errorf("expected success, got: %s", results[0].Error)
+	}
+}
+
+func TestOrchestratorApplyActionsMultiple(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	mockProv := mock.NewMockProvider().WithPRs([]*provider.PR{
+		{ID: "github:owner/repo:42"},
+		{ID: "github:owner/repo:43"},
+	})
+	orch := NewOrchestrator(log, mockProv, nil, nil)
+
+	results := orch.ApplyActions(context.Background(), []*actions.ActionRequest{
+		{
+			PRID:   "github:owner/repo:42",
+			Action: actions.ApproveCommand,
+		},
+		{
+			PRID:   "github:owner/repo:43",
+			Action: actions.RequestChangesCommand,
+			Body:   "Please update",
+		},
+	})
+
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	successCount := 0
+	for _, r := range results {
+		if r.Success {
+			successCount++
+		}
+	}
+	if successCount != 2 {
+		t.Errorf("expected 2 successes, got %d", successCount)
 	}
 }

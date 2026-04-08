@@ -7,6 +7,7 @@ import (
 
 	"log/slog"
 
+	"github.com/samuelasvanyi/bistro/internal/actions"
 	"github.com/samuelasvanyi/bistro/internal/git"
 	"github.com/samuelasvanyi/bistro/internal/provider"
 	"github.com/samuelasvanyi/bistro/internal/store"
@@ -150,6 +151,55 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 	))
 
 	return result, nil
+}
+
+// ApplyActions executes a batch of PR actions with events and retry.
+func (o *Orchestrator) ApplyActions(ctx context.Context, requests []*actions.ActionRequest) []*actions.ActionResult {
+	if o.log != nil {
+		o.log.Info("applying actions", "count", len(requests))
+	}
+
+	o.emitter.Emit(&SyncEvent{
+		Type: "actions_started",
+		Data: map[string]interface{}{
+			"count": len(requests),
+		},
+		Timestamp: time.Now(),
+	})
+
+	executor := actions.NewActionExecutor(o.log, o.provider, o.store, o.emitter)
+
+	results := make([]*actions.ActionResult, 0, len(requests))
+	for _, req := range requests {
+		result, err := executor.ExecuteWithRetry(ctx, req, 3)
+		if err != nil {
+			if o.log != nil {
+				o.log.Error("action execution error", "pr", req.PRID, "error", err)
+			}
+		}
+		if result != nil {
+			results = append(results, result)
+		}
+	}
+
+	successCount := 0
+	for _, r := range results {
+		if r.Success {
+			successCount++
+		}
+	}
+
+	o.emitter.Emit(&SyncEvent{
+		Type: "actions_complete",
+		Data: map[string]interface{}{
+			"total":   len(results),
+			"success": successCount,
+			"failed":  len(results) - successCount,
+		},
+		Timestamp: time.Now(),
+	})
+
+	return results
 }
 
 // syncPRList fetches and stores the PR list

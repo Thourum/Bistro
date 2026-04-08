@@ -1,105 +1,33 @@
 package sync
 
 import (
-	"sync"
 	"time"
+
+	"github.com/samuelasvanyi/bistro/internal/events"
 )
 
-// SyncEvent represents a sync progress or completion event
-type SyncEvent struct {
-	Type      string                 `json:"type"`
-	Data      map[string]interface{} `json:"data"`
-	Timestamp time.Time              `json:"timestamp"`
-}
+// SyncEvent is an alias for events.Event for backward compatibility within this package.
+type SyncEvent = events.Event
 
-// EventEmitter broadcasts events to multiple subscribers
-type EventEmitter struct {
-	mu          sync.RWMutex
-	subscribers map[<-chan *SyncEvent]chan<- *SyncEvent
-}
+// EventEmitter is an alias for events.EventEmitter for backward compatibility.
+type EventEmitter = events.EventEmitter
 
-// NewEventEmitter creates a new event emitter
+// NewEventEmitter creates a new EventEmitter.
 func NewEventEmitter() *EventEmitter {
-	return &EventEmitter{
-		subscribers: make(map[<-chan *SyncEvent]chan<- *SyncEvent),
-	}
+	return events.NewEventEmitter()
 }
 
-// Subscribe creates a new event channel and registers it
-func (e *EventEmitter) Subscribe() <-chan *SyncEvent {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	ch := make(chan *SyncEvent, 10) // Buffered to avoid blocking
-	e.subscribers[ch] = ch
-	return ch
-}
-
-// Unsubscribe removes a subscriber and closes its channel
-func (e *EventEmitter) Unsubscribe(ch <-chan *SyncEvent) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if send, ok := e.subscribers[ch]; ok {
-		close(send)
-		delete(e.subscribers, ch)
-	}
-}
-
-// Emit broadcasts an event to all subscribers
-func (e *EventEmitter) Emit(event *SyncEvent) {
-	if event == nil {
-		return
-	}
-
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
-	for _, ch := range e.subscribers {
-		select {
-		case ch <- event:
-			// Event sent
-		default:
-			// Channel full, skip (don't block)
-		}
-	}
-}
-
-// NewProgressEvent creates a sync progress event
+// NewProgressEvent creates a sync progress event.
 func NewProgressEvent(stage string, current, total int) *SyncEvent {
-	return &SyncEvent{
-		Type: "sync_progress",
-		Data: map[string]interface{}{
-			"stage":   stage,
-			"current": current,
-			"total":   total,
-		},
-		Timestamp: time.Now(),
-	}
+	return events.NewProgressEvent(stage, current, total)
 }
 
-// NewCompleteEvent creates a sync completion event
-func NewCompleteEvent(prCount, newPRs, updatedPRs, errors int, duration time.Duration) *SyncEvent {
-	return &SyncEvent{
-		Type: "sync_complete",
-		Data: map[string]interface{}{
-			"pr_count":    prCount,
-			"new_prs":     newPRs,
-			"updated_prs": updatedPRs,
-			"errors":      errors,
-			"duration_ms": duration.Milliseconds(),
-		},
-		Timestamp: time.Now(),
-	}
+// NewCompleteEvent creates a sync completion event.
+func NewCompleteEvent(prCount, newPRs, updatedPRs, errs int, duration time.Duration) *SyncEvent {
+	return events.NewCompleteEvent(prCount, newPRs, updatedPRs, errs, duration)
 }
 
-// NewErrorEvent creates a sync error event
+// NewErrorEvent creates a sync error event.
 func NewErrorEvent(message string) *SyncEvent {
-	return &SyncEvent{
-		Type: "sync_error",
-		Data: map[string]interface{}{
-			"error": message,
-		},
-		Timestamp: time.Now(),
-	}
+	return events.NewErrorEvent(message)
 }

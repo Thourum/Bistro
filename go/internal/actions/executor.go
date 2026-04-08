@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/samuelasvanyi/bistro/internal/events"
 	"github.com/samuelasvanyi/bistro/internal/provider"
 	"github.com/samuelasvanyi/bistro/internal/store"
-	"github.com/samuelasvanyi/bistro/internal/sync"
 )
 
 // ActionExecutor coordinates action execution with provider, store, and events.
@@ -17,7 +17,7 @@ type ActionExecutor struct {
 	log      *slog.Logger
 	provider provider.Provider
 	store    *store.DB
-	emitter  *sync.EventEmitter
+	emitter  *events.EventEmitter
 }
 
 // NewActionExecutor creates a new action executor.
@@ -25,7 +25,7 @@ func NewActionExecutor(
 	log *slog.Logger,
 	prov provider.Provider,
 	db *store.DB,
-	emitter *sync.EventEmitter,
+	emitter *events.EventEmitter,
 ) *ActionExecutor {
 	return &ActionExecutor{
 		log:      log,
@@ -147,7 +147,7 @@ func (ae *ActionExecutor) logResult(req *ActionRequest, result *ActionResult) {
 
 // emitEvent broadcasts an action_complete event to all subscribers.
 func (ae *ActionExecutor) emitEvent(req *ActionRequest, result *ActionResult) {
-	ae.emitter.Emit(&sync.SyncEvent{
+	ae.emitter.Emit(&events.Event{
 		Type: "action_complete",
 		Data: map[string]interface{}{
 			"pr":      req.PRID,

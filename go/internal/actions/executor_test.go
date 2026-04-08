@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samuelasvanyi/bistro/internal/events"
 	"github.com/samuelasvanyi/bistro/internal/provider"
 	"github.com/samuelasvanyi/bistro/internal/provider/mock"
-	"github.com/samuelasvanyi/bistro/internal/sync"
 )
 
 func TestExecutorApprove(t *testing.T) {
@@ -19,7 +19,7 @@ func TestExecutorApprove(t *testing.T) {
 	mockProv := mock.NewMockProvider().WithPRs([]*provider.PR{
 		{ID: "github:owner/repo:42"},
 	})
-	emitter := sync.NewEventEmitter()
+	emitter := events.NewEventEmitter()
 
 	executor := NewActionExecutor(log, mockProv, nil, emitter)
 
@@ -42,7 +42,7 @@ func TestExecutorEventEmission(t *testing.T) {
 	mockProv := mock.NewMockProvider().WithPRs([]*provider.PR{
 		{ID: "github:owner/repo:42"},
 	})
-	emitter := sync.NewEventEmitter()
+	emitter := events.NewEventEmitter()
 	eventCh := emitter.Subscribe()
 
 	executor := NewActionExecutor(log, mockProv, nil, emitter)
@@ -68,7 +68,7 @@ func TestExecutorWithRetry(t *testing.T) {
 	mockProv := mock.NewMockProvider().WithPRs([]*provider.PR{
 		{ID: "github:owner/repo:42"},
 	})
-	emitter := sync.NewEventEmitter()
+	emitter := events.NewEventEmitter()
 
 	executor := NewActionExecutor(log, mockProv, nil, emitter)
 
@@ -88,7 +88,7 @@ func TestExecutorWithRetry(t *testing.T) {
 func TestExecutorErrorHandling(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	mockProv := mock.NewMockProvider().WithError(fmt.Errorf("mock error"))
-	emitter := sync.NewEventEmitter()
+	emitter := events.NewEventEmitter()
 
 	executor := NewActionExecutor(log, mockProv, nil, emitter)
 
@@ -108,7 +108,7 @@ func TestExecutorErrorHandling(t *testing.T) {
 func TestExecutorInvalidAction(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	mockProv := mock.NewMockProvider()
-	emitter := sync.NewEventEmitter()
+	emitter := events.NewEventEmitter()
 
 	executor := NewActionExecutor(log, mockProv, nil, emitter)
 
@@ -130,7 +130,7 @@ func TestExecutorExecuteMultiple(t *testing.T) {
 	mockProv := mock.NewMockProvider().WithPRs([]*provider.PR{
 		{ID: "github:owner/repo:42"},
 	})
-	emitter := sync.NewEventEmitter()
+	emitter := events.NewEventEmitter()
 
 	executor := NewActionExecutor(log, mockProv, nil, emitter)
 
