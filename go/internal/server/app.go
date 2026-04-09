@@ -217,7 +217,7 @@ func (a *App) runAuthCodeFlow(providerName string, resultCh <-chan auth.Callback
 		a.SetProvider(client)
 
 		username := ""
-		if u, err := client.GetUsername(context.Background()); err == nil {
+		if u, err := a.fetchUsername(providerName, result.Token); err == nil {
 			username = u
 			a.providerCache.Set(providerName, u)
 		} else {
@@ -293,11 +293,15 @@ func (a *App) handleAuthCheck(msg ws.InboundMessage) (interface{}, error) {
 }
 
 // fetchUsername retrieves the authenticated username for the given provider using the supplied token.
+// Uses a 10-second timeout to avoid blocking indefinitely on slow provider APIs.
 func (a *App) fetchUsername(providerName, token string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	switch providerName {
 	case "github":
 		client := github.NewClient(token)
-		return client.GetUsername(context.Background())
+		return client.GetUsername(ctx)
 	default:
 		return "", fmt.Errorf("username fetch not implemented for %s", providerName)
 	}
