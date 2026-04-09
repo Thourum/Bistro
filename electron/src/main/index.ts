@@ -1,4 +1,4 @@
-import { app } from 'electron';
+import { app, ipcMain, shell } from 'electron';
 import { join } from 'path';
 import { mkdirSync, existsSync } from 'fs';
 import log from 'electron-log';
@@ -106,6 +106,21 @@ app.on('ready', async () => {
 
     // 3. Setup IPC handlers (DB should exist now that Go has started)
     setupIPC(appConfig.goProcess.dbPath, log, wsClient);
+
+    // 3b. Register open-external IPC handler (HTTPS-only URL validation)
+    ipcMain.handle('open-external', async (_event, url: unknown) => {
+      if (typeof url !== 'string' || !url.startsWith('https://')) {
+        return { err: 'Only https:// URLs are allowed' };
+      }
+      try {
+        await shell.openExternal(url);
+        return { ok: true as const };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        log.error(`open-external failed: ${message}`);
+        return { err: message };
+      }
+    });
 
     // 4. Broadcast sync events from WebSocket to renderer
     wsClient.on('event', (event) => {

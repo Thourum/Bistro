@@ -80,6 +80,15 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on(channel, wrappedListener);
     return () => ipcRenderer.removeListener(channel, wrappedListener);
   },
+
+  /**
+   * Open a URL in the system default browser.
+   * Only https:// URLs are allowed.
+   * @returns { ok: true } | { err: string }
+   */
+  async openExternal(url: string): Promise<{ ok: true } | { err: string }> {
+    return ipcRenderer.invoke('open-external', url);
+  },
 });
 
 declare global {
@@ -92,6 +101,7 @@ declare global {
       send: (channel: ValidSendChannel, data?: unknown) => void;
       syncAction: (request: SyncActionRequest) => Promise<SyncActionResponse | IPCError>;
       on: (channel: ValidEventChannel, listener: (data: SyncEvent) => void) => () => void;
+      openExternal: (url: string) => Promise<{ ok: true } | { err: string }>;
     };
   }
 }
