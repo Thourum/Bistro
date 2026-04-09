@@ -27,10 +27,11 @@ func BuildAuthURL(cfg ProviderConfig, redirectURI string) (authURL string, state
 	state = hex.EncodeToString(stateBytes)
 
 	params := url.Values{
-		"client_id":    {cfg.ClientID},
-		"redirect_uri": {redirectURI},
-		"scope":        {strings.Join(cfg.Scopes, " ")},
-		"state":        {state},
+		"client_id":     {cfg.ClientID},
+		"redirect_uri":  {redirectURI},
+		"response_type": {"code"},
+		"scope":         {strings.Join(cfg.Scopes, " ")},
+		"state":         {state},
 	}
 
 	return cfg.AuthURL + "?" + params.Encode(), state, nil
