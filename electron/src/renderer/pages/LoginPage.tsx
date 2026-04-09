@@ -5,22 +5,11 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
+import { PROVIDERS, parseAuthAction } from '../providers';
+import type { ProviderId } from '../providers';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('LoginPage');
-
-type OAuthProvider = 'github' | 'gitlab' | 'gitea';
-
-const PROVIDERS: Array<{
-  provider: OAuthProvider;
-  icon: string;
-  label: string;
-  keyHint: string;
-}> = [
-  { provider: 'github', icon: 'terminal', label: 'GitHub', keyHint: 'G' },
-  { provider: 'gitlab', icon: 'source', label: 'GitLab', keyHint: 'L' },
-  { provider: 'gitea', icon: 'coffee', label: 'Gitea', keyHint: 'T' },
-];
 
 export function LoginPage() {
   const { send } = useWebSocket();
@@ -32,7 +21,7 @@ export function LoginPage() {
   const authLoading = useStore(appStore, (s: UIState) => s.authLoading);
   const authError = useStore(appStore, (s: UIState) => s.authError);
 
-  const handleProviderClick = (provider: OAuthProvider): void => {
+  const handleProviderClick = (provider: ProviderId): void => {
     log.info({ provider, syncStatus, authLoading }, 'provider clicked');
 
     const msgId = send('AUTH_START', { provider });
@@ -55,14 +44,14 @@ export function LoginPage() {
 
   React.useEffect(() => {
     if (confirmingAction === null) return;
+
+    const parsed = parseAuthAction(confirmingAction);
+    appStore.setState((s) => ({ ...s, confirmingAction: null }));
+
+    if (parsed === null) return;
     if (authLoading || deviceCode !== null) return;
 
-    const match = confirmingAction.match(/^auth_(github|gitlab|gitea)$/);
-    if (match !== null) {
-      const provider = match[1] as OAuthProvider;
-      appStore.setState((s) => ({ ...s, confirmingAction: null }));
-      handleProviderClick(provider);
-    }
+    handleProviderClick(parsed.id);
   }, [confirmingAction, authLoading, deviceCode]);
 
   return (
@@ -103,14 +92,14 @@ export function LoginPage() {
           <>
             {/* Provider buttons */}
             <div className="space-y-3">
-              {PROVIDERS.map(({ provider, icon, label, keyHint }) => (
+              {PROVIDERS.map((p) => (
                 <ProviderButton
-                  key={provider}
-                  provider={provider}
-                  icon={icon}
-                  label={label}
-                  keyHint={keyHint}
-                  onClick={() => { if (!authLoading) { handleProviderClick(provider); } }}
+                  key={p.id}
+                  provider={p.id}
+                  icon={p.icon}
+                  label={p.label}
+                  keyHint={p.key.toUpperCase()}
+                  onClick={() => { if (!authLoading) { handleProviderClick(p.id); } }}
                 />
               ))}
             </div>

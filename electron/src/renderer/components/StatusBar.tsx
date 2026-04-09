@@ -3,6 +3,7 @@ import type { UIState } from '../store/ui';
 import { appStore } from '../store';
 
 const MODE_HINTS: Record<UIState['mode'], string> = {
+  login: 'G github | L gitlab | T gitea',
   list: 'j/k nav | Enter open | / search | f filter | : cmd | ? help',
   detail: 'hjkl scroll | n/p files | aa approve | c comment | Esc back',
   search: 'Type to search | Enter apply | Esc cancel',
