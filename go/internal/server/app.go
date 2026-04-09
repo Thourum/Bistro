@@ -251,12 +251,14 @@ func (a *App) handleAuthCheck(msg ws.InboundMessage) (interface{}, error) {
 	}
 
 	var providers []providerInfo
+	authenticated := false
 
 	for _, p := range knownProviders {
 		token, err := a.tokenManager.Get(p)
 		if err != nil || token == "" {
 			continue
 		}
+		authenticated = true
 
 		username, expired, found := a.providerCache.Get(p)
 		if found && !expired {
@@ -267,16 +269,13 @@ func (a *App) handleAuthCheck(msg ws.InboundMessage) (interface{}, error) {
 		fetched, fetchErr := a.fetchUsername(p, token)
 		if fetchErr != nil {
 			a.log.Warn("failed to fetch username", "provider", p, "error", fetchErr)
-			if found {
-				providers = append(providers, providerInfo{Provider: p, Username: username})
-			}
+			// Always include the provider — use stale cache or empty string
+			providers = append(providers, providerInfo{Provider: p, Username: username})
 			continue
 		}
 		a.providerCache.Set(p, fetched)
 		providers = append(providers, providerInfo{Provider: p, Username: fetched})
 	}
-
-	authenticated := len(providers) > 0
 
 	return map[string]interface{}{
 		"id":   msg.ID,
