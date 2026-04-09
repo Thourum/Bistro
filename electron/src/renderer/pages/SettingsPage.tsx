@@ -194,9 +194,11 @@ export function SettingsPage() {
                     <span className="text-sm font-medium text-on-surface">
                       {info?.label ?? provider}
                     </span>
-                    <span className="text-xs text-on-surface-variant font-mono">
-                      @{username}
-                    </span>
+                    {username && (
+                      <span className="text-xs text-on-surface-variant font-mono">
+                        @{username}
+                      </span>
+                    )}
                   </div>
                   <Button
                     onClick={() => handleDisconnect(provider)}
