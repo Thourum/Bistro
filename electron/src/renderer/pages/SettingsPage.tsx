@@ -28,8 +28,15 @@ export function SettingsPage() {
 
   const handleConnect = (provider: string): void => {
     if (!authLoading) {
-      send('AUTH_START', { provider });
-      appStore.setState((s) => ({ ...s, authLoading: true, authError: null }));
+      const msgId = send('AUTH_START', { provider });
+      if (msgId === undefined) {
+        appStore.setState((s) => ({
+          ...s,
+          authError: 'Cannot connect to sync engine. Make sure the Go process is running.',
+        }));
+      } else {
+        appStore.setState((s) => ({ ...s, authLoading: true, authError: null }));
+      }
     }
   };
 
