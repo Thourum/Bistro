@@ -50,25 +50,33 @@ func (cs *CallbackServer) handler() http.Handler {
 	return mux
 }
 
+// sendResult delivers a result without blocking if the channel is already full.
+func (cs *CallbackServer) sendResult(result CallbackResult) {
+	select {
+	case cs.resultCh <- result:
+	default:
+	}
+}
+
 func (cs *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request) {
 	incomingState := r.URL.Query().Get("state")
 	if incomingState != cs.state {
 		http.Error(w, "Invalid state parameter", http.StatusForbidden)
-		cs.resultCh <- CallbackResult{Err: fmt.Errorf("state mismatch")}
+		cs.sendResult(CallbackResult{Err: fmt.Errorf("state mismatch")})
 		return
 	}
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		http.Error(w, "Missing code parameter", http.StatusBadRequest)
-		cs.resultCh <- CallbackResult{Err: fmt.Errorf("missing code")}
+		cs.sendResult(CallbackResult{Err: fmt.Errorf("missing code")})
 		return
 	}
 
 	token, err := ExchangeToken(r.Context(), cs.cfg, code, cs.redirectURI)
 	if err != nil {
 		http.Error(w, "Token exchange failed", http.StatusInternalServerError)
-		cs.resultCh <- CallbackResult{Err: fmt.Errorf("token exchange: %w", err)}
+		cs.sendResult(CallbackResult{Err: fmt.Errorf("token exchange: %w", err)})
 		return
 	}
 
@@ -77,7 +85,7 @@ func (cs *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request)
 		<h2>Authorization successful!</h2><p>You can close this tab and return to Bistro.</p>
 	</body></html>`)
 
-	cs.resultCh <- CallbackResult{Token: token}
+	cs.sendResult(CallbackResult{Token: token})
 }
 
 // ListenAndServe starts the callback server. It blocks until the server is shut down.
