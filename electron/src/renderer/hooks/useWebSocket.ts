@@ -269,13 +269,14 @@ export function useWebSocket() {
             handleActionFailed(message.data as ActionFailedData);
             addToast({ type: 'error', message: formatErrorMessage((message.data as ActionFailedData).error), dismissible: true });
             break;
-          case 'AUTH_DEVICE_CODE': {
-            const payload = message.data as { user_code: string; verification_uri: string };
+          case 'AUTH_REDIRECT': {
+            const payload = message.data as { provider: string; url: string };
             try {
+              if (window.electron?.openExternal) {
+                void window.electron.openExternal(payload.url);
+              }
               appStore.setState((s) => ({
                 ...s,
-                deviceCode: payload.user_code,
-                verificationUri: payload.verification_uri,
                 authLoading: true,
                 authError: null,
               }));
@@ -291,6 +292,7 @@ export function useWebSocket() {
               appStore.setState((s) => ({
                 ...s,
                 authChecked: true,
+                authLoading: false,
                 isAuthenticated: payload.authenticated,
                 connectedProviders: payload.providers ?? [],
               }));
@@ -319,8 +321,6 @@ export function useWebSocket() {
                 isAuthenticated: true,
                 authChecked: true,
                 authLoading: false,
-                deviceCode: null,
-                verificationUri: null,
                 authError: null,
                 connectedProviders: [
                   ...s.connectedProviders.filter((p) => p.provider !== payload.provider),
@@ -337,8 +337,6 @@ export function useWebSocket() {
                 ...s,
                 authLoading: false,
                 authError: payload.error,
-                deviceCode: null,
-                verificationUri: null,
               }));
             } catch { /* test env */ }
             addToast({ type: 'error', message: payload.error, dismissible: true });

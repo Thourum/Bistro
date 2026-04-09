@@ -36,9 +36,7 @@ export interface UIState {
   syncStats: SyncStats | null;
   toasts: Toast[];
   isOffline: boolean;
-  // OAuth device flow state
-  deviceCode: string | null;
-  verificationUri: string | null;
+  // OAuth auth state
   authLoading: boolean;
   authError: string | null;
   authChecked: boolean;
@@ -96,8 +94,6 @@ const initialUIState: UIState = {
   syncStats: null,
   toasts: [],
   isOffline: false,
-  deviceCode: null,
-  verificationUri: null,
   authLoading: false,
   authError: null,
   authChecked: false,

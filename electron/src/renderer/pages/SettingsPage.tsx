@@ -18,8 +18,6 @@ export function SettingsPage() {
 
   const connectedProviders = useStore(appStore, (s: UIState) => s.connectedProviders);
   const authLoading = useStore(appStore, (s: UIState) => s.authLoading);
-  const deviceCode = useStore(appStore, (s: UIState) => s.deviceCode);
-  const verificationUri = useStore(appStore, (s: UIState) => s.verificationUri);
   const { send } = useWebSocket();
 
   const allProviders = [
@@ -204,22 +202,13 @@ export function SettingsPage() {
             })}
           </div>
 
-          {deviceCode !== null && verificationUri !== null ? (
+          {authLoading ? (
             <div className="space-y-3 p-4 border border-outline-variant/30 rounded">
-              <p className="text-sm text-on-surface-variant">Enter this code:</p>
-              <p className="text-2xl font-mono font-bold text-primary tracking-widest text-center">
-                {deviceCode}
-              </p>
-              <a
-                href={verificationUri}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-primary hover:underline block text-center"
-              >
-                Open {verificationUri}
-              </a>
-              <p className="text-xs text-on-surface-variant animate-pulse text-center">
+              <p className="text-sm text-on-surface-variant animate-pulse text-center">
                 Waiting for authorization...
+              </p>
+              <p className="text-xs text-on-surface-variant text-center">
+                Complete the sign-in in your browser, then return here.
               </p>
             </div>
           ) : (
