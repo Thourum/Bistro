@@ -49,6 +49,22 @@ export function LoginPage() {
     }
   };
 
+  // React to keyboard bindings dispatched via the centralized keyboard system.
+  // The binding sets confirmingAction to 'auth_github' / 'auth_gitlab' / 'auth_gitea'.
+  const confirmingAction = useStore(appStore, (s: UIState) => s.confirmingAction);
+
+  React.useEffect(() => {
+    if (confirmingAction === null) return;
+    if (authLoading || deviceCode !== null) return;
+
+    const match = confirmingAction.match(/^auth_(github|gitlab|gitea)$/);
+    if (match !== null) {
+      const provider = match[1] as OAuthProvider;
+      appStore.setState((s) => ({ ...s, confirmingAction: null }));
+      handleProviderClick(provider);
+    }
+  }, [confirmingAction, authLoading, deviceCode]);
+
   return (
     <AuthLayout>
       <div className="p-12">

@@ -11,7 +11,7 @@ export interface UIState {
   selectedPRIndex: number;
   selectedFileIndex: number;
   searchQuery: string;
-  mode: 'list' | 'detail' | 'search' | 'help' | 'command' | 'filter' | 'settings';
+  mode: 'login' | 'list' | 'detail' | 'search' | 'help' | 'command' | 'filter' | 'settings';
   isAuthenticated: boolean;
   darkMode: boolean;
   showFileTree: boolean;

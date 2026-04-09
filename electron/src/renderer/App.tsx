@@ -16,8 +16,6 @@ import './App.css';
 const queryClient = new QueryClient();
 
 export function AppContent(): React.ReactElement {
-  useKeyboardIntegration();
-
   const mode = useStore(appStore, (state: UIState) => state.mode);
   const confirmingAction = useStore(appStore, (state: UIState) => state.confirmingAction);
 
@@ -53,7 +51,19 @@ export function AppContent(): React.ReactElement {
 }
 
 export function AuthGate(): React.ReactElement {
+  useKeyboardIntegration();
+
   const isAuthenticated = useStore(appStore, (state: UIState) => state.isAuthenticated);
+
+  // Keep mode in sync with auth state so the centralized keyboard system
+  // activates the correct bindings on every page, including login.
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      appStore.setState((s) => ({ ...s, mode: 'login' }));
+    } else if (appStore.state.mode === 'login') {
+      appStore.setState((s) => ({ ...s, mode: 'list' }));
+    }
+  }, [isAuthenticated]);
 
   if (!isAuthenticated) {
     return <LoginPage />;

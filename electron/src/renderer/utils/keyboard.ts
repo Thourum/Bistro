@@ -26,7 +26,7 @@ const globalBindings: BindingDefinition[] = [
   {
     keys: ['Escape'],
     description: 'Close help / cancel input / back to list',
-    modes: ['list', 'detail', 'help', 'search'],
+    modes: ['list', 'detail', 'help', 'search', 'settings'],
     action: (store) => {
       const { mode } = store.state;
       if (mode === 'help') {
@@ -35,6 +35,8 @@ const globalBindings: BindingDefinition[] = [
         store.setState((s) => ({ ...s, mode: 'list' }));
       } else if (mode === 'search') {
         store.setState((s) => ({ ...s, mode: 'list', searchQuery: '' }));
+      } else if (mode === 'settings') {
+        store.setState((s) => ({ ...s, mode: 'list' }));
       } else if (mode === 'list') {
         store.setState((s) => ({ ...s, filterMenuOpen: false, confirmingAction: null }));
       }
@@ -90,6 +92,35 @@ const globalBindings: BindingDefinition[] = [
       } else {
         store.setState((s) => ({ ...s, mode: 'search' }));
       }
+    },
+  },
+];
+
+// ─── Login bindings (active on the login page) ──────────────────────────────
+
+const loginBindings: BindingDefinition[] = [
+  {
+    keys: ['g'],
+    description: 'Login with GitHub',
+    modes: ['login'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, confirmingAction: 'auth_github' }));
+    },
+  },
+  {
+    keys: ['l'],
+    description: 'Login with GitLab',
+    modes: ['login'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, confirmingAction: 'auth_gitlab' }));
+    },
+  },
+  {
+    keys: ['t'],
+    description: 'Login with Gitea',
+    modes: ['login'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, confirmingAction: 'auth_gitea' }));
     },
   },
 ];
@@ -407,6 +438,7 @@ const detailScrollBindings: BindingDefinition[] = [
 
 export const KEYBOARD_BINDING_GROUPS: BindingDefinition[] = [
   ...globalBindings,
+  ...loginBindings,
   ...listBindings,
   ...detailBindings,
   ...detailScrollBindings,
