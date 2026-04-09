@@ -19,7 +19,10 @@ func TestClient_GetUsername(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient("test-token")
-	ghClient, _ := ghlib.NewClient(nil).WithEnterpriseURLs(server.URL+"/", server.URL+"/")
+	ghClient, err := ghlib.NewClient(nil).WithEnterpriseURLs(server.URL+"/", server.URL+"/")
+	if err != nil {
+		t.Fatalf("failed to configure enterprise URLs: %v", err)
+	}
 	client.gh = ghClient
 
 	username, err := client.GetUsername(context.Background())
