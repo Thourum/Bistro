@@ -1,5 +1,6 @@
 import type { Store } from '@tanstack/store';
 import type { UIState } from '../store/ui';
+import { PROVIDERS, authAction } from '../providers';
 
 export type AppMode = UIState['mode'];
 
@@ -96,34 +97,16 @@ const globalBindings: BindingDefinition[] = [
   },
 ];
 
-// ─── Login bindings (active on the login page) ──────────────────────────────
+// ─── Login bindings (derived from PROVIDER_META) ────────────────────────────
 
-const loginBindings: BindingDefinition[] = [
-  {
-    keys: ['g'],
-    description: 'Login with GitHub',
-    modes: ['login'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, confirmingAction: 'auth_github' }));
-    },
+const loginBindings: BindingDefinition[] = PROVIDERS.map((provider) => ({
+  keys: [provider.key],
+  description: `Login with ${provider.label}`,
+  modes: ['login'] as AppMode[],
+  action: (store: Store<UIState>) => {
+    store.setState((s) => ({ ...s, confirmingAction: authAction(provider) }));
   },
-  {
-    keys: ['l'],
-    description: 'Login with GitLab',
-    modes: ['login'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, confirmingAction: 'auth_gitlab' }));
-    },
-  },
-  {
-    keys: ['t'],
-    description: 'Login with Gitea',
-    modes: ['login'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, confirmingAction: 'auth_gitea' }));
-    },
-  },
-];
+}));
 
 // ─── PR List bindings (active in list mode only) ──────────────────────────────
 

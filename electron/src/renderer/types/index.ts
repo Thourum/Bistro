@@ -98,3 +98,4 @@ export interface Toast {
   message: string;
   dismissible: boolean;
 }
+
