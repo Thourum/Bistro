@@ -213,10 +213,21 @@ export function useWebSocket() {
             syncError: null,
             lastSyncAt: new Date().toISOString(),
             isOffline: false,
+            authChecked: false,
           }));
         } catch {
           // Store not available (test environment)
         }
+
+        // Ask Go engine for current auth status
+        const checkMsg: WSMessage = {
+          id: `req-${Date.now()}-${Math.random()}`,
+          type: 'AUTH_CHECK',
+          data: {},
+          timestamp: new Date().toISOString(),
+        };
+        log.info({ id: checkMsg.id }, 'sending AUTH_CHECK');
+        ws.send(JSON.stringify(checkMsg));
       };
 
       ws.onmessage = (event: MessageEvent<string>) => {
@@ -258,28 +269,80 @@ export function useWebSocket() {
             handleActionFailed(message.data as ActionFailedData);
             addToast({ type: 'error', message: formatErrorMessage((message.data as ActionFailedData).error), dismissible: true });
             break;
-          case 'AUTH_DEVICE_CODE': {
-            const payload = message.data as { user_code: string; verification_uri: string };
+          case 'AUTH_REDIRECT': {
+            const payload = message.data as { provider: string; url: string };
+            try {
+              if (!window.electron?.openExternal) {
+                appStore.setState((s) => ({
+                  ...s,
+                  authLoading: false,
+                  authError: 'Browser launch is unavailable.',
+                }));
+                break;
+              }
+
+              void window.electron.openExternal(payload.url).then((result) => {
+                if (result && 'err' in result) {
+                  appStore.setState((s) => ({
+                    ...s,
+                    authLoading: false,
+                    authError: (result as { err: string }).err,
+                  }));
+                  addToast({ type: 'error', message: (result as { err: string }).err, dismissible: true });
+                  return;
+                }
+                appStore.setState((s) => ({
+                  ...s,
+                  authLoading: true,
+                  authError: null,
+                }));
+              });
+            } catch { /* test env */ }
+            break;
+          }
+          case 'AUTH_CHECK_RESULT': {
+            const payload = message.data as {
+              authenticated: boolean;
+              providers: Array<{ provider: string; username: string }>;
+            };
             try {
               appStore.setState((s) => ({
                 ...s,
-                deviceCode: payload.user_code,
-                verificationUri: payload.verification_uri,
-                authLoading: true,
-                authError: null,
+                authChecked: true,
+                authLoading: false,
+                isAuthenticated: payload.authenticated,
+                connectedProviders: payload.providers ?? [],
+              }));
+            } catch { /* test env */ }
+            break;
+          }
+          case 'AUTH_DISCONNECT_RESULT': {
+            const payload = message.data as {
+              authenticated: boolean;
+              providers: Array<{ provider: string; username: string }>;
+            };
+            try {
+              appStore.setState((s) => ({
+                ...s,
+                isAuthenticated: payload.authenticated,
+                connectedProviders: payload.providers ?? [],
               }));
             } catch { /* test env */ }
             break;
           }
           case 'AUTH_SUCCESS': {
+            const payload = message.data as { provider: string; username: string };
             try {
               appStore.setState((s) => ({
                 ...s,
                 isAuthenticated: true,
+                authChecked: true,
                 authLoading: false,
-                deviceCode: null,
-                verificationUri: null,
                 authError: null,
+                connectedProviders: [
+                  ...s.connectedProviders.filter((p) => p.provider !== payload.provider),
+                  { provider: payload.provider, username: payload.username ?? '' },
+                ],
               }));
             } catch { /* test env */ }
             break;
@@ -291,8 +354,6 @@ export function useWebSocket() {
                 ...s,
                 authLoading: false,
                 authError: payload.error,
-                deviceCode: null,
-                verificationUri: null,
               }));
             } catch { /* test env */ }
             addToast({ type: 'error', message: payload.error, dismissible: true });
@@ -333,6 +394,7 @@ export function useWebSocket() {
             ...s,
             syncStatus: 'disconnected',
             isOffline: !isOnline,
+            authLoading: false,
           }));
         } catch {
           // Store not available (test environment)
@@ -355,6 +417,8 @@ export function useWebSocket() {
               ...s,
               syncStatus: 'error',
               syncError: 'Connection lost. Please restart the app.',
+              authChecked: true,
+              isAuthenticated: false,
             }));
           } catch {
             // Store not available (test environment)

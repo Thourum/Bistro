@@ -16,8 +16,6 @@ export function LoginPage() {
   const syncStatus = useStore(appStore, (s: UIState) => s.syncStatus);
   const syncError = useStore(appStore, (s: UIState) => s.syncError);
   const lastSyncAt = useStore(appStore, (s: UIState) => s.lastSyncAt);
-  const deviceCode = useStore(appStore, (s: UIState) => s.deviceCode);
-  const verificationUri = useStore(appStore, (s: UIState) => s.verificationUri);
   const authLoading = useStore(appStore, (s: UIState) => s.authLoading);
   const authError = useStore(appStore, (s: UIState) => s.authError);
 
@@ -49,10 +47,10 @@ export function LoginPage() {
     appStore.setState((s) => ({ ...s, confirmingAction: null }));
 
     if (parsed === null) return;
-    if (authLoading || deviceCode !== null) return;
+    if (authLoading) return;
 
     handleProviderClick(parsed.id);
-  }, [confirmingAction, authLoading, deviceCode]);
+  }, [confirmingAction, authLoading]);
 
   return (
     <AuthLayout>
@@ -67,25 +65,14 @@ export function LoginPage() {
           </p>
         </header>
 
-        {/* Device code flow UI */}
-        {deviceCode !== null && verificationUri !== null ? (
+        {/* Auth state UI */}
+        {authLoading ? (
           <div className="text-center space-y-4">
-            <p className="text-sm text-on-surface-variant">
-              Enter this code at GitHub:
-            </p>
-            <p className="text-3xl font-mono font-bold text-primary tracking-widest">
-              {deviceCode}
-            </p>
-            <a
-              href={verificationUri}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-primary hover:underline"
-            >
-              Open {verificationUri}
-            </a>
-            <p className="text-xs text-on-surface-variant animate-pulse">
+            <p className="text-sm text-on-surface-variant animate-pulse">
               Waiting for authorization...
+            </p>
+            <p className="text-xs text-on-surface-variant">
+              Complete the sign-in in your browser, then return here.
             </p>
           </div>
         ) : (

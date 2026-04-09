@@ -54,6 +54,7 @@ export function AuthGate(): React.ReactElement {
   useKeyboardIntegration();
 
   const isAuthenticated = useStore(appStore, (state: UIState) => state.isAuthenticated);
+  const authChecked = useStore(appStore, (state: UIState) => state.authChecked);
 
   // Keep mode in sync with auth state so the centralized keyboard system
   // activates the correct bindings on every page, including login.
@@ -64,6 +65,21 @@ export function AuthGate(): React.ReactElement {
       appStore.setState((s) => ({ ...s, mode: 'list' }));
     }
   }, [isAuthenticated]);
+
+  if (!authChecked) {
+    return (
+      <div className="w-full h-screen bg-surface-container-lowest flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <h1 className="text-2xl font-extrabold tracking-tighter text-on-surface uppercase">
+            BISTRO
+          </h1>
+          <p className="text-sm text-on-surface-variant animate-pulse">
+            Connecting...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <LoginPage />;

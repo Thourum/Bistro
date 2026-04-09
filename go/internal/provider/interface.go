@@ -27,6 +27,9 @@ type Provider interface {
 
 	// PostComment posts a comment to a PR
 	PostComment(ctx context.Context, prID string, line int, body string) error
+
+	// GetUsername returns the authenticated user's login name
+	GetUsername(ctx context.Context) (string, error)
 }
 
 // PRFilters defines optional PR list filters

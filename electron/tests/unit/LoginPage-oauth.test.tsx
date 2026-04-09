@@ -18,15 +18,13 @@ beforeEach(() => {
   // Reset store to initial state
   appStore.setState((s) => ({
     ...s,
-    deviceCode: null,
-    verificationUri: null,
     authLoading: false,
     authError: null,
     isAuthenticated: false,
   }));
 });
 
-describe('LoginPage — OAuth device flow', () => {
+describe('LoginPage — OAuth auth code flow', () => {
   it('sends AUTH_START with provider when GitHub button is clicked', () => {
     render(<LoginPage />);
     fireEvent.click(screen.getByText('GitHub'));
@@ -39,36 +37,19 @@ describe('LoginPage — OAuth device flow', () => {
     expect(appStore.state.isAuthenticated).toBe(false);
   });
 
-  it('shows device code UI when deviceCode and verificationUri are set', () => {
+  it('shows waiting UI when authLoading is true', () => {
     appStore.setState((s) => ({
       ...s,
-      deviceCode: 'ABCD-1234',
-      verificationUri: 'https://github.com/login/device',
       authLoading: true,
     }));
     render(<LoginPage />);
-    expect(screen.getByText('ABCD-1234')).toBeInTheDocument();
-    expect(screen.getByText(/Enter this code at GitHub/i)).toBeInTheDocument();
     expect(screen.getByText(/Waiting for authorization/i)).toBeInTheDocument();
+    expect(screen.getByText(/Complete the sign-in in your browser/i)).toBeInTheDocument();
   });
 
-  it('shows a link to the verification URI', () => {
+  it('hides provider buttons when authLoading is true', () => {
     appStore.setState((s) => ({
       ...s,
-      deviceCode: 'ABCD-1234',
-      verificationUri: 'https://github.com/login/device',
-      authLoading: true,
-    }));
-    render(<LoginPage />);
-    const link = screen.getByRole('link');
-    expect(link).toHaveAttribute('href', 'https://github.com/login/device');
-  });
-
-  it('hides provider buttons when device code is showing', () => {
-    appStore.setState((s) => ({
-      ...s,
-      deviceCode: 'ABCD-1234',
-      verificationUri: 'https://github.com/login/device',
       authLoading: true,
     }));
     render(<LoginPage />);
@@ -84,7 +65,7 @@ describe('LoginPage — OAuth device flow', () => {
     expect(screen.getByText(/device code expired/i)).toBeInTheDocument();
   });
 
-  it('shows provider buttons when no device code is active', () => {
+  it('shows provider buttons when no auth is in progress', () => {
     render(<LoginPage />);
     expect(screen.getByText('GitHub')).toBeInTheDocument();
     expect(screen.getByText('GitLab')).toBeInTheDocument();
