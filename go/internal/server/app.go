@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
+	"github.com/samuelasvanyi/bistro/internal/auth"
 	"github.com/samuelasvanyi/bistro/internal/cache"
 	"github.com/samuelasvanyi/bistro/internal/git"
 	"github.com/samuelasvanyi/bistro/internal/keychain"
@@ -22,17 +25,19 @@ import (
 
 // App is the top-level orchestrator for the bistro-sync process.
 type App struct {
-	log            *slog.Logger
-	db             *store.DB
-	wsServer       *ws.Server
-	wsPort         int
-	dbPath         string
-	orchestrator   *sync.Orchestrator
-	prov           provider.Provider
-	gitClient      *git.Client
-	githubClientID string
-	providerCache  *cache.ProviderCache
-	tokenManager   *keychain.TokenManager
+	log                *slog.Logger
+	db                 *store.DB
+	wsServer           *ws.Server
+	wsPort             int
+	dbPath             string
+	orchestrator       *sync.Orchestrator
+	prov               provider.Provider
+	gitClient          *git.Client
+	githubClientID     string
+	githubClientSecret string
+	callbackServer     *auth.CallbackServer // non-nil while auth is in progress
+	providerCache      *cache.ProviderCache
+	tokenManager       *keychain.TokenManager
 }
 
 // SetProvider configures the GitHub provider used by the sync orchestrator.
@@ -86,13 +91,19 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 	}
 }
 
-// SetGitHubClientID sets the GitHub OAuth app client ID used by the device flow.
+// SetGitHubClientID sets the GitHub OAuth app client ID.
 func (a *App) SetGitHubClientID(clientID string) {
 	a.githubClientID = clientID
 }
 
-// handleAuthStart processes an AUTH_START WebSocket message by launching the
-// GitHub device flow in a goroutine and returning nil immediately.
+// SetGitHubClientSecret sets the GitHub OAuth app client secret used by the auth code flow.
+func (a *App) SetGitHubClientSecret(secret string) {
+	a.githubClientSecret = secret
+}
+
+// handleAuthStart processes an AUTH_START WebSocket message by starting the
+// OAuth authorization code flow. Returns AUTH_REDIRECT to the requesting client
+// only (not broadcast). AUTH_SUCCESS/AUTH_FAILED are broadcast to all clients.
 func (a *App) handleAuthStart(msg ws.InboundMessage) (interface{}, error) {
 	var data struct {
 		Provider string `json:"provider"`
@@ -109,74 +120,116 @@ func (a *App) handleAuthStart(msg ws.InboundMessage) (interface{}, error) {
 		}, nil
 	}
 
-	go a.runDeviceFlow()
-	return nil, nil
+	if a.callbackServer != nil {
+		return map[string]interface{}{
+			"id":   msg.ID,
+			"type": "AUTH_FAILED",
+			"data": map[string]string{"error": "auth_already_in_progress"},
+		}, nil
+	}
+
+	if a.githubClientID == "" || a.githubClientSecret == "" {
+		return map[string]interface{}{
+			"id":   msg.ID,
+			"type": "AUTH_FAILED",
+			"data": map[string]string{"error": "GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET not configured"},
+		}, nil
+	}
+
+	cfg := auth.ProviderConfig{
+		AuthURL:      "https://github.com/login/oauth/authorize",
+		TokenURL:     "https://github.com/login/oauth/access_token",
+		Scopes:       []string{"repo", "read:user"},
+		ClientID:     a.githubClientID,
+		ClientSecret: a.githubClientSecret,
+	}
+
+	authURL, state, err := auth.BuildAuthURL(cfg, auth.RedirectURI)
+	if err != nil {
+		return nil, fmt.Errorf("building auth URL: %w", err)
+	}
+
+	resultCh := make(chan auth.CallbackResult, 1)
+	a.callbackServer = auth.NewCallbackServer(cfg, state, auth.RedirectURI, resultCh)
+
+	go a.runAuthCodeFlow(data.Provider, resultCh)
+
+	return map[string]interface{}{
+		"id":   msg.ID,
+		"type": "AUTH_REDIRECT",
+		"data": map[string]interface{}{
+			"provider": data.Provider,
+			"url":      authURL,
+		},
+	}, nil
 }
 
-// runDeviceFlow performs the full GitHub device code flow: requests a device
-// code, broadcasts it to Electron, polls for the token, stores it in keychain,
-// and broadcasts AUTH_SUCCESS or AUTH_FAILED.
-func (a *App) runDeviceFlow() {
-	ctx := context.Background()
-	clientID := a.githubClientID
-	if clientID == "" {
+// runAuthCodeFlow starts the callback server and waits for the OAuth result,
+// then broadcasts AUTH_SUCCESS or AUTH_FAILED to all connected clients.
+func (a *App) runAuthCodeFlow(providerName string, resultCh <-chan auth.CallbackResult) {
+	serverErrCh := make(chan error, 1)
+	go func() {
+		if err := a.callbackServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErrCh <- err
+		}
+		close(serverErrCh)
+	}()
+
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if a.callbackServer != nil {
+			_ = a.callbackServer.Shutdown(ctx)
+		}
+		a.callbackServer = nil
+	}()
+
+	select {
+	case result := <-resultCh:
+		if result.Err != nil {
+			a.log.Error("auth callback failed", "error", result.Err)
+			a.wsServer.Broadcast(map[string]interface{}{
+				"type": "AUTH_FAILED",
+				"data": map[string]string{"error": result.Err.Error()},
+			})
+			return
+		}
+
+		if err := a.tokenManager.Store(providerName, result.Token); err != nil {
+			a.log.Error("failed to store token", "error", err)
+		}
+
+		client := github.NewClient(result.Token)
+		a.SetProvider(client)
+
+		username := ""
+		if u, err := client.GetUsername(context.Background()); err == nil {
+			username = u
+			a.providerCache.Set(providerName, u)
+		} else {
+			a.log.Warn("failed to fetch username after OAuth", "error", err)
+		}
+
 		a.wsServer.Broadcast(map[string]interface{}{
-			"type": "AUTH_FAILED",
-			"data": map[string]string{"error": "GITHUB_CLIENT_ID not configured"},
+			"type": "AUTH_SUCCESS",
+			"data": map[string]string{"provider": providerName, "username": username},
 		})
-		return
-	}
+		a.log.Info("OAuth authorization code flow completed", "provider", providerName)
 
-	auth := github.NewAuthenticator(clientID)
-
-	deviceCode, userCode, verificationURI, interval, err := auth.GetDeviceCode(ctx)
-	if err != nil {
-		a.log.Error("device code request failed", "error", err)
+	case err := <-serverErrCh:
+		a.log.Error("callback server error", "error", err)
 		a.wsServer.Broadcast(map[string]interface{}{
 			"type": "AUTH_FAILED",
 			"data": map[string]string{"error": err.Error()},
 		})
-		return
-	}
 
-	a.wsServer.Broadcast(map[string]interface{}{
-		"type": "AUTH_DEVICE_CODE",
-		"data": map[string]interface{}{
-			"user_code":        userCode,
-			"verification_uri": verificationURI,
-		},
-	})
-
-	token, err := auth.PollForToken(ctx, deviceCode, interval)
-	if err != nil {
-		a.log.Error("token polling failed", "error", err)
+	case <-time.After(auth.CallbackTimeout):
+		a.log.Warn("auth callback timed out")
 		a.wsServer.Broadcast(map[string]interface{}{
 			"type": "AUTH_FAILED",
-			"data": map[string]string{"error": err.Error()},
+			"data": map[string]string{"error": "timeout"},
 		})
-		return
 	}
-
-	if err := a.tokenManager.StoreGitHubToken(token); err != nil {
-		a.log.Error("failed to store token in keychain", "error", err)
-	}
-
-	client := github.NewClient(token)
-	a.SetProvider(client)
-
-	username := ""
-	if u, err := client.GetUsername(context.Background()); err == nil {
-		username = u
-		a.providerCache.Set("github", u)
-	} else {
-		a.log.Warn("failed to fetch username after OAuth", "error", err)
-	}
-
-	a.wsServer.Broadcast(map[string]interface{}{
-		"type": "AUTH_SUCCESS",
-		"data": map[string]string{"provider": "github", "username": username},
-	})
-	a.log.Info("GitHub OAuth device flow completed successfully")
 }
 
 var knownProviders = []string{"github", "gitlab", "gitea"}

@@ -42,14 +42,20 @@ func main() {
 
 	app := server.NewWithLogger(*wsPort, *dbPath, log)
 
-	// Read GitHub OAuth client ID from environment.
+	// Read GitHub OAuth credentials from environment.
 	clientID := os.Getenv("GITHUB_CLIENT_ID")
 	if clientID == "" {
-		log.Warn("GITHUB_CLIENT_ID not set — OAuth device flow will fail until configured")
+		log.Warn("GITHUB_CLIENT_ID not set — OAuth will fail until configured")
 	}
 	app.SetGitHubClientID(clientID)
 
-	// Check keychain for an existing GitHub token — skip the device flow if found.
+	clientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
+	if clientSecret == "" {
+		log.Warn("GITHUB_CLIENT_SECRET not set — OAuth will fail until configured")
+	}
+	app.SetGitHubClientSecret(clientSecret)
+
+	// Check keychain for an existing GitHub token — skip the auth flow if found.
 	tm := keychain.NewTokenManager()
 	existingToken, err := tm.GetGitHubToken()
 	if err == nil && existingToken != "" {
@@ -57,7 +63,7 @@ func main() {
 		client := github.NewClient(existingToken)
 		app.SetProvider(client)
 	} else {
-		log.Info("no GitHub token in keychain — waiting for OAuth device flow")
+		log.Info("no GitHub token in keychain — waiting for OAuth authorization code flow")
 	}
 
 	if *replayQueue {
