@@ -41,7 +41,13 @@ export function SettingsPage() {
   };
 
   const handleDisconnect = (provider: string): void => {
-    send('AUTH_DISCONNECT', { provider });
+    const msgId = send('AUTH_DISCONNECT', { provider });
+    if (msgId === undefined) {
+      appStore.setState((s) => ({
+        ...s,
+        authError: 'Cannot disconnect. Sync engine is not connected.',
+      }));
+    }
   };
 
   const updateSetting = <K extends keyof UIState>(key: K, value: UIState[K]): void => {
