@@ -7,6 +7,7 @@ import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import { persistSettings } from '../store/ui';
 import type { UIState } from '../store/ui';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 export function SettingsPage() {
   const darkMode = useStore(appStore, (s: UIState) => s.darkMode);
@@ -14,6 +15,29 @@ export function SettingsPage() {
   const autoSync = useStore(appStore, (s: UIState) => s.autoSync);
   const syncInterval = useStore(appStore, (s: UIState) => s.syncInterval);
   const notifications = useStore(appStore, (s: UIState) => s.notifications);
+
+  const connectedProviders = useStore(appStore, (s: UIState) => s.connectedProviders);
+  const authLoading = useStore(appStore, (s: UIState) => s.authLoading);
+  const deviceCode = useStore(appStore, (s: UIState) => s.deviceCode);
+  const verificationUri = useStore(appStore, (s: UIState) => s.verificationUri);
+  const { send } = useWebSocket();
+
+  const allProviders = [
+    { id: 'github', label: 'GitHub' },
+    { id: 'gitlab', label: 'GitLab' },
+    { id: 'gitea', label: 'Gitea' },
+  ] as const;
+
+  const handleConnect = (provider: string): void => {
+    if (!authLoading) {
+      send('AUTH_START', { provider });
+      appStore.setState((s) => ({ ...s, authLoading: true, authError: null }));
+    }
+  };
+
+  const handleDisconnect = (provider: string): void => {
+    send('AUTH_DISCONNECT', { provider });
+  };
 
   const updateSetting = <K extends keyof UIState>(key: K, value: UIState[K]): void => {
     appStore.setState((s) => {
@@ -34,7 +58,7 @@ export function SettingsPage() {
       description="Configure Bistro to your preferences"
     >
       <Tabs defaultValue="appearance" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 border-b border-outline-variant bg-transparent p-0 rounded-none">
+        <TabsList className="grid w-full grid-cols-4 border-b border-outline-variant bg-transparent p-0 rounded-none">
           <TabsTrigger
             value="appearance"
             className="border-b-2 border-b-transparent data-[state=active]:border-b-primary rounded-none"
@@ -52,6 +76,12 @@ export function SettingsPage() {
             className="border-b-2 border-b-transparent data-[state=active]:border-b-primary rounded-none"
           >
             Keyboard
+          </TabsTrigger>
+          <TabsTrigger
+            value="accounts"
+            className="border-b-2 border-b-transparent data-[state=active]:border-b-primary rounded-none"
+          >
+            Accounts
           </TabsTrigger>
         </TabsList>
 
@@ -142,6 +172,78 @@ export function SettingsPage() {
           >
             View All Shortcuts
           </Button>
+        </TabsContent>
+        <TabsContent value="accounts" className="space-y-6 mt-6">
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-on-surface uppercase tracking-wider">
+              Connected
+            </h3>
+            {connectedProviders.length === 0 && (
+              <p className="text-sm text-on-surface-variant">No providers connected.</p>
+            )}
+            {connectedProviders.map(({ provider, username }) => {
+              const info = allProviders.find((p) => p.id === provider);
+              return (
+                <div key={provider} className="flex items-center justify-between py-2 border-b border-outline-variant/30">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-on-surface">
+                      {info?.label ?? provider}
+                    </span>
+                    <span className="text-xs text-on-surface-variant font-mono">
+                      @{username}
+                    </span>
+                  </div>
+                  <Button
+                    onClick={() => handleDisconnect(provider)}
+                    className="text-xs bg-error/10 text-error hover:bg-error/20"
+                  >
+                    Disconnect
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+
+          {deviceCode !== null && verificationUri !== null ? (
+            <div className="space-y-3 p-4 border border-outline-variant/30 rounded">
+              <p className="text-sm text-on-surface-variant">Enter this code:</p>
+              <p className="text-2xl font-mono font-bold text-primary tracking-widest text-center">
+                {deviceCode}
+              </p>
+              <a
+                href={verificationUri}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-primary hover:underline block text-center"
+              >
+                Open {verificationUri}
+              </a>
+              <p className="text-xs text-on-surface-variant animate-pulse text-center">
+                Waiting for authorization...
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-on-surface uppercase tracking-wider">
+                Add Provider
+              </h3>
+              {allProviders
+                .filter((p) => !connectedProviders.some((cp) => cp.provider === p.id))
+                .map(({ id, label }) => (
+                  <Button
+                    key={id}
+                    onClick={() => handleConnect(id)}
+                    disabled={authLoading}
+                    className="w-full justify-start bg-surface-container text-on-surface hover:bg-surface-container-high"
+                  >
+                    Connect {label}
+                  </Button>
+                ))}
+              {allProviders.every((p) => connectedProviders.some((cp) => cp.provider === p.id)) && (
+                <p className="text-sm text-on-surface-variant">All providers connected.</p>
+              )}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </SettingsLayout>
