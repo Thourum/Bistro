@@ -64,7 +64,7 @@ interface ActionFailedData {
   error: string;
 }
 
-const WS_URL = 'ws://localhost:8080';
+const WS_URL = 'ws://localhost:8080/ws';
 const REQUEST_TIMEOUT_MS = 5000;
 const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
