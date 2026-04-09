@@ -213,10 +213,21 @@ export function useWebSocket() {
             syncError: null,
             lastSyncAt: new Date().toISOString(),
             isOffline: false,
+            authChecked: false,
           }));
         } catch {
           // Store not available (test environment)
         }
+
+        // Ask Go engine for current auth status
+        const checkMsg: WSMessage = {
+          id: `req-${Date.now()}-${Math.random()}`,
+          type: 'AUTH_CHECK',
+          data: {},
+          timestamp: new Date().toISOString(),
+        };
+        log.info({ id: checkMsg.id }, 'sending AUTH_CHECK');
+        ws.send(JSON.stringify(checkMsg));
       };
 
       ws.onmessage = (event: MessageEvent<string>) => {
@@ -271,15 +282,50 @@ export function useWebSocket() {
             } catch { /* test env */ }
             break;
           }
+          case 'AUTH_CHECK_RESULT': {
+            const payload = message.data as {
+              authenticated: boolean;
+              providers: Array<{ provider: string; username: string }>;
+            };
+            try {
+              appStore.setState((s) => ({
+                ...s,
+                authChecked: true,
+                isAuthenticated: payload.authenticated,
+                connectedProviders: payload.providers ?? [],
+              }));
+            } catch { /* test env */ }
+            break;
+          }
+          case 'AUTH_DISCONNECT_RESULT': {
+            const payload = message.data as {
+              authenticated: boolean;
+              providers: Array<{ provider: string; username: string }>;
+            };
+            try {
+              appStore.setState((s) => ({
+                ...s,
+                isAuthenticated: payload.authenticated,
+                connectedProviders: payload.providers ?? [],
+              }));
+            } catch { /* test env */ }
+            break;
+          }
           case 'AUTH_SUCCESS': {
+            const payload = message.data as { provider: string; username: string };
             try {
               appStore.setState((s) => ({
                 ...s,
                 isAuthenticated: true,
+                authChecked: true,
                 authLoading: false,
                 deviceCode: null,
                 verificationUri: null,
                 authError: null,
+                connectedProviders: [
+                  ...s.connectedProviders.filter((p) => p.provider !== payload.provider),
+                  { provider: payload.provider, username: payload.username ?? '' },
+                ],
               }));
             } catch { /* test env */ }
             break;
