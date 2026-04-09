@@ -57,7 +57,10 @@ export function LoginPage() {
     if (confirmingAction === null) return;
 
     const match = confirmingAction.match(/^auth_(github|gitlab|gitea)$/);
-    if (match === null) return;
+    if (match === null) {
+      appStore.setState((s) => ({ ...s, confirmingAction: null }));
+      return;
+    }
 
     if (authLoading || deviceCode !== null) {
       appStore.setState((s) => ({ ...s, confirmingAction: null }));
