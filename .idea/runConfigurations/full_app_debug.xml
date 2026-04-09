@@ -13,7 +13,7 @@
   -->
   <configuration default="false" name="Full App: Debug" type="CompoundRunConfigurationType">
     <toRun name="bistro-sync: Headless (dlv)" type="ShRunConfigurationType" />
-    <toRun name="Electron: App (Debug)" type="js.build_tools.npm" />
+    <toRun name="Electron: App (Debug, No Go)" type="js.build_tools.npm" />
     <method v="2" />
   </configuration>
 </component>

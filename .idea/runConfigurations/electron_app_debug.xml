@@ -12,8 +12,6 @@
     <envs>
       <env name="GITHUB_CLIENT_ID" value="" />
       <env name="GITHUB_CLIENT_SECRET" value="" />
-      <!-- Set to 1 when using "Full App: Debug" compound to prevent a second Go spawn -->
-      <env name="BISTRO_SKIP_GO_SPAWN" value="0" />
     </envs>
     <method v="2">
       <option name="RunConfigurationTask" enabled="true" run_configuration_name="bistro-sync: Build" run_configuration_type="ShRunConfigurationType" />
