@@ -272,14 +272,31 @@ export function useWebSocket() {
           case 'AUTH_REDIRECT': {
             const payload = message.data as { provider: string; url: string };
             try {
-              if (window.electron?.openExternal) {
-                void window.electron.openExternal(payload.url);
+              if (!window.electron?.openExternal) {
+                appStore.setState((s) => ({
+                  ...s,
+                  authLoading: false,
+                  authError: 'Browser launch is unavailable.',
+                }));
+                break;
               }
-              appStore.setState((s) => ({
-                ...s,
-                authLoading: true,
-                authError: null,
-              }));
+
+              void window.electron.openExternal(payload.url).then((result) => {
+                if (result && 'err' in result) {
+                  appStore.setState((s) => ({
+                    ...s,
+                    authLoading: false,
+                    authError: (result as { err: string }).err,
+                  }));
+                  addToast({ type: 'error', message: (result as { err: string }).err, dismissible: true });
+                  return;
+                }
+                appStore.setState((s) => ({
+                  ...s,
+                  authLoading: true,
+                  authError: null,
+                }));
+              });
             } catch { /* test env */ }
             break;
           }
