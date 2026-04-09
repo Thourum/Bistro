@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/google/go-github/v63/github"
@@ -34,4 +35,13 @@ func NewClient(token string) *Client {
 		token: token,
 		gh:    github.NewClient(httpClient),
 	}
+}
+
+// GetUsername returns the login name of the authenticated GitHub user.
+func (c *Client) GetUsername(ctx context.Context) (string, error) {
+	user, _, err := c.gh.Users.Get(ctx, "")
+	if err != nil {
+		return "", fmt.Errorf("failed to get authenticated user: %w", err)
+	}
+	return user.GetLogin(), nil
 }

@@ -9,10 +9,11 @@ import (
 
 // MockProvider implements Provider interface with canned data for testing.
 type MockProvider struct {
-	prs      []*provider.PR
-	comments []*provider.Comment
-	ciStatus *provider.CIStatus
-	err      error
+	prs             []*provider.PR
+	comments        []*provider.Comment
+	ciStatus        *provider.CIStatus
+	err             error
+	GetUsernameFunc func(ctx context.Context) (string, error)
 }
 
 // NewMockProvider creates a new mock provider with empty state.
@@ -26,40 +27,44 @@ func NewMockProvider() *MockProvider {
 // WithPRs returns a new MockProvider with the given PR list configured.
 func (m *MockProvider) WithPRs(prs []*provider.PR) *MockProvider {
 	return &MockProvider{
-		prs:      prs,
-		comments: m.comments,
-		ciStatus: m.ciStatus,
-		err:      m.err,
+		prs:             prs,
+		comments:        m.comments,
+		ciStatus:        m.ciStatus,
+		err:             m.err,
+		GetUsernameFunc: m.GetUsernameFunc,
 	}
 }
 
 // WithComments returns a new MockProvider with the given comments configured.
 func (m *MockProvider) WithComments(comments []*provider.Comment) *MockProvider {
 	return &MockProvider{
-		prs:      m.prs,
-		comments: comments,
-		ciStatus: m.ciStatus,
-		err:      m.err,
+		prs:             m.prs,
+		comments:        comments,
+		ciStatus:        m.ciStatus,
+		err:             m.err,
+		GetUsernameFunc: m.GetUsernameFunc,
 	}
 }
 
 // WithCIStatus returns a new MockProvider with the given CI status configured.
 func (m *MockProvider) WithCIStatus(status *provider.CIStatus) *MockProvider {
 	return &MockProvider{
-		prs:      m.prs,
-		comments: m.comments,
-		ciStatus: status,
-		err:      m.err,
+		prs:             m.prs,
+		comments:        m.comments,
+		ciStatus:        status,
+		err:             m.err,
+		GetUsernameFunc: m.GetUsernameFunc,
 	}
 }
 
 // WithError returns a new MockProvider that returns err from all methods.
 func (m *MockProvider) WithError(err error) *MockProvider {
 	return &MockProvider{
-		prs:      m.prs,
-		comments: m.comments,
-		ciStatus: m.ciStatus,
-		err:      err,
+		prs:             m.prs,
+		comments:        m.comments,
+		ciStatus:        m.ciStatus,
+		err:             err,
+		GetUsernameFunc: m.GetUsernameFunc,
 	}
 }
 
@@ -121,4 +126,12 @@ func (m *MockProvider) RequestChanges(_ context.Context, _ string, _ string) err
 // PostComment succeeds without error unless WithError was configured.
 func (m *MockProvider) PostComment(_ context.Context, _ string, _ int, _ string) error {
 	return m.err
+}
+
+// GetUsername returns the mock username or delegates to GetUsernameFunc if set.
+func (m *MockProvider) GetUsername(ctx context.Context) (string, error) {
+	if m.GetUsernameFunc != nil {
+		return m.GetUsernameFunc(ctx)
+	}
+	return "mock-user", nil
 }
