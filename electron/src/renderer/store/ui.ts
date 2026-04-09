@@ -41,6 +41,8 @@ export interface UIState {
   verificationUri: string | null;
   authLoading: boolean;
   authError: string | null;
+  authChecked: boolean;
+  connectedProviders: Array<{ provider: string; username: string }>;
 }
 
 const SETTINGS_STORAGE_KEY = 'bistro-settings';
@@ -98,6 +100,8 @@ const initialUIState: UIState = {
   verificationUri: null,
   authLoading: false,
   authError: null,
+  authChecked: false,
+  connectedProviders: [],
   ...loadPersistedSettings(),
 };
 
