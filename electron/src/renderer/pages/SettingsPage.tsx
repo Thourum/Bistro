@@ -47,6 +47,8 @@ export function SettingsPage() {
         ...s,
         authError: 'Cannot disconnect. Sync engine is not connected.',
       }));
+    } else {
+      appStore.setState((s) => ({ ...s, authError: null }));
     }
   };
 
