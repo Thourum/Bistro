@@ -206,6 +206,11 @@ func (a *App) runAuthCodeFlow(providerName string, resultCh <-chan auth.Callback
 
 		if err := a.tokenManager.Store(providerName, result.Token); err != nil {
 			a.log.Error("failed to store token", "error", err)
+			a.wsServer.Broadcast(map[string]interface{}{
+				"type": "AUTH_FAILED",
+				"data": map[string]string{"error": "failed to persist token"},
+			})
+			return
 		}
 
 		client := github.NewClient(result.Token)
