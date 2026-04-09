@@ -1,0 +1,19 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="bistro-sync: Debug" type="GoApplicationRunConfiguration" factoryName="Go Application">
+    <module name="bistro" />
+    <working_directory value="$PROJECT_DIR$/go" />
+    <parameters value="-ws-port 8080 -db-path ./data/sync.db -log-level debug" />
+    <envs>
+      <env name="GITHUB_CLIENT_ID" value="" />
+      <env name="GITHUB_CLIENT_SECRET" value="" />
+    </envs>
+    <kind value="PACKAGE" />
+    <package value="github.com/samuelasvanyi/bistro/cmd/bistro-sync" />
+    <directory value="$PROJECT_DIR$/go/cmd/bistro-sync" />
+    <filePath value="$PROJECT_DIR$/go/cmd/bistro-sync/main.go" />
+    <!-- GoLand uses Delve automatically for all Go run configs when breakpoints are set.
+         This config sets -gcflags="all=-N -l" to disable optimizations for better debug experience. -->
+    <go_parameters value="-gcflags=&quot;all=-N -l&quot;" />
+    <method v="2" />
+  </configuration>
+</component>

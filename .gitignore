@@ -6,7 +6,8 @@ dist/
 build/
 
 # IDE
-.idea/
+.idea/*
+!.idea/runConfigurations/
 *.swp
 *.swo
 .vscode/

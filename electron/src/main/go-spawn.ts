@@ -25,6 +25,13 @@ export interface GoSpawnOptions {
 export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
   const { config, logger, onCrash, maxRestarts = MAX_RESTARTS } = options;
   return new Promise((resolve, reject) => {
+    // When BISTRO_SKIP_GO_SPAWN=1, assume Go is already running externally (e.g. under Delve for debugging).
+    if (process.env.BISTRO_SKIP_GO_SPAWN === '1') {
+      logger.info('BISTRO_SKIP_GO_SPAWN=1 — skipping Go spawn, assuming external process on port ' + config.wsPort);
+      resolve();
+      return;
+    }
+
     if (goProcess) {
       logger.warn('Go process already running');
       resolve();
