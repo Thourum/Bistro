@@ -33,6 +33,7 @@ type App struct {
 	dbPath             string
 	orchestrator       *sync.Orchestrator
 	prov               provider.Provider
+	activeProviderName string
 	gitClient          *git.Client
 	githubClientID     string
 	githubClientSecret string
@@ -215,6 +216,7 @@ func (a *App) runAuthCodeFlow(providerName string, resultCh <-chan auth.Callback
 
 		client := github.NewClient(result.Token)
 		a.SetProvider(client)
+		a.activeProviderName = providerName
 
 		username := ""
 		if u, err := a.fetchUsername(providerName, result.Token); err == nil {
@@ -321,7 +323,10 @@ func (a *App) handleAuthDisconnect(msg ws.InboundMessage) (interface{}, error) {
 		a.log.Warn("failed to delete token from keychain", "provider", data.Provider, "error", err)
 	}
 	a.providerCache.Delete(data.Provider)
-	a.prov = nil
+	if a.activeProviderName == data.Provider {
+		a.prov = nil
+		a.activeProviderName = ""
+	}
 
 	checkResp, err := a.handleAuthCheck(msg)
 	if err != nil {
