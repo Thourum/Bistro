@@ -1,8 +1,35 @@
-.worktrees/
+# Dependencies
 node_modules/
-*.log
-.DS_Store
-.env
-.env.local
+
+# Build output
 dist/
 build/
+
+# IDE
+.idea/
+*.swp
+*.swo
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.local
+*.env.local
+
+# Logs
+*.log
+logs/
+
+# Go
+go/bistro-sync
+go/data/
+*.db
+*.db-journal
+*.db-wal
+
+# Worktrees
+.worktrees/

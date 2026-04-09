@@ -1,245 +1,123 @@
-# Bistro Go Sync Engine — Implementation Status
+# Bistro
 
-**Status:** Phase 1 Complete ✅ | Phase 2 Ready 🚀
+Keyboard-first desktop code review tool for GitHub (GitLab and Gitea planned).
 
----
+## Architecture
+
+```
+GitHub API
+    |
+    v
+Go sync engine (bistro-sync)
+    |-- fetches PRs, diffs via go-git
+    |-- writes to SQLite (local cache)
+    |-- emits real-time events over WebSocket
+    |
+    v
+Electron + React UI
+    |-- reads SQLite directly for instant rendering
+    |-- receives WebSocket events for live updates
+    |-- vim-inspired keyboard navigation
+```
+
+No server. Everything runs locally. SQLite is a cache, not a shared database.
+
+## Prerequisites
+
+- Go 1.21+
+- Node 18+
+- pnpm
 
 ## Quick Start
 
-### Build the Project
+```bash
+# Install all dependencies
+make install
+
+# Run tests
+make test
+
+# Start dev mode (two terminals)
+make build-go                         # Terminal 1
+cd go && ./bistro-sync --log-level debug
+
+cd electron && pnpm dev               # Terminal 2
+```
+
+## Project Structure
+
+```
+bistro/
+├── go/                        Go sync engine
+│   ├── cmd/bistro-sync/       Binary entry point
+│   └── internal/
+│       ├── provider/github/   GitHub API client
+│       ├── sync/              PR sync orchestration
+│       ├── git/               Diff generation (go-git)
+│       ├── store/             SQLite read/write
+│       ├── ws/                WebSocket server
+│       ├── actions/           Approve, comment, request-changes
+│       ├── events/            Event types
+│       ├── keychain/          OS keychain token storage
+│       └── server/            App orchestrator
+├── electron/                  Electron + React UI
+│   ├── src/renderer/          React app (pages, components, queries)
+│   ├── components/ui/         Shared UI components
+│   └── tests/                 Unit and integration tests
+└── design/                    Architecture and API docs
+    ├── api-contracts.md        WebSocket message schemas
+    ├── data-flow.md            End-to-end data lifecycle
+    ├── keyboard-bindings.md    Key mapping reference
+    ├── error-handling.md       Error types and messages
+    └── security-model.md       Token storage and auth
+```
+
+## Configuration
+
+### Electron
+
+Copy `electron/.env.example` to `electron/.env.local` and fill in values:
+
+```
+WS_PORT=8080                   # Must match --ws-port on the Go side
+GO_LOG_LEVEL=info              # debug | info | warn | error
+GITHUB_CLIENT_ID=              # From https://github.com/settings/developers
+GITHUB_CLIENT_SECRET=          # Keep secret, never commit
+WINDOW_WIDTH=1600
+WINDOW_HEIGHT=900
+```
+
+### Go sync engine flags
+
+```
+--ws-port       int     WebSocket port (default: 8080)
+--db-path       string  SQLite database path (default: ./data/sync.db)
+--log-level     string  debug | info | warn | error (default: info)
+--log-file      string  Log file path; omit to use stderr only
+--replay-queue  bool    Replay offline action queue on startup (default: true)
+```
+
+Example:
 
 ```bash
-cd go
-go build -o bistro-sync ./cmd/bistro-sync
+./bistro-sync --log-level debug --log-file logs/sync.log
 ```
 
-### Run Tests
+## Testing
 
 ```bash
-cd go
-go test ./...
+make test              # All tests
+make test-go           # Go tests only
+make test-electron     # Electron tests only
+
+# Go with race detector
+cd go && go test -race ./...
 ```
 
-### Project Structure
+## Key Design Decisions
 
-```
-go/
-├── go.mod                      — Go module definition
-├── go.sum                      — Dependency checksums
-├── cmd/
-│   └── bistro-sync/
-│       └── main.go             — Entry point
-├── internal/
-│   ├── logger/                 — Structured logging (slog wrapper)
-│   ├── store/                  — SQLite database operations
-│   ├── ws/                     — WebSocket server
-│   ├── keychain/               — OS keychain token storage
-│   └── server/                 — App orchestrator
-├── data/
-│   ├── sqlite.db               — SQLite database (created at runtime)
-│   └── patches/                — Generated diff patches
-├── PHASE_1_REVIEW.md           — Phase 1 verification & design alignment
-├── PHASE_2_PLAN.md             — Phase 2 implementation plan (ready to execute)
-└── README.md                   — This file
-```
-
----
-
-## Phase 1: Core Infrastructure ✅
-
-**Completed:** 6 tasks, 11/11 tests passing
-
-### What Was Built
-
-| Component | Status | Purpose |
-|-----------|--------|---------|
-| **Logger** | ✅ | Structured logging using stdlib `slog` |
-| **SQLite** | ✅ | Database connection pool + schema (3 tables, 3 indexes) |
-| **WebSocket** | ✅ | Gorilla websocket server on random port |
-| **Keychain** | ✅ | OS keychain wrapper for token storage |
-| **App Lifecycle** | ✅ | Graceful shutdown, SIGTERM/SIGINT handling |
-| **Error Handling** | ✅ | Explicit error propagation throughout |
-
-### Design Compliance
-
-- ✅ api-contracts.md — WebSocket endpoint, message format structure ready
-- ✅ error-handling.md — No panics, explicit error returns
-- ✅ security-model.md — OS keychain for token storage, no plaintext secrets
-- ✅ data-flow.md — Database initialization, graceful startup/shutdown
-
-### Key Files
-
-- `internal/logger/logger.go` — 70 LOC, 3 tests ✓
-- `internal/store/db.go` + `migrations.go` — 100 LOC, 3 tests ✓
-- `internal/ws/server.go` — 90 LOC, 2 tests ✓
-- `internal/keychain/keychain.go` — 80 LOC, 2 tests ✓
-- `cmd/bistro-sync/main.go` — 15 LOC, entry point ✓
-
----
-
-## Phase 2: Provider Interface & GitHub Adapter 🚀
-
-**Ready to Execute:** Plan in `PHASE_2_PLAN.md`
-
-### What Will Be Built
-
-| Task | Files | Purpose |
-|------|-------|---------|
-| **Provider Interface** | `interface.go`, `models.go` | Abstraction for any Git service |
-| **GitHub OAuth** | `github/auth.go` | Device flow + token refresh |
-| **GitHub ListPRs** | `github/prs.go` | Fetch PR list + single PR details |
-| **GitHub Comments** | `github/comments.go` | Fetch comments, normalize |
-| **GitHub CI** | `github/ci.go` | Fetch check runs, normalize status |
-| **GitHub Actions** | `github/actions.go` | Approve, request changes, post comment |
-| **Mock Provider** | `mock/provider_mock.go` | For unit tests (no API calls) |
-
-### Expected Deliverables
-
-- ✅ 7 tasks (similar TDD discipline as Phase 1)
-- ✅ Provider interface with 8 methods
-- ✅ Normalized domain types (PR, Comment, CIStatus, Check)
-- ✅ Full GitHub API integration
-- ✅ Mock provider for testing
-- ✅ All tests passing
-- ✅ ~600 LOC across 8 files
-
----
-
-## Phase 3: Git Operations & Diff Generation (Future)
-
-After Phase 2 completes, Phase 3 will add:
-
-- Shallow clone/fetch using `go-git`
-- Per-file unified diff generation
-- Patch file I/O (`data/patches/{sha1}_{sha2}/`)
-- Repo cache (avoid re-cloning)
-
----
-
-## Design Documents
-
-Refer to the design directory for full specifications:
-
-- `design/api-contracts.md` — IPC & WebSocket message schemas
-- `design/error-handling.md` — Error types and user messages
-- `design/security-model.md` — Token storage, auth
-- `design/data-flow.md` — Complete data lifecycle
-
----
-
-## Development Workflow
-
-### Running Tests
-
-```bash
-# All tests
-go test ./...
-
-# Specific package
-go test ./internal/store -v
-
-# With coverage
-go test ./... -cover
-```
-
-### Building
-
-```bash
-# Binary
-go build -o bistro-sync ./cmd/bistro-sync
-
-# All packages (verify no build errors)
-go build ./...
-```
-
-### Code Quality
-
-- **Format:** `go fmt ./...`
-- **Lint:** `go vet ./...`
-- **Dependencies:** `go mod tidy`
-
----
-
-## Dependencies
-
-| Library | Version | Purpose |
-|---------|---------|---------|
-| `gorilla/websocket` | v1.5.3 | WebSocket server |
-| `mattn/go-sqlite3` | v1.14.41 | SQLite driver |
-| `zalando/go-keyring` | v0.2.8 | OS keychain wrapper |
-| `google/go-github` | v63 | GitHub API client (Phase 2) |
-
----
-
-## Environment
-
-- **Go Version:** 1.26.1+
-- **Platform:** macOS (tested), Linux, Windows compatible
-- **Database:** SQLite (local, unencrypted per design)
-- **OS Keychain:** Cross-platform (macOS Keychain, Linux Secret Service, Windows Credential Manager)
-
----
-
-## Next Steps
-
-1. **Immediate:** Execute Phase 2 plan (Provider interface & GitHub adapter)
-   - File: `PHASE_2_PLAN.md`
-   - Expected: 7 tasks, ~2-3 hours
-   - Output: Full GitHub integration ready for sync orchestration
-
-2. **After Phase 2:** Phase 3 (Git operations & diff generation)
-   - Shallow clone with `go-git`
-   - Per-file diff generation
-   - Repo caching
-
-3. **After Phase 3:** Phase 4 (Sync orchestration)
-   - Concurrent goroutines for fetching
-   - SQLite writes
-   - WebSocket event streaming
-
-4. **After Phase 4:** Phase 5 (Actions & PR modifications)
-   - Receive commands from Electron
-   - Execute approve/comment actions
-   - Update local SQLite
-
----
-
-## Verification
-
-To verify Phase 1 is complete:
-
-```bash
-cd go
-
-# Build
-go build -o bistro-sync ./cmd/bistro-sync
-
-# Test
-go test ./... -v
-
-# Expected output:
-# PASS: logger (3 tests)
-# PASS: store (3 tests)
-# PASS: ws (2 tests)
-# PASS: keychain (2 tests)
-# Total: 11 tests, all passing ✓
-```
-
----
-
-## Questions?
-
-Refer to the relevant design document or implementation plan:
-
-- **API Schema Questions** → `design/api-contracts.md`
-- **Error Handling** → `design/error-handling.md`
-- **Security** → `design/security-model.md`
-- **Phase 1 Details** → `PHASE_1_REVIEW.md`
-- **Phase 2 Tasks** → `PHASE_2_PLAN.md`
-
----
-
-**Last Updated:** 2025-04-08
-**Worktree:** `.`
-**Branch:** `feature/go-sync-engine`
-
+- **SQLite as local cache** — the UI reads directly from SQLite for zero-latency rendering; the Go engine owns all writes.
+- **Vim-inspired keyboard bindings** — no mouse required; `j/k` to navigate, `:` for command palette, `?` for help.
+- **Go for parallel API fanout** — concurrent goroutines fetch PR metadata, diffs, and comments; Electron stays thin.
+- **neverthrow-style Result types** — explicit error handling throughout the Electron codebase; no unhandled promise rejections.
+- **Offline queue** — actions (approve, comment) are queued in SQLite when the API is unavailable and replayed on reconnect.

@@ -85,13 +85,15 @@ bistro/
 │   │   └── store.ts         ← SQLite wrapper
 │   └── package.json
 │
-├── app/                     ← React frontend
-│   ├── src/
-│   │   ├── components/      ← React components (PR list, detail)
-│   │   ├── hooks/           ← Custom hooks (useSync, usePR)
-│   │   ├── App.tsx          ← Root component
-│   │   └── main.tsx         ← React entry point
-│   └── package.json
+├── electron/src/renderer/   ← React frontend
+│   ├── components/          ← React components (PR list, detail, diff)
+│   ├── pages/               ← Full-page views (Login, PRList, PRDetail, Settings)
+│   ├── hooks/               ← Custom hooks
+│   ├── store/               ← TanStack Store state management
+│   ├── queries/             ← Data fetching helpers
+│   ├── utils/               ← Utility functions
+│   ├── App.tsx              ← Root component
+│   └── main.tsx             ← React entry point
 │
 ├── design/                  ← This documentation
 │   ├── PLAN.md
@@ -123,27 +125,31 @@ github.com/bistro-dev/bistro/go/
 // Main entry point
 cmd/bistro-sync/main.go
 
-// API client
-internal/github/
-  ├── client.go       ← GitHub REST API calls
-  └── types.go        ← GitHub API response types
+// Provider abstraction + GitHub client
+internal/provider/
+  ├── github/         ← GitHub REST API implementation
+  └── mock/           ← Test mock provider
 
 // Data storage
 internal/store/
-  ├── sqlite.go       ← SQL queries
-  ├── pr.go           ← PR table operations
-  └── migration.go    ← Schema setup
+  ├── migrations/     ← SQL schema migrations
+  └── ...             ← SQLite queries and table operations
 
-// Business logic
-internal/engine/
-  ├── engine.go       ← Main sync loop
-  ├── approver.go     ← Approval logic
-  └── commenter.go    ← Comment posting
+// Sync engine
+internal/sync/         ← Main PR sync loop
 
-// IPC server
-internal/ipc/
-  ├── server.go       ← WebSocket server
-  └── handlers.go     ← Message handlers
+// Action handlers (approve, comment, request changes)
+internal/actions/
+
+// WebSocket server
+internal/ws/           ← WebSocket server and event broadcasting
+internal/server/       ← HTTP/IPC server
+
+// Event definitions
+internal/events/
+
+// Git operations (clone, diff)
+internal/git/
 ```
 
 ### Electron Main (`/electron`)
@@ -160,35 +166,41 @@ electron/src/
 ├── types.ts         ← Type definitions (Shift+Click for docs)
 ```
 
-### React Frontend (`/app`)
+### React Frontend (`/electron/src/renderer`)
 
 ```typescript
-app/src/
+electron/src/renderer/
 
-// Containers (full-page layouts)
-├── screens/
-│   ├── AuthScreen.tsx       ← GitHub login
-│   ├── MainScreen.tsx       ← Main three-pane layout
-│   └── SettingsScreen.tsx   ← User preferences
+// Full-page views
+├── pages/
+│   ├── LoginPage.tsx        ← GitHub login
+│   ├── PRListPage.tsx       ← PR list view
+│   ├── PRDetailPage.tsx     ← PR detail + diff
+│   └── SettingsPage.tsx     ← User preferences
 
-// Components (reusable UI pieces)
+// Reusable UI components
 ├── components/
 │   ├── PRList.tsx
+│   ├── PRListItem.tsx
 │   ├── DiffViewer.tsx
-│   ├── StatusPane.tsx
-│   └── Comment.tsx
+│   ├── StatusSidebar.tsx
+│   ├── CommandPalette.tsx
+│   ├── HelpOverlay.tsx
+│   ├── CommentInput.tsx
+│   ├── CommentThread.tsx
+│   └── StatusBar.tsx
 
-// State management
+// State management (TanStack Store)
+├── store/
+
+// Data fetching
+├── queries/
+
+// Custom hooks
 ├── hooks/
-│   ├── useSync.ts           ← Manage PR list sync
-│   ├── usePR.ts             ← Current PR state
-│   └── useKeyboard.ts       ← Keyboard events
 
 // Utilities
 ├── utils/
-│   ├── ipc.ts               ← Send messages to Go
-│   ├── storage.ts           ← Access SQLite
-│   └── keyboard.ts          ← Binding helpers
 
 └── App.tsx                  ← Root component
 ```
@@ -471,7 +483,7 @@ Add to appropriate section:
 | x | Do new action |
 ```
 
-**4. Update help overlay (`app/src/data/help.ts`)**
+**4. Update help overlay (`electron/src/renderer/components/HelpOverlay.tsx`)**
 
 ```typescript
 export const HELP_TEXT = {
@@ -500,7 +512,7 @@ const (
 )
 ```
 
-**2. Add handler (Electron: `app/src/utils/errorHandler.ts`)**
+**2. Add handler (Electron: `electron/src/renderer/utils/errorHandler.ts`)**
 
 ```typescript
 case 'MY_ERROR':

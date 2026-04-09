@@ -259,7 +259,9 @@ Electron renderer updates list (preserves scroll position, selection)
 
 ---
 
-### Flow 6: Multi-Provider (GitHub + GitLab)
+### Flow 6: Multi-Provider (GitHub + GitLab) — Future: Not Yet Implemented
+
+> **Note:** This flow is planned for a future release. Only GitHub is supported today. The schema and design below reflect the intended architecture when multi-provider support is added.
 
 **Goal:** Single DB stores PRs from multiple providers; filters by provider.
 

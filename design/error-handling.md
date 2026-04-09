@@ -203,12 +203,15 @@ if resp.StatusCode == 429 {
 
 ## Electron Error Handling (Client-Side)
 
-### Result Type Pattern (neverthrow library recommended)
+### Result Type Pattern (hand-rolled, defined in `electron/src/main/types.ts`)
 
 All async operations return `Result<T, E>`:
 
 ```typescript
-import { ok, err, Result } from 'neverthrow'
+// Result type definition (electron/src/main/types.ts)
+type Result<T, E> =
+    | { success: true; data: T }
+    | { success: false; error: E }
 
 // Signature
 async function approvePR(prID: string): Promise<Result<boolean, ErrorInfo>>
@@ -216,13 +219,12 @@ async function approvePR(prID: string): Promise<Result<boolean, ErrorInfo>>
 // Usage
 const result = await approvePR('123')
 
-if (result.isErr()) {
+if (!result.success) {
     // Handle error
-    const error = result.error
-    handleError(error)
+    handleError(result.error)
 } else {
     // Use success value
-    const approved = result.value
+    const approved = result.data
     console.log('Approved:', approved)
 }
 ```
