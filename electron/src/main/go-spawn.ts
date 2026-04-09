@@ -1,6 +1,29 @@
 import { spawn, type ChildProcess } from 'child_process';
+import { createConnection } from 'node:net';
 import { Logger } from 'electron-log';
 import type { GoProcessConfig } from './types';
+
+function waitForPort(port: number, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      const socket = createConnection({ host: '127.0.0.1', port });
+      socket.once('connect', () => {
+        socket.destroy();
+        resolve();
+      });
+      socket.once('error', () => {
+        socket.destroy();
+        if (Date.now() >= deadline) {
+          reject(new Error(`Timed out waiting for external Go process on port ${port}`));
+          return;
+        }
+        setTimeout(attempt, 250);
+      });
+    };
+    attempt();
+  });
+}
 
 let goProcess: ChildProcess | null = null;
 
@@ -25,6 +48,13 @@ export interface GoSpawnOptions {
 export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
   const { config, logger, onCrash, maxRestarts = MAX_RESTARTS } = options;
   return new Promise((resolve, reject) => {
+    // When BISTRO_SKIP_GO_SPAWN=1, assume Go is already running externally (e.g. under Delve for debugging).
+    if (process.env.BISTRO_SKIP_GO_SPAWN === '1') {
+      logger.info('BISTRO_SKIP_GO_SPAWN=1 — waiting for external Go process on port ' + config.wsPort);
+      waitForPort(config.wsPort, GO_READY_TIMEOUT_MS).then(resolve).catch(reject);
+      return;
+    }
+
     if (goProcess) {
       logger.warn('Go process already running');
       resolve();

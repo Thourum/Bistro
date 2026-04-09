@@ -1,0 +1,19 @@
+<component name="ProjectRunConfigurationManager">
+  <!-- Debug both Go and Electron simultaneously.
+       1. Go runs under headless Delve on :2345 (attach "bistro-sync: Attach (Remote)" after start)
+       2. Electron starts with BISTRO_SKIP_GO_SPAWN=1 (skips spawning Go) and --inspect=9229
+          (attach "Electron: Attach Main" after start)
+
+       Workflow:
+         a) Run this compound config
+         b) Wait for dlv to print "API server listening at :2345"
+         c) Run "bistro-sync: Attach (Remote)" to connect GoLand debugger to Go
+         d) Run "Electron: Attach Main" to connect Node.js debugger to Electron main
+         e) Open chrome://inspect for Electron renderer DevTools
+  -->
+  <configuration default="false" name="Full App: Debug" type="CompoundRunConfigurationType">
+    <toRun name="bistro-sync: Headless (dlv)" type="ShRunConfigurationType" />
+    <toRun name="Electron: App (Debug, No Go)" type="js.build_tools.npm" />
+    <method v="2" />
+  </configuration>
+</component>

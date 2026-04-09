@@ -1,0 +1,16 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="bistro-sync: Run" type="GoApplicationRunConfiguration" factoryName="Go Application">
+    <module name="bistro" />
+    <working_directory value="$PROJECT_DIR$/go" />
+    <parameters value="-ws-port 8080 -db-path ./data/sync.db -log-level debug" />
+    <envs>
+      <env name="GITHUB_CLIENT_ID" value="" />
+      <env name="GITHUB_CLIENT_SECRET" value="" />
+    </envs>
+    <kind value="PACKAGE" />
+    <package value="github.com/samuelasvanyi/bistro/cmd/bistro-sync" />
+    <directory value="$PROJECT_DIR$/go/cmd/bistro-sync" />
+    <filePath value="$PROJECT_DIR$/go/cmd/bistro-sync/main.go" />
+    <method v="2" />
+  </configuration>
+</component>
