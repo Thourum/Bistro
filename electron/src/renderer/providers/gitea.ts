@@ -1,8 +1,8 @@
 import type { ProviderDef } from './provider';
 
-export const gitea: ProviderDef = {
+export const gitea = {
   id: 'gitea',
   key: 't',
   label: 'Gitea',
   icon: 'coffee',
-};
+} as const satisfies ProviderDef;
