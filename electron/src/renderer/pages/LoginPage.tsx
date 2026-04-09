@@ -55,14 +55,18 @@ export function LoginPage() {
 
   React.useEffect(() => {
     if (confirmingAction === null) return;
-    if (authLoading || deviceCode !== null) return;
 
     const match = confirmingAction.match(/^auth_(github|gitlab|gitea)$/);
-    if (match !== null) {
-      const provider = match[1] as OAuthProvider;
+    if (match === null) return;
+
+    if (authLoading || deviceCode !== null) {
       appStore.setState((s) => ({ ...s, confirmingAction: null }));
-      handleProviderClick(provider);
+      return;
     }
+
+    const provider = match[1] as OAuthProvider;
+    appStore.setState((s) => ({ ...s, confirmingAction: null }));
+    handleProviderClick(provider);
   }, [confirmingAction, authLoading, deviceCode]);
 
   return (
