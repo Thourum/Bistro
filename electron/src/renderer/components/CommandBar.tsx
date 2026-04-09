@@ -8,6 +8,7 @@ export default function CommandBar() {
   return (
     <div className="command-bar">
       <div className="mode-indicator">
+        {mode === 'login' && <span>Login</span>}
         {mode === 'list' && <span>List Mode</span>}
         {mode === 'search' && <span>Search Mode</span>}
         {mode === 'detail' && <span>Detail Mode</span>}
