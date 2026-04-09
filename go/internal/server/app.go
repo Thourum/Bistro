@@ -68,7 +68,10 @@ func (a *App) ReplayQueuedActions(ctx context.Context) error {
 // Uses default Info-level stderr logging.
 func New(wsPort int, dbPath string) *App {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	cacheDir, _ := os.UserCacheDir()
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		cacheDir = os.TempDir()
+	}
 	cachePath := filepath.Join(cacheDir, "bistro", "providers.json")
 	return &App{
 		log:           logger,
@@ -82,7 +85,10 @@ func New(wsPort int, dbPath string) *App {
 
 // NewWithLogger returns a new App with a custom logger.
 func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
-	cacheDir, _ := os.UserCacheDir()
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		cacheDir = os.TempDir()
+	}
 	cachePath := filepath.Join(cacheDir, "bistro", "providers.json")
 	return &App{
 		log:           logger,
