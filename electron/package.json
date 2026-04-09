@@ -16,7 +16,7 @@
     "test:coverage": "vitest run --config vitest.config.ts --coverage",
     "lint": "eslint src --ext .ts,.tsx",
     "electron": "electron .",
-    "electron:dev": "concurrently \"pnpm run dev:renderer\" \"wait-on http://localhost:5173 && pnpm run dev:main && electron .\"",
+    "electron:dev": "pnpm run electron:app",
     "electron:app": "concurrently \"pnpm run dev:renderer\" \"pnpm run dev:main\" \"wait-on http://localhost:5173 && sleep 2 && electron .\"",
     "electron:app:debug": "concurrently \"pnpm run dev:renderer\" \"pnpm run dev:main\" \"wait-on http://localhost:5173 && sleep 2 && electron . --inspect=9229\""
   },
