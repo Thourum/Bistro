@@ -377,6 +377,7 @@ export function useWebSocket() {
             ...s,
             syncStatus: 'disconnected',
             isOffline: !isOnline,
+            authLoading: false,
           }));
         } catch {
           // Store not available (test environment)
@@ -399,6 +400,8 @@ export function useWebSocket() {
               ...s,
               syncStatus: 'error',
               syncError: 'Connection lost. Please restart the app.',
+              authChecked: true,
+              isAuthenticated: false,
             }));
           } catch {
             // Store not available (test environment)

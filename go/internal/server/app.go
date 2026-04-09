@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	stdsync "sync"
 	"time"
 
 	"github.com/samuelasvanyi/bistro/internal/auth"
@@ -35,8 +36,9 @@ type App struct {
 	gitClient          *git.Client
 	githubClientID     string
 	githubClientSecret string
-	callbackServer     *auth.CallbackServer // non-nil while auth is in progress
-	providerCache      *cache.ProviderCache
+	authMu         stdsync.Mutex
+	callbackServer *auth.CallbackServer // non-nil while auth is in progress; guarded by authMu
+	providerCache  *cache.ProviderCache
 	tokenManager       *keychain.TokenManager
 }
 
@@ -120,7 +122,9 @@ func (a *App) handleAuthStart(msg ws.InboundMessage) (interface{}, error) {
 		}, nil
 	}
 
+	a.authMu.Lock()
 	if a.callbackServer != nil {
+		a.authMu.Unlock()
 		return map[string]interface{}{
 			"id":   msg.ID,
 			"type": "AUTH_FAILED",
@@ -129,6 +133,7 @@ func (a *App) handleAuthStart(msg ws.InboundMessage) (interface{}, error) {
 	}
 
 	if a.githubClientID == "" || a.githubClientSecret == "" {
+		a.authMu.Unlock()
 		return map[string]interface{}{
 			"id":   msg.ID,
 			"type": "AUTH_FAILED",
@@ -146,11 +151,13 @@ func (a *App) handleAuthStart(msg ws.InboundMessage) (interface{}, error) {
 
 	authURL, state, err := auth.BuildAuthURL(cfg, auth.RedirectURI)
 	if err != nil {
+		a.authMu.Unlock()
 		return nil, fmt.Errorf("building auth URL: %w", err)
 	}
 
 	resultCh := make(chan auth.CallbackResult, 1)
 	a.callbackServer = auth.NewCallbackServer(cfg, state, auth.RedirectURI, resultCh)
+	a.authMu.Unlock()
 
 	go a.runAuthCodeFlow(data.Provider, resultCh)
 
@@ -178,10 +185,12 @@ func (a *App) runAuthCodeFlow(providerName string, resultCh <-chan auth.Callback
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		a.authMu.Lock()
 		if a.callbackServer != nil {
 			_ = a.callbackServer.Shutdown(ctx)
 		}
 		a.callbackServer = nil
+		a.authMu.Unlock()
 	}()
 
 	select {
