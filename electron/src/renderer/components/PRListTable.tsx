@@ -101,7 +101,7 @@ export function PRListTable() {
                 }));
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && e.target === e.currentTarget) {
                   appStore.setState((s) => ({
                     ...s,
                     selectedPRIndex: idx,
