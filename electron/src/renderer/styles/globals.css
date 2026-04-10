@@ -11,7 +11,7 @@
 :root {
   /* Fonts */
   --font-family-sans:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -apple-system, "BlinkMacSystemFont", "Segoe UI", "Roboto", sans-serif;
   --font-family-mono: "Menlo", "Monaco", "Courier New", monospace;
 
   /* Spacing (8px grid) */
