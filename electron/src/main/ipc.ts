@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { join, resolve, sep } from 'node:path';
 import Database from 'better-sqlite3';
 import { ipcMain } from 'electron';
 import type { Logger } from 'electron-log';
@@ -72,9 +73,22 @@ export function setupIPC(
     'fs:read-patch',
     async (_event, request: FSReadPatchRequest) => {
       try {
+        // Mirror Go's os.UserCacheDir() per platform
+        const cacheBase =
+          process.env.XDG_CACHE_HOME ??
+          (process.platform === 'darwin'
+            ? join(homedir(), 'Library', 'Caches')
+            : process.platform === 'win32'
+              ? (process.env.LOCALAPPDATA ??
+                join(homedir(), 'AppData', 'Local'))
+              : join(homedir(), '.cache'));
+        const baseDir = resolve(join(cacheBase, 'bistro'));
         const resolved = resolve(request.path);
-        if (resolved !== request.path && !resolved.startsWith('/')) {
-          return { err: 'Invalid path' };
+        if (!resolved.startsWith(baseDir + sep)) {
+          logger.warn(
+            `fs:read-patch: rejected path outside cache: ${resolved}`,
+          );
+          return { err: 'Access denied: path outside allowed directory' };
         }
         const content = await readFile(resolved, 'utf-8');
         return { ok: content };
