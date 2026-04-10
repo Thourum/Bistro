@@ -1,16 +1,19 @@
-import { useStore } from '../hooks/useStore';
-import type { UIState } from '../store/ui';
-import { usePRList } from '../queries/usePRList';
 import CommandBar from '../components/CommandBar';
-import StatusBar from '../components/StatusBar';
 import PRListItem from '../components/PRListItem';
-import { appStore } from '../store';
+import StatusBar from '../components/StatusBar';
+import { useStore } from '../hooks/useStore';
 import { useStoreSync } from '../hooks/useStoreSync';
+import { usePRList } from '../queries/usePRList';
+import { appStore } from '../store';
+import type { UIState } from '../store/ui';
 
 export default function PRList() {
   useStoreSync(appStore);
   const filterState = useStore(appStore, (state: UIState) => state.filterState);
-  const selectedIndex = useStore(appStore, (state: UIState) => state.selectedPRIndex);
+  const selectedIndex = useStore(
+    appStore,
+    (state: UIState) => state.selectedPRIndex,
+  );
   const { data: prs = [], isLoading, error } = usePRList(filterState);
 
   const handlePRClick = (index: number) => {

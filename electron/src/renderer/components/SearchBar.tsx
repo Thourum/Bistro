@@ -1,5 +1,6 @@
-import React, { useRef, useEffect } from 'react';
 import { Input } from '@renderer/components/ui/input';
+import type React from 'react';
+import { useEffect, useRef } from 'react';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';

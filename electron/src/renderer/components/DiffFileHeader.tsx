@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import type { DiffSection } from '../utils/diff-parser';
 
 interface DiffFileHeaderProps {
@@ -10,7 +10,10 @@ interface DiffFileHeaderProps {
   onClick: () => void;
 }
 
-function countChanges(section: DiffSection): { additions: number; deletions: number } {
+function countChanges(section: DiffSection): {
+  additions: number;
+  deletions: number;
+} {
   let additions = 0;
   let deletions = 0;
   for (const hunk of section.hunks) {
@@ -64,7 +67,9 @@ export function DiffFileHeader({
       </div>
       <div className="flex items-center gap-2 flex-shrink-0 font-mono text-xs">
         {additions > 0 && (
-          <span className="text-green-600 dark:text-green-400">+{additions}</span>
+          <span className="text-green-600 dark:text-green-400">
+            +{additions}
+          </span>
         )}
         {deletions > 0 && (
           <span className="text-red-600 dark:text-red-400">-{deletions}</span>

@@ -1,6 +1,5 @@
-import React from 'react';
-import { Button } from './ui/button';
 import { cn } from '../lib/utils';
+import { Button } from './ui/button';
 
 interface ProviderButtonProps {
   provider: 'github' | 'gitlab' | 'gitea';
@@ -24,7 +23,7 @@ export function ProviderButton({
       className={cn(
         'w-full h-14 justify-between px-5',
         'bg-surface-container-lowest border-outline-variant',
-        'hover:bg-surface-container-low'
+        'hover:bg-surface-container-low',
       )}
       data-provider={provider}
     >

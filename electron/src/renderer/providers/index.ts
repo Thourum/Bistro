@@ -1,10 +1,11 @@
 import type { ProviderDef } from './provider';
+
 export type { ProviderDef } from './provider';
 export { AUTH_ACTION_PREFIX, authAction } from './provider';
 
+import { gitea } from './gitea';
 import { github } from './github';
 import { gitlab } from './gitlab';
-import { gitea } from './gitea';
 
 /** All registered providers. Add new providers here. */
 export const PROVIDERS = [

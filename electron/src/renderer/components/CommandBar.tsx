@@ -1,6 +1,6 @@
 import { useStore } from '../hooks/useStore';
-import type { UIState } from '../store/ui';
 import { appStore } from '../store';
+import type { UIState } from '../store/ui';
 
 export default function CommandBar() {
   const mode = useStore(appStore, (state: UIState) => state.mode);

@@ -1,6 +1,6 @@
 import { useStore } from '../hooks/useStore';
-import type { UIState } from '../store/ui';
 import { appStore } from '../store';
+import type { UIState } from '../store/ui';
 
 const MODE_HINTS: Record<UIState['mode'], string> = {
   login: 'G github | L gitlab | T gitea',
@@ -27,7 +27,10 @@ export default function StatusBar() {
   const syncStatus = useStore(appStore, (state: UIState) => state.syncStatus);
   const lastSyncAt = useStore(appStore, (state: UIState) => state.lastSyncAt);
   const syncError = useStore(appStore, (state: UIState) => state.syncError);
-  const confirmingAction = useStore(appStore, (state: UIState) => state.confirmingAction);
+  const confirmingAction = useStore(
+    appStore,
+    (state: UIState) => state.confirmingAction,
+  );
   const isOffline = useStore(appStore, (state: UIState) => state.isOffline);
 
   const syncLabel = (() => {
@@ -45,12 +48,14 @@ export default function StatusBar() {
     return syncStatus.charAt(0).toUpperCase() + syncStatus.slice(1);
   })();
 
-  const dotColor = isOffline ? 'bg-gray-500' : (STATUS_COLORS[syncStatus] ?? 'bg-gray-500');
+  const dotColor = isOffline
+    ? 'bg-gray-500'
+    : (STATUS_COLORS[syncStatus] ?? 'bg-gray-500');
 
   const hint =
     confirmingAction === 'approve'
       ? "Press 'a' again to confirm approval"
-      : MODE_HINTS[mode] ?? '';
+      : (MODE_HINTS[mode] ?? '');
 
   return (
     <div className="flex items-center justify-between px-4 py-1.5 bg-surface-container border-t border-outline-variant text-[11px] font-mono">

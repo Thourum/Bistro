@@ -1,5 +1,5 @@
 import { Store } from '@tanstack/store';
-import type { PendingAction, ActionResult, Toast } from '../types';
+import type { ActionResult, PendingAction, Toast } from '../types';
 
 export interface SyncStats {
   prCount: number;
@@ -11,7 +11,15 @@ export interface UIState {
   selectedPRIndex: number;
   selectedFileIndex: number;
   searchQuery: string;
-  mode: 'login' | 'list' | 'detail' | 'search' | 'help' | 'command' | 'filter' | 'settings';
+  mode:
+    | 'login'
+    | 'list'
+    | 'detail'
+    | 'search'
+    | 'help'
+    | 'command'
+    | 'filter'
+    | 'settings';
   isAuthenticated: boolean;
   darkMode: boolean;
   showFileTree: boolean;
@@ -30,7 +38,13 @@ export interface UIState {
   syncProgress: number;
   lastSyncedAt: Date | null;
   // WebSocket sync state
-  syncStatus: 'disconnected' | 'connecting' | 'connected' | 'ready' | 'error' | 'rate_limited';
+  syncStatus:
+    | 'disconnected'
+    | 'connecting'
+    | 'connected'
+    | 'ready'
+    | 'error'
+    | 'rate_limited';
   syncError: string | null;
   lastSyncAt: string | null;
   syncStats: SyncStats | null;
@@ -45,21 +59,44 @@ export interface UIState {
 
 const SETTINGS_STORAGE_KEY = 'bistro-settings';
 
-function loadPersistedSettings(): Pick<UIState, 'darkMode' | 'showFileTree' | 'autoSync' | 'syncInterval' | 'notifications'> {
+function loadPersistedSettings(): Pick<
+  UIState,
+  'darkMode' | 'showFileTree' | 'autoSync' | 'syncInterval' | 'notifications'
+> {
   try {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (raw !== null) {
-      return JSON.parse(raw) as Pick<UIState, 'darkMode' | 'showFileTree' | 'autoSync' | 'syncInterval' | 'notifications'>;
+      return JSON.parse(raw) as Pick<
+        UIState,
+        | 'darkMode'
+        | 'showFileTree'
+        | 'autoSync'
+        | 'syncInterval'
+        | 'notifications'
+      >;
     }
   } catch {
     // ignore parse errors
   }
-  return { darkMode: true, showFileTree: false, autoSync: true, syncInterval: 60, notifications: true };
+  return {
+    darkMode: true,
+    showFileTree: false,
+    autoSync: true,
+    syncInterval: 60,
+    notifications: true,
+  };
 }
 
 export function persistSettings(state: UIState): void {
   try {
-    const settings: Pick<UIState, 'darkMode' | 'showFileTree' | 'autoSync' | 'syncInterval' | 'notifications'> = {
+    const settings: Pick<
+      UIState,
+      | 'darkMode'
+      | 'showFileTree'
+      | 'autoSync'
+      | 'syncInterval'
+      | 'notifications'
+    > = {
       darkMode: state.darkMode,
       showFileTree: state.showFileTree,
       autoSync: state.autoSync,

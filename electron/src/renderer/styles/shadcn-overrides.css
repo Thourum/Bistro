@@ -2,7 +2,7 @@
 
 /* Override all rounded classes */
 [class*="rounded"] {
-  border-radius: 0 !important;
+  border-radius: 0;
 }
 
 /* Button components */
@@ -91,5 +91,5 @@ tbody tr:hover {
 .rounded-2xl,
 .rounded-3xl,
 .rounded-full {
-  border-radius: 0 !important;
+  border-radius: 0;
 }

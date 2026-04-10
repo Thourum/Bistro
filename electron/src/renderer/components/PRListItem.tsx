@@ -17,7 +17,9 @@ export default function PRListItem({ pr, isSelected }: Props) {
   return (
     <li className={`pr-list-item ${isSelected ? 'selected' : ''}`}>
       <div className="pr-item-header">
-        <span className={`state-badge state-${pr.draft ? 'gray' : (stateColor[pr.state] || 'gray')}`}>
+        <span
+          className={`state-badge state-${pr.draft ? 'gray' : stateColor[pr.state] || 'gray'}`}
+        >
           {pr.draft ? 'DRAFT' : pr.state.toUpperCase()}
         </span>
         <span className="pr-title">
@@ -25,7 +27,9 @@ export default function PRListItem({ pr, isSelected }: Props) {
         </span>
       </div>
       <div className="pr-item-meta">
-        <span className="pr-repo">{pr.owner}/{pr.repo}</span>
+        <span className="pr-repo">
+          {pr.owner}/{pr.repo}
+        </span>
         <span className="separator">•</span>
         <span className="pr-author">@{pr.author}</span>
         <span className="separator">•</span>

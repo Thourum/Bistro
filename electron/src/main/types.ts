@@ -1,4 +1,8 @@
-import type { DBQueryRequest, FSReadPatchRequest, GoCommandRequest } from '../types/ipc';
+import type {
+  DBQueryRequest,
+  FSReadPatchRequest,
+  GoCommandRequest,
+} from '../types/ipc';
 
 export interface IPCHandler {
   'db:query': (req: DBQueryRequest) => Promise<Record<string, unknown>[]>;

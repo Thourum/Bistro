@@ -1,6 +1,6 @@
-import { useEffect, useRef, useCallback } from 'react';
-import { appStore } from '../store';
+import { useCallback, useEffect, useRef } from 'react';
 import { addToast } from '../components/ToastContainer';
+import { appStore } from '../store';
 import { formatErrorMessage } from '../utils/error';
 import { createLogger } from '../utils/logger';
 
@@ -99,7 +99,7 @@ function handlePRApproved(data: PRApprovedData): void {
   }
 }
 
-function handleCommentPosted(data: CommentPostedData): void {
+function handleCommentPosted(_data: CommentPostedData): void {
   try {
     // Bump lastSyncAt so query subscribers know to re-fetch comment data
     appStore.setState((s) => ({
@@ -154,7 +154,10 @@ function handleActionComplete(data: ActionCompleteData): void {
       ...s,
       pendingAction: null,
       actionResult: {
-        type: data.action_type as 'approve' | 'request_changes' | 'post_comment',
+        type: data.action_type as
+          | 'approve'
+          | 'request_changes'
+          | 'post_comment',
         prId: data.pr_id,
         success: true,
         message: data.message,
@@ -173,7 +176,10 @@ function handleActionFailed(data: ActionFailedData): void {
       ...s,
       pendingAction: null,
       actionResult: {
-        type: data.action_type as 'approve' | 'request_changes' | 'post_comment',
+        type: data.action_type as
+          | 'approve'
+          | 'request_changes'
+          | 'post_comment',
         prId: data.pr_id,
         success: false,
         message: data.error,
@@ -187,7 +193,9 @@ function handleActionFailed(data: ActionFailedData): void {
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
-  const messageHandlersRef = useRef<Map<string, (data: unknown) => void>>(new Map());
+  const messageHandlersRef = useRef<Map<string, (data: unknown) => void>>(
+    new Map(),
+  );
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
 
@@ -253,11 +261,21 @@ export function useWebSocket() {
             break;
           case 'SYNC_ERROR':
             handleSyncError(message.data as SyncErrorData);
-            addToast({ type: 'error', message: formatErrorMessage((message.data as SyncErrorData).error_code), dismissible: true });
+            addToast({
+              type: 'error',
+              message: formatErrorMessage(
+                (message.data as SyncErrorData).error_code,
+              ),
+              dismissible: true,
+            });
             break;
           case 'AUTH_TOKEN_EXPIRED':
             handleAuthExpired(message.data as AuthExpiredData);
-            addToast({ type: 'error', message: formatErrorMessage('AUTH_TOKEN_EXPIRED'), dismissible: true });
+            addToast({
+              type: 'error',
+              message: formatErrorMessage('AUTH_TOKEN_EXPIRED'),
+              dismissible: true,
+            });
             break;
           case 'RATE_LIMITED':
             handleRateLimited(message.data as RateLimitedData);
@@ -267,7 +285,13 @@ export function useWebSocket() {
             break;
           case 'ACTION_FAILED':
             handleActionFailed(message.data as ActionFailedData);
-            addToast({ type: 'error', message: formatErrorMessage((message.data as ActionFailedData).error), dismissible: true });
+            addToast({
+              type: 'error',
+              message: formatErrorMessage(
+                (message.data as ActionFailedData).error,
+              ),
+              dismissible: true,
+            });
             break;
           case 'AUTH_REDIRECT': {
             const payload = message.data as { provider: string; url: string };
@@ -288,7 +312,11 @@ export function useWebSocket() {
                     authLoading: false,
                     authError: (result as { err: string }).err,
                   }));
-                  addToast({ type: 'error', message: (result as { err: string }).err, dismissible: true });
+                  addToast({
+                    type: 'error',
+                    message: (result as { err: string }).err,
+                    dismissible: true,
+                  });
                   return;
                 }
                 appStore.setState((s) => ({
@@ -297,7 +325,9 @@ export function useWebSocket() {
                   authError: null,
                 }));
               });
-            } catch { /* test env */ }
+            } catch {
+              /* test env */
+            }
             break;
           }
           case 'AUTH_CHECK_RESULT': {
@@ -313,7 +343,9 @@ export function useWebSocket() {
                 isAuthenticated: payload.authenticated,
                 connectedProviders: payload.providers ?? [],
               }));
-            } catch { /* test env */ }
+            } catch {
+              /* test env */
+            }
             break;
           }
           case 'AUTH_DISCONNECT_RESULT': {
@@ -327,11 +359,16 @@ export function useWebSocket() {
                 isAuthenticated: payload.authenticated,
                 connectedProviders: payload.providers ?? [],
               }));
-            } catch { /* test env */ }
+            } catch {
+              /* test env */
+            }
             break;
           }
           case 'AUTH_SUCCESS': {
-            const payload = message.data as { provider: string; username: string };
+            const payload = message.data as {
+              provider: string;
+              username: string;
+            };
             try {
               appStore.setState((s) => ({
                 ...s,
@@ -340,11 +377,18 @@ export function useWebSocket() {
                 authLoading: false,
                 authError: null,
                 connectedProviders: [
-                  ...s.connectedProviders.filter((p) => p.provider !== payload.provider),
-                  { provider: payload.provider, username: payload.username ?? '' },
+                  ...s.connectedProviders.filter(
+                    (p) => p.provider !== payload.provider,
+                  ),
+                  {
+                    provider: payload.provider,
+                    username: payload.username ?? '',
+                  },
                 ],
               }));
-            } catch { /* test env */ }
+            } catch {
+              /* test env */
+            }
             break;
           }
           case 'AUTH_FAILED': {
@@ -355,8 +399,14 @@ export function useWebSocket() {
                 authLoading: false,
                 authError: payload.error,
               }));
-            } catch { /* test env */ }
-            addToast({ type: 'error', message: payload.error, dismissible: true });
+            } catch {
+              /* test env */
+            }
+            addToast({
+              type: 'error',
+              message: payload.error,
+              dismissible: true,
+            });
             break;
           }
           case 'DIFF_READY':
@@ -388,7 +438,8 @@ export function useWebSocket() {
 
       ws.onclose = () => {
         log.info('disconnected');
-        const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+        const isOnline =
+          typeof navigator !== 'undefined' ? navigator.onLine : true;
         try {
           appStore.setState((s) => ({
             ...s,
@@ -402,16 +453,26 @@ export function useWebSocket() {
 
         if (reconnectAttemptRef.current < MAX_RECONNECT_ATTEMPTS) {
           const delay = Math.min(
-            BASE_RECONNECT_DELAY_MS * Math.pow(2, reconnectAttemptRef.current),
-            MAX_RECONNECT_DELAY_MS
+            BASE_RECONNECT_DELAY_MS * 2 ** reconnectAttemptRef.current,
+            MAX_RECONNECT_DELAY_MS,
           );
           reconnectAttemptRef.current += 1;
-          log.info({ delay, attempt: reconnectAttemptRef.current, maxAttempts: MAX_RECONNECT_ATTEMPTS }, 'scheduling reconnect');
+          log.info(
+            {
+              delay,
+              attempt: reconnectAttemptRef.current,
+              maxAttempts: MAX_RECONNECT_ATTEMPTS,
+            },
+            'scheduling reconnect',
+          );
           reconnectTimerRef.current = setTimeout(() => {
             connect();
           }, delay);
         } else {
-          log.error({ maxAttempts: MAX_RECONNECT_ATTEMPTS }, 'max reconnect attempts reached');
+          log.error(
+            { maxAttempts: MAX_RECONNECT_ATTEMPTS },
+            'max reconnect attempts reached',
+          );
           try {
             appStore.setState((s) => ({
               ...s,
@@ -441,27 +502,38 @@ export function useWebSocket() {
     };
   }, []);
 
-  const send = useCallback((type: string, data: unknown): string | undefined => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      const state = ws ? ws.readyState : 'null';
-      log.error({ type, ref: ws ? 'exists' : 'null', readyState: state, expected: WebSocket.OPEN }, 'send failed — not connected');
-      log.error({ type, data }, 'dropped message');
-      return undefined;
-    }
+  const send = useCallback(
+    (type: string, data: unknown): string | undefined => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        const state = ws ? ws.readyState : 'null';
+        log.error(
+          {
+            type,
+            ref: ws ? 'exists' : 'null',
+            readyState: state,
+            expected: WebSocket.OPEN,
+          },
+          'send failed — not connected',
+        );
+        log.error({ type, data }, 'dropped message');
+        return undefined;
+      }
 
-    const id = `req-${Date.now()}-${Math.random()}`;
-    const message: WSMessage = {
-      id,
-      type,
-      data,
-      timestamp: new Date().toISOString(),
-    };
+      const id = `req-${Date.now()}-${Math.random()}`;
+      const message: WSMessage = {
+        id,
+        type,
+        data,
+        timestamp: new Date().toISOString(),
+      };
 
-    log.info({ type, id }, 'sending message');
-    ws.send(JSON.stringify(message));
-    return id;
-  }, []);
+      log.info({ type, id }, 'sending message');
+      ws.send(JSON.stringify(message));
+      return id;
+    },
+    [],
+  );
 
   const request = useCallback(
     (type: string, data: unknown): Promise<unknown> => {
@@ -483,7 +555,7 @@ export function useWebSocket() {
         });
       });
     },
-    [send]
+    [send],
   );
 
   return { send, request, wsRef };

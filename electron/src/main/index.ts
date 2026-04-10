@@ -1,12 +1,12 @@
+import { existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { app, ipcMain, shell } from 'electron';
-import { join } from 'path';
-import { mkdirSync, existsSync } from 'fs';
 import log from 'electron-log';
-import { createWindow } from './window';
-import { setupIPC, closeDatabase } from './ipc';
-import { spawnGoProcess, killGoProcess } from './go-spawn';
-import { WebSocketClient } from './websocket-client';
+import { killGoProcess, spawnGoProcess } from './go-spawn';
+import { closeDatabase, setupIPC } from './ipc';
 import type { AppConfig } from './types';
+import { WebSocketClient } from './websocket-client';
+import { createWindow } from './window';
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -52,16 +52,20 @@ function buildConfig(): AppConfig {
     mkdirSync(logsDir, { recursive: true });
   }
 
-  const wsPort = parseInt(process.env.WS_PORT || '8080');
+  const wsPort = parseInt(process.env.WS_PORT || '8080', 10);
 
   return {
-    windowWidth: parseInt(process.env.APP_WINDOW_WIDTH || '1600'),
-    windowHeight: parseInt(process.env.APP_WINDOW_HEIGHT || '900'),
+    windowWidth: parseInt(process.env.APP_WINDOW_WIDTH || '1600', 10),
+    windowHeight: parseInt(process.env.APP_WINDOW_HEIGHT || '900', 10),
     goProcess: {
       binaryPath: resolveGoBinaryPath(),
       dbPath: join(dataDir, 'sync.db'),
       wsPort,
-      logLevel: (process.env.GO_LOG_LEVEL || 'debug') as 'debug' | 'info' | 'warn' | 'error',
+      logLevel: (process.env.GO_LOG_LEVEL || 'debug') as
+        | 'debug'
+        | 'info'
+        | 'warn'
+        | 'error',
       logFile: join(logsDir, 'bistro-sync.log'),
       replayQueue: true,
     },
@@ -90,11 +94,13 @@ app.on('ready', async () => {
       onCrash: (code, signal) => {
         log.error(`Go process crashed: code=${code}, signal=${signal}`);
         const { BrowserWindow } = require('electron');
-        (BrowserWindow.getAllWindows() as Electron.BrowserWindow[]).forEach((win) => {
-          if (!win.isDestroyed()) {
-            win.webContents.send('go:crashed', { code, signal });
-          }
-        });
+        (BrowserWindow.getAllWindows() as Electron.BrowserWindow[]).forEach(
+          (win) => {
+            if (!win.isDestroyed()) {
+              win.webContents.send('go:crashed', { code, signal });
+            }
+          },
+        );
       },
     });
     log.info('Go sync engine is running');

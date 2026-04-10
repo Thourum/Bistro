@@ -1,13 +1,17 @@
-import React from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs';
-import { Checkbox } from '@renderer/components/ui/checkbox';
 import { Button } from '@renderer/components/ui/button';
-import { SettingsLayout } from '../layouts/SettingsLayout';
+import { Checkbox } from '@renderer/components/ui/checkbox';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@renderer/components/ui/tabs';
 import { useStore } from '../hooks/useStore';
-import { appStore } from '../store';
-import { persistSettings } from '../store/ui';
-import type { UIState } from '../store/ui';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { SettingsLayout } from '../layouts/SettingsLayout';
+import { appStore } from '../store';
+import type { UIState } from '../store/ui';
+import { persistSettings } from '../store/ui';
 
 export function SettingsPage() {
   const darkMode = useStore(appStore, (s: UIState) => s.darkMode);
@@ -16,7 +20,10 @@ export function SettingsPage() {
   const syncInterval = useStore(appStore, (s: UIState) => s.syncInterval);
   const notifications = useStore(appStore, (s: UIState) => s.notifications);
 
-  const connectedProviders = useStore(appStore, (s: UIState) => s.connectedProviders);
+  const connectedProviders = useStore(
+    appStore,
+    (s: UIState) => s.connectedProviders,
+  );
   const authLoading = useStore(appStore, (s: UIState) => s.authLoading);
   const { send } = useWebSocket();
 
@@ -32,10 +39,15 @@ export function SettingsPage() {
       if (msgId === undefined) {
         appStore.setState((s) => ({
           ...s,
-          authError: 'Cannot connect to sync engine. Make sure the Go process is running.',
+          authError:
+            'Cannot connect to sync engine. Make sure the Go process is running.',
         }));
       } else {
-        appStore.setState((s) => ({ ...s, authLoading: true, authError: null }));
+        appStore.setState((s) => ({
+          ...s,
+          authLoading: true,
+          authError: null,
+        }));
       }
     }
   };
@@ -52,7 +64,10 @@ export function SettingsPage() {
     }
   };
 
-  const updateSetting = <K extends keyof UIState>(key: K, value: UIState[K]): void => {
+  const updateSetting = <K extends keyof UIState>(
+    key: K,
+    value: UIState[K],
+  ): void => {
     appStore.setState((s) => {
       const next = { ...s, [key]: value };
       persistSettings(next);
@@ -116,7 +131,9 @@ export function SettingsPage() {
             <Checkbox
               id="file-tree"
               checked={showFileTree}
-              onCheckedChange={() => updateSetting('showFileTree', !showFileTree)}
+              onCheckedChange={() =>
+                updateSetting('showFileTree', !showFileTree)
+              }
             />
             <label
               htmlFor="file-tree"
@@ -167,7 +184,9 @@ export function SettingsPage() {
             <Checkbox
               id="notifications"
               checked={notifications}
-              onCheckedChange={() => updateSetting('notifications', !notifications)}
+              onCheckedChange={() =>
+                updateSetting('notifications', !notifications)
+              }
             />
             <label
               htmlFor="notifications"
@@ -192,12 +211,17 @@ export function SettingsPage() {
               Connected
             </h3>
             {connectedProviders.length === 0 && (
-              <p className="text-sm text-on-surface-variant">No providers connected.</p>
+              <p className="text-sm text-on-surface-variant">
+                No providers connected.
+              </p>
             )}
             {connectedProviders.map(({ provider, username }) => {
               const info = allProviders.find((p) => p.id === provider);
               return (
-                <div key={provider} className="flex items-center justify-between py-2 border-b border-outline-variant/30">
+                <div
+                  key={provider}
+                  className="flex items-center justify-between py-2 border-b border-outline-variant/30"
+                >
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-medium text-on-surface">
                       {info?.label ?? provider}
@@ -234,7 +258,9 @@ export function SettingsPage() {
                 Add Provider
               </h3>
               {allProviders
-                .filter((p) => !connectedProviders.some((cp) => cp.provider === p.id))
+                .filter(
+                  (p) => !connectedProviders.some((cp) => cp.provider === p.id),
+                )
                 .map(({ id, label }) => (
                   <Button
                     key={id}
@@ -245,8 +271,12 @@ export function SettingsPage() {
                     Connect {label}
                   </Button>
                 ))}
-              {allProviders.every((p) => connectedProviders.some((cp) => cp.provider === p.id)) && (
-                <p className="text-sm text-on-surface-variant">All providers connected.</p>
+              {allProviders.every((p) =>
+                connectedProviders.some((cp) => cp.provider === p.id),
+              ) && (
+                <p className="text-sm text-on-surface-variant">
+                  All providers connected.
+                </p>
               )}
             </div>
           )}

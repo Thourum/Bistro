@@ -1,6 +1,6 @@
 import type { Store } from '@tanstack/store';
+import { authAction, PROVIDERS } from '../providers';
 import type { UIState } from '../store/ui';
-import { PROVIDERS, authAction } from '../providers';
 
 export type AppMode = UIState['mode'];
 
@@ -39,7 +39,11 @@ const globalBindings: BindingDefinition[] = [
       } else if (mode === 'settings') {
         store.setState((s) => ({ ...s, mode: 'list' }));
       } else if (mode === 'list') {
-        store.setState((s) => ({ ...s, filterMenuOpen: false, confirmingAction: null }));
+        store.setState((s) => ({
+          ...s,
+          filterMenuOpen: false,
+          confirmingAction: null,
+        }));
       }
     },
   },
@@ -144,7 +148,10 @@ const listBindings: BindingDefinition[] = [
     modes: ['list'],
     action: (store) => {
       // Bounds clamping is handled by the consumer; store accepts any index.
-      store.setState((s) => ({ ...s, selectedPRIndex: Number.MAX_SAFE_INTEGER }));
+      store.setState((s) => ({
+        ...s,
+        selectedPRIndex: Number.MAX_SAFE_INTEGER,
+      }));
     },
   },
   {
@@ -256,7 +263,10 @@ const detailBindings: BindingDefinition[] = [
     description: 'Next file in diff',
     modes: ['detail'],
     action: (store) => {
-      store.setState((s) => ({ ...s, selectedFileIndex: s.selectedFileIndex + 1 }));
+      store.setState((s) => ({
+        ...s,
+        selectedFileIndex: s.selectedFileIndex + 1,
+      }));
     },
   },
   {
@@ -278,7 +288,10 @@ const detailBindings: BindingDefinition[] = [
       const { confirmingAction } = store.state;
       if (confirmingAction === 'approve') {
         // Second tap: signal confirmation — PRDetailPage effect dispatches the actual action
-        store.setState((s) => ({ ...s, confirmingAction: 'approve_confirmed' }));
+        store.setState((s) => ({
+          ...s,
+          confirmingAction: 'approve_confirmed',
+        }));
       } else {
         // First tap: enter confirmation state
         store.setState((s) => ({ ...s, confirmingAction: 'approve' }));
@@ -404,7 +417,9 @@ const detailScrollBindings: BindingDefinition[] = [
     description: 'Jump to top of diff',
     modes: ['detail'],
     action: (_store) => {
-      const el = document.querySelector('[data-diff-viewport]') as HTMLElement | null;
+      const el = document.querySelector(
+        '[data-diff-viewport]',
+      ) as HTMLElement | null;
       if (el) el.scrollTop = 0;
     },
   },
@@ -413,7 +428,9 @@ const detailScrollBindings: BindingDefinition[] = [
     description: 'Jump to bottom of diff',
     modes: ['detail'],
     action: (_store) => {
-      const el = document.querySelector('[data-diff-viewport]') as HTMLElement | null;
+      const el = document.querySelector(
+        '[data-diff-viewport]',
+      ) as HTMLElement | null;
       if (el) el.scrollTop = el.scrollHeight;
     },
   },

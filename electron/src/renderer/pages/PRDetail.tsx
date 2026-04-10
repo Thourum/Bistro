@@ -1,14 +1,19 @@
 import { useStore } from '../hooks/useStore';
-import type { UIState } from '../store/ui';
 import { appStore } from '../store';
+import type { UIState } from '../store/ui';
 
 export default function PRDetail() {
-  const selectedIndex = useStore(appStore, (state: UIState) => state.selectedPRIndex);
+  const selectedIndex = useStore(
+    appStore,
+    (state: UIState) => state.selectedPRIndex,
+  );
 
   return (
     <div className="pr-detail-view">
       <div className="detail-header">
-        <button onClick={() => appStore.setState((s) => ({ ...s, mode: 'list' }))}>
+        <button
+          onClick={() => appStore.setState((s) => ({ ...s, mode: 'list' }))}
+        >
           ← Back to List
         </button>
         <h1>PR #{selectedIndex + 1} Detail</h1>

@@ -1,15 +1,10 @@
-import React from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog';
-import { ScrollArea } from './ui/scroll-area';
+import type React from 'react';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
-import { KEYBOARD_BINDING_GROUPS, bindingSequence } from '../utils/keyboard';
 import type { BindingDefinition } from '../utils/keyboard';
+import { bindingSequence, KEYBOARD_BINDING_GROUPS } from '../utils/keyboard';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { ScrollArea } from './ui/scroll-area';
 
 interface ShortcutRow {
   readonly key: string;
@@ -26,23 +21,49 @@ function toRow(b: BindingDefinition): ShortcutRow {
 }
 
 function buildSections(): ShortcutSection[] {
-  const navigationKeys = new Set(['j', 'k', 'gg', 'G', 'n', 'p', 'h', 'l', 'ctrl+d', 'ctrl+u', '0', '$']);
-  const actionKeys = new Set(['Enter', 'a', 'aa', 'Escape', 'c', 'r', 'o', ' ', 'd', 'm', 's']);
+  const navigationKeys = new Set([
+    'j',
+    'k',
+    'gg',
+    'G',
+    'n',
+    'p',
+    'h',
+    'l',
+    'ctrl+d',
+    'ctrl+u',
+    '0',
+    '$',
+  ]);
+  const actionKeys = new Set([
+    'Enter',
+    'a',
+    'aa',
+    'Escape',
+    'c',
+    'r',
+    'o',
+    ' ',
+    'd',
+    'm',
+    's',
+  ]);
   const searchKeys = new Set(['/', ':', 'f', '?', 'meta+/', 'ctrl+/']);
 
   const navBindings = KEYBOARD_BINDING_GROUPS.filter((b) =>
-    navigationKeys.has(bindingSequence(b))
+    navigationKeys.has(bindingSequence(b)),
   );
   const actionBindings = KEYBOARD_BINDING_GROUPS.filter((b) =>
-    actionKeys.has(bindingSequence(b))
+    actionKeys.has(bindingSequence(b)),
   );
   const searchBindings = KEYBOARD_BINDING_GROUPS.filter((b) =>
-    searchKeys.has(bindingSequence(b))
+    searchKeys.has(bindingSequence(b)),
   );
-  const globalBindings = KEYBOARD_BINDING_GROUPS.filter((b) =>
-    !navigationKeys.has(bindingSequence(b)) &&
-    !actionKeys.has(bindingSequence(b)) &&
-    !searchKeys.has(bindingSequence(b))
+  const globalBindings = KEYBOARD_BINDING_GROUPS.filter(
+    (b) =>
+      !navigationKeys.has(bindingSequence(b)) &&
+      !actionKeys.has(bindingSequence(b)) &&
+      !searchKeys.has(bindingSequence(b)),
   );
 
   const sections: ShortcutSection[] = [
@@ -87,7 +108,9 @@ export function HelpOverlay(): React.ReactElement | null {
                       <kbd className="font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded text-xs min-w-[3rem] text-center">
                         {shortcut.key}
                       </kbd>
-                      <span className="text-on-surface">{shortcut.description}</span>
+                      <span className="text-on-surface">
+                        {shortcut.description}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -95,8 +118,15 @@ export function HelpOverlay(): React.ReactElement | null {
             ))}
 
             <div className="text-xs text-on-surface-variant text-center mt-4 pt-4 border-t border-outline-variant">
-              Press <kbd className="font-mono bg-surface-container px-1 rounded">?</kbd> or{' '}
-              <kbd className="font-mono bg-surface-container px-1 rounded">Esc</kbd> to close
+              Press{' '}
+              <kbd className="font-mono bg-surface-container px-1 rounded">
+                ?
+              </kbd>{' '}
+              or{' '}
+              <kbd className="font-mono bg-surface-container px-1 rounded">
+                Esc
+              </kbd>{' '}
+              to close
             </div>
           </div>
         </ScrollArea>

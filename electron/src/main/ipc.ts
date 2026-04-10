@@ -1,14 +1,13 @@
-import { ipcMain } from 'electron';
+import { readFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
-import { readFileSync } from 'fs';
-import { Logger } from 'electron-log';
+import { ipcMain } from 'electron';
+import type { Logger } from 'electron-log';
 import type {
   DBQueryRequest,
   FSReadPatchRequest,
   GoCommandRequest,
   SyncActionRequest,
 } from '../types/ipc';
-import type { IPCHandler } from './types';
 import type { WebSocketClient } from './websocket-client';
 
 let db: Database.Database | null = null;
@@ -45,7 +44,11 @@ function getDatabase(logger: Logger): Database.Database {
   }
 }
 
-export function setupIPC(path: string, logger: Logger, wsClient: WebSocketClient): void {
+export function setupIPC(
+  path: string,
+  logger: Logger,
+  wsClient: WebSocketClient,
+): void {
   dbPath = path;
   logger.info(`IPC database path set to: ${dbPath}`);
 
@@ -64,16 +67,20 @@ export function setupIPC(path: string, logger: Logger, wsClient: WebSocketClient
   });
 
   // ---- fs:read-patch handler ----
-  ipcMain.handle('fs:read-patch', async (_event, request: FSReadPatchRequest) => {
-    try {
-      const content = readFileSync(request.path, 'utf-8');
-      return { ok: content };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error(`fs:read-patch error: ${message}`);
-      return { err: message };
-    }
-  });
+  ipcMain.handle(
+    'fs:read-patch',
+    async (_event, request: FSReadPatchRequest) => {
+      try {
+        const content = readFileSync(request.path, 'utf-8');
+        return { ok: content };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        logger.error(`fs:read-patch error: ${message}`);
+        return { err: message };
+      }
+    },
+  );
 
   // ---- go:command handler ----
   ipcMain.handle('go:command', async (_event, request: GoCommandRequest) => {
