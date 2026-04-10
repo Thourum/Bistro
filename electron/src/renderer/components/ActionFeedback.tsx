@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { PendingAction, ActionResult } from '../types';
+import type { ActionResult, PendingAction } from '../types';
 
 const ACTION_LABELS: Record<string, string> = {
   approve: 'Approving',
@@ -24,7 +24,7 @@ export default function ActionFeedback({
 }: ActionFeedbackProps) {
   // Auto-dismiss successful results after timeout
   useEffect(() => {
-    if (actionResult !== null && actionResult.success) {
+    if (actionResult?.success) {
       const timer = setTimeout(onDismiss, AUTO_DISMISS_MS);
       return () => clearTimeout(timer);
     }

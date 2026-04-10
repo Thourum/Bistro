@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { appStore } from '../store';
-import { KEYBOARD_BINDING_GROUPS, bindingSequence } from '../utils/keyboard';
 import type { AppMode, BindingDefinition } from '../utils/keyboard';
+import { bindingSequence, KEYBOARD_BINDING_GROUPS } from '../utils/keyboard';
 
 const SEQUENCE_TIMEOUT_MS = 500;
 
@@ -37,7 +37,10 @@ export function resolveEventKey(event: KeyboardEvent): string {
  * Determines whether a binding is active for the given mode.
  * Bindings with an empty modes array are active in all modes.
  */
-function isBindingActiveForMode(binding: BindingDefinition, mode: AppMode): boolean {
+function isBindingActiveForMode(
+  binding: BindingDefinition,
+  mode: AppMode,
+): boolean {
   if (binding.modes.length === 0) return true;
   return binding.modes.includes(mode);
 }
@@ -54,7 +57,7 @@ export function findBinding(
   key: string,
   mode: AppMode,
   pendingKey: string | undefined,
-  pendingKeyTime: number | undefined
+  pendingKeyTime: number | undefined,
 ): { binding: BindingDefinition; consumed: boolean } | null {
   // 1. Modifier combo (e.g. 'ctrl+d', 'meta+q')
   if (key.includes('+')) {
@@ -62,7 +65,7 @@ export function findBinding(
       (b) =>
         isBindingActiveForMode(b, mode) &&
         b.keys.length === 1 &&
-        b.keys[0] === key
+        b.keys[0] === key,
     );
     if (modifierBinding !== undefined) {
       return { binding: modifierBinding, consumed: false };
@@ -83,7 +86,7 @@ export function findBinding(
       (b) =>
         isBindingActiveForMode(b, mode) &&
         b.keys.length === 2 &&
-        bindingSequence(b) === sequence
+        bindingSequence(b) === sequence,
     );
     if (seqBinding !== undefined) {
       return { binding: seqBinding, consumed: true };
@@ -95,7 +98,7 @@ export function findBinding(
     (b) =>
       isBindingActiveForMode(b, mode) &&
       b.keys.length === 1 &&
-      b.keys[0] === key
+      b.keys[0] === key,
   );
 
   if (singleBinding !== undefined) {
@@ -116,7 +119,11 @@ function isInputFocused(): boolean {
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
   if (active.isContentEditable) return true;
   // Explicit attribute check for jsdom compatibility
-  if ((active as HTMLElement & { contentEditable?: string }).contentEditable === 'true') return true;
+  if (
+    (active as HTMLElement & { contentEditable?: string }).contentEditable ===
+    'true'
+  )
+    return true;
   return false;
 }
 
@@ -157,7 +164,10 @@ export function useKeyboard(): void {
       // Special case: digit keys 1–9 jump directly to the Nth PR.
       if (mode === 'list' && /^[1-9]$/.test(key) && !isInputFocused()) {
         event.preventDefault();
-        appStore.setState((s) => ({ ...s, selectedPRIndex: parseInt(key, 10) - 1 }));
+        appStore.setState((s) => ({
+          ...s,
+          selectedPRIndex: parseInt(key, 10) - 1,
+        }));
         stateRef.current = { lastAction: key };
         return;
       }
@@ -178,7 +188,7 @@ export function useKeyboard(): void {
           (b) =>
             isBindingActiveForMode(b, mode) &&
             b.keys.length === 2 &&
-            b.keys[0] === key
+            b.keys[0] === key,
         );
 
         if (couldStartSequence) {

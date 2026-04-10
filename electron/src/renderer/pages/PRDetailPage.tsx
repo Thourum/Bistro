@@ -1,16 +1,17 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { MainLayout } from '../layouts/MainLayout';
-import { DiffViewer } from '../components/DiffViewer';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CommentInput } from '../components/CommentInput';
-import { useStore } from '../hooks/useStore';
-import { appStore } from '../store';
-import { usePRList } from '../queries/usePRList';
-import { useWebSocket } from '../hooks/useWebSocket';
-import { parseMultiFileDiff } from '../utils/diff-parser';
+import { DiffViewer } from '../components/DiffViewer';
 import { useActionDispatch } from '../hooks/useActionDispatch';
+import { useStore } from '../hooks/useStore';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { MainLayout } from '../layouts/MainLayout';
+import { usePRList } from '../queries/usePRList';
+import { appStore } from '../store';
+import { parseMultiFileDiff } from '../utils/diff-parser';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('PRDetailPage');
+
 import ActionFeedback from '../components/ActionFeedback';
 import StatusSidebar from '../components/StatusSidebar';
 import type { Comment } from '../types';
@@ -27,7 +28,10 @@ export function PRDetailPage() {
   const [diffError, setDiffError] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentsError, setCommentsError] = useState<string | null>(null);
-  const [commentTarget, setCommentTarget] = useState<{ fileIndex: number; lineNumber: number } | null>(null);
+  const [commentTarget, setCommentTarget] = useState<{
+    fileIndex: number;
+    lineNumber: number;
+  } | null>(null);
 
   const confirmingAction = useStore(appStore, (s) => s.confirmingAction);
   const { data: prs = [], isLoading, error } = usePRList(filterState);
@@ -65,7 +69,7 @@ export function PRDetailPage() {
         setDiffError(message);
         setDiffLoading(false);
       });
-  }, [selectedIndex, request, pr]);
+  }, [request, pr]);
 
   // Parse diff sections so we can resolve fileIndex → filename
   const diffSections = useMemo(() => parseMultiFileDiff(diff), [diff]);
@@ -85,11 +89,14 @@ export function PRDetailPage() {
         log.error({ err: message }, 'failed to fetch comments');
         setCommentsError(message);
       });
-  }, [selectedIndex, request, pr]);
+  }, [request, pr]);
 
-  const handleLineClick = useCallback((fileIndex: number, lineNumber: number) => {
-    setCommentTarget({ fileIndex, lineNumber });
-  }, []);
+  const handleLineClick = useCallback(
+    (fileIndex: number, lineNumber: number) => {
+      setCommentTarget({ fileIndex, lineNumber });
+    },
+    [],
+  );
 
   const handleCommentSubmit = useCallback(
     (body: string) => {
@@ -97,9 +104,10 @@ export function PRDetailPage() {
 
       // Resolve filename from fileIndex so inline comment anchors correctly
       const section = diffSections[commentTarget.fileIndex];
-      const file = section != null
-        ? extractFileName(section.newFile || section.oldFile)
-        : undefined;
+      const file =
+        section != null
+          ? extractFileName(section.newFile || section.oldFile)
+          : undefined;
 
       // Optimistic update — add immediately, server confirms via COMMENT_POSTED event
       const optimisticComment: Comment = {
@@ -107,10 +115,12 @@ export function PRDetailPage() {
         pr_id: pr.id,
         author: 'you',
         body,
-        file,
+        ...(file !== undefined && { file }),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        line: commentTarget.lineNumber,
+        ...(commentTarget.lineNumber !== undefined && {
+          line: commentTarget.lineNumber,
+        }),
       };
       setComments((prev) => [...prev, optimisticComment]);
       setCommentTarget(null);
@@ -152,9 +162,13 @@ export function PRDetailPage() {
     >
       <div className="flex flex-col h-full">
         <div>
-          <h2 className="text-lg font-bold text-on-surface mb-2 px-4 pt-4">PR Details</h2>
+          <h2 className="text-lg font-bold text-on-surface mb-2 px-4 pt-4">
+            PR Details
+          </h2>
           {isLoading && (
-            <p className="text-sm text-on-surface-variant px-4">Loading PR details...</p>
+            <p className="text-sm text-on-surface-variant px-4">
+              Loading PR details...
+            </p>
           )}
           {error !== null && (
             <p className="text-sm text-error px-4">
@@ -168,7 +182,8 @@ export function PRDetailPage() {
           )}
           {!isLoading && error === null && pr === undefined && (
             <p className="text-sm text-on-surface-variant px-4">
-              Open PR details sidebar to view review status, comments, and metadata.
+              Open PR details sidebar to view review status, comments, and
+              metadata.
             </p>
           )}
         </div>
@@ -180,13 +195,19 @@ export function PRDetailPage() {
         />
 
         {diffLoading && (
-          <p className="text-sm text-on-surface-variant px-4 py-2">Loading diff...</p>
+          <p className="text-sm text-on-surface-variant px-4 py-2">
+            Loading diff...
+          </p>
         )}
         {diffError !== null && (
-          <p className="text-sm text-error px-4 py-2">Failed to load diff: {diffError}</p>
+          <p className="text-sm text-error px-4 py-2">
+            Failed to load diff: {diffError}
+          </p>
         )}
         {commentsError !== null && (
-          <p className="text-sm text-error px-4 py-2">Failed to load comments: {commentsError}</p>
+          <p className="text-sm text-error px-4 py-2">
+            Failed to load comments: {commentsError}
+          </p>
         )}
 
         <div className="flex flex-1 min-h-0">
@@ -198,9 +219,7 @@ export function PRDetailPage() {
               onLineClick={handleLineClick}
             />
           </div>
-          {pr !== undefined && (
-            <StatusSidebar pr={pr} ciChecks={[]} />
-          )}
+          {pr !== undefined && <StatusSidebar pr={pr} ciChecks={[]} />}
         </div>
 
         {commentTarget !== null && (

@@ -1,8 +1,9 @@
-import { useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useWebSocket } from './useWebSocket';
+import { useEffect } from 'react';
 import { appStore } from '../store';
 import type { PR } from '../types';
+import { useStore } from './useStore';
+import { useWebSocket } from './useWebSocket';
 
 interface RequestPRListData {
   filter: 'open' | 'draft' | 'all';
@@ -20,7 +21,9 @@ interface PRListReadyData {
  * Fetches PR list from sync engine via WebSocket
  * Replaces SQLite-based queries with live sync engine data
  */
-export function useWebSocketPRList(filterState: 'open' | 'draft' | 'all' = 'open') {
+export function useWebSocketPRList(
+  filterState: 'open' | 'draft' | 'all' = 'open',
+) {
   const { request } = useWebSocket();
 
   return useQuery({
@@ -36,7 +39,8 @@ export function useWebSocketPRList(filterState: 'open' | 'draft' | 'all' = 'open
         const payload = data as PRListReadyData;
         return payload.prs;
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to fetch PR list';
+        const message =
+          err instanceof Error ? err.message : 'Failed to fetch PR list';
         throw new Error(message);
       }
     },
@@ -50,8 +54,14 @@ export function useWebSocketPRList(filterState: 'open' | 'draft' | 'all' = 'open
  * Hook to refetch PR list when sync completes
  * Subscribes to SYNC_COMPLETE events and invalidates query cache
  */
-export function useWebSocketSyncListener(onSyncComplete?: (stats: { prCount: number; newPRs: number; updatedPRs: number }) => void): void {
-  const syncStats = appStore.use((s) => s.syncStats);
+export function useWebSocketSyncListener(
+  onSyncComplete?: (stats: {
+    prCount: number;
+    newPRs: number;
+    updatedPRs: number;
+  }) => void,
+): void {
+  const syncStats = useStore(appStore, (s) => s.syncStats);
 
   useEffect(() => {
     if (syncStats !== null) {

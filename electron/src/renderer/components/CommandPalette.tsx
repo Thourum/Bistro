@@ -1,14 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog';
-import { Input } from './ui/input';
-import { ScrollArea } from './ui/scroll-area';
+import type React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Input } from './ui/input';
+import { ScrollArea } from './ui/scroll-area';
 
 interface Command {
   readonly id: string;
@@ -88,7 +84,9 @@ export function CommandPalette(): React.ReactElement | null {
     }
   };
 
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+  const handleInputKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+  ): void => {
     if (e.key === 'Escape') {
       handleClose();
     } else if (e.key === 'ArrowDown') {
@@ -99,7 +97,7 @@ export function CommandPalette(): React.ReactElement | null {
       setSelectedIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Enter' && filteredCommands.length > 0) {
       e.preventDefault();
-      handleExecute(filteredCommands[selectedIndex]);
+      handleExecute(filteredCommands[selectedIndex]!);
     }
   };
 
@@ -135,7 +133,9 @@ export function CommandPalette(): React.ReactElement | null {
                 tabIndex={0}
                 onKeyDown={(e) => e.key === 'Enter' && handleExecute(cmd)}
               >
-                <div className="font-mono text-sm text-on-surface">{cmd.name}</div>
+                <div className="font-mono text-sm text-on-surface">
+                  {cmd.name}
+                </div>
                 {cmd.description !== undefined && (
                   <div className="text-[11px] text-on-surface-variant mt-1">
                     {cmd.description}

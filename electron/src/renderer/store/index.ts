@@ -1,4 +1,4 @@
-import { Store } from '@tanstack/store';
+import type { Store } from '@tanstack/store';
 import type { UIState } from './ui';
 import { createUIStore } from './ui';
 

@@ -34,7 +34,7 @@ export function useActionDispatch(prId: string | undefined) {
 
       send('REQUEST_CHANGES', { pr_id: prId, comment });
     },
-    [prId, send]
+    [prId, send],
   );
 
   const clearActionResult = useCallback(() => {

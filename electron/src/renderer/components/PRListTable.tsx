@@ -1,4 +1,5 @@
-import React from 'react';
+import { Badge } from '@renderer/components/ui/badge';
+import { Button } from '@renderer/components/ui/button';
 import {
   Table,
   TableBody,
@@ -7,12 +8,11 @@ import {
   TableHeader,
   TableRow,
 } from '@renderer/components/ui/table';
-import { Badge } from '@renderer/components/ui/badge';
-import { Button } from '@renderer/components/ui/button';
-import { usePRList } from '../queries/usePRList';
+import type React from 'react';
 import { useStore } from '../hooks/useStore';
-import { appStore } from '../store';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { usePRList } from '../queries/usePRList';
+import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 
 type PRState = 'open' | 'closed' | 'draft' | 'merged';
@@ -43,7 +43,10 @@ function formatDate(dateStr: string): string {
 
 export function PRListTable() {
   const filterState = useStore(appStore, (state: UIState) => state.filterState);
-  const selectedIndex = useStore(appStore, (state: UIState) => state.selectedPRIndex);
+  const selectedIndex = useStore(
+    appStore,
+    (state: UIState) => state.selectedPRIndex,
+  );
   const { data: prs = [], isLoading, error } = usePRList(filterState);
   const { send } = useWebSocket();
 
@@ -91,18 +94,24 @@ export function PRListTable() {
                   : 'cursor-pointer hover:bg-surface-container-low transition-colors'
               }
               onClick={() => {
-                appStore.setState((s) => ({ ...s, selectedPRIndex: idx, mode: 'detail' }));
+                appStore.setState((s) => ({
+                  ...s,
+                  selectedPRIndex: idx,
+                  mode: 'detail',
+                }));
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  appStore.setState((s) => ({ ...s, selectedPRIndex: idx, mode: 'detail' }));
+                if (e.key === 'Enter' && e.target === e.currentTarget) {
+                  appStore.setState((s) => ({
+                    ...s,
+                    selectedPRIndex: idx,
+                    mode: 'detail',
+                  }));
                 }
               }}
             >
               <TableCell>
-                <Badge variant={getBadgeVariant(pr.state)}>
-                  {pr.state}
-                </Badge>
+                <Badge variant={getBadgeVariant(pr.state)}>{pr.state}</Badge>
               </TableCell>
               <TableCell className="font-medium text-on-surface">
                 {pr.title}

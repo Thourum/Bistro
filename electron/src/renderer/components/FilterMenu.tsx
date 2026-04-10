@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
@@ -33,7 +33,9 @@ function FilterPanel(): React.ReactElement {
           key={value}
           onClick={() => handleSelect(value)}
           className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-colors hover:bg-surface-container-low ${
-            filterState === value ? 'bg-surface-container-low font-semibold' : ''
+            filterState === value
+              ? 'bg-surface-container-low font-semibold'
+              : ''
           }`}
           role="menuitem"
           tabIndex={0}
@@ -46,7 +48,8 @@ function FilterPanel(): React.ReactElement {
         </div>
       ))}
       <div className="px-3 py-2 border-t border-outline-variant text-[10px] text-on-surface-variant">
-        Press <kbd className="font-mono">f</kbd> or <kbd className="font-mono">Esc</kbd> to close
+        Press <kbd className="font-mono">f</kbd> or{' '}
+        <kbd className="font-mono">Esc</kbd> to close
       </div>
     </div>
   );

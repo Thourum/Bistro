@@ -1,12 +1,12 @@
-import React from 'react';
-import { AuthLayout } from '../layouts/AuthLayout';
+import React, { useCallback } from 'react';
 import { ProviderButton } from '../components/ProviderButton';
-import { useWebSocket } from '../hooks/useWebSocket';
 import { useStore } from '../hooks/useStore';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { AuthLayout } from '../layouts/AuthLayout';
+import type { ProviderId } from '../providers';
+import { PROVIDERS, parseAuthAction } from '../providers';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
-import { PROVIDERS, parseAuthAction } from '../providers';
-import type { ProviderId } from '../providers';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('LoginPage');
@@ -19,26 +19,45 @@ export function LoginPage() {
   const authLoading = useStore(appStore, (s: UIState) => s.authLoading);
   const authError = useStore(appStore, (s: UIState) => s.authError);
 
-  const handleProviderClick = (provider: ProviderId): void => {
-    log.info({ provider, syncStatus, authLoading }, 'provider clicked');
+  const handleProviderClick = useCallback(
+    (provider: ProviderId): void => {
+      // Read fresh from store — the closure value may be stale on rapid re-invocation
+      if (appStore.state.authLoading) {
+        log.warn({ provider }, 'AUTH_START ignored — already loading');
+        return;
+      }
 
-    const msgId = send('AUTH_START', { provider });
-
-    if (msgId === undefined) {
-      log.error({ provider, syncStatus }, 'send returned undefined — WebSocket not connected');
-      appStore.setState((s) => ({
-        ...s,
-        authError: `Cannot connect to sync engine (status: ${syncStatus}). Make sure the Go process is running.`,
-      }));
-    } else {
-      log.info({ provider, msgId }, 'AUTH_START sent');
+      // Set loading eagerly before sending to close the race window
       appStore.setState((s) => ({ ...s, authLoading: true, authError: null }));
-    }
-  };
+
+      log.info({ provider, syncStatus }, 'provider clicked');
+
+      const msgId = send('AUTH_START', { provider });
+
+      if (msgId === undefined) {
+        log.error(
+          { provider, syncStatus },
+          'send returned undefined — WebSocket not connected',
+        );
+        appStore.setState((s) => ({
+          ...s,
+          authLoading: false,
+          authError: `Cannot connect to sync engine (status: ${syncStatus}). Make sure the Go process is running.`,
+        }));
+        return;
+      }
+
+      log.info({ provider, msgId }, 'AUTH_START sent');
+    },
+    [send, syncStatus],
+  );
 
   // React to keyboard bindings dispatched via the centralized keyboard system.
   // The binding sets confirmingAction to 'auth_github' / 'auth_gitlab' / 'auth_gitea'.
-  const confirmingAction = useStore(appStore, (s: UIState) => s.confirmingAction);
+  const confirmingAction = useStore(
+    appStore,
+    (s: UIState) => s.confirmingAction,
+  );
 
   React.useEffect(() => {
     if (confirmingAction === null) return;
@@ -49,8 +68,8 @@ export function LoginPage() {
     if (parsed === null) return;
     if (authLoading) return;
 
-    handleProviderClick(parsed.id);
-  }, [confirmingAction, authLoading]);
+    handleProviderClick(parsed.id as ProviderId);
+  }, [confirmingAction, authLoading, handleProviderClick]);
 
   return (
     <AuthLayout>
@@ -86,7 +105,11 @@ export function LoginPage() {
                   icon={p.icon}
                   label={p.label}
                   keyHint={p.key.toUpperCase()}
-                  onClick={() => { if (!authLoading) { handleProviderClick(p.id); } }}
+                  onClick={() => {
+                    if (!authLoading) {
+                      handleProviderClick(p.id);
+                    }
+                  }}
                 />
               ))}
             </div>

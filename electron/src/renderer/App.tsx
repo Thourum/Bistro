@@ -1,29 +1,36 @@
-import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { appStore } from './store';
-import { useStore } from './hooks/useStore';
-import { useKeyboardIntegration } from './hooks/useKeyboardIntegration';
-import type { UIState } from './store/ui';
-import { LoginPage } from './pages/LoginPage';
-import { PRListPage } from './pages/PRListPage';
-import { PRDetailPage } from './pages/PRDetailPage';
-import { SettingsPage } from './pages/SettingsPage';
+import React from 'react';
 import { CommandPalette } from './components/CommandPalette';
 import { HelpOverlay } from './components/HelpOverlay';
 import ToastContainer from './components/ToastContainer';
+import { useKeyboardIntegration } from './hooks/useKeyboardIntegration';
+import { useStore } from './hooks/useStore';
+import { LoginPage } from './pages/LoginPage';
+import { PRDetailPage } from './pages/PRDetailPage';
+import { PRListPage } from './pages/PRListPage';
+import { SettingsPage } from './pages/SettingsPage';
+import { appStore } from './store';
+import type { UIState } from './store/ui';
 import './App.css';
 
 const queryClient = new QueryClient();
 
 export function AppContent(): React.ReactElement {
   const mode = useStore(appStore, (state: UIState) => state.mode);
-  const confirmingAction = useStore(appStore, (state: UIState) => state.confirmingAction);
+  const confirmingAction = useStore(
+    appStore,
+    (state: UIState) => state.confirmingAction,
+  );
 
   // Command palette is driven by confirmingAction === 'command'.
   // Map it to the 'command' mode so CommandPalette (which reads mode) opens.
   React.useEffect(() => {
     if (confirmingAction === 'command') {
-      appStore.setState((s) => ({ ...s, mode: 'command', confirmingAction: null }));
+      appStore.setState((s) => ({
+        ...s,
+        mode: 'command',
+        confirmingAction: null,
+      }));
     }
   }, [confirmingAction]);
 
@@ -53,7 +60,10 @@ export function AppContent(): React.ReactElement {
 export function AuthGate(): React.ReactElement {
   useKeyboardIntegration();
 
-  const isAuthenticated = useStore(appStore, (state: UIState) => state.isAuthenticated);
+  const isAuthenticated = useStore(
+    appStore,
+    (state: UIState) => state.isAuthenticated,
+  );
   const authChecked = useStore(appStore, (state: UIState) => state.authChecked);
 
   // Keep mode in sync with auth state so the centralized keyboard system

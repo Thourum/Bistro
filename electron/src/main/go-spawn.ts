@@ -1,6 +1,6 @@
-import { spawn, type ChildProcess } from 'child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import { createConnection } from 'node:net';
-import { Logger } from 'electron-log';
+import type { Logger } from 'electron-log';
 import type { GoProcessConfig } from './types';
 
 function waitForPort(port: number, timeoutMs: number): Promise<void> {
@@ -15,7 +15,11 @@ function waitForPort(port: number, timeoutMs: number): Promise<void> {
       socket.once('error', () => {
         socket.destroy();
         if (Date.now() >= deadline) {
-          reject(new Error(`Timed out waiting for external Go process on port ${port}`));
+          reject(
+            new Error(
+              `Timed out waiting for external Go process on port ${port}`,
+            ),
+          );
           return;
         }
         setTimeout(attempt, 250);
@@ -50,8 +54,13 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
   return new Promise((resolve, reject) => {
     // When BISTRO_SKIP_GO_SPAWN=1, assume Go is already running externally (e.g. under Delve for debugging).
     if (process.env.BISTRO_SKIP_GO_SPAWN === '1') {
-      logger.info('BISTRO_SKIP_GO_SPAWN=1 — waiting for external Go process on port ' + config.wsPort);
-      waitForPort(config.wsPort, GO_READY_TIMEOUT_MS).then(resolve).catch(reject);
+      logger.info(
+        'BISTRO_SKIP_GO_SPAWN=1 — waiting for external Go process on port ' +
+          config.wsPort,
+      );
+      waitForPort(config.wsPort, GO_READY_TIMEOUT_MS)
+        .then(resolve)
+        .catch(reject);
       return;
     }
 
@@ -62,9 +71,12 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
     }
 
     const args = [
-      `-ws-port`, String(config.wsPort),
-      `-db-path`, config.dbPath,
-      `-log-level`, config.logLevel,
+      `-ws-port`,
+      String(config.wsPort),
+      `-db-path`,
+      config.dbPath,
+      `-log-level`,
+      config.logLevel,
       `-replay-queue=${config.replayQueue}`,
     ];
 
@@ -90,7 +102,9 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
     const readyTimeout = setTimeout(() => {
       if (!resolved) {
         resolved = true;
-        logger.warn('Go process did not signal readiness within timeout — proceeding anyway');
+        logger.warn(
+          'Go process did not signal readiness within timeout — proceeding anyway',
+        );
         resolve();
       }
     }, GO_READY_TIMEOUT_MS);
@@ -141,7 +155,11 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
       if (!resolved) {
         resolved = true;
         clearTimeout(readyTimeout);
-        reject(new Error(`Go process exited prematurely: code=${code}, signal=${signal}`));
+        reject(
+          new Error(
+            `Go process exited prematurely: code=${code}, signal=${signal}`,
+          ),
+        );
         return;
       }
 
@@ -153,7 +171,9 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
       // Auto-restart if under limit
       if (restartCount < maxRestarts) {
         restartCount += 1;
-        logger.info(`Auto-restarting Go process (attempt ${restartCount}/${maxRestarts}) in ${RESTART_DELAY_MS}ms`);
+        logger.info(
+          `Auto-restarting Go process (attempt ${restartCount}/${maxRestarts}) in ${RESTART_DELAY_MS}ms`,
+        );
         setTimeout(() => {
           spawnGoProcess(options).catch((err: unknown) => {
             const message = err instanceof Error ? err.message : String(err);
@@ -161,7 +181,9 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
           });
         }, RESTART_DELAY_MS);
       } else {
-        logger.error(`Go process crashed ${restartCount} times — not restarting`);
+        logger.error(
+          `Go process crashed ${restartCount} times — not restarting`,
+        );
       }
     });
 

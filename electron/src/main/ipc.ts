@@ -1,14 +1,15 @@
-import { ipcMain } from 'electron';
+import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join, resolve, sep } from 'node:path';
 import Database from 'better-sqlite3';
-import { readFileSync } from 'fs';
-import { Logger } from 'electron-log';
+import { ipcMain } from 'electron';
+import type { Logger } from 'electron-log';
 import type {
   DBQueryRequest,
   FSReadPatchRequest,
   GoCommandRequest,
   SyncActionRequest,
 } from '../types/ipc';
-import type { IPCHandler } from './types';
 import type { WebSocketClient } from './websocket-client';
 
 let db: Database.Database | null = null;
@@ -45,7 +46,11 @@ function getDatabase(logger: Logger): Database.Database {
   }
 }
 
-export function setupIPC(path: string, logger: Logger, wsClient: WebSocketClient): void {
+export function setupIPC(
+  path: string,
+  logger: Logger,
+  wsClient: WebSocketClient,
+): void {
   dbPath = path;
   logger.info(`IPC database path set to: ${dbPath}`);
 
@@ -64,16 +69,37 @@ export function setupIPC(path: string, logger: Logger, wsClient: WebSocketClient
   });
 
   // ---- fs:read-patch handler ----
-  ipcMain.handle('fs:read-patch', async (_event, request: FSReadPatchRequest) => {
-    try {
-      const content = readFileSync(request.path, 'utf-8');
-      return { ok: content };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error(`fs:read-patch error: ${message}`);
-      return { err: message };
-    }
-  });
+  ipcMain.handle(
+    'fs:read-patch',
+    async (_event, request: FSReadPatchRequest) => {
+      try {
+        // Mirror Go's os.UserCacheDir() per platform
+        const cacheBase =
+          process.env.XDG_CACHE_HOME ??
+          (process.platform === 'darwin'
+            ? join(homedir(), 'Library', 'Caches')
+            : process.platform === 'win32'
+              ? (process.env.LOCALAPPDATA ??
+                join(homedir(), 'AppData', 'Local'))
+              : join(homedir(), '.cache'));
+        const baseDir = resolve(join(cacheBase, 'bistro'));
+        const resolved = resolve(request.path);
+        if (!resolved.startsWith(baseDir + sep)) {
+          logger.warn(
+            `fs:read-patch: rejected path outside cache: ${resolved}`,
+          );
+          return { err: 'Access denied: path outside allowed directory' };
+        }
+        const content = await readFile(resolved, 'utf-8');
+        return { ok: content };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        logger.error(`fs:read-patch error: ${message}`);
+        return { err: message };
+      }
+    },
+  );
 
   // ---- go:command handler ----
   ipcMain.handle('go:command', async (_event, request: GoCommandRequest) => {

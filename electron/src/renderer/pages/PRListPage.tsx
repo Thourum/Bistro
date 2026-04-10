@@ -1,9 +1,8 @@
-import React from 'react';
-import { MainLayout } from '../layouts/MainLayout';
-import { PRListTable } from '../components/PRListTable';
 import { FilterMenu } from '../components/FilterMenu';
+import { PRListTable } from '../components/PRListTable';
 import { SearchBar } from '../components/SearchBar';
 import { useSyncEvents } from '../hooks/useSyncEvents';
+import { MainLayout } from '../layouts/MainLayout';
 
 export function PRListPage() {
   useSyncEvents();

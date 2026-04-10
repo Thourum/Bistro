@@ -58,9 +58,7 @@ export interface GoCommandResponse {
 
 // ---- Sync Subscribe Channel ----
 
-export interface SyncSubscribeRequest {
-  // No params — subscribes renderer to all sync events
-}
+export type SyncSubscribeRequest = Record<string, never>;
 
 // ---- Sync Action Channel ----
 

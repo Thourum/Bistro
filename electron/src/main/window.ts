@@ -1,7 +1,9 @@
 import { BrowserWindow } from 'electron';
+
 const isDev = process.env.NODE_ENV === 'development';
-import { join } from 'path';
-import { Logger } from 'electron-log';
+
+import { join } from 'node:path';
+import type { Logger } from 'electron-log';
 import type { AppConfig } from './types';
 
 let mainWindow: BrowserWindow | null = null;

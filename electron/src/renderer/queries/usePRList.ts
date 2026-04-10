@@ -13,7 +13,7 @@ export function usePRList(filterState: 'open' | 'draft' | 'all' = 'open') {
       if (filterState === 'open') {
         sql += " AND state = 'open' AND draft = 0";
       } else if (filterState === 'draft') {
-        sql += " AND draft = 1";
+        sql += ' AND draft = 1';
       }
 
       sql += ' ORDER BY updated_at DESC LIMIT 100';
@@ -29,6 +29,7 @@ export function usePRList(filterState: 'open' | 'draft' | 'all' = 'open') {
     staleTime: 30 * 1000, // 30s
     gcTime: 5 * 60 * 1000, // 5m
     retry: 3,
-    retryDelay: (attemptIndex: number) => Math.min(1000 * Math.pow(2, attemptIndex), 30000),
+    retryDelay: (attemptIndex: number) =>
+      Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 }

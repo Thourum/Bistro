@@ -1,9 +1,14 @@
-import { EventEmitter } from 'events';
-import WebSocket from 'ws';
+import { EventEmitter } from 'node:events';
 import type { Logger } from 'electron-log';
+import WebSocket from 'ws';
 
 export interface SyncEvent {
-  type: 'sync_started' | 'progress' | 'sync_complete' | 'action_complete' | 'action_failed';
+  type:
+    | 'sync_started'
+    | 'progress'
+    | 'sync_complete'
+    | 'action_complete'
+    | 'action_failed';
   data?: Record<string, unknown>;
   timestamp: number;
 }
@@ -68,7 +73,7 @@ export class WebSocketClient extends EventEmitter {
     if (!this.isConnected()) {
       throw new Error('WebSocket not connected');
     }
-    this.ws!.send(JSON.stringify(message));
+    this.ws?.send(JSON.stringify(message));
   }
 
   isConnected(): boolean {
@@ -90,14 +95,18 @@ export class WebSocketClient extends EventEmitter {
   private scheduleReconnect(): void {
     if (this.stopped) return;
     if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      this.logger.error(`WebSocket max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached`);
+      this.logger.error(
+        `WebSocket max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached`,
+      );
       this.emit('max_reconnect_exceeded');
       return;
     }
 
-    const delay = BASE_RECONNECT_DELAY_MS * Math.pow(2, this.reconnectAttempts);
+    const delay = BASE_RECONNECT_DELAY_MS * 2 ** this.reconnectAttempts;
     this.reconnectAttempts += 1;
-    this.logger.info(`WebSocket reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+    this.logger.info(
+      `WebSocket reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`,
+    );
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

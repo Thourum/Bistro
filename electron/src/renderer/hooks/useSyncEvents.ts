@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { appStore } from '../store';
 import type { SyncEvent } from '../../main/websocket-client';
+import { appStore } from '../store';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('SyncEvents');
