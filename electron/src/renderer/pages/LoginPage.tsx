@@ -21,7 +21,16 @@ export function LoginPage() {
 
   const handleProviderClick = useCallback(
     (provider: ProviderId): void => {
-      log.info({ provider, syncStatus, authLoading }, 'provider clicked');
+      // Read fresh from store — the closure value may be stale on rapid re-invocation
+      if (appStore.state.authLoading) {
+        log.warn({ provider }, 'AUTH_START ignored — already loading');
+        return;
+      }
+
+      // Set loading eagerly before sending to close the race window
+      appStore.setState((s) => ({ ...s, authLoading: true, authError: null }));
+
+      log.info({ provider, syncStatus }, 'provider clicked');
 
       const msgId = send('AUTH_START', { provider });
 
@@ -32,18 +41,15 @@ export function LoginPage() {
         );
         appStore.setState((s) => ({
           ...s,
+          authLoading: false,
           authError: `Cannot connect to sync engine (status: ${syncStatus}). Make sure the Go process is running.`,
         }));
-      } else {
-        log.info({ provider, msgId }, 'AUTH_START sent');
-        appStore.setState((s) => ({
-          ...s,
-          authLoading: true,
-          authError: null,
-        }));
+        return;
       }
+
+      log.info({ provider, msgId }, 'AUTH_START sent');
     },
-    [send, syncStatus, authLoading],
+    [send, syncStatus],
   );
 
   // React to keyboard bindings dispatched via the centralized keyboard system.
