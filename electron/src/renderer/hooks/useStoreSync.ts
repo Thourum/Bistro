@@ -7,24 +7,21 @@ import { useStore } from './useStore';
 const log = createLogger('StoreSync');
 
 export function useStoreSync(store: AppStore) {
-  const _selectedIndex = useStore(store, (s: UIState) => s.selectedPRIndex);
+  const selectedPRIndex = useStore(store, (s: UIState) => s.selectedPRIndex);
+  const filterState = useStore(store, (s: UIState) => s.filterState);
+  const sortBy = useStore(store, (s: UIState) => s.sortBy);
 
   // Sync to localStorage for persistence
   useEffect(() => {
-    const state = store.state;
     try {
       localStorage.setItem(
         'bistro-ui-state',
-        JSON.stringify({
-          selectedPRIndex: state.selectedPRIndex,
-          filterState: state.filterState,
-          sortBy: state.sortBy,
-        }),
+        JSON.stringify({ selectedPRIndex, filterState, sortBy }),
       );
     } catch (e) {
       log.warn({ err: e }, 'failed to save state to localStorage');
     }
-  }, [store.state]);
+  }, [selectedPRIndex, filterState, sortBy]);
 
   // Load from localStorage on mount
   useEffect(() => {
