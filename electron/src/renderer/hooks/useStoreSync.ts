@@ -41,6 +41,12 @@ export function useStoreSync(store: AppStore) {
             filterState: parsed.filterState,
           }));
         }
+        if (parsed.sortBy !== undefined) {
+          store.setState((s: UIState) => ({
+            ...s,
+            sortBy: parsed.sortBy,
+          }));
+        }
       }
     } catch (e) {
       log.warn({ err: e }, 'failed to load state from localStorage');
