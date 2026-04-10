@@ -60,12 +60,12 @@ function buildConfig(): AppConfig {
 
   const GO_LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
   type GoLogLevel = (typeof GO_LOG_LEVELS)[number];
-  const rawLogLevel = process.env.GO_LOG_LEVEL ?? 'debug';
+  const rawLogLevel = process.env.GO_LOG_LEVEL ?? 'info';
   const logLevel: GoLogLevel = (GO_LOG_LEVELS as readonly string[]).includes(
     rawLogLevel,
   )
     ? (rawLogLevel as GoLogLevel)
-    : 'debug';
+    : 'info';
 
   return {
     windowWidth: Number.isNaN(windowWidth) ? 1600 : windowWidth,
