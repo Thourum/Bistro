@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect } from 'vitest';
+import { expect, vi } from 'vitest';
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { SettingsPage } from '../../src/renderer/pages/SettingsPage';
+
+vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
+  useWebSocket: () => ({ send: vi.fn(), request: vi.fn() }),
+}));
 
 expect.extend(matchers);
 
