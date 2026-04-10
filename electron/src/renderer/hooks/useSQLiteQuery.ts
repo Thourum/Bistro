@@ -29,10 +29,7 @@ export function useSQLiteQuery() {
         (async () => {
           const request: DBQueryRequest =
             params !== undefined ? { sql, params } : { sql };
-          // biome-ignore lint/suspicious/noExplicitAny: globalThis.window not typed in Node context
-          const response = await (globalThis as any).window.electron.db(
-            request,
-          );
+          const response = await window.electron.db(request);
 
           if ('err' in response) {
             throw new Error(response.err);

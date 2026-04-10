@@ -53,19 +53,28 @@ function buildConfig(): AppConfig {
   }
 
   const wsPort = parseInt(process.env.WS_PORT || '8080', 10);
+  if (Number.isNaN(wsPort)) throw new Error('WS_PORT must be a valid number');
+
+  const windowWidth = parseInt(process.env.APP_WINDOW_WIDTH || '1600', 10);
+  const windowHeight = parseInt(process.env.APP_WINDOW_HEIGHT || '900', 10);
+
+  const GO_LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
+  type GoLogLevel = (typeof GO_LOG_LEVELS)[number];
+  const rawLogLevel = process.env.GO_LOG_LEVEL ?? 'debug';
+  const logLevel: GoLogLevel = (GO_LOG_LEVELS as readonly string[]).includes(
+    rawLogLevel,
+  )
+    ? (rawLogLevel as GoLogLevel)
+    : 'debug';
 
   return {
-    windowWidth: parseInt(process.env.APP_WINDOW_WIDTH || '1600', 10),
-    windowHeight: parseInt(process.env.APP_WINDOW_HEIGHT || '900', 10),
+    windowWidth: Number.isNaN(windowWidth) ? 1600 : windowWidth,
+    windowHeight: Number.isNaN(windowHeight) ? 900 : windowHeight,
     goProcess: {
       binaryPath: resolveGoBinaryPath(),
       dbPath: join(dataDir, 'sync.db'),
       wsPort,
-      logLevel: (process.env.GO_LOG_LEVEL || 'debug') as
-        | 'debug'
-        | 'info'
-        | 'warn'
-        | 'error',
+      logLevel,
       logFile: join(logsDir, 'bistro-sync.log'),
       replayQueue: true,
     },

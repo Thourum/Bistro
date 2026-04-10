@@ -40,7 +40,7 @@ export function CommandPalette(): React.ReactElement | null {
   // Reset selection when query changes
   useEffect(() => {
     setSelectedIndex(0);
-  }, []);
+  }, [query]);
 
   const handleClose = (): void => {
     appStore.setState((s) => ({ ...s, mode: 'list' }));

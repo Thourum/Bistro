@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { ProviderButton } from '../components/ProviderButton';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -19,25 +19,32 @@ export function LoginPage() {
   const authLoading = useStore(appStore, (s: UIState) => s.authLoading);
   const authError = useStore(appStore, (s: UIState) => s.authError);
 
-  const handleProviderClick = (provider: ProviderId): void => {
-    log.info({ provider, syncStatus, authLoading }, 'provider clicked');
+  const handleProviderClick = useCallback(
+    (provider: ProviderId): void => {
+      log.info({ provider, syncStatus, authLoading }, 'provider clicked');
 
-    const msgId = send('AUTH_START', { provider });
+      const msgId = send('AUTH_START', { provider });
 
-    if (msgId === undefined) {
-      log.error(
-        { provider, syncStatus },
-        'send returned undefined — WebSocket not connected',
-      );
-      appStore.setState((s) => ({
-        ...s,
-        authError: `Cannot connect to sync engine (status: ${syncStatus}). Make sure the Go process is running.`,
-      }));
-    } else {
-      log.info({ provider, msgId }, 'AUTH_START sent');
-      appStore.setState((s) => ({ ...s, authLoading: true, authError: null }));
-    }
-  };
+      if (msgId === undefined) {
+        log.error(
+          { provider, syncStatus },
+          'send returned undefined — WebSocket not connected',
+        );
+        appStore.setState((s) => ({
+          ...s,
+          authError: `Cannot connect to sync engine (status: ${syncStatus}). Make sure the Go process is running.`,
+        }));
+      } else {
+        log.info({ provider, msgId }, 'AUTH_START sent');
+        appStore.setState((s) => ({
+          ...s,
+          authLoading: true,
+          authError: null,
+        }));
+      }
+    },
+    [send, syncStatus, authLoading],
+  );
 
   // React to keyboard bindings dispatched via the centralized keyboard system.
   // The binding sets confirmingAction to 'auth_github' / 'auth_gitlab' / 'auth_gitea'.

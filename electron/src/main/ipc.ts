@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { ipcMain } from 'electron';
 import type { Logger } from 'electron-log';
@@ -71,7 +72,11 @@ export function setupIPC(
     'fs:read-patch',
     async (_event, request: FSReadPatchRequest) => {
       try {
-        const content = readFileSync(request.path, 'utf-8');
+        const resolved = resolve(request.path);
+        if (resolved !== request.path && !resolved.startsWith('/')) {
+          return { err: 'Invalid path' };
+        }
+        const content = await readFile(resolved, 'utf-8');
         return { ok: content };
       } catch (error) {
         const message =
