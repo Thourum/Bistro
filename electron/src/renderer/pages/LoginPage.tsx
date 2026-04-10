@@ -1,12 +1,12 @@
 import React from 'react';
-import { AuthLayout } from '../layouts/AuthLayout';
 import { ProviderButton } from '../components/ProviderButton';
-import { useWebSocket } from '../hooks/useWebSocket';
 import { useStore } from '../hooks/useStore';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { AuthLayout } from '../layouts/AuthLayout';
+import type { ProviderId } from '../providers';
+import { PROVIDERS, parseAuthAction } from '../providers';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
-import { PROVIDERS, parseAuthAction } from '../providers';
-import type { ProviderId } from '../providers';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('LoginPage');
@@ -25,7 +25,10 @@ export function LoginPage() {
     const msgId = send('AUTH_START', { provider });
 
     if (msgId === undefined) {
-      log.error({ provider, syncStatus }, 'send returned undefined — WebSocket not connected');
+      log.error(
+        { provider, syncStatus },
+        'send returned undefined — WebSocket not connected',
+      );
       appStore.setState((s) => ({
         ...s,
         authError: `Cannot connect to sync engine (status: ${syncStatus}). Make sure the Go process is running.`,
@@ -38,7 +41,10 @@ export function LoginPage() {
 
   // React to keyboard bindings dispatched via the centralized keyboard system.
   // The binding sets confirmingAction to 'auth_github' / 'auth_gitlab' / 'auth_gitea'.
-  const confirmingAction = useStore(appStore, (s: UIState) => s.confirmingAction);
+  const confirmingAction = useStore(
+    appStore,
+    (s: UIState) => s.confirmingAction,
+  );
 
   React.useEffect(() => {
     if (confirmingAction === null) return;
@@ -49,8 +55,8 @@ export function LoginPage() {
     if (parsed === null) return;
     if (authLoading) return;
 
-    handleProviderClick(parsed.id);
-  }, [confirmingAction, authLoading]);
+    handleProviderClick(parsed.id as ProviderId);
+  }, [confirmingAction, authLoading, handleProviderClick]);
 
   return (
     <AuthLayout>
@@ -86,7 +92,11 @@ export function LoginPage() {
                   icon={p.icon}
                   label={p.label}
                   keyHint={p.key.toUpperCase()}
-                  onClick={() => { if (!authLoading) { handleProviderClick(p.id); } }}
+                  onClick={() => {
+                    if (!authLoading) {
+                      handleProviderClick(p.id);
+                    }
+                  }}
                 />
               ))}
             </div>

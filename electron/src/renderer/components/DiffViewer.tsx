@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollArea } from './ui/scroll-area';
-import { parseMultiFileDiff, parseDiff } from '../utils/diff-parser';
+import type { Comment } from '../types';
+import type { DiffLine, DiffSection } from '../utils/diff-parser';
+import { parseDiff, parseMultiFileDiff } from '../utils/diff-parser';
 import { detectLanguage, highlightCode } from '../utils/highlighter';
 import { DiffFileHeader } from './DiffFileHeader';
-import type { DiffLine, DiffSection } from '../utils/diff-parser';
-import type { Comment } from '../types';
+import { ScrollArea } from './ui/scroll-area';
 
 interface DiffViewerProps {
   diff: string;
@@ -16,9 +16,15 @@ interface DiffViewerProps {
 function getLineClasses(type: DiffLine['type']): { bg: string; text: string } {
   switch (type) {
     case 'added':
-      return { bg: 'bg-green-50 dark:bg-green-900/20', text: 'text-green-900 dark:text-green-100' };
+      return {
+        bg: 'bg-green-50 dark:bg-green-900/20',
+        text: 'text-green-900 dark:text-green-100',
+      };
     case 'removed':
-      return { bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-900 dark:text-red-100' };
+      return {
+        bg: 'bg-red-50 dark:bg-red-900/20',
+        text: 'text-red-900 dark:text-red-100',
+      };
     default:
       return { bg: 'bg-surface-container-lowest', text: 'text-on-surface' };
   }
@@ -98,12 +104,16 @@ function FileSection({
                 const { bg, text } = getLineClasses(line.type);
                 const prefix = getLinePrefix(line.type);
                 const lineNum = getLineNumber(line);
-                const lineComments = lineNum != null ? (commentsByLine.get(lineNum) ?? []) : [];
+                const lineComments =
+                  lineNum != null ? (commentsByLine.get(lineNum) ?? []) : [];
                 // Only syntax-highlight added/removed lines; context lines stay as plain text
                 // so text-content based queries (getByText) continue to work in tests and for
                 // screen readers.
-                const useHighlight = line.type === 'added' || line.type === 'removed';
-                const highlighted = useHighlight ? highlightCode(line.content, language) : null;
+                const useHighlight =
+                  line.type === 'added' || line.type === 'removed';
+                const highlighted = useHighlight
+                  ? highlightCode(line.content, language)
+                  : null;
 
                 return (
                   <React.Fragment key={`line-${line.type}-${lineIdx}`}>
@@ -131,7 +141,9 @@ function FileSection({
                           dangerouslySetInnerHTML={{ __html: highlighted }}
                         />
                       ) : (
-                        <div className={`flex-1 px-3 py-1 overflow-auto ${text} whitespace-pre-wrap break-words`}>
+                        <div
+                          className={`flex-1 px-3 py-1 overflow-auto ${text} whitespace-pre-wrap break-words`}
+                        >
                           {line.content}
                         </div>
                       )}
@@ -142,7 +154,9 @@ function FileSection({
                         key={comment.id}
                         className="border-b border-outline-variant bg-surface-container px-4 py-2 text-sm"
                       >
-                        <span className="font-bold text-primary text-xs">@{comment.author}</span>
+                        <span className="font-bold text-primary text-xs">
+                          @{comment.author}
+                        </span>
                         <span className="mx-2 text-on-surface-variant text-xs">
                           {new Date(comment.created_at).toLocaleDateString()}
                         </span>
@@ -160,7 +174,12 @@ function FileSection({
   );
 }
 
-export function DiffViewer({ diff, className = '', comments = [], onLineClick }: DiffViewerProps) {
+export function DiffViewer({
+  diff,
+  className = '',
+  comments = [],
+  onLineClick,
+}: DiffViewerProps) {
   // Support both multi-file git diffs and single-file unified diffs
   const sections = useMemo((): DiffSection[] => {
     if (!diff || diff.trim() === '') return [];
@@ -168,7 +187,8 @@ export function DiffViewer({ diff, className = '', comments = [], onLineClick }:
     if (multi.length > 0) return multi;
     // Fall back to single-file parsing
     const single = parseDiff(diff);
-    if (single.hunks.length > 0 || single.oldFile || single.newFile) return [single];
+    if (single.hunks.length > 0 || single.oldFile || single.newFile)
+      return [single];
     return [];
   }, [diff]);
 
@@ -177,17 +197,13 @@ export function DiffViewer({ diff, className = '', comments = [], onLineClick }:
 
   if (!diff || diff.trim() === '') {
     return (
-      <div className="p-4 text-center text-on-surface-variant">
-        No changes
-      </div>
+      <div className="p-4 text-center text-on-surface-variant">No changes</div>
     );
   }
 
   if (sections.length === 0) {
     return (
-      <div className="p-4 text-center text-on-surface-variant">
-        No changes
-      </div>
+      <div className="p-4 text-center text-on-surface-variant">No changes</div>
     );
   }
 
@@ -219,7 +235,7 @@ export function DiffViewer({ diff, className = '', comments = [], onLineClick }:
             comments={comments}
             onToggleCollapse={() => handleToggleCollapse(idx)}
             onFileClick={() => setSelectedFileIndex(idx)}
-            onLineClick={onLineClick}
+            {...(onLineClick !== undefined && { onLineClick })}
           />
         ))}
       </div>

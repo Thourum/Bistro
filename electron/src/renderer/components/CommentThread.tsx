@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import type React from 'react';
+import { useState } from 'react';
 import type { Comment } from '../types';
 
 interface CommentThreadProps {
@@ -15,7 +16,7 @@ export function CommentThread({
   onEdit,
   onDelete,
   currentUser,
-}: CommentThreadProps): React.ReactElement {
+}: CommentThreadProps): React.ReactElement | null {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [showReply, setShowReply] = useState(false);
@@ -23,7 +24,7 @@ export function CommentThread({
   const [editText, setEditText] = useState('');
 
   if (comments.length === 0) {
-    return <></>;
+    return null;
   }
 
   const handleReplySubmit = () => {
@@ -51,13 +52,16 @@ export function CommentThread({
         aria-expanded={!isCollapsed}
       >
         <span>{isCollapsed ? '▶' : '▼'}</span>
-        <span>{comments.length} {comments.length === 1 ? 'comment' : 'comments'}</span>
+        <span>
+          {comments.length} {comments.length === 1 ? 'comment' : 'comments'}
+        </span>
       </div>
 
       {!isCollapsed && (
         <div>
           {comments.map((comment) => {
-            const isAuthor = currentUser != null && currentUser === comment.author;
+            const isAuthor =
+              currentUser != null && currentUser === comment.author;
             const isEditing = editingId === comment.id;
 
             return (
@@ -67,7 +71,9 @@ export function CommentThread({
               >
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-xs text-on-surface">@{comment.author}</span>
+                    <span className="font-bold text-xs text-on-surface">
+                      @{comment.author}
+                    </span>
                     <span className="text-[10px] text-on-surface-variant">
                       {new Date(comment.created_at).toLocaleDateString()}
                     </span>
@@ -112,7 +118,10 @@ export function CommentThread({
                         Save
                       </button>
                       <button
-                        onClick={() => { setEditingId(null); setEditText(''); }}
+                        onClick={() => {
+                          setEditingId(null);
+                          setEditText('');
+                        }}
                         className="text-[10px] text-on-surface-variant hover:text-on-surface"
                       >
                         Cancel
@@ -120,7 +129,9 @@ export function CommentThread({
                     </div>
                   </div>
                 ) : (
-                  <p className="text-on-surface text-xs leading-relaxed">{comment.body}</p>
+                  <p className="text-on-surface text-xs leading-relaxed">
+                    {comment.body}
+                  </p>
                 )}
               </div>
             );
@@ -136,7 +147,6 @@ export function CommentThread({
                     placeholder="Write a reply..."
                     className="w-full text-xs bg-surface border border-outline-variant rounded px-2 py-1 text-on-surface resize-none"
                     rows={2}
-                    autoFocus
                     onKeyDown={(e) => {
                       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                         e.preventDefault();
@@ -157,7 +167,10 @@ export function CommentThread({
                       Reply
                     </button>
                     <button
-                      onClick={() => { setShowReply(false); setReplyText(''); }}
+                      onClick={() => {
+                        setShowReply(false);
+                        setReplyText('');
+                      }}
                       className="text-[10px] text-on-surface-variant hover:text-on-surface"
                     >
                       Cancel
