@@ -32,5 +32,10 @@ go/data/
 *.db-journal
 *.db-wal
 
+# Electron Forge
+electron/out/
+electron/.vite/
+electron/src/renderer/.vite/
+
 # Worktrees
 .worktrees/
