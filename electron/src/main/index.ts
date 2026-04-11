@@ -15,13 +15,12 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
  * Dev: uses <project>/go/ directory (where the binary lives)
  * Prod: uses app.getPath('userData') for stable, writable location
  */
-/**
- * __dirname at runtime = dist/main/main/
- * Project root (bistro/) = 4 levels up: main/ → main/ → dist/ → electron/ → bistro/
- * Electron root (electron/) = 3 levels up: main/ → main/ → dist/ → electron/
- */
-const ELECTRON_ROOT = join(__dirname, '..', '..', '..');
-const PROJECT_ROOT = join(ELECTRON_ROOT, '..');
+// app.getAppPath() → electron/ in dev, app.asar in prod
+// process.resourcesPath → only defined in packaged app
+const ELECTRON_ROOT = app.getAppPath();
+const PROJECT_ROOT = app.isPackaged
+  ? process.resourcesPath
+  : join(ELECTRON_ROOT, '..');
 
 function resolveDataDir(): string {
   if (isDev) {
@@ -82,6 +81,8 @@ function buildConfig(): AppConfig {
 }
 
 log.info('Starting Bistro Electron app');
+log.info(`ELECTRON_ROOT: ${ELECTRON_ROOT}`);
+log.info(`PROJECT_ROOT: ${PROJECT_ROOT}`);
 log.info(`Mode: ${isDev ? 'development' : 'production'}`);
 
 let wsClient: WebSocketClient | null = null;
