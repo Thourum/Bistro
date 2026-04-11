@@ -8,12 +8,7 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
   },
-  rebuildConfig: {
-    // better-sqlite3@12.8.0 has V8 API incompatibilities with Electron 42 alpha.
-    // Skip native rebuild — the hoisted pnpm install already built against Node.js.
-    // Remove this once a better-sqlite3 release supports Electron 42's V8 ABI.
-    onlyModules: [],
-  },
+  rebuildConfig: {},
   makers: [new MakerZIP({}, ['darwin', 'linux', 'win32']), new MakerDMG({})],
   plugins: [
     new AutoUnpackNativesPlugin({}),
