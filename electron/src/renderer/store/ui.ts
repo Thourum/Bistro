@@ -1,5 +1,5 @@
 import { Store } from '@tanstack/store';
-import type { ActionResult, PendingAction, Toast } from '../types';
+import type { ActionResult, PendingAction, RepoInfo, Toast } from '../types';
 
 export interface SyncStats {
   prCount: number;
@@ -55,13 +55,23 @@ export interface UIState {
   authError: string | null;
   authChecked: boolean;
   connectedProviders: Array<{ provider: string; username: string }>;
+  // Repo discovery
+  repos: RepoInfo[];
+  reposLoading: boolean;
+  prListView: 'flat' | 'grouped';
+  repoFilter: string | null;
 }
 
 const SETTINGS_STORAGE_KEY = 'bistro-settings';
 
 function loadPersistedSettings(): Pick<
   UIState,
-  'darkMode' | 'showFileTree' | 'autoSync' | 'syncInterval' | 'notifications'
+  | 'darkMode'
+  | 'showFileTree'
+  | 'autoSync'
+  | 'syncInterval'
+  | 'notifications'
+  | 'prListView'
 > {
   try {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
@@ -73,6 +83,7 @@ function loadPersistedSettings(): Pick<
         | 'autoSync'
         | 'syncInterval'
         | 'notifications'
+        | 'prListView'
       >;
     }
   } catch {
@@ -84,6 +95,7 @@ function loadPersistedSettings(): Pick<
     autoSync: true,
     syncInterval: 60,
     notifications: true,
+    prListView: 'flat',
   };
 }
 
@@ -96,12 +108,14 @@ export function persistSettings(state: UIState): void {
       | 'autoSync'
       | 'syncInterval'
       | 'notifications'
+      | 'prListView'
     > = {
       darkMode: state.darkMode,
       showFileTree: state.showFileTree,
       autoSync: state.autoSync,
       syncInterval: state.syncInterval,
       notifications: state.notifications,
+      prListView: state.prListView,
     };
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
   } catch {
@@ -135,6 +149,9 @@ export const initialUIState: UIState = {
   authError: null,
   authChecked: false,
   connectedProviders: [],
+  repos: [],
+  reposLoading: false,
+  repoFilter: null,
   ...loadPersistedSettings(),
 };
 
