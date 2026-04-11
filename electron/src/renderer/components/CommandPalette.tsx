@@ -1,8 +1,10 @@
 import type React from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../hooks/useStore';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { appStore } from '../store';
 import { initialUIState } from '../store/ui';
+import { RepoPicker } from './RepoPicker';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
@@ -19,6 +21,7 @@ const isDev = import.meta.env.DEV;
 const COMMANDS: readonly Command[] = [
   { id: 'help', name: 'help', description: 'Show keyboard shortcuts' },
   { id: 'settings', name: 'settings', description: 'Open settings' },
+  { id: 'repos', name: 'repos', description: 'Manage watched repositories' },
   { id: 'clear', name: 'clear', description: 'Clear all filters and search' },
   { id: 'focus-list', name: 'focus list', description: 'Focus PR list' },
   { id: 'focus-detail', name: 'focus detail', description: 'Focus PR detail' },
@@ -36,6 +39,9 @@ export function CommandPalette(): React.ReactElement | null {
   const isOpen = mode === 'command';
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [view, setView] = useState<'commands' | 'repos'>('commands');
+  const { send } = useWebSocket();
+  const prefetchedRef = useRef(false);
 
   const filteredCommands = useMemo(
     () =>
@@ -53,13 +59,28 @@ export function CommandPalette(): React.ReactElement | null {
     setSelectedIndex(0);
   }, [query]);
 
+  // Prefetch repo list when user starts typing "repo..."
+  useEffect(() => {
+    if (query.toLowerCase().startsWith('repo') && !prefetchedRef.current) {
+      prefetchedRef.current = true;
+      appStore.setState((s) => ({ ...s, reposLoading: true }));
+      send('REQUEST_REPO_LIST', {});
+    }
+  }, [query, send]);
+
   const handleClose = (): void => {
     appStore.setState((s) => ({ ...s, mode: 'list' }));
     setQuery('');
+    setView('commands');
+    prefetchedRef.current = false;
   };
 
   const handleExecute = (command: Command): void => {
     switch (command.id) {
+      case 'repos':
+        setView('repos');
+        setQuery('');
+        return;
       case 'settings':
         appStore.setState((s) => ({ ...s, mode: 'settings' }));
         setQuery('');
@@ -120,46 +141,54 @@ export function CommandPalette(): React.ReactElement | null {
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="w-full max-w-md">
         <DialogHeader>
-          <DialogTitle>Command Palette</DialogTitle>
+          <DialogTitle>
+            {view === 'repos' ? 'Watched Repositories' : 'Command Palette'}
+          </DialogTitle>
         </DialogHeader>
 
-        <Input
-          type="text"
-          placeholder=":"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={handleInputKeyDown}
-          className="font-mono"
-          autoFocus
-        />
+        {view === 'repos' ? (
+          <RepoPicker onClose={() => setView('commands')} />
+        ) : (
+          <>
+            <Input
+              type="text"
+              placeholder=":"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              className="font-mono"
+              autoFocus
+            />
 
-        <ScrollArea className="h-64">
-          <div className="divide-y divide-outline-variant">
-            {filteredCommands.map((cmd, idx) => (
-              <div
-                key={cmd.id}
-                onClick={() => handleExecute(cmd)}
-                className={`px-4 py-3 cursor-pointer transition-colors ${
-                  idx === selectedIndex
-                    ? 'bg-surface-container-low border-l-2 border-l-primary'
-                    : 'hover:bg-surface-container-low'
-                }`}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => e.key === 'Enter' && handleExecute(cmd)}
-              >
-                <div className="font-mono text-sm text-on-surface">
-                  {cmd.name}
-                </div>
-                {cmd.description !== undefined && (
-                  <div className="text-[11px] text-on-surface-variant mt-1">
-                    {cmd.description}
+            <ScrollArea className="h-64">
+              <div className="divide-y divide-outline-variant">
+                {filteredCommands.map((cmd, idx) => (
+                  <div
+                    key={cmd.id}
+                    onClick={() => handleExecute(cmd)}
+                    className={`px-4 py-3 cursor-pointer transition-colors ${
+                      idx === selectedIndex
+                        ? 'bg-surface-container-low border-l-2 border-l-primary'
+                        : 'hover:bg-surface-container-low'
+                    }`}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === 'Enter' && handleExecute(cmd)}
+                  >
+                    <div className="font-mono text-sm text-on-surface">
+                      {cmd.name}
+                    </div>
+                    {cmd.description !== undefined && (
+                      <div className="text-[11px] text-on-surface-variant mt-1">
+                        {cmd.description}
+                      </div>
+                    )}
                   </div>
-                )}
+                ))}
               </div>
-            ))}
-          </div>
-        </ScrollArea>
+            </ScrollArea>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
