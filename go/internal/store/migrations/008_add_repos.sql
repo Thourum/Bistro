@@ -10,3 +10,5 @@ CREATE TABLE IF NOT EXISTS repos (
 );
 
 ALTER TABLE prs ADD COLUMN repo_id TEXT NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_prs_repo_id ON prs(repo_id);

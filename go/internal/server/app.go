@@ -352,8 +352,8 @@ func (a *App) handleAuthDisconnect(msg ws.InboundMessage) (interface{}, error) {
 	if a.activeProviderName == data.Provider {
 		a.provMu.Lock()
 		a.prov = nil
-		a.provMu.Unlock()
 		a.activeProviderName = ""
+		a.provMu.Unlock()
 	}
 
 	checkResp, err := a.handleAuthCheck(msg)
@@ -419,7 +419,6 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 	}
 	if err := rows.Err(); err != nil {
 		a.log.Error("syncWatchedRepos: rows error", "err", err)
-		return
 	}
 
 	a.wsServer.Broadcast(map[string]interface{}{

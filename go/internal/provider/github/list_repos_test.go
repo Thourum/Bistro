@@ -2,15 +2,29 @@ package github
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	gh "github.com/google/go-github/v63/github"
 )
 
-func TestListUserRepos_RequiresAuth(t *testing.T) {
-	// Client with empty token should compile and the method should exist.
-	// We only verify no panic and that the method is callable.
+func TestListUserRepos_EmptyToken(t *testing.T) {
+	// Mock server that returns 401 Unauthorized
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"message":"Bad credentials"}`))
+	}))
+	defer srv.Close()
+
 	client := NewClient("")
+	// Point the go-github client at our mock server
+	ghClient := gh.NewClient(nil)
+	ghClient.BaseURL, _ = ghClient.BaseURL.Parse(srv.URL + "/")
+	client.gh = ghClient
+
 	_, err := client.ListUserRepos(context.Background())
 	if err == nil {
-		t.Log("ListUserRepos with empty token may succeed or fail depending on GitHub — just verifying it compiles and runs")
+		t.Error("expected error when calling ListUserRepos with empty token, got nil")
 	}
 }

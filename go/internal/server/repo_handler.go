@@ -126,19 +126,17 @@ func newToggleWatchHandler(
 			return nil, fmt.Errorf("TOGGLE_WATCH_REPO: repo_id is required")
 		}
 
-		// Toggle the watched bit.
-		_, err := db.Exec(
-			`UPDATE repos SET watched = CASE WHEN watched = 1 THEN 0 ELSE 1 END WHERE id = ?`,
+		// Toggle the watched bit atomically and read back the new state.
+		var watched int
+		err := db.QueryRow(
+			"UPDATE repos SET watched = CASE WHEN watched = 1 THEN 0 ELSE 1 END WHERE id = ? RETURNING watched",
 			data.RepoID,
-		)
+		).Scan(&watched)
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("repo not found: %s", data.RepoID)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("toggle watch for %s: %w", data.RepoID, err)
-		}
-
-		// Read back the new state.
-		var watched int
-		if err := db.QueryRow("SELECT watched FROM repos WHERE id = ?", data.RepoID).Scan(&watched); err != nil {
-			return nil, fmt.Errorf("read watch state: %w", err)
 		}
 
 		newWatched := watched == 1
