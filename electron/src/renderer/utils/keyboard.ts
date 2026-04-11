@@ -56,14 +56,6 @@ const globalBindings: BindingDefinition[] = [
     },
   },
   {
-    keys: [':', 'r', 'e', 'p', 'o', 's'],
-    description: 'Manage watched repositories',
-    modes: ['list', 'detail'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, mode: 'command' }));
-    },
-  },
-  {
     // macOS: Cmd+Q  — triggers window.close() via IPC; store signals intent
     keys: ['meta+q'],
     description: 'Quit app (macOS)',

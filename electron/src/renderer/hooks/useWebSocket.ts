@@ -380,11 +380,23 @@ function onMessage(event: MessageEvent<string>): void {
         error?: string;
       };
       try {
-        appStore.setState((s) => ({
-          ...s,
-          repos: payload.repos ?? [],
-          reposLoading: false,
-        }));
+        if (payload.error) {
+          appStore.setState((s) => ({
+            ...s,
+            reposLoading: false,
+          }));
+          addToast({
+            type: 'error',
+            message: `Failed to load repos: ${payload.error}`,
+            dismissible: true,
+          });
+        } else {
+          appStore.setState((s) => ({
+            ...s,
+            repos: payload.repos ?? [],
+            reposLoading: false,
+          }));
+        }
       } catch {
         /* test env */
       }

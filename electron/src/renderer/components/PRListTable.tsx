@@ -155,11 +155,7 @@ export function PRListTable() {
 
   // Empty state when no repos watched
   const watchedRepos = (repos ?? []).filter((r) => r.watched);
-  if (
-    prs.length === 0 &&
-    watchedRepos.length === 0 &&
-    (repos ?? []).length === 0
-  ) {
+  if (prs.length === 0 && watchedRepos.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-on-surface-variant">
         <p className="text-lg font-semibold">No repositories watched</p>
