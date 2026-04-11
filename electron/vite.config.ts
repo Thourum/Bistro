@@ -1,27 +1,15 @@
 import { defineConfig } from 'vitest/config';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 
 export default defineConfig({
-  plugins: [react()],
-  root: 'src/renderer',
-  base: './',
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       '@renderer': resolve(__dirname, 'src/renderer'),
       '@shared': resolve(__dirname, 'src/shared'),
     },
-  },
-  build: {
-    outDir: resolve(__dirname, 'dist/renderer'),
-    emptyOutDir: true,
-    rollupOptions: {
-      input: resolve(__dirname, 'src/renderer/index.html'),
-    },
-  },
-  server: {
-    port: 5173,
-    strictPort: true,
   },
   test: {
     globals: true,
