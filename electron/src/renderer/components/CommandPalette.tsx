@@ -2,6 +2,7 @@ import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
+import { initialUIState } from '../store/ui';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
@@ -10,7 +11,10 @@ interface Command {
   readonly id: string;
   readonly name: string;
   readonly description?: string;
+  readonly dev?: boolean;
 }
+
+const isDev = import.meta.env.DEV;
 
 const COMMANDS: readonly Command[] = [
   { id: 'help', name: 'help', description: 'Show keyboard shortcuts' },
@@ -19,6 +23,12 @@ const COMMANDS: readonly Command[] = [
   { id: 'focus-list', name: 'focus list', description: 'Focus PR list' },
   { id: 'focus-detail', name: 'focus detail', description: 'Focus PR detail' },
   { id: 'about', name: 'about', description: 'Show app version and credits' },
+  {
+    id: 'reset-store',
+    name: 'reset store',
+    description: '[DEV] Reset store to initial state',
+    dev: true,
+  },
 ] as const;
 
 export function CommandPalette(): React.ReactElement | null {
@@ -31,8 +41,9 @@ export function CommandPalette(): React.ReactElement | null {
     () =>
       COMMANDS.filter(
         (cmd) =>
-          cmd.name.includes(query.toLowerCase()) ||
-          cmd.description?.toLowerCase().includes(query.toLowerCase()),
+          (!cmd.dev || isDev) &&
+          (cmd.name.includes(query.toLowerCase()) ||
+            cmd.description?.toLowerCase().includes(query.toLowerCase())),
       ),
     [query],
   );
@@ -73,6 +84,10 @@ export function CommandPalette(): React.ReactElement | null {
           filterState: 'open',
           filterMenuOpen: false,
         }));
+        setQuery('');
+        return;
+      case 'reset-store':
+        appStore.setState(() => ({ ...initialUIState, mode: 'list' }));
         setQuery('');
         return;
       case 'about':

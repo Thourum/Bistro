@@ -109,7 +109,7 @@ export function persistSettings(state: UIState): void {
   }
 }
 
-const initialUIState: UIState = {
+export const initialUIState: UIState = {
   selectedPRIndex: 0,
   selectedFileIndex: 0,
   searchQuery: '',
