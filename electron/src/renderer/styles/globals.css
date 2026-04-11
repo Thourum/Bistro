@@ -1,6 +1,82 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  /* Dark mode via class */
+  --dark-mode: class;
+
+  /* Colors - Surface hierarchy */
+  --color-surface: #f8f9fa;
+  --color-surface-bright: #f8f9fa;
+  --color-background: #f8f9fa;
+  --color-surface-dim: #d9dadb;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f3f4f5;
+  --color-surface-container: #edeeef;
+  --color-surface-container-high: #e7e8e9;
+  --color-surface-container-highest: #e1e3e4;
+  --color-surface-variant: #e1e3e4;
+
+  /* Colors - Primary */
+  --color-primary: #004ac6;
+  --color-primary-container: #2563eb;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #eeefff;
+  --color-primary-fixed: #dbe1ff;
+  --color-primary-fixed-dim: #b4c5ff;
+
+  /* Colors - Secondary */
+  --color-secondary: #495c95;
+  --color-secondary-container: #acbfff;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #394c84;
+  --color-secondary-fixed: #dbe1ff;
+  --color-secondary-fixed-dim: #b4c5ff;
+
+  /* Colors - Outline */
+  --color-outline: #737686;
+  --color-outline-variant: #c3c6d7;
+
+  /* Colors - Surface text */
+  --color-on-surface: #191c1d;
+  --color-on-surface-variant: #434655;
+  --color-on-background: #191c1d;
+
+  /* Colors - Error */
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+
+  /* Colors - Tertiary */
+  --color-tertiary: #943700;
+  --color-tertiary-container: #bc4800;
+  --color-on-tertiary: #ffffff;
+  --color-on-tertiary-container: #ffede6;
+  --color-tertiary-fixed: #ffdbcd;
+  --color-tertiary-fixed-dim: #ffb596;
+
+  /* Colors - Inverse */
+  --color-inverse-surface: #2e3132;
+  --color-inverse-on-surface: #f0f1f2;
+  --color-inverse-primary: #b4c5ff;
+
+  /* Border radius - all zero */
+  --radius-none: 0px;
+  --radius: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-full: 0px;
+
+  /* Font families */
+  --font-sans: "IBM Plex Mono", monospace;
+  --font-mono: "IBM Plex Mono", monospace;
+
+  /* Box shadows */
+  --shadow-ambient: 0 10px 30px rgba(25, 28, 29, 0.04);
+  --shadow-none: none;
+}
 
 * {
   box-sizing: border-box;
@@ -9,11 +85,6 @@
 }
 
 :root {
-  /* Fonts */
-  --font-family-sans:
-    -apple-system, "BlinkMacSystemFont", "Segoe UI", "Roboto", sans-serif;
-  --font-family-mono: "Menlo", "Monaco", "Courier New", monospace;
-
   /* Spacing (8px grid) */
   --space-xs: 4px;
   --space-sm: 8px;

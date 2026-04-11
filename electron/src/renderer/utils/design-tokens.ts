@@ -17,8 +17,8 @@ export const COLORS = {
 } as const;
 
 export const FONTS = {
-  sans: "'Geist', sans-serif",
-  mono: "'JetBrains Mono', monospace",
+  sans: "'IBM Plex Mono', monospace",
+  mono: "'IBM Plex Mono', monospace",
 } as const;
 
 export const SHADOWS = {
