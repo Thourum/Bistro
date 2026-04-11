@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
+
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import { expect, vi } from 'vitest';
-import * as matchers from '@testing-library/jest-dom/matchers';
 import { PRDetailPage } from '../../src/renderer/pages/PRDetailPage';
 import * as storeModule from '../../src/renderer/store';
 
-vi.mock('../../src/renderer/queries/usePRList', () => ({
-  usePRList: () => ({ data: [], isLoading: false, error: null }),
+vi.mock('../../src/renderer/hooks/useWebSocketPRList', () => ({
+  useWebSocketPRList: () => ({ data: [], isLoading: false, error: null }),
 }));
 
 expect.extend(matchers);
@@ -35,12 +36,16 @@ describe('PRDetailPage', () => {
 
   it('renders PR detail page', () => {
     render(<PRDetailPage />);
-    expect(screen.getByRole('heading', { name: /PR Details/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /PR Details/i }),
+    ).toBeInTheDocument();
   });
 
   it('renders within MainLayout', () => {
     const { container } = render(<PRDetailPage />);
-    expect(container.querySelector('[data-testid="main-layout"]')).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-testid="main-layout"]'),
+    ).toBeInTheDocument();
   });
 
   it('displays diff viewer', () => {

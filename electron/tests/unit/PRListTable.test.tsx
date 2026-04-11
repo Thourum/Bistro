@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
+
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import { expect, vi } from 'vitest';
-import * as matchers from '@testing-library/jest-dom/matchers';
 import { PRListTable } from '../../src/renderer/components/PRListTable';
-import * as prListModule from '../../src/renderer/queries/usePRList';
+import * as prListModule from '../../src/renderer/hooks/useWebSocketPRList';
 import * as storeModule from '../../src/renderer/store';
 
 expect.extend(matchers);
@@ -33,11 +34,11 @@ const mockStore = {
 
 describe('PRListTable', () => {
   beforeEach(() => {
-    vi.spyOn(prListModule, 'usePRList').mockReturnValue({
+    vi.spyOn(prListModule, 'useWebSocketPRList').mockReturnValue({
       data: [mockPR],
       isLoading: false,
       error: null,
-    } as ReturnType<typeof prListModule.usePRList>);
+    } as ReturnType<typeof prListModule.useWebSocketPRList>);
 
     vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue(
       mockStore as unknown as typeof storeModule.appStore,
@@ -86,11 +87,11 @@ describe('PRListTable', () => {
   });
 
   it('handles empty PR list gracefully', () => {
-    vi.spyOn(prListModule, 'usePRList').mockReturnValue({
+    vi.spyOn(prListModule, 'useWebSocketPRList').mockReturnValue({
       data: [],
       isLoading: false,
       error: null,
-    } as ReturnType<typeof prListModule.usePRList>);
+    } as ReturnType<typeof prListModule.useWebSocketPRList>);
 
     const { container } = render(<PRListTable />);
     const tbody = container.querySelector('tbody');

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { app, ipcMain, shell } from 'electron';
 import log from 'electron-log';
 import { killGoProcess, spawnGoProcess } from './go-spawn';
-import { closeDatabase, setupIPC } from './ipc';
+import { setupIPC } from './ipc';
 import type { AppConfig } from './types';
 import { WebSocketClient } from './websocket-client';
 import { createWindow } from './window';
@@ -169,7 +169,6 @@ app.on('before-quit', () => {
   log.info('App shutting down');
   wsClient?.stop();
   killGoProcess();
-  closeDatabase();
 });
 
 app.on('window-all-closed', () => {

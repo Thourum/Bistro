@@ -11,7 +11,7 @@ import {
 import type React from 'react';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { usePRList } from '../queries/usePRList';
+import { useWebSocketPRList as usePRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 

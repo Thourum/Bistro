@@ -3,7 +3,7 @@ import PRListItem from '../components/PRListItem';
 import StatusBar from '../components/StatusBar';
 import { useStore } from '../hooks/useStore';
 import { useStoreSync } from '../hooks/useStoreSync';
-import { usePRList } from '../queries/usePRList';
+import { useWebSocketPRList as usePRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 

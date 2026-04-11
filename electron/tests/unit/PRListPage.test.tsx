@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
+
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import { expect, vi } from 'vitest';
-import * as matchers from '@testing-library/jest-dom/matchers';
+import * as prListModule from '../../src/renderer/hooks/useWebSocketPRList';
 import { PRListPage } from '../../src/renderer/pages/PRListPage';
-import * as prListModule from '../../src/renderer/queries/usePRList';
 import * as storeModule from '../../src/renderer/store';
 
 expect.extend(matchers);
@@ -33,11 +34,11 @@ const mockStore = {
 
 describe('PRListPage', () => {
   beforeEach(() => {
-    vi.spyOn(prListModule, 'usePRList').mockReturnValue({
+    vi.spyOn(prListModule, 'useWebSocketPRList').mockReturnValue({
       data: [mockPR],
       isLoading: false,
       error: null,
-    } as ReturnType<typeof prListModule.usePRList>);
+    } as ReturnType<typeof prListModule.useWebSocketPRList>);
 
     vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue(
       mockStore as unknown as typeof storeModule.appStore,
@@ -55,12 +56,16 @@ describe('PRListPage', () => {
 
   it('renders within MainLayout', () => {
     const { container } = render(<PRListPage />);
-    expect(container.querySelector('[data-testid="main-layout"]')).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-testid="main-layout"]'),
+    ).toBeInTheDocument();
   });
 
   it('renders toolbar with search and filter', () => {
     render(<PRListPage />);
-    expect(screen.getByPlaceholderText('Search PRs... (/ to focus)')).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText('Search PRs... (/ to focus)'),
+    ).toBeInTheDocument();
     expect(screen.getByText('Filter')).toBeInTheDocument();
   });
 });
