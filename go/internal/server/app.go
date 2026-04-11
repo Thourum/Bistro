@@ -47,10 +47,19 @@ type App struct {
 }
 
 // SetProvider configures the GitHub provider used by the sync orchestrator.
+// If the database and git client are already available, it also (re)creates the
+// orchestrator so the sync loop can start working immediately after auth.
 func (a *App) SetProvider(prov provider.Provider) {
 	a.provMu.Lock()
 	defer a.provMu.Unlock()
 	a.prov = prov
+
+	if prov != nil && a.db != nil && a.gitClient != nil {
+		diffStore := store.NewDiffStore(a.db.DB)
+		a.orchestrator = sync.NewOrchestrator(a.log, prov, a.db, a.gitClient).
+			WithDiffStore(diffStore)
+		a.log.Info("orchestrator initialized after auth")
+	}
 }
 
 // SetGitClient configures the git client used by the sync orchestrator.
