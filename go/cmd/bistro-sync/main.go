@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/samuelasvanyi/bistro/internal/keychain"
 	github "github.com/samuelasvanyi/bistro/internal/provider/github"
@@ -20,6 +21,7 @@ func main() {
 	replayQueue := flag.Bool("replay-queue", true, "Replay offline queue on startup")
 	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, error")
 	logFile := flag.String("log-file", "", "Log file path (default: stderr only)")
+	syncInterval := flag.Duration("sync-interval", 5*time.Minute, "Interval between sync cycles")
 	flag.Parse()
 
 	// Setup logging
@@ -41,6 +43,7 @@ func main() {
 	)
 
 	app := server.NewWithLogger(*wsPort, *dbPath, log)
+	app.SetSyncInterval(*syncInterval)
 
 	// Read GitHub OAuth credentials from environment.
 	clientID := os.Getenv("GITHUB_CLIENT_ID")

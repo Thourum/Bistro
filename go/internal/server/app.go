@@ -41,11 +41,15 @@ type App struct {
 	callbackServer *auth.CallbackServer // non-nil while auth is in progress; guarded by authMu
 	providerCache  *cache.ProviderCache
 	tokenManager       *keychain.TokenManager
+	syncTrigger        chan string
+	provMu             stdsync.RWMutex
+	syncInterval       time.Duration
 }
 
 // SetProvider configures the GitHub provider used by the sync orchestrator.
-// Must be called before Run.
 func (a *App) SetProvider(prov provider.Provider) {
+	a.provMu.Lock()
+	defer a.provMu.Unlock()
 	a.prov = prov
 }
 
@@ -80,6 +84,8 @@ func New(wsPort int, dbPath string) *App {
 		dbPath:        dbPath,
 		providerCache: cache.NewProviderCache(cachePath),
 		tokenManager:  keychain.NewTokenManager(),
+		syncTrigger:   make(chan string, 8),
+		syncInterval:  5 * time.Minute,
 	}
 }
 
@@ -97,7 +103,21 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 		dbPath:        dbPath,
 		providerCache: cache.NewProviderCache(cachePath),
 		tokenManager:  keychain.NewTokenManager(),
+		syncTrigger:   make(chan string, 8),
+		syncInterval:  5 * time.Minute,
 	}
+}
+
+// SetSyncInterval configures the interval between automatic sync cycles.
+func (a *App) SetSyncInterval(d time.Duration) {
+	a.syncInterval = d
+}
+
+// getProvider safely returns the current provider under a read lock.
+func (a *App) getProvider() provider.Provider {
+	a.provMu.RLock()
+	defer a.provMu.RUnlock()
+	return a.prov
 }
 
 // SetGitHubClientID sets the GitHub OAuth app client ID.
@@ -330,7 +350,9 @@ func (a *App) handleAuthDisconnect(msg ws.InboundMessage) (interface{}, error) {
 	}
 	a.providerCache.Delete(data.Provider)
 	if a.activeProviderName == data.Provider {
+		a.provMu.Lock()
 		a.prov = nil
+		a.provMu.Unlock()
 		a.activeProviderName = ""
 	}
 
@@ -341,6 +363,123 @@ func (a *App) handleAuthDisconnect(msg ws.InboundMessage) (interface{}, error) {
 	respMap := checkResp.(map[string]interface{})
 	respMap["type"] = "AUTH_DISCONNECT_RESULT"
 	return respMap, nil
+}
+
+// runSyncLoop runs the periodic sync goroutine. It exits when ctx is cancelled.
+func (a *App) runSyncLoop(ctx context.Context) {
+	ticker := time.NewTicker(a.syncInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.syncWatchedRepos(ctx)
+		case repoID := <-a.syncTrigger:
+			a.syncSingleRepo(ctx, repoID)
+		}
+	}
+}
+
+// syncWatchedRepos syncs all watched repos. No-ops if not yet authenticated.
+func (a *App) syncWatchedRepos(ctx context.Context) {
+	if a.getProvider() == nil || a.orchestrator == nil {
+		return
+	}
+
+	rows, err := a.db.DB.QueryContext(ctx,
+		"SELECT id, provider, owner, repo FROM repos WHERE watched = 1",
+	)
+	if err != nil {
+		a.log.Error("syncWatchedRepos: query failed", "err", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, prov, owner, repo string
+		if err := rows.Scan(&id, &prov, &owner, &repo); err != nil {
+			a.log.Error("syncWatchedRepos: scan failed", "err", err)
+			continue
+		}
+		req := &sync.SyncRequest{
+			Provider:   prov,
+			Owner:      owner,
+			Repo:       repo,
+			IncludePRs: true,
+			State:      "open",
+		}
+		result, syncErr := a.orchestrator.Sync(ctx, req)
+		if syncErr != nil {
+			a.log.Error("syncWatchedRepos: sync failed", "repo", id, "err", syncErr)
+			continue
+		}
+		a.log.Info("syncWatchedRepos: synced", "repo", id, "prs", result.PRCount)
+	}
+	if err := rows.Err(); err != nil {
+		a.log.Error("syncWatchedRepos: rows error", "err", err)
+		return
+	}
+
+	a.wsServer.Broadcast(map[string]interface{}{
+		"type": "SYNC_COMPLETE",
+		"data": map[string]interface{}{},
+	})
+}
+
+// syncSingleRepo syncs a single repo identified by its repo_id (e.g. "github:owner/repo").
+func (a *App) syncSingleRepo(ctx context.Context, repoID string) {
+	if a.getProvider() == nil || a.orchestrator == nil {
+		return
+	}
+
+	// Parse "provider:owner/repo"
+	colonIdx := -1
+	for i, c := range repoID {
+		if c == ':' {
+			colonIdx = i
+			break
+		}
+	}
+	if colonIdx < 0 {
+		a.log.Error("syncSingleRepo: invalid repo_id format", "repo_id", repoID)
+		return
+	}
+	providerName := repoID[:colonIdx]
+	ownerRepo := repoID[colonIdx+1:]
+	slashIdx := -1
+	for i, c := range ownerRepo {
+		if c == '/' {
+			slashIdx = i
+			break
+		}
+	}
+	if slashIdx < 0 {
+		a.log.Error("syncSingleRepo: invalid repo_id format (no slash)", "repo_id", repoID)
+		return
+	}
+	owner := ownerRepo[:slashIdx]
+	repo := ownerRepo[slashIdx+1:]
+
+	req := &sync.SyncRequest{
+		Provider:   providerName,
+		Owner:      owner,
+		Repo:       repo,
+		IncludePRs: true,
+		State:      "open",
+	}
+	result, err := a.orchestrator.Sync(ctx, req)
+	if err != nil {
+		a.log.Error("syncSingleRepo: sync failed", "repo_id", repoID, "err", err)
+		return
+	}
+	a.log.Info("syncSingleRepo: synced", "repo_id", repoID, "prs", result.PRCount)
+
+	a.wsServer.Broadcast(map[string]interface{}{
+		"type": "SYNC_COMPLETE",
+		"data": map[string]interface{}{"repo_id": repoID},
+	})
 }
 
 // Run initializes the database, starts the WebSocket server, and blocks until
@@ -373,6 +512,10 @@ func (a *App) Run(ctx context.Context) error {
 	a.wsServer.RegisterHandler("AUTH_DISCONNECT", a.handleAuthDisconnect)
 	a.wsServer.RegisterHandler("REQUEST_DIFF", newRequestDiffHandler(diffStore, a.log))
 	a.wsServer.RegisterHandler("REQUEST_PR_LIST", newRequestPRListHandler(a.db.DB, a.log))
+	a.wsServer.RegisterHandler("REQUEST_REPO_LIST",
+		newRequestRepoListHandler(a.getProvider, a.db.DB, a.log))
+	a.wsServer.RegisterHandler("TOGGLE_WATCH_REPO",
+		newToggleWatchHandler(a.db.DB, a.syncTrigger, a.log))
 
 	wsAddr := fmt.Sprintf(":%d", a.wsPort)
 	if err := a.wsServer.Start(wsAddr); err != nil {
@@ -380,6 +523,8 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	a.log.Info("WebSocket server listening", "addr", wsAddr)
+
+	go a.runSyncLoop(ctx)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
