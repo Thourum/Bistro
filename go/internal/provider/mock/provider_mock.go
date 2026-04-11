@@ -14,6 +14,8 @@ type MockProvider struct {
 	ciStatus        *provider.CIStatus
 	err             error
 	GetUsernameFunc func(ctx context.Context) (string, error)
+	// Repos is the list returned by ListUserRepos.
+	Repos []*provider.Repo
 }
 
 // NewMockProvider creates a new mock provider with empty state.
@@ -32,6 +34,7 @@ func (m *MockProvider) WithPRs(prs []*provider.PR) *MockProvider {
 		ciStatus:        m.ciStatus,
 		err:             m.err,
 		GetUsernameFunc: m.GetUsernameFunc,
+		Repos:           m.Repos,
 	}
 }
 
@@ -43,6 +46,7 @@ func (m *MockProvider) WithComments(comments []*provider.Comment) *MockProvider 
 		ciStatus:        m.ciStatus,
 		err:             m.err,
 		GetUsernameFunc: m.GetUsernameFunc,
+		Repos:           m.Repos,
 	}
 }
 
@@ -54,6 +58,7 @@ func (m *MockProvider) WithCIStatus(status *provider.CIStatus) *MockProvider {
 		ciStatus:        status,
 		err:             m.err,
 		GetUsernameFunc: m.GetUsernameFunc,
+		Repos:           m.Repos,
 	}
 }
 
@@ -65,6 +70,19 @@ func (m *MockProvider) WithError(err error) *MockProvider {
 		ciStatus:        m.ciStatus,
 		err:             err,
 		GetUsernameFunc: m.GetUsernameFunc,
+		Repos:           m.Repos,
+	}
+}
+
+// WithRepos returns a new MockProvider with the given repos configured.
+func (m *MockProvider) WithRepos(repos []*provider.Repo) *MockProvider {
+	return &MockProvider{
+		prs:             m.prs,
+		comments:        m.comments,
+		ciStatus:        m.ciStatus,
+		err:             m.err,
+		GetUsernameFunc: m.GetUsernameFunc,
+		Repos:           repos,
 	}
 }
 
@@ -134,4 +152,12 @@ func (m *MockProvider) GetUsername(ctx context.Context) (string, error) {
 		return m.GetUsernameFunc(ctx)
 	}
 	return "mock-user", nil
+}
+
+// ListUserRepos returns the configured repos.
+func (m *MockProvider) ListUserRepos(_ context.Context) ([]*provider.Repo, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.Repos, nil
 }

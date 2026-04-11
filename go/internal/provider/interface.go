@@ -30,6 +30,9 @@ type Provider interface {
 
 	// GetUsername returns the authenticated user's login name
 	GetUsername(ctx context.Context) (string, error)
+
+	// ListUserRepos fetches all repos the authenticated user can access
+	ListUserRepos(ctx context.Context) ([]*Repo, error)
 }
 
 // PRFilters defines optional PR list filters
