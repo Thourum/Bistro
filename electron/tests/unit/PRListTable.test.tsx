@@ -28,7 +28,13 @@ const mockPR = {
 };
 
 const mockStore = {
-  state: { selectedPRIndex: 0 },
+  state: {
+    selectedPRIndex: 0,
+    prListView: 'flat' as const,
+    repoFilter: null,
+    repos: [],
+    filterState: 'open' as const,
+  },
   subscribe: vi.fn(() => () => {}),
 };
 
@@ -93,8 +99,8 @@ describe('PRListTable', () => {
       error: null,
     } as ReturnType<typeof prListModule.useWebSocketPRList>);
 
-    const { container } = render(<PRListTable />);
-    const tbody = container.querySelector('tbody');
-    expect(tbody?.children.length).toBe(0);
+    render(<PRListTable />);
+    // When no PRs and no repos watched, show empty state prompt
+    expect(screen.getByText('No repositories watched')).toBeInTheDocument();
   });
 });

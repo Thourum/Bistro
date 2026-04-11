@@ -98,3 +98,14 @@ export interface Toast {
   message: string;
   dismissible: boolean;
 }
+
+/**
+ * Repository discovered from provider, optionally watched for PR sync.
+ */
+export interface RepoInfo {
+  id: string;
+  provider: string;
+  owner: string;
+  repo: string;
+  watched: boolean;
+}

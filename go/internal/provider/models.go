@@ -40,6 +40,14 @@ type Comment struct {
 	UpdatedAt time.Time
 }
 
+// Repo represents a normalized repository
+type Repo struct {
+	Owner    string
+	Name     string
+	FullName string // "owner/repo"
+	Private  bool
+}
+
 // CIStatus represents CI/check run status
 type CIStatus struct {
 	Status    string // "pending", "success", "failure"

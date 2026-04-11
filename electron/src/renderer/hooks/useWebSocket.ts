@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from 'react';
 import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
+import type { RepoInfo } from '../types';
 import { formatErrorMessage } from '../utils/error';
 import { createLogger } from '../utils/logger';
 
@@ -83,6 +84,7 @@ function handleSyncComplete(data: SyncCompleteData): void {
       ...s,
       syncStatus: 'ready',
       lastSyncAt: new Date().toISOString(),
+      prListRevision: s.prListRevision + 1,
       syncStats: {
         prCount: data.pr_count,
         newPRs: data.new_prs,
@@ -369,6 +371,58 @@ function onMessage(event: MessageEvent<string>): void {
       const handler = messageHandlers.get(message.id);
       if (handler) {
         handler(message.data);
+        messageHandlers.delete(message.id);
+      }
+      break;
+    }
+    case 'REPO_LIST_READY': {
+      const payload = message.data as {
+        repos?: RepoInfo[];
+        error?: string;
+      };
+      try {
+        if (payload.error) {
+          appStore.setState((s) => ({
+            ...s,
+            reposLoading: false,
+          }));
+          addToast({
+            type: 'error',
+            message: `Failed to load repos: ${payload.error}`,
+            dismissible: true,
+          });
+        } else {
+          appStore.setState((s) => ({
+            ...s,
+            repos: payload.repos ?? [],
+            reposLoading: false,
+          }));
+        }
+      } catch {
+        /* test env */
+      }
+      const repoListHandler = messageHandlers.get(message.id);
+      if (repoListHandler) {
+        repoListHandler(message.data);
+        messageHandlers.delete(message.id);
+      }
+      break;
+    }
+    case 'WATCH_REPO_RESULT': {
+      const payload = message.data as { repo_id: string; watched: boolean };
+      try {
+        appStore.setState((s) => ({
+          ...s,
+          repos: s.repos.map((r) =>
+            r.id === payload.repo_id ? { ...r, watched: payload.watched } : r,
+          ),
+        }));
+      } catch {
+        /* test env */
+      }
+      const watchHandler = messageHandlers.get(message.id);
+      if (watchHandler) {
+        watchHandler(message.data);
         messageHandlers.delete(message.id);
       }
       break;

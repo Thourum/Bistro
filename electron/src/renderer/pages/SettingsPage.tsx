@@ -16,6 +16,7 @@ import { persistSettings } from '../store/ui';
 export function SettingsPage() {
   const darkMode = useStore(appStore, (s: UIState) => s.darkMode);
   const showFileTree = useStore(appStore, (s: UIState) => s.showFileTree);
+  const prListView = useStore(appStore, (s: UIState) => s.prListView);
   const autoSync = useStore(appStore, (s: UIState) => s.autoSync);
   const syncInterval = useStore(appStore, (s: UIState) => s.syncInterval);
   const notifications = useStore(appStore, (s: UIState) => s.notifications);
@@ -141,6 +142,35 @@ export function SettingsPage() {
             >
               Show file tree in diff view
             </label>
+          </div>
+          <div className="flex items-center space-x-4">
+            <span className="text-sm text-on-surface font-medium">
+              PR List View
+            </span>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="prListView"
+                  value="flat"
+                  checked={prListView === 'flat'}
+                  onChange={() => updateSetting('prListView', 'flat')}
+                  className="accent-primary"
+                />
+                <span className="text-sm text-on-surface">Flat</span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="prListView"
+                  value="grouped"
+                  checked={prListView === 'grouped'}
+                  onChange={() => updateSetting('prListView', 'grouped')}
+                  className="accent-primary"
+                />
+                <span className="text-sm text-on-surface">Grouped</span>
+              </label>
+            </div>
           </div>
         </TabsContent>
 
