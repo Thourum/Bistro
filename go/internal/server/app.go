@@ -372,6 +372,7 @@ func (a *App) Run(ctx context.Context) error {
 	a.wsServer.RegisterHandler("AUTH_CHECK", a.handleAuthCheck)
 	a.wsServer.RegisterHandler("AUTH_DISCONNECT", a.handleAuthDisconnect)
 	a.wsServer.RegisterHandler("REQUEST_DIFF", newRequestDiffHandler(diffStore, a.log))
+	a.wsServer.RegisterHandler("REQUEST_PR_LIST", newRequestPRListHandler(a.db.DB, a.log))
 
 	wsAddr := fmt.Sprintf(":%d", a.wsPort)
 	if err := a.wsServer.Start(wsAddr); err != nil {
