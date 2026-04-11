@@ -1,8 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <!-- Full app with Node.js inspector on Electron main process (:9229).
-       Attach "Electron: Attach Main" after launch to debug the main process.
-       Before launch builds the Go binary so Electron can spawn it. -->
-  <configuration default="false" name="Electron: App (Debug)" type="js.build_tools.npm" factoryName="npm">
+  <configuration default="false" name="Electron: App (Debug)" type="js.build_tools.npm">
     <package-json value="$PROJECT_DIR$/electron/package.json" />
     <command value="run" />
     <scripts>
@@ -10,8 +7,8 @@
     </scripts>
     <node-interpreter value="project" />
     <envs>
-      <env name="GITHUB_CLIENT_ID" value="" />
-      <env name="GITHUB_CLIENT_SECRET" value="" />
+      <env name="GITHUB_CLIENT_ID" value="Ov23lie9iulWfibCZFz3" />
+      <env name="GITHUB_CLIENT_SECRET" value="c057774bb921cf4226c2cc17b10621f96fa0f56b" />
     </envs>
     <method v="2">
       <option name="RunConfigurationTask" enabled="true" run_configuration_name="bistro-sync: Build" run_configuration_type="ShRunConfigurationType" />
