@@ -54,7 +54,7 @@ func (a *App) SetProvider(prov provider.Provider) {
 	defer a.provMu.Unlock()
 	a.prov = prov
 
-	if prov != nil && a.db != nil && a.gitClient != nil {
+	if prov != nil && a.db != nil {
 		diffStore := store.NewDiffStore(a.db.DB)
 		a.orchestrator = sync.NewOrchestrator(a.log, prov, a.db, a.gitClient).
 			WithDiffStore(diffStore)
@@ -509,9 +509,10 @@ func (a *App) Run(ctx context.Context) error {
 
 	diffStore := store.NewDiffStore(a.db.DB)
 
-	if a.prov != nil && a.gitClient != nil {
+	if a.prov != nil {
 		a.orchestrator = sync.NewOrchestrator(a.log, a.prov, a.db, a.gitClient).
 			WithDiffStore(diffStore)
+		a.log.Info("orchestrator initialized at startup (token from keychain)")
 	}
 
 	// Register inbound WebSocket handlers.
