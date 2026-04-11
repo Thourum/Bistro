@@ -2,10 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "target": "ES2022",
-    "module": "Node16",
-    "moduleResolution": "Node16",
-    "outDir": "dist/main",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "lib": ["ES2022"],
+    "noEmit": true,
     "esModuleInterop": true
   },
   "include": ["src/main/**/*.ts", "src/shared/**/*.ts"],
