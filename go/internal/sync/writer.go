@@ -113,8 +113,9 @@ func (w *Writer) writePR(ctx context.Context, tx *sql.Tx, pr *provider.PR) error
 			created_at, updated_at, merged_at,
 			base_branch, head_branch, base_sha, head_sha,
 			comment_count, ci_status, draft,
-			review_status, approved_by, changes_requested_by
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			review_status, approved_by, changes_requested_by,
+			repo_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title                  = excluded.title,
 			body                   = excluded.body,
@@ -130,8 +131,11 @@ func (w *Writer) writePR(ctx context.Context, tx *sql.Tx, pr *provider.PR) error
 			draft                  = excluded.draft,
 			review_status          = excluded.review_status,
 			approved_by            = excluded.approved_by,
-			changes_requested_by   = excluded.changes_requested_by
+			changes_requested_by   = excluded.changes_requested_by,
+			repo_id                = excluded.repo_id
 	`
+
+	repoID := pr.Provider + ":" + pr.Owner + "/" + pr.Repo
 
 	draft := 0
 	if pr.Draft {
@@ -161,6 +165,7 @@ func (w *Writer) writePR(ctx context.Context, tx *sql.Tx, pr *provider.PR) error
 		pr.ReviewStatus,
 		pr.ApprovedBy,
 		pr.ChangesRequestedBy,
+		repoID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write PR %s: %w", pr.ID, err)
