@@ -84,6 +84,7 @@ function handleSyncComplete(data: SyncCompleteData): void {
       ...s,
       syncStatus: 'ready',
       lastSyncAt: new Date().toISOString(),
+      prListRevision: s.prListRevision + 1,
       syncStats: {
         prCount: data.pr_count,
         newPRs: data.new_prs,

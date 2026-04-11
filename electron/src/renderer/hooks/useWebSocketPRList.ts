@@ -25,10 +25,10 @@ export function useWebSocketPRList(
   filterState: 'open' | 'draft' | 'all' = 'open',
 ) {
   const { request } = useWebSocket();
-  const lastSyncAt = useStore(appStore, (s) => s.lastSyncAt);
+  const prListRevision = useStore(appStore, (s) => s.prListRevision);
 
   return useQuery({
-    queryKey: ['prs-websocket', filterState, lastSyncAt],
+    queryKey: ['prs-websocket', filterState, prListRevision],
     queryFn: async (): Promise<PR[]> => {
       try {
         const data = await request('REQUEST_PR_LIST', {

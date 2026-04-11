@@ -64,7 +64,11 @@ export function CommandPalette(): React.ReactElement | null {
     if (query.toLowerCase().startsWith('repo') && !prefetchedRef.current) {
       prefetchedRef.current = true;
       appStore.setState((s) => ({ ...s, reposLoading: true }));
-      send('REQUEST_REPO_LIST', {});
+      const requestId = send('REQUEST_REPO_LIST', {});
+      if (requestId === undefined) {
+        appStore.setState((s) => ({ ...s, reposLoading: false }));
+        prefetchedRef.current = false;
+      }
     }
   }, [query, send]);
 

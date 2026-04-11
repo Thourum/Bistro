@@ -47,6 +47,7 @@ export interface UIState {
     | 'rate_limited';
   syncError: string | null;
   lastSyncAt: string | null;
+  prListRevision: number;
   syncStats: SyncStats | null;
   toasts: Toast[];
   isOffline: boolean;
@@ -142,6 +143,7 @@ export const initialUIState: UIState = {
   syncStatus: 'disconnected',
   syncError: null,
   lastSyncAt: null,
+  prListRevision: 0,
   syncStats: null,
   toasts: [],
   isOffline: false,

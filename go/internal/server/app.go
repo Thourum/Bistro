@@ -9,8 +9,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"syscall"
+	"strings"
 	stdsync "sync"
+	"syscall"
 	"time"
 
 	"github.com/samuelasvanyi/bistro/internal/auth"
@@ -251,7 +252,9 @@ func (a *App) runAuthCodeFlow(providerName string, resultCh <-chan auth.Callback
 
 		client := github.NewClient(result.Token)
 		a.SetProvider(client)
+		a.provMu.Lock()
 		a.activeProviderName = providerName
+		a.provMu.Unlock()
 
 		username := ""
 		if u, err := a.fetchUsername(providerName, result.Token); err == nil {
@@ -358,12 +361,12 @@ func (a *App) handleAuthDisconnect(msg ws.InboundMessage) (interface{}, error) {
 		a.log.Warn("failed to delete token from keychain", "provider", data.Provider, "error", err)
 	}
 	a.providerCache.Delete(data.Provider)
+	a.provMu.Lock()
 	if a.activeProviderName == data.Provider {
-		a.provMu.Lock()
 		a.prov = nil
 		a.activeProviderName = ""
-		a.provMu.Unlock()
 	}
+	a.provMu.Unlock()
 
 	checkResp, err := a.handleAuthCheck(msg)
 	if err != nil {
@@ -393,7 +396,12 @@ func (a *App) runSyncLoop(ctx context.Context) {
 
 // syncWatchedRepos syncs all watched repos. No-ops if not yet authenticated.
 func (a *App) syncWatchedRepos(ctx context.Context) {
-	if a.getProvider() == nil || a.orchestrator == nil {
+	a.provMu.RLock()
+	orch := a.orchestrator
+	prov := a.prov
+	a.provMu.RUnlock()
+
+	if prov == nil || orch == nil {
 		return
 	}
 
@@ -407,19 +415,19 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var id, prov, owner, repo string
-		if err := rows.Scan(&id, &prov, &owner, &repo); err != nil {
+		var id, repoProvider, owner, repo string
+		if err := rows.Scan(&id, &repoProvider, &owner, &repo); err != nil {
 			a.log.Error("syncWatchedRepos: scan failed", "err", err)
 			continue
 		}
 		req := &sync.SyncRequest{
-			Provider:   prov,
+			Provider:   repoProvider,
 			Owner:      owner,
 			Repo:       repo,
 			IncludePRs: true,
 			State:      "open",
 		}
-		result, syncErr := a.orchestrator.Sync(ctx, req)
+		result, syncErr := orch.Sync(ctx, req)
 		if syncErr != nil {
 			a.log.Error("syncWatchedRepos: sync failed", "repo", id, "err", syncErr)
 			continue
@@ -438,37 +446,26 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 
 // syncSingleRepo syncs a single repo identified by its repo_id (e.g. "github:owner/repo").
 func (a *App) syncSingleRepo(ctx context.Context, repoID string) {
-	if a.getProvider() == nil || a.orchestrator == nil {
+	a.provMu.RLock()
+	orch := a.orchestrator
+	prov := a.prov
+	a.provMu.RUnlock()
+
+	if prov == nil || orch == nil {
 		return
 	}
 
 	// Parse "provider:owner/repo"
-	colonIdx := -1
-	for i, c := range repoID {
-		if c == ':' {
-			colonIdx = i
-			break
-		}
-	}
-	if colonIdx < 0 {
+	providerName, ownerRepo, found := strings.Cut(repoID, ":")
+	if !found {
 		a.log.Error("syncSingleRepo: invalid repo_id format", "repo_id", repoID)
 		return
 	}
-	providerName := repoID[:colonIdx]
-	ownerRepo := repoID[colonIdx+1:]
-	slashIdx := -1
-	for i, c := range ownerRepo {
-		if c == '/' {
-			slashIdx = i
-			break
-		}
-	}
-	if slashIdx < 0 {
+	owner, repo, found := strings.Cut(ownerRepo, "/")
+	if !found {
 		a.log.Error("syncSingleRepo: invalid repo_id format (no slash)", "repo_id", repoID)
 		return
 	}
-	owner := ownerRepo[:slashIdx]
-	repo := ownerRepo[slashIdx+1:]
 
 	req := &sync.SyncRequest{
 		Provider:   providerName,
@@ -477,7 +474,7 @@ func (a *App) syncSingleRepo(ctx context.Context, repoID string) {
 		IncludePRs: true,
 		State:      "open",
 	}
-	result, err := a.orchestrator.Sync(ctx, req)
+	result, err := orch.Sync(ctx, req)
 	if err != nil {
 		a.log.Error("syncSingleRepo: sync failed", "repo_id", repoID, "err", err)
 		return

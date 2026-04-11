@@ -166,6 +166,12 @@ func TestToggleWatchHandler_TogglesWatch(t *testing.T) {
 	if data2["watched"].(bool) {
 		t.Error("expected watched=false after second toggle")
 	}
+	select {
+	case repoID := <-syncCh:
+		t.Errorf("did not expect sync trigger after unwatch, got %s", repoID)
+	default:
+		// expected: no sync trigger
+	}
 }
 
 func TestToggleWatchHandler_MissingRepoID(t *testing.T) {

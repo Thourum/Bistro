@@ -58,12 +58,14 @@ func newRequestRepoListHandler(
 		}
 
 		// Upsert repos into DB, preserving existing watched state.
+		// TODO: derive provName from provider interface when multi-provider support is added.
+		const provName = "github"
 		for _, r := range repos {
-			id := "github:" + r.FullName
+			id := provName + ":" + r.FullName
 			_, upsertErr := db.ExecContext(ctx,
 				`INSERT INTO repos (id, provider, owner, repo) VALUES (?, ?, ?, ?)
 				 ON CONFLICT(id) DO NOTHING`,
-				id, "github", r.Owner, r.Name,
+				id, provName, r.Owner, r.Name,
 			)
 			if upsertErr != nil {
 				log.Error("upsert repo failed", "id", id, "err", upsertErr)

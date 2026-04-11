@@ -24,6 +24,11 @@ func main() {
 	syncInterval := flag.Duration("sync-interval", 5*time.Minute, "Interval between sync cycles")
 	flag.Parse()
 
+	if *syncInterval <= 0 {
+		fmt.Fprintf(os.Stderr, "invalid -sync-interval: %s (must be > 0)\n", syncInterval.String())
+		os.Exit(2)
+	}
+
 	// Setup logging
 	logCloser, err := setupLogging(*logLevel, *logFile)
 	if err != nil {
