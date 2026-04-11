@@ -5,6 +5,7 @@ import { HelpOverlay } from './components/HelpOverlay';
 import ToastContainer from './components/ToastContainer';
 import { useKeyboardIntegration } from './hooks/useKeyboardIntegration';
 import { useStore } from './hooks/useStore';
+import { useWebSocket } from './hooks/useWebSocket';
 import { LoginPage } from './pages/LoginPage';
 import { PRDetailPage } from './pages/PRDetailPage';
 import { PRListPage } from './pages/PRListPage';
@@ -59,6 +60,7 @@ export function AppContent(): React.ReactElement {
 
 export function AuthGate(): React.ReactElement {
   useKeyboardIntegration();
+  useWebSocket();
 
   const isAuthenticated = useStore(
     appStore,

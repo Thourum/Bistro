@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
 import { formatErrorMessage } from '../utils/error';
@@ -70,6 +70,13 @@ const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
+// ── Singleton WebSocket manager ──────────────────────────────────────
+let singletonWs: WebSocket | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempt = 0;
+let refCount = 0;
+const messageHandlers = new Map<string, (data: unknown) => void>();
+
 function handleSyncComplete(data: SyncCompleteData): void {
   try {
     appStore.setState((s) => ({
@@ -89,7 +96,6 @@ function handleSyncComplete(data: SyncCompleteData): void {
 
 function handlePRApproved(data: PRApprovedData): void {
   try {
-    // Bump lastSyncAt so query subscribers know to re-fetch PR data
     appStore.setState((s) => ({
       ...s,
       lastSyncAt: data.timestamp,
@@ -101,7 +107,6 @@ function handlePRApproved(data: PRApprovedData): void {
 
 function handleCommentPosted(_data: CommentPostedData): void {
   try {
-    // Bump lastSyncAt so query subscribers know to re-fetch comment data
     appStore.setState((s) => ({
       ...s,
       lastSyncAt: new Date().toISOString(),
@@ -191,372 +196,382 @@ function handleActionFailed(data: ActionFailedData): void {
   }
 }
 
-export function useWebSocket() {
-  const wsRef = useRef<WebSocket | null>(null);
-  const messageHandlersRef = useRef<Map<string, (data: unknown) => void>>(
-    new Map(),
-  );
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectAttemptRef = useRef(0);
+function onMessage(event: MessageEvent<string>): void {
+  let message: WSMessage;
+  try {
+    message = JSON.parse(event.data) as WSMessage;
+  } catch (error) {
+    log.error({ err: error }, 'message parse error');
+    return;
+  }
 
-  useEffect(() => {
-    function connect() {
-      log.info({ url: WS_URL }, 'attempting connection');
+  log.debug({ type: message.type, data: message.data }, 'received event');
+
+  switch (message.type) {
+    case 'SYNC_COMPLETE':
+      handleSyncComplete(message.data as SyncCompleteData);
+      break;
+    case 'PR_APPROVED':
+      handlePRApproved(message.data as PRApprovedData);
+      break;
+    case 'COMMENT_POSTED':
+      handleCommentPosted(message.data as CommentPostedData);
+      break;
+    case 'SYNC_ERROR':
+      handleSyncError(message.data as SyncErrorData);
+      addToast({
+        type: 'error',
+        message: formatErrorMessage((message.data as SyncErrorData).error_code),
+        dismissible: true,
+      });
+      break;
+    case 'AUTH_TOKEN_EXPIRED':
+      handleAuthExpired(message.data as AuthExpiredData);
+      addToast({
+        type: 'error',
+        message: formatErrorMessage('AUTH_TOKEN_EXPIRED'),
+        dismissible: true,
+      });
+      break;
+    case 'RATE_LIMITED':
+      handleRateLimited(message.data as RateLimitedData);
+      break;
+    case 'ACTION_COMPLETE':
+      handleActionComplete(message.data as ActionCompleteData);
+      break;
+    case 'ACTION_FAILED':
+      handleActionFailed(message.data as ActionFailedData);
+      addToast({
+        type: 'error',
+        message: formatErrorMessage((message.data as ActionFailedData).error),
+        dismissible: true,
+      });
+      break;
+    case 'AUTH_REDIRECT': {
+      const payload = message.data as { provider: string; url: string };
       try {
-        appStore.setState((s) => ({ ...s, syncStatus: 'connecting' }));
-      } catch {
-        log.warn('store not available — skipping connection');
-        return;
-      }
-
-      const ws = new WebSocket(WS_URL);
-
-      ws.onopen = () => {
-        log.info({ url: WS_URL }, 'connected');
-        reconnectAttemptRef.current = 0;
-        try {
+        if (!window.electron?.openExternal) {
           appStore.setState((s) => ({
             ...s,
-            syncStatus: 'connected',
-            syncError: null,
-            lastSyncAt: new Date().toISOString(),
-            isOffline: false,
-            authChecked: false,
-          }));
-        } catch {
-          // Store not available (test environment)
-        }
-
-        // Ask Go engine for current auth status
-        const checkMsg: WSMessage = {
-          id: `req-${Date.now()}-${Math.random()}`,
-          type: 'AUTH_CHECK',
-          data: {},
-          timestamp: new Date().toISOString(),
-        };
-        log.info({ id: checkMsg.id }, 'sending AUTH_CHECK');
-        ws.send(JSON.stringify(checkMsg));
-      };
-
-      ws.onmessage = (event: MessageEvent<string>) => {
-        let message: WSMessage;
-        try {
-          message = JSON.parse(event.data) as WSMessage;
-        } catch (error) {
-          log.error({ err: error }, 'message parse error');
-          return;
-        }
-
-        log.debug({ type: message.type, data: message.data }, 'received event');
-
-        switch (message.type) {
-          case 'SYNC_COMPLETE':
-            handleSyncComplete(message.data as SyncCompleteData);
-            break;
-          case 'PR_APPROVED':
-            handlePRApproved(message.data as PRApprovedData);
-            break;
-          case 'COMMENT_POSTED':
-            handleCommentPosted(message.data as CommentPostedData);
-            break;
-          case 'SYNC_ERROR':
-            handleSyncError(message.data as SyncErrorData);
-            addToast({
-              type: 'error',
-              message: formatErrorMessage(
-                (message.data as SyncErrorData).error_code,
-              ),
-              dismissible: true,
-            });
-            break;
-          case 'AUTH_TOKEN_EXPIRED':
-            handleAuthExpired(message.data as AuthExpiredData);
-            addToast({
-              type: 'error',
-              message: formatErrorMessage('AUTH_TOKEN_EXPIRED'),
-              dismissible: true,
-            });
-            break;
-          case 'RATE_LIMITED':
-            handleRateLimited(message.data as RateLimitedData);
-            break;
-          case 'ACTION_COMPLETE':
-            handleActionComplete(message.data as ActionCompleteData);
-            break;
-          case 'ACTION_FAILED':
-            handleActionFailed(message.data as ActionFailedData);
-            addToast({
-              type: 'error',
-              message: formatErrorMessage(
-                (message.data as ActionFailedData).error,
-              ),
-              dismissible: true,
-            });
-            break;
-          case 'AUTH_REDIRECT': {
-            const payload = message.data as { provider: string; url: string };
-            try {
-              if (!window.electron?.openExternal) {
-                appStore.setState((s) => ({
-                  ...s,
-                  authLoading: false,
-                  authError: 'Browser launch is unavailable.',
-                }));
-                break;
-              }
-
-              void window.electron.openExternal(payload.url).then((result) => {
-                if (result && 'err' in result) {
-                  appStore.setState((s) => ({
-                    ...s,
-                    authLoading: false,
-                    authError: (result as { err: string }).err,
-                  }));
-                  addToast({
-                    type: 'error',
-                    message: (result as { err: string }).err,
-                    dismissible: true,
-                  });
-                  return;
-                }
-                appStore.setState((s) => ({
-                  ...s,
-                  authLoading: true,
-                  authError: null,
-                }));
-              });
-            } catch {
-              /* test env */
-            }
-            break;
-          }
-          case 'AUTH_CHECK_RESULT': {
-            const payload = message.data as {
-              authenticated: boolean;
-              providers: Array<{ provider: string; username: string }>;
-            };
-            try {
-              appStore.setState((s) => ({
-                ...s,
-                authChecked: true,
-                authLoading: false,
-                isAuthenticated: payload.authenticated,
-                connectedProviders: payload.providers ?? [],
-              }));
-            } catch {
-              /* test env */
-            }
-            break;
-          }
-          case 'AUTH_DISCONNECT_RESULT': {
-            const payload = message.data as {
-              authenticated: boolean;
-              providers: Array<{ provider: string; username: string }>;
-            };
-            try {
-              appStore.setState((s) => ({
-                ...s,
-                isAuthenticated: payload.authenticated,
-                connectedProviders: payload.providers ?? [],
-              }));
-            } catch {
-              /* test env */
-            }
-            break;
-          }
-          case 'AUTH_SUCCESS': {
-            const payload = message.data as {
-              provider: string;
-              username: string;
-            };
-            try {
-              appStore.setState((s) => ({
-                ...s,
-                isAuthenticated: true,
-                authChecked: true,
-                authLoading: false,
-                authError: null,
-                connectedProviders: [
-                  ...s.connectedProviders.filter(
-                    (p) => p.provider !== payload.provider,
-                  ),
-                  {
-                    provider: payload.provider,
-                    username: payload.username ?? '',
-                  },
-                ],
-              }));
-            } catch {
-              /* test env */
-            }
-            break;
-          }
-          case 'AUTH_FAILED': {
-            const payload = message.data as { error: string };
-            try {
-              appStore.setState((s) => ({
-                ...s,
-                authLoading: false,
-                authError: payload.error,
-              }));
-            } catch {
-              /* test env */
-            }
-            addToast({
-              type: 'error',
-              message: payload.error,
-              dismissible: true,
-            });
-            break;
-          }
-          case 'DIFF_READY':
-          case 'COMMENTS_READY': {
-            const handler = messageHandlersRef.current.get(message.id);
-            if (handler) {
-              handler(message.data);
-              messageHandlersRef.current.delete(message.id);
-            }
-            break;
-          }
-          default:
-            log.warn({ type: message.type }, 'unhandled event type');
-        }
-      };
-
-      ws.onerror = (error) => {
-        log.error({ err: error }, 'connection error');
-        try {
-          appStore.setState((s) => ({
-            ...s,
-            syncStatus: 'error',
-            syncError: 'WebSocket connection failed',
-          }));
-        } catch {
-          // Store not available (test environment)
-        }
-      };
-
-      ws.onclose = () => {
-        log.info('disconnected');
-        const isOnline =
-          typeof navigator !== 'undefined' ? navigator.onLine : true;
-        try {
-          appStore.setState((s) => ({
-            ...s,
-            syncStatus: 'disconnected',
-            isOffline: !isOnline,
             authLoading: false,
+            authError: 'Browser launch is unavailable.',
           }));
-        } catch {
-          // Store not available (test environment)
+          break;
         }
 
-        if (reconnectAttemptRef.current < MAX_RECONNECT_ATTEMPTS) {
-          const delay = Math.min(
-            BASE_RECONNECT_DELAY_MS * 2 ** reconnectAttemptRef.current,
-            MAX_RECONNECT_DELAY_MS,
-          );
-          reconnectAttemptRef.current += 1;
-          log.info(
-            {
-              delay,
-              attempt: reconnectAttemptRef.current,
-              maxAttempts: MAX_RECONNECT_ATTEMPTS,
-            },
-            'scheduling reconnect',
-          );
-          reconnectTimerRef.current = setTimeout(() => {
-            connect();
-          }, delay);
-        } else {
-          log.error(
-            { maxAttempts: MAX_RECONNECT_ATTEMPTS },
-            'max reconnect attempts reached',
-          );
-          try {
+        void window.electron.openExternal(payload.url).then((result) => {
+          if (result && 'err' in result) {
             appStore.setState((s) => ({
               ...s,
-              syncStatus: 'error',
-              syncError: 'Connection lost. Please restart the app.',
-              authChecked: true,
-              isAuthenticated: false,
+              authLoading: false,
+              authError: (result as { err: string }).err,
             }));
-          } catch {
-            // Store not available (test environment)
+            addToast({
+              type: 'error',
+              message: (result as { err: string }).err,
+              dismissible: true,
+            });
+            return;
           }
-        }
+          appStore.setState((s) => ({
+            ...s,
+            authLoading: true,
+            authError: null,
+          }));
+        });
+      } catch {
+        /* test env */
+      }
+      break;
+    }
+    case 'AUTH_CHECK_RESULT': {
+      const payload = message.data as {
+        authenticated: boolean;
+        providers: Array<{ provider: string; username: string }>;
       };
+      try {
+        appStore.setState((s) => ({
+          ...s,
+          authChecked: true,
+          authLoading: false,
+          isAuthenticated: payload.authenticated,
+          connectedProviders: payload.providers ?? [],
+        }));
+      } catch {
+        /* test env */
+      }
+      break;
+    }
+    case 'AUTH_DISCONNECT_RESULT': {
+      const payload = message.data as {
+        authenticated: boolean;
+        providers: Array<{ provider: string; username: string }>;
+      };
+      try {
+        appStore.setState((s) => ({
+          ...s,
+          isAuthenticated: payload.authenticated,
+          connectedProviders: payload.providers ?? [],
+        }));
+      } catch {
+        /* test env */
+      }
+      break;
+    }
+    case 'AUTH_SUCCESS': {
+      const payload = message.data as {
+        provider: string;
+        username: string;
+      };
+      try {
+        appStore.setState((s) => ({
+          ...s,
+          isAuthenticated: true,
+          authChecked: true,
+          authLoading: false,
+          authError: null,
+          connectedProviders: [
+            ...s.connectedProviders.filter(
+              (p) => p.provider !== payload.provider,
+            ),
+            {
+              provider: payload.provider,
+              username: payload.username ?? '',
+            },
+          ],
+        }));
+      } catch {
+        /* test env */
+      }
+      break;
+    }
+    case 'AUTH_FAILED': {
+      const payload = message.data as { error: string };
+      try {
+        appStore.setState((s) => ({
+          ...s,
+          authLoading: false,
+          authError: payload.error,
+        }));
+      } catch {
+        /* test env */
+      }
+      addToast({
+        type: 'error',
+        message: payload.error,
+        dismissible: true,
+      });
+      break;
+    }
+    case 'DIFF_READY':
+    case 'COMMENTS_READY':
+    case 'PR_LIST_READY': {
+      const handler = messageHandlers.get(message.id);
+      if (handler) {
+        handler(message.data);
+        messageHandlers.delete(message.id);
+      }
+      break;
+    }
+    default:
+      log.warn({ type: message.type }, 'unhandled event type');
+  }
+}
 
-      wsRef.current = ws;
+function connect(): void {
+  if (singletonWs && singletonWs.readyState <= WebSocket.OPEN) {
+    return;
+  }
+
+  log.info({ url: WS_URL }, 'attempting connection');
+  try {
+    appStore.setState((s) => ({ ...s, syncStatus: 'connecting' }));
+  } catch {
+    log.warn('store not available — skipping connection');
+    return;
+  }
+
+  const ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    log.info({ url: WS_URL }, 'connected');
+    reconnectAttempt = 0;
+    try {
+      appStore.setState((s) => ({
+        ...s,
+        syncStatus: 'connected',
+        syncError: null,
+        lastSyncAt: new Date().toISOString(),
+        isOffline: false,
+        authChecked: false,
+      }));
+    } catch {
+      // Store not available (test environment)
     }
 
-    connect();
+    const checkMsg: WSMessage = {
+      id: `req-${Date.now()}-${Math.random()}`,
+      type: 'AUTH_CHECK',
+      data: {},
+      timestamp: new Date().toISOString(),
+    };
+    log.info({ id: checkMsg.id }, 'sending AUTH_CHECK');
+    ws.send(JSON.stringify(checkMsg));
+  };
 
-    return () => {
-      if (reconnectTimerRef.current !== null) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
+  ws.onmessage = onMessage;
+
+  ws.onerror = (error) => {
+    log.error({ err: error }, 'connection error');
+    try {
+      appStore.setState((s) => ({
+        ...s,
+        syncStatus: 'error',
+        syncError: 'WebSocket connection failed',
+      }));
+    } catch {
+      // Store not available (test environment)
+    }
+  };
+
+  ws.onclose = () => {
+    log.info('disconnected');
+    singletonWs = null;
+    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+    try {
+      appStore.setState((s) => ({
+        ...s,
+        syncStatus: 'disconnected',
+        isOffline: !isOnline,
+        authLoading: false,
+      }));
+    } catch {
+      // Store not available (test environment)
+    }
+
+    if (refCount > 0 && reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
+      const delay = Math.min(
+        BASE_RECONNECT_DELAY_MS * 2 ** reconnectAttempt,
+        MAX_RECONNECT_DELAY_MS,
+      );
+      reconnectAttempt += 1;
+      log.info(
+        {
+          delay,
+          attempt: reconnectAttempt,
+          maxAttempts: MAX_RECONNECT_ATTEMPTS,
+        },
+        'scheduling reconnect',
+      );
+      reconnectTimer = setTimeout(connect, delay);
+    } else if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      log.error(
+        { maxAttempts: MAX_RECONNECT_ATTEMPTS },
+        'max reconnect attempts reached',
+      );
+      try {
+        appStore.setState((s) => ({
+          ...s,
+          syncStatus: 'error',
+          syncError: 'Connection lost. Please restart the app.',
+          authChecked: true,
+          isAuthenticated: false,
+        }));
+      } catch {
+        // Store not available (test environment)
       }
-      wsRef.current?.close();
-      wsRef.current = null;
+    }
+  };
+
+  singletonWs = ws;
+}
+
+function disconnect(): void {
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  singletonWs?.close();
+  singletonWs = null;
+  reconnectAttempt = 0;
+}
+
+function sendMessage(type: string, data: unknown): string | undefined {
+  const ws = singletonWs;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    const state = ws ? ws.readyState : 'null';
+    log.error(
+      {
+        type,
+        ref: ws ? 'exists' : 'null',
+        readyState: state,
+        expected: WebSocket.OPEN,
+      },
+      'send failed — not connected',
+    );
+    log.error({ type, data }, 'dropped message');
+    return undefined;
+  }
+
+  const id = `req-${Date.now()}-${Math.random()}`;
+  const message: WSMessage = {
+    id,
+    type,
+    data,
+    timestamp: new Date().toISOString(),
+  };
+
+  log.info({ type, id }, 'sending message');
+  ws.send(JSON.stringify(message));
+  return id;
+}
+
+function requestMessage(type: string, data: unknown): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const id = sendMessage(type, data);
+    if (id === undefined) {
+      reject(new Error('WebSocket not connected'));
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      messageHandlers.delete(id);
+      reject(new Error(`Timeout waiting for ${type} response`));
+    }, REQUEST_TIMEOUT_MS);
+
+    messageHandlers.set(id, (responseData) => {
+      clearTimeout(timeout);
+      resolve(responseData);
+    });
+  });
+}
+
+// ── Hook (ref-counted, shares singleton) ─────────────────────────────
+export function useWebSocket() {
+  useEffect(() => {
+    refCount += 1;
+    if (refCount === 1) {
+      connect();
+    }
+    return () => {
+      refCount -= 1;
+      if (refCount === 0) {
+        disconnect();
+      }
     };
   }, []);
 
   const send = useCallback(
-    (type: string, data: unknown): string | undefined => {
-      const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        const state = ws ? ws.readyState : 'null';
-        log.error(
-          {
-            type,
-            ref: ws ? 'exists' : 'null',
-            readyState: state,
-            expected: WebSocket.OPEN,
-          },
-          'send failed — not connected',
-        );
-        log.error({ type, data }, 'dropped message');
-        return undefined;
-      }
-
-      const id = `req-${Date.now()}-${Math.random()}`;
-      const message: WSMessage = {
-        id,
-        type,
-        data,
-        timestamp: new Date().toISOString(),
-      };
-
-      log.info({ type, id }, 'sending message');
-      ws.send(JSON.stringify(message));
-      return id;
-    },
+    (type: string, data: unknown): string | undefined =>
+      sendMessage(type, data),
     [],
   );
 
   const request = useCallback(
-    (type: string, data: unknown): Promise<unknown> => {
-      return new Promise((resolve, reject) => {
-        const id = send(type, data);
-        if (id === undefined) {
-          reject(new Error('WebSocket not connected'));
-          return;
-        }
-
-        const timeout = setTimeout(() => {
-          messageHandlersRef.current.delete(id);
-          reject(new Error(`Timeout waiting for ${type} response`));
-        }, REQUEST_TIMEOUT_MS);
-
-        messageHandlersRef.current.set(id, (responseData) => {
-          clearTimeout(timeout);
-          resolve(responseData);
-        });
-      });
-    },
-    [send],
+    (type: string, data: unknown): Promise<unknown> =>
+      requestMessage(type, data),
+    [],
   );
 
-  return { send, request, wsRef };
+  return { send, request };
 }
