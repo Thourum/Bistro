@@ -127,3 +127,36 @@ func TestPostComment_ValidationErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestApprove_InvalidID verifies Approve returns an error for a malformed ID.
+func TestApprove_InvalidID(t *testing.T) {
+	client := NewClient("test-token")
+	ctx := context.Background()
+
+	err := client.Approve(ctx, "not-a-pr-id")
+	if err == nil {
+		t.Error("expected error for invalid PR ID, got nil")
+	}
+}
+
+// TestRequestChanges_InvalidID verifies RequestChanges returns an error for a malformed ID.
+func TestRequestChanges_InvalidID(t *testing.T) {
+	client := NewClient("test-token")
+	ctx := context.Background()
+
+	err := client.RequestChanges(ctx, "not-a-pr-id", "body")
+	if err == nil {
+		t.Error("expected error for invalid PR ID, got nil")
+	}
+}
+
+// TestPostComment_InvalidID verifies PostComment returns an error for a malformed ID.
+func TestPostComment_InvalidID(t *testing.T) {
+	client := NewClient("test-token")
+	ctx := context.Background()
+
+	err := client.PostComment(ctx, "not-a-pr-id", 0, "body")
+	if err == nil {
+		t.Error("expected error for invalid PR ID, got nil")
+	}
+}

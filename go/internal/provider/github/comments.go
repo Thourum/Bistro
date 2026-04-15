@@ -46,3 +46,13 @@ func normalizeComment(prID string, ghComment *ghlib.IssueComment) *provider.Comm
 		UpdatedAt: ghComment.GetUpdatedAt().Time,
 	}
 }
+
+// GetComments implements provider.Provider, parsing the "github:owner/repo:number" ID format.
+func (c *Client) GetComments(ctx context.Context, prID string) ([]*provider.Comment, error) {
+	owner, repo, number, err := parsePRID(prID)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.getComments(ctx, owner, repo, number)
+}

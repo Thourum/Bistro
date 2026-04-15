@@ -70,3 +70,37 @@ func normalizePR(owner, repo string, ghPR *ghlib.PullRequest) *provider.PR {
 
 	return pr
 }
+
+// ListPRs implements provider.Provider by mapping PRFilters to GitHub-specific params.
+// filters.Owner and filters.Repo are required. filters.State defaults to "open" if empty.
+func (c *Client) ListPRs(ctx context.Context, filters provider.PRFilters) ([]*provider.PR, error) {
+	if filters.Owner == "" || filters.Repo == "" {
+		return nil, fmt.Errorf("owner and repo required in filters")
+	}
+
+	state := filters.State
+	if state == "" {
+		state = "open"
+	}
+
+	prs, err := c.listPRs(ctx, filters.Owner, filters.Repo, state)
+	if err != nil {
+		return nil, err
+	}
+
+	if filters.Limit > 0 && len(prs) > filters.Limit {
+		prs = prs[:filters.Limit]
+	}
+
+	return prs, nil
+}
+
+// GetPR implements provider.Provider, parsing the "github:owner/repo:number" ID format.
+func (c *Client) GetPR(ctx context.Context, id string) (*provider.PR, error) {
+	owner, repo, number, err := parsePRID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.getPR(ctx, owner, repo, number)
+}

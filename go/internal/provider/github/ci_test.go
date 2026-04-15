@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"testing"
 
 	ghlib "github.com/google/go-github/v84/github"
@@ -38,5 +39,16 @@ func TestGetCIStatus(t *testing.T) {
 	client := NewClient("test-token")
 	if client == nil {
 		t.Error("expected non-nil client")
+	}
+}
+
+// TestGetCIStatus_InvalidID verifies GetCIStatus returns an error for a malformed ID.
+func TestGetCIStatus_InvalidID(t *testing.T) {
+	client := NewClient("test-token")
+	ctx := context.Background()
+
+	_, err := client.GetCIStatus(ctx, "invalid-id")
+	if err == nil {
+		t.Error("expected error for invalid PR ID, got nil")
 	}
 }

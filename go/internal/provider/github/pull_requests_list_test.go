@@ -55,3 +55,14 @@ func TestListPRs_PRFilters_HasOwnerRepo(t *testing.T) {
 		t.Errorf("Repo: want %q, got %q", "testrepo", f.Repo)
 	}
 }
+
+// TestListPRs_ReturnsNotImplementedError verifies ListPRs explains the limitation.
+func TestListPRs_ReturnsNotImplementedError(t *testing.T) {
+	client := NewClient("test-token")
+	ctx := context.Background()
+
+	_, err := client.ListPRs(ctx, provider.PRFilters{State: "open"})
+	if err == nil {
+		t.Error("expected error from ListPRs (requires owner/repo), got nil")
+	}
+}

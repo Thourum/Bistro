@@ -45,3 +45,13 @@ func (c *Client) GetUsername(ctx context.Context) (string, error) {
 	}
 	return user.GetLogin(), nil
 }
+
+// Authenticate performs the GitHub OAuth device flow.
+// The clientID must be set via environment configuration in Phase 3.
+func (c *Client) Authenticate(ctx context.Context) (string, error) {
+	if c.token != "" {
+		return c.token, nil
+	}
+
+	return "", fmt.Errorf("Authenticate via device flow not yet implemented: set token directly in Phase 3")
+}

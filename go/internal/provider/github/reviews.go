@@ -71,3 +71,33 @@ func (c *Client) postComment(ctx context.Context, owner, repo string, number, li
 
 	return nil
 }
+
+// Approve implements provider.Provider, parsing the "github:owner/repo:number" ID format.
+func (c *Client) Approve(ctx context.Context, prID string) error {
+	owner, repo, number, err := parsePRID(prID)
+	if err != nil {
+		return err
+	}
+
+	return c.approve(ctx, owner, repo, number, "")
+}
+
+// RequestChanges implements provider.Provider, parsing the "github:owner/repo:number" ID format.
+func (c *Client) RequestChanges(ctx context.Context, prID string, body string) error {
+	owner, repo, number, err := parsePRID(prID)
+	if err != nil {
+		return err
+	}
+
+	return c.requestChanges(ctx, owner, repo, number, body)
+}
+
+// PostComment implements provider.Provider, parsing the "github:owner/repo:number" ID format.
+func (c *Client) PostComment(ctx context.Context, prID string, line int, body string) error {
+	owner, repo, number, err := parsePRID(prID)
+	if err != nil {
+		return err
+	}
+
+	return c.postComment(ctx, owner, repo, number, line, body)
+}

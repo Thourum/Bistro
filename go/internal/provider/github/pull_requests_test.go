@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -164,5 +165,16 @@ func TestNormalizePRIDFormat(t *testing.T) {
 			t.Errorf("owner=%q repo=%q number=%d: expected ID %q, got %q",
 				tc.owner, tc.repo, tc.number, tc.expectedID, result.ID)
 		}
+	}
+}
+
+// TestGetPR_InvalidID verifies GetPR returns an error for a malformed ID.
+func TestGetPR_InvalidID(t *testing.T) {
+	client := NewClient("test-token")
+	ctx := context.Background()
+
+	_, err := client.GetPR(ctx, "invalid-id")
+	if err == nil {
+		t.Error("expected error for invalid PR ID, got nil")
 	}
 }
