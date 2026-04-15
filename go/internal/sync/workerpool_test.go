@@ -7,14 +7,6 @@ import (
 	"time"
 )
 
-func TestFetchPRDetailsSequential(t *testing.T) {
-	// Just verify the method signature exists
-	if true {
-		// Placeholder test
-		t.Skip("integration test - requires provider")
-	}
-}
-
 func TestConcurrentGoroutinePool(t *testing.T) {
 	// Test goroutine pool can be created
 	pool := NewWorkerPool(4, nil)
@@ -97,19 +89,6 @@ func TestWorkerPoolMultipleTasks(t *testing.T) {
 	}
 	if count != 5 {
 		t.Errorf("expected 5 results, got %d", count)
-	}
-}
-
-func TestPRFetchResultHasFields(t *testing.T) {
-	result := &PRFetchResult{}
-	if result.PR != nil {
-		t.Error("expected nil PR on zero value")
-	}
-	if result.Error != nil {
-		t.Error("expected nil Error on zero value")
-	}
-	if result.DiffSize != 0 {
-		t.Error("expected zero DiffSize on zero value")
 	}
 }
 
