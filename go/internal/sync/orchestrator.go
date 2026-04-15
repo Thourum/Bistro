@@ -10,6 +10,7 @@ import (
 	"log/slog"
 
 	"github.com/samuelasvanyi/bistro/internal/actions"
+	"github.com/samuelasvanyi/bistro/internal/events"
 	"github.com/samuelasvanyi/bistro/internal/git"
 	"github.com/samuelasvanyi/bistro/internal/provider"
 	"github.com/samuelasvanyi/bistro/internal/store"
@@ -27,7 +28,7 @@ type Orchestrator struct {
 	provider       provider.Provider
 	store          *store.DB
 	git            *git.Client
-	emitter        *EventEmitter
+	emitter        *events.EventEmitter
 	rateLimitMu    gosync.RWMutex
 	rateLimitState *provider.RateLimitState
 	queue          *ActionQueue
@@ -46,7 +47,7 @@ func NewOrchestrator(
 		provider: prov,
 		store:    db,
 		git:      gitClient,
-		emitter:  NewEventEmitter(),
+		emitter:  events.NewEventEmitter(),
 	}
 }
 
@@ -206,7 +207,7 @@ func isRateLimitError(err error) bool {
 
 // GetEventChannel returns a read-only channel for subscribing to sync events.
 // The channel is buffered; the caller should drain it promptly to avoid dropped events.
-func (o *Orchestrator) GetEventChannel() <-chan *SyncEvent {
+func (o *Orchestrator) GetEventChannel() <-chan *events.Event {
 	return o.emitter.Subscribe()
 }
 
@@ -228,7 +229,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 	if o.log != nil {
 		o.log.Info("sync started", "provider", req.Provider, "owner", req.Owner, "repo", req.Repo)
 	}
-	o.emitter.Emit(&SyncEvent{
+	o.emitter.Emit(&events.Event{
 		Type: "sync_started",
 		Data: map[string]interface{}{
 			"provider": req.Provider,
@@ -241,7 +242,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 	// Phase 1: Fetch PR list
 	var fetchedPRs []*PRFetchResult
 	if req.IncludePRs {
-		o.emitter.Emit(NewProgressEvent("fetching_prs", 0, 0))
+		o.emitter.Emit(events.NewProgressEvent("fetching_prs", 0, 0))
 
 		prs, err := o.syncPRList(ctx, req)
 		if err != nil {
@@ -250,7 +251,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 			if o.log != nil {
 				o.log.Error("sync failed", "err", err)
 			}
-			o.emitter.Emit(NewErrorEvent(errMsg))
+			o.emitter.Emit(events.NewErrorEvent(errMsg))
 		} else {
 			result.PRCount = len(prs)
 			fetchedPRs = make([]*PRFetchResult, len(prs))
@@ -262,7 +263,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 
 	// Phase 2: Fetch details concurrently (comments, CI, diffs)
 	if len(fetchedPRs) > 0 {
-		o.emitter.Emit(NewProgressEvent("fetching_details", 0, len(fetchedPRs)))
+		o.emitter.Emit(events.NewProgressEvent("fetching_details", 0, len(fetchedPRs)))
 
 		detailResults, err := o.SyncPRsWithDetails(ctx, req)
 		if err != nil {
@@ -271,7 +272,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 			if o.log != nil {
 				o.log.Error("detail fetch failed", "err", err)
 			}
-			o.emitter.Emit(NewErrorEvent(errMsg))
+			o.emitter.Emit(events.NewErrorEvent(errMsg))
 		} else {
 			fetchedPRs = detailResults
 			for _, r := range detailResults {
@@ -287,7 +288,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 
 	// Phase 3: Write to SQLite (batched transactions)
 	if len(fetchedPRs) > 0 {
-		o.emitter.Emit(NewProgressEvent("writing_database", 0, len(fetchedPRs)))
+		o.emitter.Emit(events.NewProgressEvent("writing_database", 0, len(fetchedPRs)))
 
 		writer := NewWriter(o.log, o.store)
 		if err := writer.WriteSyncResults(fetchedPRs); err != nil {
@@ -296,7 +297,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 			if o.log != nil {
 				o.log.Error("write failed", "err", err)
 			}
-			o.emitter.Emit(NewErrorEvent(errMsg))
+			o.emitter.Emit(events.NewErrorEvent(errMsg))
 		}
 	}
 
@@ -308,7 +309,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 			"errors", len(result.Errors))
 	}
 
-	o.emitter.Emit(NewCompleteEvent(
+	o.emitter.Emit(events.NewCompleteEvent(
 		result.PRCount,
 		result.NewPRs,
 		result.UpdatedPRs,
@@ -325,7 +326,7 @@ func (o *Orchestrator) ApplyActions(ctx context.Context, requests []*actions.Act
 		o.log.Info("applying actions", "count", len(requests))
 	}
 
-	o.emitter.Emit(&SyncEvent{
+	o.emitter.Emit(&events.Event{
 		Type: "actions_started",
 		Data: map[string]interface{}{
 			"count": len(requests),
@@ -348,7 +349,7 @@ func (o *Orchestrator) ApplyActions(ctx context.Context, requests []*actions.Act
 		}
 	}
 
-	o.emitter.Emit(&SyncEvent{
+	o.emitter.Emit(&events.Event{
 		Type: "actions_complete",
 		Data: map[string]interface{}{
 			"total":   len(results),
@@ -386,7 +387,7 @@ func (o *Orchestrator) syncPRList(ctx context.Context, req *SyncRequest) ([]*pro
 			if o.log != nil {
 				o.log.Warn("rate limited", "reset_at", state.ResetAt)
 			}
-			o.emitter.Emit(&SyncEvent{
+			o.emitter.Emit(&events.Event{
 				Type: "rate_limited",
 				Data: map[string]interface{}{
 					"reset_in": state.ResetIn().Seconds(),

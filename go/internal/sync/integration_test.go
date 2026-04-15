@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samuelasvanyi/bistro/internal/events"
 	"github.com/samuelasvanyi/bistro/internal/provider"
 	"github.com/samuelasvanyi/bistro/internal/provider/mock"
 )
@@ -53,12 +54,12 @@ func TestFullSyncFlow(t *testing.T) {
 }
 
 func TestSyncWithEventEmitter(t *testing.T) {
-	emitter := NewEventEmitter()
+	emitter := events.NewEventEmitter()
 
 	eventCh := emitter.Subscribe()
 	defer emitter.Unsubscribe(eventCh)
 
-	event := NewProgressEvent("fetching_prs", 1, 10)
+	event := events.NewProgressEvent("fetching_prs", 1, 10)
 	emitter.Emit(event)
 
 	select {
@@ -139,7 +140,7 @@ func TestOrchestratorEmitsEvents(t *testing.T) {
 	}
 
 	// Collect events in background
-	var events []*SyncEvent
+	var collected []*events.Event
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -149,7 +150,7 @@ func TestOrchestratorEmitsEvents(t *testing.T) {
 				if !ok {
 					return
 				}
-				events = append(events, ev)
+				collected = append(collected, ev)
 				if ev.Type == "sync_complete" {
 					return
 				}
@@ -166,13 +167,13 @@ func TestOrchestratorEmitsEvents(t *testing.T) {
 
 	<-done
 
-	if len(events) == 0 {
+	if len(collected) == 0 {
 		t.Error("expected at least one event emitted")
 	}
 
 	// Verify sync_complete was emitted
 	var foundComplete bool
-	for _, ev := range events {
+	for _, ev := range collected {
 		if ev.Type == "sync_complete" {
 			foundComplete = true
 		}

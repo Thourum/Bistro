@@ -3,10 +3,12 @@ package sync
 import (
 	"testing"
 	"time"
+
+	"github.com/samuelasvanyi/bistro/internal/events"
 )
 
 func TestSyncEventCreation(t *testing.T) {
-	event := &SyncEvent{
+	event := &events.Event{
 		Type:      "sync_started",
 		Timestamp: time.Now(),
 	}
@@ -17,14 +19,14 @@ func TestSyncEventCreation(t *testing.T) {
 }
 
 func TestEventEmitterCreation(t *testing.T) {
-	emitter := NewEventEmitter()
+	emitter := events.NewEventEmitter()
 	if emitter == nil {
 		t.Error("expected non-nil emitter")
 	}
 }
 
 func TestEventEmitterSubscribe(t *testing.T) {
-	emitter := NewEventEmitter()
+	emitter := events.NewEventEmitter()
 	ch := emitter.Subscribe()
 
 	if ch == nil {
@@ -35,11 +37,11 @@ func TestEventEmitterSubscribe(t *testing.T) {
 }
 
 func TestEventEmitterEmit(t *testing.T) {
-	emitter := NewEventEmitter()
+	emitter := events.NewEventEmitter()
 	ch := emitter.Subscribe()
 	defer emitter.Unsubscribe(ch)
 
-	event := &SyncEvent{Type: "test_event"}
+	event := &events.Event{Type: "test_event"}
 	go emitter.Emit(event)
 
 	select {
@@ -53,14 +55,14 @@ func TestEventEmitterEmit(t *testing.T) {
 }
 
 func TestProgressEvent(t *testing.T) {
-	event := NewProgressEvent("fetching_prs", 5, 50)
+	event := events.NewProgressEvent("fetching_prs", 5, 50)
 	if event.Type != "sync_progress" {
 		t.Errorf("expected type sync_progress, got %s", event.Type)
 	}
 }
 
 func TestCompleteEvent(t *testing.T) {
-	event := NewCompleteEvent(42, 3, 5, 0, 2*time.Second)
+	event := events.NewCompleteEvent(42, 3, 5, 0, 2*time.Second)
 	if event.Type != "sync_complete" {
 		t.Errorf("expected type sync_complete, got %s", event.Type)
 	}

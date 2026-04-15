@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/samuelasvanyi/bistro/internal/actions"
+	"github.com/samuelasvanyi/bistro/internal/events"
 	"github.com/samuelasvanyi/bistro/internal/provider"
 	"github.com/samuelasvanyi/bistro/internal/provider/mock"
 )
@@ -29,7 +30,7 @@ func TestOrchestratorRateLimitDetection(t *testing.T) {
 	}
 
 	// Collect events in the background until we see rate_limited or timeout.
-	received := make(chan *SyncEvent, 32)
+	received := make(chan *events.Event, 32)
 	collectorDone := make(chan struct{})
 	go func() {
 		defer close(collectorDone)
