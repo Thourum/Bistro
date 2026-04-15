@@ -1,4 +1,4 @@
-package sync
+package store
 
 import (
 	"context"
@@ -6,9 +6,22 @@ import (
 	"time"
 )
 
+func openTestDBForQueue(t *testing.T) *DB {
+	t.Helper()
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("openTestDBForQueue: %v", err)
+	}
+	if err := NewMigrationRunner(nil, db.DB).Run(context.Background()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
 // TestQueueEnqueue verifies that a new action can be enqueued and retrieved by ID.
 func TestQueueEnqueue(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestDBForQueue(t)
 	q := NewActionQueue(db.DB)
 	ctx := context.Background()
 
@@ -46,7 +59,7 @@ func TestQueueEnqueue(t *testing.T) {
 
 // TestQueuePending verifies that GetPending returns only pending actions with retry_count < 3.
 func TestQueuePending(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestDBForQueue(t)
 	q := NewActionQueue(db.DB)
 	ctx := context.Background()
 
@@ -72,7 +85,7 @@ func TestQueuePending(t *testing.T) {
 
 // TestQueueMarkCompleted verifies that MarkCompleted sets the status to 'completed'.
 func TestQueueMarkCompleted(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestDBForQueue(t)
 	q := NewActionQueue(db.DB)
 	ctx := context.Background()
 
@@ -102,7 +115,7 @@ func TestQueueMarkCompleted(t *testing.T) {
 // TestQueueMarkFailed verifies that MarkFailed keeps the action pending while
 // retries remain, and only moves it to 'failed' once retries are exhausted.
 func TestQueueMarkFailed(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestDBForQueue(t)
 	q := NewActionQueue(db.DB)
 	ctx := context.Background()
 
@@ -153,7 +166,7 @@ func TestQueueMarkFailed(t *testing.T) {
 
 // TestQueueRetryLimit verifies that actions with retry_count >= 3 are excluded from GetPending.
 func TestQueueRetryLimit(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestDBForQueue(t)
 	q := NewActionQueue(db.DB)
 	ctx := context.Background()
 
@@ -189,7 +202,7 @@ func TestQueueRetryLimit(t *testing.T) {
 
 // TestQueueDeleteCompleted verifies that DeleteCompleted removes old completed actions.
 func TestQueueDeleteCompleted(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestDBForQueue(t)
 	q := NewActionQueue(db.DB)
 	ctx := context.Background()
 
@@ -223,7 +236,7 @@ func TestQueueDeleteCompleted(t *testing.T) {
 
 // TestQueueCleanup verifies that DeleteFailed removes old failed actions.
 func TestQueueCleanup(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestDBForQueue(t)
 	q := NewActionQueue(db.DB)
 	ctx := context.Background()
 
@@ -253,7 +266,7 @@ func TestQueueCleanup(t *testing.T) {
 
 // TestQueueGetByIDNotFound verifies that GetByID returns an error for unknown IDs.
 func TestQueueGetByIDNotFound(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestDBForQueue(t)
 	q := NewActionQueue(db.DB)
 	ctx := context.Background()
 
@@ -265,7 +278,7 @@ func TestQueueGetByIDNotFound(t *testing.T) {
 
 // TestQueuePendingLimit verifies that GetPending respects the limit parameter.
 func TestQueuePendingLimit(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestDBForQueue(t)
 	q := NewActionQueue(db.DB)
 	ctx := context.Background()
 

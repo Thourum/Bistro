@@ -31,7 +31,7 @@ type Orchestrator struct {
 	emitter        *events.EventEmitter
 	rateLimitMu    gosync.RWMutex
 	rateLimitState *provider.RateLimitState
-	queue          *ActionQueue
+	queue          *store.ActionQueue
 	diffStore      diffStorer
 }
 
@@ -75,7 +75,7 @@ func (o *Orchestrator) ApplyAction(ctx context.Context, req *actions.ActionReque
 			o.log.Info("rate limited, queueing action", "pr_id", req.PRID)
 		}
 
-		queuedAction := &QueuedAction{
+		queuedAction := &store.QueuedAction{
 			ID:         req.PRID + "-" + string(req.Action),
 			ActionType: string(req.Action),
 			PRID:       req.PRID,
