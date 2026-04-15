@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	gh "github.com/google/go-github/v63/github"
+	gh "github.com/google/go-github/v84/github"
 )
 
 func TestListUserRepos_EmptyToken(t *testing.T) {

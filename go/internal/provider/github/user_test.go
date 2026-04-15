@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	ghlib "github.com/google/go-github/v63/github"
+	ghlib "github.com/google/go-github/v84/github"
 )
 
 func TestClient_GetUsername(t *testing.T) {

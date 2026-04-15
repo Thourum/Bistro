@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	ghlib "github.com/google/go-github/v63/github"
+	ghlib "github.com/google/go-github/v84/github"
 	"github.com/samuelasvanyi/bistro/internal/provider"
 )
 

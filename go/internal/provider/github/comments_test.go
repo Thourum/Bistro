@@ -3,14 +3,14 @@ package github
 import (
 	"testing"
 
-	ghlib "github.com/google/go-github/v63/github"
+	ghlib "github.com/google/go-github/v84/github"
 )
 
 func TestNormalizeComment(t *testing.T) {
 	ghComment := &ghlib.IssueComment{
-		ID:   ghlib.Int64(456),
-		User: &ghlib.User{Login: ghlib.String("bob")},
-		Body: ghlib.String("Great work!"),
+		ID:   ghlib.Ptr[int64](456),
+		User: &ghlib.User{Login: ghlib.Ptr("bob")},
+		Body: ghlib.Ptr("Great work!"),
 	}
 
 	comment := normalizeComment("github:org/repo:123", ghComment)

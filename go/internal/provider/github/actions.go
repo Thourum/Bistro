@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	ghlib "github.com/google/go-github/v63/github"
+	ghlib "github.com/google/go-github/v84/github"
 )
 
 // approve approves a PR with an optional review body.
@@ -14,8 +14,8 @@ func (c *Client) approve(ctx context.Context, owner, repo string, number int, bo
 	}
 
 	review := &ghlib.PullRequestReviewRequest{
-		Body:  ghlib.String(body),
-		Event: ghlib.String("APPROVE"),
+		Body:  ghlib.Ptr(body),
+		Event: ghlib.Ptr("APPROVE"),
 	}
 
 	_, _, err := c.gh.PullRequests.CreateReview(ctx, owner, repo, number, review)
@@ -33,8 +33,8 @@ func (c *Client) requestChanges(ctx context.Context, owner, repo string, number 
 	}
 
 	review := &ghlib.PullRequestReviewRequest{
-		Body:  ghlib.String(body),
-		Event: ghlib.String("REQUEST_CHANGES"),
+		Body:  ghlib.Ptr(body),
+		Event: ghlib.Ptr("REQUEST_CHANGES"),
 	}
 
 	_, _, err := c.gh.PullRequests.CreateReview(ctx, owner, repo, number, review)
@@ -61,7 +61,7 @@ func (c *Client) postComment(ctx context.Context, owner, repo string, number, li
 	}
 
 	comment := &ghlib.IssueComment{
-		Body: ghlib.String(body),
+		Body: ghlib.Ptr(body),
 	}
 
 	_, _, err := c.gh.Issues.CreateComment(ctx, owner, repo, number, comment)

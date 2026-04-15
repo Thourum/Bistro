@@ -3,14 +3,14 @@ package github
 import (
 	"testing"
 
-	ghlib "github.com/google/go-github/v63/github"
+	ghlib "github.com/google/go-github/v84/github"
 )
 
 func TestNormalizeCheckRun(t *testing.T) {
 	ghCheck := &ghlib.CheckRun{
-		Name:       ghlib.String("Tests"),
-		Status:     ghlib.String("completed"),
-		Conclusion: ghlib.String("success"),
+		Name:       ghlib.Ptr("Tests"),
+		Status:     ghlib.Ptr("completed"),
+		Conclusion: ghlib.Ptr("success"),
 	}
 
 	check := normalizeCheckRun(ghCheck)
@@ -24,8 +24,8 @@ func TestNormalizeCheckRun(t *testing.T) {
 
 func TestNormalizeCheckRunPending(t *testing.T) {
 	ghCheck := &ghlib.CheckRun{
-		Name:   ghlib.String("Lint"),
-		Status: ghlib.String("in_progress"),
+		Name:   ghlib.Ptr("Lint"),
+		Status: ghlib.Ptr("in_progress"),
 	}
 
 	check := normalizeCheckRun(ghCheck)

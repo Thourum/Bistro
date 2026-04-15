@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	ghlib "github.com/google/go-github/v63/github"
+	ghlib "github.com/google/go-github/v84/github"
 )
 
 // buildTimestamp returns a fixed Timestamp for use in tests.

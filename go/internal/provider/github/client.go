@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/google/go-github/v63/github"
+	"github.com/google/go-github/v84/github"
 	"github.com/samuelasvanyi/bistro/internal/provider"
 	"golang.org/x/oauth2"
 )
