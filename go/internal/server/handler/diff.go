@@ -1,4 +1,4 @@
-package server
+package handler
 
 import (
 	"encoding/json"
@@ -14,9 +14,9 @@ type diffReader interface {
 	GetUnifiedDiff(prID string) (string, error)
 }
 
-// newRequestDiffHandler returns a ws.MessageHandler that reads diffs from the
+// NewRequestDiffHandler returns a ws.MessageHandler that reads diffs from the
 // database and returns them as a DIFF_READY message over WebSocket.
-func newRequestDiffHandler(ds diffReader, log *slog.Logger) ws.MessageHandler {
+func NewRequestDiffHandler(ds diffReader, log *slog.Logger) ws.MessageHandler {
 	return func(msg ws.InboundMessage) (interface{}, error) {
 		var data struct {
 			PRID string `json:"pr_id"`
@@ -55,5 +55,4 @@ func newRequestDiffHandler(ds diffReader, log *slog.Logger) ws.MessageHandler {
 	}
 }
 
-// Ensure *store.DiffStore satisfies diffReader at compile time.
 var _ diffReader = (*store.DiffStore)(nil)

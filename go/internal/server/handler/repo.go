@@ -1,4 +1,4 @@
-package server
+package handler
 
 import (
 	"context"
@@ -20,10 +20,10 @@ type repoRow struct {
 	Watched  bool   `json:"watched"`
 }
 
-// newRequestRepoListHandler handles REQUEST_REPO_LIST messages.
+// NewRequestRepoListHandler handles REQUEST_REPO_LIST messages.
 // It fetches repos from the provider, upserts them into the DB, then returns
 // all repos (with their watched state) as REPO_LIST_READY.
-func newRequestRepoListHandler(
+func NewRequestRepoListHandler(
 	getProvider func() provider.Provider,
 	db *sql.DB,
 	log *slog.Logger,
@@ -57,8 +57,6 @@ func newRequestRepoListHandler(
 			}, nil
 		}
 
-		// Upsert repos into DB, preserving existing watched state.
-		// TODO: derive provName from provider interface when multi-provider support is added.
 		const provName = "github"
 		for _, r := range repos {
 			id := provName + ":" + r.FullName
@@ -72,7 +70,6 @@ func newRequestRepoListHandler(
 			}
 		}
 
-		// Return all repos from DB ordered by watched desc, then owner/repo.
 		rows, err := db.QueryContext(ctx,
 			"SELECT id, provider, owner, repo, watched FROM repos ORDER BY watched DESC, owner ASC, repo ASC",
 		)
@@ -109,10 +106,10 @@ func newRequestRepoListHandler(
 	}
 }
 
-// newToggleWatchHandler handles TOGGLE_WATCH_REPO messages.
+// NewToggleWatchHandler handles TOGGLE_WATCH_REPO messages.
 // It flips the watched state for the given repo_id and triggers an immediate
 // sync if the repo was just enabled for watching.
-func newToggleWatchHandler(
+func NewToggleWatchHandler(
 	db *sql.DB,
 	syncTrigger chan<- string,
 	log *slog.Logger,
@@ -128,7 +125,6 @@ func newToggleWatchHandler(
 			return nil, fmt.Errorf("TOGGLE_WATCH_REPO: repo_id is required")
 		}
 
-		// Toggle the watched bit atomically and read back the new state.
 		var watched int
 		err := db.QueryRow(
 			"UPDATE repos SET watched = CASE WHEN watched = 1 THEN 0 ELSE 1 END WHERE id = ? RETURNING watched",
@@ -143,7 +139,6 @@ func newToggleWatchHandler(
 
 		newWatched := watched == 1
 
-		// Trigger immediate sync if newly watched.
 		if newWatched {
 			select {
 			case syncTrigger <- data.RepoID:

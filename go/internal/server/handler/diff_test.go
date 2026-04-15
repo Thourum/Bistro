@@ -1,4 +1,4 @@
-package server
+package handler
 
 import (
 	"encoding/json"
@@ -8,7 +8,6 @@ import (
 	"github.com/samuelasvanyi/bistro/internal/ws"
 )
 
-// stubDiffReader is a test double for diffReader.
 type stubDiffReader struct {
 	diffs map[string]string
 }
@@ -30,7 +29,7 @@ func TestRequestDiffHandler_Found(t *testing.T) {
 	stub := &stubDiffReader{diffs: map[string]string{
 		"pr-1": "diff --git a/main.go b/main.go\n+new line\n",
 	}}
-	handler := newRequestDiffHandler(stub, nil)
+	handler := NewRequestDiffHandler(stub, nil)
 
 	resp, err := handler(makeMsg(t, "req-1", "pr-1"))
 	if err != nil {
@@ -65,7 +64,7 @@ func TestRequestDiffHandler_Found(t *testing.T) {
 
 func TestRequestDiffHandler_NotFound(t *testing.T) {
 	stub := &stubDiffReader{diffs: map[string]string{}}
-	handler := newRequestDiffHandler(stub, nil)
+	handler := NewRequestDiffHandler(stub, nil)
 
 	resp, err := handler(makeMsg(t, "req-2", "pr-missing"))
 	if err != nil {
@@ -94,7 +93,7 @@ func TestRequestDiffHandler_NotFound(t *testing.T) {
 
 func TestRequestDiffHandler_MissingPRID(t *testing.T) {
 	stub := &stubDiffReader{diffs: map[string]string{}}
-	handler := newRequestDiffHandler(stub, nil)
+	handler := NewRequestDiffHandler(stub, nil)
 
 	data, _ := json.Marshal(map[string]string{})
 	msg := ws.InboundMessage{ID: "req-3", Type: "REQUEST_DIFF", Data: data}
@@ -107,7 +106,7 @@ func TestRequestDiffHandler_MissingPRID(t *testing.T) {
 
 func TestRequestDiffHandler_InvalidPayload(t *testing.T) {
 	stub := &stubDiffReader{diffs: map[string]string{}}
-	handler := newRequestDiffHandler(stub, nil)
+	handler := NewRequestDiffHandler(stub, nil)
 
 	msg := ws.InboundMessage{ID: "req-4", Type: "REQUEST_DIFF", Data: []byte("not-json")}
 

@@ -1,4 +1,4 @@
-package server
+package handler
 
 import (
 	"database/sql"
@@ -14,7 +14,6 @@ import (
 	"github.com/samuelasvanyi/bistro/internal/ws"
 )
 
-// setupRepoTestDB creates an in-memory SQLite DB with the repos table.
 func setupRepoTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:")
@@ -43,7 +42,7 @@ func TestRequestRepoListHandler_NotAuthenticated(t *testing.T) {
 	db := setupRepoTestDB(t)
 	defer db.Close()
 
-	handler := newRequestRepoListHandler(func() provider.Provider { return nil }, db, testRepoLogger())
+	handler := NewRequestRepoListHandler(func() provider.Provider { return nil }, db, testRepoLogger())
 
 	msg := ws.InboundMessage{ID: "req-1", Type: "REQUEST_REPO_LIST"}
 	resp, err := handler(msg)
@@ -74,7 +73,7 @@ func TestRequestRepoListHandler_ReturnsRepos(t *testing.T) {
 	})
 
 	getProvider := func() provider.Provider { return prov }
-	handler := newRequestRepoListHandler(getProvider, db, testRepoLogger())
+	handler := NewRequestRepoListHandler(getProvider, db, testRepoLogger())
 
 	msg := ws.InboundMessage{ID: "req-2", Type: "REQUEST_REPO_LIST"}
 	resp, err := handler(msg)
@@ -102,7 +101,7 @@ func TestRequestRepoListHandler_ProviderError(t *testing.T) {
 
 	errProv := mock.NewMockProvider().WithError(errors.New("api error"))
 	getProvider := func() provider.Provider { return errProv }
-	handler := newRequestRepoListHandler(getProvider, db, testRepoLogger())
+	handler := NewRequestRepoListHandler(getProvider, db, testRepoLogger())
 
 	msg := ws.InboundMessage{ID: "req-3", Type: "REQUEST_REPO_LIST"}
 	resp, err := handler(msg)
@@ -120,14 +119,13 @@ func TestToggleWatchHandler_TogglesWatch(t *testing.T) {
 	db := setupRepoTestDB(t)
 	defer db.Close()
 
-	// Insert a repo to toggle.
 	_, err := db.Exec(`INSERT INTO repos (id, provider, owner, repo) VALUES ('github:acme/api', 'github', 'acme', 'api')`)
 	if err != nil {
 		t.Fatalf("insert repo: %v", err)
 	}
 
 	syncCh := make(chan string, 8)
-	handler := newToggleWatchHandler(db, syncCh, testRepoLogger())
+	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
 
 	payload, _ := json.Marshal(map[string]string{"repo_id": "github:acme/api"})
 	msg := ws.InboundMessage{ID: "req-4", Type: "TOGGLE_WATCH_REPO", Data: payload}
@@ -146,7 +144,6 @@ func TestToggleWatchHandler_TogglesWatch(t *testing.T) {
 		t.Error("expected watched=true after first toggle")
 	}
 
-	// Verify sync was triggered.
 	select {
 	case repoID := <-syncCh:
 		if repoID != "github:acme/api" {
@@ -156,7 +153,6 @@ func TestToggleWatchHandler_TogglesWatch(t *testing.T) {
 		t.Error("expected sync trigger after watch enabled")
 	}
 
-	// Toggle again — should set to unwatched, no sync trigger.
 	resp2, err := handler(msg)
 	if err != nil {
 		t.Fatalf("unexpected error on second toggle: %v", err)
@@ -170,7 +166,6 @@ func TestToggleWatchHandler_TogglesWatch(t *testing.T) {
 	case repoID := <-syncCh:
 		t.Errorf("did not expect sync trigger after unwatch, got %s", repoID)
 	default:
-		// expected: no sync trigger
 	}
 }
 
@@ -179,7 +174,7 @@ func TestToggleWatchHandler_MissingRepoID(t *testing.T) {
 	defer db.Close()
 
 	syncCh := make(chan string, 8)
-	handler := newToggleWatchHandler(db, syncCh, testRepoLogger())
+	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
 
 	payload, _ := json.Marshal(map[string]string{})
 	msg := ws.InboundMessage{ID: "req-5", Type: "TOGGLE_WATCH_REPO", Data: payload}
@@ -195,7 +190,7 @@ func TestToggleWatchHandler_InvalidPayload(t *testing.T) {
 	defer db.Close()
 
 	syncCh := make(chan string, 8)
-	handler := newToggleWatchHandler(db, syncCh, testRepoLogger())
+	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
 
 	msg := ws.InboundMessage{ID: "req-6", Type: "TOGGLE_WATCH_REPO", Data: json.RawMessage(`not-json`)}
 

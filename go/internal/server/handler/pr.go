@@ -1,4 +1,4 @@
-package server
+package handler
 
 import (
 	"database/sql"
@@ -42,7 +42,7 @@ type prLister interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 }
 
-func newRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
+func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
 	return func(msg ws.InboundMessage) (interface{}, error) {
 		var req prListRequest
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
