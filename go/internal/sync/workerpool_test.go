@@ -51,13 +51,13 @@ func TestContextCancellation(t *testing.T) {
 	}
 }
 
-func TestWorkerPoolDefaultsToOne(t *testing.T) {
+func TestWorkerPoolDefaultsToDefaultWorkers(t *testing.T) {
 	pool := NewWorkerPool(0, nil)
 	if pool == nil {
 		t.Error("expected non-nil pool for zero workers")
 	}
-	if pool.workers != 1 {
-		t.Errorf("expected 1 worker for zero input, got %d", pool.workers)
+	if pool.workers != DefaultWorkers {
+		t.Errorf("expected %d workers for zero input, got %d", DefaultWorkers, pool.workers)
 	}
 	if err := pool.Wait(context.Background()); err != nil {
 		t.Errorf("unexpected wait error: %v", err)

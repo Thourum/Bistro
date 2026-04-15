@@ -52,11 +52,12 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 			continue
 		}
 		req := &sync.SyncRequest{
-			Provider:   repoProvider,
-			Owner:      owner,
-			Repo:       repo,
-			IncludePRs: true,
-			State:      "open",
+			Provider:        repoProvider,
+			Owner:           owner,
+			Repo:            repo,
+			IncludePRs:      true,
+			IncludeComments: true,
+			State:           "open",
 		}
 		result, syncErr := orch.Sync(ctx, req)
 		if syncErr != nil {
@@ -98,11 +99,12 @@ func (a *App) syncSingleRepo(ctx context.Context, repoID string) {
 	}
 
 	req := &sync.SyncRequest{
-		Provider:   providerName,
-		Owner:      owner,
-		Repo:       repo,
-		IncludePRs: true,
-		State:      "open",
+		Provider:        providerName,
+		Owner:           owner,
+		Repo:            repo,
+		IncludePRs:      true,
+		IncludeComments: true,
+		State:           "open",
 	}
 	result, err := orch.Sync(ctx, req)
 	if err != nil {

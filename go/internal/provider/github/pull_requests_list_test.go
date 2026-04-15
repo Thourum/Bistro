@@ -39,23 +39,6 @@ func TestListPRsWithOwnerRepo_BothMissing(t *testing.T) {
 	}
 }
 
-// TestListPRs_PRFilters_HasOwnerRepo verifies that PRFilters carries Owner/Repo fields.
-func TestListPRs_PRFilters_HasOwnerRepo(t *testing.T) {
-	f := provider.PRFilters{
-		Owner:  "testorg",
-		Repo:   "testrepo",
-		State:  "open",
-		Limit:  10,
-		Offset: 0,
-	}
-	if f.Owner != "testorg" {
-		t.Errorf("Owner: want %q, got %q", "testorg", f.Owner)
-	}
-	if f.Repo != "testrepo" {
-		t.Errorf("Repo: want %q, got %q", "testrepo", f.Repo)
-	}
-}
-
 // TestListPRs_ReturnsNotImplementedError verifies ListPRs explains the limitation.
 func TestListPRs_ReturnsNotImplementedError(t *testing.T) {
 	client := NewClient("test-token")

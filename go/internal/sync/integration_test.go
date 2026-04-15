@@ -28,13 +28,14 @@ func TestFullSyncFlow(t *testing.T) {
 	}
 
 	req := &SyncRequest{
-		Provider:    "github",
-		Owner:       "org",
-		Repo:        "repo",
-		IncludePRs:  true,
-		IncludeCI:   false,
-		IncludeDiff: false,
-		State:       "open",
+		Provider:        "github",
+		Owner:           "org",
+		Repo:            "repo",
+		IncludePRs:      true,
+		IncludeComments: true,
+		IncludeCI:       false,
+		IncludeDiff:     false,
+		State:           "open",
 	}
 
 	ctx := context.Background()
@@ -80,10 +81,11 @@ func TestSyncContextCancellation(t *testing.T) {
 	orch := NewOrchestrator(nil, mockProvider, nil, nil)
 
 	req := &SyncRequest{
-		Provider:   "github",
-		Owner:      "org",
-		Repo:       "repo",
-		IncludePRs: true,
+		Provider:        "github",
+		Owner:           "org",
+		Repo:            "repo",
+		IncludePRs:      true,
+		IncludeComments: true,
 	}
 
 	_, _ = orch.Sync(ctx, req)
@@ -100,10 +102,11 @@ func TestErrorRecovery(t *testing.T) {
 	orch := NewOrchestrator(nil, mockProvider, nil, nil)
 
 	req := &SyncRequest{
-		Provider:   "github",
-		Owner:      "org",
-		Repo:       "repo",
-		IncludePRs: true,
+		Provider:        "github",
+		Owner:           "org",
+		Repo:            "repo",
+		IncludePRs:      true,
+		IncludeComments: true,
 	}
 
 	result, err := orch.Sync(context.Background(), req)
@@ -132,11 +135,12 @@ func TestOrchestratorEmitsEvents(t *testing.T) {
 	eventCh := orch.GetEventChannel()
 
 	req := &SyncRequest{
-		Provider:   "github",
-		Owner:      "org",
-		Repo:       "repo",
-		IncludePRs: true,
-		State:      "open",
+		Provider:        "github",
+		Owner:           "org",
+		Repo:            "repo",
+		IncludePRs:      true,
+		IncludeComments: true,
+		State:           "open",
 	}
 
 	// Collect events in background

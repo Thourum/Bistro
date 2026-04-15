@@ -11,21 +11,28 @@ import (
 
 // listPRs fetches the list of PRs for a repository and normalizes them to domain types.
 func (c *Client) listPRs(ctx context.Context, owner, repo, state string) ([]*provider.PR, error) {
+	var result []*provider.PR
 	opts := &ghlib.PullRequestListOptions{
 		State: state,
 		ListOptions: ghlib.ListOptions{
-			PerPage: 30,
+			PerPage: 100,
 		},
 	}
 
-	ghPRs, _, err := c.gh.PullRequests.List(ctx, owner, repo, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list PRs for %s/%s: %w", owner, repo, err)
-	}
+	for {
+		ghPRs, resp, err := c.gh.PullRequests.List(ctx, owner, repo, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list PRs for %s/%s: %w", owner, repo, err)
+		}
 
-	result := make([]*provider.PR, 0, len(ghPRs))
-	for _, ghPR := range ghPRs {
-		result = append(result, normalizePR(owner, repo, ghPR))
+		for _, ghPR := range ghPRs {
+			result = append(result, normalizePR(owner, repo, ghPR))
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
 	}
 
 	return result, nil

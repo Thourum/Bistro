@@ -4,13 +4,14 @@ import "time"
 
 // SyncRequest defines what to fetch during a sync
 type SyncRequest struct {
-	Provider    string // "github", "gitlab", "gitea"
-	Owner       string // Repository owner
-	Repo        string // Repository name
-	IncludePRs  bool   // Fetch PR list
-	IncludeCI   bool   // Fetch CI status for each PR
-	IncludeDiff bool   // Generate diffs for each PR
-	State       string // "open", "closed", "all"
+	Provider        string // "github", "gitlab", "gitea"
+	Owner           string // Repository owner
+	Repo            string // Repository name
+	IncludePRs      bool   // Fetch PR list
+	IncludeComments bool   // Fetch PR comments for each PR
+	IncludeCI       bool   // Fetch CI status for each PR
+	IncludeDiff     bool   // Generate diffs for each PR
+	State           string // "open", "closed", "all"
 }
 
 // SyncResult contains the results of a sync operation

@@ -7,6 +7,15 @@ import (
 	"time"
 )
 
+// parseCreatedAt tries RFC 3339 first (ISO 8601, used by SQLite's strftime default),
+// then falls back to the space-separated format.
+func parseCreatedAt(s string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	return time.Parse("2006-01-02 15:04:05", s)
+}
+
 // QueuedAction represents an offline action waiting to be replayed against the provider.
 type QueuedAction struct {
 	ID         string    `json:"id"`
@@ -81,20 +90,23 @@ func (q *ActionQueue) GetByID(ctx context.Context, id string) (*QueuedAction, er
 		return nil, fmt.Errorf("get action %s: %w", id, err)
 	}
 
-	a.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+	a.CreatedAt, err = parseCreatedAt(createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse created_at for action %s: %w", a.ID, err)
+	}
 	return &a, nil
 }
 
-// GetPending returns up to limit pending actions with retry_count < 3, ordered by created_at.
+// GetPending returns up to limit pending actions with retry_count below MaxRetryCount, ordered by created_at.
 func (q *ActionQueue) GetPending(ctx context.Context, limit int) ([]*QueuedAction, error) {
-	const query = `
+	query := fmt.Sprintf(`
 		SELECT id, action_type, pr_id, payload, created_at, retry_count,
 		       COALESCE(last_error, ''), status
 		FROM action_queue
-		WHERE status = 'pending' AND retry_count < 3
+		WHERE status = 'pending' AND retry_count < %d
 		ORDER BY created_at ASC
 		LIMIT ?
-	`
+	`, MaxRetryCount)
 	rows, err := q.db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("get pending actions: %w", err)
@@ -105,7 +117,7 @@ func (q *ActionQueue) GetPending(ctx context.Context, limit int) ([]*QueuedActio
 	for rows.Next() {
 		var a QueuedAction
 		var createdAt string
-		if err := rows.Scan(
+		if err = rows.Scan(
 			&a.ID,
 			&a.ActionType,
 			&a.PRID,
@@ -117,11 +129,14 @@ func (q *ActionQueue) GetPending(ctx context.Context, limit int) ([]*QueuedActio
 		); err != nil {
 			return nil, fmt.Errorf("scan pending action: %w", err)
 		}
-		a.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		a.CreatedAt, err = parseCreatedAt(createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse created_at for action %s: %w", a.ID, err)
+		}
 		actions = append(actions, &a)
 	}
 
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate pending actions: %w", err)
 	}
 

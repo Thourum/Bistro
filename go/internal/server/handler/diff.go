@@ -31,7 +31,7 @@ func NewRequestDiffHandler(ds diffReader, log *slog.Logger) ws.MessageHandler {
 		unified, err := ds.GetUnifiedDiff(data.PRID)
 		if err != nil {
 			if log != nil {
-				log.Warn("diff not found", "pr_id", data.PRID, "err", err)
+				log.Warn("failed to get diff", "pr_id", data.PRID, "err", err)
 			}
 			return map[string]interface{}{
 				"id":   msg.ID,

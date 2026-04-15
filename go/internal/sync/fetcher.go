@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"os"
 	gosync "sync"
 
 	"github.com/samuelasvanyi/bistro/internal/provider"
@@ -80,6 +81,7 @@ func (o *Orchestrator) FetchPRDetails(
 						o.log.Error("repo clone failed", "pr_id", prCopy.ID, "repo", cloneURL, "err", cloneErr)
 					}
 				} else {
+					defer func() { _ = os.RemoveAll(cloneResult.LocalPath) }()
 					diffResult, err := o.git.GenerateDiff(cloneResult.LocalPath, prCopy.BaseSHA, prCopy.HeadSHA)
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("diff: %v", err))
@@ -99,6 +101,7 @@ func (o *Orchestrator) FetchPRDetails(
 								})
 							}
 							if saveErr := o.diffStore.SaveDiffs(prCopy.ID, diffFiles); saveErr != nil {
+								errs = append(errs, fmt.Sprintf("diff save: %v", saveErr))
 								if o.log != nil {
 									o.log.Error("failed to persist diffs", "pr_id", prCopy.ID, "err", saveErr)
 								}
@@ -169,7 +172,7 @@ func (o *Orchestrator) SyncPRsWithDetails(
 	results, err := o.FetchPRDetails(
 		ctx,
 		prs,
-		req.IncludePRs,
+		req.IncludeComments,
 		req.IncludeCI,
 		req.IncludeDiff,
 	)

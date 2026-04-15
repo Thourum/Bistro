@@ -12,18 +12,19 @@ const DefaultWorkers = 4
 
 // WorkerPool manages a pool of goroutines that process submitted tasks concurrently.
 type WorkerPool struct {
-	workers int
-	taskCh  chan func()
-	wg      gosync.WaitGroup
-	log     *slog.Logger
+	workers   int
+	taskCh    chan func()
+	wg        gosync.WaitGroup
+	closeOnce gosync.Once
+	log       *slog.Logger
 }
 
 // NewWorkerPool creates a new worker pool with the given number of workers.
-// If workerCount is <= 0, it defaults to 1.
+// If workerCount is <= 0, it defaults to DefaultWorkers.
 // The log parameter is optional; pass nil to disable panic logging.
 func NewWorkerPool(workerCount int, log *slog.Logger) *WorkerPool {
 	if workerCount <= 0 {
-		workerCount = 1
+		workerCount = DefaultWorkers
 	}
 
 	pool := &WorkerPool{
@@ -80,7 +81,7 @@ func (p *WorkerPool) Submit(ctx context.Context, task func()) error {
 // Returns ctx.Err() if the context was cancelled before all workers completed.
 // The pool must not be used after Wait returns.
 func (p *WorkerPool) Wait(ctx context.Context) error {
-	close(p.taskCh)
+	p.closeOnce.Do(func() { close(p.taskCh) })
 
 	done := make(chan struct{})
 	go func() {

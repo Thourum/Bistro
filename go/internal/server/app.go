@@ -165,19 +165,23 @@ func (a *App) Run(ctx context.Context) error {
 		Cache:  a.providerCache,
 		Broadcast: a.wsServer.Broadcast,
 		SetProvider: func(prov provider.Provider, name string) {
+			a.provMu.Lock()
+			defer a.provMu.Unlock()
 			if prov == nil {
-				a.provMu.Lock()
 				if a.activeProviderName == name {
 					a.prov = nil
 					a.activeProviderName = ""
 				}
-				a.provMu.Unlock()
 				return
 			}
-			a.SetProvider(prov)
-			a.provMu.Lock()
+			a.prov = prov
 			a.activeProviderName = name
-			a.provMu.Unlock()
+			if a.db != nil {
+				diffStore := store.NewDiffStore(a.db.DB)
+				a.orchestrator = sync.NewOrchestrator(a.log, prov, a.db, a.gitClient).
+					WithDiffStore(diffStore)
+				a.log.Info("orchestrator initialized after auth")
+			}
 		},
 		GetClientID:     func() string { return a.githubClientID },
 		GetClientSecret: func() string { return a.githubClientSecret },

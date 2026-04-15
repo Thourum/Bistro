@@ -23,11 +23,12 @@ func TestOrchestratorRateLimitDetection(t *testing.T) {
 	eventCh := orch.GetEventChannel()
 
 	req := &SyncRequest{
-		Provider:   "github",
-		Owner:      "org",
-		Repo:       "repo",
-		IncludePRs: true,
-		State:      "open",
+		Provider:        "github",
+		Owner:           "org",
+		Repo:            "repo",
+		IncludePRs:      true,
+		IncludeComments: true,
+		State:           "open",
 	}
 
 	// Collect events in the background until we see rate_limited or timeout.

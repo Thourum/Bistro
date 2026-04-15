@@ -12,9 +12,6 @@ func TestApprove(t *testing.T) {
 
 	// Just verify method exists and validates inputs
 	err := client.approve(ctx, "owner", "repo", 123, "Looks good!")
-	if client == nil {
-		t.Error("client should not be nil")
-	}
 	if err != nil {
 		t.Logf("approve returned error (expected without real API): %v", err)
 	}
@@ -52,9 +49,6 @@ func TestRequestChanges(t *testing.T) {
 	ctx := context.Background()
 
 	err := client.requestChanges(ctx, "owner", "repo", 123, "Please fix this")
-	if client == nil {
-		t.Error("client should not be nil")
-	}
 	if err != nil {
 		t.Logf("requestChanges returned error (expected without real API): %v", err)
 	}
@@ -92,9 +86,6 @@ func TestPostComment(t *testing.T) {
 	ctx := context.Background()
 
 	err := client.postComment(ctx, "owner", "repo", 123, 0, "Great work!")
-	if client == nil {
-		t.Error("client should not be nil")
-	}
 	if err != nil {
 		t.Logf("postComment returned error (expected without real API): %v", err)
 	}

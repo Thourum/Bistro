@@ -79,7 +79,7 @@ func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
 				"type": "PR_LIST_READY",
 				"data": map[string]interface{}{
 					"prs":      []interface{}{},
-					"total":    0,
+					"count":    0,
 					"has_more": false,
 					"error":    err.Error(),
 				},
@@ -112,7 +112,7 @@ func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
 			"type": "PR_LIST_READY",
 			"data": map[string]interface{}{
 				"prs":      prs,
-				"total":    len(prs),
+				"count":    len(prs),
 				"has_more": len(prs) == req.Limit,
 			},
 		}, nil
