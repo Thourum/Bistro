@@ -7,25 +7,29 @@ export interface SyncStats {
   updatedPRs: number;
 }
 
+/**
+ * Transient UI state (not persisted).
+ *
+ * All user preferences live in `settingsStore` (store/settings.ts) and are
+ * round-tripped through the main process into `userData/settings.json`.
+ */
 export interface UIState {
   selectedPRIndex: number;
   selectedFileIndex: number;
   searchQuery: string;
   mode:
     | 'login'
+    | 'onboarding'
     | 'list'
     | 'detail'
+    | 'diff'
     | 'search'
     | 'help'
     | 'command'
     | 'filter'
     | 'settings';
   isAuthenticated: boolean;
-  darkMode: boolean;
   showFileTree: boolean;
-  autoSync: boolean;
-  syncInterval: number;
-  notifications: boolean;
   paneLayout: 'list' | 'detail' | 'split';
   sortBy: 'updated' | 'created';
   filterState: 'open' | 'draft' | 'all';
@@ -59,69 +63,7 @@ export interface UIState {
   // Repo discovery
   repos: RepoInfo[];
   reposLoading: boolean;
-  prListView: 'flat' | 'grouped';
   repoFilter: string | null;
-}
-
-const SETTINGS_STORAGE_KEY = 'bistro-settings';
-
-function loadPersistedSettings(): Pick<
-  UIState,
-  | 'darkMode'
-  | 'showFileTree'
-  | 'autoSync'
-  | 'syncInterval'
-  | 'notifications'
-  | 'prListView'
-> {
-  try {
-    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (raw !== null) {
-      return JSON.parse(raw) as Pick<
-        UIState,
-        | 'darkMode'
-        | 'showFileTree'
-        | 'autoSync'
-        | 'syncInterval'
-        | 'notifications'
-        | 'prListView'
-      >;
-    }
-  } catch {
-    // ignore parse errors
-  }
-  return {
-    darkMode: true,
-    showFileTree: false,
-    autoSync: true,
-    syncInterval: 60,
-    notifications: true,
-    prListView: 'flat',
-  };
-}
-
-export function persistSettings(state: UIState): void {
-  try {
-    const settings: Pick<
-      UIState,
-      | 'darkMode'
-      | 'showFileTree'
-      | 'autoSync'
-      | 'syncInterval'
-      | 'notifications'
-      | 'prListView'
-    > = {
-      darkMode: state.darkMode,
-      showFileTree: state.showFileTree,
-      autoSync: state.autoSync,
-      syncInterval: state.syncInterval,
-      notifications: state.notifications,
-      prListView: state.prListView,
-    };
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // ignore storage errors
-  }
 }
 
 export const initialUIState: UIState = {
@@ -137,6 +79,7 @@ export const initialUIState: UIState = {
   pendingAction: null,
   actionResult: null,
   isAuthenticated: false,
+  showFileTree: false,
   isSyncing: false,
   syncProgress: 0,
   lastSyncedAt: null,
@@ -154,7 +97,6 @@ export const initialUIState: UIState = {
   repos: [],
   reposLoading: false,
   repoFilter: null,
-  ...loadPersistedSettings(),
 };
 
 export function createUIStore(): Store<UIState> {
