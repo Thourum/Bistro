@@ -1,8 +1,9 @@
 import type React from 'react';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
+import { settingsStore } from '../store/settings';
 import type { BindingDefinition } from '../utils/keyboard';
-import { bindingSequence, KEYBOARD_BINDING_GROUPS } from '../utils/keyboard';
+import { bindingSequence, getEffectiveBindings } from '../utils/keyboard';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { ScrollArea } from './ui/scroll-area';
 
@@ -20,7 +21,7 @@ function toRow(b: BindingDefinition): ShortcutRow {
   return { key: bindingSequence(b), description: b.description };
 }
 
-function buildSections(): ShortcutSection[] {
+function buildSections(bindings: BindingDefinition[]): ShortcutSection[] {
   const navigationKeys = new Set([
     'j',
     'k',
@@ -50,16 +51,16 @@ function buildSections(): ShortcutSection[] {
   ]);
   const searchKeys = new Set(['/', ':', 'f', '?', 'meta+/', 'ctrl+/']);
 
-  const navBindings = KEYBOARD_BINDING_GROUPS.filter((b) =>
+  const navBindings = bindings.filter((b) =>
     navigationKeys.has(bindingSequence(b)),
   );
-  const actionBindings = KEYBOARD_BINDING_GROUPS.filter((b) =>
+  const actionBindings = bindings.filter((b) =>
     actionKeys.has(bindingSequence(b)),
   );
-  const searchBindings = KEYBOARD_BINDING_GROUPS.filter((b) =>
+  const searchBindings = bindings.filter((b) =>
     searchKeys.has(bindingSequence(b)),
   );
-  const globalBindings = KEYBOARD_BINDING_GROUPS.filter(
+  const globalBindings = bindings.filter(
     (b) =>
       !navigationKeys.has(bindingSequence(b)) &&
       !actionKeys.has(bindingSequence(b)) &&
@@ -81,8 +82,9 @@ function buildSections(): ShortcutSection[] {
 
 export function HelpOverlay(): React.ReactElement | null {
   const mode = useStore(appStore, (s) => s.mode);
+  const overrides = useStore(settingsStore, (s) => s.keybindings);
   const isOpen = mode === 'help';
-  const sections = buildSections();
+  const sections = buildSections(getEffectiveBindings(overrides));
 
   const handleClose = (): void => {
     appStore.setState((s) => ({ ...s, mode: 'list' }));

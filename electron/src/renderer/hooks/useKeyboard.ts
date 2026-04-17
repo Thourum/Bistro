@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { appStore } from '../store';
+import { settingsStore } from '../store/settings';
 import type { AppMode, BindingDefinition } from '../utils/keyboard';
-import { bindingSequence, KEYBOARD_BINDING_GROUPS } from '../utils/keyboard';
+import { bindingSequence, getEffectiveBindings } from '../utils/keyboard';
 
 const SEQUENCE_TIMEOUT_MS = 500;
 
@@ -58,10 +59,13 @@ export function findBinding(
   mode: AppMode,
   pendingKey: string | undefined,
   pendingKeyTime: number | undefined,
+  bindings: BindingDefinition[] = getEffectiveBindings(
+    settingsStore.state.keybindings,
+  ),
 ): { binding: BindingDefinition; consumed: boolean } | null {
   // 1. Modifier combo (e.g. 'ctrl+d', 'meta+q')
   if (key.includes('+')) {
-    const modifierBinding = KEYBOARD_BINDING_GROUPS.find(
+    const modifierBinding = bindings.find(
       (b) =>
         isBindingActiveForMode(b, mode) &&
         b.keys.length === 1 &&
@@ -82,7 +86,7 @@ export function findBinding(
   // 2. Two-plain-key timed sequence
   if (withinTimeout && pendingKey !== undefined) {
     const sequence = pendingKey + key;
-    const seqBinding = KEYBOARD_BINDING_GROUPS.find(
+    const seqBinding = bindings.find(
       (b) =>
         isBindingActiveForMode(b, mode) &&
         b.keys.length === 2 &&
@@ -94,7 +98,7 @@ export function findBinding(
   }
 
   // 3. Single plain-key binding
-  const singleBinding = KEYBOARD_BINDING_GROUPS.find(
+  const singleBinding = bindings.find(
     (b) =>
       isBindingActiveForMode(b, mode) &&
       b.keys.length === 1 &&
@@ -160,6 +164,9 @@ export function useKeyboard(): void {
 
       const { lastKey, lastKeyTime } = stateRef.current;
       const key = resolveEventKey(event);
+      // Re-read the effective map on each keystroke so live settings.json
+      // edits propagate without needing to re-mount the app.
+      const bindings = getEffectiveBindings(settingsStore.state.keybindings);
 
       // Special case: digit keys 1–9 jump directly to the Nth PR.
       if (mode === 'list' && /^[1-9]$/.test(key) && !isInputFocused()) {
@@ -172,7 +179,7 @@ export function useKeyboard(): void {
         return;
       }
 
-      const result = findBinding(key, mode, lastKey, lastKeyTime);
+      const result = findBinding(key, mode, lastKey, lastKeyTime, bindings);
 
       if (result !== null) {
         event.preventDefault();
@@ -184,7 +191,7 @@ export function useKeyboard(): void {
       // Check if this plain key could be the start of a two-key sequence.
       // Modifier combos never start sequences.
       if (!key.includes('+')) {
-        const couldStartSequence = KEYBOARD_BINDING_GROUPS.some(
+        const couldStartSequence = bindings.some(
           (b) =>
             isBindingActiveForMode(b, mode) &&
             b.keys.length === 2 &&
