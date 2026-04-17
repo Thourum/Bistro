@@ -1,5 +1,5 @@
-import { BrowserWindow } from 'electron';
 import { join } from 'node:path';
+import { BrowserWindow } from 'electron';
 import type { Logger } from 'electron-log';
 import type { AppConfig } from './types';
 

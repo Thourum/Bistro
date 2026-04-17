@@ -4,6 +4,7 @@ import { app, ipcMain, shell } from 'electron';
 import log from 'electron-log';
 import { killGoProcess, spawnGoProcess } from './go-spawn';
 import { setupIPC } from './ipc';
+import { SettingsService } from './settings';
 import type { AppConfig } from './types';
 import { WebSocketClient } from './websocket-client';
 import { createWindow } from './window';
@@ -86,6 +87,7 @@ log.info(`PROJECT_ROOT: ${PROJECT_ROOT}`);
 log.info(`Mode: ${isDev ? 'development' : 'production'}`);
 
 let wsClient: WebSocketClient | null = null;
+let settingsService: SettingsService | null = null;
 
 app.on('ready', async () => {
   const appConfig = buildConfig();
@@ -120,8 +122,13 @@ app.on('ready', async () => {
     wsClient = new WebSocketClient(wsUrl, log);
     wsClient.connect();
 
-    // 3. Setup IPC handlers (DB should exist now that Go has started)
-    setupIPC(appConfig.goProcess.dbPath, log, wsClient);
+    // 3. Load settings from userData/settings.json (creates defaults on first run)
+    settingsService = new SettingsService(log);
+    await settingsService.load();
+    log.info(`Settings loaded from ${settingsService.path}`);
+
+    // 4. Setup IPC handlers (DB should exist now that Go has started)
+    setupIPC(appConfig.goProcess.dbPath, log, wsClient, settingsService);
 
     // 3b. Register open-external IPC handler (HTTPS-only URL validation)
     ipcMain.handle('open-external', async (_event, url: unknown) => {
@@ -168,6 +175,7 @@ app.on('ready', async () => {
 app.on('before-quit', () => {
   log.info('App shutting down');
   wsClient?.stop();
+  settingsService?.stop();
   killGoProcess();
 });
 
