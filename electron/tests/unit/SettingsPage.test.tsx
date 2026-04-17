@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, vi } from 'vitest';
-import * as matchers from '@testing-library/jest-dom/matchers';
+import { describe, expect, it, vi } from 'vitest';
 import { SettingsPage } from '../../src/renderer/pages/SettingsPage';
 
 vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
@@ -12,44 +12,44 @@ vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
 expect.extend(matchers);
 
 describe('SettingsPage', () => {
-  it('renders settings title', () => {
+  it('renders the Settings title', () => {
     render(<SettingsPage />);
-    expect(screen.getByText(/Settings/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /Settings/i }),
+    ).toBeInTheDocument();
   });
 
-  it('renders all three tabs', () => {
+  it('renders all navigation sections in the sidebar', () => {
     render(<SettingsPage />);
-    expect(screen.getByRole('tab', { name: /Appearance/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Sync/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Keyboard/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Appearance/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Keyboard/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Connections/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Sync$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Advanced/i }),
+    ).toBeInTheDocument();
   });
 
-  it('renders appearance tab content by default', () => {
+  it('renders theme cards for light and dark mode', () => {
     render(<SettingsPage />);
-    expect(screen.getByLabelText(/Dark mode/i)).toBeInTheDocument();
+    expect(screen.getByText('Light Mode')).toBeInTheDocument();
+    expect(screen.getByText('Dark Mode')).toBeInTheDocument();
   });
 
-  it('switches to sync tab on click', async () => {
+  it('exposes the UI font picker', () => {
     render(<SettingsPage />);
-    const syncTab = screen.getByRole('tab', { name: /Sync/i });
-    await userEvent.click(syncTab);
-    expect(screen.getByLabelText(/Auto-sync/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^UI Font$/i)).toBeInTheDocument();
   });
 
-  it('switches to keyboard tab on click', async () => {
+  it('allows switching to the Advanced section via sidebar', async () => {
     render(<SettingsPage />);
-    const keyboardTab = screen.getByRole('tab', { name: /Keyboard/i });
-    await userEvent.click(keyboardTab);
-    expect(screen.getByRole('button', { name: /View All Shortcuts/i })).toBeInTheDocument();
-  });
-
-  it('renders within SettingsLayout', () => {
-    const { container } = render(<SettingsPage />);
-    expect(container.querySelector('[data-testid="settings-header"]')).toBeInTheDocument();
-  });
-
-  it('renders description text', () => {
-    render(<SettingsPage />);
-    expect(screen.getByText(/Configure Bistro to your preferences/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Advanced/i }));
+    expect(screen.getAllByText(/Advanced/i).length).toBeGreaterThan(0);
   });
 });

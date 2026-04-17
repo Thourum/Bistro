@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
+
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import { expect } from 'vitest';
-import * as matchers from '@testing-library/jest-dom/matchers';
 import { LoginPage } from '../../src/renderer/pages/LoginPage';
 
 expect.extend(matchers);
@@ -33,7 +34,7 @@ describe('LoginPage', () => {
 
   it('renders version info in footer', () => {
     render(<LoginPage />);
-    expect(screen.getByText(/v4.0.2-stable/i)).toBeInTheDocument();
+    expect(screen.getByText(/v\d+\.\d+\.\d+/i)).toBeInTheDocument();
   });
 
   it('displays live sync status', () => {

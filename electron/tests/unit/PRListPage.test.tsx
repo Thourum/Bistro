@@ -2,7 +2,8 @@
 
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
-import { expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FooterSlotProvider } from '../../src/renderer/components/FooterSlot';
 import * as prListModule from '../../src/renderer/hooks/useWebSocketPRList';
 import { PRListPage } from '../../src/renderer/pages/PRListPage';
 import * as storeModule from '../../src/renderer/store';
@@ -12,6 +13,8 @@ expect.extend(matchers);
 const mockPR = {
   id: 'github-1',
   provider_id: 'github:default',
+  owner: 'acme',
+  repo: 'widgets',
   number: 1,
   title: 'Fix auth bug',
   author: 'alice',
@@ -28,7 +31,13 @@ const mockPR = {
 };
 
 const mockStore = {
-  state: { selectedPRIndex: 0, filterState: 'open' },
+  state: {
+    selectedPRIndex: 0,
+    filterState: 'open' as const,
+    sortBy: 'updated' as const,
+    repoFilter: null,
+    repos: [{ owner: 'acme', repo: 'widgets', watched: true }],
+  },
   subscribe: vi.fn(() => () => {}),
 };
 
@@ -49,23 +58,33 @@ describe('PRListPage', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders PR list page', () => {
-    render(<PRListPage />);
+  it('renders the PR title from the redesigned list', () => {
+    render(
+      <FooterSlotProvider>
+        <PRListPage />
+      </FooterSlotProvider>,
+    );
     expect(screen.getByText('Fix auth bug')).toBeInTheDocument();
   });
 
-  it('renders within MainLayout', () => {
-    const { container } = render(<PRListPage />);
-    expect(
-      container.querySelector('[data-testid="main-layout"]'),
-    ).toBeInTheDocument();
+  it('shows the inbox breadcrumb and filter heading', () => {
+    render(
+      <FooterSlotProvider>
+        <PRListPage />
+      </FooterSlotProvider>,
+    );
+    expect(screen.getByText('bistro')).toBeInTheDocument();
+    expect(screen.getByText('inbox')).toBeInTheDocument();
+    expect(screen.getByText('Open Pull Requests')).toBeInTheDocument();
   });
 
-  it('renders toolbar with search and filter', () => {
-    render(<PRListPage />);
-    expect(
-      screen.getByPlaceholderText('Search PRs... (/ to focus)'),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Filter')).toBeInTheDocument();
+  it('renders the floating filter/sort card', () => {
+    render(
+      <FooterSlotProvider>
+        <PRListPage />
+      </FooterSlotProvider>,
+    );
+    expect(screen.getByText(/IS:OPEN/)).toBeInTheDocument();
+    expect(screen.getByText(/UPDATED_FIRST/)).toBeInTheDocument();
   });
 });
