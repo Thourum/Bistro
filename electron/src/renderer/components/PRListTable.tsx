@@ -1,118 +1,163 @@
-import { Badge } from '@renderer/components/ui/badge';
-import { Button } from '@renderer/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@renderer/components/ui/table';
 import type React from 'react';
 import { useStore } from '../hooks/useStore';
-import { useWebSocket } from '../hooks/useWebSocket';
 import { useWebSocketPRList as usePRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
+import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import type { PR } from '../types';
 
-type PRState = 'open' | 'closed' | 'draft' | 'merged';
+/**
+ * Minimalist PR inbox matching `pr_inbox_minimal_light/code.html`.
+ *
+ * - Flat rows on a 5-col grid `[24px_60px_1fr_120px_100px]`
+ * - Optional repo grouping via `<details>/<summary>` when
+ *   `settings.prList.view === 'grouped'`
+ * - CI status dots (green / red / yellow / neutral)
+ */
 
-type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
-
-function getBadgeVariant(state: PRState): BadgeVariant {
-  switch (state) {
-    case 'open':
-      return 'default';
-    case 'merged':
-      return 'secondary';
-    case 'closed':
-      return 'destructive';
-    case 'draft':
-      return 'outline';
+function ciColor(pr: PR): string {
+  switch (pr.ci_status) {
+    case 'success':
+      return 'bg-green-500';
+    case 'failure':
+      return 'bg-error';
+    case 'pending':
+    case 'running':
+      return 'bg-yellow-500';
+    default:
+      return 'bg-outline-variant';
   }
 }
 
-function formatDate(dateStr: string): string {
-  // Use en-US with numeric (non-padded) month/day for consistent cross-platform output
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'numeric',
-    day: 'numeric',
-    year: 'numeric',
-  });
+function ciTitle(pr: PR): string {
+  switch (pr.ci_status) {
+    case 'success':
+      return 'CI SUCCESS';
+    case 'failure':
+      return 'CI FAILED';
+    case 'pending':
+    case 'running':
+      return 'CI RUNNING';
+    default:
+      return 'CI UNKNOWN';
+  }
+}
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hour = Math.floor(min / 60);
+  if (hour < 24) return `${hour}h ago`;
+  const day = Math.floor(hour / 24);
+  return `${day}d ago`;
 }
 
 interface PRRowProps {
   pr: PR;
-  idx: number;
+  globalIndex: number;
   selectedIndex: number;
-  onApprove: (prId: string, event: React.MouseEvent) => void;
-  showRepo?: boolean;
 }
 
 function PRRow({
   pr,
-  idx,
+  globalIndex,
   selectedIndex,
-  onApprove,
-  showRepo = true,
 }: PRRowProps): React.ReactElement {
+  const isSelected = selectedIndex === globalIndex;
+  const open = (): void => {
+    appStore.setState((s) => ({
+      ...s,
+      selectedPRIndex: globalIndex,
+      mode: 'detail',
+    }));
+  };
   return (
-    <TableRow
-      key={pr.id}
-      tabIndex={0}
-      className={
-        selectedIndex === idx
-          ? 'cursor-pointer bg-surface-container-low border-l-[3px] border-l-primary'
-          : 'cursor-pointer hover:bg-surface-container-low transition-colors'
-      }
-      onClick={() => {
-        appStore.setState((s) => ({
-          ...s,
-          selectedPRIndex: idx,
-          mode: 'detail',
-        }));
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && e.target === e.currentTarget) {
-          appStore.setState((s) => ({
-            ...s,
-            selectedPRIndex: idx,
-            mode: 'detail',
-          }));
-        }
-      }}
+    <button
+      type="button"
+      onClick={open}
+      className={[
+        'grid grid-cols-[24px_60px_1fr_120px_100px] items-center gap-4 py-3 px-4 w-full text-left',
+        'cursor-crosshair transition-colors border-l-2',
+        isSelected
+          ? 'bg-surface-container-low border-primary'
+          : 'border-transparent hover:bg-surface-container-low hover:border-primary',
+      ].join(' ')}
     >
-      <TableCell>
-        <Badge variant={getBadgeVariant(pr.state)}>{pr.state}</Badge>
-      </TableCell>
-      <TableCell className="font-medium text-on-surface">{pr.title}</TableCell>
-      {showRepo && (
-        <TableCell className="font-mono text-[11px] text-on-surface-variant">
-          {pr.owner}/{pr.repo}
-        </TableCell>
-      )}
-      <TableCell className="text-right">
-        <span className="font-mono text-[11px] text-on-surface-variant">
-          {formatDate(pr.updated_at)}
-        </span>
-      </TableCell>
-      <TableCell className="text-right font-mono text-[11px] text-primary">
-        {pr.author}
-      </TableCell>
-      <TableCell className="text-right">
-        {pr.state === 'open' && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-[10px] h-6 px-2"
-            onClick={(e) => onApprove(pr.id, e)}
+      <span
+        className={`w-3 h-3 inline-block ${ciColor(pr)}`}
+        title={ciTitle(pr)}
+        role="img"
+        aria-label={ciTitle(pr)}
+      />
+      <div className="font-mono text-[11px] text-outline">#{pr.number}</div>
+      <div className="font-medium text-[14px] text-on-surface truncate">
+        {pr.title}
+      </div>
+      <div className="font-mono text-[11px] text-outline-variant text-right truncate">
+        @{pr.author}
+      </div>
+      <div
+        className={`font-mono text-[11px] text-right ${
+          isSelected ? 'text-primary' : 'text-outline-variant'
+        }`}
+      >
+        {relativeTime(pr.updated_at)}
+      </div>
+    </button>
+  );
+}
+
+interface PRGroupProps {
+  title: string;
+  prs: PR[];
+  startIndex: number;
+  selectedIndex: number;
+  accent: boolean;
+}
+
+function PRGroup({
+  title,
+  prs,
+  startIndex,
+  selectedIndex,
+  accent,
+}: PRGroupProps): React.ReactElement {
+  return (
+    <details
+      className={accent ? 'group' : 'group mt-8'}
+      open={accent ? true : prs.length > 0}
+    >
+      <summary className="list-none cursor-pointer flex items-center justify-between py-4 group-open:bg-surface-container-low px-2 -mx-2 transition-colors">
+        <div className="flex items-center gap-4">
+          <span
+            className={`text-[10px] font-mono px-1.5 py-0.5 border ${
+              accent
+                ? 'text-primary border-primary'
+                : 'text-outline border-outline'
+            }`}
           >
-            Approve
-          </Button>
-        )}
-      </TableCell>
-    </TableRow>
+            GROUP
+          </span>
+          <span className="font-bold text-sm tracking-tight">{title}</span>
+        </div>
+        <span className="font-mono text-[10px] text-outline">
+          TOGGLE [SPACE]
+        </span>
+      </summary>
+      <div className="mt-2">
+        {prs.map((pr, i) => (
+          <PRRow
+            key={pr.id}
+            pr={pr}
+            globalIndex={startIndex + i}
+            selectedIndex={selectedIndex}
+          />
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -122,50 +167,40 @@ export function PRListTable() {
     appStore,
     (state: UIState) => state.selectedPRIndex,
   );
-  const prListView = useStore(appStore, (state: UIState) => state.prListView);
+  const prListView = useStore(settingsStore, (s) => s.prList.view);
   const repoFilter = useStore(appStore, (state: UIState) => state.repoFilter);
   const repos = useStore(appStore, (state: UIState) => state.repos);
+
   const { data: prs = [], isLoading, error } = usePRList(filterState);
-  const { send } = useWebSocket();
-
-  const handleApprove = (prId: string, event: React.MouseEvent): void => {
-    event.stopPropagation();
-    send('APPROVE_PR', { pr_id: prId });
-  };
-
-  const handleClearRepoFilter = (): void => {
-    appStore.setState((s) => ({ ...s, repoFilter: null }));
-  };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-32 text-on-surface-variant">
-        Loading PRs...
+      <div className="flex items-center justify-center py-16 text-on-surface-variant font-mono uppercase tracking-widest text-xs">
+        Loading PRs…
       </div>
     );
   }
 
   if (error !== null) {
     return (
-      <div className="flex items-center justify-center h-32 text-error">
+      <div className="flex items-center justify-center py-16 text-error font-mono text-sm">
         Failed to load PRs: {(error as Error).message}
       </div>
     );
   }
 
-  // Empty state when no repos watched
   const watchedRepos = (repos ?? []).filter((r) => r.watched);
   if (prs.length === 0 && watchedRepos.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-on-surface-variant">
+      <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant space-y-2">
         <p className="text-lg font-semibold">No repositories watched</p>
-        <p className="text-sm mt-2">
+        <p className="text-sm">
           Press{' '}
-          <kbd className="px-1 py-0.5 bg-surface-container rounded text-xs font-mono">
+          <kbd className="px-1 py-0.5 bg-surface-container text-xs font-mono">
             :
           </kbd>{' '}
           then type{' '}
-          <kbd className="px-1 py-0.5 bg-surface-container rounded text-xs font-mono">
+          <kbd className="px-1 py-0.5 bg-surface-container text-xs font-mono">
             repos
           </kbd>{' '}
           to discover and watch your GitHub repositories.
@@ -174,133 +209,49 @@ export function PRListTable() {
     );
   }
 
-  // Apply repo filter
-  const filteredPRs = repoFilter
+  const filteredPRs: PR[] = repoFilter
     ? prs.filter((pr) => `${pr.owner}/${pr.repo}` === repoFilter)
     : prs;
 
-  return (
-    <div className="w-full border border-outline-variant shadow-ambient">
-      {repoFilter !== null && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-surface-container border-b border-outline-variant">
-          <span className="text-xs text-on-surface-variant font-mono">
-            Filtered: {repoFilter}
-          </span>
-          <button
-            onClick={handleClearRepoFilter}
-            className="text-xs text-primary hover:underline"
-            type="button"
-          >
-            Clear
-          </button>
-        </div>
-      )}
-
-      {prListView === 'grouped' ? (
-        <GroupedPRTable
-          prs={filteredPRs}
-          selectedIndex={selectedIndex}
-          onApprove={handleApprove}
-        />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[80px]">State</TableHead>
-              <TableHead>Title</TableHead>
-              <TableHead className="w-[160px]">Repo</TableHead>
-              <TableHead className="text-right w-[120px]">Updated</TableHead>
-              <TableHead className="text-right w-[100px]">Author</TableHead>
-              <TableHead className="w-[90px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredPRs.map((pr, idx) => (
-              <PRRow
-                key={pr.id}
-                pr={pr}
-                idx={idx}
-                selectedIndex={selectedIndex}
-                onApprove={handleApprove}
-                showRepo={true}
-              />
-            ))}
-          </TableBody>
-        </Table>
-      )}
-    </div>
-  );
-}
-
-interface GroupedPRTableProps {
-  prs: PR[];
-  selectedIndex: number;
-  onApprove: (prId: string, event: React.MouseEvent) => void;
-}
-
-function GroupedPRTable({
-  prs,
-  selectedIndex,
-  onApprove,
-}: GroupedPRTableProps): React.ReactElement {
-  // Group by owner/repo
-  const groups = new Map<string, PR[]>();
-  for (const pr of prs) {
-    const key = `${pr.owner}/${pr.repo}`;
-    const existing = groups.get(key);
-    if (existing) {
-      existing.push(pr);
-    } else {
-      groups.set(key, [pr]);
+  if (prListView === 'grouped') {
+    const groups = new Map<string, PR[]>();
+    for (const pr of filteredPRs) {
+      const key = `${pr.owner}/${pr.repo}`;
+      const existing = groups.get(key);
+      if (existing) existing.push(pr);
+      else groups.set(key, [pr]);
     }
+    let cursor = 0;
+    return (
+      <div className="space-y-0">
+        {Array.from(groups.entries()).map(([repoKey, repoPRs], idx) => {
+          const start = cursor;
+          cursor += repoPRs.length;
+          return (
+            <PRGroup
+              key={repoKey}
+              title={repoKey}
+              prs={repoPRs}
+              startIndex={start}
+              selectedIndex={selectedIndex}
+              accent={idx === 0}
+            />
+          );
+        })}
+      </div>
+    );
   }
 
-  // Build flat index for selection alignment
-  let globalIdx = 0;
-
   return (
-    <div>
-      {Array.from(groups.entries()).map(([repoKey, repoPRs]) => {
-        const startIdx = globalIdx;
-        globalIdx += repoPRs.length;
-        return (
-          <div key={repoKey} className="mb-2">
-            <div className="px-4 py-2 bg-surface-container border-b border-outline-variant flex items-center justify-between">
-              <span className="font-mono text-sm font-semibold text-on-surface">
-                {repoKey}
-              </span>
-              <span className="text-xs text-on-surface-variant">
-                {repoPRs.length} PR{repoPRs.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[80px]">State</TableHead>
-                  <TableHead>Title</TableHead>
-                  <TableHead className="text-right w-[120px]">
-                    Updated
-                  </TableHead>
-                  <TableHead className="text-right w-[100px]">Author</TableHead>
-                  <TableHead className="w-[90px]"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {repoPRs.map((pr, i) => (
-                  <PRRow
-                    key={pr.id}
-                    pr={pr}
-                    idx={startIdx + i}
-                    selectedIndex={selectedIndex}
-                    onApprove={onApprove}
-                    showRepo={false}
-                  />
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        );
-      })}
+    <div className="space-y-0">
+      {filteredPRs.map((pr, idx) => (
+        <PRRow
+          key={pr.id}
+          pr={pr}
+          globalIndex={idx}
+          selectedIndex={selectedIndex}
+        />
+      ))}
     </div>
   );
 }

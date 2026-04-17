@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface-container-highest": "#e1e3e4",
+            "primary-fixed": "#dbe1ff",
+            "on-surface-variant": "#434655",
+            "inverse-surface": "#2e3132",
+            "surface-container-lowest": "#ffffff",
+            "error": "#ba1a1a",
+            "on-tertiary": "#ffffff",
+            "background": "#f8f9fa",
+            "surface-container-high": "#e7e8e9",
+            "on-error": "#ffffff",
+            "surface-dim": "#d9dadb",
+            "surface-variant": "#e1e3e4",
+            "primary-container": "#2563eb",
+            "on-primary-fixed": "#00174b",
+            "secondary": "#495c95",
+            "primary": "#004ac6",
+            "surface-bright": "#f8f9fa",
+            "on-secondary-fixed": "#00174b",
+            "on-primary-container": "#eeefff",
+            "on-secondary-container": "#394c84",
+            "outline": "#737686",
+            "on-primary-fixed-variant": "#003ea8",
+            "on-error-container": "#93000a",
+            "on-tertiary-container": "#ffede6",
+            "surface": "#f8f9fa",
+            "surface-container": "#edeeef",
+            "tertiary-container": "#bc4800",
+            "primary-fixed-dim": "#b4c5ff",
+            "outline-variant": "#c3c6d7",
+            "inverse-on-surface": "#f0f1f2",
+            "on-tertiary-fixed-variant": "#7d2d00",
+            "error-container": "#ffdad6",
+            "surface-tint": "#0053db",
+            "secondary-fixed-dim": "#b4c5ff",
+            "secondary-fixed": "#dbe1ff",
+            "on-secondary-fixed-variant": "#31447b",
+            "surface-container-low": "#f3f4f5",
+            "on-tertiary-fixed": "#360f00",
+            "on-secondary": "#ffffff",
+            "tertiary-fixed": "#ffdbcd",
+            "tertiary-fixed-dim": "#ffb596",
+            "secondary-container": "#acbfff",
+            "on-background": "#191c1d",
+            "on-primary": "#ffffff",
+            "on-surface": "#191c1d",
+            "tertiary": "#943700",
+            "inverse-primary": "#b4c5ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0px",
+            "lg": "0px",
+            "xl": "0px",
+            "full": "0px"
+          },
+          "fontFamily": {
+            "sans": ["Geist", "Inter", "sans-serif"],
+            "mono": ["JetBrains Mono", "monospace"]
+          }
+        },
+      },
+    }
+  </script>
+  <style>
+    body { font-family: 'Geist', sans-serif; }
+    .mono-text { font-family: 'JetBrains Mono', monospace; }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface flex flex-col min-h-screen">
+  <!-- Header / Branding Navigation Suppressed as per Task (Onboarding) -->
+  <main class="flex-grow flex items-center justify-center p-6">
+    <div class="max-w-3xl w-full">
+      <!-- Technical Header Section -->
+      <header class="mb-16">
+        <h1 class="text-5xl font-black tracking-tighter text-on-surface uppercase mb-2">BISTRO</h1>
+        <p class="text-xl text-on-surface-variant font-medium max-w-lg leading-snug">
+          Master the Technical Atelier. Your productivity is bound to your fluency with the terminal.
+        </p>
+      </header>
+      <!-- Keyboard Navigation Bento Layout -->
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-px bg-outline-variant/20 border border-outline-variant/30">
+        <!-- Primary Navigation -->
+        <div class="md:col-span-7 bg-surface-container-lowest p-8 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-3 mb-8">
+              <span class="material-symbols-outlined text-primary" data-icon="keyboard">keyboard</span>
+              <span class="mono-text text-xs font-bold uppercase tracking-widest">Core Movements</span>
+            </div>
+            <div class="space-y-6">
+              <div class="flex items-center justify-between">
+                <span class="text-lg font-medium">Navigate Items</span>
+                <div class="flex gap-1">
+                  <kbd class="mono-text px-3 py-1 bg-surface-container-low border-b-2 border-outline-variant text-sm font-bold">j</kbd>
+                  <kbd class="mono-text px-3 py-1 bg-surface-container-low border-b-2 border-outline-variant text-sm font-bold">k</kbd>
+                </div>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-lg font-medium text-on-surface-variant">Open Selected</span>
+                <kbd class="mono-text px-3 py-1 bg-surface-container-low border-b-2 border-outline-variant text-sm font-bold">Enter</kbd>
+              </div>
+            </div>
+          </div>
+          <div class="mt-12 pt-8 border-t border-outline-variant/10">
+            <p class="mono-text text-[10px] text-outline leading-relaxed uppercase">
+              Linear progression through the stack using standard vim-like bindings for peak ergonomic efficiency.
+            </p>
+          </div>
+        </div>
+        <!-- Command Box Section -->
+        <div class="md:col-span-5 bg-surface-container-low p-8">
+          <div class="flex items-center gap-3 mb-8">
+            <span class="material-symbols-outlined text-primary" data-icon="terminal">terminal</span>
+            <span class="mono-text text-xs font-bold uppercase tracking-widest">Omni-Search</span>
+          </div>
+          <div class="flex flex-col items-center justify-center py-4 bg-surface-container-lowest border border-outline-variant/30 mb-6">
+            <div class="flex gap-2">
+              <kbd class="mono-text px-3 py-1 bg-surface-container text-sm font-bold">⌘</kbd>
+              <kbd class="mono-text px-3 py-1 bg-surface-container text-sm font-bold">K</kbd>
+            </div>
+          </div>
+          <p class="text-sm font-medium mb-2">Open command box</p>
+          <p class="mono-text text-[10px] text-outline uppercase tracking-tight leading-normal">
+            Global entry point for files, settings, and repository commands.
+          </p>
+        </div>
+        <!-- Approval Actions -->
+        <div class="md:col-span-6 bg-surface-container-low p-8 border-t border-outline-variant/30">
+          <div class="flex items-center justify-between">
+            <div class="flex flex-col">
+              <span class="text-lg font-medium mb-1">Approve</span>
+              <span class="mono-text text-[10px] text-outline uppercase">Rapid Review Cycle</span>
+            </div>
+            <kbd class="mono-text px-4 py-2 bg-primary text-on-primary font-bold text-lg">a</kbd>
+          </div>
+        </div>
+        <!-- Comment Actions -->
+        <div class="md:col-span-6 bg-surface-container-lowest p-8 border-t border-l border-outline-variant/30">
+          <div class="flex items-center justify-between">
+            <div class="flex flex-col">
+              <span class="text-lg font-medium mb-1 text-on-surface-variant">Comment</span>
+              <span class="mono-text text-[10px] text-outline uppercase">Annotate Changes</span>
+            </div>
+            <kbd class="mono-text px-4 py-2 border-2 border-outline text-outline font-bold text-lg">c</kbd>
+          </div>
+        </div>
+      </div>
+      <!-- Visualization / Graphic Element -->
+      <div class="mt-12 w-full h-1 bg-surface-container-highest">
+        <div class="h-full bg-primary w-1/4"></div>
+      </div>
+    </div>
+  </main>
+  <!-- Footer Action -->
+  <footer class="bg-surface-container-lowest py-8 flex flex-col items-center border-t border-outline-variant/20">
+    <div class="flex flex-col items-center gap-4">
+      <div class="flex items-center gap-2">
+        <span class="mono-text text-[11px] font-bold text-outline uppercase tracking-widest">Press</span>
+        <kbd class="mono-text px-8 py-2 bg-on-surface text-surface text-sm font-bold tracking-widest uppercase">Space</kbd>
+        <span class="mono-text text-[11px] font-bold text-outline uppercase tracking-widest">to finish</span>
+      </div>
+      <div class="flex gap-8 mt-4">
+        <span class="mono-text text-[9px] text-outline uppercase tracking-tighter opacity-50">v.1.0.4-release</span>
+        <span class="mono-text text-[9px] text-outline uppercase tracking-tighter opacity-50">LATENCY: 12ms</span>
+        <span class="mono-text text-[9px] text-outline uppercase tracking-tighter opacity-50">AUTH: VERIFIED</span>
+      </div>
+    </div>
+  </footer>
+</body></html>

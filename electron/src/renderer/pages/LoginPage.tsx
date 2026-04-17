@@ -21,13 +21,11 @@ export function LoginPage() {
 
   const handleProviderClick = useCallback(
     (provider: ProviderId): void => {
-      // Read fresh from store — the closure value may be stale on rapid re-invocation
       if (appStore.state.authLoading) {
         log.warn({ provider }, 'AUTH_START ignored — already loading');
         return;
       }
 
-      // Set loading eagerly before sending to close the race window
       appStore.setState((s) => ({ ...s, authLoading: true, authError: null }));
 
       log.info({ provider, syncStatus }, 'provider clicked');
@@ -52,8 +50,6 @@ export function LoginPage() {
     [send, syncStatus],
   );
 
-  // React to keyboard bindings dispatched via the centralized keyboard system.
-  // The binding sets confirmingAction to 'auth_github' / 'auth_gitlab' / 'auth_gitea'.
   const confirmingAction = useStore(
     appStore,
     (s: UIState) => s.confirmingAction,
@@ -74,9 +70,8 @@ export function LoginPage() {
   return (
     <AuthLayout>
       <div className="p-12">
-        {/* Header */}
         <header className="mb-12">
-          <h1 className="text-4xl font-extrabold tracking-tighter text-on-surface mb-4 uppercase">
+          <h1 className="text-4xl font-extrabold tracking-tighter text-on-background mb-4 uppercase">
             BISTRO
           </h1>
           <p className="text-on-surface-variant text-sm font-medium tracking-tight">
@@ -84,10 +79,9 @@ export function LoginPage() {
           </p>
         </header>
 
-        {/* Auth state UI */}
         {authLoading ? (
-          <div className="text-center space-y-4">
-            <p className="text-sm text-on-surface-variant animate-pulse">
+          <div className="text-center space-y-4 py-6">
+            <p className="text-sm text-on-surface-variant animate-pulse font-mono uppercase tracking-widest">
               Waiting for authorization...
             </p>
             <p className="text-xs text-on-surface-variant">
@@ -96,8 +90,7 @@ export function LoginPage() {
           </div>
         ) : (
           <>
-            {/* Provider buttons */}
-            <div className="space-y-3">
+            <div className="space-y-4">
               {PROVIDERS.map((p) => (
                 <ProviderButton
                   key={p.id}
@@ -120,23 +113,22 @@ export function LoginPage() {
           </>
         )}
 
-        {/* Footer */}
         <div className="mt-16 flex items-end justify-between">
-          <div className="font-mono text-[10px] text-outline-variant flex flex-col">
-            <span className="uppercase tracking-widest mb-1">
+          <div className="font-mono text-[10px] text-outline-variant flex flex-col gap-0.5">
+            <span className="uppercase tracking-widest">
               Status: {syncStatus.toUpperCase()}
             </span>
             {syncError !== null && (
-              <span className="text-error text-[9px]">{syncError}</span>
+              <span className="text-error">{syncError}</span>
             )}
             {lastSyncAt !== null && (
-              <span className="text-[9px]">
+              <span>
                 Last sync: {new Date(lastSyncAt).toLocaleTimeString()}
               </span>
             )}
-            <span>v4.0.2-stable</span>
+            <span>v0.1.0-stable</span>
           </div>
-          <div className="w-24 h-[1px] bg-outline-variant/30"></div>
+          <div className="w-24 h-[1px] bg-outline-variant/30" />
         </div>
       </div>
     </AuthLayout>
