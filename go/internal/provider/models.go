@@ -29,6 +29,14 @@ type PR struct {
 	Draft        bool
 }
 
+// Review represents a normalized PR review submission.
+type Review struct {
+	PRID        string
+	Author      string
+	State       string // "approved", "changes_requested", "commented", "dismissed", "pending"
+	SubmittedAt time.Time
+}
+
 // Comment represents a normalized comment
 type Comment struct {
 	ID        string

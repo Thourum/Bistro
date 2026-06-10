@@ -89,6 +89,31 @@ func (o *Orchestrator) FetchPRDetails(
 				}
 			}
 
+			// Reviews ride along with the details pass: triage (Needs Action /
+			// FYI) needs review_status refreshed on the same cadence as comments.
+			if includeComments && o.provider != nil {
+				subStart := time.Now()
+				reviews, err := o.provider.ListReviews(taskCtx, prCopy.ID)
+				subDur := time.Since(subStart).Milliseconds()
+				if err != nil {
+					errs = append(errs, fmt.Sprintf("reviews: %v", err))
+					prLog.Error("review fetch failed",
+						"duration_ms", subDur,
+						"error", err,
+					)
+				} else {
+					status, approvedBy, changesBy := provider.DeriveReviewStatus(reviews)
+					prCopy.ReviewStatus = status
+					prCopy.ApprovedBy = approvedBy
+					prCopy.ChangesRequestedBy = changesBy
+					prLog.Debug("pr reviews fetched",
+						"count", len(reviews),
+						"review_status", status,
+						"duration_ms", subDur,
+					)
+				}
+			}
+
 			if includeCI && o.provider != nil {
 				subStart := time.Now()
 				ci, err := o.provider.GetCIStatus(taskCtx, prCopy.ID)

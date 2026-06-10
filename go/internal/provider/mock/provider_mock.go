@@ -11,6 +11,7 @@ import (
 type MockProvider struct {
 	prs             []*provider.PR
 	comments        []*provider.Comment
+	reviews         []*provider.Review
 	ciStatus        *provider.CIStatus
 	err             error
 	GetUsernameFunc func(ctx context.Context) (string, error)
@@ -28,62 +29,44 @@ func NewMockProvider() *MockProvider {
 
 // WithPRs returns a new MockProvider with the given PR list configured.
 func (m *MockProvider) WithPRs(prs []*provider.PR) *MockProvider {
-	return &MockProvider{
-		prs:             prs,
-		comments:        m.comments,
-		ciStatus:        m.ciStatus,
-		err:             m.err,
-		GetUsernameFunc: m.GetUsernameFunc,
-		Repos:           m.Repos,
-	}
+	clone := *m
+	clone.prs = prs
+	return &clone
 }
 
 // WithComments returns a new MockProvider with the given comments configured.
 func (m *MockProvider) WithComments(comments []*provider.Comment) *MockProvider {
-	return &MockProvider{
-		prs:             m.prs,
-		comments:        comments,
-		ciStatus:        m.ciStatus,
-		err:             m.err,
-		GetUsernameFunc: m.GetUsernameFunc,
-		Repos:           m.Repos,
-	}
+	clone := *m
+	clone.comments = comments
+	return &clone
+}
+
+// WithReviews returns a new MockProvider with the given reviews configured.
+func (m *MockProvider) WithReviews(reviews []*provider.Review) *MockProvider {
+	clone := *m
+	clone.reviews = reviews
+	return &clone
 }
 
 // WithCIStatus returns a new MockProvider with the given CI status configured.
 func (m *MockProvider) WithCIStatus(status *provider.CIStatus) *MockProvider {
-	return &MockProvider{
-		prs:             m.prs,
-		comments:        m.comments,
-		ciStatus:        status,
-		err:             m.err,
-		GetUsernameFunc: m.GetUsernameFunc,
-		Repos:           m.Repos,
-	}
+	clone := *m
+	clone.ciStatus = status
+	return &clone
 }
 
 // WithError returns a new MockProvider that returns err from all methods.
 func (m *MockProvider) WithError(err error) *MockProvider {
-	return &MockProvider{
-		prs:             m.prs,
-		comments:        m.comments,
-		ciStatus:        m.ciStatus,
-		err:             err,
-		GetUsernameFunc: m.GetUsernameFunc,
-		Repos:           m.Repos,
-	}
+	clone := *m
+	clone.err = err
+	return &clone
 }
 
 // WithRepos returns a new MockProvider with the given repos configured.
 func (m *MockProvider) WithRepos(repos []*provider.Repo) *MockProvider {
-	return &MockProvider{
-		prs:             m.prs,
-		comments:        m.comments,
-		ciStatus:        m.ciStatus,
-		err:             m.err,
-		GetUsernameFunc: m.GetUsernameFunc,
-		Repos:           repos,
-	}
+	clone := *m
+	clone.Repos = repos
+	return &clone
 }
 
 // Authenticate returns a mock token.
@@ -121,6 +104,14 @@ func (m *MockProvider) GetComments(_ context.Context, _ string) ([]*provider.Com
 		return nil, m.err
 	}
 	return m.comments, nil
+}
+
+// ListReviews returns the configured reviews.
+func (m *MockProvider) ListReviews(_ context.Context, _ string) ([]*provider.Review, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.reviews, nil
 }
 
 // GetCIStatus returns the configured CI status.

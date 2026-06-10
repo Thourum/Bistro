@@ -16,6 +16,9 @@ type Provider interface {
 	// GetComments fetches all comments for a PR
 	GetComments(ctx context.Context, prID string) ([]*Comment, error)
 
+	// ListReviews fetches all review submissions for a PR
+	ListReviews(ctx context.Context, prID string) ([]*Review, error)
+
 	// GetCIStatus fetches CI check runs for a PR
 	GetCIStatus(ctx context.Context, prID string) (*CIStatus, error)
 

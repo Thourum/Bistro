@@ -3,8 +3,11 @@ package github
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	ghlib "github.com/google/go-github/v84/github"
+	"github.com/samuelasvanyi/bistro/internal/provider"
 )
 
 // approve approves a PR with an optional review body.
@@ -100,4 +103,44 @@ func (c *Client) PostComment(ctx context.Context, prID string, line int, body st
 	}
 
 	return c.postComment(ctx, owner, repo, number, line, body)
+}
+
+// listReviews fetches all review submissions for a PR, normalized to domain types.
+func (c *Client) listReviews(ctx context.Context, owner, repo string, number int) ([]*provider.Review, error) {
+	var result []*provider.Review
+	opts := &ghlib.ListOptions{PerPage: 100}
+
+	prID := "github:" + owner + "/" + repo + ":" + strconv.Itoa(number)
+	for {
+		ghReviews, resp, err := c.gh.PullRequests.ListReviews(ctx, owner, repo, number, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list reviews for %s/%s#%d: %w", owner, repo, number, err)
+		}
+
+		for _, ghReview := range ghReviews {
+			result = append(result, &provider.Review{
+				PRID:        prID,
+				Author:      ghReview.GetUser().GetLogin(),
+				State:       strings.ToLower(ghReview.GetState()),
+				SubmittedAt: ghReview.GetSubmittedAt().Time,
+			})
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return result, nil
+}
+
+// ListReviews implements provider.Provider, parsing the "github:owner/repo:number" ID format.
+func (c *Client) ListReviews(ctx context.Context, prID string) ([]*provider.Review, error) {
+	owner, repo, number, err := parsePRID(prID)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.listReviews(ctx, owner, repo, number)
 }
