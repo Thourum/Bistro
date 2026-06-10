@@ -119,6 +119,8 @@ function deriveStatus(
       return { label: 'OPERATIONAL', dotClass: 'bg-green-500' };
     case 'connecting':
       return { label: 'CONNECTING', dotClass: 'bg-yellow-500 animate-pulse' };
+    case 'syncing':
+      return { label: 'SYNCING', dotClass: 'bg-yellow-500 animate-pulse' };
     case 'rate_limited':
       return { label: 'RATE-LIMITED', dotClass: 'bg-error' };
     case 'error':

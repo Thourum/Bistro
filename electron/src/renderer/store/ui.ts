@@ -47,6 +47,7 @@ export interface UIState {
     | 'connecting'
     | 'connected'
     | 'ready'
+    | 'syncing'
     | 'error'
     | 'rate_limited';
   syncError: string | null;

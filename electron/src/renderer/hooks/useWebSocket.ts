@@ -232,6 +232,19 @@ function onMessage(event: MessageEvent<string>): void {
     case 'SYNC_COMPLETE':
       handleSyncComplete(message.data as SyncCompleteData);
       break;
+    case 'SYNC_TRIGGERED': {
+      const queued = (message.data as { queued?: boolean }).queued === true;
+      if (queued) {
+        try {
+          appStore.setState((s) => ({ ...s, syncStatus: 'syncing' }));
+        } catch {
+          // Store not available (test environment)
+        }
+      } else {
+        log.warn('manual sync not queued — sync already in progress');
+      }
+      break;
+    }
     case 'PR_APPROVED':
       handlePRApproved(message.data as PRApprovedData);
       break;

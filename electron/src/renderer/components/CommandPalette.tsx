@@ -34,6 +34,12 @@ const COMMANDS: readonly Command[] = [
     shortcut: ['⌘', ','],
   },
   {
+    id: 'sync',
+    name: 'Sync now',
+    description: 'Force sync all watched repos',
+    icon: 'sync',
+  },
+  {
     id: 'clear',
     name: 'Clear all filters and search',
     icon: 'filter_alt_off',
@@ -172,6 +178,15 @@ export function CommandPalette(): React.ReactElement | null {
           searchQuery: '',
           filterState: 'open',
           filterMenuOpen: false,
+        }));
+        setQuery('');
+        return;
+      case 'sync':
+        send('FORCE_SYNC', {});
+        appStore.setState((s) => ({
+          ...s,
+          syncStatus: 'syncing',
+          mode: 'list',
         }));
         setQuery('');
         return;
