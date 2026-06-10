@@ -63,7 +63,8 @@ function buildConfig(): AppConfig {
 
   const GO_LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
   type GoLogLevel = (typeof GO_LOG_LEVELS)[number];
-  const rawLogLevel = process.env.GO_LOG_LEVEL ?? 'info';
+  // Dev defaults to debug so per-PR sync steps are visible when things hang.
+  const rawLogLevel = process.env.GO_LOG_LEVEL ?? (isDev ? 'debug' : 'info');
   const logLevel: GoLogLevel = (GO_LOG_LEVELS as readonly string[]).includes(
     rawLogLevel,
   )

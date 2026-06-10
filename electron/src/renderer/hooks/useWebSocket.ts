@@ -652,7 +652,16 @@ function requestMessage(type: string, data: unknown): Promise<unknown> {
 
       const timeout = setTimeout(() => {
         messageHandlers.delete(id);
-        reject(new Error(`Timeout waiting for ${type} response`));
+        const readyState = singletonWs?.readyState ?? 'no-socket';
+        log.error(
+          { type, id, readyState, pendingRequests: messageHandlers.size },
+          'request timed out',
+        );
+        reject(
+          new Error(
+            `Timeout waiting for ${type} response (socket state: ${readyState} — see bistro-sync.log for the backend side)`,
+          ),
+        );
       }, REQUEST_TIMEOUT_MS);
 
       messageHandlers.set(id, (responseData) => {
