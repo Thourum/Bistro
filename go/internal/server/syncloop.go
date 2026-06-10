@@ -25,7 +25,11 @@ func (a *App) runSyncLoop(ctx context.Context) {
 			a.syncWatchedRepos(ctx)
 		case repoID := <-a.syncTrigger:
 			a.log.Debug("sync trigger received", "repo_id", repoID)
-			a.syncSingleRepo(ctx, repoID)
+			if repoID == "" {
+				a.syncWatchedRepos(ctx)
+			} else {
+				a.syncSingleRepo(ctx, repoID)
+			}
 		}
 	}
 }

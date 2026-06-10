@@ -207,6 +207,7 @@ func (a *App) Run(ctx context.Context) error {
 		handler.NewRequestRepoListHandler(a.getProvider, a.db.DB, a.log))
 	a.wsServer.RegisterHandler("TOGGLE_WATCH_REPO",
 		handler.NewToggleWatchHandler(a.db.DB, a.syncTrigger, a.log))
+	a.wsServer.RegisterHandler("FORCE_SYNC", handler.NewForceSyncHandler(a.syncTrigger, a.log))
 
 	wsAddr := fmt.Sprintf(":%d", a.wsPort)
 	if err := a.wsServer.Start(wsAddr); err != nil {
