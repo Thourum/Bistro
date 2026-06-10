@@ -1,3 +1,4 @@
+import type { SyncEvent } from '../../main/websocket-client';
 import type {
   DBQueryRequest,
   DBQueryResponse,
@@ -5,18 +6,18 @@ import type {
   FSReadPatchResponse,
   GoCommandRequest,
   GoCommandResponse,
+  IPCError,
   SyncActionRequest,
   SyncActionResponse,
-  IPCError,
 } from '../../types/ipc';
 import type { AppSettings } from '../../types/settings';
-import type { SyncEvent } from '../../main/websocket-client';
 
 type EventChannel = 'sync:event' | 'settings:changed';
 
 declare global {
   interface Window {
     electron: {
+      wsPort: number;
       db: (request: DBQueryRequest) => Promise<DBQueryResponse | IPCError>;
       fs: (
         request: FSReadPatchRequest,

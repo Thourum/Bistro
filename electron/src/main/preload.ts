@@ -12,6 +12,7 @@ import type {
 } from '../types/ipc';
 import type { AppSettings } from '../types/settings';
 import type { SyncEvent } from './websocket-client';
+import { readWsPortFromArgv } from './ws-port';
 
 const VALID_SEND_CHANNELS = ['sync:subscribe'] as const;
 const VALID_EVENT_CHANNELS = ['sync:event', 'settings:changed'] as const;
@@ -21,6 +22,12 @@ type ValidEventChannel = (typeof VALID_EVENT_CHANNELS)[number];
 
 // Expose safe IPC methods to renderer
 contextBridge.exposeInMainWorld('electron', {
+  /**
+   * Actual WebSocket port of the Go sync engine, delivered via
+   * additionalArguments at window creation (Go picks it dynamically).
+   */
+  wsPort: readWsPortFromArgv(process.argv),
+
   /**
    * Query SQLite database
    * @returns { ok: Record<string, unknown>[] } | { err: string }
@@ -134,6 +141,7 @@ contextBridge.exposeInMainWorld('electron', {
 declare global {
   interface Window {
     electron: {
+      wsPort: number;
       db: (request: DBQueryRequest) => Promise<DBQueryResponse | IPCError>;
       fs: (
         request: FSReadPatchRequest,

@@ -65,7 +65,26 @@ interface ActionFailedData {
   error: string;
 }
 
-const WS_URL = 'ws://localhost:8080/ws';
+const DEFAULT_WS_PORT = 8080;
+
+/**
+ * Resolves the sync-engine WebSocket URL. The Go process picks its port
+ * dynamically; the preload script exposes it synchronously as
+ * `window.electron.wsPort`. Falls back to 8080 outside Electron (tests,
+ * plain browser dev).
+ */
+function getWsUrl(): string {
+  const exposedPort =
+    typeof window !== 'undefined' ? window.electron?.wsPort : undefined;
+  const port =
+    typeof exposedPort === 'number' &&
+    Number.isInteger(exposedPort) &&
+    exposedPort > 0 &&
+    exposedPort <= 65535
+      ? exposedPort
+      : DEFAULT_WS_PORT;
+  return `ws://localhost:${port}/ws`;
+}
 const REQUEST_TIMEOUT_MS = 5000;
 const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
@@ -437,7 +456,8 @@ function connect(): void {
     return;
   }
 
-  log.info({ url: WS_URL }, 'attempting connection');
+  const wsUrl = getWsUrl();
+  log.info({ url: wsUrl }, 'attempting connection');
   try {
     appStore.setState((s) => ({ ...s, syncStatus: 'connecting' }));
   } catch {
@@ -445,10 +465,10 @@ function connect(): void {
     return;
   }
 
-  const ws = new WebSocket(WS_URL);
+  const ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
-    log.info({ url: WS_URL }, 'connected');
+    log.info({ url: wsUrl }, 'connected');
     reconnectAttempt = 0;
     try {
       appStore.setState((s) => ({
