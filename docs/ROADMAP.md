@@ -48,10 +48,10 @@ This is the existing architecture. Most of it ships in pre-v1 builds. Listed her
 
 | Item | Status | Action |
 |---|---|---|
-| WebSocket port collision | partial | Go side done: `ws/server.go` accepts `:0` and selects a random port. Remaining: Electron still spawns with fixed `-ws-port 8080` and polls that port (`go-spawn.ts`) — pass `:0` and read the chosen port back via stdout/IPC |
+| WebSocket port collision | done | Go binds `:0` and prints `{"event":"ready","wsPort":N}`; Electron parses it and delivers the port to the renderer via preload additionalArguments |
 | OAuth scope honesty | partial | Current spec says "minimal scopes, no write." That's incompatible with approve / comment / request-changes. Update to "scope per feature" model — see Phase 1 |
 | `@pierre/diffs` license review | not started | Verify the license terms before v1.0 ships publicly (currently `@pierre/diffs@^1.1.15`) |
-| Initial-launch SQLite migration race | partial | Make sure Electron blocks on Go's "ready" signal before issuing reads (today: readiness inferred from a log line in `go-spawn.ts`) |
+| Initial-launch SQLite migration race | done | The ready signal is only emitted after migrations complete and the WS listener is up; Electron blocks on it |
 | `pr_diffs` table size budget | not started | Add a config setting for max cache size and a vacuum strategy |
 | `repos` watched-flag UI exposure | partial | Already in schema; surface a per-repo "last sync time / error / rate-limit remaining" indicator |
 
@@ -72,7 +72,7 @@ Three-pane layout (list / detail / status), filters for Open / Draft / Merged, s
 | Search across title/author/repo/filename | done | `SearchBar.tsx`, `/` binding |
 | Repo picker + watch toggle | done | `RepoPicker.tsx`, `WATCH_REPO_RESULT` event |
 | PR row metadata (state, age, +/-, file count, review status) | done | |
-| **Mark as "needs my action" vs "FYI"** | not started | See 1.6 |
+| **Mark as "needs my action" vs "FYI"** | partial | See 1.6 — lanes, counters, and `n` filter shipped; default-view switch and review_status population pending |
 
 ### 1.2 Diff viewer
 
@@ -113,7 +113,7 @@ Approve (with `a a` confirmation), request changes, post line/thread comments, e
 | 429 detection and queue-mode | done | covered by orchestrator integration tests |
 | In-place TanStack Query merging | done | |
 | **Per-currently-open-PR fast sync** | not started | When a PR is open in the UI, sync it every 30–60s; everything else stays at 5m |
-| **Manual force-sync command** | not started | `:sync` in command palette |
+| **Manual force-sync command** | done | `:sync` palette command → FORCE_SYNC → syncTrigger; SYNCING footer status |
 
 ### 1.5 Real-time event coverage
 
