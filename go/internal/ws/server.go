@@ -69,12 +69,32 @@ func (s *Server) RegisterHandler(messageType string, handler MessageHandler) {
 func (s *Server) Broadcast(msg interface{}) {
 	data, err := json.Marshal(msg)
 	if err != nil {
+		s.dispatcher.logger.Error("broadcast marshal failed", "error", err)
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	clientCount := len(s.conns)
+	s.dispatcher.logger.Debug("broadcast start",
+		"clients", clientCount,
+		"payload_bytes", len(data),
+		"payload", truncateForLog(data, 4096),
+	)
+	var writeErrs int
 	for conn := range s.conns {
-		conn.WriteMessage(websocket.TextMessage, data) //nolint:errcheck
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			writeErrs++
+			s.dispatcher.logger.Warn("broadcast write failed",
+				"error", err,
+				"remote_addr", conn.RemoteAddr().String(),
+			)
+		}
+	}
+	if writeErrs > 0 {
+		s.dispatcher.logger.Error("broadcast had write errors",
+			"clients", clientCount,
+			"failed", writeErrs,
+		)
 	}
 }
 
@@ -140,43 +160,87 @@ func (s *Server) deregisterConn(conn *websocket.Conn) {
 // handleWebSocket upgrades an HTTP connection to WebSocket and keeps it open
 // until the client disconnects or the server stops.
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	remoteAddr := r.RemoteAddr
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		s.dispatcher.logger.Warn("ws upgrade failed",
+			"remote_addr", remoteAddr,
+			"origin", r.Header.Get("Origin"),
+			"error", err,
+		)
 		return
 	}
+	s.dispatcher.logger.Info("ws connect",
+		"remote_addr", remoteAddr,
+		"origin", r.Header.Get("Origin"),
+	)
 
 	s.mu.Lock()
 	s.registerConn(conn)
+	clientCount := len(s.conns)
 	s.mu.Unlock()
+	s.dispatcher.logger.Debug("ws client registered",
+		"remote_addr", remoteAddr,
+		"total_clients", clientCount,
+	)
 
 	defer func() {
 		s.mu.Lock()
 		s.deregisterConn(conn)
+		remaining := len(s.conns)
 		s.mu.Unlock()
 		conn.Close()
+		s.dispatcher.logger.Info("ws disconnect",
+			"remote_addr", remoteAddr,
+			"total_clients", remaining,
+		)
 	}()
 
+	baseCtx := r.Context()
 	for {
 		select {
 		case <-s.stopChan:
+			s.dispatcher.logger.Debug("ws stop signal received",
+				"remote_addr", remoteAddr,
+			)
 			return
 		default:
 			_, raw, err := conn.ReadMessage()
 			if err != nil {
+				s.dispatcher.logger.Debug("ws read ended",
+					"remote_addr", remoteAddr,
+					"error", err,
+				)
 				return
 			}
-			response, dispatchErr := s.dispatcher.Dispatch(raw)
+			response, dispatchErr := s.dispatcher.Dispatch(baseCtx, raw)
 			if dispatchErr != nil {
-				s.dispatcher.logger.Error("dispatch error", "error", dispatchErr)
+				s.dispatcher.logger.Error("dispatch error",
+					"remote_addr", remoteAddr,
+					"error", dispatchErr,
+				)
 				continue
 			}
 			if response != nil {
 				responseBytes, marshalErr := json.Marshal(response)
 				if marshalErr != nil {
-					s.dispatcher.logger.Error("marshal response error", "error", marshalErr)
+					s.dispatcher.logger.Error("marshal response error",
+						"remote_addr", remoteAddr,
+						"error", marshalErr,
+					)
 					continue
 				}
-				conn.WriteMessage(websocket.TextMessage, responseBytes) //nolint:errcheck
+				if writeErr := conn.WriteMessage(websocket.TextMessage, responseBytes); writeErr != nil {
+					s.dispatcher.logger.Warn("ws write failed",
+						"remote_addr", remoteAddr,
+						"error", writeErr,
+					)
+					return
+				}
+				s.dispatcher.logger.Debug("ws response sent",
+					"remote_addr", remoteAddr,
+					"bytes", len(responseBytes),
+				)
 			}
 		}
 	}

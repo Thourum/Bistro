@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -31,7 +32,7 @@ func TestRequestDiffHandler_Found(t *testing.T) {
 	}}
 	handler := NewRequestDiffHandler(stub, nil)
 
-	resp, err := handler(makeMsg(t, "req-1", "pr-1"))
+	resp, err := handler(context.Background(), makeMsg(t, "req-1", "pr-1"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestRequestDiffHandler_NotFound(t *testing.T) {
 	stub := &stubDiffReader{diffs: map[string]string{}}
 	handler := NewRequestDiffHandler(stub, nil)
 
-	resp, err := handler(makeMsg(t, "req-2", "pr-missing"))
+	resp, err := handler(context.Background(), makeMsg(t, "req-2", "pr-missing"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -98,7 +99,7 @@ func TestRequestDiffHandler_MissingPRID(t *testing.T) {
 	data, _ := json.Marshal(map[string]string{})
 	msg := ws.InboundMessage{ID: "req-3", Type: "REQUEST_DIFF", Data: data}
 
-	_, err := handler(msg)
+	_, err := handler(context.Background(), msg)
 	if err == nil {
 		t.Error("expected error for missing pr_id, got nil")
 	}
@@ -110,7 +111,7 @@ func TestRequestDiffHandler_InvalidPayload(t *testing.T) {
 
 	msg := ws.InboundMessage{ID: "req-4", Type: "REQUEST_DIFF", Data: []byte("not-json")}
 
-	_, err := handler(msg)
+	_, err := handler(context.Background(), msg)
 	if err == nil {
 		t.Error("expected error for invalid JSON, got nil")
 	}

@@ -108,7 +108,7 @@ func setupLogging(level, logFile string) (io.Closer, error) {
 
 	opts := &slog.HandlerOptions{
 		Level: logLevel,
-		AddSource: logLevel == slog.LevelDebug, // Include source file:line for debug
+		AddSource: logLevel <= slog.LevelDebug, // Include source file:line for debug and below
 	}
 
 	var out io.Writer = os.Stderr

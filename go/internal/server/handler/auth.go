@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samuelasvanyi/bistro/internal/auth"
+	"github.com/samuelasvanyi/bistro/internal/logging"
 	"github.com/samuelasvanyi/bistro/internal/provider"
 	github "github.com/samuelasvanyi/bistro/internal/provider/github"
 	"github.com/samuelasvanyi/bistro/internal/ws"
@@ -137,7 +138,12 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 		}
 	}
 
-	return func(msg ws.InboundMessage) (interface{}, error) {
+	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
+		logger := logging.FromContext(ctx)
+		if deps.Log != nil {
+			logger = deps.Log.With("request_id", msg.ID, "msg_type", msg.Type)
+		}
+
 		var data struct {
 			Provider string `json:"provider"`
 		}
@@ -145,7 +151,10 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 			return nil, fmt.Errorf("invalid AUTH_START data: %w", err)
 		}
 
+		logger.Debug("auth start requested", "provider", data.Provider)
+
 		if data.Provider != "github" {
+			logger.Warn("unsupported auth provider", "provider", data.Provider)
 			return map[string]interface{}{
 				"id":   msg.ID,
 				"type": "AUTH_FAILED",
@@ -156,6 +165,7 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 		mu.Lock()
 		if callbackServer != nil {
 			mu.Unlock()
+			logger.Info("auth already in progress", "provider", data.Provider)
 			return map[string]interface{}{
 				"id":   msg.ID,
 				"type": "AUTH_FAILED",
@@ -167,6 +177,10 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 		clientSecret := deps.GetClientSecret()
 		if clientID == "" || clientSecret == "" {
 			mu.Unlock()
+			logger.Error("oauth client credentials missing",
+				"has_client_id", clientID != "",
+				"has_client_secret", clientSecret != "",
+			)
 			return map[string]interface{}{
 				"id":   msg.ID,
 				"type": "AUTH_FAILED",
@@ -185,12 +199,15 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 		authURL, state, err := auth.BuildAuthURL(cfg, auth.RedirectURI)
 		if err != nil {
 			mu.Unlock()
+			logger.Error("building auth URL failed", "error", err)
 			return nil, fmt.Errorf("building auth URL: %w", err)
 		}
 
 		resultCh := make(chan auth.CallbackResult, 1)
 		callbackServer = auth.NewCallbackServer(cfg, state, auth.RedirectURI, resultCh)
 		mu.Unlock()
+
+		logger.Info("starting oauth flow", "provider", data.Provider, "redirect_uri", auth.RedirectURI)
 
 		go runAuthCodeFlow(data.Provider, resultCh)
 
@@ -208,7 +225,12 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 // NewAuthCheckHandler returns a handler for AUTH_CHECK messages that responds
 // with the current authentication state for all known providers.
 func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
-	return func(msg ws.InboundMessage) (interface{}, error) {
+	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
+		logger := logging.FromContext(ctx)
+		if deps.Log != nil {
+			logger = deps.Log.With("request_id", msg.ID, "msg_type", msg.Type)
+		}
+
 		type providerInfo struct {
 			Provider string `json:"provider"`
 			Username string `json:"username"`
@@ -220,16 +242,19 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 		for _, p := range knownProviders {
 			token, err := deps.Tokens.Get(p)
 			if err != nil || token == "" {
+				logger.Debug("no token for provider", "provider", p)
 				continue
 			}
 			authenticated = true
 
 			username, expired, found := deps.Cache.Get(p)
 			if found && !expired {
+				logger.Debug("username cache hit", "provider", p)
 				providers = append(providers, providerInfo{Provider: p, Username: username})
 				continue
 			}
 
+			logger.Debug("username cache miss, fetching", "provider", p, "expired", expired)
 			fetched, fetchErr := fetchUsername(p, token)
 			if fetchErr != nil {
 				deps.Log.Warn("failed to fetch username", "provider", p, "error", fetchErr)
@@ -239,6 +264,8 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 			deps.Cache.Set(p, fetched)
 			providers = append(providers, providerInfo{Provider: p, Username: fetched})
 		}
+
+		logger.Debug("auth check complete", "authenticated", authenticated, "providers", len(providers))
 
 		return map[string]interface{}{
 			"id":   msg.ID,
@@ -254,7 +281,12 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 // NewAuthDisconnectHandler returns a handler for AUTH_DISCONNECT messages that
 // removes the token and cache entry for a provider and returns refreshed state.
 func NewAuthDisconnectHandler(deps AuthDeps, checkHandler ws.MessageHandler) ws.MessageHandler {
-	return func(msg ws.InboundMessage) (interface{}, error) {
+	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
+		logger := logging.FromContext(ctx)
+		if deps.Log != nil {
+			logger = deps.Log.With("request_id", msg.ID, "msg_type", msg.Type)
+		}
+
 		var data struct {
 			Provider string `json:"provider"`
 		}
@@ -262,13 +294,15 @@ func NewAuthDisconnectHandler(deps AuthDeps, checkHandler ws.MessageHandler) ws.
 			return nil, fmt.Errorf("invalid AUTH_DISCONNECT data: %w", err)
 		}
 
+		logger.Info("disconnecting provider", "provider", data.Provider)
+
 		if err := deps.Tokens.Delete(data.Provider); err != nil {
 			deps.Log.Warn("failed to delete token from keychain", "provider", data.Provider, "error", err)
 		}
 		deps.Cache.Delete(data.Provider)
 		deps.SetProvider(nil, data.Provider)
 
-		checkResp, err := checkHandler(msg)
+		checkResp, err := checkHandler(ctx, msg)
 		if err != nil {
 			return nil, err
 		}

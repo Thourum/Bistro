@@ -13,13 +13,18 @@ func (a *App) runSyncLoop(ctx context.Context) {
 	ticker := time.NewTicker(a.syncInterval)
 	defer ticker.Stop()
 
+	a.log.Debug("sync loop started", "interval", a.syncInterval.String())
+
 	for {
 		select {
 		case <-ctx.Done():
+			a.log.Debug("sync loop stopping", "reason", ctx.Err())
 			return
 		case <-ticker.C:
+			a.log.Debug("sync tick fired", "next_tick_in", a.syncInterval.String())
 			a.syncWatchedRepos(ctx)
 		case repoID := <-a.syncTrigger:
+			a.log.Debug("sync trigger received", "repo_id", repoID)
 			a.syncSingleRepo(ctx, repoID)
 		}
 	}

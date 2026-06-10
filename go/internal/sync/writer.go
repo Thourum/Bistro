@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"log/slog"
 
+	"github.com/samuelasvanyi/bistro/internal/logging"
 	"github.com/samuelasvanyi/bistro/internal/provider"
 	"github.com/samuelasvanyi/bistro/internal/store"
 )
@@ -17,8 +19,12 @@ type Writer struct {
 	db  *store.DB
 }
 
-// NewWriter creates a new database writer.
+// NewWriter creates a new database writer. If log is nil, slog.Default() is
+// used so the writer can always log unconditionally.
 func NewWriter(log *slog.Logger, db *store.DB) *Writer {
+	if log == nil {
+		log = slog.Default()
+	}
 	return &Writer{
 		log: log,
 		db:  db,
@@ -35,69 +41,122 @@ func (w *Writer) WriteSyncResults(results []*PRFetchResult) error {
 // respecting the provided context for cancellation.
 // Per-item errors are logged and skipped; they do not abort the transaction.
 func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetchResult) error {
+	// Prefer the request-scoped logger from ctx (carries sync_id, repo, etc.)
+	// over the writer's own logger; fall back to the writer's logger when ctx
+	// doesn't carry one.
+	log := logging.FromContext(ctx)
+	if log == slog.Default() && w.log != nil {
+		log = w.log
+	}
+
 	if len(results) == 0 {
+		log.Debug("WriteSyncResults: nothing to write")
 		return nil
 	}
 
-	// If no DB is configured (e.g. in tests), skip writes.
 	if w.db == nil {
+		log.Debug("WriteSyncResults: no DB configured, skipping", "results", len(results))
 		return nil
 	}
+
+	overallStart := time.Now()
 
 	tx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
+		log.Error("failed to start transaction", "error", err)
 		return fmt.Errorf("failed to start transaction: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck
 
 	prCount := 0
+	prSkipped := 0
+	prErrors := 0
 	commentCount := 0
 
 	for _, result := range results {
 		if result == nil {
+			prSkipped++
 			continue
 		}
 
 		if result.Error != nil {
-			if w.log != nil {
-				w.log.Error("skipping result with error", "err", result.Error)
+			prErrors++
+			prID := ""
+			if result.PR != nil {
+				prID = result.PR.ID
 			}
+			log.Warn("skipping pr write due to upstream error",
+				"pr_id", prID,
+				"error", result.Error,
+			)
 			continue
 		}
 
 		if result.PR == nil {
+			prSkipped++
+			log.Debug("skipping nil PR in result")
 			continue
 		}
 
+		writeStart := time.Now()
 		if err := w.writePR(ctx, tx, result.PR); err != nil {
-			if w.log != nil {
-				w.log.Error("failed to write PR", "pr_id", result.PR.ID, "err", err)
-			}
+			prErrors++
+			log.Error("failed to write PR",
+				"pr_id", result.PR.ID,
+				"pr_number", result.PR.Number,
+				"duration_ms", time.Since(writeStart).Milliseconds(),
+				"error", err,
+			)
 			continue
 		}
 		prCount++
+		log.Debug("pr written",
+			"pr_id", result.PR.ID,
+			"pr_number", result.PR.Number,
+			"state", result.PR.State,
+			"duration_ms", time.Since(writeStart).Milliseconds(),
+		)
 
 		for _, comment := range result.Comments {
 			if comment == nil {
 				continue
 			}
+			commentStart := time.Now()
 			if err := w.writeComment(ctx, tx, result.PR.ID, comment); err != nil {
-				if w.log != nil {
-					w.log.Error("failed to write comment", "comment_id", comment.ID, "err", err)
-				}
+				log.Error("failed to write comment",
+					"comment_id", comment.ID,
+					"pr_id", result.PR.ID,
+					"duration_ms", time.Since(commentStart).Milliseconds(),
+					"error", err,
+				)
 				continue
 			}
 			commentCount++
 		}
 	}
 
+	commitStart := time.Now()
 	if err := tx.Commit(); err != nil {
+		log.Error("failed to commit transaction",
+			"duration_ms", time.Since(commitStart).Milliseconds(),
+			"error", err,
+		)
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	if w.log != nil {
-		w.log.Info("sync results written", "prs", prCount, "comments", commentCount)
+	totalDur := time.Since(overallStart).Milliseconds()
+	logFn := log.Info
+	if totalDur > 500 {
+		// Writing >500ms for a single sync batch is unusual for SQLite — flag it.
+		logFn = log.Warn
 	}
+	logFn("sync results written",
+		"prs", prCount,
+		"prs_skipped", prSkipped,
+		"prs_errors", prErrors,
+		"comments", commentCount,
+		"duration_ms", totalDur,
+	)
 	return nil
 }
 
@@ -142,7 +201,7 @@ func (w *Writer) writePR(ctx context.Context, tx *sql.Tx, pr *provider.PR) error
 		draft = 1
 	}
 
-	_, err := tx.ExecContext(ctx, query,
+	res, err := tx.ExecContext(ctx, query,
 		pr.ID,
 		pr.Provider,
 		pr.Owner,
@@ -169,6 +228,15 @@ func (w *Writer) writePR(ctx context.Context, tx *sql.Tx, pr *provider.PR) error
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write PR %s: %w", pr.ID, err)
+	}
+
+	if logging.FromContext(ctx) != slog.Default() {
+		if affected, err := res.RowsAffected(); err == nil {
+			logging.FromContext(ctx).Debug("pr upsert rows affected",
+				"pr_id", pr.ID,
+				"rows_affected", affected,
+			)
+		}
 	}
 
 	return nil

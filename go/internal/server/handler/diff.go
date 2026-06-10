@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 
+	"github.com/samuelasvanyi/bistro/internal/logging"
 	"github.com/samuelasvanyi/bistro/internal/store"
 	"github.com/samuelasvanyi/bistro/internal/ws"
 )
@@ -17,7 +19,12 @@ type diffReader interface {
 // NewRequestDiffHandler returns a ws.MessageHandler that reads diffs from the
 // database and returns them as a DIFF_READY message over WebSocket.
 func NewRequestDiffHandler(ds diffReader, log *slog.Logger) ws.MessageHandler {
-	return func(msg ws.InboundMessage) (interface{}, error) {
+	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
+		logger := logging.FromContext(ctx)
+		if log != nil {
+			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+		}
+
 		var data struct {
 			PRID string `json:"pr_id"`
 		}
@@ -28,11 +35,11 @@ func NewRequestDiffHandler(ds diffReader, log *slog.Logger) ws.MessageHandler {
 			return nil, fmt.Errorf("REQUEST_DIFF: pr_id is required")
 		}
 
+		logger.Debug("diff requested", "pr_id", data.PRID)
+
 		unified, err := ds.GetUnifiedDiff(data.PRID)
 		if err != nil {
-			if log != nil {
-				log.Warn("failed to get diff", "pr_id", data.PRID, "err", err)
-			}
+			logger.Warn("failed to get diff", "pr_id", data.PRID, "err", err)
 			return map[string]interface{}{
 				"id":   msg.ID,
 				"type": "DIFF_READY",
@@ -43,6 +50,8 @@ func NewRequestDiffHandler(ds diffReader, log *slog.Logger) ws.MessageHandler {
 				},
 			}, nil
 		}
+
+		logger.Debug("diff ready", "pr_id", data.PRID, "bytes", len(unified))
 
 		return map[string]interface{}{
 			"id":   msg.ID,

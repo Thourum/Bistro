@@ -21,8 +21,12 @@ type MigrationRunner struct {
 	db  *sql.DB
 }
 
-// NewMigrationRunner creates a new MigrationRunner.
+// NewMigrationRunner creates a new MigrationRunner. If log is nil, slog.Default
+// is used so internal guards aren't needed.
 func NewMigrationRunner(log *slog.Logger, db *sql.DB) *MigrationRunner {
+	if log == nil {
+		log = slog.Default()
+	}
 	return &MigrationRunner{log: log, db: db}
 }
 
@@ -43,21 +47,27 @@ func (mr *MigrationRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("load migration files: %w", err)
 	}
 
+	mr.log.Debug("running migrations",
+		"total", len(migrations),
+		"applied", len(applied),
+	)
+
 	for _, mig := range migrations {
 		if applied[mig.Version] {
-			if mr.log != nil {
-				mr.log.Info("migration already applied", "version", mig.Version, "description", mig.Description)
-			}
+			mr.log.Debug("migration already applied", "version", mig.Version, "description", mig.Description)
 			continue
 		}
 
 		if err := mr.applyMigration(ctx, mig); err != nil {
+			mr.log.Error("migration apply failed",
+				"version", mig.Version,
+				"name", mig.Name,
+				"error", err,
+			)
 			return fmt.Errorf("apply migration %s: %w", mig.Name, err)
 		}
 
-		if mr.log != nil {
-			mr.log.Info("migration applied", "version", mig.Version, "description", mig.Description)
-		}
+		mr.log.Info("migration applied", "version", mig.Version, "description", mig.Description)
 	}
 
 	return nil

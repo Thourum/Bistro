@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/samuelasvanyi/bistro/internal/logging"
 )
 
 const (
@@ -59,8 +61,17 @@ func (cs *CallbackServer) sendResult(result CallbackResult) {
 }
 
 func (cs *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request) {
+	log := logging.FromContext(r.Context()).With(
+		"remote_addr", r.RemoteAddr,
+		"auth_callback", true,
+	)
+
 	incomingState := r.URL.Query().Get("state")
 	if incomingState != cs.state {
+		log.Warn("oauth callback state mismatch",
+			"incoming_state_len", len(incomingState),
+			"expected_state_len", len(cs.state),
+		)
 		http.Error(w, "Invalid state parameter", http.StatusForbidden)
 		cs.sendResult(CallbackResult{Err: fmt.Errorf("state mismatch")})
 		return
@@ -68,17 +79,25 @@ func (cs *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request)
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
+		log.Warn("oauth callback missing code",
+			"query_params", r.URL.Query().Encode(),
+			"error", r.URL.Query().Get("error"),
+		)
 		http.Error(w, "Missing code parameter", http.StatusBadRequest)
 		cs.sendResult(CallbackResult{Err: fmt.Errorf("missing code")})
 		return
 	}
 
+	log.Debug("oauth callback: exchanging code for token")
 	token, err := ExchangeToken(r.Context(), cs.cfg, code, cs.redirectURI)
 	if err != nil {
+		log.Error("oauth token exchange failed", "error", err)
 		http.Error(w, "Token exchange failed", http.StatusInternalServerError)
 		cs.sendResult(CallbackResult{Err: fmt.Errorf("token exchange: %w", err)})
 		return
 	}
+
+	log.Info("oauth callback success")
 
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprint(w, `<!DOCTYPE html><html><body style="font-family:system-ui;text-align:center;padding:60px">
@@ -119,6 +138,7 @@ type tokenResponse struct {
 // It validates that the token_type is "bearer" and that the returned scopes
 // contain all the requested scopes.
 func ExchangeToken(ctx context.Context, cfg ProviderConfig, code, redirectURI string) (string, error) {
+	log := logging.FromContext(ctx)
 	params := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
@@ -134,11 +154,30 @@ func ExchangeToken(ctx context.Context, cfg ProviderConfig, code, redirectURI st
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
+	log.Debug("oauth token exchange request", "token_url", cfg.TokenURL)
+	start := time.Now()
 	resp, err := http.DefaultClient.Do(req)
+	dur := time.Since(start).Milliseconds()
 	if err != nil {
+		log.Error("oauth token exchange http failed",
+			"token_url", cfg.TokenURL,
+			"duration_ms", dur,
+			"error", err,
+		)
 		return "", fmt.Errorf("token request failed: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		log.Warn("oauth token endpoint non-2xx",
+			"status", resp.StatusCode,
+			"duration_ms", dur,
+		)
+	} else {
+		log.Debug("oauth token endpoint ok",
+			"status", resp.StatusCode,
+			"duration_ms", dur,
+		)
+	}
 
 	var tr tokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
@@ -146,14 +185,24 @@ func ExchangeToken(ctx context.Context, cfg ProviderConfig, code, redirectURI st
 	}
 
 	if tr.Error != "" {
+		log.Warn("oauth token response contained error",
+			"error", tr.Error,
+			"description", tr.ErrorDesc,
+		)
 		return "", fmt.Errorf("%s: %s", tr.Error, tr.ErrorDesc)
 	}
 
 	if strings.ToLower(tr.TokenType) != "bearer" {
+		log.Warn("oauth token_type not bearer", "token_type", tr.TokenType)
 		return "", fmt.Errorf("unexpected token_type: %s", tr.TokenType)
 	}
 
 	if err := validateScopes(cfg.Scopes, tr.Scope); err != nil {
+		log.Warn("oauth scope validation failed",
+			"requested", cfg.Scopes,
+			"returned", tr.Scope,
+			"error", err,
+		)
 		return "", err
 	}
 

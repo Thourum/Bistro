@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 
+	"github.com/samuelasvanyi/bistro/internal/logging"
 	"github.com/samuelasvanyi/bistro/internal/ws"
 )
 
@@ -43,7 +45,12 @@ type prLister interface {
 }
 
 func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
-	return func(msg ws.InboundMessage) (interface{}, error) {
+	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
+		logger := logging.FromContext(ctx)
+		if log != nil {
+			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+		}
+
 		var req prListRequest
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
 			return nil, fmt.Errorf("invalid REQUEST_PR_LIST payload: %w", err)
@@ -55,6 +62,12 @@ func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
 		if req.Offset < 0 {
 			req.Offset = 0
 		}
+
+		logger.Debug("pr list requested",
+			"filter", req.Filter,
+			"limit", req.Limit,
+			"offset", req.Offset,
+		)
 
 		query := "SELECT id, provider, owner, repo, number, title, body, author, state, created_at, updated_at, merged_at, base_branch, head_branch, base_sha, head_sha, comment_count, ci_status, draft FROM prs WHERE 1=1"
 
@@ -73,7 +86,7 @@ func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
 
 		rows, err := db.Query(query, req.Limit, req.Offset)
 		if err != nil {
-			log.Error("REQUEST_PR_LIST query failed", "err", err)
+			logger.Error("REQUEST_PR_LIST query failed", "err", err)
 			return map[string]interface{}{
 				"id":   msg.ID,
 				"type": "PR_LIST_READY",
@@ -97,7 +110,7 @@ func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
 				&pr.BaseBranch, &pr.HeadBranch, &pr.BaseSHA, &pr.HeadSHA,
 				&pr.CommentCount, &pr.CIStatus, &pr.Draft,
 			); err != nil {
-				log.Error("REQUEST_PR_LIST scan failed", "err", err)
+				logger.Error("REQUEST_PR_LIST scan failed", "err", err)
 				continue
 			}
 			prs = append(prs, pr)
@@ -106,6 +119,12 @@ func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
 		if prs == nil {
 			prs = []prRow{}
 		}
+
+		logger.Debug("pr list ready",
+			"filter", req.Filter,
+			"returned", len(prs),
+			"has_more", len(prs) == req.Limit,
+		)
 
 		return map[string]interface{}{
 			"id":   msg.ID,

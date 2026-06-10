@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -45,7 +46,7 @@ func TestRequestRepoListHandler_NotAuthenticated(t *testing.T) {
 	handler := NewRequestRepoListHandler(func() provider.Provider { return nil }, db, testRepoLogger())
 
 	msg := ws.InboundMessage{ID: "req-1", Type: "REQUEST_REPO_LIST"}
-	resp, err := handler(msg)
+	resp, err := handler(context.Background(), msg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -76,7 +77,7 @@ func TestRequestRepoListHandler_ReturnsRepos(t *testing.T) {
 	handler := NewRequestRepoListHandler(getProvider, db, testRepoLogger())
 
 	msg := ws.InboundMessage{ID: "req-2", Type: "REQUEST_REPO_LIST"}
-	resp, err := handler(msg)
+	resp, err := handler(context.Background(), msg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestRequestRepoListHandler_ProviderError(t *testing.T) {
 	handler := NewRequestRepoListHandler(getProvider, db, testRepoLogger())
 
 	msg := ws.InboundMessage{ID: "req-3", Type: "REQUEST_REPO_LIST"}
-	resp, err := handler(msg)
+	resp, err := handler(context.Background(), msg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -130,7 +131,7 @@ func TestToggleWatchHandler_TogglesWatch(t *testing.T) {
 	payload, _ := json.Marshal(map[string]string{"repo_id": "github:acme/api"})
 	msg := ws.InboundMessage{ID: "req-4", Type: "TOGGLE_WATCH_REPO", Data: payload}
 
-	resp, err := handler(msg)
+	resp, err := handler(context.Background(), msg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -153,7 +154,7 @@ func TestToggleWatchHandler_TogglesWatch(t *testing.T) {
 		t.Error("expected sync trigger after watch enabled")
 	}
 
-	resp2, err := handler(msg)
+	resp2, err := handler(context.Background(), msg)
 	if err != nil {
 		t.Fatalf("unexpected error on second toggle: %v", err)
 	}
@@ -179,7 +180,7 @@ func TestToggleWatchHandler_MissingRepoID(t *testing.T) {
 	payload, _ := json.Marshal(map[string]string{})
 	msg := ws.InboundMessage{ID: "req-5", Type: "TOGGLE_WATCH_REPO", Data: payload}
 
-	_, err := handler(msg)
+	_, err := handler(context.Background(), msg)
 	if err == nil {
 		t.Error("expected error for missing repo_id")
 	}
@@ -194,7 +195,7 @@ func TestToggleWatchHandler_InvalidPayload(t *testing.T) {
 
 	msg := ws.InboundMessage{ID: "req-6", Type: "TOGGLE_WATCH_REPO", Data: json.RawMessage(`not-json`)}
 
-	_, err := handler(msg)
+	_, err := handler(context.Background(), msg)
 	if err == nil {
 		t.Error("expected error for invalid payload")
 	}
