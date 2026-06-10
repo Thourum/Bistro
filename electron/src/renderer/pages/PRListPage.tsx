@@ -74,9 +74,6 @@ export function PRListPage() {
             </div>
           </div>
         </div>
-        <div className="bg-primary text-on-primary px-3 py-1 font-mono text-[10px] font-bold pointer-events-auto">
-          CMD + K
-        </div>
       </div>
     </main>
   );
