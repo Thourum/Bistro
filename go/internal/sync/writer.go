@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -173,8 +174,9 @@ func (w *Writer) writePR(ctx context.Context, tx *sql.Tx, pr *provider.PR) error
 			base_branch, head_branch, base_sha, head_sha,
 			comment_count, ci_status, draft,
 			review_status, approved_by, changes_requested_by,
+			requested_reviewers,
 			repo_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title                  = excluded.title,
 			body                   = excluded.body,
@@ -191,6 +193,7 @@ func (w *Writer) writePR(ctx context.Context, tx *sql.Tx, pr *provider.PR) error
 			review_status          = excluded.review_status,
 			approved_by            = excluded.approved_by,
 			changes_requested_by   = excluded.changes_requested_by,
+			requested_reviewers    = excluded.requested_reviewers,
 			repo_id                = excluded.repo_id
 	`
 
@@ -199,6 +202,15 @@ func (w *Writer) writePR(ctx context.Context, tx *sql.Tx, pr *provider.PR) error
 	draft := 0
 	if pr.Draft {
 		draft = 1
+	}
+
+	reviewers := pr.RequestedReviewers
+	if reviewers == nil {
+		reviewers = []string{}
+	}
+	requestedReviewers, err := json.Marshal(reviewers)
+	if err != nil {
+		return fmt.Errorf("failed to marshal requested reviewers for %s: %w", pr.ID, err)
 	}
 
 	res, err := tx.ExecContext(ctx, query,
@@ -224,6 +236,7 @@ func (w *Writer) writePR(ctx context.Context, tx *sql.Tx, pr *provider.PR) error
 		pr.ReviewStatus,
 		pr.ApprovedBy,
 		pr.ChangesRequestedBy,
+		string(requestedReviewers),
 		repoID,
 	)
 	if err != nil {

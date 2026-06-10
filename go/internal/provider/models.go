@@ -16,6 +16,7 @@ type PR struct {
 	ReviewStatus          string // "pending", "approved", "changes_requested"
 	ApprovedBy            string // username who approved
 	ChangesRequestedBy    string // username who requested changes
+	RequestedReviewers    []string // logins whose review is currently requested
 	BaseBranch            string
 	HeadBranch   string
 	BaseSHA      string

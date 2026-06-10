@@ -120,6 +120,37 @@ func TestNormalizePR(t *testing.T) {
 	}
 }
 
+func TestNormalizePRRequestedReviewers(t *testing.T) {
+	pr := buildTestGHPR()
+	alice := "alice"
+	bob := "bob"
+	pr.RequestedReviewers = []*ghlib.User{
+		{Login: &alice},
+		{Login: &bob},
+		nil, // defensive: API can theoretically return nulls
+	}
+
+	result := normalizePR("myorg", "myrepo", pr)
+
+	if len(result.RequestedReviewers) != 2 {
+		t.Fatalf("got %d requested reviewers, want 2: %v",
+			len(result.RequestedReviewers), result.RequestedReviewers)
+	}
+	if result.RequestedReviewers[0] != "alice" || result.RequestedReviewers[1] != "bob" {
+		t.Errorf("requested reviewers = %v, want [alice bob]", result.RequestedReviewers)
+	}
+}
+
+func TestNormalizePRNoRequestedReviewers(t *testing.T) {
+	pr := buildTestGHPR()
+
+	result := normalizePR("myorg", "myrepo", pr)
+
+	if len(result.RequestedReviewers) != 0 {
+		t.Errorf("got %v, want no requested reviewers", result.RequestedReviewers)
+	}
+}
+
 func TestNormalizePRDraft(t *testing.T) {
 	pr := buildTestGHPR()
 	isDraft := true

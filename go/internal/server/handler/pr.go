@@ -34,14 +34,35 @@ type prRow struct {
 	HeadBranch   string  `json:"head_branch"`
 	BaseSHA      string  `json:"base_sha"`
 	HeadSHA      string  `json:"head_sha"`
-	CommentCount int     `json:"comment_count"`
-	CIStatus     *string `json:"ci_status"`
-	Draft        int     `json:"draft"`
+	CommentCount int      `json:"comment_count"`
+	CIStatus     *string  `json:"ci_status"`
+	Draft        int      `json:"draft"`
+	ReviewStatus       *string  `json:"review_status"`
+	ApprovedBy         *string  `json:"approved_by"`
+	ChangesRequestedBy *string  `json:"changes_requested_by"`
+	RequestedReviewers []string `json:"requested_reviewers"`
 }
 
 // prLister is the subset of *sql.DB needed to list PRs.
 type prLister interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
+}
+
+// decodeReviewers parses the requested_reviewers JSON column. NULL (rows
+// written before migration 010) and malformed values decode to an empty slice.
+func decodeReviewers(logger *slog.Logger, prID string, raw *string) []string {
+	if raw == nil || *raw == "" {
+		return []string{}
+	}
+	var reviewers []string
+	if err := json.Unmarshal([]byte(*raw), &reviewers); err != nil {
+		logger.Warn("invalid requested_reviewers JSON", "pr_id", prID, "err", err)
+		return []string{}
+	}
+	if reviewers == nil {
+		return []string{}
+	}
+	return reviewers
 }
 
 func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
@@ -69,7 +90,7 @@ func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
 			"offset", req.Offset,
 		)
 
-		query := "SELECT id, provider, owner, repo, number, title, body, author, state, created_at, updated_at, merged_at, base_branch, head_branch, base_sha, head_sha, comment_count, ci_status, draft FROM prs WHERE 1=1"
+		query := "SELECT id, provider, owner, repo, number, title, body, author, state, created_at, updated_at, merged_at, base_branch, head_branch, base_sha, head_sha, comment_count, ci_status, draft, review_status, approved_by, changes_requested_by, requested_reviewers FROM prs WHERE 1=1"
 
 		switch req.Filter {
 		case "open":
@@ -103,16 +124,20 @@ func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
 		var prs []prRow
 		for rows.Next() {
 			var pr prRow
+			var requestedReviewers *string
 			if err := rows.Scan(
 				&pr.ID, &pr.Provider, &pr.Owner, &pr.Repo, &pr.Number,
 				&pr.Title, &pr.Body, &pr.Author, &pr.State,
 				&pr.CreatedAt, &pr.UpdatedAt, &pr.MergedAt,
 				&pr.BaseBranch, &pr.HeadBranch, &pr.BaseSHA, &pr.HeadSHA,
 				&pr.CommentCount, &pr.CIStatus, &pr.Draft,
+				&pr.ReviewStatus, &pr.ApprovedBy, &pr.ChangesRequestedBy,
+				&requestedReviewers,
 			); err != nil {
 				logger.Error("REQUEST_PR_LIST scan failed", "err", err)
 				continue
 			}
+			pr.RequestedReviewers = decodeReviewers(logger, pr.ID, requestedReviewers)
 			prs = append(prs, pr)
 		}
 

@@ -75,6 +75,12 @@ func normalizePR(owner, repo string, ghPR *ghlib.PullRequest) *provider.PR {
 		pr.MergedAt = &mergedAt
 	}
 
+	for _, reviewer := range ghPR.RequestedReviewers {
+		if login := reviewer.GetLogin(); login != "" {
+			pr.RequestedReviewers = append(pr.RequestedReviewers, login)
+		}
+	}
+
 	return pr
 }
 
