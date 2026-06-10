@@ -24,6 +24,7 @@ export interface PR {
   review_status: string | null; // 'pending' | 'approved' | 'changes_requested'
   approved_by: string | null;
   changes_requested_by: string | null;
+  requested_reviewers: string[]; // logins whose review is currently requested
 }
 
 /**

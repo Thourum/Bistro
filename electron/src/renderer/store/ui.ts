@@ -32,7 +32,7 @@ export interface UIState {
   showFileTree: boolean;
   paneLayout: 'list' | 'detail' | 'split';
   sortBy: 'updated' | 'created';
-  filterState: 'open' | 'draft' | 'all';
+  filterState: 'open' | 'draft' | 'all' | 'needs_action';
   confirmingAction: string | null;
   filterMenuOpen: boolean;
   pendingAction: PendingAction | null;

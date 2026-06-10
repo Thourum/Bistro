@@ -6,6 +6,7 @@ import type { UIState } from '../store/ui';
 type FilterValue = UIState['filterState'];
 
 const FILTER_OPTIONS: { label: string; value: FilterValue; hint: string }[] = [
+  { label: 'Needs Action', value: 'needs_action', hint: 'n' },
   { label: 'Open', value: 'open', hint: 'o' },
   { label: 'Draft', value: 'draft', hint: 'd' },
   { label: 'All', value: 'all', hint: 'a' },

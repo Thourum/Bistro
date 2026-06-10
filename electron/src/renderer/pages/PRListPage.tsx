@@ -5,6 +5,14 @@ import { useSyncEvents } from '../hooks/useSyncEvents';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
+import { countTriageLanes } from '../utils/triage';
+
+const FILTER_TITLES: Record<UIState['filterState'], string> = {
+  needs_action: 'Needs Your Action',
+  open: 'Open Pull Requests',
+  draft: 'Draft Pull Requests',
+  all: 'All Pull Requests',
+};
 
 /**
  * PR inbox — matches `pr_inbox_minimal_light/code.html`.
@@ -18,7 +26,14 @@ export function PRListPage() {
 
   const filterState = useStore(appStore, (s: UIState) => s.filterState);
   const sortBy = useStore(appStore, (s: UIState) => s.sortBy);
+  const username = useStore(
+    appStore,
+    (s: UIState) => (s.connectedProviders ?? [])[0]?.username ?? '',
+  );
   const { data: prs = [] } = useWebSocketPRList(filterState);
+  // Counters always reflect the full open lane, independent of the filter.
+  const { data: openPRs = [] } = useWebSocketPRList('open');
+  const triage = countTriageLanes(openPRs, username);
 
   return (
     <main className="flex-1 overflow-y-auto bg-surface-container-lowest text-on-surface relative">
@@ -39,14 +54,15 @@ export function PRListPage() {
           </div>
           <div className="mt-4 flex items-baseline justify-between border-b border-outline-variant/30 pb-2">
             <h1 className="text-xs font-mono uppercase tracking-[0.2em] text-outline">
-              {filterState === 'open'
-                ? 'Open Pull Requests'
-                : filterState === 'draft'
-                  ? 'Draft Pull Requests'
-                  : 'All Pull Requests'}
+              {FILTER_TITLES[filterState]}
             </h1>
             <span className="text-xs font-mono text-outline-variant">
-              TOTAL: {prs.length}
+              <span className="text-primary font-bold">
+                NEEDS ACTION: {triage.needsAction}
+              </span>
+              {' · '}WAITING: {triage.waitingAuthor}
+              {' · '}FYI: {triage.fyi}
+              {' · '}TOTAL: {prs.length}
             </span>
           </div>
         </header>

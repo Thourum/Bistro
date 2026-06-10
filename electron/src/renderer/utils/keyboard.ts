@@ -343,6 +343,15 @@ const detailBindings: BindingDefinition[] = [
 
 const filterBindings: BindingDefinition[] = [
   {
+    actionId: 'filter.needsAction',
+    keys: ['n'],
+    description: 'Set filter to Needs Action',
+    modes: ['filter'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, filterState: 'needs_action' }));
+    },
+  },
+  {
     actionId: 'filter.open',
     keys: ['o'],
     description: 'Set filter to Open',
