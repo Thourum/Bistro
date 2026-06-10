@@ -12,6 +12,10 @@ import (
 	"github.com/samuelasvanyi/bistro/internal/store"
 )
 
+// perPRFetchTimeout caps how long the detail fetch (comments, reviews, CI,
+// diff) may take for a single PR before it is abandoned with an error.
+const perPRFetchTimeout = 2 * time.Minute
+
 // PRFetchResult holds the fetched data for a single PR, including any
 // per-PR error encountered during concurrent fetching.
 type PRFetchResult struct {
@@ -62,7 +66,11 @@ func (o *Orchestrator) FetchPRDetails(
 				"pr_state", prCopy.State,
 				"pr_head_sha", truncateSHA(prCopy.HeadSHA),
 			)
-			taskCtx := logging.WithLogger(ctx, prLog)
+			// Hard ceiling per PR so one stuck fetch can never wedge the
+			// whole sync pass — it becomes a logged per-PR error instead.
+			boundedCtx, cancel := context.WithTimeout(ctx, perPRFetchTimeout)
+			defer cancel()
+			taskCtx := logging.WithLogger(boundedCtx, prLog)
 
 			prLog.Debug("pr fetch start", "title", prCopy.Title)
 

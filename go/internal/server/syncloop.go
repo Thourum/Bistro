@@ -2,11 +2,24 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/samuelasvanyi/bistro/internal/sync"
 )
+
+// broadcastSyncError surfaces a sync failure to every connected UI instead of
+// leaving it buried in the logs.
+func (a *App) broadcastSyncError(repoID string, err error) {
+	a.wsServer.Broadcast(map[string]interface{}{
+		"type": "SYNC_ERROR",
+		"data": map[string]interface{}{
+			"error_code": "SYNC_FAILED",
+			"message":    fmt.Sprintf("sync failed for %s: %v", repoID, err),
+		},
+	})
+}
 
 // runSyncLoop runs the periodic sync goroutine. It exits when ctx is cancelled.
 func (a *App) runSyncLoop(ctx context.Context) {
@@ -54,6 +67,8 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 	}
 	defer rows.Close()
 
+	passStart := time.Now()
+	var synced, failed int
 	for rows.Next() {
 		var id, repoProvider, owner, repo string
 		if err := rows.Scan(&id, &repoProvider, &owner, &repo); err != nil {
@@ -68,16 +83,34 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 			IncludeComments: true,
 			State:           "open",
 		}
+		repoStart := time.Now()
 		result, syncErr := orch.Sync(ctx, req)
 		if syncErr != nil {
-			a.log.Error("syncWatchedRepos: sync failed", "repo", id, "err", syncErr)
+			failed++
+			a.log.Error("syncWatchedRepos: sync failed",
+				"repo", id,
+				"duration_ms", time.Since(repoStart).Milliseconds(),
+				"err", syncErr,
+			)
+			a.broadcastSyncError(id, syncErr)
 			continue
 		}
-		a.log.Info("syncWatchedRepos: synced", "repo", id, "prs", result.PRCount)
+		synced++
+		a.log.Info("syncWatchedRepos: synced",
+			"repo", id,
+			"prs", result.PRCount,
+			"duration_ms", time.Since(repoStart).Milliseconds(),
+		)
 	}
 	if err := rows.Err(); err != nil {
 		a.log.Error("syncWatchedRepos: rows error", "err", err)
 	}
+
+	a.log.Info("sync pass complete",
+		"synced", synced,
+		"failed", failed,
+		"duration_ms", time.Since(passStart).Milliseconds(),
+	)
 
 	a.wsServer.Broadcast(map[string]interface{}{
 		"type": "SYNC_COMPLETE",
@@ -115,12 +148,22 @@ func (a *App) syncSingleRepo(ctx context.Context, repoID string) {
 		IncludeComments: true,
 		State:           "open",
 	}
+	repoStart := time.Now()
 	result, err := orch.Sync(ctx, req)
 	if err != nil {
-		a.log.Error("syncSingleRepo: sync failed", "repo_id", repoID, "err", err)
+		a.log.Error("syncSingleRepo: sync failed",
+			"repo_id", repoID,
+			"duration_ms", time.Since(repoStart).Milliseconds(),
+			"err", err,
+		)
+		a.broadcastSyncError(repoID, err)
 		return
 	}
-	a.log.Info("syncSingleRepo: synced", "repo_id", repoID, "prs", result.PRCount)
+	a.log.Info("syncSingleRepo: synced",
+		"repo_id", repoID,
+		"prs", result.PRCount,
+		"duration_ms", time.Since(repoStart).Milliseconds(),
+	)
 
 	a.wsServer.Broadcast(map[string]interface{}{
 		"type": "SYNC_COMPLETE",

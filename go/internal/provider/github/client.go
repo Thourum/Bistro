@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/go-github/v84/github"
 	"github.com/samuelasvanyi/bistro/internal/provider"
@@ -39,6 +40,9 @@ func NewClient(token string) *Client {
 	// Authorization header is added after logging and never appears in log
 	// output. Redaction in logging_transport covers manually-set headers.
 	httpClient.Transport = newLoggingTransport(httpClient.Transport)
+	// Without a timeout a stalled request blocks a sync worker forever and
+	// the whole sync pass silently never completes.
+	httpClient.Timeout = 30 * time.Second
 	return &Client{
 		token: token,
 		gh:    github.NewClient(httpClient),

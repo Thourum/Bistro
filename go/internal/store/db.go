@@ -41,6 +41,13 @@ func OpenDB(dsn string) (*DB, error) {
 		return nil, fmt.Errorf("set journal_mode WAL pragma: %w", err)
 	}
 
+	// Bound lock waits: if another connection holds the write lock, fail
+	// after 5s with SQLITE_BUSY instead of stalling a sync pass forever.
+	if _, err := sqlDB.Exec("PRAGMA busy_timeout = 5000"); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("set busy_timeout pragma: %w", err)
+	}
+
 	return &DB{sqlDB}, nil
 }
 

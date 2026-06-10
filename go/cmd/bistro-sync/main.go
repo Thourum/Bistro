@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/samuelasvanyi/bistro/internal/keychain"
 	github "github.com/samuelasvanyi/bistro/internal/provider/github"
 	"github.com/samuelasvanyi/bistro/internal/server"
@@ -38,6 +39,31 @@ func main() {
 	if logCloser != nil {
 		defer logCloser.Close()
 	}
+
+	// Single-instance guard: a second engine on the same database would
+	// fight over the SQLite write lock and wedge both syncs. An orphaned
+	// instance (e.g. Electron crashed without killing its child) caused
+	// exactly that, so fail fast and loud instead.
+	if dbDir := filepath.Dir(*dbPath); dbDir != "." && dbDir != "" {
+		if err := os.MkdirAll(dbDir, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to create db directory %s: %v\n", dbDir, err)
+			os.Exit(1)
+		}
+	}
+	lock := flock.New(*dbPath + ".lock")
+	locked, err := lock.TryLock()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to acquire instance lock %s: %v\n", lock.Path(), err)
+		os.Exit(1)
+	}
+	if !locked {
+		fmt.Fprintf(os.Stderr,
+			"another bistro-sync instance is already using %s — kill it or pass a different -db-path\n",
+			*dbPath,
+		)
+		os.Exit(1)
+	}
+	defer lock.Unlock() //nolint:errcheck
 
 	log := slog.Default()
 	log.Info("bistro-sync starting",
