@@ -12,6 +12,24 @@ func TestNewServer(t *testing.T) {
 	}
 }
 
+func TestServerPort(t *testing.T) {
+	server := NewServer()
+
+	if got := server.Port(); got != 0 {
+		t.Errorf("Port() before Start = %d, want 0", got)
+	}
+
+	if err := server.Start(":0"); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer server.Stop() //nolint:errcheck
+
+	port := server.Port()
+	if port <= 0 || port > 65535 {
+		t.Errorf("Port() after Start(\":0\") = %d, want a valid TCP port", port)
+	}
+}
+
 func TestStartServer(t *testing.T) {
 	server := NewServer()
 	startErr := make(chan error, 1)

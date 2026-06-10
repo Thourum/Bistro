@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -39,6 +40,13 @@ type App struct {
 	syncTrigger        chan string
 	provMu             stdsync.RWMutex
 	syncInterval       time.Duration
+	readyWriter        io.Writer
+}
+
+// SetReadyWriter overrides where the machine-readable ready signal is written.
+// Defaults to os.Stdout when unset.
+func (a *App) SetReadyWriter(w io.Writer) {
+	a.readyWriter = w
 }
 
 // SetProvider configures the GitHub provider used by the sync orchestrator.
@@ -204,7 +212,16 @@ func (a *App) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to start ws server: %w", err)
 	}
 
-	a.log.Info("WebSocket server listening", "addr", wsAddr)
+	actualPort := a.wsServer.Port()
+	a.log.Info("WebSocket server listening", "addr", wsAddr, "port", actualPort)
+
+	readyOut := a.readyWriter
+	if readyOut == nil {
+		readyOut = os.Stdout
+	}
+	if err := emitReady(readyOut, actualPort); err != nil {
+		a.log.Warn("failed to emit ready signal", "error", err)
+	}
 
 	go a.runSyncLoop(ctx)
 

@@ -98,6 +98,20 @@ func (s *Server) Broadcast(msg interface{}) {
 	}
 }
 
+// Port returns the actual TCP port the server is listening on, or 0 if the
+// server has not been started. Useful when Start was called with ":0".
+func (s *Server) Port() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.listener == nil {
+		return 0
+	}
+	if addr, ok := s.listener.Addr().(*net.TCPAddr); ok {
+		return addr.Port
+	}
+	return 0
+}
+
 // Start begins listening on addr and serves WebSocket connections.
 // Passing ":0" selects a random available port.
 func (s *Server) Start(addr string) error {

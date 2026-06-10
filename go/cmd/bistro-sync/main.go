@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	wsPort := flag.Int("ws-port", 8080, "WebSocket server port")
+	wsPort := flag.Int("ws-port", 8080, "WebSocket server port (0 = random available port, reported via ready signal on stdout)")
 	dbPath := flag.String("db-path", "./data/sync.db", "SQLite database path")
 	replayQueue := flag.Bool("replay-queue", true, "Replay offline queue on startup")
 	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, error")
