@@ -600,23 +600,60 @@ function sendMessage(type: string, data: unknown): string | undefined {
   return id;
 }
 
+/**
+ * Extracts a non-empty `error` string from a response payload, or null.
+ * Go handlers report recoverable failures (e.g. "diff not synced yet") as
+ * an `error` field inside otherwise-successful *_READY envelopes.
+ */
+export function extractResponseError(data: unknown): string | null {
+  if (typeof data !== 'object' || data === null) {
+    return null;
+  }
+  const err = (data as { error?: unknown }).error;
+  return typeof err === 'string' && err.length > 0 ? err : null;
+}
+
+const CONNECT_WAIT_INTERVAL_MS = 250;
+
 function requestMessage(type: string, data: unknown): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const id = sendMessage(type, data);
-    if (id === undefined) {
-      reject(new Error('WebSocket not connected'));
-      return;
-    }
+    const connectDeadline = Date.now() + REQUEST_TIMEOUT_MS;
 
-    const timeout = setTimeout(() => {
-      messageHandlers.delete(id);
-      reject(new Error(`Timeout waiting for ${type} response`));
-    }, REQUEST_TIMEOUT_MS);
+    // The socket connects asynchronously on mount; requests issued in the
+    // same render tick would otherwise be dropped. Wait briefly for OPEN.
+    const trySend = (): void => {
+      if (singletonWs === null || singletonWs.readyState !== WebSocket.OPEN) {
+        if (Date.now() >= connectDeadline) {
+          reject(new Error(`WebSocket not connected (sending ${type})`));
+          return;
+        }
+        setTimeout(trySend, CONNECT_WAIT_INTERVAL_MS);
+        return;
+      }
 
-    messageHandlers.set(id, (responseData) => {
-      clearTimeout(timeout);
-      resolve(responseData);
-    });
+      const id = sendMessage(type, data);
+      if (id === undefined) {
+        reject(new Error('WebSocket not connected'));
+        return;
+      }
+
+      const timeout = setTimeout(() => {
+        messageHandlers.delete(id);
+        reject(new Error(`Timeout waiting for ${type} response`));
+      }, REQUEST_TIMEOUT_MS);
+
+      messageHandlers.set(id, (responseData) => {
+        clearTimeout(timeout);
+        const responseError = extractResponseError(responseData);
+        if (responseError !== null) {
+          reject(new Error(responseError));
+          return;
+        }
+        resolve(responseData);
+      });
+    };
+
+    trySend();
   });
 }
 

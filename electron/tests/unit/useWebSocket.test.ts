@@ -84,3 +84,32 @@ describe('WebSocket ACTION_COMPLETE handler', () => {
     expect(prev.pendingAction).not.toBeNull();
   });
 });
+
+describe('extractResponseError', () => {
+  it('returns the error string from a response payload', async () => {
+    const { extractResponseError } = await import(
+      '../../src/renderer/hooks/useWebSocket'
+    );
+    expect(extractResponseError({ error: 'diff not found' })).toBe(
+      'diff not found',
+    );
+  });
+
+  it('returns null when there is no error field', async () => {
+    const { extractResponseError } = await import(
+      '../../src/renderer/hooks/useWebSocket'
+    );
+    expect(extractResponseError({ diff: 'abc' })).toBeNull();
+    expect(extractResponseError({})).toBeNull();
+  });
+
+  it('returns null for empty-string errors and non-objects', async () => {
+    const { extractResponseError } = await import(
+      '../../src/renderer/hooks/useWebSocket'
+    );
+    expect(extractResponseError({ error: '' })).toBeNull();
+    expect(extractResponseError(null)).toBeNull();
+    expect(extractResponseError('oops')).toBeNull();
+    expect(extractResponseError({ error: 42 })).toBeNull();
+  });
+});
