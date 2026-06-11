@@ -58,27 +58,23 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 		return
 	}
 
-	rows, err := a.db.DB.QueryContext(ctx,
-		"SELECT id, provider, owner, repo FROM repos WHERE watched = 1",
-	)
+	// Read the full repo list and close the result set BEFORE syncing.
+	// Keeping rows open across orch.Sync deadlocks the connection pool:
+	// the open result set holds a connection while the sync's write
+	// transaction waits for one.
+	repos, err := a.listWatchedRepos(ctx)
 	if err != nil {
 		a.log.Error("syncWatchedRepos: query failed", "err", err)
 		return
 	}
-	defer rows.Close()
 
 	passStart := time.Now()
 	var synced, failed int
-	for rows.Next() {
-		var id, repoProvider, owner, repo string
-		if err := rows.Scan(&id, &repoProvider, &owner, &repo); err != nil {
-			a.log.Error("syncWatchedRepos: scan failed", "err", err)
-			continue
-		}
+	for _, r := range repos {
 		req := &sync.SyncRequest{
-			Provider:        repoProvider,
-			Owner:           owner,
-			Repo:            repo,
+			Provider:        r.provider,
+			Owner:           r.owner,
+			Repo:            r.repo,
 			IncludePRs:      true,
 			IncludeComments: true,
 			State:           "open",
@@ -88,22 +84,19 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 		if syncErr != nil {
 			failed++
 			a.log.Error("syncWatchedRepos: sync failed",
-				"repo", id,
+				"repo", r.id,
 				"duration_ms", time.Since(repoStart).Milliseconds(),
 				"err", syncErr,
 			)
-			a.broadcastSyncError(id, syncErr)
+			a.broadcastSyncError(r.id, syncErr)
 			continue
 		}
 		synced++
 		a.log.Info("syncWatchedRepos: synced",
-			"repo", id,
+			"repo", r.id,
 			"prs", result.PRCount,
 			"duration_ms", time.Since(repoStart).Milliseconds(),
 		)
-	}
-	if err := rows.Err(); err != nil {
-		a.log.Error("syncWatchedRepos: rows error", "err", err)
 	}
 
 	a.log.Info("sync pass complete",
@@ -116,6 +109,36 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 		"type": "SYNC_COMPLETE",
 		"data": map[string]interface{}{},
 	})
+}
+
+type watchedRepo struct {
+	id       string
+	provider string
+	owner    string
+	repo     string
+}
+
+// listWatchedRepos reads all watched repos, fully draining and closing the
+// result set so no connection is held while syncs run.
+func (a *App) listWatchedRepos(ctx context.Context) ([]watchedRepo, error) {
+	rows, err := a.db.DB.QueryContext(ctx,
+		"SELECT id, provider, owner, repo FROM repos WHERE watched = 1",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var repos []watchedRepo
+	for rows.Next() {
+		var r watchedRepo
+		if err := rows.Scan(&r.id, &r.provider, &r.owner, &r.repo); err != nil {
+			a.log.Error("listWatchedRepos: scan failed", "err", err)
+			continue
+		}
+		repos = append(repos, r)
+	}
+	return repos, rows.Err()
 }
 
 // syncSingleRepo syncs a single repo identified by its repo_id (e.g. "github:owner/repo").

@@ -123,6 +123,9 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
       `-log-level`,
       config.logLevel,
       `-replay-queue=${config.replayQueue}`,
+      // Go exits when its stdin pipe closes, so it can never outlive us
+      // even if this process is SIGKILLed (see stdio below).
+      `-exit-on-stdin-close`,
     ];
 
     if (config.logFile) {
@@ -133,7 +136,8 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
 
     try {
       goProcess = spawn(config.binaryPath, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
+        // stdin must be a pipe: Go watches it for EOF to detect parent death.
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

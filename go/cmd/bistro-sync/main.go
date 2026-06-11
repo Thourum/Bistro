@@ -23,6 +23,8 @@ func main() {
 	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, error")
 	logFile := flag.String("log-file", "", "Log file path (default: stderr only)")
 	syncInterval := flag.Duration("sync-interval", 5*time.Minute, "Interval between sync cycles")
+	exitOnStdinClose := flag.Bool("exit-on-stdin-close", false,
+		"Exit when stdin closes (set by the Electron shell so the engine dies with its parent)")
 	flag.Parse()
 
 	if *syncInterval <= 0 {
@@ -98,6 +100,18 @@ func main() {
 		app.SetProvider(client)
 	} else {
 		log.Info("no GitHub token in keychain — waiting for OAuth authorization code flow")
+	}
+
+	// Parent-death watchdog: Electron holds our stdin pipe open. If the
+	// shell dies without killing us (crash, SIGKILL, killed process tree),
+	// stdin hits EOF and we exit instead of becoming an orphan that holds
+	// the database hostage.
+	if *exitOnStdinClose {
+		go func() {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			log.Info("stdin closed — parent gone, shutting down")
+			os.Exit(0)
+		}()
 	}
 
 	if *replayQueue {
