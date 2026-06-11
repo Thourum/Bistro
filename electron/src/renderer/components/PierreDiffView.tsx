@@ -1,4 +1,5 @@
 import { PatchDiff } from '@pierre/diffs/react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSettings } from '../../types/settings';
 
@@ -26,6 +27,8 @@ interface ParsedFile {
   deletions: number;
   /** The per-file unified-diff slice. */
   patch: string;
+  /** Total lines in the patch — used to estimate virtual row heights. */
+  lineCount: number;
 }
 
 /**
@@ -43,6 +46,8 @@ export function PierreDiffView({
 }: PierreDiffViewProps) {
   const files = useMemo(() => splitUnifiedDiff(diff), [diff]);
   const [activeId, setActiveId] = useState<string | null>(files[0]?.id ?? null);
+  // Registered by DiffCanvas so nav clicks can jump the virtualized list.
+  const scrollToFileRef = useRef<(id: string) => void>(() => undefined);
 
   useEffect(() => {
     if (files.length === 0) {
@@ -73,7 +78,10 @@ export function PierreDiffView({
       <FileNav
         files={filtered}
         activeId={activeId}
-        onSelect={setActiveId}
+        onSelect={(id) => {
+          setActiveId(id);
+          scrollToFileRef.current(id);
+        }}
         totalCount={files.length}
       />
       <DiffCanvas
@@ -81,6 +89,9 @@ export function PierreDiffView({
         activeId={activeId}
         theme={theme}
         onActiveChange={setActiveId}
+        registerScrollTo={(fn) => {
+          scrollToFileRef.current = fn;
+        }}
       />
     </div>
   );
@@ -141,81 +152,109 @@ interface DiffCanvasProps {
   activeId: string | null;
   theme: AppSettings['appearance']['theme'];
   onActiveChange: (id: string) => void;
+  registerScrollTo: (fn: (id: string) => void) => void;
 }
 
+/** Estimated rendered height of one diff line, used until measurement. */
+const ESTIMATED_LINE_HEIGHT = 20;
+/** Per-file chrome: sticky header plus borders. */
+const FILE_HEADER_HEIGHT = 40;
+
+/**
+ * Virtualized diff canvas: only the file blocks near the viewport are
+ * mounted, so 100+ file diffs don't pay the DOM cost of every `PatchDiff`.
+ * Rows are positioned with `top` (not `transform`) so the per-file sticky
+ * headers keep sticking to the scroll viewport.
+ */
 function DiffCanvas({
   files,
   activeId,
   theme: _theme,
   onActiveChange,
+  registerScrollTo,
 }: DiffCanvasProps) {
   const scrollRef = useRef<HTMLElement>(null);
-  const fileRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const virtualizer = useVirtualizer({
+    count: files.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => {
+      const file = files[index];
+      if (file === undefined) return FILE_HEADER_HEIGHT;
+      return FILE_HEADER_HEIGHT + file.lineCount * ESTIMATED_LINE_HEIGHT;
+    },
+    overscan: 2,
+    getItemKey: (index) => files[index]?.id ?? index,
+  });
 
   useEffect(() => {
-    if (activeId === null) return;
-    const el = fileRefs.current.get(activeId);
-    if (el !== undefined) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [activeId]);
-
-  useEffect(() => {
-    const root = scrollRef.current;
-    if (root === null) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.find((e) => e.isIntersecting);
-        if (visible !== undefined) {
-          const id = (visible.target as HTMLElement).dataset.fileId;
-          if (id !== undefined && id !== activeId) onActiveChange(id);
-        }
-      },
-      { root, threshold: 0.15 },
-    );
-    fileRefs.current.forEach((el) => {
-      observer.observe(el);
+    registerScrollTo((id: string) => {
+      const idx = files.findIndex((f) => f.id === id);
+      if (idx >= 0) {
+        virtualizer.scrollToIndex(idx, { align: 'start' });
+      }
     });
-    return () => observer.disconnect();
-  }, [activeId, onActiveChange]);
+  }, [files, virtualizer, registerScrollTo]);
+
+  const virtualItems = virtualizer.getVirtualItems();
+
+  // The topmost visible file drives the nav highlight. Scrolling never
+  // scrolls back (no scroll-jacking) — only nav clicks call scrollToIndex.
+  const scrollOffset = virtualizer.scrollOffset ?? 0;
+  const firstVisibleIndex =
+    virtualItems.find((v) => v.end > scrollOffset + 1)?.index ?? -1;
+
+  useEffect(() => {
+    if (firstVisibleIndex < 0) return;
+    const file = files[firstVisibleIndex];
+    if (file !== undefined && file.id !== activeId) {
+      onActiveChange(file.id);
+    }
+  }, [firstVisibleIndex, files, activeId, onActiveChange]);
 
   return (
     <section
       ref={scrollRef}
       className="flex-1 bg-surface-container-lowest overflow-auto relative"
     >
-      <div className="min-w-full">
-        {files.map((file) => (
-          <div
-            key={file.id}
-            ref={(el) => {
-              if (el !== null) fileRefs.current.set(file.id, el);
-              else fileRefs.current.delete(file.id);
-            }}
-            data-file-id={file.id}
-            className="border-b border-outline-variant/10"
-          >
-            <div className="sticky top-0 z-10 bg-surface-container-lowest border-b border-outline-variant/10 px-4 py-2 flex items-center justify-between">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-outline font-mono text-[11px] truncate">
-                  {file.path}
-                </span>
-                <span className="bg-surface-container px-2 py-0.5 text-[10px] text-outline uppercase font-mono shrink-0">
-                  {file.lang}
-                </span>
+      <div
+        className="relative w-full"
+        style={{ height: virtualizer.getTotalSize() }}
+      >
+        {virtualItems.map((virtualRow) => {
+          const file = files[virtualRow.index];
+          if (file === undefined) return null;
+          return (
+            <div
+              key={virtualRow.key}
+              ref={virtualizer.measureElement}
+              data-index={virtualRow.index}
+              data-file-id={file.id}
+              className="absolute left-0 w-full border-b border-outline-variant/10"
+              style={{ top: virtualRow.start }}
+            >
+              <div className="sticky top-0 z-10 bg-surface-container-lowest border-b border-outline-variant/10 px-4 py-2 flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-outline font-mono text-[11px] truncate">
+                    {file.path}
+                  </span>
+                  <span className="bg-surface-container px-2 py-0.5 text-[10px] text-outline uppercase font-mono shrink-0">
+                    {file.lang}
+                  </span>
+                </div>
+                <div className="flex gap-4 font-mono text-[11px] font-bold shrink-0">
+                  <span className="text-primary">+{file.additions}</span>
+                  <span className="text-error">-{file.deletions}</span>
+                </div>
               </div>
-              <div className="flex gap-4 font-mono text-[11px] font-bold shrink-0">
-                <span className="text-primary">+{file.additions}</span>
-                <span className="text-error">-{file.deletions}</span>
-              </div>
+              <PatchDiff
+                patch={file.patch}
+                disableWorkerPool
+                className="block w-full"
+              />
             </div>
-            <PatchDiff
-              patch={file.patch}
-              disableWorkerPool
-              className="block w-full"
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -248,6 +287,7 @@ function splitUnifiedDiff(raw: string): ParsedFile[] {
         additions,
         deletions,
         patch: raw,
+        lineCount: countLines(raw),
       },
     ];
   }
@@ -276,8 +316,17 @@ function splitUnifiedDiff(raw: string): ParsedFile[] {
       additions,
       deletions,
       patch,
+      lineCount: countLines(patch),
     };
   });
+}
+
+function countLines(patch: string): number {
+  let count = 1;
+  for (let i = 0; i < patch.length; i++) {
+    if (patch.charCodeAt(i) === 10) count++;
+  }
+  return count;
 }
 
 function extractFilePath(patch: string): string | null {
