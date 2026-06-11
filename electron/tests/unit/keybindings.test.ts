@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
-import { Store } from '@tanstack/store';
+
 import { assertValidHotkey } from '@tanstack/react-hotkeys';
+import { Store } from '@tanstack/store';
 import { describe, expect, it } from 'vitest';
 import type { UIState } from '../../src/renderer/store/ui';
+import { initialUIState } from '../../src/renderer/store/ui';
 import type { KeyBinding } from '../../src/renderer/utils/keybindings';
 import {
   DEFAULT_KEYBINDINGS,
   getEffectiveBindings,
   isSequenceBinding,
 } from '../../src/renderer/utils/keybindings';
-import { initialUIState } from '../../src/renderer/store/ui';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -102,11 +103,41 @@ describe('DEFAULT_KEYBINDINGS', () => {
     }
   });
 
-  it('includes quit and search chords with canonical modifiers', () => {
+  it('includes quit, search, and settings chords', () => {
     expect(byId('global.quit.mac').keys).toBe('Meta+Q');
     expect(byId('global.quit.win').keys).toBe('Alt+F4');
-    expect(byId('global.search.mac').keys).toBe('Meta+/');
-    expect(byId('global.search.win').keys).toBe('Control+/');
+    // Single cross-platform binding — 'Mod' resolves per platform.
+    expect(byId('global.search').keys).toBe('Mod+/');
+    expect(byId('global.settings').keys).toBe('Mod+,');
+  });
+
+  it('writes shifted punctuation as Shift + physical key', () => {
+    // The matcher requires exact modifier state, so '?' must be 'Shift+/'.
+    expect(byId('global.help').keys).toBe('Shift+/');
+    expect(byId('global.command').keys).toBe('Shift+;');
+    expect(byId('detail.scrollBottom').keys).toBe('Shift+4');
+  });
+
+  it('provides hidden arrow-key aliases for navigation', () => {
+    expect(byId('list.downArrow').keys).toBe('ArrowDown');
+    expect(byId('list.upArrow').keys).toBe('ArrowUp');
+    expect(byId('list.downArrow').hidden).toBe(true);
+    expect(byId('detail.scrollDownArrow').keys).toBe('ArrowDown');
+    expect(byId('detail.scrollLeftArrow').keys).toBe('ArrowLeft');
+  });
+
+  it('detail navigation and scrolling also work in the diff view', () => {
+    for (const id of [
+      'detail.nextFile',
+      'detail.prevFile',
+      'detail.scrollDown',
+      'detail.scrollUp',
+      'detail.pageDown',
+      'detail.scrollTop',
+      'detail.scrollBottom',
+    ]) {
+      expect(byId(id).modes, id).toContain('diff');
+    }
   });
 
   it('covers the diff view: Space enters, Escape exits', () => {
@@ -115,16 +146,18 @@ describe('DEFAULT_KEYBINDINGS', () => {
     expect(byId('global.escape').modes).toContain('diff');
   });
 
-  it('? help binding is active in list and detail', () => {
+  it('help binding is active in list and detail and records its source', () => {
     const b = byId('global.help');
-    expect(b.keys).toBe('?');
     expect(b.modes).toContain('list');
     expect(b.modes).toContain('detail');
+    const store = makeStore({ mode: 'detail' });
+    b.action(store);
+    expect(store.state.mode).toBe('help');
+    expect(store.state.helpSourceMode).toBe('detail');
   });
 
-  it('detail scroll bindings include 0 and $ jumps', () => {
+  it('detail scroll bindings include top and bottom jumps', () => {
     expect(byId('detail.scrollTop').keys).toBe('0');
-    expect(byId('detail.scrollBottom').keys).toBe('$');
   });
 });
 
@@ -235,10 +268,12 @@ describe('binding actions', () => {
       ['filter.all', 'all'],
     ];
     for (const [actionId, expected] of cases) {
-      it(`${actionId} sets filterState=${expected}`, () => {
+      it(`${actionId} sets filterState=${expected} and closes the menu`, () => {
         const store = makeStore({ mode: 'filter', filterMenuOpen: true });
         byId(actionId).action(store);
         expect(store.state.filterState).toBe(expected);
+        expect(store.state.filterMenuOpen).toBe(false);
+        expect(store.state.mode).toBe('list');
       });
     }
   });

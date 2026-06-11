@@ -16,7 +16,12 @@ function fireKey(
   target: EventTarget = document.body,
 ): void {
   target.dispatchEvent(
-    new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...opts }),
+    new KeyboardEvent('keydown', {
+      key,
+      bubbles: true,
+      cancelable: true,
+      ...opts,
+    }),
   );
 }
 
@@ -73,6 +78,35 @@ describe('useAppHotkeys', () => {
       fireKey('f', { code: 'KeyF' });
     });
     expect(appStore.state.filterMenuOpen).toBe(false);
+  });
+
+  it('opens help on "?" (Shift+/ physically)', () => {
+    renderHook(() => useAppHotkeys());
+    act(() => {
+      fireKey('?', { code: 'Slash', shiftKey: true });
+    });
+    expect(appStore.state.mode).toBe('help');
+    expect(appStore.state.helpSourceMode).toBe('list');
+  });
+
+  it('opens command mode on ":" (Shift+; physically)', () => {
+    renderHook(() => useAppHotkeys());
+    act(() => {
+      fireKey(':', { code: 'Semicolon', shiftKey: true });
+    });
+    expect(appStore.state.mode).toBe('command');
+  });
+
+  it('moves selection with the arrow keys', () => {
+    renderHook(() => useAppHotkeys());
+    act(() => {
+      fireKey('ArrowDown', { code: 'ArrowDown' });
+    });
+    expect(appStore.state.selectedPRIndex).toBe(1);
+    act(() => {
+      fireKey('ArrowUp', { code: 'ArrowUp' });
+    });
+    expect(appStore.state.selectedPRIndex).toBe(0);
   });
 
   it('returns from detail mode to list on Escape', () => {

@@ -28,6 +28,8 @@ export interface UIState {
     | 'command'
     | 'filter'
     | 'settings';
+  /** Mode the user was in when opening the help overlay — scopes its content. */
+  helpSourceMode: 'list' | 'detail';
   isAuthenticated: boolean;
   showFileTree: boolean;
   paneLayout: 'list' | 'detail' | 'split';
@@ -72,6 +74,7 @@ export const initialUIState: UIState = {
   selectedFileIndex: 0,
   searchQuery: '',
   mode: 'list',
+  helpSourceMode: 'list',
   paneLayout: 'split',
   sortBy: 'updated',
   filterState: 'open',

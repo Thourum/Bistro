@@ -2,6 +2,8 @@ import { PatchDiff } from '@pierre/diffs/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSettings } from '../../types/settings';
+import { useStore } from '../hooks/useStore';
+import { appStore } from '../store';
 
 export interface PierreDiffViewProps {
   /** Full unified-diff string (`diff --git …` separated). */
@@ -48,6 +50,7 @@ export function PierreDiffView({
   const [activeId, setActiveId] = useState<string | null>(files[0]?.id ?? null);
   // Registered by DiffCanvas so nav clicks can jump the virtualized list.
   const scrollToFileRef = useRef<(id: string) => void>(() => undefined);
+  const selectedFileIndex = useStore(appStore, (s) => s.selectedFileIndex);
 
   useEffect(() => {
     if (files.length === 0) {
@@ -58,6 +61,34 @@ export function PierreDiffView({
       setActiveId(files[0]?.id ?? null);
     }
   }, [files, activeId]);
+
+  // The n/p keybindings drive store.selectedFileIndex; follow it here.
+  useEffect(() => {
+    if (files.length === 0) return;
+    const clamped = Math.min(Math.max(selectedFileIndex, 0), files.length - 1);
+    if (clamped !== selectedFileIndex) {
+      appStore.setState((s) => ({ ...s, selectedFileIndex: clamped }));
+      return;
+    }
+    const file = files[clamped];
+    if (file !== undefined && file.id !== activeId) {
+      setActiveId(file.id);
+      scrollToFileRef.current(file.id);
+    }
+    // activeId intentionally omitted: scroll-driven highlight changes must
+    // not yank the viewport back to the store-selected file.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFileIndex, files]);
+
+  // Keep the store index in sync when scrolling changes the active file, so
+  // the next n/p press moves relative to what the user actually sees.
+  const handleActiveChange = (id: string): void => {
+    setActiveId(id);
+    const idx = files.findIndex((f) => f.id === id);
+    if (idx >= 0 && appStore.state.selectedFileIndex !== idx) {
+      appStore.setState((s) => ({ ...s, selectedFileIndex: idx }));
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = findQuery.trim().toLowerCase();
@@ -88,7 +119,7 @@ export function PierreDiffView({
         files={files}
         activeId={activeId}
         theme={theme}
-        onActiveChange={setActiveId}
+        onActiveChange={handleActiveChange}
         registerScrollTo={(fn) => {
           scrollToFileRef.current = fn;
         }}
@@ -215,6 +246,7 @@ function DiffCanvas({
   return (
     <section
       ref={scrollRef}
+      data-diff-viewport
       className="flex-1 bg-surface-container-lowest overflow-auto relative"
     >
       <div

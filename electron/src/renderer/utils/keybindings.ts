@@ -37,11 +37,17 @@ export function isSequenceBinding(
 const globalBindings: KeyBinding[] = [
   {
     actionId: 'global.help',
-    keys: '?',
+    // The matcher requires exact modifier state, so shifted punctuation is
+    // written as Shift + the physical base key ('?' = Shift+/ on US layouts).
+    keys: 'Shift+/',
     description: 'Show help / bindings overlay',
     modes: ['list', 'detail'],
     action: (store) => {
-      store.setState((s) => ({ ...s, mode: 'help' }));
+      store.setState((s) => ({
+        ...s,
+        mode: 'help',
+        helpSourceMode: s.mode === 'detail' ? 'detail' : 'list',
+      }));
     },
   },
   {
@@ -72,11 +78,20 @@ const globalBindings: KeyBinding[] = [
   },
   {
     actionId: 'global.command',
-    keys: ':',
+    keys: 'Shift+;', // ':' on US layouts
     description: 'Open command mode',
     modes: ['list', 'detail'],
     action: (store) => {
       store.setState((s) => ({ ...s, mode: 'command' }));
+    },
+  },
+  {
+    actionId: 'global.settings',
+    keys: 'Mod+,',
+    description: 'Open settings',
+    modes: ['list', 'detail'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, mode: 'settings' }));
     },
   },
   {
@@ -98,23 +113,11 @@ const globalBindings: KeyBinding[] = [
     },
   },
   {
-    actionId: 'global.search.mac',
-    keys: 'Meta+/',
-    description: 'Toggle search box (macOS)',
-    modes: ['list', 'detail'],
-    action: (store) => {
-      const { mode } = store.state;
-      if (mode === 'search') {
-        store.setState((s) => ({ ...s, mode: 'list', searchQuery: '' }));
-      } else {
-        store.setState((s) => ({ ...s, mode: 'search' }));
-      }
-    },
-  },
-  {
-    actionId: 'global.search.win',
-    keys: 'Control+/',
-    description: 'Toggle search box (Linux/Windows)',
+    actionId: 'global.search',
+    // 'Mod' resolves to Meta on macOS and Control elsewhere — one binding
+    // covers all platforms, and formatForDisplay renders it natively.
+    keys: 'Mod+/',
+    description: 'Toggle search box',
     modes: ['list', 'detail'],
     action: (store) => {
       const { mode } = store.state;
@@ -172,6 +175,29 @@ const listBindings: KeyBinding[] = [
     keys: 'k',
     description: 'Move to previous PR',
     modes: ['list'],
+    action: (store) => {
+      store.setState((s) => ({
+        ...s,
+        selectedPRIndex: Math.max(0, s.selectedPRIndex - 1),
+      }));
+    },
+  },
+  {
+    actionId: 'list.downArrow',
+    keys: 'ArrowDown',
+    description: 'Move to next PR',
+    modes: ['list'],
+    hidden: true,
+    action: (store) => {
+      store.setState((s) => ({ ...s, selectedPRIndex: s.selectedPRIndex + 1 }));
+    },
+  },
+  {
+    actionId: 'list.upArrow',
+    keys: 'ArrowUp',
+    description: 'Move to previous PR',
+    modes: ['list'],
+    hidden: true,
     action: (store) => {
       store.setState((s) => ({
         ...s,
@@ -308,7 +334,7 @@ const detailBindings: KeyBinding[] = [
     actionId: 'detail.nextFile',
     keys: 'n',
     description: 'Next file in diff',
-    modes: ['detail'],
+    modes: ['detail', 'diff'],
     action: (store) => {
       store.setState((s) => ({
         ...s,
@@ -320,7 +346,7 @@ const detailBindings: KeyBinding[] = [
     actionId: 'detail.prevFile',
     keys: 'p',
     description: 'Previous file in diff',
-    modes: ['detail'],
+    modes: ['detail', 'diff'],
     action: (store) => {
       store.setState((s) => ({
         ...s,
@@ -375,6 +401,21 @@ const detailBindings: KeyBinding[] = [
 ];
 
 // ─── Filter mode bindings (active when filter menu is open) ──────────────────
+// Selecting a filter applies it AND closes the menu, so `f a` behaves like a
+// sequence: `f` reveals the options in the footer legend, the next key picks
+// one and returns to the list.
+
+function applyFilter(
+  store: Store<UIState>,
+  filterState: UIState['filterState'],
+): void {
+  store.setState((s) => ({
+    ...s,
+    filterState,
+    filterMenuOpen: false,
+    mode: 'list',
+  }));
+}
 
 const filterBindings: KeyBinding[] = [
   {
@@ -383,7 +424,7 @@ const filterBindings: KeyBinding[] = [
     description: 'Set filter to Needs Action',
     modes: ['filter'],
     action: (store) => {
-      store.setState((s) => ({ ...s, filterState: 'needs_action' }));
+      applyFilter(store, 'needs_action');
     },
   },
   {
@@ -392,7 +433,7 @@ const filterBindings: KeyBinding[] = [
     description: 'Set filter to Open',
     modes: ['filter'],
     action: (store) => {
-      store.setState((s) => ({ ...s, filterState: 'open' }));
+      applyFilter(store, 'open');
     },
   },
   {
@@ -401,7 +442,7 @@ const filterBindings: KeyBinding[] = [
     description: 'Set filter to Draft',
     modes: ['filter'],
     action: (store) => {
-      store.setState((s) => ({ ...s, filterState: 'draft' }));
+      applyFilter(store, 'draft');
     },
   },
   {
@@ -410,7 +451,7 @@ const filterBindings: KeyBinding[] = [
     description: 'Set filter to All',
     modes: ['filter'],
     action: (store) => {
-      store.setState((s) => ({ ...s, filterState: 'all' }));
+      applyFilter(store, 'all');
     },
   },
   {
@@ -440,7 +481,7 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollLeft',
     keys: 'h',
     description: 'Scroll left in diff',
-    modes: ['detail'],
+    modes: ['detail', 'diff'],
     action: (_store) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ left: -80 });
     },
@@ -449,7 +490,7 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollDown',
     keys: 'j',
     description: 'Scroll down in diff',
-    modes: ['detail'],
+    modes: ['detail', 'diff'],
     action: (_store) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 40 });
     },
@@ -458,7 +499,7 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollUp',
     keys: 'k',
     description: 'Scroll up in diff',
-    modes: ['detail'],
+    modes: ['detail', 'diff'],
     action: (_store) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -40 });
     },
@@ -467,7 +508,47 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollRight',
     keys: 'l',
     description: 'Scroll right in diff',
-    modes: ['detail'],
+    modes: ['detail', 'diff'],
+    action: (_store) => {
+      document.querySelector('[data-diff-viewport]')?.scrollBy({ left: 80 });
+    },
+  },
+  {
+    actionId: 'detail.scrollDownArrow',
+    keys: 'ArrowDown',
+    description: 'Scroll down in diff',
+    modes: ['detail', 'diff'],
+    hidden: true,
+    action: (_store) => {
+      document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 40 });
+    },
+  },
+  {
+    actionId: 'detail.scrollUpArrow',
+    keys: 'ArrowUp',
+    description: 'Scroll up in diff',
+    modes: ['detail', 'diff'],
+    hidden: true,
+    action: (_store) => {
+      document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -40 });
+    },
+  },
+  {
+    actionId: 'detail.scrollLeftArrow',
+    keys: 'ArrowLeft',
+    description: 'Scroll left in diff',
+    modes: ['detail', 'diff'],
+    hidden: true,
+    action: (_store) => {
+      document.querySelector('[data-diff-viewport]')?.scrollBy({ left: -80 });
+    },
+  },
+  {
+    actionId: 'detail.scrollRightArrow',
+    keys: 'ArrowRight',
+    description: 'Scroll right in diff',
+    modes: ['detail', 'diff'],
+    hidden: true,
     action: (_store) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ left: 80 });
     },
@@ -476,7 +557,7 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.pageDown',
     keys: 'Control+D',
     description: 'Page down in diff',
-    modes: ['detail'],
+    modes: ['detail', 'diff'],
     action: (_store) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 300 });
     },
@@ -485,7 +566,7 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.pageUp',
     keys: 'Control+U',
     description: 'Page up in diff',
-    modes: ['detail'],
+    modes: ['detail', 'diff'],
     action: (_store) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -300 });
     },
@@ -494,7 +575,7 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollTop',
     keys: '0',
     description: 'Jump to top of diff',
-    modes: ['detail'],
+    modes: ['detail', 'diff'],
     action: (_store) => {
       const el = document.querySelector(
         '[data-diff-viewport]',
@@ -504,9 +585,9 @@ const detailScrollBindings: KeyBinding[] = [
   },
   {
     actionId: 'detail.scrollBottom',
-    keys: '$',
+    keys: 'Shift+4', // '$' on US layouts
     description: 'Jump to bottom of diff',
-    modes: ['detail'],
+    modes: ['detail', 'diff'],
     action: (_store) => {
       const el = document.querySelector(
         '[data-diff-viewport]',

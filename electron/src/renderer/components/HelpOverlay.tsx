@@ -72,8 +72,15 @@ const SEARCH_IDS = new Set([
   'global.search.win',
 ]);
 
-function buildSections(bindings: KeyBinding[]): ShortcutSection[] {
-  const visible = bindings.filter((b) => b.hidden !== true);
+function buildSections(
+  bindings: KeyBinding[],
+  sourceMode: 'list' | 'detail',
+): ShortcutSection[] {
+  // Only show bindings usable from where the user opened the overlay —
+  // diff-view scroll keys are noise when browsing the PR list.
+  const visible = bindings.filter(
+    (b) => b.hidden !== true && b.modes.includes(sourceMode),
+  );
 
   const navBindings = visible.filter((b) => NAVIGATION_IDS.has(b.actionId));
   const actionBindings = visible.filter((b) => ACTION_IDS.has(b.actionId));
@@ -100,9 +107,13 @@ function buildSections(bindings: KeyBinding[]): ShortcutSection[] {
 
 export function HelpOverlay(): React.ReactElement | null {
   const mode = useStore(appStore, (s) => s.mode);
+  const helpSourceMode = useStore(appStore, (s) => s.helpSourceMode);
   const overrides = useStore(settingsStore, (s) => s.keybindings);
   const isOpen = mode === 'help';
-  const sections = buildSections(getEffectiveBindings(overrides));
+  const sections = buildSections(
+    getEffectiveBindings(overrides),
+    helpSourceMode,
+  );
 
   const handleClose = (): void => {
     appStore.setState((s) => ({ ...s, mode: 'list' }));
