@@ -17,11 +17,35 @@ import (
 // Client handles git operations
 type Client struct {
 	cache *Cache
+	// tokenSource supplies the auth token for clone/fetch (e.g. from the OS
+	// keychain). Queried per operation so token rotation is picked up.
+	tokenSource func() string
 }
 
 // NewClient creates a new git client with cache
 func NewClient(cache *Cache) *Client {
 	return &Client{cache: cache}
+}
+
+// SetTokenSource configures where clone/fetch auth tokens come from.
+// Must be called before the client is shared across goroutines.
+func (c *Client) SetTokenSource(fn func() string) {
+	c.tokenSource = fn
+}
+
+// auth returns HTTP basic auth from the configured token source, falling
+// back to the GITHUB_TOKEN env var. Returns nil (anonymous) when neither is
+// set — public repos still work.
+func (c *Client) auth() *http.BasicAuth {
+	if c.tokenSource != nil {
+		if token := c.tokenSource(); token != "" {
+			return &http.BasicAuth{
+				Username: "x-token", // GitHub ignores username when token is used
+				Password: token,
+			}
+		}
+	}
+	return tokenFromEnv()
 }
 
 // Clone fetches both baseSHA and headSHA into a local clone.
@@ -72,7 +96,7 @@ func (c *Client) Clone(ctx context.Context, repoURL, baseSHA, headSHA string) (*
 
 	opts := &gitlib.CloneOptions{
 		URL:  repoURL,
-		Auth: tokenFromEnv(),
+		Auth: c.auth(),
 	}
 
 	cloneStart := time.Now()
@@ -90,7 +114,7 @@ func (c *Client) Clone(ctx context.Context, repoURL, baseSHA, headSHA string) (*
 
 	// Fetch both branch heads and PR refs so base and head commits are locally available
 	fetchOpts := &gitlib.FetchOptions{
-		Auth: tokenFromEnv(),
+		Auth: c.auth(),
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 			config.RefSpec("+refs/pull/*/head:refs/remotes/origin/pr/*"),
@@ -168,7 +192,7 @@ func (c *Client) FetchRefs(ctx context.Context, localPath, baseSHA, headSHA stri
 	}
 
 	fetchOpts := &gitlib.FetchOptions{
-		Auth: tokenFromEnv(),
+		Auth: c.auth(),
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 			config.RefSpec("+refs/pull/*/head:refs/remotes/origin/pr/*"),

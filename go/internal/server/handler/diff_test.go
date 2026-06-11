@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/samuelasvanyi/bistro/internal/store"
 	"github.com/samuelasvanyi/bistro/internal/ws"
 )
 
 type stubDiffReader struct {
 	diffs map[string]string
+	files map[string][]store.DiffFile
 }
 
 func (s *stubDiffReader) GetUnifiedDiff(prID string) (string, error) {
@@ -18,6 +20,10 @@ func (s *stubDiffReader) GetUnifiedDiff(prID string) (string, error) {
 		return d, nil
 	}
 	return "", fmt.Errorf("no diffs found for PR %s", prID)
+}
+
+func (s *stubDiffReader) GetDiffs(prID string) ([]store.DiffFile, error) {
+	return s.files[prID], nil
 }
 
 func makeMsg(t *testing.T, id, prID string) ws.InboundMessage {
@@ -60,6 +66,42 @@ func TestRequestDiffHandler_Found(t *testing.T) {
 	}
 	if _, hasErr := data["error"]; hasErr {
 		t.Errorf("expected no error field on success, got %v", data["error"])
+	}
+}
+
+func TestRequestDiffHandler_IncludesFileStats(t *testing.T) {
+	stub := &stubDiffReader{
+		diffs: map[string]string{"pr-1": "diff --git a/a.go b/a.go\n+x\n"},
+		files: map[string][]store.DiffFile{
+			"pr-1": {
+				{FilePath: "a.go", Additions: 10, Deletions: 2},
+				{FilePath: "b.go", Additions: 5, Deletions: 1},
+			},
+		},
+	}
+	handler := NewRequestDiffHandler(stub, nil)
+
+	resp, err := handler(context.Background(), makeMsg(t, "req-files", "pr-1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data := resp.(map[string]interface{})["data"].(map[string]interface{})
+
+	files, ok := data["files"].([]diffFileStat)
+	if !ok {
+		t.Fatalf("files is %T, want []diffFileStat", data["files"])
+	}
+	if len(files) != 2 {
+		t.Fatalf("got %d files, want 2", len(files))
+	}
+	if files[0].Path != "a.go" || files[0].Additions != 10 || files[0].Deletions != 2 {
+		t.Errorf("unexpected first file: %+v", files[0])
+	}
+	if data["additions"] != 15 {
+		t.Errorf("additions = %v, want 15", data["additions"])
+	}
+	if data["deletions"] != 3 {
+		t.Errorf("deletions = %v, want 3", data["deletions"])
 	}
 }
 

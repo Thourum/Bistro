@@ -77,6 +77,7 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 			Repo:            r.repo,
 			IncludePRs:      true,
 			IncludeComments: true,
+			IncludeDiff:     true,
 			State:           "open",
 		}
 		repoStart := time.Now()
@@ -169,6 +170,7 @@ func (a *App) syncSingleRepo(ctx context.Context, repoID string) {
 		Repo:            repo,
 		IncludePRs:      true,
 		IncludeComments: true,
+		IncludeDiff:     true,
 		State:           "open",
 	}
 	repoStart := time.Now()

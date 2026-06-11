@@ -14,6 +14,15 @@ import (
 // diffReader is the subset of store.DiffStore required by the REQUEST_DIFF handler.
 type diffReader interface {
 	GetUnifiedDiff(prID string) (string, error)
+	GetDiffs(prID string) ([]store.DiffFile, error)
+}
+
+// diffFileStat is the per-file summary returned alongside the unified diff
+// so the PR detail header can show file counts and +/- totals.
+type diffFileStat struct {
+	Path      string `json:"path"`
+	Additions int    `json:"additions"`
+	Deletions int    `json:"deletions"`
 }
 
 // NewRequestDiffHandler returns a ws.MessageHandler that reads diffs from the
@@ -51,14 +60,39 @@ func NewRequestDiffHandler(ds diffReader, log *slog.Logger) ws.MessageHandler {
 			}, nil
 		}
 
-		logger.Debug("diff ready", "pr_id", data.PRID, "bytes", len(unified))
+		files := []diffFileStat{}
+		var additions, deletions int
+		if diffFiles, filesErr := ds.GetDiffs(data.PRID); filesErr != nil {
+			logger.Warn("failed to get diff file stats", "pr_id", data.PRID, "err", filesErr)
+		} else {
+			for _, f := range diffFiles {
+				files = append(files, diffFileStat{
+					Path:      f.FilePath,
+					Additions: f.Additions,
+					Deletions: f.Deletions,
+				})
+				additions += f.Additions
+				deletions += f.Deletions
+			}
+		}
+
+		logger.Debug("diff ready",
+			"pr_id", data.PRID,
+			"bytes", len(unified),
+			"files", len(files),
+			"additions", additions,
+			"deletions", deletions,
+		)
 
 		return map[string]interface{}{
 			"id":   msg.ID,
 			"type": "DIFF_READY",
 			"data": map[string]interface{}{
-				"pr_id": data.PRID,
-				"diff":  unified,
+				"pr_id":     data.PRID,
+				"diff":      unified,
+				"files":     files,
+				"additions": additions,
+				"deletions": deletions,
 			},
 		}, nil
 	}

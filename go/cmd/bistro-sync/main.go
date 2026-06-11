@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/samuelasvanyi/bistro/internal/git"
 	"github.com/samuelasvanyi/bistro/internal/keychain"
 	github "github.com/samuelasvanyi/bistro/internal/provider/github"
 	"github.com/samuelasvanyi/bistro/internal/server"
@@ -93,6 +94,19 @@ func main() {
 
 	// Check keychain for an existing GitHub token — skip the auth flow if found.
 	tm := keychain.NewTokenManager()
+
+	// Git client for cloning PR branches and generating diffs locally.
+	// Clone auth comes from the keychain so private repos work without env vars.
+	gitClient := git.NewClient(git.NewCache())
+	gitClient.SetTokenSource(func() string {
+		token, err := tm.GetGitHubToken()
+		if err != nil {
+			return ""
+		}
+		return token
+	})
+	app.SetGitClient(gitClient)
+
 	existingToken, err := tm.GetGitHubToken()
 	if err == nil && existingToken != "" {
 		log.Info("found existing GitHub token in keychain — skipping OAuth flow")
