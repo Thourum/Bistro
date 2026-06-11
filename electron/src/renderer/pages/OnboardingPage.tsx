@@ -1,3 +1,4 @@
+import { useHotkey } from '@tanstack/react-hotkeys';
 import React from 'react';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
@@ -32,16 +33,7 @@ export function OnboardingPage(): React.ReactElement {
     }
   }, [confirmingAction, finish]);
 
-  React.useEffect(() => {
-    const handler = (e: KeyboardEvent): void => {
-      if (e.code === 'Space' || e.key === ' ') {
-        e.preventDefault();
-        finish();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [finish]);
+  useHotkey('Space', finish);
 
   return (
     <div className="flex flex-col flex-1 min-h-0 h-full w-full bg-background text-on-surface">

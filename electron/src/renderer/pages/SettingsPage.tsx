@@ -1,3 +1,4 @@
+import { formatForDisplay } from '@tanstack/react-hotkeys';
 import { useMemo, useState } from 'react';
 import {
   CODE_FONT_CHOICES,
@@ -16,7 +17,7 @@ import {
   updateSettings,
 } from '../store/settings';
 import type { UIState } from '../store/ui';
-import { getEffectiveBindings } from '../utils/keyboard';
+import { getEffectiveBindings, isSequenceBinding } from '../utils/keybindings';
 
 type SettingsSection =
   | 'appearance'
@@ -411,12 +412,12 @@ function KeyboardSection() {
                     {b.description}
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
-                    {b.keys.map((k, j) => (
+                    {(isSequenceBinding(b) ? b.keys : [b.keys]).map((k, j) => (
                       <kbd
                         key={`${k}-${j}`}
                         className="px-2 py-0.5 text-[10px] font-mono font-bold bg-surface-container-high text-on-surface border border-outline-variant/40"
                       >
-                        {formatKey(k)}
+                        {formatForDisplay(k)}
                       </kbd>
                     ))}
                   </div>
@@ -428,22 +429,6 @@ function KeyboardSection() {
       </div>
     </Section>
   );
-}
-
-function formatKey(k: string): string {
-  return k
-    .replace(/meta\+/gi, '⌘')
-    .replace(/ctrl\+/gi, '⌃')
-    .replace(/alt\+/gi, '⌥')
-    .replace(/shift\+/gi, '⇧')
-    .replace(/\bArrowUp\b/, '↑')
-    .replace(/\bArrowDown\b/, '↓')
-    .replace(/\bArrowLeft\b/, '←')
-    .replace(/\bArrowRight\b/, '→')
-    .replace(/\bEnter\b/, '⏎')
-    .replace(/\bEscape\b/, 'Esc')
-    .replace(/^ $/, 'Space')
-    .toUpperCase();
 }
 
 // ---------------------------------------------------------------------------

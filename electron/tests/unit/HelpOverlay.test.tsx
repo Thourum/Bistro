@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
+
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect } from 'vitest';
-import * as matchers from '@testing-library/jest-dom/matchers';
 import { HelpOverlay } from '../../src/renderer/components/HelpOverlay';
 import { appStore } from '../../src/renderer/store';
 
@@ -32,8 +33,8 @@ describe('HelpOverlay', () => {
     appStore.setState((s) => ({ ...s, mode: 'help' }));
     render(<HelpOverlay />);
     expect(screen.getByText(/Navigation/)).toBeInTheDocument();
-    // j and k are separate bindings derived from KEYBOARD_BINDING_GROUPS
-    expect(screen.getAllByText('j').length).toBeGreaterThan(0);
+    // j and k are separate bindings; TanStack's formatForDisplay renders 'J'.
+    expect(screen.getAllByText('J').length).toBeGreaterThan(0);
   });
 
   it('closes on Escape', async () => {
@@ -55,11 +56,13 @@ describe('HelpOverlay', () => {
     expect(screen.getByText(/Search/)).toBeInTheDocument();
   });
 
-  it('derives shortcuts from KEYBOARD_BINDING_GROUPS (not hardcoded)', () => {
+  it('derives shortcuts from DEFAULT_KEYBINDINGS (not hardcoded)', () => {
     appStore.setState((s) => ({ ...s, mode: 'help' }));
     render(<HelpOverlay />);
     // The Escape binding description comes from the binding definition
-    expect(screen.getByText(/Close help \/ cancel input \/ back to list/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Close help \/ cancel input \/ back to list/),
+    ).toBeInTheDocument();
   });
 
   it('shows all four section categories', () => {

@@ -5,23 +5,39 @@ import type { UIState } from '../store/ui';
 
 export type AppMode = UIState['mode'];
 
-export interface BindingDefinition {
+/**
+ * A single keyboard binding. `keys` uses TanStack Hotkeys syntax verbatim:
+ * a hotkey string for single chords (`'j'`, `'Shift+G'`, `'Mod+/'`,
+ * `'Escape'`) or an array of hotkey strings for Vim-style sequences
+ * (`['g', 'g']`). No translation layer exists — what is written here is what
+ * gets registered.
+ */
+export interface KeyBinding {
   /** Stable, human-legible id used by settings overrides, e.g. `list.down`. */
   actionId: string;
-  /** One or more key strings that trigger this binding (e.g. ['j'], ['g','g']) */
-  keys: string[];
+  /** TanStack hotkey string, or an array of them for a sequence. */
+  keys: string | readonly string[];
   description: string;
-  /** Modes in which this binding is active. Empty array = all non-search modes. */
-  modes: AppMode[];
+  /** Modes in which this binding is active. Empty array = all modes. */
+  modes: readonly AppMode[];
+  /** Excluded from the help overlay (e.g. the repetitive 2–9 jump keys). */
+  hidden?: boolean;
   action: (store: Store<UIState>) => void;
 }
 
-// ─── Global bindings (active in list, detail, help) ──────────────────────────
+/** True when the binding is a multi-chord sequence (['g','g']). */
+export function isSequenceBinding(
+  binding: KeyBinding,
+): binding is KeyBinding & { keys: readonly string[] } {
+  return Array.isArray(binding.keys);
+}
 
-const globalBindings: BindingDefinition[] = [
+// ─── Global bindings ─────────────────────────────────────────────────────────
+
+const globalBindings: KeyBinding[] = [
   {
     actionId: 'global.help',
-    keys: ['?'],
+    keys: '?',
     description: 'Show help / bindings overlay',
     modes: ['list', 'detail'],
     action: (store) => {
@@ -30,13 +46,15 @@ const globalBindings: BindingDefinition[] = [
   },
   {
     actionId: 'global.escape',
-    keys: ['Escape'],
+    keys: 'Escape',
     description: 'Close help / cancel input / back to list',
-    modes: ['list', 'detail', 'help', 'search', 'settings'],
+    modes: ['list', 'detail', 'diff', 'help', 'search', 'settings'],
     action: (store) => {
       const { mode } = store.state;
       if (mode === 'help') {
         store.setState((s) => ({ ...s, mode: 'list' }));
+      } else if (mode === 'diff') {
+        store.setState((s) => ({ ...s, mode: 'detail' }));
       } else if (mode === 'detail') {
         store.setState((s) => ({ ...s, mode: 'list' }));
       } else if (mode === 'search') {
@@ -54,7 +72,7 @@ const globalBindings: BindingDefinition[] = [
   },
   {
     actionId: 'global.command',
-    keys: [':'],
+    keys: ':',
     description: 'Open command mode',
     modes: ['list', 'detail'],
     action: (store) => {
@@ -63,7 +81,7 @@ const globalBindings: BindingDefinition[] = [
   },
   {
     actionId: 'global.quit.mac',
-    keys: ['meta+q'],
+    keys: 'Meta+Q',
     description: 'Quit app (macOS)',
     modes: ['list', 'detail', 'help', 'search'],
     action: (_store) => {
@@ -72,7 +90,7 @@ const globalBindings: BindingDefinition[] = [
   },
   {
     actionId: 'global.quit.win',
-    keys: ['alt+F4'],
+    keys: 'Alt+F4',
     description: 'Quit app (Linux/Windows)',
     modes: ['list', 'detail', 'help', 'search'],
     action: (_store) => {
@@ -81,7 +99,7 @@ const globalBindings: BindingDefinition[] = [
   },
   {
     actionId: 'global.search.mac',
-    keys: ['meta+/'],
+    keys: 'Meta+/',
     description: 'Toggle search box (macOS)',
     modes: ['list', 'detail'],
     action: (store) => {
@@ -95,7 +113,7 @@ const globalBindings: BindingDefinition[] = [
   },
   {
     actionId: 'global.search.win',
-    keys: ['ctrl+/'],
+    keys: 'Control+/',
     description: 'Toggle search box (Linux/Windows)',
     modes: ['list', 'detail'],
     action: (store) => {
@@ -111,9 +129,9 @@ const globalBindings: BindingDefinition[] = [
 
 // ─── Login bindings (derived from PROVIDER_META) ────────────────────────────
 
-const loginBindings: BindingDefinition[] = PROVIDERS.map((provider) => ({
+const loginBindings: KeyBinding[] = PROVIDERS.map((provider) => ({
   actionId: `login.provider.${provider.id}`,
-  keys: [provider.key],
+  keys: provider.key,
   description: `Login with ${provider.label}`,
   modes: ['login'] as AppMode[],
   action: (store: Store<UIState>) => {
@@ -123,10 +141,26 @@ const loginBindings: BindingDefinition[] = PROVIDERS.map((provider) => ({
 
 // ─── PR List bindings (active in list mode only) ──────────────────────────────
 
-const listBindings: BindingDefinition[] = [
+/** Jump bindings for digits 1–9; only the first is shown in the help overlay. */
+const jumpBindings: KeyBinding[] = Array.from({ length: 9 }, (_, i) => {
+  const digit = i + 1;
+  return {
+    actionId: `list.jumpTo${digit}`,
+    keys: String(digit),
+    description:
+      digit === 1 ? 'Jump to Nth PR (press 1–9)' : `Jump to PR #${digit}`,
+    modes: ['list'] as AppMode[],
+    hidden: digit !== 1,
+    action: (store: Store<UIState>) => {
+      store.setState((s) => ({ ...s, selectedPRIndex: digit - 1 }));
+    },
+  };
+});
+
+const listBindings: KeyBinding[] = [
   {
     actionId: 'list.down',
-    keys: ['j'],
+    keys: 'j',
     description: 'Move to next PR',
     modes: ['list'],
     action: (store) => {
@@ -135,7 +169,7 @@ const listBindings: BindingDefinition[] = [
   },
   {
     actionId: 'list.up',
-    keys: ['k'],
+    keys: 'k',
     description: 'Move to previous PR',
     modes: ['list'],
     action: (store) => {
@@ -156,7 +190,7 @@ const listBindings: BindingDefinition[] = [
   },
   {
     actionId: 'list.bottom',
-    keys: ['G'],
+    keys: 'Shift+G',
     description: 'Jump to bottom of PR list',
     modes: ['list'],
     action: (store) => {
@@ -168,7 +202,7 @@ const listBindings: BindingDefinition[] = [
   },
   {
     actionId: 'list.open',
-    keys: ['Enter'],
+    keys: 'Enter',
     description: 'Open selected PR in detail view',
     modes: ['list'],
     action: (store) => {
@@ -177,7 +211,7 @@ const listBindings: BindingDefinition[] = [
   },
   {
     actionId: 'list.search',
-    keys: ['/'],
+    keys: '/',
     description: 'Focus search box',
     modes: ['list'],
     action: (store) => {
@@ -186,7 +220,7 @@ const listBindings: BindingDefinition[] = [
   },
   {
     actionId: 'list.filter',
-    keys: ['f'],
+    keys: 'f',
     description: 'Toggle filter menu',
     modes: ['list'],
     action: (store) => {
@@ -200,7 +234,7 @@ const listBindings: BindingDefinition[] = [
   },
   {
     actionId: 'list.pageDown',
-    keys: ['ctrl+d'],
+    keys: 'Control+D',
     description: 'Page down (5 PRs at a time)',
     modes: ['list'],
     action: (store) => {
@@ -209,7 +243,7 @@ const listBindings: BindingDefinition[] = [
   },
   {
     actionId: 'list.pageUp',
-    keys: ['ctrl+u'],
+    keys: 'Control+U',
     description: 'Page up (5 PRs at a time)',
     modes: ['list'],
     action: (store) => {
@@ -221,7 +255,7 @@ const listBindings: BindingDefinition[] = [
   },
   {
     actionId: 'list.openBrowser',
-    keys: ['o'],
+    keys: 'o',
     description: 'Open selected PR in browser',
     modes: ['list'],
     action: (store) => {
@@ -230,7 +264,7 @@ const listBindings: BindingDefinition[] = [
   },
   {
     actionId: 'list.preview',
-    keys: [' '],
+    keys: 'Space',
     description: 'Preview PR metadata tooltip',
     modes: ['list'],
     action: (store) => {
@@ -239,7 +273,7 @@ const listBindings: BindingDefinition[] = [
   },
   {
     actionId: 'list.draft',
-    keys: ['d'],
+    keys: 'd',
     description: 'Mark PR as draft / un-draft',
     modes: ['list'],
     action: (store) => {
@@ -248,7 +282,7 @@ const listBindings: BindingDefinition[] = [
   },
   {
     actionId: 'list.mute',
-    keys: ['m'],
+    keys: 'm',
     description: 'Toggle mute (hide PR from list)',
     modes: ['list'],
     action: (store) => {
@@ -257,30 +291,22 @@ const listBindings: BindingDefinition[] = [
   },
   {
     actionId: 'list.star',
-    keys: ['s'],
+    keys: 's',
     description: 'Star / unstar PR',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({ ...s, confirmingAction: 'star' }));
     },
   },
-  {
-    actionId: 'list.jumpToN',
-    keys: ['1-9'],
-    description: 'Jump to Nth PR (1 = first, 9 = ninth)',
-    modes: ['list'],
-    action: (_store) => {
-      // Resolved by the hook via a special-case; no-op placeholder.
-    },
-  },
+  ...jumpBindings,
 ];
 
 // ─── Detail View bindings (active in detail mode only) ────────────────────────
 
-const detailBindings: BindingDefinition[] = [
+const detailBindings: KeyBinding[] = [
   {
     actionId: 'detail.nextFile',
-    keys: ['n'],
+    keys: 'n',
     description: 'Next file in diff',
     modes: ['detail'],
     action: (store) => {
@@ -292,7 +318,7 @@ const detailBindings: BindingDefinition[] = [
   },
   {
     actionId: 'detail.prevFile',
-    keys: ['p'],
+    keys: 'p',
     description: 'Previous file in diff',
     modes: ['detail'],
     action: (store) => {
@@ -300,6 +326,15 @@ const detailBindings: BindingDefinition[] = [
         ...s,
         selectedFileIndex: Math.max(0, s.selectedFileIndex - 1),
       }));
+    },
+  },
+  {
+    actionId: 'detail.viewDiff',
+    keys: 'Space',
+    description: 'Open full-screen diff view',
+    modes: ['detail'],
+    action: (store) => {
+      store.setState((s) => ({ ...s, mode: 'diff' }));
     },
   },
   {
@@ -321,7 +356,7 @@ const detailBindings: BindingDefinition[] = [
   },
   {
     actionId: 'detail.comment',
-    keys: ['c'],
+    keys: 'c',
     description: 'Comment on current line',
     modes: ['detail'],
     action: (store) => {
@@ -330,7 +365,7 @@ const detailBindings: BindingDefinition[] = [
   },
   {
     actionId: 'detail.reply',
-    keys: ['r'],
+    keys: 'r',
     description: 'Reply to existing comment',
     modes: ['detail'],
     action: (store) => {
@@ -341,10 +376,10 @@ const detailBindings: BindingDefinition[] = [
 
 // ─── Filter mode bindings (active when filter menu is open) ──────────────────
 
-const filterBindings: BindingDefinition[] = [
+const filterBindings: KeyBinding[] = [
   {
     actionId: 'filter.needsAction',
-    keys: ['n'],
+    keys: 'n',
     description: 'Set filter to Needs Action',
     modes: ['filter'],
     action: (store) => {
@@ -353,7 +388,7 @@ const filterBindings: BindingDefinition[] = [
   },
   {
     actionId: 'filter.open',
-    keys: ['o'],
+    keys: 'o',
     description: 'Set filter to Open',
     modes: ['filter'],
     action: (store) => {
@@ -362,7 +397,7 @@ const filterBindings: BindingDefinition[] = [
   },
   {
     actionId: 'filter.draft',
-    keys: ['d'],
+    keys: 'd',
     description: 'Set filter to Draft',
     modes: ['filter'],
     action: (store) => {
@@ -371,7 +406,7 @@ const filterBindings: BindingDefinition[] = [
   },
   {
     actionId: 'filter.all',
-    keys: ['a'],
+    keys: 'a',
     description: 'Set filter to All',
     modes: ['filter'],
     action: (store) => {
@@ -380,7 +415,7 @@ const filterBindings: BindingDefinition[] = [
   },
   {
     actionId: 'filter.close',
-    keys: ['Escape'],
+    keys: 'Escape',
     description: 'Close filter menu',
     modes: ['filter'],
     action: (store) => {
@@ -389,7 +424,7 @@ const filterBindings: BindingDefinition[] = [
   },
   {
     actionId: 'filter.toggle',
-    keys: ['f'],
+    keys: 'f',
     description: 'Close filter menu',
     modes: ['filter'],
     action: (store) => {
@@ -400,10 +435,10 @@ const filterBindings: BindingDefinition[] = [
 
 // ─── Detail View scroll bindings ─────────────────────────────────────────────
 
-const detailScrollBindings: BindingDefinition[] = [
+const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.scrollLeft',
-    keys: ['h'],
+    keys: 'h',
     description: 'Scroll left in diff',
     modes: ['detail'],
     action: (_store) => {
@@ -412,7 +447,7 @@ const detailScrollBindings: BindingDefinition[] = [
   },
   {
     actionId: 'detail.scrollDown',
-    keys: ['j'],
+    keys: 'j',
     description: 'Scroll down in diff',
     modes: ['detail'],
     action: (_store) => {
@@ -421,7 +456,7 @@ const detailScrollBindings: BindingDefinition[] = [
   },
   {
     actionId: 'detail.scrollUp',
-    keys: ['k'],
+    keys: 'k',
     description: 'Scroll up in diff',
     modes: ['detail'],
     action: (_store) => {
@@ -430,7 +465,7 @@ const detailScrollBindings: BindingDefinition[] = [
   },
   {
     actionId: 'detail.scrollRight',
-    keys: ['l'],
+    keys: 'l',
     description: 'Scroll right in diff',
     modes: ['detail'],
     action: (_store) => {
@@ -439,7 +474,7 @@ const detailScrollBindings: BindingDefinition[] = [
   },
   {
     actionId: 'detail.pageDown',
-    keys: ['ctrl+d'],
+    keys: 'Control+D',
     description: 'Page down in diff',
     modes: ['detail'],
     action: (_store) => {
@@ -448,7 +483,7 @@ const detailScrollBindings: BindingDefinition[] = [
   },
   {
     actionId: 'detail.pageUp',
-    keys: ['ctrl+u'],
+    keys: 'Control+U',
     description: 'Page up in diff',
     modes: ['detail'],
     action: (_store) => {
@@ -457,7 +492,7 @@ const detailScrollBindings: BindingDefinition[] = [
   },
   {
     actionId: 'detail.scrollTop',
-    keys: ['0'],
+    keys: '0',
     description: 'Jump to top of diff',
     modes: ['detail'],
     action: (_store) => {
@@ -469,7 +504,7 @@ const detailScrollBindings: BindingDefinition[] = [
   },
   {
     actionId: 'detail.scrollBottom',
-    keys: ['$'],
+    keys: '$',
     description: 'Jump to bottom of diff',
     modes: ['detail'],
     action: (_store) => {
@@ -482,11 +517,11 @@ const detailScrollBindings: BindingDefinition[] = [
 ];
 
 /**
- * Default (code-defined) keyboard bindings. This is the authoritative source
- * of truth; overrides from `settings.keybindings` are merged on top via
+ * Default (code-defined) keybindings. This is the authoritative source of
+ * truth; overrides from `settings.keybindings` are merged on top via
  * {@link getEffectiveBindings}.
  */
-export const DEFAULT_KEYBOARD_BINDINGS: BindingDefinition[] = [
+export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   ...globalBindings,
   ...loginBindings,
   ...listBindings,
@@ -496,39 +531,27 @@ export const DEFAULT_KEYBOARD_BINDINGS: BindingDefinition[] = [
 ];
 
 /**
- * Back-compat alias — existing callers import `KEYBOARD_BINDING_GROUPS`.
- * Prefer `DEFAULT_KEYBOARD_BINDINGS` or `getEffectiveBindings()` in new code.
- */
-export const KEYBOARD_BINDING_GROUPS: BindingDefinition[] =
-  DEFAULT_KEYBOARD_BINDINGS;
-
-/**
  * Merge user overrides from `settings.keybindings` onto the defaults.
  *
+ * Override values are arrays of TanStack hotkey strings:
  * - Absent entries fall back to the default keys.
  * - Empty arrays (`[]`) are treated as "remove this binding".
- * - Non-empty arrays replace the default keys wholesale.
+ * - One-element arrays replace the binding with a single hotkey.
+ * - Multi-element arrays replace it with a sequence.
  */
 export function getEffectiveBindings(
   overrides: KeybindingOverrides,
-): BindingDefinition[] {
-  const result: BindingDefinition[] = [];
-  for (const binding of DEFAULT_KEYBOARD_BINDINGS) {
+): KeyBinding[] {
+  const result: KeyBinding[] = [];
+  for (const binding of DEFAULT_KEYBINDINGS) {
     const override = overrides[binding.actionId];
     if (override === undefined) {
       result.push(binding);
       continue;
     }
     if (override.length === 0) continue;
-    result.push({ ...binding, keys: override });
+    const keys = override.length === 1 ? (override[0] as string) : override;
+    result.push({ ...binding, keys });
   }
   return result;
-}
-
-/**
- * Returns the sequence string for a binding definition.
- * Single-key bindings return the key itself; multi-key bindings join them.
- */
-export function bindingSequence(binding: BindingDefinition): string {
-  return binding.keys.join('');
 }

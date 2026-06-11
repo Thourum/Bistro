@@ -53,18 +53,6 @@ export function DiffPage() {
       });
   }, [pr, request]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (appStore.state.mode !== 'diff') return;
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        appStore.setState((s) => ({ ...s, mode: 'detail' }));
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
   if (pr === undefined) {
     return (
       <div className="flex-1 flex items-center justify-center text-error">

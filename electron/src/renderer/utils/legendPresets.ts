@@ -1,4 +1,9 @@
-import type { AppMode, BindingDefinition } from './keyboard';
+import { formatForDisplay } from '@tanstack/react-hotkeys';
+import {
+  type AppMode,
+  isSequenceBinding,
+  type KeyBinding,
+} from './keybindings';
 
 /**
  * Per-mode footer legend preset.
@@ -43,25 +48,15 @@ export interface FooterLegendEntry {
   description: string;
 }
 
-/** Pretty-print a binding's keys into a compact footer label (e.g. `ctrl+d` → `^D`). */
-function formatKeys(keys: string[]): string {
-  if (keys.length === 0) return '';
-  if (keys.length > 1 && keys.every((k) => k.length === 1)) {
-    // Multi-tap sequence, e.g. ['g','g'] → `GG`, ['a','a'] → `AA`.
-    return keys.map((k) => k.toUpperCase()).join('');
+/**
+ * Pretty-print a binding's keys via TanStack Hotkeys' platform-aware
+ * formatter. Sequences render their formatted steps joined by a space.
+ */
+export function formatBindingKeys(binding: KeyBinding): string {
+  if (isSequenceBinding(binding)) {
+    return binding.keys.map((step) => formatForDisplay(step)).join(' ');
   }
-  // Single key (or modifier combo).
-  const key = keys[0];
-  if (!key) return '';
-  return key
-    .replace(/meta\+/gi, '⌘')
-    .replace(/ctrl\+/gi, '^')
-    .replace(/shift\+/gi, '⇧')
-    .replace(/alt\+/gi, '⌥')
-    .replace(/^ $/, 'SPACE')
-    .replace(/^Enter$/i, 'ENTER')
-    .replace(/^Escape$/i, 'ESC')
-    .toUpperCase();
+  return formatForDisplay(binding.keys);
 }
 
 /**
@@ -70,7 +65,7 @@ function formatKeys(keys: string[]): string {
  */
 export function buildLegendForMode(
   mode: AppMode,
-  bindings: BindingDefinition[],
+  bindings: KeyBinding[],
 ): FooterLegendEntry[] {
   const preset = FOOTER_LEGEND_PRESETS[mode];
   if (!preset || preset.length === 0) return [];
@@ -82,7 +77,7 @@ export function buildLegendForMode(
     if (binding.keys.length === 0) continue;
     entries.push({
       actionId: id,
-      label: formatKeys(binding.keys),
+      label: formatBindingKeys(binding),
       description: binding.description,
     });
   }

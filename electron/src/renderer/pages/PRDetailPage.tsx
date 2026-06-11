@@ -117,19 +117,6 @@ export function PRDetailPage() {
       });
   }, [pr, request]);
 
-  // Enter diff mode on SPACE
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (appStore.state.mode !== 'detail') return;
-      if (e.code === 'Space' && e.target === document.body) {
-        e.preventDefault();
-        appStore.setState((s) => ({ ...s, mode: 'diff' }));
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center text-on-surface-variant font-mono uppercase tracking-widest text-xs">

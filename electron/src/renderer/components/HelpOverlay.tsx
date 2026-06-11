@@ -2,8 +2,9 @@ import type React from 'react';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
-import type { BindingDefinition } from '../utils/keyboard';
-import { bindingSequence, getEffectiveBindings } from '../utils/keyboard';
+import type { KeyBinding } from '../utils/keybindings';
+import { getEffectiveBindings } from '../utils/keybindings';
+import { formatBindingKeys } from '../utils/legendPresets';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { ScrollArea } from './ui/scroll-area';
 
@@ -17,54 +18,71 @@ interface ShortcutSection {
   readonly shortcuts: readonly ShortcutRow[];
 }
 
-function toRow(b: BindingDefinition): ShortcutRow {
-  return { key: bindingSequence(b), description: b.description };
+function toRow(b: KeyBinding): ShortcutRow {
+  return { key: formatBindingKeys(b), description: b.description };
 }
 
-function buildSections(bindings: BindingDefinition[]): ShortcutSection[] {
-  const navigationKeys = new Set([
-    'j',
-    'k',
-    'gg',
-    'G',
-    'n',
-    'p',
-    'h',
-    'l',
-    'ctrl+d',
-    'ctrl+u',
-    '0',
-    '$',
-  ]);
-  const actionKeys = new Set([
-    'Enter',
-    'a',
-    'aa',
-    'Escape',
-    'c',
-    'r',
-    'o',
-    ' ',
-    'd',
-    'm',
-    's',
-  ]);
-  const searchKeys = new Set(['/', ':', 'f', '?', 'meta+/', 'ctrl+/']);
+// Sections are keyed by stable actionIds so user-remapped keys stay grouped.
+const NAVIGATION_IDS = new Set([
+  'list.down',
+  'list.up',
+  'list.top',
+  'list.bottom',
+  'list.pageDown',
+  'list.pageUp',
+  'list.jumpTo1',
+  'detail.nextFile',
+  'detail.prevFile',
+  'detail.scrollLeft',
+  'detail.scrollDown',
+  'detail.scrollUp',
+  'detail.scrollRight',
+  'detail.pageDown',
+  'detail.pageUp',
+  'detail.scrollTop',
+  'detail.scrollBottom',
+]);
 
-  const navBindings = bindings.filter((b) =>
-    navigationKeys.has(bindingSequence(b)),
-  );
-  const actionBindings = bindings.filter((b) =>
-    actionKeys.has(bindingSequence(b)),
-  );
-  const searchBindings = bindings.filter((b) =>
-    searchKeys.has(bindingSequence(b)),
-  );
-  const globalBindings = bindings.filter(
+const ACTION_IDS = new Set([
+  'list.open',
+  'list.openBrowser',
+  'list.preview',
+  'list.draft',
+  'list.mute',
+  'list.star',
+  'detail.viewDiff',
+  'detail.approve',
+  'detail.comment',
+  'detail.reply',
+  'global.escape',
+  'filter.needsAction',
+  'filter.open',
+  'filter.draft',
+  'filter.all',
+  'filter.close',
+]);
+
+const SEARCH_IDS = new Set([
+  'list.search',
+  'list.filter',
+  'filter.toggle',
+  'global.command',
+  'global.help',
+  'global.search.mac',
+  'global.search.win',
+]);
+
+function buildSections(bindings: KeyBinding[]): ShortcutSection[] {
+  const visible = bindings.filter((b) => b.hidden !== true);
+
+  const navBindings = visible.filter((b) => NAVIGATION_IDS.has(b.actionId));
+  const actionBindings = visible.filter((b) => ACTION_IDS.has(b.actionId));
+  const searchBindings = visible.filter((b) => SEARCH_IDS.has(b.actionId));
+  const globalBindings = visible.filter(
     (b) =>
-      !navigationKeys.has(bindingSequence(b)) &&
-      !actionKeys.has(bindingSequence(b)) &&
-      !searchKeys.has(bindingSequence(b)),
+      !NAVIGATION_IDS.has(b.actionId) &&
+      !ACTION_IDS.has(b.actionId) &&
+      !SEARCH_IDS.has(b.actionId),
   );
 
   const sections: ShortcutSection[] = [

@@ -5,7 +5,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { FooterSlotProvider } from './components/FooterSlot';
 import { HelpOverlay } from './components/HelpOverlay';
 import ToastContainer from './components/ToastContainer';
-import { useKeyboardIntegration } from './hooks/useKeyboardIntegration';
+import { useAppHotkeys } from './hooks/useAppHotkeys';
 import { useSettingsEffect } from './hooks/useSettingsEffect';
 import { useStore } from './hooks/useStore';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -69,7 +69,7 @@ export function AppContent(): React.ReactElement {
 }
 
 export function AuthGate(): React.ReactElement {
-  useKeyboardIntegration();
+  useAppHotkeys();
   useSettingsEffect();
   useWebSocket();
 

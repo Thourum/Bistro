@@ -41,14 +41,16 @@ export interface PRListSettings {
 /**
  * Overrides for keyboard bindings.
  *
- * Maps a stable `actionId` (see `utils/keyboard.ts`) to a tuple/sequence of
- * key strings. Presence here overrides the default defined in code. Absence
- * means the default is used.
+ * Maps a stable `actionId` (see `utils/keybindings.ts`) to an array of
+ * TanStack Hotkeys strings. One element = a single hotkey; multiple
+ * elements = a Vim-style sequence; an empty array unbinds the action.
+ * Absence means the default is used.
  *
  * Examples:
- *   { "pr-list.down": ["j"] }       // single-key
- *   { "pr-list.top": ["g", "g"] }   // two-key sequence
- *   { "pr-list.search": ["meta+/"] } // modifier combo
+ *   { "list.down": ["j"] }          // single key
+ *   { "list.top": ["g", "g"] }      // two-key sequence
+ *   { "list.search": ["Meta+/"] }   // modifier combo
+ *   { "list.mute": [] }             // unbind
  */
 export type KeybindingOverrides = Record<string, string[]>;
 

@@ -3,7 +3,7 @@ import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
-import { getEffectiveBindings } from '../utils/keyboard';
+import { getEffectiveBindings } from '../utils/keybindings';
 import { buildLegendForMode } from '../utils/legendPresets';
 import { useFooterSlotContent } from './FooterSlot';
 
