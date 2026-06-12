@@ -58,11 +58,16 @@ export interface FooterLegendEntry {
  * Pretty-print a binding's keys via TanStack Hotkeys' platform-aware
  * formatter. Sequences render their formatted steps joined by a space.
  */
-export function formatBindingKeys(binding: KeyBinding): string {
+export function formatBindingKeys(
+  binding: KeyBinding,
+  options?: Parameters<typeof formatForDisplay>[1],
+): string {
   if (isSequenceBinding(binding)) {
-    return binding.keys.map((step) => formatForDisplay(step)).join(' ');
+    return binding.keys
+      .map((step) => formatForDisplay(step, options))
+      .join(' ');
   }
-  return formatForDisplay(binding.keys);
+  return formatForDisplay(binding.keys, options);
 }
 
 /**

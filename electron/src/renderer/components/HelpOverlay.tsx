@@ -19,7 +19,11 @@ interface ShortcutSection {
 }
 
 function toRow(b: KeyBinding): ShortcutRow {
-  return { key: formatBindingKeys(b), description: b.description };
+  // useSymbols: false renders 'Cmd+/' style labels instead of '⌘ /' symbols.
+  return {
+    key: formatBindingKeys(b, { useSymbols: false }),
+    description: b.description,
+  };
 }
 
 // Sections are keyed by stable actionIds so user-remapped keys stay grouped.
@@ -68,8 +72,8 @@ const SEARCH_IDS = new Set([
   'filter.toggle',
   'global.command',
   'global.help',
-  'global.search.mac',
-  'global.search.win',
+  'global.search',
+  'global.settings',
 ]);
 
 function buildSections(
@@ -136,7 +140,7 @@ export function HelpOverlay(): React.ReactElement | null {
                 <div className="space-y-2 text-sm">
                   {section.shortcuts.map((shortcut) => (
                     <div key={shortcut.key} className="flex justify-between">
-                      <kbd className="font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded text-xs min-w-[3rem] text-center">
+                      <kbd className=" text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded border text-sm  border-gray-500/20 text-center">
                         {shortcut.key}
                       </kbd>
                       <span className="text-on-surface">

@@ -40,7 +40,7 @@ const globalBindings: KeyBinding[] = [
     // The matcher requires exact modifier state, so shifted punctuation is
     // written as Shift + the physical base key ('?' = Shift+/ on US layouts).
     keys: 'Shift+/',
-    description: 'Show help / bindings overlay',
+    description: 'Help',
     modes: ['list', 'detail'],
     action: (store) => {
       store.setState((s) => ({
@@ -53,7 +53,7 @@ const globalBindings: KeyBinding[] = [
   {
     actionId: 'global.escape',
     keys: 'Escape',
-    description: 'Close help / cancel input / back to list',
+    description: 'Back / Cancel',
     modes: ['list', 'detail', 'diff', 'help', 'search', 'settings'],
     action: (store) => {
       const { mode } = store.state;
@@ -79,7 +79,7 @@ const globalBindings: KeyBinding[] = [
   {
     actionId: 'global.command',
     keys: 'Shift+;', // ':' on US layouts
-    description: 'Open command mode',
+    description: 'Commands',
     modes: ['list', 'detail'],
     action: (store) => {
       store.setState((s) => ({ ...s, mode: 'command' }));
@@ -88,7 +88,7 @@ const globalBindings: KeyBinding[] = [
   {
     actionId: 'global.settings',
     keys: 'Mod+,',
-    description: 'Open settings',
+    description: 'Settings',
     modes: ['list', 'detail'],
     action: (store) => {
       store.setState((s) => ({ ...s, mode: 'settings' }));
@@ -97,7 +97,7 @@ const globalBindings: KeyBinding[] = [
   {
     actionId: 'global.quit.mac',
     keys: 'Meta+Q',
-    description: 'Quit app (macOS)',
+    description: 'Quit',
     modes: ['list', 'detail', 'help', 'search'],
     action: (_store) => {
       window.electronAPI?.quitApp?.();
@@ -106,7 +106,7 @@ const globalBindings: KeyBinding[] = [
   {
     actionId: 'global.quit.win',
     keys: 'Alt+F4',
-    description: 'Quit app (Linux/Windows)',
+    description: 'Quit',
     modes: ['list', 'detail', 'help', 'search'],
     action: (_store) => {
       window.electronAPI?.quitApp?.();
@@ -117,7 +117,7 @@ const globalBindings: KeyBinding[] = [
     // 'Mod' resolves to Meta on macOS and Control elsewhere — one binding
     // covers all platforms, and formatForDisplay renders it natively.
     keys: 'Mod+/',
-    description: 'Toggle search box',
+    description: 'Search',
     modes: ['list', 'detail'],
     action: (store) => {
       const { mode } = store.state;
@@ -150,8 +150,7 @@ const jumpBindings: KeyBinding[] = Array.from({ length: 9 }, (_, i) => {
   return {
     actionId: `list.jumpTo${digit}`,
     keys: String(digit),
-    description:
-      digit === 1 ? 'Jump to Nth PR (press 1–9)' : `Jump to PR #${digit}`,
+    description: digit === 1 ? 'Jump to PR (1–9)' : `Jump to PR #${digit}`,
     modes: ['list'] as AppMode[],
     hidden: digit !== 1,
     action: (store: Store<UIState>) => {
@@ -164,7 +163,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.down',
     keys: 'j',
-    description: 'Move to next PR',
+    description: 'Next',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({ ...s, selectedPRIndex: s.selectedPRIndex + 1 }));
@@ -173,7 +172,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.up',
     keys: 'k',
-    description: 'Move to previous PR',
+    description: 'Previous',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({
@@ -185,7 +184,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.downArrow',
     keys: 'ArrowDown',
-    description: 'Move to next PR',
+    description: 'Next',
     modes: ['list'],
     hidden: true,
     action: (store) => {
@@ -195,7 +194,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.upArrow',
     keys: 'ArrowUp',
-    description: 'Move to previous PR',
+    description: 'Previous',
     modes: ['list'],
     hidden: true,
     action: (store) => {
@@ -208,7 +207,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.top',
     keys: ['g', 'g'],
-    description: 'Jump to top of PR list',
+    description: 'Jump to top',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({ ...s, selectedPRIndex: 0 }));
@@ -217,7 +216,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.bottom',
     keys: 'Shift+G',
-    description: 'Jump to bottom of PR list',
+    description: 'Jump to bottom',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({
@@ -229,7 +228,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.open',
     keys: 'Enter',
-    description: 'Open selected PR in detail view',
+    description: 'Open',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({ ...s, mode: 'detail' }));
@@ -238,7 +237,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.search',
     keys: '/',
-    description: 'Focus search box',
+    description: 'Search',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({ ...s, mode: 'search' }));
@@ -247,7 +246,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.filter',
     keys: 'f',
-    description: 'Toggle filter menu',
+    description: 'Filter',
     modes: ['list'],
     action: (store) => {
       const isOpen = store.state.filterMenuOpen;
@@ -261,7 +260,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.pageDown',
     keys: 'Control+D',
-    description: 'Page down (5 PRs at a time)',
+    description: 'Down (5 PRs)',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({ ...s, selectedPRIndex: s.selectedPRIndex + 5 }));
@@ -270,7 +269,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.pageUp',
     keys: 'Control+U',
-    description: 'Page up (5 PRs at a time)',
+    description: 'Up (5 PRs)',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({
@@ -282,7 +281,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.openBrowser',
     keys: 'o',
-    description: 'Open selected PR in browser',
+    description: 'Open (in Browser)',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({ ...s, confirmingAction: 'open-browser' }));
@@ -291,7 +290,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.preview',
     keys: 'Space',
-    description: 'Preview PR metadata tooltip',
+    description: 'Preview',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({ ...s, confirmingAction: 'preview' }));
@@ -300,7 +299,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.draft',
     keys: 'd',
-    description: 'Mark PR as draft / un-draft',
+    description: 'Toggle draft',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({ ...s, confirmingAction: 'draft' }));
@@ -309,7 +308,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.mute',
     keys: 'm',
-    description: 'Toggle mute (hide PR from list)',
+    description: 'Mute',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({ ...s, confirmingAction: 'mute' }));
@@ -318,7 +317,7 @@ const listBindings: KeyBinding[] = [
   {
     actionId: 'list.star',
     keys: 's',
-    description: 'Star / unstar PR',
+    description: 'Star',
     modes: ['list'],
     action: (store) => {
       store.setState((s) => ({ ...s, confirmingAction: 'star' }));
@@ -333,7 +332,7 @@ const detailBindings: KeyBinding[] = [
   {
     actionId: 'detail.nextFile',
     keys: 'n',
-    description: 'Next file in diff',
+    description: 'Next file',
     modes: ['detail', 'diff'],
     action: (store) => {
       store.setState((s) => ({
@@ -345,7 +344,7 @@ const detailBindings: KeyBinding[] = [
   {
     actionId: 'detail.prevFile',
     keys: 'p',
-    description: 'Previous file in diff',
+    description: 'Previous file',
     modes: ['detail', 'diff'],
     action: (store) => {
       store.setState((s) => ({
@@ -357,7 +356,7 @@ const detailBindings: KeyBinding[] = [
   {
     actionId: 'detail.viewDiff',
     keys: 'Space',
-    description: 'Open full-screen diff view',
+    description: 'View diff',
     modes: ['detail'],
     action: (store) => {
       store.setState((s) => ({ ...s, mode: 'diff' }));
@@ -366,7 +365,7 @@ const detailBindings: KeyBinding[] = [
   {
     actionId: 'detail.approve',
     keys: ['a', 'a'],
-    description: 'Approve PR (double-tap to confirm)',
+    description: 'Approve (double-tap)',
     modes: ['detail'],
     action: (store) => {
       const { confirmingAction } = store.state;
@@ -383,7 +382,7 @@ const detailBindings: KeyBinding[] = [
   {
     actionId: 'detail.comment',
     keys: 'c',
-    description: 'Comment on current line',
+    description: 'Comment',
     modes: ['detail'],
     action: (store) => {
       store.setState((s) => ({ ...s, confirmingAction: 'comment' }));
@@ -392,7 +391,7 @@ const detailBindings: KeyBinding[] = [
   {
     actionId: 'detail.reply',
     keys: 'r',
-    description: 'Reply to existing comment',
+    description: 'Reply',
     modes: ['detail'],
     action: (store) => {
       store.setState((s) => ({ ...s, confirmingAction: 'reply' }));
@@ -421,7 +420,7 @@ const filterBindings: KeyBinding[] = [
   {
     actionId: 'filter.needsAction',
     keys: 'n',
-    description: 'Set filter to Needs Action',
+    description: 'Needs Action',
     modes: ['filter'],
     action: (store) => {
       applyFilter(store, 'needs_action');
@@ -430,7 +429,7 @@ const filterBindings: KeyBinding[] = [
   {
     actionId: 'filter.open',
     keys: 'o',
-    description: 'Set filter to Open',
+    description: 'Open',
     modes: ['filter'],
     action: (store) => {
       applyFilter(store, 'open');
@@ -439,7 +438,7 @@ const filterBindings: KeyBinding[] = [
   {
     actionId: 'filter.draft',
     keys: 'd',
-    description: 'Set filter to Draft',
+    description: 'Draft',
     modes: ['filter'],
     action: (store) => {
       applyFilter(store, 'draft');
@@ -448,7 +447,7 @@ const filterBindings: KeyBinding[] = [
   {
     actionId: 'filter.all',
     keys: 'a',
-    description: 'Set filter to All',
+    description: 'All',
     modes: ['filter'],
     action: (store) => {
       applyFilter(store, 'all');
@@ -457,7 +456,7 @@ const filterBindings: KeyBinding[] = [
   {
     actionId: 'filter.close',
     keys: 'Escape',
-    description: 'Close filter menu',
+    description: 'Close',
     modes: ['filter'],
     action: (store) => {
       store.setState((s) => ({ ...s, filterMenuOpen: false, mode: 'list' }));
@@ -466,7 +465,7 @@ const filterBindings: KeyBinding[] = [
   {
     actionId: 'filter.toggle',
     keys: 'f',
-    description: 'Close filter menu',
+    description: 'Close',
     modes: ['filter'],
     action: (store) => {
       store.setState((s) => ({ ...s, filterMenuOpen: false, mode: 'list' }));
@@ -480,7 +479,7 @@ const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.scrollLeft',
     keys: 'h',
-    description: 'Scroll left in diff',
+    description: 'Scroll left',
     modes: ['detail', 'diff'],
     action: (_store) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ left: -80 });
@@ -489,7 +488,7 @@ const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.scrollDown',
     keys: 'j',
-    description: 'Scroll down in diff',
+    description: 'Scroll down',
     modes: ['detail', 'diff'],
     action: (_store) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 40 });
@@ -498,7 +497,7 @@ const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.scrollUp',
     keys: 'k',
-    description: 'Scroll up in diff',
+    description: 'Scroll up',
     modes: ['detail', 'diff'],
     action: (_store) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -40 });
@@ -507,7 +506,7 @@ const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.scrollRight',
     keys: 'l',
-    description: 'Scroll right in diff',
+    description: 'Scroll right',
     modes: ['detail', 'diff'],
     action: (_store) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ left: 80 });
@@ -516,7 +515,7 @@ const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.scrollDownArrow',
     keys: 'ArrowDown',
-    description: 'Scroll down in diff',
+    description: 'Scroll down',
     modes: ['detail', 'diff'],
     hidden: true,
     action: (_store) => {
@@ -526,7 +525,7 @@ const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.scrollUpArrow',
     keys: 'ArrowUp',
-    description: 'Scroll up in diff',
+    description: 'Scroll up',
     modes: ['detail', 'diff'],
     hidden: true,
     action: (_store) => {
@@ -536,7 +535,7 @@ const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.scrollLeftArrow',
     keys: 'ArrowLeft',
-    description: 'Scroll left in diff',
+    description: 'Scroll left',
     modes: ['detail', 'diff'],
     hidden: true,
     action: (_store) => {
@@ -546,7 +545,7 @@ const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.scrollRightArrow',
     keys: 'ArrowRight',
-    description: 'Scroll right in diff',
+    description: 'Scroll right',
     modes: ['detail', 'diff'],
     hidden: true,
     action: (_store) => {
@@ -556,7 +555,7 @@ const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.pageDown',
     keys: 'Control+D',
-    description: 'Page down in diff',
+    description: 'Page down',
     modes: ['detail', 'diff'],
     action: (_store) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 300 });
@@ -565,7 +564,7 @@ const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.pageUp',
     keys: 'Control+U',
-    description: 'Page up in diff',
+    description: 'Page up',
     modes: ['detail', 'diff'],
     action: (_store) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -300 });
@@ -574,7 +573,7 @@ const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.scrollTop',
     keys: '0',
-    description: 'Jump to top of diff',
+    description: 'Jump to top',
     modes: ['detail', 'diff'],
     action: (_store) => {
       const el = document.querySelector(
@@ -586,7 +585,7 @@ const detailScrollBindings: KeyBinding[] = [
   {
     actionId: 'detail.scrollBottom',
     keys: 'Shift+4', // '$' on US layouts
-    description: 'Jump to bottom of diff',
+    description: 'Jump to bottom',
     modes: ['detail', 'diff'],
     action: (_store) => {
       const el = document.querySelector(

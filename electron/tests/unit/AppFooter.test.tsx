@@ -28,11 +28,9 @@ describe('AppFooter', () => {
     renderFooter();
 
     // list mode preset includes list.down (j), list.up (k), list.open (Enter).
-    expect(screen.getByText('Move to next PR')).toBeInTheDocument();
-    expect(screen.getByText('Move to previous PR')).toBeInTheDocument();
-    expect(
-      screen.getByText('Open selected PR in detail view'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Next')).toBeInTheDocument();
+    expect(screen.getByText('Previous')).toBeInTheDocument();
+    expect(screen.getByText('Open')).toBeInTheDocument();
   });
 
   it('lets a page override the left region via FooterLeftSlot', () => {
@@ -41,7 +39,7 @@ describe('AppFooter', () => {
 
     expect(screen.getByText('CUSTOM-LEFT')).toBeInTheDocument();
     // Default legend should no longer be rendered when a page overrides left.
-    expect(screen.queryByText('Move to next PR')).not.toBeInTheDocument();
+    expect(screen.queryByText('Next')).not.toBeInTheDocument();
   });
 
   it('projects page content into the center region via FooterCenterSlot', () => {

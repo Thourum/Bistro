@@ -53,16 +53,14 @@ describe('HelpOverlay', () => {
   it('displays search and commands section', () => {
     appStore.setState((s) => ({ ...s, mode: 'help' }));
     render(<HelpOverlay />);
-    expect(screen.getByText(/Search/)).toBeInTheDocument();
+    expect(screen.getByText('Search & Commands')).toBeInTheDocument();
   });
 
   it('derives shortcuts from DEFAULT_KEYBINDINGS (not hardcoded)', () => {
     appStore.setState((s) => ({ ...s, mode: 'help' }));
     render(<HelpOverlay />);
     // The Escape binding description comes from the binding definition
-    expect(
-      screen.getByText(/Close help \/ cancel input \/ back to list/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Back \/ Cancel/)).toBeInTheDocument();
   });
 
   it('shows all four section categories', () => {
@@ -70,6 +68,6 @@ describe('HelpOverlay', () => {
     render(<HelpOverlay />);
     expect(screen.getByText('Navigation')).toBeInTheDocument();
     expect(screen.getByText('Actions')).toBeInTheDocument();
-    expect(screen.getByText(/Search/)).toBeInTheDocument();
+    expect(screen.getByText('Search & Commands')).toBeInTheDocument();
   });
 });
