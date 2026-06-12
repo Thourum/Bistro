@@ -1,16 +1,16 @@
-import { PatchDiff } from '@pierre/diffs/react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AppSettings } from '../../types/settings';
-import { useStore } from '../hooks/useStore';
-import { appStore } from '../store';
+import { PatchDiff } from "@pierre/diffs/react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { AppSettings } from "../../types/settings";
+import { useStore } from "../hooks/useStore";
+import { appStore } from "../store";
 
 export interface PierreDiffViewProps {
   /** Full unified-diff string (`diff --git …` separated). */
   diff: string;
   /** Current theme; currently unused but we thread it through so the
    *  component can re-render when the user flips modes. */
-  theme: AppSettings['appearance']['theme'];
+  theme: AppSettings["appearance"]["theme"];
   /** Optional find query used to narrow the file list. Diff-canvas
    *  find-in-content is deferred to a later pass. */
   findQuery?: string;
@@ -44,7 +44,7 @@ interface ParsedFile {
 export function PierreDiffView({
   diff,
   theme,
-  findQuery = '',
+  findQuery = "",
 }: PierreDiffViewProps) {
   const files = useMemo(() => splitUnifiedDiff(diff), [diff]);
   const [activeId, setActiveId] = useState<string | null>(files[0]?.id ?? null);
@@ -92,7 +92,7 @@ export function PierreDiffView({
 
   const filtered = useMemo(() => {
     const q = findQuery.trim().toLowerCase();
-    if (q === '') return files;
+    if (q === "") return files;
     return files.filter((f) => f.path.toLowerCase().includes(q));
   }, [files, findQuery]);
 
@@ -140,7 +140,7 @@ function FileNav({ files, activeId, onSelect, totalCount }: FileNavProps) {
     <aside className="w-1/4 min-w-[220px] bg-surface-container-low border-r border-outline-variant/20 overflow-y-auto">
       <div className="p-4">
         <h3 className="font-mono text-[10px] font-bold text-outline tracking-widest uppercase mb-4">
-          Files Changed ({totalCount.toString().padStart(2, '0')})
+          Files Changed ({totalCount.toString().padStart(2, "0")})
         </h3>
         <nav className="space-y-1">
           {files.map((f) => {
@@ -152,13 +152,13 @@ function FileNav({ files, activeId, onSelect, totalCount }: FileNavProps) {
                 onClick={() => onSelect(f.id)}
                 className={`w-full flex items-center gap-2 px-2 py-1.5 text-left transition-colors ${
                   isActive
-                    ? 'bg-surface-container-lowest text-primary border-l-2 border-primary'
-                    : 'hover:bg-surface-container-highest/50 text-on-surface border-l-2 border-transparent'
+                    ? "bg-surface-container-lowest text-primary border-l-2 border-primary"
+                    : "hover:bg-surface-container-highest/50 text-on-surface border-l-2 border-transparent"
                 }`}
               >
                 <span
                   className={`material-symbols-outlined text-[16px] ${
-                    isActive ? 'text-primary' : 'text-outline'
+                    isActive ? "text-primary" : "text-outline"
                   }`}
                 >
                   description
@@ -181,7 +181,7 @@ function FileNav({ files, activeId, onSelect, totalCount }: FileNavProps) {
 interface DiffCanvasProps {
   files: ParsedFile[];
   activeId: string | null;
-  theme: AppSettings['appearance']['theme'];
+  theme: AppSettings["appearance"]["theme"];
   onActiveChange: (id: string) => void;
   registerScrollTo: (fn: (id: string) => void) => void;
 }
@@ -222,7 +222,7 @@ function DiffCanvas({
     registerScrollTo((id: string) => {
       const idx = files.findIndex((f) => f.id === id);
       if (idx >= 0) {
-        virtualizer.scrollToIndex(idx, { align: 'start' });
+        virtualizer.scrollToIndex(idx, { align: "start" });
       }
     });
   }, [files, virtualizer, registerScrollTo]);
@@ -280,6 +280,9 @@ function DiffCanvas({
                 </div>
               </div>
               <PatchDiff
+                options={{
+                  theme: `pierre-${_theme}`,
+                }}
                 patch={file.patch}
                 disableWorkerPool
                 className="block w-full"
@@ -309,13 +312,12 @@ function splitUnifiedDiff(raw: string): ParsedFile[] {
 
   const GIT_HEADER = /^diff --git /m;
   if (!GIT_HEADER.test(raw)) {
-    const lang = guessLang('patch');
     const { additions, deletions } = countChanges(raw);
     return [
       {
-        id: 'patch-0',
-        path: 'patch',
-        lang,
+        id: "patch-0",
+        path: "patch",
+        lang: "patch",
         additions,
         deletions,
         patch: raw,
@@ -324,22 +326,22 @@ function splitUnifiedDiff(raw: string): ParsedFile[] {
     ];
   }
 
-  const lines = raw.split('\n');
+  const lines = raw.split("\n");
   const chunks: string[] = [];
   let buf: string[] = [];
   for (const line of lines) {
-    if (line.startsWith('diff --git ')) {
-      if (buf.length > 0) chunks.push(buf.join('\n'));
+    if (line.startsWith("diff --git ")) {
+      if (buf.length > 0) chunks.push(buf.join("\n"));
       buf = [line];
     } else {
       buf.push(line);
     }
   }
-  if (buf.length > 0) chunks.push(buf.join('\n'));
+  if (buf.length > 0) chunks.push(buf.join("\n"));
 
   return chunks.map((patch, i) => {
     const path = extractFilePath(patch) ?? `file-${i}`;
-    const lang = guessLang(path);
+    const lang = path.split(".").pop()?.toUpperCase() ?? "";
     const { additions, deletions } = countChanges(patch);
     return {
       id: `${path}::${i}`,
@@ -375,43 +377,10 @@ function countChanges(patch: string): {
 } {
   let additions = 0;
   let deletions = 0;
-  for (const line of patch.split('\n')) {
-    if (line.startsWith('+++') || line.startsWith('---')) continue;
-    if (line.startsWith('+')) additions += 1;
-    else if (line.startsWith('-')) deletions += 1;
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) additions += 1;
+    else if (line.startsWith("-")) deletions += 1;
   }
   return { additions, deletions };
-}
-
-function guessLang(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() ?? '';
-  const map: Record<string, string> = {
-    ts: 'TS',
-    tsx: 'TSX',
-    js: 'JS',
-    jsx: 'JSX',
-    mjs: 'JS',
-    cjs: 'JS',
-    go: 'GO',
-    rs: 'RUST',
-    py: 'PY',
-    rb: 'RB',
-    java: 'JAVA',
-    kt: 'KT',
-    swift: 'SWIFT',
-    cpp: 'CPP',
-    c: 'C',
-    h: 'H',
-    hpp: 'HPP',
-    md: 'MD',
-    json: 'JSON',
-    yml: 'YAML',
-    yaml: 'YAML',
-    toml: 'TOML',
-    sh: 'SH',
-    css: 'CSS',
-    html: 'HTML',
-    sql: 'SQL',
-  };
-  return map[ext] ?? ext.toUpperCase() ?? 'TXT';
 }
