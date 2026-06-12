@@ -9,6 +9,11 @@
 > 2. *`:open in browser`* upgraded to `partial` — the `o` keybinding (`list.openBrowser`) and `openExternal` IPC exist; only the palette command is missing.
 > 3. *Schema multi-tenancy (6.3)* is largely already done — `prs` carries a `provider` column with `UNIQUE(provider, owner, repo, number)`, `repos.id` is `"provider:owner/repo"`, comment IDs are opaque TEXT.
 
+> **Progress update (2026-06-12).** See `docs/UPDATE-2026-06-12.md` for the full
+> session log. Newly done: WS port handshake, migration-race fix, `:sync`.
+> Honestly partial: 1.6 triage (data layer complete, UI placement gaps remain)
+> and the `pr_diffs` pipeline (existed on paper, only now actually enabled).
+
 ## How to read this document
 
 The roadmap is broken into **phases** rather than fixed-length sprints. Each phase is a coherent chunk of work that produces something shippable or testable on its own. Phases are roughly ordered by dependency, but some can run in parallel if there's capacity.
@@ -43,6 +48,8 @@ This is the existing architecture. Most of it ships in pre-v1 builds. Listed her
 | Structured slog logging with context propagation | done | `go/internal/logging/context.go`; `sync_id`, `repo`, `pr_id` etc carry through |
 | Offline action queue | done | `store/action_queue.go` + migration 004; survives rate-limit and network failures |
 | Crash monitoring (Go process → Electron) | done | `go-spawn.ts` onCrash + bounded restarts; UI shows error state instead of silent hang |
+| Keyboard engine on TanStack Hotkeys | done (2026-06-12) | Custom matcher replaced; bindings are pure config in `utils/keybindings.ts`, dispatch/format via `@tanstack/react-hotkeys` |
+| Sync-engine self-protection | done (2026-06-12) | Single-instance flock, busy_timeout, HTTP + per-PR timeouts, stdin parent-death watchdog, SYNC_ERROR broadcast |
 
 ### Foundation hardening before v1.0
 
@@ -72,7 +79,7 @@ Three-pane layout (list / detail / status), filters for Open / Draft / Merged, s
 | Search across title/author/repo/filename | done | `SearchBar.tsx`, `/` binding |
 | Repo picker + watch toggle | done | `RepoPicker.tsx`, `WATCH_REPO_RESULT` event |
 | PR row metadata (state, age, +/-, file count, review status) | done | |
-| **Mark as "needs my action" vs "FYI"** | partial | See 1.6 — lanes, counters, and `n` filter shipped; default-view switch and review_status population pending |
+| **Mark as "needs my action" vs "FYI"** | partial | See 1.6. Done: classification logic, lane counters, `n` filter, and the data layer (requested reviewers + reviews API now populate review_status — it was empty before 2026-06-12). NOT done from the acceptance criteria: counters live in the inbox header, not the sidebar, and the default view is still "Open", not "Needs Action" |
 
 ### 1.2 Diff viewer
 
@@ -83,7 +90,7 @@ File-by-file unified diff via `@pierre/diffs`, syntax highlighting via highlight
 | File-by-file unified diff | done | `PierreDiffView.tsx` |
 | Syntax highlighting | done | highlight.js 11.x |
 | Inline comment threads | done | `CommentThread.tsx` |
-| Diff cached in `pr_diffs` | done | migration 007 |
+| Diff cached in `pr_diffs` | done | migration 007. Honesty note: the pipeline existed but was dormant until 2026-06-12 — sync never passed IncludeDiff, the git client was unwired, and clone auth was env-only. Now end-to-end with keychain auth + per-file stats |
 | Keyboard navigation | done | |
 | **Side-by-side diff toggle** | not started | Some users strongly prefer; cheap to add |
 | **Generated-file collapse** | not started | Respect `.gitattributes linguist-generated`; auto-collapse `*.pb.go`, `dist/`, etc |
@@ -440,7 +447,7 @@ A unified, prioritised landing screen.
 
 | Command | Status | Notes |
 |---|---|---|
-| `:sync` (force sync now) | not started | |
+| `:sync` (force sync now) | done (2026-06-12) | Sends FORCE_SYNC; footer shows SYNCING until SYNC_COMPLETE |
 | `:settings`, `:about`, `:help` | done | Also implemented: `:clear` (clear filters/search), `:reset-store` |
 | `:focus list/detail` | done | |
 | `:open in browser` | partial | `o` keybinding (`list.openBrowser`) + `openExternal` IPC already exist; palette command missing |
