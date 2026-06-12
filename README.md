@@ -1,123 +1,94 @@
 # Bistro
 
-Keyboard-first desktop code review tool for GitHub (GitLab and Gitea planned).
+**The keyboard-first code review client for the AI-PR era.**
 
-## Architecture
+Review pull requests at the speed of thought — no browser tabs, no mouse, no
+waiting. Bistro is a local-first desktop app that syncs your GitHub pull
+requests into a blazing-fast inbox, generates diffs on your machine, and puts
+every action one keystroke away.
 
-```
-GitHub API
-    |
-    v
-Go sync engine (bistro-sync)
-    |-- fetches PRs, diffs via go-git
-    |-- writes to SQLite (local cache)
-    |-- emits real-time events over WebSocket
-    |
-    v
-Electron + React UI
-    |-- reads SQLite directly for instant rendering
-    |-- receives WebSocket events for live updates
-    |-- vim-inspired keyboard navigation
-```
+![PR inbox](electron/stitch_terminal_authentic_prd/pr_inbox_minimal_light/screen.png)
 
-No server. Everything runs locally. SQLite is a cache, not a shared database.
+## Why Bistro?
 
-## Prerequisites
+Code review didn't get slower — pull requests got faster. AI tools open more
+PRs, push more force-updates, and leave more bot comments than any web UI was
+designed for. Bistro is built for the reviewer drowning in that stream:
 
-- Go 1.21+
-- Node 18+
-- pnpm
+- **Triage first.** Your inbox separates *Needs Action* from *Waiting on
+  Author* and *FYI*, computed locally from who actually requested your review.
+- **Runs entirely on your machine.** A Go sync engine keeps a local SQLite
+  cache warm — the UI never waits on the network to render. Your code and
+  tokens never touch anyone's server, because there isn't one.
+- **Keyboard everything.** `j`/`k` to move, `Enter` to open, `a a` to approve,
+  `:` for the command palette, `?` for help. Every binding is remappable.
+- **Diffs without limits.** PR branches are cloned and diffed locally with
+  go-git, then rendered through a virtualized canvas — 100-file PRs scroll
+  like 5-file PRs.
+- **Works offline.** Approvals and comments queue locally when you're
+  disconnected (or rate-limited) and replay automatically.
 
-## Quick Start
+![PR overview](electron/stitch_terminal_authentic_prd/pr_overview_minimal_refined/screen.png)
 
-```bash
-# Install all dependencies
-make install
+## Core features
 
-# Run tests
-make test
+- PR inbox with filters (Open / Draft / All / Needs Action), search, and
+  per-repo watch toggles
+- Needs Action / Waiting on Author / FYI triage with live lane counters
+- Full-screen diff view: file navigator, syntax highlighting, vim-style
+  navigation (`h j k l`, `n`/`p` between files, `0`/`$` jumps)
+- Review actions from the keyboard: approve (double-tap confirm), request
+  changes, comment — with retry, backoff, and an offline queue
+- Real-time updates over a local WebSocket: sync status, rate-limit state,
+  and errors surface in the footer as they happen
+- Command palette (`:`) and a help overlay (`?`) that always reflects your
+  actual bindings — including your remaps
 
-# Start dev mode (two terminals)
-make build-go                         # Terminal 1
-cd go && ./bistro-sync --log-level debug
+GitHub today; GitLab is next on the [roadmap](docs/ROADMAP.md).
 
-cd electron && pnpm dev               # Terminal 2
-```
+## Install
 
-## Project Structure
-
-```
-bistro/
-├── go/                        Go sync engine
-│   ├── cmd/bistro-sync/       Binary entry point
-│   └── internal/
-│       ├── provider/github/   GitHub API client
-│       ├── sync/              PR sync orchestration
-│       ├── git/               Diff generation (go-git)
-│       ├── store/             SQLite read/write
-│       ├── ws/                WebSocket server
-│       ├── actions/           Approve, comment, request-changes
-│       ├── events/            Event types
-│       ├── keychain/          OS keychain token storage
-│       └── server/            App orchestrator
-├── electron/                  Electron + React UI
-│   ├── src/renderer/          React app (pages, components, queries)
-│   ├── components/ui/         Shared UI components
-│   └── tests/                 Unit and integration tests
-└── design/                    Architecture and API docs
-    ├── api-contracts.md        WebSocket message schemas
-    ├── data-flow.md            End-to-end data lifecycle
-    ├── keyboard-bindings.md    Key mapping reference
-    ├── error-handling.md       Error types and messages
-    └── security-model.md       Token storage and auth
-```
-
-## Configuration
-
-### Electron
-
-Copy `electron/.env.example` to `electron/.env.local` and fill in values:
-
-```
-WS_PORT=8080                   # Must match --ws-port on the Go side
-GO_LOG_LEVEL=info              # debug | info | warn | error
-GITHUB_CLIENT_ID=              # From https://github.com/settings/developers
-GITHUB_CLIENT_SECRET=          # Keep secret, never commit
-WINDOW_WIDTH=1600
-WINDOW_HEIGHT=900
-```
-
-### Go sync engine flags
-
-```
---ws-port       int     WebSocket port (default: 8080)
---db-path       string  SQLite database path (default: ./data/sync.db)
---log-level     string  debug | info | warn | error (default: info)
---log-file      string  Log file path; omit to use stderr only
---replay-queue  bool    Replay offline action queue on startup (default: true)
-```
-
-Example:
+> Packaged installers (DMG / MSI / AppImage) land with v1.0. Until then,
+> Bistro runs from source:
 
 ```bash
-./bistro-sync --log-level debug --log-file logs/sync.log
+git clone https://github.com/Itterno/Bistro.git && cd Bistro
+make install                                   # Go + pnpm dependencies
+cd go && go build -o bistro-sync ./cmd/bistro-sync
 ```
 
-## Testing
+You'll need Go 1.21+, Node 18+, and pnpm. Create a GitHub OAuth app
+(github.com/settings/developers) and put its credentials in
+`electron/.env.local` — see [DEVELOPMENT.md](DEVELOPMENT.md#configuration).
+
+## Run
 
 ```bash
-make test              # All tests
-make test-go           # Go tests only
-make test-electron     # Electron tests only
-
-# Go with race detector
-cd go && go test -race ./...
+cd electron && pnpm start
 ```
 
-## Key Design Decisions
+The app spawns the sync engine automatically, signs you in via GitHub OAuth
+(your token lives in the OS keychain), and starts syncing the repos you watch.
+Press `?` anytime to see what your keyboard can do.
 
-- **SQLite as local cache** — the UI reads directly from SQLite for zero-latency rendering; the Go engine owns all writes.
-- **Vim-inspired keyboard bindings** — no mouse required; `j/k` to navigate, `:` for command palette, `?` for help.
-- **Go for parallel API fanout** — concurrent goroutines fetch PR metadata, diffs, and comments; Electron stays thin.
-- **neverthrow-style Result types** — explicit error handling throughout the Electron codebase; no unhandled promise rejections.
-- **Offline queue** — actions (approve, comment) are queued in SQLite when the API is unavailable and replayed on reconnect.
+## Settings
+
+Open settings with `⌘,` (or `:settings` from the command palette). Appearance,
+sync behavior, and every keyboard binding are configurable; settings live in a
+plain `settings.json` you can edit by hand — changes apply live. Rebinding a
+key updates the footer legend and help overlay everywhere it appears.
+
+## For developers
+
+Architecture, build instructions, debugging, and contribution notes live in
+[DEVELOPMENT.md](DEVELOPMENT.md). The feature plan and project status live in
+[docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Developed by
+
+Built by **Samuel Asvanyi** at **Itterno ApS**.
+
+## License
+
+© 2026 Itterno ApS. The open-source license will be finalized before the
+public v1.0 release (see the [roadmap's open questions](docs/ROADMAP.md)).
