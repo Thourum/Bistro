@@ -1,7 +1,10 @@
 package github
 
 import (
+	"context"
 	"testing"
+
+	"github.com/samuelasvanyi/bistro/internal/provider"
 )
 
 // TestNewClientWithToken verifies that a non-empty token is stored and a
@@ -49,5 +52,40 @@ func TestNewClientTokenStored(t *testing.T) {
 	client := NewClient(want)
 	if client.token != want {
 		t.Errorf("token stored: want %q, got %q", want, client.token)
+	}
+}
+
+// TestClientImplementsProvider verifies the compile-time interface check holds.
+func TestClientImplementsProvider(t *testing.T) {
+	var _ provider.Provider = (*Client)(nil)
+
+	client := NewClient("test-token")
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+}
+
+// TestAuthenticate_WithToken verifies that a pre-set token is returned directly.
+func TestAuthenticate_WithToken(t *testing.T) {
+	client := NewClient("existing-token")
+	ctx := context.Background()
+
+	token, err := client.Authenticate(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if token != "existing-token" {
+		t.Errorf("expected token %q, got %q", "existing-token", token)
+	}
+}
+
+// TestAuthenticate_NoToken verifies that an empty token returns an error.
+func TestAuthenticate_NoToken(t *testing.T) {
+	client := NewClient("")
+	ctx := context.Background()
+
+	_, err := client.Authenticate(ctx)
+	if err == nil {
+		t.Error("expected error when no token set, got nil")
 	}
 }

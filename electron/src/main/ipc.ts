@@ -8,6 +8,8 @@ import type {
   GoCommandRequest,
   SyncActionRequest,
 } from '../types/ipc';
+import type { AppSettings } from '../types/settings';
+import type { SettingsService } from './settings';
 import type { WebSocketClient } from './websocket-client';
 
 const ACTION_TYPE_MAP: Record<string, string> = {
@@ -21,8 +23,47 @@ export function setupIPC(
   path: string,
   logger: Logger,
   wsClient: WebSocketClient,
+  settings: SettingsService,
 ): void {
   logger.info(`IPC setup (db path: ${path})`);
+
+  // ---- settings:* handlers ----
+  ipcMain.handle('settings:get', async () => {
+    return { ok: settings.snapshot };
+  });
+
+  ipcMain.handle(
+    'settings:set',
+    async (_event, patch: Partial<AppSettings>) => {
+      try {
+        const next = await settings.set(patch);
+        return { ok: next };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error(`settings:set error: ${message}`);
+        return { err: message };
+      }
+    },
+  );
+
+  ipcMain.handle('settings:reset', async () => {
+    try {
+      const next = await settings.reset();
+      return { ok: next };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`settings:reset error: ${message}`);
+      return { err: message };
+    }
+  });
+
+  ipcMain.handle('settings:open-file', async () => {
+    return settings.openFile();
+  });
+
+  ipcMain.handle('settings:path', async () => {
+    return { ok: settings.path };
+  });
 
   // ---- fs:read-patch handler ----
   ipcMain.handle(

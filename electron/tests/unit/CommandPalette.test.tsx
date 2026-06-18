@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect } from 'vitest';
-import * as matchers from '@testing-library/jest-dom/matchers';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommandPalette } from '../../src/renderer/components/CommandPalette';
 import { appStore } from '../../src/renderer/store';
+
+vi.mock('../../src/renderer/hooks/useWebSocketPRList', () => ({
+  useWebSocketPRList: () => ({ data: [], isLoading: false, error: null }),
+}));
+vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
+  useWebSocket: () => ({ send: vi.fn(), request: vi.fn() }),
+}));
 
 expect.extend(matchers);
 
@@ -25,24 +32,26 @@ describe('CommandPalette', () => {
   it('renders when mode is "command"', () => {
     appStore.setState((s) => ({ ...s, mode: 'command' }));
     render(<CommandPalette />);
-    expect(screen.getByPlaceholderText(':')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Type a command/i)).toBeInTheDocument();
   });
 
-  it('displays all available commands', () => {
+  it('displays core commands', () => {
     appStore.setState((s) => ({ ...s, mode: 'command' }));
     render(<CommandPalette />);
-    expect(screen.getByText('help')).toBeInTheDocument();
-    expect(screen.getByText('settings')).toBeInTheDocument();
-    expect(screen.getByText('clear')).toBeInTheDocument();
+    expect(screen.getByText(/Show keyboard shortcuts/i)).toBeInTheDocument();
+    expect(screen.getByText(/Open project settings/i)).toBeInTheDocument();
+    expect(screen.getByText(/Clear all filters/i)).toBeInTheDocument();
   });
 
   it('filters commands by search query', async () => {
     appStore.setState((s) => ({ ...s, mode: 'command' }));
     render(<CommandPalette />);
-    const input = screen.getByPlaceholderText(':') as HTMLInputElement;
-    await userEvent.type(input, 'help');
-    expect(screen.getByText('help')).toBeInTheDocument();
-    expect(screen.queryByText('settings')).not.toBeInTheDocument();
+    const input = screen.getByPlaceholderText(/Type a command/i);
+    await userEvent.type(input, 'shortcut');
+    expect(screen.getByText(/Show keyboard shortcuts/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Open project settings/i),
+    ).not.toBeInTheDocument();
   });
 
   it('closes on Escape', async () => {
@@ -52,27 +61,16 @@ describe('CommandPalette', () => {
     expect(appStore.state.mode).toBe('list');
   });
 
-  it('has autofocus on input', () => {
+  it('autofocuses the input on open', async () => {
     appStore.setState((s) => ({ ...s, mode: 'command' }));
     render(<CommandPalette />);
-    const input = screen.getByPlaceholderText(':') as HTMLInputElement;
+    const input = screen.getByPlaceholderText(/Type a command/i);
+    // Focus is applied in a microtask via setTimeout(..., 0).
+    await new Promise((r) => setTimeout(r, 10));
     expect(input).toHaveFocus();
   });
 
-  it('input has monospace styling', () => {
-    appStore.setState((s) => ({ ...s, mode: 'command' }));
-    render(<CommandPalette />);
-    const input = screen.getByPlaceholderText(':');
-    expect(input).toHaveClass('font-mono');
-  });
-
-  it('displays :about command', () => {
-    appStore.setState((s) => ({ ...s, mode: 'command' }));
-    render(<CommandPalette />);
-    expect(screen.getByText('about')).toBeInTheDocument();
-  });
-
-  it(':clear command clears filters and search', async () => {
+  it(':clear-style command resets filters and search', async () => {
     appStore.setState((s) => ({
       ...s,
       mode: 'command',
@@ -81,7 +79,7 @@ describe('CommandPalette', () => {
       filterMenuOpen: true,
     }));
     render(<CommandPalette />);
-    const input = screen.getByPlaceholderText(':') as HTMLInputElement;
+    const input = screen.getByPlaceholderText(/Type a command/i);
     await userEvent.type(input, 'clear');
     await userEvent.keyboard('{Enter}');
     expect(appStore.state.searchQuery).toBe('');
@@ -89,21 +87,11 @@ describe('CommandPalette', () => {
     expect(appStore.state.filterMenuOpen).toBe(false);
   });
 
-  it('arrow down moves selection down', async () => {
+  it('Enter on "shortcuts" switches mode to help', async () => {
     appStore.setState((s) => ({ ...s, mode: 'command' }));
     render(<CommandPalette />);
-    const input = screen.getByPlaceholderText(':') as HTMLInputElement;
-    await userEvent.type(input, '{ArrowDown}');
-    // Second item (settings) should now be highlighted
-    const settingsItem = screen.getByText('settings').closest('[role="button"]');
-    expect(settingsItem).toHaveClass('bg-surface-container-low');
-  });
-
-  it('Enter executes selected command', async () => {
-    appStore.setState((s) => ({ ...s, mode: 'command' }));
-    render(<CommandPalette />);
-    const input = screen.getByPlaceholderText(':') as HTMLInputElement;
-    await userEvent.type(input, 'help');
+    const input = screen.getByPlaceholderText(/Type a command/i);
+    await userEvent.type(input, 'shortcut');
     await userEvent.keyboard('{Enter}');
     expect(appStore.state.mode).toBe('help');
   });

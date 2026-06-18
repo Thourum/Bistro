@@ -4,6 +4,7 @@ import { app, ipcMain, shell } from 'electron';
 import log from 'electron-log';
 import { killGoProcess, spawnGoProcess } from './go-spawn';
 import { setupIPC } from './ipc';
+import { SettingsService } from './settings';
 import type { AppConfig } from './types';
 import { WebSocketClient } from './websocket-client';
 import { createWindow } from './window';
@@ -51,15 +52,19 @@ function buildConfig(): AppConfig {
     mkdirSync(logsDir, { recursive: true });
   }
 
-  const wsPort = parseInt(process.env.WS_PORT || '8080', 10);
-  if (Number.isNaN(wsPort)) throw new Error('WS_PORT must be a valid number');
+  // 0 = let Go pick a random available port (reported via its ready signal).
+  const wsPort = parseInt(process.env.WS_PORT || '0', 10);
+  if (Number.isNaN(wsPort) || wsPort < 0 || wsPort > 65535) {
+    throw new Error('WS_PORT must be a number between 0 and 65535');
+  }
 
   const windowWidth = parseInt(process.env.APP_WINDOW_WIDTH || '1600', 10);
   const windowHeight = parseInt(process.env.APP_WINDOW_HEIGHT || '900', 10);
 
   const GO_LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
   type GoLogLevel = (typeof GO_LOG_LEVELS)[number];
-  const rawLogLevel = process.env.GO_LOG_LEVEL ?? 'info';
+  // Dev defaults to debug so per-PR sync steps are visible when things hang.
+  const rawLogLevel = process.env.GO_LOG_LEVEL ?? (isDev ? 'debug' : 'info');
   const logLevel: GoLogLevel = (GO_LOG_LEVELS as readonly string[]).includes(
     rawLogLevel,
   )
@@ -86,6 +91,8 @@ log.info(`PROJECT_ROOT: ${PROJECT_ROOT}`);
 log.info(`Mode: ${isDev ? 'development' : 'production'}`);
 
 let wsClient: WebSocketClient | null = null;
+let settingsService: SettingsService | null = null;
+let runtimeConfig: AppConfig | null = null;
 
 app.on('ready', async () => {
   const appConfig = buildConfig();
@@ -96,9 +103,9 @@ app.on('ready', async () => {
   log.info(`WS port: ${appConfig.goProcess.wsPort}`);
 
   try {
-    // 1. Spawn Go process and wait for readiness
+    // 1. Spawn Go process and wait for readiness (resolves with actual port)
     log.info('Spawning Go sync engine...');
-    await spawnGoProcess({
+    const actualWsPort = await spawnGoProcess({
       config: appConfig.goProcess,
       logger: log,
       onCrash: (code, signal) => {
@@ -113,15 +120,25 @@ app.on('ready', async () => {
         );
       },
     });
-    log.info('Go sync engine is running');
+    log.info(`Go sync engine is running on port ${actualWsPort}`);
+
+    runtimeConfig = {
+      ...appConfig,
+      goProcess: { ...appConfig.goProcess, wsPort: actualWsPort },
+    };
 
     // 2. Create WebSocket client and connect (Go is now ready)
-    const wsUrl = `ws://localhost:${appConfig.goProcess.wsPort}/ws`;
+    const wsUrl = `ws://localhost:${actualWsPort}/ws`;
     wsClient = new WebSocketClient(wsUrl, log);
     wsClient.connect();
 
-    // 3. Setup IPC handlers (DB should exist now that Go has started)
-    setupIPC(appConfig.goProcess.dbPath, log, wsClient);
+    // 3. Load settings from userData/settings.json (creates defaults on first run)
+    settingsService = new SettingsService(log);
+    await settingsService.load();
+    log.info(`Settings loaded from ${settingsService.path}`);
+
+    // 4. Setup IPC handlers (DB should exist now that Go has started)
+    setupIPC(appConfig.goProcess.dbPath, log, wsClient, settingsService);
 
     // 3b. Register open-external IPC handler (HTTPS-only URL validation)
     ipcMain.handle('open-external', async (_event, url: unknown) => {
@@ -150,7 +167,7 @@ app.on('ready', async () => {
     });
 
     // 5. Create window (last — everything is ready)
-    createWindow(appConfig, log);
+    createWindow(runtimeConfig, log);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.error(`Failed to start app: ${message}`);
@@ -168,6 +185,7 @@ app.on('ready', async () => {
 app.on('before-quit', () => {
   log.info('App shutting down');
   wsClient?.stop();
+  settingsService?.stop();
   killGoProcess();
 });
 
@@ -180,8 +198,7 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   const { BrowserWindow } = require('electron');
   if (BrowserWindow.getAllWindows().length === 0) {
-    const appConfig = buildConfig();
-    createWindow(appConfig, log);
+    createWindow(runtimeConfig ?? buildConfig(), log);
   }
 });
 

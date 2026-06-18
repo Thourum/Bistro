@@ -14,31 +14,32 @@ type DB struct {
 
 // OpenDB opens (or creates) a SQLite database at the given DSN.
 // Use ":memory:" for an in-process ephemeral database.
+//
+// Pragmas are passed as DSN options so they apply to EVERY pooled
+// connection: foreign keys on, WAL journaling, and a 5s busy timeout so a
+// held write lock surfaces as SQLITE_BUSY instead of stalling forever.
 func OpenDB(dsn string) (*DB, error) {
-	sqlDB, err := sql.Open("sqlite3", dsn)
+	connStr := dsn + "?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000"
+
+	sqlDB, err := sql.Open("sqlite3", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite3 %q: %w", dsn, err)
+	}
+
+	if dsn == ":memory:" {
+		// Each connection to :memory: is a separate database — the pool
+		// must stay at one connection or tests see phantom empty DBs.
+		sqlDB.SetMaxOpenConns(1)
+	} else {
+		// A single-connection pool deadlocks the moment any code path
+		// holds a result set (or transaction) while acquiring a second
+		// connection. WAL supports concurrent readers plus one writer.
+		sqlDB.SetMaxOpenConns(4)
 	}
 
 	if err := sqlDB.Ping(); err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("ping sqlite3 %q: %w", dsn, err)
-	}
-
-	// SQLite pragmas are per-connection. Pin the pool to one connection so
-	// pragmas set below apply to every subsequent query.
-	sqlDB.SetMaxOpenConns(1)
-
-	// Enable foreign key enforcement (disabled by default per SQLite connection).
-	if _, err := sqlDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("enable foreign_keys pragma: %w", err)
-	}
-
-	// Enable WAL mode for better concurrent read/write performance.
-	if _, err := sqlDB.Exec("PRAGMA journal_mode = WAL"); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("set journal_mode WAL pragma: %w", err)
 	}
 
 	return &DB{sqlDB}, nil

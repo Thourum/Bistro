@@ -1,8 +1,10 @@
 import type React from 'react';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
-import type { BindingDefinition } from '../utils/keyboard';
-import { bindingSequence, KEYBOARD_BINDING_GROUPS } from '../utils/keyboard';
+import { settingsStore } from '../store/settings';
+import type { KeyBinding } from '../utils/keybindings';
+import { getEffectiveBindings } from '../utils/keybindings';
+import { formatBindingKeys } from '../utils/legendPresets';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { ScrollArea } from './ui/scroll-area';
 
@@ -16,54 +18,82 @@ interface ShortcutSection {
   readonly shortcuts: readonly ShortcutRow[];
 }
 
-function toRow(b: BindingDefinition): ShortcutRow {
-  return { key: bindingSequence(b), description: b.description };
+function toRow(b: KeyBinding): ShortcutRow {
+  // useSymbols: false renders 'Cmd+/' style labels instead of '⌘ /' symbols.
+  return {
+    key: formatBindingKeys(b, { useSymbols: false }),
+    description: b.description,
+  };
 }
 
-function buildSections(): ShortcutSection[] {
-  const navigationKeys = new Set([
-    'j',
-    'k',
-    'gg',
-    'G',
-    'n',
-    'p',
-    'h',
-    'l',
-    'ctrl+d',
-    'ctrl+u',
-    '0',
-    '$',
-  ]);
-  const actionKeys = new Set([
-    'Enter',
-    'a',
-    'aa',
-    'Escape',
-    'c',
-    'r',
-    'o',
-    ' ',
-    'd',
-    'm',
-    's',
-  ]);
-  const searchKeys = new Set(['/', ':', 'f', '?', 'meta+/', 'ctrl+/']);
+// Sections are keyed by stable actionIds so user-remapped keys stay grouped.
+const NAVIGATION_IDS = new Set([
+  'list.down',
+  'list.up',
+  'list.top',
+  'list.bottom',
+  'list.pageDown',
+  'list.pageUp',
+  'list.jumpTo1',
+  'detail.nextFile',
+  'detail.prevFile',
+  'detail.scrollLeft',
+  'detail.scrollDown',
+  'detail.scrollUp',
+  'detail.scrollRight',
+  'detail.pageDown',
+  'detail.pageUp',
+  'detail.scrollTop',
+  'detail.scrollBottom',
+]);
 
-  const navBindings = KEYBOARD_BINDING_GROUPS.filter((b) =>
-    navigationKeys.has(bindingSequence(b)),
+const ACTION_IDS = new Set([
+  'list.open',
+  'list.openBrowser',
+  'list.preview',
+  'list.draft',
+  'list.mute',
+  'list.star',
+  'detail.viewDiff',
+  'detail.approve',
+  'detail.comment',
+  'detail.reply',
+  'global.escape',
+  'filter.needsAction',
+  'filter.open',
+  'filter.draft',
+  'filter.all',
+  'filter.close',
+]);
+
+const SEARCH_IDS = new Set([
+  'list.search',
+  'list.filter',
+  'filter.toggle',
+  'global.command',
+  'global.help',
+  'global.search',
+  'global.settings',
+]);
+
+function buildSections(
+  bindings: KeyBinding[],
+  sourceMode: 'list' | 'detail',
+): ShortcutSection[] {
+  // Only show bindings usable from where the user opened the overlay —
+  // diff-view scroll keys are noise when browsing the PR list.
+  const visible = bindings.filter(
+    (b) => b.hidden !== true && b.modes.includes(sourceMode),
   );
-  const actionBindings = KEYBOARD_BINDING_GROUPS.filter((b) =>
-    actionKeys.has(bindingSequence(b)),
-  );
-  const searchBindings = KEYBOARD_BINDING_GROUPS.filter((b) =>
-    searchKeys.has(bindingSequence(b)),
-  );
-  const globalBindings = KEYBOARD_BINDING_GROUPS.filter(
+
+  const navBindings = visible.filter((b) => NAVIGATION_IDS.has(b.actionId));
+  const actionBindings = visible.filter((b) => ACTION_IDS.has(b.actionId));
+  const searchBindings = visible.filter((b) => SEARCH_IDS.has(b.actionId));
+  const globalBindings = visible.filter(
     (b) =>
-      !navigationKeys.has(bindingSequence(b)) &&
-      !actionKeys.has(bindingSequence(b)) &&
-      !searchKeys.has(bindingSequence(b)),
+      !NAVIGATION_IDS.has(b.actionId) &&
+      !ACTION_IDS.has(b.actionId) &&
+      !SEARCH_IDS.has(b.actionId),
   );
 
   const sections: ShortcutSection[] = [
@@ -81,8 +111,13 @@ function buildSections(): ShortcutSection[] {
 
 export function HelpOverlay(): React.ReactElement | null {
   const mode = useStore(appStore, (s) => s.mode);
+  const helpSourceMode = useStore(appStore, (s) => s.helpSourceMode);
+  const overrides = useStore(settingsStore, (s) => s.keybindings);
   const isOpen = mode === 'help';
-  const sections = buildSections();
+  const sections = buildSections(
+    getEffectiveBindings(overrides),
+    helpSourceMode,
+  );
 
   const handleClose = (): void => {
     appStore.setState((s) => ({ ...s, mode: 'list' }));
@@ -105,7 +140,7 @@ export function HelpOverlay(): React.ReactElement | null {
                 <div className="space-y-2 text-sm">
                   {section.shortcuts.map((shortcut) => (
                     <div key={shortcut.key} className="flex justify-between">
-                      <kbd className="font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded text-xs min-w-[3rem] text-center">
+                      <kbd className=" text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded border text-sm  border-gray-500/20 text-center">
                         {shortcut.key}
                       </kbd>
                       <span className="text-on-surface">

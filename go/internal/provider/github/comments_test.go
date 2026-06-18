@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"testing"
 
 	ghlib "github.com/google/go-github/v84/github"
@@ -33,5 +34,16 @@ func TestGetComments(t *testing.T) {
 	// Just verify the method exists (real API calls in Phase 3)
 	if client == nil {
 		t.Error("expected non-nil client")
+	}
+}
+
+// TestGetComments_InvalidID verifies GetComments returns an error for a malformed ID.
+func TestGetComments_InvalidID(t *testing.T) {
+	client := NewClient("test-token")
+	ctx := context.Background()
+
+	_, err := client.GetComments(ctx, "invalid-id")
+	if err == nil {
+		t.Error("expected error for invalid PR ID, got nil")
 	}
 }

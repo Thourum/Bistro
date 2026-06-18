@@ -2,17 +2,20 @@
 
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
-import { expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRListTable } from '../../src/renderer/components/PRListTable';
 import * as prListModule from '../../src/renderer/hooks/useWebSocketPRList';
 import * as storeModule from '../../src/renderer/store';
+import { settingsStore } from '../../src/renderer/store/settings';
 
 expect.extend(matchers);
 
 const mockPR = {
   id: 'github-1',
   provider_id: 'github:default',
-  number: 1,
+  owner: 'acme',
+  repo: 'widgets',
+  number: 42,
   title: 'Fix auth bug',
   author: 'alice',
   state: 'open' as const,
@@ -30,9 +33,8 @@ const mockPR = {
 const mockStore = {
   state: {
     selectedPRIndex: 0,
-    prListView: 'flat' as const,
     repoFilter: null,
-    repos: [],
+    repos: [{ owner: 'acme', repo: 'widgets', watched: true }],
     filterState: 'open' as const,
   },
   subscribe: vi.fn(() => () => {}),
@@ -49,58 +51,49 @@ describe('PRListTable', () => {
     vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue(
       mockStore as unknown as typeof storeModule.appStore,
     );
+
+    // Ensure flat view.
+    settingsStore.setState((s) => ({
+      ...s,
+      prList: { ...s.prList, view: 'flat' },
+    }));
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('renders PR table header', () => {
-    render(<PRListTable />);
-    expect(screen.getByText('State')).toBeInTheDocument();
-    expect(screen.getByText('Title')).toBeInTheDocument();
-    expect(screen.getByText('Updated')).toBeInTheDocument();
-    expect(screen.getByText('Author')).toBeInTheDocument();
-  });
-
-  it('renders PR rows', () => {
+  it('renders the PR title and metadata', () => {
     render(<PRListTable />);
     expect(screen.getByText('Fix auth bug')).toBeInTheDocument();
-    expect(screen.getByText('alice')).toBeInTheDocument();
+    expect(screen.getByText(/#42/)).toBeInTheDocument();
+    expect(screen.getByText('@alice')).toBeInTheDocument();
   });
 
-  it('renders state badge', () => {
+  it('exposes the CI status via aria-label', () => {
     render(<PRListTable />);
-    expect(screen.getByText('open')).toBeInTheDocument();
+    expect(screen.getByLabelText(/CI /i)).toBeInTheDocument();
   });
 
-  it('renders author in monospace', () => {
+  it('renders the row as a button for keyboard access', () => {
     render(<PRListTable />);
-    const authorCell = screen.getByText('alice').closest('td');
-    expect(authorCell).toHaveClass('font-mono');
+    const btn = screen.getByRole('button', { name: /Fix auth bug/ });
+    expect(btn).toBeInTheDocument();
   });
 
-  it('renders updated date in monospace', () => {
-    render(<PRListTable />);
-    const dateCell = screen.getByText(/4\/8\/2025/);
-    expect(dateCell).toHaveClass('font-mono');
-  });
-
-  it('highlights selected row with border', () => {
-    const { container } = render(<PRListTable />);
-    const rows = container.querySelectorAll('tbody tr');
-    expect(rows[0]).toHaveClass('border-l-primary');
-  });
-
-  it('handles empty PR list gracefully', () => {
+  it('handles empty PR list with no watched repos', () => {
     vi.spyOn(prListModule, 'useWebSocketPRList').mockReturnValue({
       data: [],
       isLoading: false,
       error: null,
     } as ReturnType<typeof prListModule.useWebSocketPRList>);
 
+    vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue({
+      ...mockStore,
+      state: { ...mockStore.state, repos: [] },
+    } as unknown as typeof storeModule.appStore);
+
     render(<PRListTable />);
-    // When no PRs and no repos watched, show empty state prompt
     expect(screen.getByText('No repositories watched')).toBeInTheDocument();
   });
 });

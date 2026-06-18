@@ -35,7 +35,9 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
 
   const filteredRepos = searchQuery
     ? sortedRepos.filter((r) =>
-        `${r.owner}/${r.repo}`.toLowerCase().includes(searchQuery.toLowerCase()),
+        `${r.owner}/${r.repo}`
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase()),
       )
     : sortedRepos;
 
@@ -68,9 +70,7 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setFocusedIndex((i) =>
-          Math.min(i + 1, filteredRepos.length - 1),
-        );
+        setFocusedIndex((i) => Math.min(i + 1, filteredRepos.length - 1));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setFocusedIndex((i) => Math.max(i - 1, 0));
@@ -86,7 +86,14 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
         setTimeout(() => searchInputRef.current?.focus(), 0);
       }
     },
-    [isSearching, searchQuery, filteredRepos, focusedIndex, toggleWatch, onClose],
+    [
+      isSearching,
+      searchQuery,
+      filteredRepos,
+      focusedIndex,
+      toggleWatch,
+      onClose,
+    ],
   );
 
   if (reposLoading && repos.length === 0) {
@@ -130,7 +137,6 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
             }}
             placeholder="Filter repos..."
             className="w-full px-3 py-1.5 text-sm bg-surface-container border border-outline-variant text-on-surface placeholder:text-on-surface-variant font-mono outline-none"
-            autoFocus
           />
         </div>
       ) : (

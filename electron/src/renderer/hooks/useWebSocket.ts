@@ -65,7 +65,26 @@ interface ActionFailedData {
   error: string;
 }
 
-const WS_URL = 'ws://localhost:8080/ws';
+const DEFAULT_WS_PORT = 8080;
+
+/**
+ * Resolves the sync-engine WebSocket URL. The Go process picks its port
+ * dynamically; the preload script exposes it synchronously as
+ * `window.electron.wsPort`. Falls back to 8080 outside Electron (tests,
+ * plain browser dev).
+ */
+function getWsUrl(): string {
+  const exposedPort =
+    typeof window !== 'undefined' ? window.electron?.wsPort : undefined;
+  const port =
+    typeof exposedPort === 'number' &&
+    Number.isInteger(exposedPort) &&
+    exposedPort > 0 &&
+    exposedPort <= 65535
+      ? exposedPort
+      : DEFAULT_WS_PORT;
+  return `ws://localhost:${port}/ws`;
+}
 const REQUEST_TIMEOUT_MS = 5000;
 const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
@@ -213,6 +232,19 @@ function onMessage(event: MessageEvent<string>): void {
     case 'SYNC_COMPLETE':
       handleSyncComplete(message.data as SyncCompleteData);
       break;
+    case 'SYNC_TRIGGERED': {
+      const queued = (message.data as { queued?: boolean }).queued === true;
+      if (queued) {
+        try {
+          appStore.setState((s) => ({ ...s, syncStatus: 'syncing' }));
+        } catch {
+          // Store not available (test environment)
+        }
+      } else {
+        log.warn('manual sync not queued — sync already in progress');
+      }
+      break;
+    }
     case 'PR_APPROVED':
       handlePRApproved(message.data as PRApprovedData);
       break;
@@ -437,7 +469,8 @@ function connect(): void {
     return;
   }
 
-  log.info({ url: WS_URL }, 'attempting connection');
+  const wsUrl = getWsUrl();
+  log.info({ url: wsUrl }, 'attempting connection');
   try {
     appStore.setState((s) => ({ ...s, syncStatus: 'connecting' }));
   } catch {
@@ -445,10 +478,10 @@ function connect(): void {
     return;
   }
 
-  const ws = new WebSocket(WS_URL);
+  const ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
-    log.info({ url: WS_URL }, 'connected');
+    log.info({ url: wsUrl }, 'connected');
     reconnectAttempt = 0;
     try {
       appStore.setState((s) => ({
@@ -580,23 +613,69 @@ function sendMessage(type: string, data: unknown): string | undefined {
   return id;
 }
 
+/**
+ * Extracts a non-empty `error` string from a response payload, or null.
+ * Go handlers report recoverable failures (e.g. "diff not synced yet") as
+ * an `error` field inside otherwise-successful *_READY envelopes.
+ */
+export function extractResponseError(data: unknown): string | null {
+  if (typeof data !== 'object' || data === null) {
+    return null;
+  }
+  const err = (data as { error?: unknown }).error;
+  return typeof err === 'string' && err.length > 0 ? err : null;
+}
+
+const CONNECT_WAIT_INTERVAL_MS = 250;
+
 function requestMessage(type: string, data: unknown): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const id = sendMessage(type, data);
-    if (id === undefined) {
-      reject(new Error('WebSocket not connected'));
-      return;
-    }
+    const connectDeadline = Date.now() + REQUEST_TIMEOUT_MS;
 
-    const timeout = setTimeout(() => {
-      messageHandlers.delete(id);
-      reject(new Error(`Timeout waiting for ${type} response`));
-    }, REQUEST_TIMEOUT_MS);
+    // The socket connects asynchronously on mount; requests issued in the
+    // same render tick would otherwise be dropped. Wait briefly for OPEN.
+    const trySend = (): void => {
+      if (singletonWs === null || singletonWs.readyState !== WebSocket.OPEN) {
+        if (Date.now() >= connectDeadline) {
+          reject(new Error(`WebSocket not connected (sending ${type})`));
+          return;
+        }
+        setTimeout(trySend, CONNECT_WAIT_INTERVAL_MS);
+        return;
+      }
 
-    messageHandlers.set(id, (responseData) => {
-      clearTimeout(timeout);
-      resolve(responseData);
-    });
+      const id = sendMessage(type, data);
+      if (id === undefined) {
+        reject(new Error('WebSocket not connected'));
+        return;
+      }
+
+      const timeout = setTimeout(() => {
+        messageHandlers.delete(id);
+        const readyState = singletonWs?.readyState ?? 'no-socket';
+        log.error(
+          { type, id, readyState, pendingRequests: messageHandlers.size },
+          'request timed out',
+        );
+        reject(
+          new Error(
+            `Timeout waiting for ${type} response (socket state: ${readyState} — see bistro-sync.log for the backend side)`,
+          ),
+        );
+      }, REQUEST_TIMEOUT_MS);
+
+      messageHandlers.set(id, (responseData) => {
+        clearTimeout(timeout);
+        const responseError = extractResponseError(responseData);
+        if (responseError !== null) {
+          reject(new Error(responseError));
+          return;
+        }
+        resolve(responseData);
+      });
+    };
+
+    trySend();
   });
 }
 

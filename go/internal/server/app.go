@@ -2,24 +2,21 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	stdsync "sync"
 	"syscall"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/auth"
 	"github.com/samuelasvanyi/bistro/internal/cache"
 	"github.com/samuelasvanyi/bistro/internal/git"
 	"github.com/samuelasvanyi/bistro/internal/keychain"
 	"github.com/samuelasvanyi/bistro/internal/provider"
-	github "github.com/samuelasvanyi/bistro/internal/provider/github"
+	"github.com/samuelasvanyi/bistro/internal/server/handler"
 	"github.com/samuelasvanyi/bistro/internal/store"
 	"github.com/samuelasvanyi/bistro/internal/sync"
 	"github.com/samuelasvanyi/bistro/internal/ws"
@@ -38,13 +35,18 @@ type App struct {
 	gitClient          *git.Client
 	githubClientID     string
 	githubClientSecret string
-	authMu         stdsync.Mutex
-	callbackServer *auth.CallbackServer // non-nil while auth is in progress; guarded by authMu
-	providerCache  *cache.ProviderCache
+	providerCache      *cache.ProviderCache
 	tokenManager       *keychain.TokenManager
 	syncTrigger        chan string
 	provMu             stdsync.RWMutex
 	syncInterval       time.Duration
+	readyWriter        io.Writer
+}
+
+// SetReadyWriter overrides where the machine-readable ready signal is written.
+// Defaults to os.Stdout when unset.
+func (a *App) SetReadyWriter(w io.Writer) {
+	a.readyWriter = w
 }
 
 // SetProvider configures the GitHub provider used by the sync orchestrator.
@@ -140,353 +142,6 @@ func (a *App) SetGitHubClientSecret(secret string) {
 	a.githubClientSecret = secret
 }
 
-// handleAuthStart processes an AUTH_START WebSocket message by starting the
-// OAuth authorization code flow. Returns AUTH_REDIRECT to the requesting client
-// only (not broadcast). AUTH_SUCCESS/AUTH_FAILED are broadcast to all clients.
-func (a *App) handleAuthStart(msg ws.InboundMessage) (interface{}, error) {
-	var data struct {
-		Provider string `json:"provider"`
-	}
-	if err := json.Unmarshal(msg.Data, &data); err != nil {
-		return nil, fmt.Errorf("invalid AUTH_START data: %w", err)
-	}
-
-	if data.Provider != "github" {
-		return map[string]interface{}{
-			"id":   msg.ID,
-			"type": "AUTH_FAILED",
-			"data": map[string]string{"error": "unsupported provider: " + data.Provider},
-		}, nil
-	}
-
-	a.authMu.Lock()
-	if a.callbackServer != nil {
-		a.authMu.Unlock()
-		return map[string]interface{}{
-			"id":   msg.ID,
-			"type": "AUTH_FAILED",
-			"data": map[string]string{"error": "auth_already_in_progress"},
-		}, nil
-	}
-
-	if a.githubClientID == "" || a.githubClientSecret == "" {
-		a.authMu.Unlock()
-		return map[string]interface{}{
-			"id":   msg.ID,
-			"type": "AUTH_FAILED",
-			"data": map[string]string{"error": "GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET not configured"},
-		}, nil
-	}
-
-	cfg := auth.ProviderConfig{
-		AuthURL:      "https://github.com/login/oauth/authorize",
-		TokenURL:     "https://github.com/login/oauth/access_token",
-		Scopes:       []string{"repo", "read:user"},
-		ClientID:     a.githubClientID,
-		ClientSecret: a.githubClientSecret,
-	}
-
-	authURL, state, err := auth.BuildAuthURL(cfg, auth.RedirectURI)
-	if err != nil {
-		a.authMu.Unlock()
-		return nil, fmt.Errorf("building auth URL: %w", err)
-	}
-
-	resultCh := make(chan auth.CallbackResult, 1)
-	a.callbackServer = auth.NewCallbackServer(cfg, state, auth.RedirectURI, resultCh)
-	a.authMu.Unlock()
-
-	go a.runAuthCodeFlow(data.Provider, resultCh)
-
-	return map[string]interface{}{
-		"id":   msg.ID,
-		"type": "AUTH_REDIRECT",
-		"data": map[string]interface{}{
-			"provider": data.Provider,
-			"url":      authURL,
-		},
-	}, nil
-}
-
-// runAuthCodeFlow starts the callback server and waits for the OAuth result,
-// then broadcasts AUTH_SUCCESS or AUTH_FAILED to all connected clients.
-func (a *App) runAuthCodeFlow(providerName string, resultCh <-chan auth.CallbackResult) {
-	serverErrCh := make(chan error, 1)
-	go func() {
-		if err := a.callbackServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			serverErrCh <- err
-		}
-		close(serverErrCh)
-	}()
-
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		a.authMu.Lock()
-		if a.callbackServer != nil {
-			_ = a.callbackServer.Shutdown(ctx)
-		}
-		a.callbackServer = nil
-		a.authMu.Unlock()
-	}()
-
-	select {
-	case result := <-resultCh:
-		if result.Err != nil {
-			a.log.Error("auth callback failed", "error", result.Err)
-			a.wsServer.Broadcast(map[string]interface{}{
-				"type": "AUTH_FAILED",
-				"data": map[string]string{"error": result.Err.Error()},
-			})
-			return
-		}
-
-		if err := a.tokenManager.Store(providerName, result.Token); err != nil {
-			a.log.Error("failed to store token", "error", err)
-			a.wsServer.Broadcast(map[string]interface{}{
-				"type": "AUTH_FAILED",
-				"data": map[string]string{"error": "failed to persist token"},
-			})
-			return
-		}
-
-		client := github.NewClient(result.Token)
-		a.SetProvider(client)
-		a.provMu.Lock()
-		a.activeProviderName = providerName
-		a.provMu.Unlock()
-
-		username := ""
-		if u, err := a.fetchUsername(providerName, result.Token); err == nil {
-			username = u
-			a.providerCache.Set(providerName, u)
-		} else {
-			a.log.Warn("failed to fetch username after OAuth", "error", err)
-		}
-
-		a.wsServer.Broadcast(map[string]interface{}{
-			"type": "AUTH_SUCCESS",
-			"data": map[string]string{"provider": providerName, "username": username},
-		})
-		a.log.Info("OAuth authorization code flow completed", "provider", providerName)
-
-	case err := <-serverErrCh:
-		a.log.Error("callback server error", "error", err)
-		a.wsServer.Broadcast(map[string]interface{}{
-			"type": "AUTH_FAILED",
-			"data": map[string]string{"error": err.Error()},
-		})
-
-	case <-time.After(auth.CallbackTimeout):
-		a.log.Warn("auth callback timed out")
-		a.wsServer.Broadcast(map[string]interface{}{
-			"type": "AUTH_FAILED",
-			"data": map[string]string{"error": "timeout"},
-		})
-	}
-}
-
-var knownProviders = []string{"github", "gitlab", "gitea"}
-
-// handleAuthCheck responds with the current authentication state for all known providers.
-func (a *App) handleAuthCheck(msg ws.InboundMessage) (interface{}, error) {
-	type providerInfo struct {
-		Provider string `json:"provider"`
-		Username string `json:"username"`
-	}
-
-	var providers []providerInfo
-	authenticated := false
-
-	for _, p := range knownProviders {
-		token, err := a.tokenManager.Get(p)
-		if err != nil || token == "" {
-			continue
-		}
-		authenticated = true
-
-		username, expired, found := a.providerCache.Get(p)
-		if found && !expired {
-			providers = append(providers, providerInfo{Provider: p, Username: username})
-			continue
-		}
-
-		fetched, fetchErr := a.fetchUsername(p, token)
-		if fetchErr != nil {
-			a.log.Warn("failed to fetch username", "provider", p, "error", fetchErr)
-			// Always include the provider — use stale cache or empty string
-			providers = append(providers, providerInfo{Provider: p, Username: username})
-			continue
-		}
-		a.providerCache.Set(p, fetched)
-		providers = append(providers, providerInfo{Provider: p, Username: fetched})
-	}
-
-	return map[string]interface{}{
-		"id":   msg.ID,
-		"type": "AUTH_CHECK_RESULT",
-		"data": map[string]interface{}{
-			"authenticated": authenticated,
-			"providers":     providers,
-		},
-	}, nil
-}
-
-// fetchUsername retrieves the authenticated username for the given provider using the supplied token.
-// Uses a 10-second timeout to avoid blocking indefinitely on slow provider APIs.
-func (a *App) fetchUsername(providerName, token string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	switch providerName {
-	case "github":
-		client := github.NewClient(token)
-		return client.GetUsername(ctx)
-	default:
-		return "", fmt.Errorf("username fetch not implemented for %s", providerName)
-	}
-}
-
-// handleAuthDisconnect removes the token and cache entry for a provider and
-// returns a refreshed AUTH_DISCONNECT_RESULT with the remaining auth state.
-func (a *App) handleAuthDisconnect(msg ws.InboundMessage) (interface{}, error) {
-	var data struct {
-		Provider string `json:"provider"`
-	}
-	if err := json.Unmarshal(msg.Data, &data); err != nil {
-		return nil, fmt.Errorf("invalid AUTH_DISCONNECT data: %w", err)
-	}
-
-	if err := a.tokenManager.Delete(data.Provider); err != nil {
-		a.log.Warn("failed to delete token from keychain", "provider", data.Provider, "error", err)
-	}
-	a.providerCache.Delete(data.Provider)
-	a.provMu.Lock()
-	if a.activeProviderName == data.Provider {
-		a.prov = nil
-		a.activeProviderName = ""
-	}
-	a.provMu.Unlock()
-
-	checkResp, err := a.handleAuthCheck(msg)
-	if err != nil {
-		return nil, err
-	}
-	respMap := checkResp.(map[string]interface{})
-	respMap["type"] = "AUTH_DISCONNECT_RESULT"
-	return respMap, nil
-}
-
-// runSyncLoop runs the periodic sync goroutine. It exits when ctx is cancelled.
-func (a *App) runSyncLoop(ctx context.Context) {
-	ticker := time.NewTicker(a.syncInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			a.syncWatchedRepos(ctx)
-		case repoID := <-a.syncTrigger:
-			a.syncSingleRepo(ctx, repoID)
-		}
-	}
-}
-
-// syncWatchedRepos syncs all watched repos. No-ops if not yet authenticated.
-func (a *App) syncWatchedRepos(ctx context.Context) {
-	a.provMu.RLock()
-	orch := a.orchestrator
-	prov := a.prov
-	a.provMu.RUnlock()
-
-	if prov == nil || orch == nil {
-		return
-	}
-
-	rows, err := a.db.DB.QueryContext(ctx,
-		"SELECT id, provider, owner, repo FROM repos WHERE watched = 1",
-	)
-	if err != nil {
-		a.log.Error("syncWatchedRepos: query failed", "err", err)
-		return
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var id, repoProvider, owner, repo string
-		if err := rows.Scan(&id, &repoProvider, &owner, &repo); err != nil {
-			a.log.Error("syncWatchedRepos: scan failed", "err", err)
-			continue
-		}
-		req := &sync.SyncRequest{
-			Provider:   repoProvider,
-			Owner:      owner,
-			Repo:       repo,
-			IncludePRs: true,
-			State:      "open",
-		}
-		result, syncErr := orch.Sync(ctx, req)
-		if syncErr != nil {
-			a.log.Error("syncWatchedRepos: sync failed", "repo", id, "err", syncErr)
-			continue
-		}
-		a.log.Info("syncWatchedRepos: synced", "repo", id, "prs", result.PRCount)
-	}
-	if err := rows.Err(); err != nil {
-		a.log.Error("syncWatchedRepos: rows error", "err", err)
-	}
-
-	a.wsServer.Broadcast(map[string]interface{}{
-		"type": "SYNC_COMPLETE",
-		"data": map[string]interface{}{},
-	})
-}
-
-// syncSingleRepo syncs a single repo identified by its repo_id (e.g. "github:owner/repo").
-func (a *App) syncSingleRepo(ctx context.Context, repoID string) {
-	a.provMu.RLock()
-	orch := a.orchestrator
-	prov := a.prov
-	a.provMu.RUnlock()
-
-	if prov == nil || orch == nil {
-		return
-	}
-
-	// Parse "provider:owner/repo"
-	providerName, ownerRepo, found := strings.Cut(repoID, ":")
-	if !found {
-		a.log.Error("syncSingleRepo: invalid repo_id format", "repo_id", repoID)
-		return
-	}
-	owner, repo, found := strings.Cut(ownerRepo, "/")
-	if !found {
-		a.log.Error("syncSingleRepo: invalid repo_id format (no slash)", "repo_id", repoID)
-		return
-	}
-
-	req := &sync.SyncRequest{
-		Provider:   providerName,
-		Owner:      owner,
-		Repo:       repo,
-		IncludePRs: true,
-		State:      "open",
-	}
-	result, err := orch.Sync(ctx, req)
-	if err != nil {
-		a.log.Error("syncSingleRepo: sync failed", "repo_id", repoID, "err", err)
-		return
-	}
-	a.log.Info("syncSingleRepo: synced", "repo_id", repoID, "prs", result.PRCount)
-
-	a.wsServer.Broadcast(map[string]interface{}{
-		"type": "SYNC_COMPLETE",
-		"data": map[string]interface{}{"repo_id": repoID},
-	})
-}
-
 // Run initializes the database, starts the WebSocket server, and blocks until
 // a SIGTERM or SIGINT signal is received, then shuts down gracefully.
 func (a *App) Run(ctx context.Context) error {
@@ -512,23 +167,63 @@ func (a *App) Run(ctx context.Context) error {
 		a.log.Info("orchestrator initialized at startup (token from keychain)")
 	}
 
-	// Register inbound WebSocket handlers.
-	a.wsServer.RegisterHandler("AUTH_START", a.handleAuthStart)
-	a.wsServer.RegisterHandler("AUTH_CHECK", a.handleAuthCheck)
-	a.wsServer.RegisterHandler("AUTH_DISCONNECT", a.handleAuthDisconnect)
-	a.wsServer.RegisterHandler("REQUEST_DIFF", newRequestDiffHandler(diffStore, a.log))
-	a.wsServer.RegisterHandler("REQUEST_PR_LIST", newRequestPRListHandler(a.db.DB, a.log))
+	authDeps := handler.AuthDeps{
+		Log:    a.log,
+		Tokens: a.tokenManager,
+		Cache:  a.providerCache,
+		Broadcast: a.wsServer.Broadcast,
+		SetProvider: func(prov provider.Provider, name string) {
+			a.provMu.Lock()
+			defer a.provMu.Unlock()
+			if prov == nil {
+				if a.activeProviderName == name {
+					a.prov = nil
+					a.activeProviderName = ""
+				}
+				return
+			}
+			a.prov = prov
+			a.activeProviderName = name
+			if a.db != nil {
+				diffStore := store.NewDiffStore(a.db.DB)
+				a.orchestrator = sync.NewOrchestrator(a.log, prov, a.db, a.gitClient).
+					WithDiffStore(diffStore)
+				a.log.Info("orchestrator initialized after auth")
+			}
+		},
+		GetClientID:     func() string { return a.githubClientID },
+		GetClientSecret: func() string { return a.githubClientSecret },
+	}
+
+	authCheck := handler.NewAuthCheckHandler(authDeps)
+
+	a.wsServer.RegisterHandler("AUTH_START", handler.NewAuthStartHandler(authDeps))
+	a.wsServer.RegisterHandler("AUTH_CHECK", authCheck)
+	a.wsServer.RegisterHandler("AUTH_DISCONNECT", handler.NewAuthDisconnectHandler(authDeps, authCheck))
+	a.wsServer.RegisterHandler("REQUEST_DIFF", handler.NewRequestDiffHandler(diffStore, a.log))
+	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandler(a.db.DB, a.log))
+	a.wsServer.RegisterHandler("REQUEST_COMMENTS", handler.NewRequestCommentsHandler(a.db.DB, a.log))
 	a.wsServer.RegisterHandler("REQUEST_REPO_LIST",
-		newRequestRepoListHandler(a.getProvider, a.db.DB, a.log))
+		handler.NewRequestRepoListHandler(a.getProvider, a.db.DB, a.log))
 	a.wsServer.RegisterHandler("TOGGLE_WATCH_REPO",
-		newToggleWatchHandler(a.db.DB, a.syncTrigger, a.log))
+		handler.NewToggleWatchHandler(a.db.DB, a.syncTrigger, a.log))
+	a.wsServer.RegisterHandler("FORCE_SYNC", handler.NewForceSyncHandler(a.syncTrigger, a.log))
 
 	wsAddr := fmt.Sprintf(":%d", a.wsPort)
 	if err := a.wsServer.Start(wsAddr); err != nil {
 		return fmt.Errorf("failed to start ws server: %w", err)
 	}
 
-	a.log.Info("WebSocket server listening", "addr", wsAddr)
+	actualPort := a.wsServer.Port()
+	a.log.Info("WebSocket server listening", "addr", wsAddr, "port", actualPort)
+
+	readyOut := a.readyWriter
+	if readyOut == nil {
+		readyOut = os.Stdout
+	}
+	if err := emitReady(readyOut, actualPort); err != nil {
+		a.log.Warn("failed to emit ready signal", "error", err)
+	}
 
 	go a.runSyncLoop(ctx)
 

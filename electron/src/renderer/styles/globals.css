@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
-@theme {
-  /* Dark mode via class */
-  --dark-mode: class;
+/* Dark mode enabled via the `dark` class on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
 
-  /* Colors - Surface hierarchy */
+@theme {
+  /* ── Surface hierarchy ─────────────────────────────────────── */
   --color-surface: #f8f9fa;
   --color-surface-bright: #f8f9fa;
   --color-background: #f8f9fa;
@@ -15,174 +15,164 @@
   --color-surface-container-high: #e7e8e9;
   --color-surface-container-highest: #e1e3e4;
   --color-surface-variant: #e1e3e4;
+  --color-surface-tint: #0053db;
 
-  /* Colors - Primary */
+  /* ── Primary ───────────────────────────────────────────────── */
   --color-primary: #004ac6;
   --color-primary-container: #2563eb;
   --color-on-primary: #ffffff;
   --color-on-primary-container: #eeefff;
   --color-primary-fixed: #dbe1ff;
   --color-primary-fixed-dim: #b4c5ff;
+  --color-on-primary-fixed: #00174b;
+  --color-on-primary-fixed-variant: #003ea8;
 
-  /* Colors - Secondary */
+  /* ── Secondary ─────────────────────────────────────────────── */
   --color-secondary: #495c95;
   --color-secondary-container: #acbfff;
   --color-on-secondary: #ffffff;
   --color-on-secondary-container: #394c84;
   --color-secondary-fixed: #dbe1ff;
   --color-secondary-fixed-dim: #b4c5ff;
+  --color-on-secondary-fixed: #00174b;
+  --color-on-secondary-fixed-variant: #31447b;
 
-  /* Colors - Outline */
-  --color-outline: #737686;
-  --color-outline-variant: #c3c6d7;
-
-  /* Colors - Surface text */
-  --color-on-surface: #191c1d;
-  --color-on-surface-variant: #434655;
-  --color-on-background: #191c1d;
-
-  /* Colors - Error */
-  --color-error: #ba1a1a;
-  --color-on-error: #ffffff;
-  --color-error-container: #ffdad6;
-  --color-on-error-container: #93000a;
-
-  /* Colors - Tertiary */
+  /* ── Tertiary ──────────────────────────────────────────────── */
   --color-tertiary: #943700;
   --color-tertiary-container: #bc4800;
   --color-on-tertiary: #ffffff;
   --color-on-tertiary-container: #ffede6;
   --color-tertiary-fixed: #ffdbcd;
   --color-tertiary-fixed-dim: #ffb596;
+  --color-on-tertiary-fixed: #360f00;
+  --color-on-tertiary-fixed-variant: #7d2d00;
 
-  /* Colors - Inverse */
+  /* ── Outline / on-surface ──────────────────────────────────── */
+  --color-outline: #737686;
+  --color-outline-variant: #c3c6d7;
+  --color-on-surface: #191c1d;
+  --color-on-surface-variant: #434655;
+  --color-on-background: #191c1d;
+
+  /* ── Error ─────────────────────────────────────────────────── */
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+
+  /* ── Inverse ───────────────────────────────────────────────── */
   --color-inverse-surface: #2e3132;
   --color-inverse-on-surface: #f0f1f2;
   --color-inverse-primary: #b4c5ff;
 
-  /* Border radius - all zero */
+  /* ── Radius (zero-radius architecture) ─────────────────────── */
   --radius-none: 0px;
   --radius: 0px;
   --radius-sm: 0px;
   --radius-md: 0px;
   --radius-lg: 0px;
   --radius-xl: 0px;
+  --radius-2xl: 0px;
   --radius-full: 0px;
 
-  /* Font families */
-  --font-sans: "IBM Plex Mono", monospace;
-  --font-mono: "IBM Plex Mono", monospace;
+  /* ── Font families ─────────────────────────────────────────── */
+  /* Token defaults: overridden at runtime via --app-ui-font / --app-code-font
+     which are bound to Settings. Tailwind `font-sans` / `font-mono` utility
+     classes resolve through these CSS variables. */
+  --font-sans: var(
+    --app-ui-font,
+    "Geist Variable",
+    "Geist",
+    "Inter",
+    system-ui,
+    sans-serif
+  );
+  --font-mono: var(
+    --app-code-font,
+    "JetBrains Mono",
+    "Geist Mono Variable",
+    "Fira Code",
+    "IBM Plex Mono",
+    monospace
+  );
 
-  /* Box shadows */
+  /* ── Shadows ───────────────────────────────────────────────── */
   --shadow-ambient: 0 10px 30px rgba(25, 28, 29, 0.04);
   --shadow-none: none;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/* ─── Dark mode smoke palette ──────────────────────────────────
+   Minimal high-contrast overrides to verify the toggle works.
+   A full dark design is a follow-up pass. */
+html.dark {
+  --color-surface: #0a0a0a;
+  --color-surface-bright: #111111;
+  --color-background: #0a0a0a;
+  --color-surface-dim: #050505;
+  --color-surface-container-lowest: #000000;
+  --color-surface-container-low: #0f0f0f;
+  --color-surface-container: #151515;
+  --color-surface-container-high: #1c1c1c;
+  --color-surface-container-highest: #242424;
+  --color-surface-variant: #242424;
+
+  --color-on-surface: #fafafa;
+  --color-on-surface-variant: #c0c0c0;
+  --color-on-background: #fafafa;
+
+  --color-outline: #6b6b6b;
+  --color-outline-variant: #333333;
+
+  --color-primary: #7aa4ff;
+  --color-primary-container: #3b82f6;
+  --color-on-primary: #000000;
+  --color-on-primary-container: #eaf0ff;
+
+  --color-error: #ff6e6e;
+  --color-on-error: #000000;
+  --color-error-container: #5a1a1a;
+  --color-on-error-container: #ffdad6;
+
+  --color-inverse-surface: #f0f1f2;
+  --color-inverse-on-surface: #191c1d;
 }
 
 :root {
-  /* Spacing (8px grid) */
-  --space-xs: 4px;
-  --space-sm: 8px;
-  --space-md: 16px;
-  --space-lg: 24px;
-  --space-xl: 32px;
-
-  /* Typography */
-  --font-size-sm: 12px;
-  --font-size-base: 14px;
-  --font-size-md: 16px;
-  --font-size-lg: 18px;
-  --font-size-xl: 24px;
-
-  --line-height-tight: 1.4;
-  --line-height-base: 1.6;
-  --line-height-loose: 1.8;
-
-  --font-weight-normal: 400;
-  --font-weight-medium: 500;
-  --font-weight-semibold: 600;
-  --font-weight-bold: 700;
-
-  /* Transitions */
-  --transition-fast: 50ms;
-  --transition-base: 150ms;
-  --transition-slow: 300ms;
+  /* Runtime-tunable app font stack. Settings updates these directly. */
+  --app-ui-font: "Geist Variable", "Geist", "Inter", system-ui, sans-serif;
+  --app-code-font:
+    "JetBrains Mono", "Geist Mono Variable", "Fira Code", "IBM Plex Mono",
+    monospace;
+  --app-ui-font-size: 14px;
+  --app-code-font-size: 13px;
 }
 
 html,
 body {
   height: 100%;
   width: 100%;
-  background-color: var(--color-bg);
-  color: var(--color-text-primary);
-  font-family: var(--font-family-sans);
-  font-size: var(--font-size-base);
-  line-height: var(--line-height-base);
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+  font-family: var(--app-ui-font);
+  font-size: var(--app-ui-font-size);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-h1 {
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-bold);
-  margin-bottom: var(--space-md);
-}
-
-h2 {
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-  margin-bottom: var(--space-sm);
-}
-
-h3 {
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-semibold);
-}
-
+/* Code blocks use the configured code size; kbd / UI mono use Tailwind text-* */
 code,
-pre {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
+pre,
+samp {
+  font-family: var(--app-code-font);
+  font-size: var(--app-code-font-size);
 }
 
-pre {
-  background-color: var(--color-surface);
-  padding: var(--space-md);
-  border-radius: 4px;
-  overflow-x: auto;
-}
-
-button {
-  font-family: var(--font-family-sans);
-  padding: var(--space-sm) var(--space-md);
-  border-radius: 4px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: all var(--transition-base);
-  font-weight: var(--font-weight-medium);
-}
-
-button:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-input {
-  font-family: var(--font-family-sans);
-  padding: var(--space-sm);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background-color: var(--color-surface);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-base);
-}
-
-input:focus-visible {
-  outline: 2px solid var(--color-accent);
-  border-color: var(--color-accent);
+kbd,
+.font-mono,
+.mono-text {
+  font-family: var(--app-code-font);
 }
 
 #root {
@@ -192,21 +182,53 @@ input:focus-visible {
   flex-direction: column;
 }
 
-/* Dark mode scrollbar */
+button {
+  font-family: inherit;
+  cursor: pointer;
+  background: none;
+  border: 1px solid transparent;
+  color: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  color: inherit;
+  background: transparent;
+}
+
+/* ─── Material Symbols helper ──────────────────────────────── */
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined", sans-serif;
+  font-variation-settings:
+    "FILL" 0,
+    "wght" 400,
+    "GRAD" 0,
+    "opsz" 24;
+  line-height: 1;
+  user-select: none;
+}
+
+/* ─── Scrollbar (neutral, both modes) ──────────────────────── */
 ::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
 }
-
 ::-webkit-scrollbar-track {
-  background: var(--color-bg);
+  background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 6px;
+  background: var(--color-outline-variant);
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-secondary);
+  background: var(--color-outline);
 }

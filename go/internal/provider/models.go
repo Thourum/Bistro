@@ -16,6 +16,7 @@ type PR struct {
 	ReviewStatus          string // "pending", "approved", "changes_requested"
 	ApprovedBy            string // username who approved
 	ChangesRequestedBy    string // username who requested changes
+	RequestedReviewers    []string // logins whose review is currently requested
 	BaseBranch            string
 	HeadBranch   string
 	BaseSHA      string
@@ -26,6 +27,14 @@ type PR struct {
 	CommentCount int
 	CIStatus     string // "pending", "success", "failure"
 	Draft        bool
+}
+
+// Review represents a normalized PR review submission.
+type Review struct {
+	PRID        string
+	Author      string
+	State       string // "approved", "changes_requested", "commented", "dismissed", "pending"
+	SubmittedAt time.Time
 }
 
 // Comment represents a normalized comment

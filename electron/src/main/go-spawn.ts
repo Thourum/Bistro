@@ -34,8 +34,45 @@ let goProcess: ChildProcess | null = null;
 const GO_READY_TIMEOUT_MS = 15_000;
 const MAX_RESTARTS = 3;
 const RESTART_DELAY_MS = 2000;
+const FALLBACK_EXTERNAL_PORT = 8080;
 
 let restartCount = 0;
+let lastKnownPort: number | null = null;
+
+/**
+ * Parses the machine-readable ready signal the Go process prints to stdout:
+ * `{"event":"ready","wsPort":63796}`. Returns the port, or null when the
+ * line is not a valid ready signal.
+ */
+export function parseReadyLine(line: string): number | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('{')) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return null;
+  }
+  const record = parsed as Record<string, unknown>;
+  if (record.event !== 'ready') {
+    return null;
+  }
+  const port = record.wsPort;
+  if (
+    typeof port !== 'number' ||
+    !Number.isInteger(port) ||
+    port < 1 ||
+    port > 65535
+  ) {
+    return null;
+  }
+  return port;
+}
 
 export interface GoSpawnOptions {
   config: GoProcessConfig;
@@ -46,27 +83,35 @@ export interface GoSpawnOptions {
 
 /**
  * Spawns the Go sync engine binary and waits for it to signal readiness.
- * Resolves when Go prints a line containing "listening" or "started" (case-insensitive),
- * or after a timeout (proceeds anyway with a warning).
+ * Resolves with the actual WebSocket port once Go prints its structured
+ * ready line (`{"event":"ready","wsPort":N}`). Falls back to legacy log-line
+ * sniffing for older binaries when a fixed port was configured.
+ *
+ * Pass `config.wsPort = 0` to let Go pick a random available port.
  */
-export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
+export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
   const { config, logger, onCrash, maxRestarts = MAX_RESTARTS } = options;
   return new Promise((resolve, reject) => {
     // When BISTRO_SKIP_GO_SPAWN=1, assume Go is already running externally (e.g. under Delve for debugging).
     if (process.env.BISTRO_SKIP_GO_SPAWN === '1') {
+      const externalPort =
+        config.wsPort > 0 ? config.wsPort : FALLBACK_EXTERNAL_PORT;
       logger.info(
         'BISTRO_SKIP_GO_SPAWN=1 — waiting for external Go process on port ' +
-          config.wsPort,
+          externalPort,
       );
-      waitForPort(config.wsPort, GO_READY_TIMEOUT_MS)
-        .then(resolve)
+      waitForPort(externalPort, GO_READY_TIMEOUT_MS)
+        .then(() => {
+          lastKnownPort = externalPort;
+          resolve(externalPort);
+        })
         .catch(reject);
       return;
     }
 
     if (goProcess) {
       logger.warn('Go process already running');
-      resolve();
+      resolve(lastKnownPort ?? config.wsPort);
       return;
     }
 
@@ -78,6 +123,9 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
       `-log-level`,
       config.logLevel,
       `-replay-queue=${config.replayQueue}`,
+      // Go exits when its stdin pipe closes, so it can never outlive us
+      // even if this process is SIGKILLed (see stdio below).
+      `-exit-on-stdin-close`,
     ];
 
     if (config.logFile) {
@@ -88,7 +136,8 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
 
     try {
       goProcess = spawn(config.binaryPath, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
+        // stdin must be a pipe: Go watches it for EOF to detect parent death.
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -102,24 +151,45 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
     const readyTimeout = setTimeout(() => {
       if (!resolved) {
         resolved = true;
-        logger.warn(
-          'Go process did not signal readiness within timeout — proceeding anyway',
-        );
-        resolve();
+        if (config.wsPort > 0) {
+          logger.warn(
+            'Go process did not signal readiness within timeout — proceeding with configured port',
+          );
+          resolve(config.wsPort);
+        } else {
+          reject(
+            new Error(
+              'Go process did not emit a ready signal — cannot determine WebSocket port',
+            ),
+          );
+        }
       }
     }, GO_READY_TIMEOUT_MS);
+
+    const markReady = (port: number, source: string): void => {
+      resolved = true;
+      clearTimeout(readyTimeout);
+      lastKnownPort = port;
+      logger.info(`Go sync engine is ready on port ${port} (${source})`);
+      resolve(port);
+    };
 
     goProcess.stdout?.on('data', (data: Buffer) => {
       const lines = data.toString().split('\n').filter(Boolean);
       for (const line of lines) {
         logger.info(`[go] ${line}`);
 
-        // Detect readiness: Go logs "WebSocket server listening on :8080" or similar
-        if (!resolved && /listen|started|serving/i.test(line)) {
-          resolved = true;
-          clearTimeout(readyTimeout);
-          logger.info('Go sync engine is ready');
-          resolve();
+        if (resolved) {
+          continue;
+        }
+        const readyPort = parseReadyLine(line);
+        if (readyPort !== null) {
+          markReady(readyPort, 'ready signal');
+          continue;
+        }
+        // Legacy fallback: older binaries only log "WebSocket server listening …"
+        if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
+          markReady(config.wsPort, 'log line');
         }
       }
     });
@@ -130,11 +200,12 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
         logger.warn(`[go:stderr] ${line}`);
 
         // Some Go programs log to stderr; also check for readiness signals there
-        if (!resolved && /listen|started|serving/i.test(line)) {
-          resolved = true;
-          clearTimeout(readyTimeout);
-          logger.info('Go sync engine is ready (via stderr)');
-          resolve();
+        if (
+          !resolved &&
+          config.wsPort > 0 &&
+          /listen|started|serving/i.test(line)
+        ) {
+          markReady(config.wsPort, 'stderr log line');
         }
       }
     });
@@ -168,14 +239,22 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<void> {
         onCrash(code, signal);
       }
 
-      // Auto-restart if under limit
+      // Auto-restart if under limit. Reuse the last known port so the main
+      // process and renderer reconnect logic keep working after a crash.
       if (restartCount < maxRestarts) {
         restartCount += 1;
         logger.info(
           `Auto-restarting Go process (attempt ${restartCount}/${maxRestarts}) in ${RESTART_DELAY_MS}ms`,
         );
+        const restartOptions: GoSpawnOptions =
+          lastKnownPort !== null
+            ? {
+                ...options,
+                config: { ...options.config, wsPort: lastKnownPort },
+              }
+            : options;
         setTimeout(() => {
-          spawnGoProcess(options).catch((err: unknown) => {
+          spawnGoProcess(restartOptions).catch((err: unknown) => {
             const message = err instanceof Error ? err.message : String(err);
             logger.error(`Failed to restart Go process: ${message}`);
           });

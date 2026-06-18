@@ -1,9 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { appStore } from '../store';
+import type { UIState } from '../store/ui';
 import type { PR } from '../types';
+import { classifyPR } from '../utils/triage';
 import { useStore } from './useStore';
 import { useWebSocket } from './useWebSocket';
+
+type FilterState = UIState['filterState'];
 
 interface RequestPRListData {
   filter: 'open' | 'draft' | 'all';
@@ -20,24 +24,36 @@ interface PRListReadyData {
 /**
  * Fetches PR list from sync engine via WebSocket
  * Replaces SQLite-based queries with live sync engine data
+ *
+ * 'needs_action' is a client-side lane: the backend serves open PRs and the
+ * list is narrowed by triage classification against the signed-in user.
  */
-export function useWebSocketPRList(
-  filterState: 'open' | 'draft' | 'all' = 'open',
-) {
+export function useWebSocketPRList(filterState: FilterState = 'open') {
   const { request } = useWebSocket();
   const prListRevision = useStore(appStore, (s) => s.prListRevision);
+  const username = useStore(
+    appStore,
+    (s) => (s.connectedProviders ?? [])[0]?.username ?? '',
+  );
 
   return useQuery({
-    queryKey: ['prs-websocket', filterState, prListRevision],
+    queryKey: ['prs-websocket', filterState, username, prListRevision],
     queryFn: async (): Promise<PR[]> => {
+      const backendFilter: RequestPRListData['filter'] =
+        filterState === 'needs_action' ? 'open' : filterState;
       try {
         const data = await request('REQUEST_PR_LIST', {
-          filter: filterState,
+          filter: backendFilter,
           limit: 100,
           offset: 0,
         } as RequestPRListData);
 
         const payload = data as PRListReadyData;
+        if (filterState === 'needs_action') {
+          return payload.prs.filter(
+            (pr) => classifyPR(pr, username) === 'needs_action',
+          );
+        }
         return payload.prs;
       } catch (err) {
         const message =

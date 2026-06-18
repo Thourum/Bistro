@@ -10,16 +10,24 @@ import type {
   SyncActionRequest,
   SyncActionResponse,
 } from '../types/ipc';
+import type { AppSettings } from '../types/settings';
 import type { SyncEvent } from './websocket-client';
+import { readWsPortFromArgv } from './ws-port';
 
 const VALID_SEND_CHANNELS = ['sync:subscribe'] as const;
-const VALID_EVENT_CHANNELS = ['sync:event'] as const;
+const VALID_EVENT_CHANNELS = ['sync:event', 'settings:changed'] as const;
 
 type ValidSendChannel = (typeof VALID_SEND_CHANNELS)[number];
 type ValidEventChannel = (typeof VALID_EVENT_CHANNELS)[number];
 
 // Expose safe IPC methods to renderer
 contextBridge.exposeInMainWorld('electron', {
+  /**
+   * Actual WebSocket port of the Go sync engine, delivered via
+   * additionalArguments at window creation (Go picks it dynamically).
+   */
+  wsPort: readWsPortFromArgv(process.argv),
+
   /**
    * Query SQLite database
    * @returns { ok: Record<string, unknown>[] } | { err: string }
@@ -73,20 +81,26 @@ contextBridge.exposeInMainWorld('electron', {
   },
 
   /**
-   * Subscribe to sync events from main process.
+   * Subscribe to events from the main process (sync events, settings changes).
    * Returns an unsubscribe function.
    */
-  on(
-    channel: ValidEventChannel,
-    listener: (data: SyncEvent) => void,
+  on<C extends ValidEventChannel>(
+    channel: C,
+    listener: (
+      data: C extends 'sync:event'
+        ? SyncEvent
+        : C extends 'settings:changed'
+          ? AppSettings
+          : unknown,
+    ) => void,
   ): () => void {
     if (!(VALID_EVENT_CHANNELS as readonly string[]).includes(channel)) {
       return () => undefined;
     }
     const wrappedListener = (
       _event: Electron.IpcRendererEvent,
-      data: SyncEvent,
-    ) => listener(data);
+      data: unknown,
+    ) => listener(data as never);
     ipcRenderer.on(channel, wrappedListener);
     return () => ipcRenderer.removeListener(channel, wrappedListener);
   },
@@ -99,11 +113,35 @@ contextBridge.exposeInMainWorld('electron', {
   async openExternal(url: string): Promise<{ ok: true } | { err: string }> {
     return ipcRenderer.invoke('open-external', url);
   },
+
+  /**
+   * User settings persisted to `userData/settings.json`.
+   */
+  settings: {
+    async get(): Promise<{ ok: AppSettings } | IPCError> {
+      return ipcRenderer.invoke('settings:get');
+    },
+    async set(
+      patch: Partial<AppSettings>,
+    ): Promise<{ ok: AppSettings } | IPCError> {
+      return ipcRenderer.invoke('settings:set', patch);
+    },
+    async reset(): Promise<{ ok: AppSettings } | IPCError> {
+      return ipcRenderer.invoke('settings:reset');
+    },
+    async openFile(): Promise<{ ok: true } | { err: string }> {
+      return ipcRenderer.invoke('settings:open-file');
+    },
+    async path(): Promise<{ ok: string } | IPCError> {
+      return ipcRenderer.invoke('settings:path');
+    },
+  },
 });
 
 declare global {
   interface Window {
     electron: {
+      wsPort: number;
       db: (request: DBQueryRequest) => Promise<DBQueryResponse | IPCError>;
       fs: (
         request: FSReadPatchRequest,
@@ -114,11 +152,26 @@ declare global {
       syncAction: (
         request: SyncActionRequest,
       ) => Promise<SyncActionResponse | IPCError>;
-      on: (
-        channel: ValidEventChannel,
-        listener: (data: SyncEvent) => void,
+      on: <C extends ValidEventChannel>(
+        channel: C,
+        listener: (
+          data: C extends 'sync:event'
+            ? SyncEvent
+            : C extends 'settings:changed'
+              ? AppSettings
+              : unknown,
+        ) => void,
       ) => () => void;
       openExternal: (url: string) => Promise<{ ok: true } | { err: string }>;
+      settings: {
+        get: () => Promise<{ ok: AppSettings } | IPCError>;
+        set: (
+          patch: Partial<AppSettings>,
+        ) => Promise<{ ok: AppSettings } | IPCError>;
+        reset: () => Promise<{ ok: AppSettings } | IPCError>;
+        openFile: () => Promise<{ ok: true } | { err: string }>;
+        path: () => Promise<{ ok: string } | IPCError>;
+      };
     };
   }
 }

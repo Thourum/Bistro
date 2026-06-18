@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/samuelasvanyi/bistro/internal/actions"
+	"github.com/samuelasvanyi/bistro/internal/events"
 	"github.com/samuelasvanyi/bistro/internal/provider"
 	"github.com/samuelasvanyi/bistro/internal/provider/mock"
+	"github.com/samuelasvanyi/bistro/internal/store"
 )
 
 // TestOrchestratorRateLimitDetection verifies that a 429 ProviderError from
@@ -21,15 +23,16 @@ func TestOrchestratorRateLimitDetection(t *testing.T) {
 	eventCh := orch.GetEventChannel()
 
 	req := &SyncRequest{
-		Provider:   "github",
-		Owner:      "org",
-		Repo:       "repo",
-		IncludePRs: true,
-		State:      "open",
+		Provider:        "github",
+		Owner:           "org",
+		Repo:            "repo",
+		IncludePRs:      true,
+		IncludeComments: true,
+		State:           "open",
 	}
 
 	// Collect events in the background until we see rate_limited or timeout.
-	received := make(chan *SyncEvent, 32)
+	received := make(chan *events.Event, 32)
 	collectorDone := make(chan struct{})
 	go func() {
 		defer close(collectorDone)
@@ -84,7 +87,7 @@ func TestOrchestratorQueueActionsWhenRateLimited(t *testing.T) {
 	orch.rateLimitState = &provider.RateLimitState{
 		ResetAt: time.Now().Add(10 * time.Minute),
 	}
-	orch.queue = NewActionQueue(storeDB.DB)
+	orch.queue = store.NewActionQueue(storeDB.DB)
 
 	req := &actions.ActionRequest{
 		PRID:   "github:org/repo:1",
@@ -126,10 +129,10 @@ func TestOrchestratorReplayQueuedActions(t *testing.T) {
 		{ID: "github:org/repo:1", Number: 1, Title: "Test PR"},
 	})
 	orch := NewOrchestrator(nil, mockProv, nil, nil)
-	orch.queue = NewActionQueue(storeDB.DB)
+	orch.queue = store.NewActionQueue(storeDB.DB)
 
 	// Pre-populate one pending action.
-	action := &QueuedAction{
+	action := &store.QueuedAction{
 		ID:         "github:org/repo:1-approve",
 		ActionType: string(actions.ApproveCommand),
 		PRID:       "github:org/repo:1",
@@ -161,7 +164,7 @@ func TestOrchestratorCleanupOldQueuedActions(t *testing.T) {
 	storeDB := openTestDB(t)
 
 	orch := NewOrchestrator(nil, mock.NewMockProvider(), nil, nil)
-	orch.queue = NewActionQueue(storeDB.DB)
+	orch.queue = store.NewActionQueue(storeDB.DB)
 
 	ctx := context.Background()
 	db := storeDB.DB

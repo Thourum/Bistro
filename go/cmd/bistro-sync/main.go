@@ -10,18 +10,22 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/gofrs/flock"
+	"github.com/samuelasvanyi/bistro/internal/git"
 	"github.com/samuelasvanyi/bistro/internal/keychain"
 	github "github.com/samuelasvanyi/bistro/internal/provider/github"
 	"github.com/samuelasvanyi/bistro/internal/server"
 )
 
 func main() {
-	wsPort := flag.Int("ws-port", 8080, "WebSocket server port")
+	wsPort := flag.Int("ws-port", 8080, "WebSocket server port (0 = random available port, reported via ready signal on stdout)")
 	dbPath := flag.String("db-path", "./data/sync.db", "SQLite database path")
 	replayQueue := flag.Bool("replay-queue", true, "Replay offline queue on startup")
 	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, error")
 	logFile := flag.String("log-file", "", "Log file path (default: stderr only)")
 	syncInterval := flag.Duration("sync-interval", 5*time.Minute, "Interval between sync cycles")
+	exitOnStdinClose := flag.Bool("exit-on-stdin-close", false,
+		"Exit when stdin closes (set by the Electron shell so the engine dies with its parent)")
 	flag.Parse()
 
 	if *syncInterval <= 0 {
@@ -38,6 +42,31 @@ func main() {
 	if logCloser != nil {
 		defer logCloser.Close()
 	}
+
+	// Single-instance guard: a second engine on the same database would
+	// fight over the SQLite write lock and wedge both syncs. An orphaned
+	// instance (e.g. Electron crashed without killing its child) caused
+	// exactly that, so fail fast and loud instead.
+	if dbDir := filepath.Dir(*dbPath); dbDir != "." && dbDir != "" {
+		if err := os.MkdirAll(dbDir, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to create db directory %s: %v\n", dbDir, err)
+			os.Exit(1)
+		}
+	}
+	lock := flock.New(*dbPath + ".lock")
+	locked, err := lock.TryLock()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to acquire instance lock %s: %v\n", lock.Path(), err)
+		os.Exit(1)
+	}
+	if !locked {
+		fmt.Fprintf(os.Stderr,
+			"another bistro-sync instance is already using %s — kill it or pass a different -db-path\n",
+			*dbPath,
+		)
+		os.Exit(1)
+	}
+	defer lock.Unlock() //nolint:errcheck
 
 	log := slog.Default()
 	log.Info("bistro-sync starting",
@@ -65,6 +94,19 @@ func main() {
 
 	// Check keychain for an existing GitHub token — skip the auth flow if found.
 	tm := keychain.NewTokenManager()
+
+	// Git client for cloning PR branches and generating diffs locally.
+	// Clone auth comes from the keychain so private repos work without env vars.
+	gitClient := git.NewClient(git.NewCache())
+	gitClient.SetTokenSource(func() string {
+		token, err := tm.GetGitHubToken()
+		if err != nil {
+			return ""
+		}
+		return token
+	})
+	app.SetGitClient(gitClient)
+
 	existingToken, err := tm.GetGitHubToken()
 	if err == nil && existingToken != "" {
 		log.Info("found existing GitHub token in keychain — skipping OAuth flow")
@@ -72,6 +114,18 @@ func main() {
 		app.SetProvider(client)
 	} else {
 		log.Info("no GitHub token in keychain — waiting for OAuth authorization code flow")
+	}
+
+	// Parent-death watchdog: Electron holds our stdin pipe open. If the
+	// shell dies without killing us (crash, SIGKILL, killed process tree),
+	// stdin hits EOF and we exit instead of becoming an orphan that holds
+	// the database hostage.
+	if *exitOnStdinClose {
+		go func() {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			log.Info("stdin closed — parent gone, shutting down")
+			os.Exit(0)
+		}()
 	}
 
 	if *replayQueue {
@@ -108,7 +162,7 @@ func setupLogging(level, logFile string) (io.Closer, error) {
 
 	opts := &slog.HandlerOptions{
 		Level: logLevel,
-		AddSource: logLevel == slog.LevelDebug, // Include source file:line for debug
+		AddSource: logLevel <= slog.LevelDebug, // Include source file:line for debug and below
 	}
 
 	var out io.Writer = os.Stderr

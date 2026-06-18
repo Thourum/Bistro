@@ -10,16 +10,42 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+
+	"github.com/samuelasvanyi/bistro/internal/logging"
 )
 
 // Client handles git operations
 type Client struct {
 	cache *Cache
+	// tokenSource supplies the auth token for clone/fetch (e.g. from the OS
+	// keychain). Queried per operation so token rotation is picked up.
+	tokenSource func() string
 }
 
 // NewClient creates a new git client with cache
 func NewClient(cache *Cache) *Client {
 	return &Client{cache: cache}
+}
+
+// SetTokenSource configures where clone/fetch auth tokens come from.
+// Must be called before the client is shared across goroutines.
+func (c *Client) SetTokenSource(fn func() string) {
+	c.tokenSource = fn
+}
+
+// auth returns HTTP basic auth from the configured token source, falling
+// back to the GITHUB_TOKEN env var. Returns nil (anonymous) when neither is
+// set — public repos still work.
+func (c *Client) auth() *http.BasicAuth {
+	if c.tokenSource != nil {
+		if token := c.tokenSource(); token != "" {
+			return &http.BasicAuth{
+				Username: "x-token", // GitHub ignores username when token is used
+				Password: token,
+			}
+		}
+	}
+	return tokenFromEnv()
 }
 
 // Clone fetches both baseSHA and headSHA into a local clone.
@@ -28,6 +54,11 @@ func NewClient(cache *Cache) *Client {
 // apart in history, so a shallow clone with Depth:1 would miss one or both.
 // Returns cached result when both SHAs already exist in the cache.
 func (c *Client) Clone(ctx context.Context, repoURL, baseSHA, headSHA string) (*CloneResult, error) {
+	log := logging.FromContext(ctx).With(
+		"repo_url", repoURL,
+		"base_sha", truncateSHAForLog(baseSHA),
+		"head_sha", truncateSHAForLog(headSHA),
+	)
 	if repoURL == "" {
 		return nil, fmt.Errorf("repository URL cannot be empty")
 	}
@@ -40,6 +71,7 @@ func (c *Client) Clone(ctx context.Context, repoURL, baseSHA, headSHA string) (*
 
 	// Check composite cache — keyed on both SHAs to avoid stale hits after force-pushes
 	if cached, ok := c.cache.Get(repoURL, baseSHA, headSHA); ok {
+		log.Debug("git clone cache hit", "local_path", cached.LocalPath)
 		return &CloneResult{
 			LocalPath: cached.LocalPath,
 			BaseSHA:   cached.BaseSHA,
@@ -47,48 +79,68 @@ func (c *Client) Clone(ctx context.Context, repoURL, baseSHA, headSHA string) (*
 		}, nil
 	}
 
+	log.Debug("git clone start")
+	overallStart := time.Now()
+
 	repoDir, err := getRepoDir()
 	if err != nil {
+		log.Error("failed to get repo dir", "error", err)
 		return nil, fmt.Errorf("failed to get repo dir: %w", err)
 	}
 
 	tmpDir, err := os.MkdirTemp(repoDir, "repo-*")
 	if err != nil {
+		log.Error("failed to create temp dir", "repo_dir", repoDir, "error", err)
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
 	opts := &gitlib.CloneOptions{
 		URL:  repoURL,
-		Auth: tokenFromEnv(),
+		Auth: c.auth(),
 	}
 
+	cloneStart := time.Now()
 	repo, err := gitlib.PlainCloneContext(ctx, tmpDir, false, opts)
+	cloneDur := time.Since(cloneStart).Milliseconds()
 	if err != nil {
 		os.RemoveAll(tmpDir)
+		log.Error("git clone failed",
+			"duration_ms", cloneDur,
+			"error", err,
+		)
 		return nil, fmt.Errorf("failed to clone repository %s: %w", repoURL, err)
 	}
+	log.Debug("git clone done", "duration_ms", cloneDur, "local_path", tmpDir)
 
 	// Fetch both branch heads and PR refs so base and head commits are locally available
 	fetchOpts := &gitlib.FetchOptions{
-		Auth: tokenFromEnv(),
+		Auth: c.auth(),
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 			config.RefSpec("+refs/pull/*/head:refs/remotes/origin/pr/*"),
 		},
 	}
 
+	fetchStart := time.Now()
 	if err := repo.FetchContext(ctx, fetchOpts); err != nil && err != gitlib.NoErrAlreadyUpToDate {
 		os.RemoveAll(tmpDir)
+		log.Error("git fetch refs failed",
+			"duration_ms", time.Since(fetchStart).Milliseconds(),
+			"error", err,
+		)
 		return nil, fmt.Errorf("failed to fetch refs: %w", err)
 	}
+	log.Debug("git fetch refs done", "duration_ms", time.Since(fetchStart).Milliseconds())
 
 	// Verify both commits are present — fail fast before writing to cache
 	if _, err := repo.CommitObject(plumbing.NewHash(baseSHA)); err != nil {
 		os.RemoveAll(tmpDir)
+		log.Warn("base commit missing after fetch", "error", err)
 		return nil, fmt.Errorf("base commit %s not found after fetch: %w", baseSHA, err)
 	}
 	if _, err := repo.CommitObject(plumbing.NewHash(headSHA)); err != nil {
 		os.RemoveAll(tmpDir)
+		log.Warn("head commit missing after fetch", "error", err)
 		return nil, fmt.Errorf("head commit %s not found after fetch: %w", headSHA, err)
 	}
 
@@ -106,7 +158,19 @@ func (c *Client) Clone(ctx context.Context, repoURL, baseSHA, headSHA string) (*
 		FetchedAt: time.Now(),
 	})
 
+	log.Debug("git clone complete",
+		"total_duration_ms", time.Since(overallStart).Milliseconds(),
+		"local_path", tmpDir,
+	)
 	return result, nil
+}
+
+// truncateSHAForLog returns a 7-char prefix of a SHA for compact log output.
+func truncateSHAForLog(s string) string {
+	if len(s) > 7 {
+		return s[:7]
+	}
+	return s
 }
 
 // FetchRefs updates an existing local repository by fetching all branch and PR
@@ -128,7 +192,7 @@ func (c *Client) FetchRefs(ctx context.Context, localPath, baseSHA, headSHA stri
 	}
 
 	fetchOpts := &gitlib.FetchOptions{
-		Auth: tokenFromEnv(),
+		Auth: c.auth(),
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 			config.RefSpec("+refs/pull/*/head:refs/remotes/origin/pr/*"),

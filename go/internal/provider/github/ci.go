@@ -84,3 +84,19 @@ func normalizeCheckStatus(status, conclusion string) string {
 	}
 	return "pending"
 }
+
+// GetCIStatus implements provider.Provider, parsing the "github:owner/repo:number" ID format.
+// Fetches the PR to resolve the head SHA, then retrieves check runs.
+func (c *Client) GetCIStatus(ctx context.Context, prID string) (*provider.CIStatus, error) {
+	owner, repo, number, err := parsePRID(prID)
+	if err != nil {
+		return nil, err
+	}
+
+	pr, err := c.getPR(ctx, owner, repo, number)
+	if err != nil {
+		return nil, fmt.Errorf("GetCIStatus: failed to fetch PR to resolve head SHA: %w", err)
+	}
+
+	return c.getCIStatus(ctx, owner, repo, pr.HeadSHA)
+}

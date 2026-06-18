@@ -1,0 +1,11 @@
+{
+  "setup": [
+    "# OAuth credentials are untracked — pull them from the main checkout if missing.\n  if [[ ! -f electron/.env.local ]]; then\n    MAIN=\"$(git worktree list --porcelain | head -1 | awk '{print $2}')\"\n    [[ -f \"$MAIN/electron/.env.local\" ]] && cp \"$MAIN/electron/.env.local\" electron/.env.local\n  fi\n\n  (cd go && go mod download && go build -o bistro-sync ./cmd/bistro-sync)\n  (cd electron && npm_config_verify_deps_before_run=false pnpm install)"
+  ],
+  "teardown": [
+    "# Kill anything still running out of THIS worktree (engine + electron).\n  # The engine's stdin watchdog normally handles this, but belt-and-braces.\n  WT=\"$(pwd)\"\n  pkill -f \"$WT\" 2>/dev/null || true\n  sleep 1\n\n  # Warn (don't fail) if the DB is somehow still held.\n  lsof go/sync.db >/dev/null 2>&1 && echo \"WARN: go/sync.db still held in $WT\" >&2 || true"
+  ],
+  "run": [
+    "(cd go && go build -o bistro-sync ./cmd/bistro-sync)\ncd electron && npm_config_verify_deps_before_run=false pnpm start"
+  ]
+}

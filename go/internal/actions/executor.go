@@ -20,13 +20,17 @@ type ActionExecutor struct {
 	emitter  *events.EventEmitter
 }
 
-// NewActionExecutor creates a new action executor.
+// NewActionExecutor creates a new action executor. If log is nil, slog.Default
+// is used so downstream code never needs to nil-check.
 func NewActionExecutor(
 	log *slog.Logger,
 	prov provider.Provider,
 	db *store.DB,
 	emitter *events.EventEmitter,
 ) *ActionExecutor {
+	if log == nil {
+		log = slog.Default()
+	}
 	return &ActionExecutor{
 		log:      log,
 		provider: prov,
@@ -227,9 +231,7 @@ func (ae *ActionExecutor) updatePRReviewStatus(ctx context.Context, req *ActionR
 			WHERE id = ?
 		`
 		if _, err := ae.store.ExecContext(ctx, query, "", req.PRID); err != nil {
-			if ae.log != nil {
-				ae.log.Error("failed to update review_status to approved", "pr_id", req.PRID, "error", err)
-			}
+			ae.log.Error("failed to update review_status to approved", "pr_id", req.PRID, "error", err)
 		}
 	case RequestChangesCommand:
 		const query = `
@@ -238,9 +240,7 @@ func (ae *ActionExecutor) updatePRReviewStatus(ctx context.Context, req *ActionR
 			WHERE id = ?
 		`
 		if _, err := ae.store.ExecContext(ctx, query, "", req.PRID); err != nil {
-			if ae.log != nil {
-				ae.log.Error("failed to update review_status to changes_requested", "pr_id", req.PRID, "error", err)
-			}
+			ae.log.Error("failed to update review_status to changes_requested", "pr_id", req.PRID, "error", err)
 		}
 	}
 }

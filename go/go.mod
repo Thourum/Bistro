@@ -4,6 +4,7 @@ go 1.26.1
 
 require (
 	github.com/go-git/go-git/v5 v5.17.2
+	github.com/gofrs/flock v0.13.0
 	github.com/google/go-github/v84 v84.0.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/mattn/go-sqlite3 v1.14.41

@@ -1,7 +1,8 @@
-import { BrowserWindow } from 'electron';
 import { join } from 'node:path';
+import { BrowserWindow } from 'electron';
 import type { Logger } from 'electron-log';
 import type { AppConfig } from './types';
+import { wsPortToArg } from './ws-port';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -17,6 +18,7 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      additionalArguments: [wsPortToArg(config.goProcess.wsPort)],
     },
   });
 
