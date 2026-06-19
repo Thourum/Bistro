@@ -31,8 +31,11 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
   }, [send]);
 
   useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 0);
-  }, []);
+    if (repos.length === 0) return;
+
+    const timeoutId = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [repos.length]);
 
   const filteredRepos = useMemo(() => {
     const q = query.trim().toLowerCase();

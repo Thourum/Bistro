@@ -24,6 +24,8 @@ const queryClient = new QueryClient();
 
 export function AppContent(): React.ReactElement {
   const mode = useStore(appStore, (state: UIState) => state.mode);
+  const repoPickerDialogRef = React.useRef<HTMLDivElement>(null);
+  const repoPickerReturnFocusRef = React.useRef<HTMLElement | null>(null);
   const confirmingAction = useStore(
     appStore,
     (state: UIState) => state.confirmingAction,
@@ -40,6 +42,63 @@ export function AppContent(): React.ReactElement {
       }));
     }
   }, [confirmingAction]);
+
+  React.useEffect(() => {
+    if (mode !== 'repo-picker') return;
+
+    repoPickerReturnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    const getFocusableElements = (): HTMLElement[] => {
+      const dialog = repoPickerDialogRef.current;
+      if (!dialog) return [];
+
+      return Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      );
+    };
+
+    const trapFocus = (event: KeyboardEvent): void => {
+      if (event.key !== 'Tab') return;
+
+      const dialog = repoPickerDialogRef.current;
+      if (!dialog) return;
+
+      const focusableElements = getFocusableElements();
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      const activeElement = document.activeElement;
+
+      if (!dialog.contains(activeElement)) {
+        event.preventDefault();
+        firstElement.focus();
+        return;
+      }
+
+      if (event.shiftKey && activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    document.addEventListener('keydown', trapFocus, true);
+    return () => document.removeEventListener('keydown', trapFocus, true);
+  }, [mode]);
 
   const renderPage = (): React.ReactElement => {
     switch (mode) {
@@ -59,7 +118,12 @@ export function AppContent(): React.ReactElement {
   };
 
   const closeRepoPicker = (): void => {
+    const returnFocusTo = repoPickerReturnFocusRef.current;
     appStore.setState((s) => ({ ...s, mode: 'list' }));
+    window.requestAnimationFrame(() => {
+      if (returnFocusTo?.isConnected === true) returnFocusTo.focus();
+      repoPickerReturnFocusRef.current = null;
+    });
   };
 
   return (
@@ -69,9 +133,11 @@ export function AppContent(): React.ReactElement {
       <CommandPalette />
       {mode === 'repo-picker' && (
         <div
+          ref={repoPickerDialogRef}
           role="dialog"
           aria-modal="true"
           aria-label="Repository picker"
+          tabIndex={-1}
           className="fixed inset-0 z-40 bg-transparent backdrop-blur-[20px] flex items-start justify-center pt-[153px]"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) closeRepoPicker();
