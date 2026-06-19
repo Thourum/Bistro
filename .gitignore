@@ -31,6 +31,10 @@ go/data/
 *.db
 *.db-journal
 *.db-wal
+*.db.lock
+
+# Node compile cache
+node-compile-cache/
 
 # Electron Forge
 electron/out/
