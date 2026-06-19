@@ -14,6 +14,19 @@
 > Honestly partial: 1.6 triage (data layer complete, UI placement gaps remain)
 > and the `pr_diffs` pipeline (existed on paper, only now actually enabled).
 
+> **🔍 Audit (2026-06-19).** A multi-agent audit of the built code + Phase 1/2 plans
+> ran; 49 findings confirmed against the codebase (10 false positives dropped). Full
+> record: `docs/ROADMAP-AUDIT-2026-06-19.md`. Inline `> ⚠️ Audit:` notes below mark
+> affected items. **Headlines:** Phase 2's two pillars are *infeasible as specified* —
+> patchset capture by polling misses intermediate force-pushes, and `git range-diff`
+> does not exist in go-git v5 (decision required before Phase 2). The comment layer
+> can't feed Phase 2: only issue-level comments are fetched (not inline review
+> comments), and the schema stores no commit SHA / position / resolution state.
+> Resolve/unresolve is GitHub-GraphQL-only (the stack is REST). Two active bugs in
+> shipped code were found and fixed this session (action-queue dedup, rate-limit
+> provider key). Several Phase 2/4 features need an unscheduled prerequisite: a
+> SQLite-resident current-user identity.
+
 ## How to read this document
 
 The roadmap is broken into **phases** rather than fixed-length sprints. Each phase is a coherent chunk of work that produces something shippable or testable on its own. Phases are roughly ordered by dependency, but some can run in parallel if there's capacity.
@@ -39,7 +52,7 @@ This is the existing architecture. Most of it ships in pre-v1 builds. Listed her
 | Feature | Status | Notes |
 |---|---|---|
 | Two-process design (Go sync + Electron UI) | done | `go/cmd/bistro-sync` + `electron/src/main/go-spawn.ts`; stable enough to build on |
-| SQLite-as-cache, Go-owns-writes | done | `go/internal/store`, migrations 000–009 |
+| SQLite-as-cache, Go-owns-writes | done | `go/internal/store`, migrations 000–011 |
 | WebSocket transport over localhost | done | `go/internal/ws/server.go` enforces local origin; pin the port-binding strategy before v1 (see below) |
 | Provider interface in `internal/provider` | done | Pre-built for multi-provider; GitHub is the only impl today (plus mock) |
 | Migration runner with embedded SQL | done | Versioned, idempotent, tested |
@@ -101,13 +114,14 @@ Approve (with `a a` confirmation), request changes, post line/thread comments, e
 
 | Sub-feature | Status | Notes |
 |---|---|---|
-| Approve / request changes / comment | done | |
+| Approve / request changes / PR-level comment | done | |
+| **Line-level / inline review comment** | not started | ⚠️ Audit: previously folded into "comment" above and assumed done. It is **not** — `provider/github/reviews.go` returns `"line-level review comments not yet supported"` when `line > 0`, and `PostComment(ctx, prID, line, body)` has no `path`/`commitSHA`/`side` params. The Provider interface must gain a `PostReviewComment(...)` before inline posting (and Phase 2.3 anchoring) can round-trip |
 | `a a` double-tap confirmation | done | `keyboard.ts` |
 | Exponential backoff retry | done | `actions/executor.go` |
-| Offline action queue with replay | done | |
-| **Resolve / unresolve conversation** | not started | Currently can post comments but can't mark threads resolved (`PRDetailPage.tsx` has a TODO for real resolution tracking) |
-| **Reviewer-request write-back** | not started | Required for Phase 4 expertise routing to be useful |
-| **Idempotency keys on retried actions** | not started | Hash of `(action_type, target_id, content_hash)` to dedupe on retry |
+| Offline action queue with replay | done | ⚠️ Audit (FIXED 2026-06-19): re-enqueuing the same `(PR, action)` hit a `PRIMARY KEY` collision and silently dropped the retry. `Enqueue` now uses `ON CONFLICT(id) DO UPDATE … status='pending', retry_count=0` |
+| **Resolve / unresolve conversation** | not started | ⚠️ Audit: requires **GraphQL** (`resolveReviewThread`/`unresolveReviewThread`). GitHub's REST API has no endpoint and go-github v84 has no method; the entire provider stack is REST-only. Needs a thin GraphQL client (e.g. `shurcooL/githubv4`) or a separate capability interface — not addable through go-github. Blocks 1.5 resolved/reopened events and all of 2.4 |
+| **Reviewer-request write-back** | not started | Required for Phase 4 expertise routing to be useful. ⚠️ Audit: wider blast radius than implied — needs a new `Provider.RequestReviewers` method (breaks the mock + all interface assertions), a new `ActionCommand`, handler, and WS message. go-github v84 *does* expose `PullRequests.RequestReviewers`, so the GitHub impl is feasible |
+| **Idempotency keys on retried actions** | partial | ⚠️ Audit: the *acute* dup-enqueue bug is fixed (see offline-queue row). The proposed `hash(action_type, target_id, content_hash)` stable-ID scheme remains a future enhancement for true content-level idempotency |
 
 ### 1.4 Sync engine
 
@@ -119,7 +133,7 @@ Approve (with `a a` confirmation), request changes, post line/thread comments, e
 | Worker-pool fan-out | done | `sync/workerpool.go` |
 | 429 detection and queue-mode | done | covered by orchestrator integration tests |
 | In-place TanStack Query merging | done | |
-| **Per-currently-open-PR fast sync** | not started | When a PR is open in the UI, sync it every 30–60s; everything else stays at 5m |
+| **Per-currently-open-PR fast sync** | not started | When a PR is open in the UI, sync it every 30–60s; everything else stays at 5m. ⚠️ Audit: no single-PR code path exists — `SyncRequest` has no PR field and the orchestrator always calls `ListPRs`. Needs: (1) a `PRNumber`/`PRID` on `SyncRequest` + a `GetPR`-based path in the orchestrator, (2) a WS message so the renderer signals which PR is open (the engine has no renderer-state awareness), (3) cost control — a per-PR details fetch is 4–5 API calls (`GetCIStatus` redundantly re-fetches the PR for the head SHA); floor the interval and fix that. Also: clone URL is hardcoded to `github.com` (`fetcher.go:149`) |
 | **Manual force-sync command** | done | `:sync` palette command → FORCE_SYNC → syncTrigger; SYNCING footer status |
 
 ### 1.5 Real-time event coverage
@@ -134,9 +148,9 @@ In addition to the events below, the following are already implemented (not orig
 | `PR_APPROVED`, `COMMENT_POSTED` | done | |
 | `AUTH_TOKEN_EXPIRED`, `RATE_LIMITED` | done | |
 | `DIFF_READY`, `COMMENTS_READY` | done | |
-| **PR description / labels / assignees / reviewers changed** | not started | Currently invisible to the UI; feels off in a real-time tool |
-| **CI status changed** | partial | Status is fetched, but no event; UI must wait for sync cycle |
-| **Conversation resolved/reopened** | not started | Goes with 1.3 resolve write-back |
+| **PR description / labels / assignees / reviewers changed** | not started | Currently invisible to the UI; feels off in a real-time tool. ⚠️ Audit: structurally blocked — `writer.go` does a blind upsert with no before/after compare, and the `Writer` has no reference to the `EventEmitter` (constructed fresh per cycle without it). Needs: inject the emitter into `Writer`, `SELECT` old tracked fields before the upsert, diff, then emit |
+| **CI status changed** | partial | Status is fetched, but no event; UI must wait for sync cycle. ⚠️ Audit: same blocker as the row above — no before/after diff in the writer path, no emitter in `Writer` |
+| **Conversation resolved/reopened** | not started | Goes with 1.3 resolve write-back. ⚠️ Audit: depends on the GraphQL resolve/unresolve capability (see 1.3) — unbuildable until that lands |
 
 ### 1.6 "Needs my action" vs "FYI" classification
 
@@ -153,6 +167,8 @@ In addition to the events below, the following are already implemented (not orig
 - Default view is "Needs Action."
 - Logic: review requested + not yet reviewed → Needs Action. Author + change requested → Needs Action. Approved + waiting for merge → Waiting on Author. Mentioned but not requested → FYI. Draft → FYI.
 
+> ⚠️ **Audit (2026-06-19).** The "**Mentioned but not requested → FYI**" rule is **unimplementable from synced data**: there is no mentions field on the PR model or schema, and GitHub's REST API exposes `@mentions` only inside raw comment body text. `triage.ts` silently classifies every unmatched PR as FYI without checking mentions. Either drop the rule (it degrades gracefully) or add a post-sync body scan + a `mentions_me` column + a triage check. Separately, switching the default view to "Needs Action" requires changing the filter default and ensuring the renderer fetches enough PRs before client-side lane filtering.
+
 ---
 
 ## Phase 2 — Patchset Semantics (the architectural unlock)
@@ -160,6 +176,29 @@ In addition to the events below, the following are already implemented (not orig
 This is where Bistro starts having features that GitHub structurally cannot match. Everything here falls out of the fact that we clone the repo locally with go-git.
 
 The architectural principle: **same patchset model for every provider**. Even where a provider exposes patchsets natively (GitLab), we use our own, computed from local git history. Mixing provider APIs and local computation produces inconsistent behaviour and divergent code paths.
+
+> ⚠️ **Audit (2026-06-19) — Phase 2 needs design decisions before any implementation.**
+> This phase as written contains two *infeasible-as-specified* items and rests on a
+> comment layer that can't yet feed it. Resolve these before scheduling work — a
+> Phase 2 re-brainstorm is recommended:
+> 1. **Patchset capture by polling is lossy** (2.1). Polling — whether the GitHub API
+>    or a local go-git fetch — only sees state at fetch time. Two force-pushes inside
+>    one sync window collapse to one; `pushed_at` has no reliable source. The
+>    "numbered timeline of every push" promise can't be met by a local-first poller
+>    (only a push webhook sees every push, which needs a server Bistro doesn't have).
+> 2. **`git range-diff` is not in go-git v5.17.2** (2.1, 2.2). Only `Tree.Patch`
+>    (plain tree-to-tree) exists, and Bistro has zero `os/exec`. Pick one: hand-roll
+>    range-diff (~500–1000 LOC) or shell out to system git (adds a `git ≥2.19`
+>    runtime dep, dents the local-first claim).
+> 3. **The comment layer can't feed 2.3/2.4.** Only *issue-level* comments are fetched
+>    (`Issues.ListComments`), never inline review comments (`PullRequests.ListComments`),
+>    and the `comments` schema stores no `commit_sha`/`position`/`side`/`resolved`/
+>    `thread_id`. Inline posting also doesn't work (see 1.3). These are prerequisites,
+>    not Phase 2 work.
+> 4. **Prerequisite migrations nobody scheduled:** a SQLite-resident current-user
+>    identity (2.2 `user_id`, all of Phase 4), `files_viewed` state (2.2), a
+>    `patchset_number` column on `comments` (2.3). See the audit doc.
+> Full detail with `file:line` evidence: `docs/ROADMAP-AUDIT-2026-06-19.md`.
 
 ### 2.1 Patchset timeline
 
@@ -179,14 +218,20 @@ The architectural principle: **same patchset model for every provider**. Even wh
 **Schema.**
 
 ```sql
+-- ⚠️ Audit: pr_id must be TEXT, not INTEGER — prs.id is TEXT (e.g. 'github:owner/repo#1').
+-- An INTEGER FK never matches; ON DELETE CASCADE never fires; JOINs return zero rows.
+-- Mirror the pattern in 007_add_pr_diffs.sql. Corrected DDL:
 CREATE TABLE patchsets (
-  pr_id INTEGER NOT NULL,
+  pr_id TEXT NOT NULL,
   number INTEGER NOT NULL,
   head_sha TEXT NOT NULL,
   base_sha TEXT NOT NULL,
   pushed_at TIMESTAMP NOT NULL,
-  PRIMARY KEY (pr_id, number)
+  PRIMARY KEY (pr_id, number),
+  FOREIGN KEY(pr_id) REFERENCES prs(id) ON DELETE CASCADE
 );
+-- ⚠️ Audit: also unscheduled but required here — add patchset_number INTEGER to the
+-- comments table (which patchset a comment was made against) so 2.3 can detect "outdated".
 ```
 
 ### 2.2 "Since I last reviewed" — survives rebase
@@ -204,6 +249,14 @@ CREATE TABLE patchsets (
 - The toggle is available even when commits have been rebased away.
 - "Files viewed" state survives rebase if the file content hasn't actually changed.
 
+> ⚠️ **Audit (2026-06-19).** Three unscheduled prerequisites: (1) **No `user_id` exists**
+> anywhere in the schema — the authenticated login lives only in an in-memory JSON cache
+> (`cache/providers.go`), so on a cold cache it's unknown. Decide on a SQLite `current_user`/
+> `settings` table written at auth-success; key `last_reviewed_sha` on `login TEXT` (matches
+> GitHub's identity model). (2) **`files_viewed` has no schema home** — needs a table keyed on
+> `(pr_id, file_path, viewer_login, content_hash)` so "viewed" survives rebase; sequentially
+> depends on patchsets (2.1). (3) **`git range-diff` isn't available** (see phase banner).
+
 ### 2.3 Comment anchoring across rebase
 
 **Why it matters.** The "where did my comment go?" thread on github/community has been growing for 7 years.
@@ -214,9 +267,24 @@ CREATE TABLE patchsets (
 - After rebase, comments resolve to their new line numbers if the content survived.
 - If the content was deleted, the comment is shown as "outdated" but remains visible inline at its nearest surviving line, not banished to a sidebar.
 
+> ⚠️ **Audit (2026-06-19).** Blocked on missing inputs: inline review comments are
+> **never fetched** (provider uses `Issues.ListComments`, not `PullRequests.ListComments`),
+> and the schema stores **no `commit_sha`/`position`/`side`/`patchset_number`** — the
+> anchoring algorithm has nothing to work with. Posting an inline comment back also doesn't
+> work yet (see 1.3). Prereq: fetch + store `PullRequestComment` fields and add the anchoring
+> columns before this is buildable. (Note: the *display-only re-anchoring* concept is sound —
+> a verifier confirmed 2.3 makes no false round-trip claim; the gap is purely the missing data.)
+
 ### 2.4 Canonical "all unresolved threads" view
 
 **Why it matters.** Free win from our SQLite cache — GitHub structurally cannot show every unresolved thread in one pane because of how their UI virtualises the timeline.
+
+> ⚠️ **Audit (2026-06-19).** The "free win" framing is misleading: **the SQLite cache is
+> missing the data this view needs.** "Unresolved" + "Open/Resolved/Outdated lifecycle" +
+> "merge-readiness" all require thread-resolution state, which (a) has no `resolved`/`thread_id`
+> column today and (b) is **GitHub-GraphQL-only** (see 1.3). 2.4 is therefore **blocked on
+> unbuilt 1.3 (resolve/unresolve) and 1.5 (resolved/reopened events)** — sequence those first.
+> Mark 2.4 "blocked on 1.3, 1.5."
 
 **Acceptance.**
 
@@ -499,7 +567,7 @@ The first non-GitHub provider. Validates the abstraction.
 
 Before writing GitLab code, sweep the existing codebase for GitHub-specific assumptions that have leaked past the provider interface. This is the highest-leverage week of engineering in the entire FOSS roadmap — refactor cost scales with the number of providers, and we want to do it once, while the count is one.
 
-Known leaks as of the 2026-06-10 audit: `go/internal/auth/callback.go`, `go/internal/server/handler/{auth,diff,repo}.go` reference GitHub directly; `rate_limit_state.id` defaults to `'github'`.
+Known leaks as of the 2026-06-10 audit: `go/internal/auth/callback.go`, `go/internal/server/handler/{auth,diff,repo}.go` reference GitHub directly; ~~`rate_limit_state.id` defaults to `'github'`~~ (FIXED 2026-06-19, migration 011 — see 6.3). ⚠️ Audit (2026-06-19) added one more: the diff fetcher hardcodes `https://github.com/%s/%s.git` (`go/internal/sync/fetcher.go:149`) regardless of `pr.Provider` — move clone-URL construction into the provider layer.
 
 **Audit checklist.**
 
@@ -524,7 +592,7 @@ Known leaks as of the 2026-06-10 audit: `go/internal/auth/callback.go`, `go/inte
 Largely done already (verified 2026-06-10): `prs` carries `provider` with `UNIQUE(provider, owner, repo, number)`, `repos.id` is `"provider:owner/repo"`, comment IDs are opaque TEXT. Remaining:
 
 - Verify no URLs are stored as columns; reconstruct from the provider instead.
-- Migrate `rate_limit_state` off its `'github'` default id.
+- ~~Migrate `rate_limit_state` off its `'github'` default id.~~ ✅ Done (2026-06-19): migration `011_fix_rate_limit_state_provider_key.sql` recreates the table without the `DEFAULT 'github'`, so distinct providers coexist without overwriting each other.
 
 ---
 

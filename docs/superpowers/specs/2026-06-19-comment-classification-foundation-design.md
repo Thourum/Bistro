@@ -63,7 +63,7 @@ Plus the matching `_test.go` files.
 
 | File | Change |
 |---|---|
-| `go/internal/store/migrations/011_add_comment_classification.sql` | New columns on `comments` + `comment_classification_state` table |
+| `go/internal/store/migrations/012_add_comment_classification.sql` | New columns on `comments` + `comment_classification_state` table |
 | `go/internal/sync/writer.go` | Classify each comment before persist; store classification + current fingerprint (synchronous) |
 | `go/internal/server/handler/comments.go` | Before returning comments, run `RefreshIfStale(prID)` — re-classify comments whose stored fingerprint ≠ current |
 | `go/cmd/bistro-sync/main.go` | On startup: `classify.SeedAndUpdate(rulesDir)` once, then construct the engine |
@@ -117,7 +117,7 @@ classifications without restarting the app.*
 
 ## Data Model
 
-### Migration `011_add_comment_classification.sql`
+### Migration `012_add_comment_classification.sql`
 
 ```sql
 ALTER TABLE comments ADD COLUMN author_type TEXT;            -- 'human'|'bot'|'unknown'

@@ -24,7 +24,7 @@
 - `*_test.go` for rules, engine, loader, fingerprint, seed.
 
 **Modified Go files:**
-- `go/internal/store/migrations/011_add_comment_classification.sql` — new columns + state table.
+- `go/internal/store/migrations/012_add_comment_classification.sql` — new columns + state table.
 - `go/internal/sync/writer.go` — `Writer` gains an `*classify.Engine` + fingerprint; `writeComment` persists classification and state row.
 - `go/internal/sync/orchestrator.go:378` — pass engine into `NewWriter`.
 - `go/internal/server/handler/comments.go` — `commentRow` gains classification fields; handler runs `RefreshIfStale` before query; takes an engine + fingerprint provider.
@@ -47,16 +47,16 @@
 
 ---
 
-## Task 1: Migration 011 — classification columns + state table
+## Task 1: Migration 012 — classification columns + state table
 
 **Files:**
-- Create: `go/internal/store/migrations/011_add_comment_classification.sql`
+- Create: `go/internal/store/migrations/012_add_comment_classification.sql`
 - Test: `go/internal/store/migration_runner_test.go` (add a case) — or reuse existing migration test harness.
 
 - [ ] **Step 1: Write the migration SQL**
 
 ```sql
--- Migration: 011_add_comment_classification
+-- Migration: 012_add_comment_classification
 -- Description: Add classification columns to comments + rules-fingerprint state table
 
 ALTER TABLE comments ADD COLUMN author_type TEXT;            -- 'human'|'bot'|'unknown'
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS comment_classification_state (
 Add to `go/internal/store/migration_runner_test.go` (match existing test style — open in-memory DB, run migrations, assert):
 
 ```go
-func TestMigration011AddsClassificationColumns(t *testing.T) {
+func TestMigration012AddsClassificationColumns(t *testing.T) {
 	db := newTestDB(t) // existing helper that runs all migrations
 	cols := map[string]bool{}
 	rows, err := db.Query(`SELECT name FROM pragma_table_info('comments')`)
@@ -107,14 +107,14 @@ func TestMigration011AddsClassificationColumns(t *testing.T) {
 
 - [ ] **Step 3: Run the test**
 
-Run: `cd go && go test ./internal/store/ -run TestMigration011 -v`
+Run: `cd go && go test ./internal/store/ -run TestMigration012 -v`
 Expected: PASS (migration auto-discovered by the embedded runner).
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add go/internal/store/migrations/011_add_comment_classification.sql go/internal/store/migration_runner_test.go
-git commit -m "feat(store): migration 011 — comment classification columns + state table"
+git add go/internal/store/migrations/012_add_comment_classification.sql go/internal/store/migration_runner_test.go
+git commit -m "feat(store): migration 012 — comment classification columns + state table"
 ```
 
 ---
