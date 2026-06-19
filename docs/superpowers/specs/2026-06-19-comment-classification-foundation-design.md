@@ -19,6 +19,24 @@ with a severity color.
 past 40 nits to find the 1 critical. After this slice: the sidebar reads
 "1 critical, 3 warnings, 12 nits," and the overview leads with the critical one.
 
+> **⚠️ Amendment (2026-06-20) — depends on Phase 2.0; unified comments table.**
+> The 2026-06-19 roadmap audit surfaced a cross-phase interaction
+> (see `docs/superpowers/specs/2026-06-20-phase-2-rescope-design.md`):
+> - **Classification operates on the unified `comments` table** (a single table with
+>   a `kind` discriminator `'issue' | 'review'`, introduced by Phase 2.0). The
+>   classification columns and the `comment_classification_state` table apply
+>   uniformly to every row regardless of `kind` — no separate path for inline
+>   comments. Migration 012 here adds the classification columns to that one table.
+> - **Partial coverage until Phase 2.0 lands.** Bot findings (CodeRabbit, Greptile,
+>   Copilot, …) are posted mostly as **inline review comments**, but today only
+>   *issue-level* comments are fetched (`Issues.ListComments`). Phase 2.0 adds the
+>   inline fetch (`PullRequests.ListComments`). Built before 2.0, this slice
+>   classifies issue-level comments only — largely missing the inline bot findings
+>   that are the wedge's whole point. **Shipping this slice is not "classification is
+>   done"**; full coverage completes when 2.0's inline fetch lands. This is an
+>   accepted, deliberate ordering (migration 012 here precedes Phase 2.0's
+>   migrations), not a gap.
+
 ## Non-goals (deferred to later slices)
 
 - 3.5 bulk operations (`dN`, `dB`, `f c/w/n`), undo.
