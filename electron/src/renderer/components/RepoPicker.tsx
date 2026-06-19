@@ -1,5 +1,6 @@
+import { Command } from 'cmdk';
 import type React from 'react';
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { appStore } from '../store';
@@ -10,98 +11,46 @@ interface RepoPickerProps {
   onClose: () => void;
 }
 
+/**
+ * RepoPicker — cmdk-powered repository chooser.
+ *
+ * cmdk owns keyboard navigation, selected-item styling hooks, and keeping the
+ * active item scrolled into view. We keep filtering external so watched and
+ * unwatched repositories can stay in distinct groups with a separator.
+ */
 export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
   const repos = useStore(appStore, (s: UIState) => s.repos);
   const reposLoading = useStore(appStore, (s: UIState) => s.reposLoading);
   const { send } = useWebSocket();
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [focusedIndex, setFocusedIndex] = useState(0);
-  const [isSearching, setIsSearching] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Fetch repo list on mount
   useEffect(() => {
     appStore.setState((s) => ({ ...s, reposLoading: true }));
     send('REQUEST_REPO_LIST', {});
   }, [send]);
 
   useEffect(() => {
-    setTimeout(() => containerRef.current?.focus(), 0);
+    setTimeout(() => inputRef.current?.focus(), 0);
   }, []);
 
-  const sortedRepos = [...repos].sort((a, b) => {
-    if (a.watched && !b.watched) return -1;
-    if (!a.watched && b.watched) return 1;
-    return `${a.owner}/${a.repo}`.localeCompare(`${b.owner}/${b.repo}`);
-  });
+  const filteredRepos = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return [...repos]
+      .sort((a, b) => {
+        if (a.watched && !b.watched) return -1;
+        if (!a.watched && b.watched) return 1;
+        return repoLabel(a).localeCompare(repoLabel(b));
+      })
+      .filter((repo) => q === '' || repoLabel(repo).toLowerCase().includes(q));
+  }, [query, repos]);
 
-  const filteredRepos = searchQuery
-    ? sortedRepos.filter((r) =>
-        `${r.owner}/${r.repo}`
-          .toLowerCase()
-          .includes(searchQuery.toLowerCase()),
-      )
-    : sortedRepos;
-  const firstUnwatchedIndex = filteredRepos.findIndex((r) => !r.watched);
-  const showWatchSeparator =
-    firstUnwatchedIndex > 0 && firstUnwatchedIndex < filteredRepos.length;
+  const watchedRepos = filteredRepos.filter((repo) => repo.watched);
+  const otherRepos = filteredRepos.filter((repo) => !repo.watched);
 
-  // Clamp focusedIndex when list changes
-  useEffect(() => {
-    setFocusedIndex((i) => Math.min(i, Math.max(0, filteredRepos.length - 1)));
-  }, [filteredRepos.length]);
-
-  const toggleWatch = useCallback(
-    (repo: RepoInfo): void => {
-      send('TOGGLE_WATCH_REPO', { repo_id: repo.id, watched: !repo.watched });
-    },
-    [send],
-  );
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        if (isSearching || searchQuery) {
-          setSearchQuery('');
-          setIsSearching(false);
-          containerRef.current?.focus();
-        } else {
-          onClose();
-        }
-        return;
-      }
-
-      if (isSearching) return;
-
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setFocusedIndex((i) => Math.min(i + 1, filteredRepos.length - 1));
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setFocusedIndex((i) => Math.max(i - 1, 0));
-      } else if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        const repo = filteredRepos[focusedIndex];
-        if (repo) {
-          toggleWatch(repo);
-        }
-      } else if (e.key === '/') {
-        e.preventDefault();
-        setIsSearching(true);
-        setTimeout(() => searchInputRef.current?.focus(), 0);
-      }
-    },
-    [
-      isSearching,
-      searchQuery,
-      filteredRepos,
-      focusedIndex,
-      toggleWatch,
-      onClose,
-    ],
-  );
+  const toggleWatch = (repo: RepoInfo): void => {
+    send('TOGGLE_WATCH_REPO', { repo_id: repo.id, watched: !repo.watched });
+  };
 
   if (reposLoading && repos.length === 0) {
     return (
@@ -121,85 +70,122 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
   }
 
   return (
-    <div
-      ref={containerRef}
-      role="application"
-      aria-label="Repository picker"
+    <Command
+      shouldFilter={false}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose();
+        }
+      }}
       className="outline-none"
-      tabIndex={-1}
-      onKeyDown={handleKeyDown}
     >
-      {isSearching ? (
-        <div className="mb-2">
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.stopPropagation();
-                setSearchQuery('');
-                setIsSearching(false);
-                containerRef.current?.focus();
-              }
-            }}
-            placeholder="Filter repos..."
-            className="w-full px-3 py-1.5 text-sm bg-surface-container border border-outline-variant text-on-surface placeholder:text-on-surface-variant font-mono outline-none"
-          />
+      <div className="flex items-center gap-3 mb-3 border border-outline-variant/40 bg-surface-container px-3 h-10">
+        <span className="material-symbols-outlined text-primary shrink-0 text-[18px]">
+          search
+        </span>
+        <Command.Input
+          ref={inputRef}
+          value={query}
+          onValueChange={setQuery}
+          placeholder="Filter repos..."
+          className="flex-1 min-w-0 bg-transparent appearance-none border-0 shadow-none outline-none ring-0 text-on-surface placeholder:text-on-surface-variant text-sm font-mono focus:border-transparent focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+        />
+        <div className="flex items-center gap-2 shrink-0">
+          <kbd className="font-mono text-[10px] px-1.5 py-0.5 bg-surface border border-outline-variant text-on-surface-variant">
+            ESC
+          </kbd>
+          <span className="font-mono text-[10px] text-outline uppercase tracking-widest">
+            close
+          </span>
         </div>
-      ) : (
-        <p className="text-xs text-on-surface-variant mb-2 font-mono">
-          ↑↓ navigate · Space/Enter toggle · / search · Esc close
-        </p>
-      )}
-
-      <div className="max-h-48 overflow-y-auto">
-        {filteredRepos.map((repo, idx) => {
-          const label = `${repo.owner}/${repo.repo}`;
-          const isFocused = idx === focusedIndex;
-          const showSeparator =
-            showWatchSeparator && idx === firstUnwatchedIndex;
-          const labelClassName = isFocused
-            ? 'font-semibold text-primary text-sm font-mono'
-            : repo.watched
-              ? 'font-bold text-secondary text-sm font-mono'
-              : 'text-on-surface-variant text-sm font-mono';
-          return (
-            <Fragment key={repo.id}>
-              {showSeparator && (
-                <div className="my-2 border-t border-outline-variant/40 pt-2">
-                  <span className="px-3 font-mono text-[10px] uppercase tracking-widest text-outline">
-                    Other repositories
-                  </span>
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  setFocusedIndex(idx);
-                  toggleWatch(repo);
-                }}
-                className={`w-full flex items-center justify-between px-3 py-2 cursor-pointer transition-colors text-left border-l-2 ${
-                  isFocused
-                    ? 'bg-surface-container-highest border-l-primary'
-                    : 'border-l-transparent hover:bg-surface-container'
-                }`}
-                tabIndex={-1}
-              >
-                <span className={labelClassName}>{label}</span>
-                <span
-                  className={`text-xs ml-2 font-mono ${
-                    repo.watched ? 'text-primary' : 'text-outline'
-                  }`}
-                >
-                  {repo.watched ? 'watching' : ''}
-                </span>
-              </button>
-            </Fragment>
-          );
-        })}
       </div>
-    </div>
+
+      <p className="text-xs text-on-surface-variant mb-2 font-mono">
+        ↑↓ navigate · Enter toggle watch · Type to filter
+      </p>
+
+      <Command.List className="max-h-80 overflow-y-auto py-1">
+        <Command.Empty className="px-3 py-6 text-center text-sm text-outline font-mono tracking-wide">
+          No repositories match
+        </Command.Empty>
+
+        {watchedRepos.length > 0 && (
+          <RepoGroup heading="Watched repositories">
+            {watchedRepos.map((repo) => (
+              <RepoItem key={repo.id} repo={repo} onSelect={toggleWatch} />
+            ))}
+          </RepoGroup>
+        )}
+
+        {watchedRepos.length > 0 && otherRepos.length > 0 && (
+          <Command.Separator
+            alwaysRender
+            className="my-2 h-px bg-outline-variant/40"
+          />
+        )}
+
+        {otherRepos.length > 0 && (
+          <RepoGroup heading="Other repositories">
+            {otherRepos.map((repo) => (
+              <RepoItem key={repo.id} repo={repo} onSelect={toggleWatch} />
+            ))}
+          </RepoGroup>
+        )}
+      </Command.List>
+    </Command>
   );
+}
+
+function RepoGroup({
+  heading,
+  children,
+}: {
+  heading: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Command.Group
+      heading={heading}
+      className="[&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:text-outline [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-items]]:space-y-1"
+    >
+      {children}
+    </Command.Group>
+  );
+}
+
+function RepoItem({
+  repo,
+  onSelect,
+}: {
+  repo: RepoInfo;
+  onSelect: (repo: RepoInfo) => void;
+}) {
+  const label = repoLabel(repo);
+  return (
+    <Command.Item
+      value={`repo-${repo.id}`}
+      onSelect={() => onSelect(repo)}
+      className="group w-full flex items-center justify-between px-3 py-2 cursor-pointer transition-colors text-left border-l-2 border-l-transparent hover:bg-surface-container data-[selected=true]:bg-surface-container-highest data-[selected=true]:border-l-primary"
+    >
+      <span
+        className={`text-sm font-mono truncate transition-colors ${
+          repo.watched ? 'font-bold text-secondary' : 'text-on-surface-variant'
+        } group-data-[selected=true]:font-semibold group-data-[selected=true]:text-primary`}
+      >
+        {label}
+      </span>
+      <span
+        className={`text-xs ml-3 shrink-0 font-mono transition-colors ${
+          repo.watched ? 'text-primary' : 'text-outline'
+        } group-data-[selected=true]:text-primary`}
+      >
+        {repo.watched ? 'watching' : 'watch'}
+      </span>
+    </Command.Item>
+  );
+}
+
+function repoLabel(repo: RepoInfo): string {
+  return `${repo.owner}/${repo.repo}`;
 }
