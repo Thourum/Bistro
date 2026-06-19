@@ -129,11 +129,6 @@ export function setupIPC(
     }
   });
 
-  // ---- sync:subscribe handler ----
-  ipcMain.on('sync:subscribe', (_event) => {
-    logger.info('Renderer subscribed to sync events');
-  });
-
   // ---- sync:action handler ----
   ipcMain.handle('sync:action', async (_event, request: SyncActionRequest) => {
     try {

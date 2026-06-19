@@ -1,7 +1,6 @@
 package sync
 
 import "time"
-
 // SyncRequest defines what to fetch during a sync
 type SyncRequest struct {
 	Provider        string // "github", "gitlab", "gitea"
@@ -26,11 +25,3 @@ type SyncResult struct {
 	Errors       []string
 }
 
-// SyncProgress tracks ongoing sync state
-type SyncProgress struct {
-	Stage        string // "starting", "fetching_prs", "fetching_comments", "generating_diffs", "writing_db", "complete"
-	Current      int    // Current item number
-	Total        int    // Total items
-	PRsProcessed int
-	ErrorCount   int
-}

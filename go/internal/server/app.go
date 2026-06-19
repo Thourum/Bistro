@@ -84,21 +84,7 @@ func (a *App) ReplayQueuedActions(ctx context.Context) error {
 // Uses default Info-level stderr logging.
 func New(wsPort int, dbPath string) *App {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		cacheDir = os.TempDir()
-	}
-	cachePath := filepath.Join(cacheDir, "bistro", "providers.json")
-	return &App{
-		log:           logger,
-		wsServer:      ws.NewServerWithLogger(logger),
-		wsPort:        wsPort,
-		dbPath:        dbPath,
-		providerCache: cache.NewProviderCache(cachePath),
-		tokenManager:  keychain.NewTokenManager(),
-		syncTrigger:   make(chan string, 8),
-		syncInterval:  5 * time.Minute,
-	}
+	return NewWithLogger(wsPort, dbPath, logger)
 }
 
 // NewWithLogger returns a new App with a custom logger.

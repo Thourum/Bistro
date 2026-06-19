@@ -1,7 +1,6 @@
 import { FooterCenterSlot } from '../components/FooterSlot';
 import { PRListTable } from '../components/PRListTable';
 import { useStore } from '../hooks/useStore';
-import { useSyncEvents } from '../hooks/useSyncEvents';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
@@ -22,8 +21,6 @@ const FILTER_TITLES: Record<UIState['filterState'], string> = {
  * `FooterCenterSlot`.
  */
 export function PRListPage() {
-  useSyncEvents();
-
   const filterState = useStore(appStore, (s: UIState) => s.filterState);
   const sortBy = useStore(appStore, (s: UIState) => s.sortBy);
   const username = useStore(

@@ -19,12 +19,6 @@ import (
 	"github.com/itterno/bistro/internal/store"
 )
 
-// diffStorer is the subset of store.DiffStore used by the orchestrator,
-// enabling test substitution without importing the concrete type.
-type diffStorer interface {
-	SaveDiffs(prID string, diffs []store.DiffFile) error
-}
-
 // Orchestrator coordinates sync operations
 type Orchestrator struct {
 	log            *slog.Logger
@@ -35,7 +29,7 @@ type Orchestrator struct {
 	rateLimitMu    gosync.RWMutex
 	rateLimitState *provider.RateLimitState
 	queue          *store.ActionQueue
-	diffStore      diffStorer
+	diffStore      *store.DiffStore
 }
 
 // NewOrchestrator creates a new sync orchestrator. If log is nil, slog.Default()
@@ -70,7 +64,7 @@ func shortID() string {
 
 // WithDiffStore attaches a DiffStore so diffs are persisted during sync.
 // This is optional; if not set, diffs are generated but not stored.
-func (o *Orchestrator) WithDiffStore(ds diffStorer) *Orchestrator {
+func (o *Orchestrator) WithDiffStore(ds *store.DiffStore) *Orchestrator {
 	o.diffStore = ds
 	return o
 }
@@ -344,7 +338,12 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 		phaseStart := time.Now()
 		o.emitter.Emit(events.NewProgressEvent("fetching_details", 0, len(fetchedPRs)))
 
-		detailResults, err := o.SyncPRsWithDetails(ctx, req)
+		// Extract the PR slice from the Phase 1 results to avoid a second ListPRs call.
+		prSlice := make([]*provider.PR, len(fetchedPRs))
+		for i, r := range fetchedPRs {
+			prSlice[i] = r.PR
+		}
+		detailResults, err := o.FetchPRDetails(ctx, prSlice, req.IncludeComments, req.IncludeCI, req.IncludeDiff)
 		phaseDur := time.Since(phaseStart).Milliseconds()
 		if err != nil {
 			errMsg := fmt.Sprintf("failed to fetch details: %v", err)
@@ -411,58 +410,6 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 	return result, nil
 }
 
-// ApplyActions executes a batch of PR actions with events and retry.
-func (o *Orchestrator) ApplyActions(ctx context.Context, requests []*actions.ActionRequest) []*actions.ActionResult {
-	batchID := shortID()
-	log := logging.FromContext(ctx).With("action_batch", batchID)
-	ctx = logging.WithLogger(ctx, log)
-
-	log.Info("applying actions", "count", len(requests))
-
-	o.emitter.Emit(&events.Event{
-		Type: "actions_started",
-		Data: map[string]interface{}{
-			"count":    len(requests),
-			"batch_id": batchID,
-		},
-		Timestamp: time.Now(),
-	})
-
-	results := make([]*actions.ActionResult, 0, len(requests))
-	for _, req := range requests {
-		result := o.ApplyAction(ctx, req)
-		if result != nil {
-			results = append(results, result)
-		}
-	}
-
-	successCount := 0
-	for _, r := range results {
-		if r.Success {
-			successCount++
-		}
-	}
-
-	log.Info("actions complete",
-		"total", len(results),
-		"success", successCount,
-		"failed", len(results)-successCount,
-	)
-
-	o.emitter.Emit(&events.Event{
-		Type: "actions_complete",
-		Data: map[string]interface{}{
-			"total":    len(results),
-			"success":  successCount,
-			"failed":   len(results) - successCount,
-			"batch_id": batchID,
-		},
-		Timestamp: time.Now(),
-	})
-
-	return results
-}
-
 // syncPRList fetches and stores the PR list
 func (o *Orchestrator) syncPRList(ctx context.Context, req *SyncRequest) ([]*provider.PR, error) {
 	log := logging.FromContext(ctx)
@@ -519,29 +466,3 @@ func (o *Orchestrator) syncPRList(ctx context.Context, req *SyncRequest) ([]*pro
 	return prs, nil
 }
 
-// SyncWithProgress executes sync with progress callback
-func (o *Orchestrator) SyncWithProgress(
-	ctx context.Context,
-	req *SyncRequest,
-	onProgress func(*SyncProgress),
-) (*SyncResult, error) {
-	if onProgress == nil {
-		return o.Sync(ctx, req)
-	}
-
-	onProgress(&SyncProgress{
-		Stage: "starting",
-	})
-
-	result, err := o.Sync(ctx, req)
-
-	if err == nil {
-		onProgress(&SyncProgress{
-			Stage:   "complete",
-			Total:   result.PRCount,
-			Current: result.PRCount,
-		})
-	}
-
-	return result, err
-}

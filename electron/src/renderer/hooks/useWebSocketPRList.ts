@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { PR } from '../types';
@@ -65,24 +64,4 @@ export function useWebSocketPRList(filterState: FilterState = 'open') {
     gcTime: 5 * 60 * 1000, // 5m
     retry: 1,
   });
-}
-
-/**
- * Hook to refetch PR list when sync completes
- * Subscribes to SYNC_COMPLETE events and invalidates query cache
- */
-export function useWebSocketSyncListener(
-  onSyncComplete?: (stats: {
-    prCount: number;
-    newPRs: number;
-    updatedPRs: number;
-  }) => void,
-): void {
-  const syncStats = useStore(appStore, (s) => s.syncStats);
-
-  useEffect(() => {
-    if (syncStats !== null) {
-      onSyncComplete?.(syncStats);
-    }
-  }, [syncStats, onSyncComplete]);
 }

@@ -6,24 +6,6 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-// StoreToken stores an OAuth token in the OS keychain.
-func StoreToken(service, provider, token string) error {
-	key := fmt.Sprintf("%s:%s", service, provider)
-	return keyring.Set(service, key, token)
-}
-
-// GetToken retrieves an OAuth token from the OS keychain.
-func GetToken(service, provider string) (string, error) {
-	key := fmt.Sprintf("%s:%s", service, provider)
-	return keyring.Get(service, key)
-}
-
-// DeleteToken removes an OAuth token from the OS keychain.
-func DeleteToken(service, provider string) error {
-	key := fmt.Sprintf("%s:%s", service, provider)
-	return keyring.Delete(service, key)
-}
-
 const BistroService = "bistro-sync"
 
 // TokenManager provides a simplified interface for token storage.
@@ -38,17 +20,20 @@ func NewTokenManager() *TokenManager {
 
 // Store saves the token for the given provider in the OS keychain.
 func (tm *TokenManager) Store(provider, token string) error {
-	return StoreToken(tm.service, provider, token)
+	key := fmt.Sprintf("%s:%s", tm.service, provider)
+	return keyring.Set(tm.service, key, token)
 }
 
 // Get retrieves the token for the given provider from the OS keychain.
 func (tm *TokenManager) Get(provider string) (string, error) {
-	return GetToken(tm.service, provider)
+	key := fmt.Sprintf("%s:%s", tm.service, provider)
+	return keyring.Get(tm.service, key)
 }
 
 // Delete removes the token for the given provider from the OS keychain.
 func (tm *TokenManager) Delete(provider string) error {
-	return DeleteToken(tm.service, provider)
+	key := fmt.Sprintf("%s:%s", tm.service, provider)
+	return keyring.Delete(tm.service, key)
 }
 
 // StoreGitHubToken stores the GitHub OAuth token in the OS keychain.

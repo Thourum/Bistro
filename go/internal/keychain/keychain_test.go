@@ -5,18 +5,17 @@ import (
 )
 
 func TestStoreAndRetrieveToken(t *testing.T) {
-	service := "bistro-test"
+	tm := &TokenManager{service: "bistro-test"}
 	provider := "github"
 	token := "test-token-value"
 
 	// Store
-	err := StoreToken(service, provider, token)
-	if err != nil {
+	if err := tm.Store(provider, token); err != nil {
 		t.Fatalf("failed to store token: %v", err)
 	}
 
 	// Retrieve
-	retrieved, err := GetToken(service, provider)
+	retrieved, err := tm.Get(provider)
 	if err != nil {
 		t.Fatalf("failed to retrieve token: %v", err)
 	}
@@ -26,21 +25,20 @@ func TestStoreAndRetrieveToken(t *testing.T) {
 	}
 
 	// Cleanup
-	DeleteToken(service, provider)
+	_ = tm.Delete(provider)
 }
 
 func TestDeleteToken(t *testing.T) {
-	service := "bistro-test"
+	tm := &TokenManager{service: "bistro-test"}
 	provider := "github"
 	token := "test-token-value"
 
-	StoreToken(service, provider, token)
-	err := DeleteToken(service, provider)
-	if err != nil {
+	_ = tm.Store(provider, token)
+	if err := tm.Delete(provider); err != nil {
 		t.Fatalf("failed to delete token: %v", err)
 	}
 
-	_, err = GetToken(service, provider)
+	_, err := tm.Get(provider)
 	if err == nil {
 		t.Error("expected error retrieving deleted token")
 	}
@@ -48,8 +46,7 @@ func TestDeleteToken(t *testing.T) {
 
 func TestTokenManager_GenericStoreAndGet(t *testing.T) {
 	tm := NewTokenManager()
-	err := tm.Store("gitlab", "test-token-gitlab")
-	if err != nil {
+	if err := tm.Store("gitlab", "test-token-gitlab"); err != nil {
 		t.Fatalf("Store failed: %v", err)
 	}
 	token, err := tm.Get("gitlab")
@@ -65,11 +62,10 @@ func TestTokenManager_GenericStoreAndGet(t *testing.T) {
 func TestTokenManager_GenericDelete(t *testing.T) {
 	tm := NewTokenManager()
 	_ = tm.Store("gitea", "test-token-gitea")
-	err := tm.Delete("gitea")
-	if err != nil {
+	if err := tm.Delete("gitea"); err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
-	_, err = tm.Get("gitea")
+	_, err := tm.Get("gitea")
 	if err == nil {
 		t.Fatal("expected error after delete")
 	}

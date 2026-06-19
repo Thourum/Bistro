@@ -155,18 +155,7 @@ app.on('ready', async () => {
       }
     });
 
-    // 4. Broadcast sync events from WebSocket to renderer
-    wsClient.on('event', (event) => {
-      const { BrowserWindow } = require('electron');
-      const windows = BrowserWindow.getAllWindows();
-      windows.forEach((win: Electron.BrowserWindow) => {
-        if (!win.isDestroyed()) {
-          win.webContents.send('sync:event', event);
-        }
-      });
-    });
-
-    // 5. Create window (last — everything is ready)
+    // 4. Create window (last — everything is ready)
     createWindow(runtimeConfig, log);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

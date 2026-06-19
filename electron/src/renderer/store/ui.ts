@@ -40,10 +40,6 @@ export interface UIState {
   filterMenuOpen: boolean;
   pendingAction: PendingAction | null;
   actionResult: ActionResult | null;
-  // Legacy sync state (kept for compatibility)
-  isSyncing: boolean;
-  syncProgress: number;
-  lastSyncedAt: Date | null;
   // WebSocket sync state
   syncStatus:
     | 'disconnected'
@@ -85,9 +81,6 @@ export const initialUIState: UIState = {
   actionResult: null,
   isAuthenticated: false,
   showFileTree: false,
-  isSyncing: false,
-  syncProgress: 0,
-  lastSyncedAt: null,
   syncStatus: 'disconnected',
   syncError: null,
   lastSyncAt: null,

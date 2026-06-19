@@ -301,7 +301,7 @@ export function CommandPalette(): React.ReactElement | null {
             </div>
           </div>
           <div className="font-mono text-[9px] text-outline uppercase tracking-widest">
-            {'BISTRO // V2.4.1'}
+            {`BISTRO // V${import.meta.env.VITE_APP_VERSION}`}
           </div>
         </div>
       </Command>

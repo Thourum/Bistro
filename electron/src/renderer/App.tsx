@@ -24,6 +24,7 @@ const queryClient = new QueryClient();
 
 export function AppContent(): React.ReactElement {
   const mode = useStore(appStore, (state: UIState) => state.mode);
+
   const repoPickerDialogRef = React.useRef<HTMLDivElement>(null);
   const repoPickerReturnFocusRef = React.useRef<HTMLElement | null>(null);
   const confirmingAction = useStore(
@@ -42,6 +43,7 @@ export function AppContent(): React.ReactElement {
       }));
     }
   }, [confirmingAction]);
+
 
   React.useEffect(() => {
     if (mode !== 'repo-picker') return;
