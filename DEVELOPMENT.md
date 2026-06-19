@@ -46,15 +46,14 @@ No server. Everything runs locally. SQLite is a cache, not a shared database.
 ## Quick Start
 
 ```bash
-# Install all dependencies
-make install
+# Install Electron dependencies
+cd electron && pnpm install
 
-# Run tests
-make test
+# Build the Go sync engine
+pnpm build
 
 # Run the app (spawns the Go engine automatically)
-cd go && go build -o bistro-sync ./cmd/bistro-sync
-cd electron && pnpm start
+pnpm start
 ```
 
 To run the Go engine separately (e.g. under Delve), set
@@ -136,12 +135,20 @@ Action ids and defaults live in `electron/src/renderer/utils/keybindings.ts`.
 ## Testing
 
 ```bash
-make test              # All tests
-make test-go           # Go tests only
-make test-electron     # Electron tests only
+(cd go && go test ./...) && (cd electron && pnpm test)    # All tests
+cd go && go test ./...                                    # Go tests only
+cd electron && pnpm test                                  # Electron tests only
 
 cd go && go test -race ./...                          # race detector
 cd electron && pnpm exec tsc --noEmit && pnpm test    # typecheck + vitest
+```
+
+## Packaging
+
+```bash
+cd electron && pnpm package     # package the Electron app locally
+cd electron && pnpm release:macos   # create a macOS DMG
+cd electron && pnpm release:win     # create a Windows zip
 ```
 
 ## Debugging

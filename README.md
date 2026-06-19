@@ -52,9 +52,9 @@ GitHub today; GitLab is next on the [roadmap](docs/ROADMAP.md).
 > Bistro runs from source:
 
 ```bash
-git clone https://github.com/Itterno/Bistro.git && cd Bistro
-make install                                   # Go + pnpm dependencies
-cd go && go build -o bistro-sync ./cmd/bistro-sync
+git clone https://github.com/Itterno/Bistro.git && cd Bistro/electron
+pnpm install
+pnpm build                                     # builds the Go sync engine
 ```
 
 You'll need Go 1.21+, Node 18+, and pnpm. Create a GitHub OAuth app
