@@ -96,9 +96,11 @@ doesn't care.
 New columns on `comments` (additive migration, version after Phase 3's 012):
 - `kind TEXT NOT NULL DEFAULT 'issue'` — `'issue' | 'review'`
 - `commit_sha TEXT`, `original_commit_sha TEXT`
-- `path TEXT` (inline; distinct from existing `file_path` if both kept — design
-  note: reconcile with existing `file_path` column at implementation, prefer reusing
-  `file_path` and adding only what's missing)
+- (no new `path` column) — **reuse the existing `file_path` column uniformly across
+  both `kind='issue'` and `kind='review'` rows.** Do NOT add a separate `path`
+  column: a second name for the same conceptual field would fork the 2.3 anchoring
+  query and Phase 3's classification renderer across kinds. `file_path` already
+  carries the right semantics.
 - `position INTEGER`, `original_position INTEGER`
 - `side TEXT` — `'LEFT' | 'RIGHT'`
 - `thread_id TEXT`
@@ -179,7 +181,9 @@ Merged because they share the entire patchset + range-diff machinery.
   (same wrapper + fallback).
 - **Files-viewed survives rebase:** `files_viewed` table keyed on
   `(pr_id, file_path, login, content_hash)` so "viewed" persists when content is
-  unchanged across a rebase.
+  unchanged across a rebase. Internal ordering note for the slice spec:
+  `content_hash` must be tied to a patchset row, so files-viewed depends on the
+  `patchsets` table — build it after patchset capture, not in parallel.
 - **Depends on:** patchsets, current_user, range-diff wrapper.
 
 ---
@@ -247,6 +251,13 @@ comments, not issue-level. **The Phase 3 foundation spec
 one-paragraph note: classification applies to the unified table, and full coverage of
 bot findings requires 2.0's inline fetch. No code conflict — both are additive
 migrations with distinct version numbers (Phase 3 = 012; Phase 2.0 migrations follow).
+
+**Sequencing consequence (state plainly so no planner assumes otherwise):** Phase 3
+classification will ship **with partial bot-finding coverage — issue-level comments
+only** — because it lands on migration 012 before Phase 2.0's inline-comment fetch.
+Full bot coverage (the inline CodeRabbit/Greptile findings that are the wedge's whole
+point) completes only when Phase 2.0 ships. This is an accepted, deliberate ordering,
+not a gap — but Phase 3's delivery should not be mistaken for "classification is done."
 
 ---
 
