@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	gh "github.com/google/go-github/v84/github"
-	"github.com/samuelasvanyi/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider"
 )
 
 // ListUserRepos fetches all repos accessible by the authenticated user, paginating

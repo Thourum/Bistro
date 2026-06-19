@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/samuelasvanyi/bistro/internal/provider"
-	"github.com/samuelasvanyi/bistro/internal/provider/mock"
-	"github.com/samuelasvanyi/bistro/internal/ws"
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider/mock"
+	"github.com/itterno/bistro/internal/ws"
 )
 
 func setupRepoTestDB(t *testing.T) *sql.DB {

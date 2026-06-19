@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/provider"
-	"github.com/samuelasvanyi/bistro/internal/store"
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/store"
 )
 
 func TestWriterCreation(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/provider"
-	"github.com/samuelasvanyi/bistro/internal/provider/mock"
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider/mock"
 )
 
 func TestFetchPRDetailsPopulatesReviewStatus(t *testing.T) {

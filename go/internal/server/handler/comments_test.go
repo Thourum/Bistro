@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/samuelasvanyi/bistro/internal/ws"
+	"github.com/itterno/bistro/internal/ws"
 )
 
 func setupCommentsTestDB(t *testing.T) *sql.DB {

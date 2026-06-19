@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/samuelasvanyi/bistro/internal/ws"
+	"github.com/itterno/bistro/internal/ws"
 )
 
 func forceSyncResponse(t *testing.T, resp interface{}) (string, map[string]interface{}) {

@@ -11,7 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 
-	"github.com/samuelasvanyi/bistro/internal/logging"
+	"github.com/itterno/bistro/internal/logging"
 )
 
 // Client handles git operations

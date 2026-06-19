@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/logging"
+	"github.com/itterno/bistro/internal/logging"
 )
 
 const (

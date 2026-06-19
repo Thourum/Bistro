@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/actions"
-	"github.com/samuelasvanyi/bistro/internal/events"
-	"github.com/samuelasvanyi/bistro/internal/provider"
-	"github.com/samuelasvanyi/bistro/internal/provider/mock"
-	"github.com/samuelasvanyi/bistro/internal/store"
+	"github.com/itterno/bistro/internal/actions"
+	"github.com/itterno/bistro/internal/events"
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider/mock"
+	"github.com/itterno/bistro/internal/store"
 )
 
 // TestOrchestratorRateLimitDetection verifies that a 429 ProviderError from

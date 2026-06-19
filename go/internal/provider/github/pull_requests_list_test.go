@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/samuelasvanyi/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider"
 )
 
 // TestListPRsWithOwnerRepo verifies that ListPRs returns an error when

@@ -12,14 +12,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/cache"
-	"github.com/samuelasvanyi/bistro/internal/git"
-	"github.com/samuelasvanyi/bistro/internal/keychain"
-	"github.com/samuelasvanyi/bistro/internal/provider"
-	"github.com/samuelasvanyi/bistro/internal/server/handler"
-	"github.com/samuelasvanyi/bistro/internal/store"
-	"github.com/samuelasvanyi/bistro/internal/sync"
-	"github.com/samuelasvanyi/bistro/internal/ws"
+	"github.com/itterno/bistro/internal/cache"
+	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/keychain"
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/server/handler"
+	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/sync"
+	"github.com/itterno/bistro/internal/ws"
 )
 
 // App is the top-level orchestrator for the bistro-sync process.

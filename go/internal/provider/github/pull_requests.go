@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	ghlib "github.com/google/go-github/v84/github"
-	"github.com/samuelasvanyi/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider"
 )
 
 // listPRs fetches the list of PRs for a repository and normalizes them to domain types.

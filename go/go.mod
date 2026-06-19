@@ -1,4 +1,4 @@
-module github.com/samuelasvanyi/bistro
+module github.com/itterno/bistro
 
 go 1.26.1
 

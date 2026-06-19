@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider"
 )
 
 // Handler defines the interface for action handlers.

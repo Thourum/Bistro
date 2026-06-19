@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/samuelasvanyi/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider"
 )
 
 // MockProvider implements Provider interface with canned data for testing.

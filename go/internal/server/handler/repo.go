@@ -8,9 +8,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/logging"
-	"github.com/samuelasvanyi/bistro/internal/provider"
-	"github.com/samuelasvanyi/bistro/internal/ws"
+	"github.com/itterno/bistro/internal/logging"
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/ws"
 )
 
 type repoRow struct {

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/events"
+	"github.com/itterno/bistro/internal/events"
 )
 
 func TestSyncEventCreation(t *testing.T) {

@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"github.com/samuelasvanyi/bistro/internal/git"
-	"github.com/samuelasvanyi/bistro/internal/keychain"
-	github "github.com/samuelasvanyi/bistro/internal/provider/github"
-	"github.com/samuelasvanyi/bistro/internal/server"
+	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/keychain"
+	github "github.com/itterno/bistro/internal/provider/github"
+	"github.com/itterno/bistro/internal/server"
 )
 
 func main() {

@@ -11,12 +11,12 @@ import (
 
 	"log/slog"
 
-	"github.com/samuelasvanyi/bistro/internal/actions"
-	"github.com/samuelasvanyi/bistro/internal/events"
-	"github.com/samuelasvanyi/bistro/internal/git"
-	"github.com/samuelasvanyi/bistro/internal/logging"
-	"github.com/samuelasvanyi/bistro/internal/provider"
-	"github.com/samuelasvanyi/bistro/internal/store"
+	"github.com/itterno/bistro/internal/actions"
+	"github.com/itterno/bistro/internal/events"
+	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/logging"
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/store"
 )
 
 // diffStorer is the subset of store.DiffStore used by the orchestrator,

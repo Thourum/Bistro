@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/v84/github"
-	"github.com/samuelasvanyi/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider"
 	"golang.org/x/oauth2"
 )
 

@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/events"
-	"github.com/samuelasvanyi/bistro/internal/provider"
-	"github.com/samuelasvanyi/bistro/internal/store"
+	"github.com/itterno/bistro/internal/events"
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/store"
 )
 
 // ActionExecutor coordinates action execution with provider, store, and events.

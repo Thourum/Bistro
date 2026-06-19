@@ -6,8 +6,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/samuelasvanyi/bistro/internal/provider"
-	"github.com/samuelasvanyi/bistro/internal/provider/mock"
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider/mock"
 )
 
 func TestApproveHandler(t *testing.T) {

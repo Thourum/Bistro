@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/samuelasvanyi/bistro/internal/logging"
-	"github.com/samuelasvanyi/bistro/internal/store"
-	"github.com/samuelasvanyi/bistro/internal/ws"
+	"github.com/itterno/bistro/internal/logging"
+	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/ws"
 )
 
 // diffReader is the subset of store.DiffStore required by the REQUEST_DIFF handler.

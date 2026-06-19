@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/auth"
-	"github.com/samuelasvanyi/bistro/internal/logging"
-	"github.com/samuelasvanyi/bistro/internal/provider"
-	github "github.com/samuelasvanyi/bistro/internal/provider/github"
-	"github.com/samuelasvanyi/bistro/internal/ws"
+	"github.com/itterno/bistro/internal/auth"
+	"github.com/itterno/bistro/internal/logging"
+	"github.com/itterno/bistro/internal/provider"
+	github "github.com/itterno/bistro/internal/provider/github"
+	"github.com/itterno/bistro/internal/ws"
 )
 
 // TokenStore is the subset of keychain.TokenManager used by auth handlers.

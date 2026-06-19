@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/logging"
+	"github.com/itterno/bistro/internal/logging"
 )
 
 // InboundMessage represents a message received from Electron.

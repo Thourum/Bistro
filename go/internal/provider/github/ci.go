@@ -6,7 +6,7 @@ import (
 	"time"
 
 	ghlib "github.com/google/go-github/v84/github"
-	"github.com/samuelasvanyi/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider"
 )
 
 // getCIStatus fetches CI check runs for the given commit ref and normalizes them.

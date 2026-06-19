@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/logging"
+	"github.com/itterno/bistro/internal/logging"
 )
 
 // maxLoggedBodyBytes is the per-body cap when logging request/response bodies

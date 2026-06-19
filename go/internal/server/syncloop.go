@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/sync"
+	"github.com/itterno/bistro/internal/sync"
 )
 
 // broadcastSyncError surfaces a sync failure to every connected UI instead of

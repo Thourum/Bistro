@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/samuelasvanyi/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider"
 )
 
 // TestNewClientWithToken verifies that a non-empty token is stored and a

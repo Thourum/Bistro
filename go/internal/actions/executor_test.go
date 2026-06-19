@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samuelasvanyi/bistro/internal/events"
-	"github.com/samuelasvanyi/bistro/internal/provider"
-	"github.com/samuelasvanyi/bistro/internal/provider/mock"
+	"github.com/itterno/bistro/internal/events"
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider/mock"
 )
 
 func TestExecutorApprove(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	ghlib "github.com/google/go-github/v84/github"
-	"github.com/samuelasvanyi/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider"
 )
 
 // approve approves a PR with an optional review body.

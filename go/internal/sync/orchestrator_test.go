@@ -6,9 +6,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/samuelasvanyi/bistro/internal/actions"
-	"github.com/samuelasvanyi/bistro/internal/provider"
-	"github.com/samuelasvanyi/bistro/internal/provider/mock"
+	"github.com/itterno/bistro/internal/actions"
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider/mock"
 )
 
 func TestNewOrchestrator(t *testing.T) {

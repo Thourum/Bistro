@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/samuelasvanyi/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider"
 )
 
 func TestNewMockProvider(t *testing.T) {
