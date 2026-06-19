@@ -104,6 +104,14 @@ comments on next open. The first open after an edit pays a small re-classify
 pass; subsequent opens are no-ops. **No fsnotify, no background watcher, no
 timer.** The system stays cold until the user looks.
 
+`RefreshIfStale` re-classifies in the same synchronous regex-over-memory path as
+ingest, so its cost scales linearly with the PR's comment count and is bounded by
+the same per-comment budget. For the foundation slice this is fine even on large
+PRs (a few thousand regex matches). If a pathologically large PR ever makes the
+first-open-after-edit pass noticeable, the upgrade path is to classify in the
+background and let the renderer show `unclassified` until done — explicitly out of
+scope now.
+
 Acceptance for reload: *editing a YAML and reopening a PR shows updated
 classifications without restarting the app.*
 
@@ -124,6 +132,11 @@ CREATE TABLE comment_classification_state (
   FOREIGN KEY(comment_id) REFERENCES comments(id) ON DELETE CASCADE
 );
 ```
+
+No `CHECK` constraints on the new enum columns. Values are validated in the Go
+engine (the rules schema parser is the single writer); a DB-level constraint would
+duplicate that and make adding a severity/category a two-place migration. The
+listed enum values are the contract; the engine never writes anything else.
 
 **Cut from roadmap 3.1:**
 - `dedup_group_id` — only used by 3.6; adding it now is a speculative migration.
