@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { appStore } from '../store';
@@ -44,6 +44,9 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
           .includes(searchQuery.toLowerCase()),
       )
     : sortedRepos;
+  const firstUnwatchedIndex = filteredRepos.findIndex((r) => !r.watched);
+  const showWatchSeparator =
+    firstUnwatchedIndex > 0 && firstUnwatchedIndex < filteredRepos.length;
 
   // Clamp focusedIndex when list changes
   useEffect(() => {
@@ -151,38 +154,49 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
         </p>
       )}
 
-      <div className="divide-y divide-outline-variant max-h-48 overflow-y-auto">
+      <div className="max-h-48 overflow-y-auto">
         {filteredRepos.map((repo, idx) => {
           const label = `${repo.owner}/${repo.repo}`;
           const isFocused = idx === focusedIndex;
+          const showSeparator =
+            showWatchSeparator && idx === firstUnwatchedIndex;
+          const labelClassName = isFocused
+            ? 'font-semibold text-primary text-sm font-mono'
+            : repo.watched
+              ? 'font-bold text-secondary text-sm font-mono'
+              : 'text-on-surface-variant text-sm font-mono';
           return (
-            <button
-              type="button"
-              key={repo.id}
-              onClick={() => {
-                setFocusedIndex(idx);
-                toggleWatch(repo);
-              }}
-              className={`w-full flex items-center justify-between px-3 py-2 cursor-pointer transition-colors text-left ${
-                isFocused
-                  ? 'bg-surface-container border-l-2 border-l-primary'
-                  : 'hover:bg-surface-container'
-              }`}
-              tabIndex={-1}
-            >
-              <span
-                className={
-                  repo.watched
-                    ? 'font-bold text-primary text-sm font-mono'
-                    : 'text-on-surface-variant text-sm font-mono'
-                }
+            <Fragment key={repo.id}>
+              {showSeparator && (
+                <div className="my-2 border-t border-outline-variant/40 pt-2">
+                  <span className="px-3 font-mono text-[10px] uppercase tracking-widest text-outline">
+                    Other repositories
+                  </span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setFocusedIndex(idx);
+                  toggleWatch(repo);
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2 cursor-pointer transition-colors text-left border-l-2 ${
+                  isFocused
+                    ? 'bg-surface-container-highest border-l-primary'
+                    : 'border-l-transparent hover:bg-surface-container'
+                }`}
+                tabIndex={-1}
               >
-                {label}
-              </span>
-              <span className="text-xs text-on-surface-variant ml-2">
-                {repo.watched ? 'watching' : ''}
-              </span>
-            </button>
+                <span className={labelClassName}>{label}</span>
+                <span
+                  className={`text-xs ml-2 font-mono ${
+                    repo.watched ? 'text-primary' : 'text-outline'
+                  }`}
+                >
+                  {repo.watched ? 'watching' : ''}
+                </span>
+              </button>
+            </Fragment>
           );
         })}
       </div>
