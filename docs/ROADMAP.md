@@ -233,6 +233,34 @@ This is what makes Bistro the answer to the AI-PR era. Implemented as a rules en
 
 **Design principle.** Every classification is deterministic, inspectable, and explainable. The user can always click a comment and see *why* it was tagged as "nit" — the matching rule, the regex, the heuristic.
 
+> **Foundation slice designed & planned (2026-06-19).** Sub-features **3.1–3.4**
+> (schema, bot identification, rules engine, heuristics) have a brainstormed spec
+> and a task-by-task implementation plan:
+> - Spec: [`docs/superpowers/specs/2026-06-19-comment-classification-foundation-design.md`](superpowers/specs/2026-06-19-comment-classification-foundation-design.md)
+> - Plan: [`docs/superpowers/plans/2026-06-19-comment-classification-foundation.md`](superpowers/plans/2026-06-19-comment-classification-foundation.md)
+>
+> Status of these four: **planned, not yet built.** Decisions that diverge from the
+> original draft below (the draft is left intact for history; the spec is authoritative):
+> - **Single engine.** Heuristics (3.4) are not a separate code path — they ship as a
+>   built-in YAML (`zz-fallback.yml`) loaded last. The rule schema gained `weight` for
+>   weighted heuristic scoring; vendor rules set severity directly.
+> - **Resolution is last-match-wins**, not "highest confidence wins." Files load
+>   alphabetically; `coderabbit.company.yml` overrides `coderabbit.yml` by loading later.
+>   No confidence score in v1 (deferred until conflicts are observed in practice).
+> - **No hot-reload / fsnotify.** A coarse `sha256` fingerprint over the rules dir is
+>   stored per comment; comments re-classify lazily on PR-open when the fingerprint is stale.
+> - **Rule distribution = bundled + app auto-update** (resolves open question #2). Built-ins
+>   are `go:embed`-ed, seeded to `~/.config/bistro/rules/` on first launch, then
+>   presence-gated-updated on app upgrade (overwrite present built-ins, respect deletions,
+>   never touch user files). No runtime fetch.
+> - **Schema trims for the slice:** `dedup_group_id` moves to the 3.6 migration (only 3.6
+>   uses it); `classification_source` values are `rule:<file>:<name>` | `unclassified`
+>   (the `byok:`/`manual` variants arrive with 3.8/3.5).
+> - **Per-PR counter lives in the sidebar** (3.2), not a per-PR header. The overview view
+>   reorders comments by severity and auto-collapses nits; the diff view gets an inline
+>   severity marker. First three built-in vendors shipped: CodeRabbit, Greptile, fallback
+>   heuristics (remaining vendors added as comment samples are collected).
+
 ### 3.1 Schema additions
 
 ```sql
@@ -556,7 +584,11 @@ To keep the line clean, these are *not* in the FOSS scope:
 ## Open questions to resolve before v1.0
 
 1. **`@pierre/diffs` license.** Verify before public release.
-2. **Bot list update mechanism.** Is the rules YAML bundled-and-updated-with-the-binary, or fetched at runtime from a curated repo? (Latter is more flexible but adds a network dependency. Suggest: bundled with optional fetch.)
+2. ~~**Bot list update mechanism.**~~ **Resolved (2026-06-19):** bundled via `go:embed`,
+   distributed through the app's normal auto-update — no runtime fetch, no network
+   dependency. Built-ins seed to `~/.config/bistro/rules/` on first launch and are
+   presence-gated-updated on upgrade; user files are never touched. See the Phase 3
+   foundation spec/plan.
 3. **Telemetry stance.** Final call on opt-in / opt-out / none-at-all.
 4. **Crash reporter.** Sentry? Self-hosted? None?
 5. **Auto-update server.** Self-hosted via static files, or a service?
