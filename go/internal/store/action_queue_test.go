@@ -264,6 +264,65 @@ func TestQueueCleanup(t *testing.T) {
 	}
 }
 
+// TestEnqueueIdempotent verifies that re-enqueuing the same ID replaces the prior row,
+// resets status to 'pending' and retry_count to 0, and updates the payload.
+func TestEnqueueIdempotent(t *testing.T) {
+	db := openTestDBForQueue(t)
+	q := NewActionQueue(db.DB)
+	ctx := context.Background()
+
+	first := &QueuedAction{
+		ID:         "pr-42-approve",
+		ActionType: "approve",
+		PRID:       "pr-42",
+		Payload:    `{"comment":"first attempt"}`,
+	}
+	if err := q.Enqueue(ctx, first); err != nil {
+		t.Fatalf("first Enqueue error: %v", err)
+	}
+
+	// Simulate a failed attempt so the row has a non-zero retry_count and last_error.
+	if err := q.MarkFailed(ctx, first.ID, "rate limited", 1); err != nil {
+		t.Fatalf("MarkFailed error: %v", err)
+	}
+
+	// Re-enqueue with a different payload — must succeed and reset the row.
+	second := &QueuedAction{
+		ID:         "pr-42-approve",
+		ActionType: "approve",
+		PRID:       "pr-42",
+		Payload:    `{"comment":"second attempt"}`,
+	}
+	if err := q.Enqueue(ctx, second); err != nil {
+		t.Fatalf("second Enqueue (re-enqueue) error: %v", err)
+	}
+
+	// Exactly one row for this ID.
+	var count int
+	if err := db.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM action_queue WHERE id = ?`, first.ID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count query error: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 row, got %d", count)
+	}
+
+	got, err := q.GetByID(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("GetByID error: %v", err)
+	}
+	if got.Status != "pending" {
+		t.Errorf("expected status 'pending' after re-enqueue, got %q", got.Status)
+	}
+	if got.RetryCount != 0 {
+		t.Errorf("expected retry_count 0 after re-enqueue, got %d", got.RetryCount)
+	}
+	if got.Payload != second.Payload {
+		t.Errorf("expected payload %q after re-enqueue, got %q", second.Payload, got.Payload)
+	}
+}
+
 // TestQueueGetByIDNotFound verifies that GetByID returns an error for unknown IDs.
 func TestQueueGetByIDNotFound(t *testing.T) {
 	db := openTestDBForQueue(t)

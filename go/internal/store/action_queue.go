@@ -53,6 +53,10 @@ func (q *ActionQueue) Enqueue(ctx context.Context, action *QueuedAction) error {
 	const query = `
 		INSERT INTO action_queue (id, action_type, pr_id, payload, status, retry_count)
 		VALUES (?, ?, ?, ?, 'pending', 0)
+		ON CONFLICT(id) DO UPDATE SET
+			payload = excluded.payload,
+			status = 'pending',
+			retry_count = 0
 	`
 	_, err := q.db.ExecContext(ctx, query, action.ID, action.ActionType, action.PRID, action.Payload)
 	if err != nil {
