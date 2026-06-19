@@ -21,7 +21,7 @@ past 40 nits to find the 1 critical. After this slice: the sidebar reads
 
 > **⚠️ Amendment (2026-06-20) — depends on Phase 2.0; unified comments table.**
 > The 2026-06-19 roadmap audit surfaced a cross-phase interaction
-> (see `docs/superpowers/specs/2026-06-20-phase-2-rescope-design.md`):
+> (see `docs/superpowers/plans/2026-06-20-phase-2-decomposition.md`):
 > - **Classification operates on the unified `comments` table** (a single table with
 >   a `kind` discriminator `'issue' | 'review'`, introduced by Phase 2.0). The
 >   classification columns and the `comment_classification_state` table apply

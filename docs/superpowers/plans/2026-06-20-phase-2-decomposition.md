@@ -1,12 +1,32 @@
-# Phase 2 Re-scope — Patchset Semantics (Design)
+# Phase 2 Re-scope — Patchset Semantics (Decomposition)
 
+> **⚠️ This is a DECOMPOSITION / TRACKING doc — NOT a buildable spec.** It defines
+> how the re-scoped Phase 2 breaks into independent slices and the assumptions behind
+> each. Every slice below gets its **own** brainstorm → spec → plan cycle (one spec +
+> one plan per slice). Do not implement from this document; implement from the
+> per-slice spec/plan it spawns. Track those in the checklist directly below.
+>
 > **Supersedes** the original Phase 2 in `docs/ROADMAP.md` (2.1–2.4). Written
 > 2026-06-20 after the multi-agent audit (`docs/ROADMAP-AUDIT-2026-06-19.md`)
 > found the original phase rested on a foundation that didn't exist and partly
-> couldn't exist as specified. This document is the authoritative shape; the
+> couldn't exist as specified. This document is the authoritative *shape*; the
 > roadmap's Phase 2 prose is left for history with `⚠️ Audit` annotations.
 >
 > **Stage 2 (Team) deferrals referenced here:** `docs/STAGE-2-TEAM.md`.
+
+## Slice tracking
+
+Each slice runs: ponytail-audit (assumptions) → brainstorm → spec → plan → issue/PR → implement.
+
+| Slice | Spec | Plan | Issue/PR | Status |
+|---|---|---|---|---|
+| 2.0 Foundation | ⏳ in progress | — | — | brainstorming started 2026-06-20 |
+| 2.1 + 2.2 Patchset timeline + since-last-review | — | — | — | not started (blocked on 2.0) |
+| 2.3 Comment anchoring across rebase | — | — | — | not started (blocked on 2.0) |
+| 2.4 Unresolved-threads view (+2.4.1 resolve/unresolve, +2.4.2 resolved/reopened event) | — | — | — | not started (blocked on 2.0) |
+
+> Update this table as each slice's spec/plan/issue is created. Build order if serial:
+> **2.0 → 2.3 → 2.1+2.2 → 2.4** (see "Slice structure" below for rationale).
 
 ## Why this re-scope exists
 
