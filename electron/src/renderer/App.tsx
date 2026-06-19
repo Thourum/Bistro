@@ -4,6 +4,7 @@ import { AppFooter } from './components/AppFooter';
 import { CommandPalette } from './components/CommandPalette';
 import { FooterSlotProvider } from './components/FooterSlot';
 import { HelpOverlay } from './components/HelpOverlay';
+import { RepoPicker } from './components/RepoPicker';
 import ToastContainer from './components/ToastContainer';
 import { useAppHotkeys } from './hooks/useAppHotkeys';
 import { useSettingsEffect } from './hooks/useSettingsEffect';
@@ -51,10 +52,14 @@ export function AppContent(): React.ReactElement {
       case 'settings':
         return <SettingsPage />;
       default:
-        // list | search | filter | help | command all keep the PR list visible
-        // underneath any overlay.
+        // list | search | filter | help | command | repo-picker all keep the PR
+        // list visible underneath any overlay.
         return <PRListPage />;
     }
+  };
+
+  const closeRepoPicker = (): void => {
+    appStore.setState((s) => ({ ...s, mode: 'list' }));
   };
 
   return (
@@ -62,6 +67,21 @@ export function AppContent(): React.ReactElement {
       <div className="flex-1 min-h-0 flex flex-col">{renderPage()}</div>
       <AppFooter />
       <CommandPalette />
+      {mode === 'repo-picker' && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Repository picker"
+          className="fixed inset-0 z-40 bg-transparent backdrop-blur-[20px] flex items-start justify-center pt-[153px]"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeRepoPicker();
+          }}
+        >
+          <div className="w-full max-w-2xl mx-4 bg-surface-container-lowest border border-primary shadow-[0_10px_30px_rgba(25,28,29,0.04)] overflow-hidden p-4">
+            <RepoPicker onClose={closeRepoPicker} />
+          </div>
+        </div>
+      )}
       <HelpOverlay />
       <ToastContainer />
     </div>

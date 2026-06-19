@@ -27,6 +27,10 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
     send('REQUEST_REPO_LIST', {});
   }, [send]);
 
+  useEffect(() => {
+    setTimeout(() => containerRef.current?.focus(), 0);
+  }, []);
+
   const sortedRepos = [...repos].sort((a, b) => {
     if (a.watched && !b.watched) return -1;
     if (!a.watched && b.watched) return 1;
@@ -116,6 +120,8 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
   return (
     <div
       ref={containerRef}
+      role="application"
+      aria-label="Repository picker"
       className="outline-none"
       tabIndex={-1}
       onKeyDown={handleKeyDown}
@@ -150,18 +156,18 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
           const label = `${repo.owner}/${repo.repo}`;
           const isFocused = idx === focusedIndex;
           return (
-            <div
+            <button
+              type="button"
               key={repo.id}
               onClick={() => {
                 setFocusedIndex(idx);
                 toggleWatch(repo);
               }}
-              className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-colors ${
+              className={`w-full flex items-center justify-between px-3 py-2 cursor-pointer transition-colors text-left ${
                 isFocused
                   ? 'bg-surface-container border-l-2 border-l-primary'
                   : 'hover:bg-surface-container'
               }`}
-              role="button"
               tabIndex={-1}
             >
               <span
@@ -176,7 +182,7 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
               <span className="text-xs text-on-surface-variant ml-2">
                 {repo.watched ? 'watching' : ''}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>

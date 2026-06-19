@@ -27,6 +27,7 @@ export interface UIState {
     | 'help'
     | 'command'
     | 'filter'
+    | 'repo-picker'
     | 'settings';
   /** Mode the user was in when opening the help overlay — scopes its content. */
   helpSourceMode: 'list' | 'detail';

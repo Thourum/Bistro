@@ -45,6 +45,12 @@ const COMMANDS: readonly CommandItem[] = [
     name: 'Clear all filters and search',
     icon: 'filter_alt_off',
   },
+  {
+    id: 'repo-picker',
+    name: 'Open repository picker',
+    description: 'Discover and watch repositories',
+    icon: 'source_environment',
+  },
   { id: 'focus-list', name: 'Focus PR list', icon: 'list_alt' },
   { id: 'focus-detail', name: 'Focus PR detail', icon: 'article' },
   { id: 'about', name: 'About BISTRO', icon: 'info' },
@@ -166,6 +172,10 @@ export function CommandPalette(): React.ReactElement | null {
           filterState: 'open',
           filterMenuOpen: false,
         }));
+        setQuery('');
+        return;
+      case 'repo-picker':
+        appStore.setState((s) => ({ ...s, mode: 'repo-picker' }));
         setQuery('');
         return;
       case 'sync':
