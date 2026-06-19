@@ -65,10 +65,11 @@ const COMMANDS: readonly CommandItem[] = [
  * `shouldFilter={false}` and keep our own substring filtering (`filteredPRs` /
  * `filteredCommands`), so cmdk renders only the already-filtered items.
  *
- * Overlay: `fixed inset-0` with `bg-surface/80 backdrop-blur-[20px]`; the box
- * sits ~153px from the top in a `max-w-2xl` container. Results are grouped
- * into _Recently opened PRs_ and _Available commands_; Arrow keys move
- * between groups; Enter selects; Escape closes.
+ * Overlay: `fixed inset-0` with a transparent, blurred backdrop so the app
+ * stays visible behind it; the box sits ~153px from the top in a `max-w-2xl`
+ * container. Results are grouped into _Recently opened PRs_ and
+ * _Available commands_; Arrow keys move between groups; Enter selects;
+ * Escape closes.
  */
 export function CommandPalette(): React.ReactElement | null {
   const mode = useStore(appStore, (s: UIState) => s.mode);
@@ -192,7 +193,7 @@ export function CommandPalette(): React.ReactElement | null {
       role="dialog"
       aria-modal="true"
       aria-label="Command palette"
-      className="fixed inset-0 z-40 bg-surface/80 backdrop-blur-[20px] flex items-start justify-center pt-[153px]"
+      className="fixed inset-0 z-40 bg-transparent backdrop-blur-[20px] flex items-start justify-center pt-[153px]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) handleClose();
       }}
@@ -208,8 +209,8 @@ export function CommandPalette(): React.ReactElement | null {
         className="w-full max-w-2xl mx-4 bg-surface-container-lowest border border-primary shadow-[0_10px_30px_rgba(25,28,29,0.04)] flex flex-col overflow-hidden"
       >
         {/* Search input header */}
-        <div className="flex items-center px-4 h-14 border-b border-outline-variant/20">
-          <span className="material-symbols-outlined text-primary mr-3">
+        <div className="flex items-center gap-3 px-4 h-14 border-b border-outline-variant/20">
+          <span className="material-symbols-outlined text-primary shrink-0">
             search
           </span>
           <Command.Input
@@ -217,9 +218,9 @@ export function CommandPalette(): React.ReactElement | null {
             value={query}
             onValueChange={setQuery}
             placeholder="Type a command or search…"
-            className="flex-1 bg-transparent border-none text-on-surface placeholder:text-outline text-lg outline-none focus:ring-0"
+            className="flex-1 min-w-0 bg-transparent appearance-none border-0 shadow-none outline-none ring-0 text-on-surface placeholder:text-outline text-lg focus:border-transparent focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
           />
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 ml-3">
             <kbd className="font-mono text-[10px] px-1.5 py-0.5 bg-surface-container border border-outline-variant text-on-surface-variant">
               ESC
             </kbd>
@@ -238,7 +239,7 @@ export function CommandPalette(): React.ReactElement | null {
           {filteredPRs.length > 0 && (
             <Command.Group
               heading="Recently opened PRs"
-              className="[&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:text-outline [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:px-4 [&_[cmdk-group-heading]]:py-2"
+              className="px-2 [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:text-outline [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:mb-2 [&_[cmdk-group-items]]:space-y-1"
             >
               {filteredPRs.map((pr) => (
                 <PRResultRow
@@ -253,7 +254,7 @@ export function CommandPalette(): React.ReactElement | null {
           {filteredCommands.length > 0 && (
             <Command.Group
               heading="Available commands"
-              className="mt-4 [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:text-outline [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:px-4 [&_[cmdk-group-heading]]:py-2"
+              className="px-2 mt-4 [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:text-outline [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:mb-2 [&_[cmdk-group-items]]:space-y-1"
             >
               {filteredCommands.map((cmd) => (
                 <CommandRow
@@ -304,7 +305,7 @@ function PRResultRow({ pr, onSelect }: { pr: PR; onSelect: () => void }) {
     <Command.Item
       value={`pr-${pr.id}`}
       onSelect={onSelect}
-      className="group w-full flex items-center justify-between px-4 py-3 text-left cursor-pointer transition-colors border-l-2 border-transparent hover:bg-surface-container-highest data-[selected=true]:bg-surface-container-highest data-[selected=true]:border-l-2 data-[selected=true]:border-primary"
+      className="group w-full flex items-center justify-between px-2 py-3 text-left cursor-pointer transition-colors border-l-2 border-transparent hover:bg-surface-container-highest data-[selected=true]:bg-surface-container-highest data-[selected=true]:border-primary"
     >
       <div className="flex items-center gap-3 min-w-0">
         <span className="material-symbols-outlined text-primary shrink-0">
@@ -319,7 +320,7 @@ function PRResultRow({ pr, onSelect }: { pr: PR; onSelect: () => void }) {
           </span>
         </div>
       </div>
-      <div className="hidden group-hover:flex group-data-[selected=true]:flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 shrink-0 ml-4 opacity-0 group-hover:opacity-100 group-data-[selected=true]:opacity-100 transition-opacity">
         <span className="font-mono text-[10px] text-outline uppercase">
           Select
         </span>
@@ -342,7 +343,7 @@ function CommandRow({
     <Command.Item
       value={`cmd-${command.id}`}
       onSelect={onSelect}
-      className="group w-full flex items-center justify-between px-4 py-3 text-left cursor-pointer transition-colors border-l-2 border-transparent hover:bg-surface-container-highest data-[selected=true]:bg-surface-container-highest data-[selected=true]:border-l-2 data-[selected=true]:border-primary"
+      className="group w-full flex items-center justify-between px-2 py-3 text-left cursor-pointer transition-colors border-l-2 border-transparent hover:bg-surface-container-highest data-[selected=true]:bg-surface-container-highest data-[selected=true]:border-primary"
     >
       <div className="flex items-center gap-3 min-w-0">
         <span className="material-symbols-outlined text-on-surface-variant shrink-0">
@@ -360,7 +361,7 @@ function CommandRow({
         </div>
       </div>
       {command.shortcut !== undefined && (
-        <div className="flex items-center gap-1 opacity-60 shrink-0">
+        <div className="flex items-center gap-1 shrink-0 ml-4 opacity-40 group-hover:opacity-100 group-data-[selected=true]:opacity-100 transition-opacity">
           {command.shortcut.map((k) => (
             <kbd
               key={`${command.id}-${k}`}
