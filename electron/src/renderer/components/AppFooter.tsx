@@ -1,3 +1,4 @@
+import { LoaderCircle } from 'lucide-react';
 import React from 'react';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
@@ -6,6 +7,7 @@ import type { UIState } from '../store/ui';
 import { getEffectiveBindings } from '../utils/keybindings';
 import { buildLegendForMode } from '../utils/legendPresets';
 import { useFooterSlotContent } from './FooterSlot';
+import { SyncStatusHoverCard } from './SyncStatusHoverCard';
 
 /**
  * Global bottom system bar rendered on every screen.
@@ -21,13 +23,15 @@ import { useFooterSlotContent } from './FooterSlot';
  *
  * Right is fixed: Shortcuts button, Settings button, and a live sync status
  * indicator. The label for the status is hidden in normal operation (dot
- * speaks for itself) and appears on hover via `title`.
+ * speaks for itself) with details available through its hover card.
  */
 export function AppFooter(): React.ReactElement {
   const mode = useStore(appStore, (state: UIState) => state.mode);
   const syncStatus = useStore(appStore, (state: UIState) => state.syncStatus);
+  const lastSyncAt = useStore(appStore, (state: UIState) => state.lastSyncAt);
   const isOffline = useStore(appStore, (state: UIState) => state.isOffline);
   const overrides = useStore(settingsStore, (s) => s.keybindings);
+  const syncSettings = useStore(settingsStore, (s) => s.sync);
 
   const slots = useFooterSlotContent();
 
@@ -41,6 +45,7 @@ export function AppFooter(): React.ReactElement {
     syncStatus,
     isOffline,
   );
+  const isSyncing = syncStatus === 'syncing' && !isOffline;
 
   return (
     <footer className="shrink-0 h-8 border-t border-outline-variant/40 bg-surface-container-high/80 backdrop-blur flex items-center z-50 text-[10px] uppercase tracking-widest font-mono">
@@ -70,16 +75,28 @@ export function AppFooter(): React.ReactElement {
         >
           Settings
         </button>
-        <span
-          className="flex items-center gap-2 pl-4 border-l border-outline-variant/40"
-          title={statusLabel}
+        <SyncStatusHoverCard
+          statusLabel={statusLabel}
+          syncStatus={syncStatus}
+          isOffline={isOffline}
+          lastSyncAt={lastSyncAt}
+          autoSync={syncSettings.autoSync}
+          syncIntervalSeconds={syncSettings.syncInterval}
         >
-          <span
-            className={`w-2 h-2 ${statusDot}`}
-            role="img"
-            aria-label={`Sync status: ${statusLabel}`}
-          />
-        </span>
+          <button
+            type="button"
+            className="flex cursor-default appearance-none items-center gap-2 border-y-0 border-r-0 border-l border-outline-variant/40 bg-transparent p-0 pl-4 outline-none focus-visible:text-on-surface"
+          >
+            {isSyncing ? (
+              <LoaderCircle
+                className="h-3 w-3 text-yellow-500 animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <span className={`w-2 h-2 ${statusDot}`} aria-hidden="true" />
+            )}
+          </button>
+        </SyncStatusHoverCard>
       </div>
     </footer>
   );
