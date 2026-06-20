@@ -17,27 +17,12 @@ export interface UIState {
   selectedPRIndex: number;
   selectedFileIndex: number;
   searchQuery: string;
-  mode:
-    | 'login'
-    | 'onboarding'
-    | 'list'
-    | 'detail'
-    | 'diff'
-    | 'search'
-    | 'help'
-    | 'command'
-    | 'filter'
-    | 'repo-picker'
-    | 'settings';
-  /** Mode the user was in when opening the help overlay — scopes its content. */
-  helpSourceMode: 'list' | 'detail';
   isAuthenticated: boolean;
   showFileTree: boolean;
   paneLayout: 'list' | 'detail' | 'split';
   sortBy: 'updated' | 'created';
   filterState: 'open' | 'draft' | 'all' | 'needs_action';
   confirmingAction: string | null;
-  filterMenuOpen: boolean;
   pendingAction: PendingAction | null;
   actionResult: ActionResult | null;
   // WebSocket sync state
@@ -64,19 +49,29 @@ export interface UIState {
   repos: RepoInfo[];
   reposLoading: boolean;
   repoFilter: string | null;
+  /**
+   * Stable id list of the currently visible PRs — kept in sync by PRListPage.
+   * Used by keybinding actions (list.open, list.bottom) to navigate by id
+   * without needing a hook context.
+   */
+  visiblePRIds: string[];
+  /**
+   * Canonical file keys for the diff currently loaded in DiffPage.
+   * Set by DiffPage via onFilesResolved when PierreDiffView parses the diff.
+   * Used by n/p keybindings (detail.nextFile / detail.prevFile) in diff mode
+   * to navigate the ?file search param without needing a hook context.
+   */
+  diffFileKeys: string[];
 }
 
 export const initialUIState: UIState = {
   selectedPRIndex: 0,
   selectedFileIndex: 0,
   searchQuery: '',
-  mode: 'list',
-  helpSourceMode: 'list',
   paneLayout: 'split',
   sortBy: 'updated',
   filterState: 'open',
   confirmingAction: null,
-  filterMenuOpen: false,
   pendingAction: null,
   actionResult: null,
   isAuthenticated: false,
@@ -95,6 +90,8 @@ export const initialUIState: UIState = {
   repos: [],
   reposLoading: false,
   repoFilter: null,
+  visiblePRIds: [],
+  diffFileKeys: [],
 };
 
 export function createUIStore(): Store<UIState> {
