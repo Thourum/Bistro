@@ -20,13 +20,20 @@ Each slice runs: ponytail-audit (assumptions) → brainstorm → spec → plan �
 
 | Slice | Spec | Plan | Issue/PR | Status |
 |---|---|---|---|---|
-| 2.0 Foundation | ✅ `specs/2026-06-20-phase-2-0-foundation-design.md` | ⏳ next | — | spec written 2026-06-20; migration **012** |
-| 2.1 + 2.2 Patchset timeline + since-last-review | — | — | — | not started (blocked on 2.0) |
-| 2.3 Comment anchoring across rebase | — | — | — | not started (blocked on 2.0) |
-| 2.4 Unresolved-threads view + resolve/unresolve write-back + resolved/reopened event | — | — | — | not started (blocked on 2.0). Shrunk: thread *data layer* moved into 2.0; 2.4 is now UI + write-back only |
+| 2.0 Foundation | ✅ `specs/2026-06-20-phase-2-0-foundation-design.md` | ⏳ next | — | spec written + reviewed 2026-06-20; migration **012** |
+| 2.1 + 2.2 Patchset timeline + since-last-review | ✅ `specs/2026-06-20-phase-2-1-2-2-patchset-timeline-design.md` | ✅ `plans/2026-06-20-phase-2-1-2-2-patchset-timeline.md` | — | spec+plan written 2026-06-20; migration **014**; blocked on 2.0 |
+| 2.3 Comment anchoring across rebase | ✅ `specs/2026-06-20-phase-2-3-comment-anchoring-design.md` | ✅ `plans/2026-06-20-phase-2-3-comment-anchoring.md` | — | spec+plan written 2026-06-20; migration **015**; blocked on 2.0 |
+| 2.4 Unresolved-threads view + resolve/unresolve write-back + resolved/reopened event | ✅ `specs/2026-06-20-phase-2-4-unresolved-threads-design.md` | ✅ `plans/2026-06-20-phase-2-4-unresolved-threads.md` | — | spec+plan written 2026-06-20; **no migration** (uses 2.0's `review_threads`); blocked on 2.0. Shrunk: thread *data layer* moved into 2.0; 2.4 is now UI + write-back only |
 
-> **Migration numbering:** Phase 2 builds before Phase 3, so Phase 2.0 = migration
-> **012** and the Phase 3 classification slice = **013**. Later 2.x slices take 014+.
+> **Migration numbering:** 012 = Phase 2.0 Foundation · 013 = Phase 3 classification ·
+> 014 = Phase 2.1+2.2 · 015 = Phase 2.3 · Phase 2.4 needs none.
+>
+> **Open questions surfaced during spec/plan authoring (resolve before/while implementing each slice):**
+> - **2.1+2.2:** range-diff wrapper signature — ship the "two-SHA simplified" form (adequate for P1→P2 pair diffs) or the full five-arg commit-range form from day one? Spec defaults to simplified.
+> - **2.3:** Task 7 (stamping `patchset_number` in `writer.go`) assumes 2.0's `WriteReviewComments` + patchset upsert exist; re-read against the 2.0 plan before starting 2.3.
+> - **2.4:** the `useReviewThreads` fetch depends on 2.0's exact server interface (REST endpoint vs WS request) — 2.0 spec references a handler but doesn't lock the shape; fill in 2.4's Task 13 once 2.0 ships.
+>
+> **Each slice's spec should still pass its own spec-review + your review before implementation** (only 2.0's spec has been through the reviewer so far).
 
 > Update this table as each slice's spec/plan/issue is created. Build order if serial:
 > **2.0 → 2.3 → 2.1+2.2 → 2.4** (see "Slice structure" below for rationale).
