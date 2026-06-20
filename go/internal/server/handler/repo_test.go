@@ -9,10 +9,10 @@ import (
 	"os"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
 	"github.com/itterno/bistro/internal/ws"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func setupRepoTestDB(t *testing.T) *sql.DB {
@@ -116,7 +116,7 @@ func TestRequestRepoListHandler_ProviderError(t *testing.T) {
 	}
 }
 
-func TestToggleWatchHandler_TogglesWatch(t *testing.T) {
+func TestToggleWatchHandler_RespectsWatchedBooleanAndTriggersSyncWhenEnabled(t *testing.T) {
 	db := setupRepoTestDB(t)
 	defer db.Close()
 
@@ -128,7 +128,7 @@ func TestToggleWatchHandler_TogglesWatch(t *testing.T) {
 	syncCh := make(chan string, 8)
 	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
 
-	payload, _ := json.Marshal(map[string]string{"repo_id": "github:acme/api"})
+	payload, _ := json.Marshal(map[string]interface{}{"repo_id": "github:acme/api", "watched": true})
 	msg := ws.InboundMessage{ID: "req-4", Type: "TOGGLE_WATCH_REPO", Data: payload}
 
 	resp, err := handler(context.Background(), msg)
@@ -142,7 +142,7 @@ func TestToggleWatchHandler_TogglesWatch(t *testing.T) {
 	}
 	data := m["data"].(map[string]interface{})
 	if !data["watched"].(bool) {
-		t.Error("expected watched=true after first toggle")
+		t.Error("expected watched=true")
 	}
 
 	select {
@@ -154,19 +154,46 @@ func TestToggleWatchHandler_TogglesWatch(t *testing.T) {
 		t.Error("expected sync trigger after watch enabled")
 	}
 
-	resp2, err := handler(context.Background(), msg)
+	unwatchPayload, _ := json.Marshal(map[string]interface{}{"repo_id": "github:acme/api", "watched": false})
+	unwatchMsg := ws.InboundMessage{ID: "req-4b", Type: "TOGGLE_WATCH_REPO", Data: unwatchPayload}
+	resp2, err := handler(context.Background(), unwatchMsg)
 	if err != nil {
-		t.Fatalf("unexpected error on second toggle: %v", err)
+		t.Fatalf("unexpected error on unwatch: %v", err)
 	}
 	m2 := resp2.(map[string]interface{})
 	data2 := m2["data"].(map[string]interface{})
 	if data2["watched"].(bool) {
-		t.Error("expected watched=false after second toggle")
+		t.Error("expected watched=false")
 	}
 	select {
 	case repoID := <-syncCh:
 		t.Errorf("did not expect sync trigger after unwatch, got %s", repoID)
 	default:
+	}
+}
+
+func TestToggleWatchHandler_MissingWatchedFallsBackToToggle(t *testing.T) {
+	db := setupRepoTestDB(t)
+	defer db.Close()
+
+	_, err := db.Exec(`INSERT INTO repos (id, provider, owner, repo) VALUES ('github:acme/api', 'github', 'acme', 'api')`)
+	if err != nil {
+		t.Fatalf("insert repo: %v", err)
+	}
+
+	syncCh := make(chan string, 8)
+	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
+
+	payload, _ := json.Marshal(map[string]string{"repo_id": "github:acme/api"})
+	msg := ws.InboundMessage{ID: "req-4c", Type: "TOGGLE_WATCH_REPO", Data: payload}
+
+	resp, err := handler(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data := resp.(map[string]interface{})["data"].(map[string]interface{})
+	if !data["watched"].(bool) {
+		t.Error("expected missing watched payload to toggle to true")
 	}
 }
 

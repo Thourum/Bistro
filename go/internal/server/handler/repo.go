@@ -145,7 +145,8 @@ func NewToggleWatchHandler(
 		}
 
 		var data struct {
-			RepoID string `json:"repo_id"`
+			RepoID  string `json:"repo_id"`
+			Watched *bool  `json:"watched"`
 		}
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return nil, fmt.Errorf("invalid TOGGLE_WATCH_REPO payload: %w", err)
@@ -156,24 +157,36 @@ func NewToggleWatchHandler(
 
 		logger.Debug("toggle watch requested", "repo_id", data.RepoID)
 
-		var watched int
-		err := db.QueryRow(
-			"UPDATE repos SET watched = CASE WHEN watched = 1 THEN 0 ELSE 1 END WHERE id = ? RETURNING watched",
-			data.RepoID,
-		).Scan(&watched)
+		var currentWatched int
+		err := db.QueryRow("SELECT watched FROM repos WHERE id = ?", data.RepoID).Scan(&currentWatched)
 		if err == sql.ErrNoRows {
 			logger.Warn("toggle watch repo not found", "repo_id", data.RepoID)
 			return nil, fmt.Errorf("repo not found: %s", data.RepoID)
 		}
 		if err != nil {
+			logger.Error("read watch state failed", "repo_id", data.RepoID, "err", err)
+			return nil, fmt.Errorf("read watch state for %s: %w", data.RepoID, err)
+		}
+
+		wasWatched := currentWatched == 1
+		newWatched := !wasWatched
+		if data.Watched != nil {
+			newWatched = *data.Watched
+		}
+
+		watchedValue := 0
+		if newWatched {
+			watchedValue = 1
+		}
+
+		if _, err := db.Exec("UPDATE repos SET watched = ? WHERE id = ?", watchedValue, data.RepoID); err != nil {
 			logger.Error("toggle watch failed", "repo_id", data.RepoID, "err", err)
 			return nil, fmt.Errorf("toggle watch for %s: %w", data.RepoID, err)
 		}
 
-		newWatched := watched == 1
 		logger.Info("watch state toggled", "repo_id", data.RepoID, "watched", newWatched)
 
-		if newWatched {
+		if newWatched && !wasWatched {
 			select {
 			case syncTrigger <- data.RepoID:
 				logger.Debug("sync triggered", "repo_id", data.RepoID)
