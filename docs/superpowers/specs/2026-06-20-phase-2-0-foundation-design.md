@@ -67,8 +67,12 @@ migration is **012**; Phase 3's classification migration moves to **013**.
 **Server (`go/internal/server/`):**
 - `handler/auth.go` + `AuthDeps` — add `CurrentUserStore`; write current_user at
   auth-success alongside the existing cache write.
-- `handler/comments.go` — return the new columns on comment rows (thread-grouped
-  payloads are 2.4's concern).
+- `handler/comments.go` — **all new `comments` columns pass through as-is** in the
+  existing flat comment payload (`kind`, `commit_sha`, `original_sha`, `side`,
+  `position`, `original_position`, `in_reply_to`, `thread_id`, `patchset_number`).
+  No new endpoint, no grouping — 2.3/2.4 consume this flat set and do their own
+  shaping. (`review_threads` rows are served by a later slice's handler; foundation
+  only guarantees the comment columns are exposed.)
 
 **Renderer:** none this slice (payload shaping deferred to 2.3/2.4).
 
@@ -111,16 +115,8 @@ a genuine error. The core `Provider` interface is unchanged.
 -- Migration: 012_add_review_comments_and_patchsets
 -- Description: Inline review comments (unified comments table), review threads, observed patchsets, current_user
 
-ALTER TABLE comments ADD COLUMN kind TEXT NOT NULL DEFAULT 'issue';  -- 'issue' | 'review'
-ALTER TABLE comments ADD COLUMN commit_sha TEXT;
-ALTER TABLE comments ADD COLUMN original_sha TEXT;
-ALTER TABLE comments ADD COLUMN side TEXT;             -- 'LEFT' | 'RIGHT'
-ALTER TABLE comments ADD COLUMN position INTEGER;
-ALTER TABLE comments ADD COLUMN original_position INTEGER;
-ALTER TABLE comments ADD COLUMN in_reply_to TEXT;
-ALTER TABLE comments ADD COLUMN thread_id TEXT REFERENCES review_threads(id) ON DELETE SET NULL;
-ALTER TABLE comments ADD COLUMN patchset_number INTEGER;  -- filled by 2.3; NULL now
-
+-- review_threads MUST be created BEFORE the comments.thread_id FK column is added,
+-- or the ALTER TABLE ... REFERENCES fails at apply time (foreign key mismatch).
 CREATE TABLE review_threads (
     id          TEXT PRIMARY KEY,            -- provider-opaque thread id
     pr_id       TEXT NOT NULL,
@@ -132,6 +128,16 @@ CREATE TABLE review_threads (
     FOREIGN KEY(pr_id) REFERENCES prs(id) ON DELETE CASCADE
 );
 
+ALTER TABLE comments ADD COLUMN kind TEXT NOT NULL DEFAULT 'issue';  -- 'issue' | 'review'
+ALTER TABLE comments ADD COLUMN commit_sha TEXT;
+ALTER TABLE comments ADD COLUMN original_sha TEXT;
+ALTER TABLE comments ADD COLUMN side TEXT;             -- 'LEFT' | 'RIGHT'
+ALTER TABLE comments ADD COLUMN position INTEGER;
+ALTER TABLE comments ADD COLUMN original_position INTEGER;
+ALTER TABLE comments ADD COLUMN in_reply_to TEXT;
+ALTER TABLE comments ADD COLUMN thread_id TEXT REFERENCES review_threads(id) ON DELETE SET NULL;
+ALTER TABLE comments ADD COLUMN patchset_number INTEGER;  -- filled by 2.3; NULL now
+
 CREATE TABLE patchsets (
     pr_id      TEXT NOT NULL,
     number     INTEGER NOT NULL,
@@ -139,6 +145,7 @@ CREATE TABLE patchsets (
     base_sha   TEXT NOT NULL,
     pushed_at  TIMESTAMP NOT NULL,  -- best-available: observation time (FOSS), true push time (Stage 2)
     PRIMARY KEY (pr_id, number),
+    UNIQUE (pr_id, head_sha),        -- DB-level idempotency: one row per observed head; enables INSERT OR IGNORE
     FOREIGN KEY(pr_id) REFERENCES prs(id) ON DELETE CASCADE
 );
 
@@ -185,14 +192,20 @@ in place. Per-item write errors log and skip, never abort the PR tx.
 ## Observed-patchset capture (in `writePR`, same tx)
 
 ```
-latest := SELECT head_sha, MAX(number) FROM patchsets WHERE pr_id = ?
-if none:                 INSERT {number:1,            head_sha:pr.HeadSHA, base_sha:pr.BaseSHA, pushed_at:now}
-else if latest.head != pr.HeadSHA: INSERT {number:latest.number+1, ...same...}
-else:                    no-op
+-- fetch the latest patchset for this PR (pin the query — no bare-column MAX):
+latest := SELECT number, head_sha FROM patchsets WHERE pr_id = ? ORDER BY number DESC LIMIT 1
+if no row:                       nextNum := 1
+else if latest.head_sha != pr.HeadSHA: nextNum := latest.number + 1
+else:                            no-op (head unchanged) → skip insert, then upsert PR
+-- insert is race-safe via the UNIQUE(pr_id, head_sha) constraint:
+INSERT OR IGNORE INTO patchsets {pr_id, number:nextNum, head_sha:pr.HeadSHA, base_sha:pr.BaseSHA, pushed_at:now}
 then upsert the PR row (existing)
 ```
 
-- Idempotent on `(pr_id, head_sha)`; re-syncs record nothing for an unchanged head.
+- **Idempotent at the DB level** via `UNIQUE(pr_id, head_sha)` + `INSERT OR IGNORE`
+  — re-syncs (and concurrent workers racing on the same PR) record nothing for an
+  already-seen head. The application-level `ORDER BY ... LIMIT 1` check computes the
+  next number; the UNIQUE constraint is the actual race-safety guard.
 - `pushed_at = time.Now()` at write (observation time). Name kept (`pushed_at`, not
   `observed_at`) so Stage 2's server backfills true push times into the same column
   — code + migration comments state this so no one "fixes" the name.
