@@ -1,13 +1,16 @@
+import { Link, useParams } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import ActionFeedback from '../components/ActionFeedback';
 import { useActionDispatch } from '../hooks/useActionDispatch';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { useWebSocketPRList as usePRList } from '../hooks/useWebSocketPRList';
+import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { CICheck, Comment, PR } from '../types';
 import { createLogger } from '../utils/logger';
+
+// Route API for reading $prId param — C2: id is the ONLY PR identity.
 
 const log = createLogger('PRDetailPage');
 
@@ -39,17 +42,26 @@ function relativeTime(iso: string): string {
  * re-enabled once `@pierre/diffs` gains first-class comment gutters.
  */
 export function PRDetailPage() {
-  const selectedIndex = useStore(appStore, (s: UIState) => s.selectedPRIndex);
-  const filterState = useStore(appStore, (s: UIState) => s.filterState);
+  // C2: resolve PR by stable id from route params — NEVER by selectedPRIndex.
+  const { prId } = useParams({ strict: false }) as { prId: string };
+
   const confirmingAction = useStore(
     appStore,
     (s: UIState) => s.confirmingAction,
   );
   const pendingAction = useStore(appStore, (s: UIState) => s.pendingAction);
   const actionResult = useStore(appStore, (s: UIState) => s.actionResult);
+  const filterState = useStore(appStore, (s: UIState) => s.filterState);
 
-  const { data: prs = [], isLoading, error } = usePRList(filterState);
-  const pr = prs[selectedIndex];
+  // Fetch ALL PRs via current filter and find by id.
+  // We use 'all' to ensure deep-linked PRs (any status) are always resolvable.
+  const { data: allPRs = [], isLoading, error } = useWebSocketPRList('all');
+  // Also try the current filter as a fallback source — whichever has the PR.
+  const { data: filteredPRs = [] } = useWebSocketPRList(filterState);
+
+  const pr =
+    allPRs.find((p) => p.id === prId) ?? filteredPRs.find((p) => p.id === prId);
+
   const { request } = useWebSocket();
 
   const { dispatchApprove, clearActionResult } = useActionDispatch(pr?.id);
@@ -127,16 +139,30 @@ export function PRDetailPage() {
 
   if (error !== null || pr === undefined) {
     return (
-      <div className="flex-1 flex items-center justify-center text-error">
-        {error !== null
-          ? `Failed to load PR: ${(error as Error).message}`
-          : 'PR not found'}
+      <div
+        data-testid="pr-not-found"
+        className="flex-1 flex flex-col items-center justify-center gap-4 text-error"
+      >
+        <span>
+          {error !== null
+            ? `Failed to load PR: ${(error as Error).message}`
+            : `PR not found: ${prId}`}
+        </span>
+        <Link
+          to="/prs"
+          className="font-mono text-xs text-primary underline uppercase tracking-widest"
+        >
+          ← Back to PRs
+        </Link>
       </div>
     );
   }
 
   return (
-    <main className="flex-1 flex flex-row overflow-hidden">
+    <main
+      data-testid="pr-detail-page"
+      className="flex-1 flex flex-row overflow-hidden"
+    >
       <article className="w-[90%] overflow-y-auto p-12 lg:p-16 flex flex-col space-y-12 bg-surface">
         <Header pr={pr} stats={stats} />
         <Description pr={pr} />

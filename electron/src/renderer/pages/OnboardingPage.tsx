@@ -23,7 +23,6 @@ export function OnboardingPage(): React.ReactElement {
         onboardingComplete: true,
       },
     });
-    appStore.setState((s) => ({ ...s, mode: 'list' }));
   }, []);
 
   React.useEffect(() => {

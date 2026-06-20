@@ -373,7 +373,8 @@ function KeyboardSection() {
     const bindings = getEffectiveBindings(overrides);
     const map = new Map<string, typeof bindings>();
     for (const b of bindings) {
-      const modeKey = b.modes[0] ?? 'global';
+      const modeKey =
+        b.activation.routes?.[0] ?? b.activation.overlays?.[0] ?? 'global';
       const bucket = map.get(modeKey) ?? [];
       bucket.push(b);
       map.set(modeKey, bucket);
@@ -417,7 +418,7 @@ function KeyboardSection() {
                         key={`${k}-${j}`}
                         className="px-2 py-0.5 text-[10px] font-mono font-bold bg-surface-container-high text-on-surface border border-outline-variant/40"
                       >
-                        {formatForDisplay(k)}
+                        {formatForDisplay(k as string)}
                       </kbd>
                     ))}
                   </div>
