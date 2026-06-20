@@ -1,8 +1,8 @@
 # Phase 2.4 — Unresolved-threads view + resolve/unresolve write-back + resolved/reopened event
 
 > **Slice of:** Phase 2 re-scope (2026-06-20-phase-2-decomposition.md)
-> **Builds on:** Phase 2.0 Foundation (2026-06-20-phase-2-0-foundation-design.md) — `review_threads` table, `ThreadProvider` capability, `GetReviewThreads`, githubv4 client, `comments.thread_id`/`kind`.
-> **Shrunk scope:** thread *data layer* (ingestion, `review_threads` table, `GetReviewThreads`) moved into Phase 2.0 Foundation. This slice is UI-only + write-back mutations only.
+> **Builds on:** Phase 2 Groundwork (2026-06-20-phase-2-groundwork-design.md) — `review_threads` table, `ThreadProvider` capability, `GetReviewThreads`, githubv4 client, `comments.thread_id`/`kind`.
+> **Shrunk scope:** thread *data layer* (ingestion, `review_threads` table, `GetReviewThreads`) moved into Phase 2 Groundwork. This slice is UI-only + write-back mutations only.
 > **Sub-slices:** 2.4.1 = resolve/unresolve write-back (was Phase 1.3); 2.4.2 = resolved/reopened WS event (was Phase 1.5).
 > **Migration:** NONE — `review_threads` is created by Foundation migration 012.
 
@@ -245,7 +245,7 @@ The WS server translates Go snake_case event type → TS SCREAMING_SNAKE_CASE fo
 
 **No migration required.** `review_threads` (with `resolved`, `outdated`, `state_known`, `pr_id`, `file_path`, `line`) is created by Foundation migration `012`. The `SetThreadResolved` helper issues a plain `UPDATE` against that existing table.
 
-If Foundation's migration `012` has not yet landed when 2.4 is implemented, the implementer must confirm `012` is merged first. 2.4 is explicitly blocked on 2.0.
+If Groundwork's migration `012` has not yet landed when 2.4 is implemented, the implementer must confirm `012` is merged first. 2.4 is explicitly blocked on Groundwork.
 
 ---
 

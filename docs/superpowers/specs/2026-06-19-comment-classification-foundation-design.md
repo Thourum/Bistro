@@ -19,22 +19,22 @@ with a severity color.
 past 40 nits to find the 1 critical. After this slice: the sidebar reads
 "1 critical, 3 warnings, 12 nits," and the overview leads with the critical one.
 
-> **⚠️ Amendment (2026-06-20) — depends on Phase 2.0; unified comments table.**
+> **⚠️ Amendment (2026-06-20) — depends on Phase 2 Groundwork; unified comments table.**
 > The 2026-06-19 roadmap audit surfaced a cross-phase interaction
 > (see `docs/superpowers/plans/2026-06-20-phase-2-decomposition.md`):
 > - **Classification operates on the unified `comments` table** (a single table with
->   a `kind` discriminator `'issue' | 'review'`, introduced by Phase 2.0). The
+>   a `kind` discriminator `'issue' | 'review'`, introduced by Phase 2 Groundwork). The
 >   classification columns and the `comment_classification_state` table apply
 >   uniformly to every row regardless of `kind` — no separate path for inline
 >   comments. Migration 013 here adds the classification columns to that one table.
-> - **Build order: Phase 2.0 ships first.** Bot findings (CodeRabbit, Greptile,
->   Copilot, …) are posted mostly as **inline review comments**. Phase 2.0 adds the
+> - **Build order: Phase 2 Groundwork ships first.** Bot findings (CodeRabbit, Greptile,
+>   Copilot, …) are posted mostly as **inline review comments**. Phase 2 Groundwork adds the
 >   inline fetch (`PullRequests.ListComments`) + the unified `comments` table; this
->   classification slice builds *on top of* 2.0, so inline bot findings already exist
+>   classification slice builds *on top of* Groundwork, so inline bot findings already exist
 >   in the cache when classification ships — full coverage from day one. Migration
->   numbering reflects this: Phase 2.0 = **012**, this classification slice = **013**.
->   (If the order ever flips and 3 ships before 2.0, classification would cover
->   issue-level comments only until 2.0 lands — not the planned path.)
+>   numbering reflects this: Phase 2 Groundwork = **012**, this classification slice = **013**.
+>   (If the order ever flips and 3 ships before Groundwork, classification would cover
+>   issue-level comments only until Groundwork lands — not the planned path.)
 
 ## Non-goals (deferred to later slices)
 

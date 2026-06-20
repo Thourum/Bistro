@@ -20,23 +20,23 @@ Each slice runs: ponytail-audit (assumptions) → brainstorm → spec → plan �
 
 | Slice | Spec | Plan | Issue/PR | Status |
 |---|---|---|---|---|
-| 2.0 Foundation | ✅ `specs/2026-06-20-phase-2-0-foundation-design.md` | ⏳ next | — | spec written + reviewed 2026-06-20; migration **012** |
-| 2.1 + 2.2 Patchset timeline + since-last-review | ✅ `specs/2026-06-20-phase-2-1-2-2-patchset-timeline-design.md` | ✅ `plans/2026-06-20-phase-2-1-2-2-patchset-timeline.md` | — | spec+plan written 2026-06-20; migration **014**; blocked on 2.0 |
-| 2.3 Comment anchoring across rebase | ✅ `specs/2026-06-20-phase-2-3-comment-anchoring-design.md` | ✅ `plans/2026-06-20-phase-2-3-comment-anchoring.md` | — | spec+plan written 2026-06-20; migration **015**; blocked on 2.0 |
-| 2.4 Unresolved-threads view + resolve/unresolve write-back + resolved/reopened event | ✅ `specs/2026-06-20-phase-2-4-unresolved-threads-design.md` | ✅ `plans/2026-06-20-phase-2-4-unresolved-threads.md` | — | spec+plan written 2026-06-20; **no migration** (uses 2.0's `review_threads`); blocked on 2.0. Shrunk: thread *data layer* moved into 2.0; 2.4 is now UI + write-back only |
+| Groundwork | ✅ `specs/2026-06-20-phase-2-groundwork-design.md` | ⏳ next | — | spec written + reviewed 2026-06-20; migration **012** |
+| 2.1 + 2.2 Patchset timeline + since-last-review | ✅ `specs/2026-06-20-phase-2-1-2-2-patchset-timeline-design.md` | ✅ `plans/2026-06-20-phase-2-1-2-2-patchset-timeline.md` | — | spec+plan written 2026-06-20; migration **014**; blocked on Groundwork |
+| 2.3 Comment anchoring across rebase | ✅ `specs/2026-06-20-phase-2-3-comment-anchoring-design.md` | ✅ `plans/2026-06-20-phase-2-3-comment-anchoring.md` | — | spec+plan written 2026-06-20; migration **015**; blocked on Groundwork |
+| 2.4 Unresolved-threads view + resolve/unresolve write-back + resolved/reopened event | ✅ `specs/2026-06-20-phase-2-4-unresolved-threads-design.md` | ✅ `plans/2026-06-20-phase-2-4-unresolved-threads.md` | — | spec+plan written 2026-06-20; **no migration** (uses Groundwork's `review_threads`); blocked on Groundwork. Shrunk: thread *data layer* moved into Groundwork; 2.4 is now UI + write-back only |
 
-> **Migration numbering:** 012 = Phase 2.0 Foundation · 013 = Phase 3 classification ·
+> **Migration numbering:** 012 = Phase 2 Groundwork · 013 = Phase 3 classification ·
 > 014 = Phase 2.1+2.2 · 015 = Phase 2.3 · Phase 2.4 needs none.
 >
 > **Open questions surfaced during spec/plan authoring (resolve before/while implementing each slice):**
 > - **2.1+2.2:** range-diff wrapper signature — ship the "two-SHA simplified" form (adequate for P1→P2 pair diffs) or the full five-arg commit-range form from day one? Spec defaults to simplified.
-> - **2.3:** Task 7 (stamping `patchset_number` in `writer.go`) assumes 2.0's `WriteReviewComments` + patchset upsert exist; re-read against the 2.0 plan before starting 2.3.
-> - **2.4:** the `useReviewThreads` fetch depends on 2.0's exact server interface (REST endpoint vs WS request) — 2.0 spec references a handler but doesn't lock the shape; fill in 2.4's Task 13 once 2.0 ships.
+> - **2.3:** Task 7 (stamping `patchset_number` in `writer.go`) assumes Groundwork's `WriteReviewComments` + patchset upsert exist; re-read against the Groundwork plan before starting 2.3.
+> - **2.4:** the `useReviewThreads` fetch depends on Groundwork's exact server interface (REST endpoint vs WS request) — Groundwork spec references a handler but doesn't lock the shape; fill in 2.4's Task 13 once Groundwork ships.
 >
-> **Each slice's spec should still pass its own spec-review + your review before implementation** (only 2.0's spec has been through the reviewer so far).
+> **Each slice's spec should still pass its own spec-review + your review before implementation** (only Groundwork's spec has been through the reviewer so far).
 
 > Update this table as each slice's spec/plan/issue is created. Build order if serial:
-> **2.0 → 2.3 → 2.1+2.2 → 2.4** (see "Slice structure" below for rationale).
+> **Groundwork → 2.3 → 2.1+2.2 → 2.4** (see "Slice structure" below for rationale).
 
 ## Why this re-scope exists
 
@@ -82,7 +82,7 @@ The audit confirmed, against the codebase:
 Each slice is its own spec → plan → implement cycle (matching Phase 3's approach).
 
 ```
-2.0 FOUNDATION  (hard prerequisite for all features)
+Groundwork  (hard prerequisite for all features)
       │
       ├── 2.1+2.2  Patchset timeline + since-last-review   (MERGED — shared machinery)
       ├── 2.3      Comment anchoring across rebase          (pure-local)
@@ -91,7 +91,7 @@ Each slice is its own spec → plan → implement cycle (matching Phase 3's appr
             └── 2.4.2  conversation resolved/reopened event (was Phase 1.5)
 ```
 
-**Recommended build order (if serial):** 2.0 → 2.3 → 2.1+2.2 → 2.4. Rationale: 2.3
+**Recommended build order (if serial):** Groundwork → 2.3 → 2.1+2.2 → 2.4. Rationale: 2.3
 is pure-local and validates the inline-comment data model with the least new
 machinery; 2.1+2.2 adds the range-diff dependency; 2.4 adds the GraphQL write path
 (highest risk, benefits from the foundation being shaken out first). The three
@@ -99,7 +99,7 @@ feature slices may run in parallel if there's capacity.
 
 ---
 
-## Phase 2.0 — Foundation
+## Phase 2 Groundwork
 
 No feature UI. Data + ingestion + capability plumbing, built and tested first.
 
@@ -274,20 +274,19 @@ the broader CI/metadata-changed events (Phase 1.5) will also need.
 ## Cross-phase interaction: Phase 3 classification
 
 Phase 3 classification operates on the **unified `comments` table**. Its wedge value
-(triaging the 1 critical among 47 bot comments) depends on Phase 2.0's inline-comment
+(triaging the 1 critical among 47 bot comments) depends on Groundwork's inline-comment
 fetch landing — bot findings (CodeRabbit, Greptile, etc.) are mostly inline review
 comments, not issue-level. **The Phase 3 foundation spec
 (`2026-06-19-comment-classification-foundation-design.md`) must be amended** with a
 one-paragraph note: classification applies to the unified table, and full coverage of
-bot findings requires 2.0's inline fetch. No code conflict — both are additive
-migrations with distinct version numbers (Phase 3 = 012; Phase 2.0 migrations follow).
+bot findings requires Groundwork's inline fetch. No code conflict — both are additive
+migrations with distinct version numbers (Groundwork = 012; Phase 3 = 013).
 
-**Sequencing consequence (state plainly so no planner assumes otherwise):** Phase 3
-classification will ship **with partial bot-finding coverage — issue-level comments
-only** — because it lands on migration 012 before Phase 2.0's inline-comment fetch.
-Full bot coverage (the inline CodeRabbit/Greptile findings that are the wedge's whole
-point) completes only when Phase 2.0 ships. This is an accepted, deliberate ordering,
-not a gap — but Phase 3's delivery should not be mistaken for "classification is done."
+**Sequencing consequence (state plainly so no planner assumes otherwise):** Groundwork
+(012) ships **first**; Phase 3 classification (013) builds on top of it. Full bot
+coverage (the inline CodeRabbit/Greptile findings that are the wedge's whole point)
+is available from day one of Phase 3 because Groundwork's inline fetch already landed.
+This is the planned, correct ordering — Phase 3 should not ship before Groundwork.
 
 ---
 

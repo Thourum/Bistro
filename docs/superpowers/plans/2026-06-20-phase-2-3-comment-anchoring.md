@@ -5,7 +5,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-20-phase-2-3-comment-anchoring-design.md`
 **Migration:** 015 (adds `anchored_line`, `anchor_head_sha`, `outdated`, `outdated_near_line` to `comments`)
-**Depends on:** Phase 2.0 Foundation (migration 012), 2.1+2.2 (migration 014)
+**Depends on:** Phase 2 Groundwork (migration 012), 2.1+2.2 (migration 014)
 
 ---
 
@@ -882,7 +882,7 @@ cd go && go test -race ./internal/sync/ -run TestWriteReviewComments_StampsPatch
 
 **Step 3: Modify `writer.go`**
 
-In the review-comment upsert block (added by Phase 2.0 Foundation), after the
+In the review-comment upsert block (added by Phase 2 Groundwork), after the
 patchset upsert, add a read-back:
 
 ```go

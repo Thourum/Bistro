@@ -1,7 +1,7 @@
 # Phase 2.3 — Comment Anchoring Across Rebase (Design Spec)
 
 **Slice of:** Phase 2 Re-scope — Patchset Semantics
-**Builds on:** Phase 2.0 Foundation (`2026-06-20-phase-2-0-foundation-design.md`) — migration 012 already adds `commit_sha`, `original_sha`, `side`, `position`, `original_position`, `in_reply_to`, `thread_id`, `patchset_number` to `comments`; the `patchsets` table; `review_threads`.
+**Builds on:** Phase 2 Groundwork (`2026-06-20-phase-2-groundwork-design.md`) — migration 012 already adds `commit_sha`, `original_sha`, `side`, `position`, `original_position`, `in_reply_to`, `thread_id`, `patchset_number` to `comments`; the `patchsets` table; `review_threads`.
 **Migration needed:** YES — **015** (see Schema section; 014 belongs to 2.1+2.2).
 **Status:** spec written 2026-06-20; not started.
 
@@ -107,7 +107,7 @@ lookups + chunk iteration). Caching per `anchor_head_sha` reduces subsequent ser
 to a simple SQL read. The cache is invalidated by comparing stored `anchor_head_sha`
 against the latest `patchsets.head_sha` — a single join.
 
-**No migration 013 or 014 conflict:** 012 = Phase 2.0 Foundation; 013 = Phase 3
+**No migration 013 or 014 conflict:** 012 = Phase 2 Groundwork; 013 = Phase 3
 classification; 014 = Phase 2.1+2.2 patchset timeline; 015 = this slice.
 
 ---
@@ -230,7 +230,7 @@ If mismatch (or NULL), call resolver and write back.
 
 ### patchset_number stamping (sync writer)
 
-In `writer.go`, inside the review-comment upsert (foundation added by 2.0), after
+In `writer.go`, inside the review-comment upsert (foundation added by Groundwork), after
 the patchset INSERT OR IGNORE:
 
 ```sql

@@ -4,7 +4,7 @@
 >
 > **Spec:** `docs/superpowers/specs/2026-06-20-phase-2-4-unresolved-threads-design.md`
 >
-> **Blocked on:** Phase 2.0 Foundation (migration 012, `review_threads` table, `ThreadProvider` capability, `github/graphql.go` githubv4 client) must be merged first.
+> **Blocked on:** Phase 2 Groundwork (migration 012, `review_threads` table, `ThreadProvider` capability, `github/graphql.go` githubv4 client) must be merged first.
 
 ---
 

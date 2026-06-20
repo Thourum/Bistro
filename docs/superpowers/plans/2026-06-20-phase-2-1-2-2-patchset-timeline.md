@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-20-phase-2-1-2-2-patchset-timeline-design.md`
 
-**Depends on:** Phase 2.0 Foundation (migration 012, `patchsets` table, `current_user` table).
+**Depends on:** Phase 2 Groundwork (migration 012, `patchsets` table, `current_user` table).
 
 ---
 

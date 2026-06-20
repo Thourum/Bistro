@@ -1,4 +1,6 @@
-# Phase 2.0 Foundation — Design
+# Phase 2 Groundwork — Design
+
+> **Note:** "Groundwork" is a synthesized prerequisite slice (shared schema + ingestion + capability layer that 2.1/2.2/2.3/2.4 all need), not a roadmap phase. The roadmap's Phase 2 is 2.1–2.4.
 
 > First slice of the re-scoped Phase 2 (see
 > `docs/superpowers/plans/2026-06-20-phase-2-decomposition.md`). Builds the data +
@@ -18,7 +20,7 @@ server and a provider-agnostic model so GitLab/Gitea slot in later:
 5. Current-user identity persisted in SQLite at auth-success.
 
 **Build-order note:** Phase 2 is being built before Phase 3, so this slice's
-migration is **012**; Phase 3's classification migration moves to **013**.
+migration is **012**; Phase 3's classification migration moves to **013**. (Phase 2 Groundwork = 012 ships first; Phase 3 = 013 builds on it.)
 
 ## Settled decisions (this brainstorm)
 
@@ -165,7 +167,7 @@ Notes:
   (orphaned comments survive as ungrouped review comments). Reuses existing
   `file_path` for the anchor; no `path` column. Existing rows get `kind='issue'`
   via the default — clean backfill.
-- **Migration ordering vs. Phase 3:** Phase 2.0 = 012, Phase 3 classification = 013
+- **Migration ordering vs. Phase 3:** Phase 2 Groundwork = 012, Phase 3 classification = 013
   (renumbered because Phase 2 builds first). Both additive; no conflict. Phase 3's
   classification columns + `comment_classification_state` apply uniformly to the
   unified `comments` table regardless of `kind`.

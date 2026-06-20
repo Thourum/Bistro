@@ -2,8 +2,8 @@
 
 > Merged slice of the re-scoped Phase 2 (see
 > `docs/superpowers/plans/2026-06-20-phase-2-decomposition.md`). Builds on the
-> data + capability layer delivered by Phase 2.0 Foundation (spec:
-> `docs/superpowers/specs/2026-06-20-phase-2-0-foundation-design.md`). Do NOT
+> data + capability layer delivered by Phase 2 Groundwork (spec:
+> `docs/superpowers/specs/2026-06-20-phase-2-groundwork-design.md`). Do NOT
 > redesign the `patchsets`, `current_user`, or `ReviewThread`/`Comment` model —
 > consume them.
 >
@@ -41,7 +41,7 @@ store + `files_viewed` store → Go handler additions → Electron UI.
   produced by `go-git Tree.Patch`. Same content across a rebase → same hash →
   viewed state survives. Stored as a 64-char hex string.
 - **`login` column** — sourced from `current_user.login` (written at auth-success
-  by 2.0 Foundation). No integer FK; plain TEXT. Rationale: `current_user` is a
+  by Groundwork). No integer FK; plain TEXT. Rationale: `current_user` is a
   single-row config table, not a multi-user FK target, and a TEXT join on login is
   sufficient at this scale.
 - **`last_reviewed_sha`** — recorded on every review submission action
@@ -84,7 +84,7 @@ store + `files_viewed` store → Go handler additions → Electron UI.
 | File | Change |
 |------|--------|
 | `go/internal/store/migrations/014_add_last_reviewed_and_files_viewed.sql` | New migration (DDL below) |
-| `go/internal/server/handler/auth.go` | No change — `SetCurrentUser` already wired by 2.0 |
+| `go/internal/server/handler/auth.go` | No change — `SetCurrentUser` already wired by Groundwork |
 | `go/internal/server/handler/diff.go` | No change — patchset-pair diff re-uses `NewRequestDiffHandler`; range-diff is its own handler |
 | `go/internal/server/app.go` | Inject `RangeDiffer` into new handlers; run capability probe at startup |
 | `go/internal/server/handler/pr.go` | `NewSubmitReviewHandler` (already exists or added here) calls `SetLastReviewedSHA` after successful action |
