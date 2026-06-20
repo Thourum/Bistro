@@ -6,6 +6,7 @@ import (
 	gosync "sync"
 	"time"
 
+	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
@@ -20,12 +21,24 @@ const perPRFetchTimeout = 2 * time.Minute
 type PRFetchResult struct {
 	PR       *provider.PR
 	Comments []*provider.Comment
+	Threads  []*provider.ReviewThread // populated when provider implements ThreadProvider
 	CI       *provider.CIStatus
-	// Diffs holds per-file diffs fetched during the details phase. The writer
-	// persists them in its batch transaction after the PR row exists.
-	Diffs    []store.DiffFile
 	DiffSize int64
-	Error    error
+	// DiffFiles holds the per-file diffs to be persisted atomically with the PR
+	// row and patchset in WriteSyncResultsContext.
+	// nil means diff was not attempted or failed (preserve existing pr_diffs cache).
+	// non-nil (including empty slice) means diff was successfully computed and
+	// the writer should replace pr_diffs — even an empty slice clears stale rows.
+	DiffFiles []store.DiffFile
+	// DiffComputed is true iff diff generation succeeded and DiffFiles is valid.
+	// When false, the writer must not touch pr_diffs for this result.
+	DiffComputed bool
+	// AnchorUpdates carries per-comment anchor results computed from the clone.
+	// Populated only when the clone was available and anchoring ran without a
+	// fatal error. Each entry is written back to the comments table after the
+	// per-PR savepoint releases (best-effort; never blocks PR/patchset commit).
+	AnchorUpdates []git.AnchorResult
+	Error         error
 }
 
 // FetchPRDetails fetches comments, CI status, and diff size for each PR
@@ -124,6 +137,26 @@ func (o *Orchestrator) FetchPRDetails(
 				}
 			}
 
+			// GetReviewThreads: optional capability — graceful skip if not implemented.
+			// Errors here are NOT added to `errs`: thread data is best-effort and must
+			// never prevent the PR row, comments, CI, or diff from being persisted.
+			if includeComments && o.provider != nil {
+				if tp, ok := o.provider.(provider.ThreadProvider); ok {
+					subStart := time.Now()
+					threads, threadErr := tp.GetReviewThreads(taskCtx, prCopy.ID)
+					subDur := time.Since(subStart).Milliseconds()
+					if threadErr != nil {
+						// Log at warn; do NOT append to errs so result.Error stays nil.
+						prLog.Warn("review thread fetch failed (non-fatal)",
+							"duration_ms", subDur, "error", threadErr)
+					} else {
+						result.Threads = threads
+						prLog.Debug("pr review threads fetched",
+							"count", len(threads), "duration_ms", subDur)
+					}
+				}
+			}
+
 			if includeCI && o.provider != nil {
 				subStart := time.Now()
 				ci, err := o.provider.GetCIStatus(taskCtx, prCopy.ID)
@@ -182,22 +215,43 @@ func (o *Orchestrator) FetchPRDetails(
 						)
 					} else if diffResult != nil {
 						result.DiffSize = diffResult.Size
-						if o.diffStore != nil {
-							result.Diffs = make([]store.DiffFile, 0, len(diffResult.Files))
-							for _, f := range diffResult.Files {
-								result.Diffs = append(result.Diffs, store.DiffFile{
-									FilePath:  f.Path,
-									Patch:     f.Patch,
-									Additions: f.AddedLines,
-									Deletions: f.RemovedLines,
-								})
-							}
-						}
 						prLog.Debug("pr diff generated",
 							"bytes", diffResult.Size,
 							"files", len(diffResult.Files),
 							"duration_ms", diffDur,
 						)
+
+						// Build DiffFiles to be persisted atomically with the PR row
+						// and patchset in WriteSyncResultsContext. Do NOT call SaveDiffs
+						// here — at this point the PR row may not yet exist (new PR
+						// initial sync) and the write must be transactional with PR/patchset.
+						diffFiles := make([]store.DiffFile, 0, len(diffResult.Files))
+						for _, f := range diffResult.Files {
+							diffFiles = append(diffFiles, store.DiffFile{
+								FilePath:  f.Path,
+								Patch:     f.Patch,
+								Additions: f.AddedLines,
+								Deletions: f.RemovedLines,
+							})
+						}
+						result.DiffFiles = diffFiles
+						result.DiffComputed = true
+
+						// Run anchor resolution while the clone is still on disk.
+						// Results are carried in AnchorUpdates and written back to
+						// the DB by the writer (best-effort, outside the savepoint).
+						if o.anchorResolver != nil {
+							anchorStart := time.Now()
+							result.AnchorUpdates = o.resolveAnchors(
+								taskCtx, result.Comments, result.Threads,
+								prCopy.ID, cloneResult.LocalPath, prCopy.HeadSHA, prCopy.BaseSHA,
+								prLog,
+							)
+							prLog.Debug("anchor resolution complete",
+								"anchored", len(result.AnchorUpdates),
+								"duration_ms", time.Since(anchorStart).Milliseconds(),
+							)
+						}
 					}
 				}
 			}

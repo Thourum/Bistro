@@ -130,12 +130,10 @@ func main() {
 		}()
 	}
 
-	if *replayQueue {
-		log.Info("replaying offline queue")
-		if err := app.ReplayQueuedActions(context.Background()); err != nil {
-			log.Error("queue replay failed", "error", err)
-		}
-	}
+	// Tell Run() to replay the queue after the DB and orchestrator are ready.
+	// Pre-Run replay was always a no-op: the orchestrator (and its queue) does
+	// not exist until Run() opens the database.
+	app.SetReplayOnStart(*replayQueue)
 
 	if err := app.Run(context.Background()); err != nil {
 		log.Error("app error", "error", err)

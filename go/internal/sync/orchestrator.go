@@ -30,6 +30,17 @@ type Orchestrator struct {
 	rateLimitState *provider.RateLimitState
 	queue          *store.ActionQueue
 	diffStore      *store.DiffStore
+	// reviewLogin/reviewSHAWriter are optional; if set they are attached to
+	// every ActionExecutor so successful reviews record last_reviewed_sha.
+	reviewLogin     actions.ReviewLoginGetter
+	reviewSHAWriter actions.ReviewSHAWriter
+	// anchorResolver is optional; when set it runs on each clone after diff
+	// generation and populates PRFetchResult.AnchorUpdates.
+	anchorResolver *git.AnchorResolver
+	// liveness is cancelled when this orchestrator is superseded (provider
+	// replaced or disconnected). ApplyAction checks it before executing so
+	// stale orchestrators self-reject even if captured before disconnect.
+	liveness context.Context
 }
 
 // NewOrchestrator creates a new sync orchestrator. If log is nil, slog.Default()
@@ -69,6 +80,238 @@ func (o *Orchestrator) WithDiffStore(ds *store.DiffStore) *Orchestrator {
 	return o
 }
 
+// WithReviewTracking attaches login-resolver and SHA-writer so that successful
+// review actions (approve, request-changes, comment) record last_reviewed_sha.
+func (o *Orchestrator) WithReviewTracking(loginGetter actions.ReviewLoginGetter, shaWriter actions.ReviewSHAWriter) *Orchestrator {
+	o.reviewLogin = loginGetter
+	o.reviewSHAWriter = shaWriter
+	return o
+}
+
+// WithAnchorResolver attaches an AnchorResolver so inline review comment
+// anchors are resolved and cached after each successful diff clone.
+func (o *Orchestrator) WithAnchorResolver(r *git.AnchorResolver) *Orchestrator {
+	o.anchorResolver = r
+	return o
+}
+
+// WithActionQueue attaches a persistent action queue for offline/rate-limited
+// action replay. Production orchestrators should always have a queue attached.
+func (o *Orchestrator) WithActionQueue(q *store.ActionQueue) *Orchestrator {
+	o.queue = q
+	return o
+}
+
+// WithLiveness attaches a context that is cancelled when this orchestrator is
+// superseded (provider disconnected or replaced). ApplyAction checks it before
+// executing so a handler that captured a stale orchestrator reference before
+// disconnect will have its action rejected rather than executed with old credentials.
+func (o *Orchestrator) WithLiveness(ctx context.Context) *Orchestrator {
+	o.liveness = ctx
+	return o
+}
+
+// resolveAnchors runs AnchorResolver.Resolve on every eligible review comment.
+//
+// Geometry rules:
+//   - Current-position comments (Position != nil, > 0): use prBaseSHA as
+//     DiffBaseSHA — correct for the current patchset.
+//   - Original-position comments (Position == nil, OriginalPosition > 0):
+//     require EXACT patchset identity via patchset_number:
+//     1. Use c.PatchsetNumber if set (populated by a prior DB write).
+//     2. Otherwise look up the stored patchset_number from the DB by comment ID.
+//     3. Find the patchset row by exact number match; use its BaseSHA.
+//     If patchset_number is zero/missing, or not found in patchsets list → SKIP.
+//     Head-SHA-only matching is never used for original-position comments.
+//
+// All errors are logged at Debug/Warn level; affected comments are skipped.
+func (o *Orchestrator) resolveAnchors(
+	ctx context.Context,
+	comments []*provider.Comment,
+	threads []*provider.ReviewThread,
+	prID, localPath, headSHA, prBaseSHA string,
+	log *slog.Logger,
+) []git.AnchorResult {
+	var candidates []*provider.Comment
+	for _, c := range comments {
+		if c != nil && c.Kind == "review" && c.FilePath != "" && isAnchorable(c) {
+			candidates = append(candidates, c)
+		}
+	}
+	for _, th := range threads {
+		if th == nil {
+			continue
+		}
+		for _, c := range th.Comments {
+			if c != nil && c.Kind == "review" && c.FilePath != "" && isAnchorable(c) {
+				candidates = append(candidates, c)
+			}
+		}
+	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	// Load all known patchsets for this PR.
+	var patchsets []store.Patchset
+	if o.store != nil && prID != "" {
+		var loadErr error
+		patchsets, loadErr = o.store.ListPatchsets(ctx, prID)
+		if loadErr != nil {
+			log.Warn("resolveAnchors: could not load patchsets; original-position comments will be skipped",
+				"pr_id", prID, "error", loadErr)
+		}
+	}
+
+	// Find the current patchset number for (prBaseSHA, headSHA).
+	// This is anchor_current_patchset_number — the state the anchor is valid against.
+	// May be 0 for first sync (patchset not yet in DB); writeAnchorUpdates will fill
+	// it in from currentPatchsetNum after recordPatchsetIfChanged runs.
+	currentPsNumForAnchors := 0
+	for _, ps := range patchsets {
+		if ps.BaseSHA == prBaseSHA && ps.HeadSHA == headSHA {
+			currentPsNumForAnchors = ps.Number
+			break
+		}
+	}
+
+	// For original-position candidates that lack c.PatchsetNumber, preload the
+	// stored patchset_number from the DB (set during a prior writeComment call).
+	storedPatchsetNums := map[string]int{}
+	if o.store != nil && prID != "" {
+		var needLookup []string
+		for _, c := range candidates {
+			if (c.PatchsetNumber == nil || *c.PatchsetNumber == 0) &&
+				(c.Position == nil || *c.Position == 0) {
+				needLookup = append(needLookup, c.ID)
+			}
+		}
+		if len(needLookup) > 0 {
+			loaded, err := o.store.GetCommentPatchsetNumbers(ctx, needLookup)
+			if err != nil {
+				log.Warn("resolveAnchors: could not load comment patchset_numbers; affected original-position comments will be skipped",
+					"error", err)
+			} else {
+				storedPatchsetNums = loaded
+			}
+		}
+	}
+
+	results := make([]git.AnchorResult, 0, len(candidates))
+	for _, c := range candidates {
+		side := c.Side
+		if side == "" {
+			side = "RIGHT"
+		}
+
+		isCurrentPos := c.Position != nil && *c.Position > 0
+
+		commitSHA := c.CommitSHA
+		position := 0
+		if isCurrentPos {
+			position = *c.Position
+		} else {
+			if c.OriginalPosition != nil && *c.OriginalPosition > 0 {
+				position = *c.OriginalPosition
+			}
+			if c.OriginalSHA != "" {
+				commitSHA = c.OriginalSHA
+			}
+		}
+		if commitSHA == "" || position == 0 {
+			log.Debug("anchor skip: no usable commit SHA or position", "comment_id", c.ID)
+			continue
+		}
+
+		// Resolve the patchset_number for this comment.
+		patchsetNum := 0
+		if c.PatchsetNumber != nil {
+			patchsetNum = *c.PatchsetNumber
+		} else if n, ok := storedPatchsetNums[c.ID]; ok {
+			patchsetNum = n
+		}
+
+		diffBaseSHA, resolvedPatchsetNum, skip := selectDiffBaseSHA(patchsets, patchsetNum, isCurrentPos, prBaseSHA, headSHA)
+		if skip {
+			log.Debug("anchor skip: original-position comment, patchset identity unavailable or not found",
+				"comment_id", c.ID, "patchset_num", patchsetNum)
+			continue
+		}
+
+		req := git.ResolveRequest{
+			LocalPath:   localPath,
+			CommitSHA:   commitSHA,
+			HeadSHA:     headSHA,
+			DiffBaseSHA: diffBaseSHA,
+			FilePath:    c.FilePath,
+			Side:        side,
+			Position:    position,
+			CommentID:   c.ID,
+			PatchsetNum: 0,  // unknown at fetch time; CommitSHA==HeadSHA fast path handles it
+			CurrentNum:  -1, // prevents 0==0 patchset fast path
+		}
+		res, err := o.anchorResolver.Resolve(req)
+		if err != nil {
+			log.Debug("anchor resolve failed (best-effort, skipping)",
+				"comment_id", c.ID, "error", err)
+			continue
+		}
+		// PatchsetNumber = source patchset (geometry used for position-to-line mapping).
+		// CurrentPatchsetNumber = current PR patchset at resolution time (the state the
+		// anchor is valid against). Both are needed for full freshness validation.
+		res.PatchsetNumber = resolvedPatchsetNum
+		res.CurrentPatchsetNumber = currentPsNumForAnchors
+		results = append(results, res)
+	}
+	return results
+}
+
+// selectDiffBaseSHA returns the correct DiffBaseSHA and resolved patchset number
+// for a ResolveRequest, and whether the comment should be skipped.
+//
+//   - Current-position: prBaseSHA is the correct geometry.
+//     Looks up the current patchset by (headSHA, prBaseSHA) to get its number.
+//     Returns (prBaseSHA, patchset.Number, false), or (prBaseSHA, 0, false) if
+//     the patchset row is not yet recorded (new PR, first sync).
+//   - Original-position: requires exact patchset number identity.
+//     patchsetNum > 0 → find patchset by exact number; return its BaseSHA and Number.
+//     patchsetNum == 0 or not found → ("", 0, true) — skip, never approximate.
+//
+// Head-SHA-only matching is intentionally absent: the same head can appear
+// under multiple bases (retarget/rebase), making head-only matching ambiguous.
+func selectDiffBaseSHA(patchsets []store.Patchset, patchsetNum int, isCurrentPos bool, prBaseSHA, prHeadSHA string) (diffBase string, resolvedPatchsetNum int, skip bool) {
+	if isCurrentPos {
+		// Look up the current patchset to get its number for anchor identity.
+		for _, ps := range patchsets {
+			if ps.BaseSHA == prBaseSHA && ps.HeadSHA == prHeadSHA {
+				return prBaseSHA, ps.Number, false
+			}
+		}
+		// Patchset not yet recorded (new PR) — still valid, number unknown.
+		return prBaseSHA, 0, false
+	}
+	// Original-position: require exact patchset_number identity.
+	if patchsetNum <= 0 {
+		return "", 0, true // no patchset_number recorded → skip
+	}
+	for _, ps := range patchsets {
+		if ps.Number == patchsetNum {
+			return ps.BaseSHA, ps.Number, false
+		}
+	}
+	return "", 0, true // patchset number not found in DB → skip
+}
+
+// isAnchorable reports whether a review comment has enough information to
+// attempt anchor resolution. It accepts both current-position comments and
+// outdated/rebased comments that carry only original-position data.
+func isAnchorable(c *provider.Comment) bool {
+	hasCurrent := c.CommitSHA != "" && c.Position != nil && *c.Position > 0
+	hasOriginal := c.OriginalPosition != nil && *c.OriginalPosition > 0
+	return hasCurrent || hasOriginal
+}
+
 // IsRateLimited reports whether the orchestrator is currently rate limited.
 func (o *Orchestrator) IsRateLimited() bool {
 	o.rateLimitMu.RLock()
@@ -79,6 +322,49 @@ func (o *Orchestrator) IsRateLimited() bool {
 	return o.rateLimitState.IsLimited()
 }
 
+// validateThreadPreflight checks thread ownership and state_known before any
+// provider mutation. Returns a non-nil *ActionResult on failure (caller must
+// return it); returns nil when validation passes or is not applicable.
+// Shared between the immediate ApplyAction path and the queue replay path so
+// both enforce the same invariants.
+func (o *Orchestrator) validateThreadPreflight(ctx context.Context, req *actions.ActionRequest) *actions.ActionResult {
+	switch req.Action {
+	case actions.ResolveThreadCommand, actions.UnresolveThreadCommand:
+		if o.store == nil {
+			return nil // no store — skip validation (test/noop path)
+		}
+		thread, err := o.store.GetReviewThread(ctx, req.PRID, req.Body)
+		if err != nil {
+			return &actions.ActionResult{
+				PRID:      req.PRID,
+				Action:    req.Action,
+				Success:   false,
+				Error:     fmt.Sprintf("thread lookup failed: %v", err),
+				Timestamp: time.Now(),
+			}
+		}
+		if thread == nil {
+			return &actions.ActionResult{
+				PRID:      req.PRID,
+				Action:    req.Action,
+				Success:   false,
+				Error:     fmt.Sprintf("thread %s not found in pr %s", req.Body, req.PRID),
+				Timestamp: time.Now(),
+			}
+		}
+		if !thread.StateKnown {
+			return &actions.ActionResult{
+				PRID:      req.PRID,
+				Action:    req.Action,
+				Success:   false,
+				Error:     fmt.Sprintf("thread %s state is unknown; sync required before mutation", req.Body),
+				Timestamp: time.Now(),
+			}
+		}
+	}
+	return nil
+}
+
 // ApplyAction executes an action immediately or queues it when rate limited.
 func (o *Orchestrator) ApplyAction(ctx context.Context, req *actions.ActionRequest) *actions.ActionResult {
 	log := logging.FromContext(ctx).With(
@@ -87,11 +373,49 @@ func (o *Orchestrator) ApplyAction(ctx context.Context, req *actions.ActionReque
 	)
 	ctx = logging.WithLogger(ctx, log)
 
+	// Reject immediately if the orchestrator's provider has been disconnected or
+	// replaced. This handles the race where a handler captured this orchestrator
+	// before disconnect and calls ApplyAction after.
+	if o.liveness != nil {
+		if err := o.liveness.Err(); err != nil {
+			return &actions.ActionResult{
+				PRID:      req.PRID,
+				Action:    req.Action,
+				Success:   false,
+				Error:     "provider disconnected: action rejected",
+				Timestamp: time.Now(),
+			}
+		}
+	}
+
+	// Validate thread ownership and state before any provider mutation or queue.
+	if result := o.validateThreadPreflight(ctx, req); result != nil {
+		return result
+	}
+
 	if o.IsRateLimited() {
 		log.Info("rate limited, queueing action")
 
+		// Reject line-level post_comment before queueing: the queue payload only
+		// stores Body, not Line, so replay would silently drop the line context
+		// and post a general PR comment instead of the intended inline comment.
+		// Return a clear error so the caller can retry after the rate limit clears.
+		if req.Action == actions.PostCommentCommand && req.Line > 0 {
+			return &actions.ActionResult{
+				PRID:      req.PRID,
+				Action:    req.Action,
+				Success:   false,
+				Error:     "line-level post_comment cannot be queued for replay (Line context would be lost); retry after rate limit clears",
+				Timestamp: time.Now(),
+			}
+		}
+
 		queuedAction := &store.QueuedAction{
-			ID:         req.PRID + "-" + string(req.Action),
+			// Include Body in the ID so that multiple thread actions on the same
+			// PR (e.g. resolve thread-A and resolve thread-B) get distinct rows
+			// rather than overwriting each other. For actions without a body
+			// (e.g. approve) the ID remains pr_id+action, preserving idempotence.
+			ID:         queuedActionID(req),
 			ActionType: string(req.Action),
 			PRID:       req.PRID,
 			Payload:    req.Body,
@@ -126,9 +450,27 @@ func (o *Orchestrator) executeAction(ctx context.Context, req *actions.ActionReq
 	log := logging.FromContext(ctx)
 	log.Debug("executing action", "pr_id", req.PRID, "action", string(req.Action))
 
-	executor := actions.NewActionExecutor(o.log, o.provider, o.store, o.emitter)
+	// Derive an execution context that is cancelled if either the caller's ctx
+	// OR the orchestrator's liveness context is cancelled. This ensures that a
+	// provider disconnect mid-retry interrupts ExecuteWithRetry rather than
+	// letting it complete with stale credentials.
+	execCtx, execCancel := context.WithCancel(ctx)
+	defer execCancel()
+	if o.liveness != nil {
+		go func() {
+			select {
+			case <-o.liveness.Done():
+				execCancel()
+			case <-execCtx.Done():
+				// caller cancelled first or action completed — nothing to do
+			}
+		}()
+	}
+
+	executor := actions.NewActionExecutor(o.log, o.provider, o.store, o.emitter).
+		WithReviewTracking(o.reviewLogin, o.reviewSHAWriter)
 	start := time.Now()
-	result, err := executor.ExecuteWithRetry(ctx, req, 3)
+	result, err := executor.ExecuteWithRetry(execCtx, req, 3)
 	dur := time.Since(start).Milliseconds()
 
 	if err != nil {
@@ -166,7 +508,73 @@ func (o *Orchestrator) executeAction(ctx context.Context, req *actions.ActionReq
 		"duration_ms", dur,
 		"success", result.Success,
 	)
+
+	// Post-action local state update and event emission for thread commands.
+	if result.Success {
+		switch req.Action {
+		case actions.ResolveThreadCommand, actions.UnresolveThreadCommand:
+			o.handleThreadActionSuccess(ctx, req, log)
+		}
+	}
+
 	return result
+}
+
+// handleThreadActionSuccess updates local thread state and emits a WS event
+// after a successful resolve/unresolve action. Best-effort: failures are
+// logged but do not affect the returned ActionResult.
+func (o *Orchestrator) handleThreadActionSuccess(ctx context.Context, req *actions.ActionRequest, log *slog.Logger) {
+	// If the provider was disconnected/replaced during or after execution,
+	// skip local SQLite writes and event emission. The next sync cycle after
+	// re-auth will reconcile state from GitHub; a stale THREAD_RESOLVED event
+	// broadcast to a new session would be misleading.
+	if o.liveness != nil && o.liveness.Err() != nil {
+		log.Debug("handleThreadActionSuccess: liveness cancelled, skipping local write/event",
+			"thread_id", req.Body)
+		return
+	}
+
+	resolved := req.Action == actions.ResolveThreadCommand
+	threadID := req.Body
+
+	// Update local SQLite cache so REVIEW_THREADS_READY reflects the new state
+	// without waiting for the next full sync cycle.
+	if o.store != nil {
+		if err := o.store.SetThreadResolved(ctx, req.PRID, threadID, resolved); err != nil {
+			log.Warn("handleThreadActionSuccess: SetThreadResolved failed",
+				"thread_id", threadID, "resolved", resolved, "error", err)
+		}
+	}
+
+	// Emit event for WS broadcast.
+	if o.emitter != nil {
+		eventType := "THREAD_RESOLVED"
+		if !resolved {
+			eventType = "THREAD_REOPENED"
+		}
+		o.emitter.Emit(&events.Event{
+			Type: eventType,
+			Data: map[string]interface{}{
+				"thread_id": threadID,
+				"pr_id":     req.PRID,
+				"resolved":  resolved,
+			},
+			Timestamp: time.Now(),
+		})
+	}
+}
+
+// queuedActionID returns a stable unique ID for a queued action.
+// For actions that target a specific thread (resolve/unresolve), the thread ID
+// (req.Body) is included so that multiple thread mutations on the same PR do
+// not overwrite each other in the action queue.
+// For actions without a body (e.g. approve), the ID is pr_id+action,
+// preserving idempotent deduplication behaviour.
+func queuedActionID(req *actions.ActionRequest) string {
+	if req.Body != "" {
+		return req.PRID + "-" + string(req.Action) + "-" + req.Body
+	}
+	return req.PRID + "-" + string(req.Action)
 }
 
 // ReplayQueuedActions replays pending actions after a rate limit clears.
@@ -202,6 +610,18 @@ func (o *Orchestrator) ReplayQueuedActions(ctx context.Context) error {
 			Body:   action.Payload,
 		}
 
+		// Re-validate thread ownership and state_known before executing.
+		// Queued actions bypass the live ApplyAction path, so we must re-run
+		// the same preflight checks here to prevent stale/wrong-PR mutations.
+		if preflightErr := o.validateThreadPreflight(ctx, req); preflightErr != nil {
+			log.Warn("replay: thread preflight failed, marking failed",
+				"id", action.ID, "reason", preflightErr.Error)
+			if err := o.queue.MarkFailed(ctx, action.ID, preflightErr.Error, store.MaxRetryCount); err != nil {
+				log.Error("failed to mark action failed after preflight", "id", action.ID, "error", err)
+			}
+			continue
+		}
+
 		result := o.executeAction(ctx, req)
 		if result.Success {
 			if err := o.queue.MarkCompleted(ctx, action.ID); err != nil {
@@ -212,7 +632,26 @@ func (o *Orchestrator) ReplayQueuedActions(ctx context.Context) error {
 			if errMsg == "" {
 				errMsg = "unknown error"
 			}
-			if err := o.queue.MarkFailed(ctx, action.ID, errMsg, action.RetryCount+1); err != nil {
+			// If the result carries the ambiguous-remote-success sentinel, the
+			// provider may have already mutated GitHub state. Mark the row
+			// permanently failed (MaxRetryCount) so it is never replayed again —
+			// retrying would risk duplicate mutations for non-idempotent actions
+			// like post_comment and request_changes.
+			//
+			// Use a fresh context for the terminal write: the execution context
+			// (ctx) may already be cancelled (that is precisely how the ambiguous
+			// state arises), and an ExecContext call on a cancelled context fails,
+			// which would leave the row pending and allow a duplicate mutation on
+			// the next replay pass.
+			retryCount := action.RetryCount + 1
+			markCtx := ctx
+			if result.IsAmbiguousRemoteSuccess() {
+				log.Warn("replay: ambiguous remote success, marking terminal to prevent duplicate mutation",
+					"id", action.ID, "action", action.ActionType)
+				retryCount = store.MaxRetryCount
+				markCtx = context.Background()
+			}
+			if err := o.queue.MarkFailed(markCtx, action.ID, errMsg, retryCount); err != nil {
 				log.Error("failed to mark action failed", "id", action.ID, "error", err)
 			}
 		}
@@ -258,6 +697,12 @@ func isRateLimitError(err error) bool {
 // The channel is buffered; the caller should drain it promptly to avoid dropped events.
 func (o *Orchestrator) GetEventChannel() <-chan *events.Event {
 	return o.emitter.Subscribe()
+}
+
+// UnsubscribeEventChannel removes the subscription identified by ch and closes
+// its underlying send channel so the receiver can detect closure.
+func (o *Orchestrator) UnsubscribeEventChannel(ch <-chan *events.Event) {
+	o.emitter.Unsubscribe(ch)
 }
 
 // Sync executes a full sync operation. All log records emitted downstream are
