@@ -24,26 +24,29 @@ func NewDiffStore(db *sql.DB) *DiffStore {
 	return &DiffStore{db: db}
 }
 
-// SaveDiffs persists all diffs for the given PR, upserting on (pr_id, file_path).
-// A nil or empty diffs slice is a no-op.
+// SaveDiffs atomically replaces all stored diffs for prID.
+// It always deletes existing rows first — this removes files that were renamed
+// or deleted in the current diff, and clears stale rows when diffs is empty.
+// Passing nil or an empty slice clears all existing rows and is not a no-op.
 func (s *DiffStore) SaveDiffs(prID string, diffs []DiffFile) error {
-	if len(diffs) == 0 {
-		return nil
-	}
-
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	// Always delete first: ensures removed/renamed files and empty diffs leave no orphans.
+	if _, err := tx.Exec(`DELETE FROM pr_diffs WHERE pr_id = ?`, prID); err != nil {
+		return fmt.Errorf("clear diffs for %s: %w", prID, err)
+	}
+
+	if len(diffs) == 0 {
+		return tx.Commit()
+	}
+
 	const query = `
 		INSERT INTO pr_diffs (pr_id, file_path, patch, additions, deletions)
 		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(pr_id, file_path) DO UPDATE SET
-			patch      = excluded.patch,
-			additions  = excluded.additions,
-			deletions  = excluded.deletions
 	`
 
 	stmt, err := tx.Prepare(query)
