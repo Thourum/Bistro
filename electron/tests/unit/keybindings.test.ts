@@ -2,15 +2,32 @@
 
 import { assertValidHotkey } from '@tanstack/react-hotkeys';
 import { Store } from '@tanstack/store';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { OverlayContextValue } from '../../src/renderer/overlays/OverlayContext';
 import type { UIState } from '../../src/renderer/store/ui';
 import { initialUIState } from '../../src/renderer/store/ui';
-import type { KeyBinding } from '../../src/renderer/utils/keybindings';
+import type {
+  KeyActionContext,
+  KeyBinding,
+  RouteBase,
+} from '../../src/renderer/utils/keybindings';
 import {
   DEFAULT_KEYBINDINGS,
   getEffectiveBindings,
+  isActive,
   isSequenceBinding,
 } from '../../src/renderer/utils/keybindings';
+
+// Mock the router so list.open / list.bottom can call router.navigate without
+// a real RouterProvider.
+const mockNavigate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('../../src/renderer/router', () => ({
+  router: {
+    navigate: mockNavigate,
+    state: { location: { pathname: '/prs/pr-test-id' } },
+  },
+  prDetailRoute: {},
+}));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -18,6 +35,38 @@ import {
 
 function makeStore(overrides: Partial<UIState> = {}): Store<UIState> {
   return new Store<UIState>({ ...initialUIState, ...overrides });
+}
+
+/** Create a minimal KeyActionContext for testing binding actions. */
+function makeCtx(
+  storeOrOverrides: Store<UIState> | Partial<UIState> = {},
+  routeBase: RouteBase | null = 'list',
+  overlayOverrides: Partial<OverlayContextValue> = {},
+): KeyActionContext {
+  const store =
+    storeOrOverrides instanceof Store
+      ? storeOrOverrides
+      : makeStore(storeOrOverrides);
+  const overlays: OverlayContextValue = {
+    activeOverlay: null,
+    helpSourceRoute: 'list',
+    openCommand: vi.fn(),
+    openHelp: vi.fn(),
+    openSearch: vi.fn(),
+    openFilter: vi.fn(),
+    toggleFilter: vi.fn(),
+    openRepoPicker: vi.fn(),
+    closeOverlay: vi.fn(),
+    closeSearch: vi.fn(),
+    ...overlayOverrides,
+  };
+  return {
+    store,
+    routeBase,
+    activeOverlay: overlays.activeOverlay,
+    overlays,
+    location: { pathname: '/prs' },
+  };
 }
 
 function byId(actionId: string): KeyBinding {
@@ -37,14 +86,14 @@ describe('DEFAULT_KEYBINDINGS', () => {
     expect(DEFAULT_KEYBINDINGS.length).toBeGreaterThanOrEqual(35);
   });
 
-  it('every binding has keys, description, modes, and action', () => {
+  it('every binding has keys, description, activation, and action', () => {
     for (const b of DEFAULT_KEYBINDINGS) {
       expect(typeof b.actionId).toBe('string');
       expect(b.actionId.length).toBeGreaterThan(0);
       expect(b.keys.length).toBeGreaterThanOrEqual(1);
       expect(typeof b.description).toBe('string');
       expect(b.description.length).toBeGreaterThan(0);
-      expect(Array.isArray(b.modes)).toBe(true);
+      expect(typeof b.activation).toBe('object');
       expect(typeof b.action).toBe('function');
     }
   });
@@ -98,7 +147,7 @@ describe('DEFAULT_KEYBINDINGS', () => {
     for (let digit = 1; digit <= 9; digit++) {
       const b = byId(`list.jumpTo${digit}`);
       expect(b.keys).toBe(String(digit));
-      expect(b.modes).toContain('list');
+      expect(b.activation.routes).toContain('list');
       expect(b.hidden ?? false).toBe(digit !== 1);
     }
   });
@@ -136,24 +185,25 @@ describe('DEFAULT_KEYBINDINGS', () => {
       'detail.scrollTop',
       'detail.scrollBottom',
     ]) {
-      expect(byId(id).modes, id).toContain('diff');
+      expect(byId(id).activation.routes, id).toContain('diff');
     }
   });
 
   it('covers the diff view: Space enters, Escape exits', () => {
     expect(byId('detail.viewDiff').keys).toBe('Space');
-    expect(byId('detail.viewDiff').modes).toEqual(['detail']);
-    expect(byId('global.escape').modes).toContain('diff');
+    expect(byId('detail.viewDiff').activation.routes).toEqual(['detail']);
+    expect(byId('global.escape').activation.overlays).toContain('command');
+    expect(byId('global.escape').activation.routes).toContain('diff');
   });
 
-  it('help binding is active in list and detail and records its source', () => {
+  it('help binding is active in list and detail routes', () => {
     const b = byId('global.help');
-    expect(b.modes).toContain('list');
-    expect(b.modes).toContain('detail');
-    const store = makeStore({ mode: 'detail' });
-    b.action(store);
-    expect(store.state.mode).toBe('help');
-    expect(store.state.helpSourceMode).toBe('detail');
+    expect(b.activation.routes).toContain('list');
+    expect(b.activation.routes).toContain('detail');
+    const openHelpMock = vi.fn();
+    const ctx = makeCtx(makeStore(), 'detail', { openHelp: openHelpMock });
+    b.action(ctx);
+    expect(openHelpMock).toHaveBeenCalledWith('detail');
   });
 
   it('detail scroll bindings include top and bottom jumps', () => {
@@ -168,99 +218,146 @@ describe('DEFAULT_KEYBINDINGS', () => {
 describe('binding actions', () => {
   it('j moves to the next PR', () => {
     const store = makeStore({ selectedPRIndex: 2 });
-    byId('list.down').action(store);
+    byId('list.down').action(makeCtx(store));
     expect(store.state.selectedPRIndex).toBe(3);
   });
 
   it('k moves to the previous PR and clamps at 0', () => {
     const store = makeStore({ selectedPRIndex: 0 });
-    byId('list.up').action(store);
+    byId('list.up').action(makeCtx(store));
     expect(store.state.selectedPRIndex).toBe(0);
   });
 
   it('gg jumps to the top', () => {
     const store = makeStore({ selectedPRIndex: 7 });
-    byId('list.top').action(store);
+    byId('list.top').action(makeCtx(store));
     expect(store.state.selectedPRIndex).toBe(0);
   });
 
-  it('Shift+G jumps to the bottom sentinel', () => {
-    const store = makeStore();
-    byId('list.bottom').action(store);
-    expect(store.state.selectedPRIndex).toBe(Number.MAX_SAFE_INTEGER);
+  it('Shift+G jumps to the last visible PR (not MAX_SAFE_INTEGER)', () => {
+    // With 3 visible PRs, cursor should jump to index 2.
+    const store = makeStore({ visiblePRIds: ['a', 'b', 'c'] });
+    byId('list.bottom').action(makeCtx(store));
+    expect(store.state.selectedPRIndex).toBe(2);
+    // With empty list, clamps to 0.
+    const emptyStore = makeStore({ visiblePRIds: [] });
+    byId('list.bottom').action(makeCtx(emptyStore));
+    expect(emptyStore.state.selectedPRIndex).toBe(0);
   });
 
-  it('Enter opens the detail view', () => {
-    const store = makeStore();
-    byId('list.open').action(store);
-    expect(store.state.mode).toBe('detail');
+  it('Enter navigates to the PR at the cursor position by id', () => {
+    mockNavigate.mockClear();
+    // With a visible PR at index 0, Enter should call router.navigate.
+    const store = makeStore({ visiblePRIds: ['pr-abc'], selectedPRIndex: 0 });
+    byId('list.open').action(makeCtx(store));
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/prs/$prId', params: { prId: 'pr-abc' } }),
+    );
+    // When list is empty, Enter is a no-op.
+    mockNavigate.mockClear();
+    const emptyStore = makeStore({ visiblePRIds: [], selectedPRIndex: 0 });
+    byId('list.open').action(makeCtx(emptyStore));
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('/ focuses search', () => {
-    const store = makeStore();
-    byId('list.search').action(store);
-    expect(store.state.mode).toBe('search');
+  it('/ opens search overlay', () => {
+    const openSearch = vi.fn();
+    byId('list.search').action(makeCtx({}, 'list', { openSearch }));
+    expect(openSearch).toHaveBeenCalled();
   });
 
-  it('f toggles the filter menu', () => {
-    const store = makeStore();
-    byId('list.filter').action(store);
-    expect(store.state.filterMenuOpen).toBe(true);
-    expect(store.state.mode).toBe('filter');
-    byId('list.filter').action(store);
-    expect(store.state.filterMenuOpen).toBe(false);
-    expect(store.state.mode).toBe('list');
+  it('f toggles the filter overlay', () => {
+    const toggleFilter = vi.fn();
+    byId('list.filter').action(makeCtx({}, 'list', { toggleFilter }));
+    expect(toggleFilter).toHaveBeenCalled();
   });
 
   it('digit bindings jump to the Nth PR', () => {
     const store = makeStore({ selectedPRIndex: 0 });
-    byId('list.jumpTo5').action(store);
+    byId('list.jumpTo5').action(makeCtx(store));
     expect(store.state.selectedPRIndex).toBe(4);
   });
 
   it('aa requires a double tap to confirm approve', () => {
-    const store = makeStore({ mode: 'detail' });
-    byId('detail.approve').action(store);
+    const store = makeStore({});
+    byId('detail.approve').action(makeCtx(store, 'detail'));
     expect(store.state.confirmingAction).toBe('approve');
-    byId('detail.approve').action(store);
+    byId('detail.approve').action(makeCtx(store, 'detail'));
     expect(store.state.confirmingAction).toBe('approve_confirmed');
   });
 
-  it('Space in detail opens the diff view', () => {
-    const store = makeStore({ mode: 'detail' });
-    byId('detail.viewDiff').action(store);
-    expect(store.state.mode).toBe('diff');
+  it('Space in detail opens the diff view (navigates to /prs/$prId/diff)', async () => {
+    const store = makeStore({});
+    const { router } = await import('../../src/renderer/router');
+    (router.state.location as { pathname: string }).pathname = '/prs/pr-test-id';
+    byId('detail.viewDiff').action(makeCtx(store, 'detail'));
+    // Router navigates; mode is no longer written.
+    expect(router.navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/prs/$prId/diff' }),
+    );
   });
 
   describe('Escape is context-sensitive', () => {
-    const cases: Array<[UIState['mode'], UIState['mode']]> = [
-      ['help', 'list'],
-      ['diff', 'detail'],
-      ['detail', 'list'],
-      ['search', 'list'],
-      ['settings', 'list'],
-    ];
-    for (const [from, to] of cases) {
-      it(`${from} → ${to}`, () => {
-        const store = makeStore({ mode: from });
-        byId('global.escape').action(store);
-        expect(store.state.mode).toBe(to);
+    it('closes overlay when command overlay is active', () => {
+      const closeOverlay = vi.fn();
+      const ctx = makeCtx({}, 'list', {
+        closeOverlay,
+        activeOverlay: 'command',
       });
-    }
+      // activeOverlay must match ctx.activeOverlay too
+      Object.assign(ctx, { activeOverlay: 'command' });
+      byId('global.escape').action(ctx);
+      expect(closeOverlay).toHaveBeenCalled();
+    });
 
-    it('in list mode it closes the filter menu and cancels actions', () => {
+    it('closes search overlay and clears query on Escape', () => {
+      const closeSearch = vi.fn();
+      const ctx = makeCtx({}, 'list', { closeSearch });
+      Object.assign(ctx, { activeOverlay: 'search' });
+      byId('global.escape').action(ctx);
+      expect(closeSearch).toHaveBeenCalledWith({ clearQuery: true });
+    });
+
+    it('detail route → navigates to /prs (router.navigate called)', async () => {
+      const { router } = await import('../../src/renderer/router');
+      (router.state.location as { pathname: string }).pathname = '/prs/pr-test-id';
+      const store = makeStore({});
+      byId('global.escape').action(makeCtx(store, 'detail'));
+      expect(router.navigate).toHaveBeenCalledWith(
+        expect.objectContaining({ to: '/prs' }),
+      );
+    });
+
+    it('diff route → navigates back to detail (router.navigate called)', async () => {
+      const { router } = await import('../../src/renderer/router');
+      (router.state.location as { pathname: string }).pathname = '/prs/pr-test-id/diff';
+      const store = makeStore({});
+      byId('global.escape').action(makeCtx(store, 'diff'));
+      expect(router.navigate).toHaveBeenCalledWith(
+        expect.objectContaining({ to: '/prs/$prId' }),
+      );
+    });
+
+    it('settings route → navigates to /prs (router.navigate called)', async () => {
+      const { router } = await import('../../src/renderer/router');
+      (router.state.location as { pathname: string }).pathname = '/settings';
+      const store = makeStore({});
+      byId('global.escape').action(makeCtx(store, 'settings'));
+      expect(router.navigate).toHaveBeenCalledWith(
+        expect.objectContaining({ to: '/prs' }),
+      );
+    });
+
+    it('in list mode it cancels confirming actions', () => {
       const store = makeStore({
-        mode: 'list',
-        filterMenuOpen: true,
         confirmingAction: 'approve',
       });
-      byId('global.escape').action(store);
-      expect(store.state.filterMenuOpen).toBe(false);
+      byId('global.escape').action(makeCtx(store, 'list'));
       expect(store.state.confirmingAction).toBeNull();
     });
   });
 
-  describe('filter mode bindings', () => {
+  describe('filter overlay bindings', () => {
     const cases: Array<[string, UIState['filterState']]> = [
       ['filter.needsAction', 'needs_action'],
       ['filter.open', 'open'],
@@ -268,12 +365,15 @@ describe('binding actions', () => {
       ['filter.all', 'all'],
     ];
     for (const [actionId, expected] of cases) {
-      it(`${actionId} sets filterState=${expected} and closes the menu`, () => {
-        const store = makeStore({ mode: 'filter', filterMenuOpen: true });
-        byId(actionId).action(store);
+      it(`${actionId} sets filterState=${expected} and closes overlay`, () => {
+        const closeOverlay = vi.fn();
+        const store = makeStore();
+        byId(actionId).action(makeCtx(store, 'list', {
+          closeOverlay,
+          activeOverlay: 'filter' as const,
+        }));
         expect(store.state.filterState).toBe(expected);
-        expect(store.state.filterMenuOpen).toBe(false);
-        expect(store.state.mode).toBe('list');
+        expect(closeOverlay).toHaveBeenCalled();
       });
     }
   });
@@ -311,4 +411,75 @@ describe('getEffectiveBindings', () => {
     getEffectiveBindings({ 'list.down': ['x'] });
     expect(byId('list.down').keys).toBe('j');
   });
+});
+
+// ---------------------------------------------------------------------------
+// BLOCKING 2 — login bindings must be inactive on every authed route/overlay
+// ---------------------------------------------------------------------------
+
+describe('isActive — login bindings inactive on authed routes', () => {
+  // All login.provider.* bindings use activation: { routes: ["login"] } (Slice 8)
+  const loginBinding = DEFAULT_KEYBINDINGS.find((b) =>
+    b.actionId.startsWith('login.provider.'),
+  );
+
+  it('login binding exists in DEFAULT_KEYBINDINGS', () => {
+    expect(loginBinding).toBeDefined();
+    expect(loginBinding?.activation.routes).toEqual(['login']);
+  });
+
+  const routes: Array<RouteBase | null> = ['list', 'detail', 'diff', 'settings', null];
+  const overlays = [null, 'command', 'help', 'search', 'filter', 'repoPicker'] as const;
+
+  for (const routeBase of routes) {
+    for (const activeOverlay of overlays) {
+      it(`inactive: routeBase=${String(routeBase)} overlay=${String(activeOverlay)}`, () => {
+        if (!loginBinding) return;
+        expect(
+          isActive(loginBinding, { routeBase, activeOverlay }),
+        ).toBe(false);
+      });
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// NIT 3 — global.quit fires while help/search overlays are open
+// ---------------------------------------------------------------------------
+
+describe('isActive — global.quit fires on routes AND help/search overlays', () => {
+  const quitMac = DEFAULT_KEYBINDINGS.find((b) => b.actionId === 'global.quit.mac')!;
+
+  it('active on list route, no overlay', () => {
+    expect(isActive(quitMac, { routeBase: 'list', activeOverlay: null })).toBe(true);
+  });
+  it('active while help overlay is open', () => {
+    expect(isActive(quitMac, { routeBase: null, activeOverlay: 'help' })).toBe(true);
+  });
+  it('active while search overlay is open', () => {
+    expect(isActive(quitMac, { routeBase: null, activeOverlay: 'search' })).toBe(true);
+  });
+  it('inactive while command overlay is open', () => {
+    // command was NOT in old quit modes — keep it inactive.
+    expect(isActive(quitMac, { routeBase: null, activeOverlay: 'command' })).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isActive semantics — empty routes array
+// ---------------------------------------------------------------------------
+
+describe('isActive — empty routes array means never-active', () => {
+  const neverBinding: KeyBinding = {
+    actionId: 'test.never',
+    keys: 'x',
+    description: 'never',
+    activation: { routes: [] },
+    action: () => undefined,
+  };
+
+  it('inactive on list', () => expect(isActive(neverBinding, { routeBase: 'list', activeOverlay: null })).toBe(false));
+  it('inactive on detail', () => expect(isActive(neverBinding, { routeBase: 'detail', activeOverlay: null })).toBe(false));
+  it('inactive with overlay', () => expect(isActive(neverBinding, { routeBase: 'list', activeOverlay: 'command' })).toBe(false));
+  it('inactive with null routeBase', () => expect(isActive(neverBinding, { routeBase: null, activeOverlay: null })).toBe(false));
 });

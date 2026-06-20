@@ -1,9 +1,22 @@
 // @vitest-environment jsdom
 
 import * as matchers from '@testing-library/jest-dom/matchers';
+import {
+  QueryClient,
+  QueryClientProvider,
+} from '@tanstack/react-query';
+import {
+  createMemoryHistory,
+  createRootRouteWithContext,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from '@tanstack/react-router';
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRDetailPage } from '../../src/renderer/pages/PRDetailPage';
+import type { RouterContext } from '../../src/renderer/router';
 import * as storeModule from '../../src/renderer/store';
 
 const mockPR = {
@@ -57,7 +70,61 @@ const mockStore = {
     actionResult: null,
   },
   subscribe: vi.fn(() => () => {}),
+  setState: vi.fn(),
 };
+
+/**
+ * Render PRDetailPage inside a minimal router with /prs/$prId route so
+ * Route.useParams() can resolve the prId param.
+ */
+function renderWithPRRoute(prId: string) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  const rootRoute = createRootRouteWithContext<RouterContext>()({
+    // Root must render Outlet so child routes are rendered.
+    component: () => <Outlet />,
+  });
+
+  const prsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/prs',
+    component: () => <Outlet />,
+  });
+
+  // The route path must match exactly what getRouteApi('/prs/$prId') expects.
+  const prDetailRoute = createRoute({
+    getParentRoute: () => prsRoute,
+    path: '$prId',
+    component: PRDetailPage,
+  });
+
+  const routeTree = rootRoute.addChildren([
+    prsRoute.addChildren([prDetailRoute]),
+  ]);
+
+  const history = createMemoryHistory({
+    initialEntries: [`/prs/${prId}`],
+  });
+
+  const testRouter = createRouter({
+    routeTree,
+    history,
+    context: {
+      queryClient,
+      authChecked: true,
+      isAuthenticated: true,
+      onboardingComplete: true,
+    },
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={testRouter} />
+    </QueryClientProvider>,
+  );
+}
 
 describe('PRDetailPage', () => {
   beforeEach(() => {
@@ -70,22 +137,19 @@ describe('PRDetailPage', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders the PR title', () => {
-    render(<PRDetailPage />);
-    expect(screen.getByText('Ship new feature')).toBeInTheDocument();
+  it('renders the PR title', async () => {
+    renderWithPRRoute('github-1');
+    expect(await screen.findByText('Ship new feature')).toBeInTheDocument();
   });
 
-  it('shows the SPACE-to-diff footer hint', () => {
-    render(<PRDetailPage />);
-    expect(screen.getByText(/view diff/i)).toBeInTheDocument();
+  it('shows the SPACE-to-diff footer hint', async () => {
+    renderWithPRRoute('github-1');
+    expect(await screen.findByText(/view diff/i)).toBeInTheDocument();
   });
 
-  it('shows not-found state when no PR is selected', () => {
-    vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue({
-      ...mockStore,
-      state: { ...mockStore.state, selectedPRIndex: 99 },
-    } as unknown as typeof storeModule.appStore);
-    render(<PRDetailPage />);
-    expect(screen.getByText(/PR not found/i)).toBeInTheDocument();
+  it('shows not-found state when prId matches no PR', async () => {
+    renderWithPRRoute('unknown-id-99');
+    expect(await screen.findByTestId('pr-not-found')).toBeInTheDocument();
+    expect(await screen.findByText(/PR not found/i)).toBeInTheDocument();
   });
 });

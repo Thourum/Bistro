@@ -2,13 +2,15 @@
 
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import React from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppFooter } from '../../src/renderer/components/AppFooter';
 import {
   FooterCenterSlot,
   FooterLeftSlot,
   FooterSlotProvider,
 } from '../../src/renderer/components/FooterSlot';
+import { OverlayProvider } from '../../src/renderer/overlays/OverlayContext';
 import { appStore } from '../../src/renderer/store';
 import { settingsStore } from '../../src/renderer/store/settings';
 import { initialUIState } from '../../src/renderer/store/ui';
@@ -16,33 +18,48 @@ import { DEFAULT_SETTINGS } from '../../src/types/settings';
 
 expect.extend(matchers);
 
+// Mock router hooks — AppFooter now always renders inside RouterProvider
+// (under authedRoute) but tests run without one, so we mock the hooks.
+const mockPathname = { current: '/prs' };
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>();
+  return {
+    ...actual,
+    useRouterState: vi.fn(() => ({ location: { pathname: mockPathname.current } })),
+    useNavigate: vi.fn(() => vi.fn()),
+  };
+});
+
 beforeEach(() => {
+  mockPathname.current = '/prs';
   appStore.setState(() => ({ ...initialUIState, mode: 'list' }));
   settingsStore.setState(() => DEFAULT_SETTINGS);
 });
 
 function renderFooter(children: React.ReactNode = null) {
   return render(
-    <FooterSlotProvider>
-      {children}
-      <AppFooter />
-    </FooterSlotProvider>,
+    <OverlayProvider>
+      <FooterSlotProvider>
+        {children}
+        <AppFooter />
+      </FooterSlotProvider>
+    </OverlayProvider>,
   );
 }
 
 describe('AppFooter', () => {
-  it('renders a mode-aware legend derived from effective bindings', () => {
-    appStore.setState((s) => ({ ...s, mode: 'list' }));
+  it('renders a route-aware legend derived from effective bindings', () => {
+    mockPathname.current = '/prs';
     renderFooter();
 
-    // list mode preset includes list.down (j), list.up (k), list.open (Enter).
+    // list route preset includes list.down (j), list.up (k), list.open (Enter).
     expect(screen.getByText('Next')).toBeInTheDocument();
     expect(screen.getByText('Previous')).toBeInTheDocument();
     expect(screen.getByText('Open')).toBeInTheDocument();
   });
 
   it('lets a page override the left region via FooterLeftSlot', () => {
-    appStore.setState((s) => ({ ...s, mode: 'list' }));
+    mockPathname.current = '/prs';
     renderFooter(<FooterLeftSlot>CUSTOM-LEFT</FooterLeftSlot>);
 
     expect(screen.getByText('CUSTOM-LEFT')).toBeInTheDocument();
@@ -51,7 +68,7 @@ describe('AppFooter', () => {
   });
 
   it('projects page content into the center region via FooterCenterSlot', () => {
-    appStore.setState((s) => ({ ...s, mode: 'list' }));
+    mockPathname.current = '/prs';
     renderFooter(
       <FooterCenterSlot>{'FILTER:OPEN // SORT:UPDATED'}</FooterCenterSlot>,
     );
@@ -98,5 +115,26 @@ describe('AppFooter', () => {
       'Sync status: SYNCING // Syncing now',
     );
     expect(statusTrigger.querySelector('svg')).toHaveClass('animate-spin');
+  });
+
+  it('shows diff-view legend on diff route', () => {
+    mockPathname.current = '/prs/pr-1/diff';
+    renderFooter();
+    // diff preset includes detail.scrollDown (j) and global.escape
+    expect(screen.getByText('Back / Cancel')).toBeInTheDocument();
+  });
+
+  // Slice 8: AppFooter has NO RouterSafe — it's only rendered under authedRoute
+  // (inside RouterProvider). The old "renders without RouterProvider" test is
+  // superseded by the slice8 guard test that confirms AppFooter is absent on
+  // /login. Verify the component has no RouterSafe class.
+  it('AppFooter renders with router context mocked (no RouterSafe needed)', () => {
+    // With the mock in place this should render cleanly.
+    renderFooter();
+    const footer = document.querySelector('footer');
+    expect(footer).toBeInTheDocument();
+    // Shortcuts button appears (router mock allows useNavigate).
+    expect(screen.getByText('Shortcuts')).toBeInTheDocument();
+    expect(screen.getByText('Settings')).toBeInTheDocument();
   });
 });
