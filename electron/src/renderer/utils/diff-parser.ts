@@ -31,8 +31,27 @@ export function parseMultiFileDiff(diffText: string): DiffSection[] {
     const trimmed = part.trim();
     if (trimmed === '') continue;
 
-    // Extract git header info for fallback file names
-    const gitMatch = trimmed.match(/^diff --git a\/(.+) b\/(.+)/);
+    // Extract git header info for fallback file names.
+    // Handles both quoted paths (git quotes filenames with spaces) and
+    // normal unquoted paths.  For unquoted paths we split on the LAST
+    // occurrence of " b/" so that paths containing spaces are handled
+    // correctly.
+    let gitMatch: [string, string, string] | null = null;
+    const quotedGitMatch = trimmed.match(/^diff --git "a\/(.+)" "b\/(.+)"/);
+    if (quotedGitMatch) {
+      gitMatch = [quotedGitMatch[0]!, quotedGitMatch[1]!, quotedGitMatch[2]!];
+    } else {
+      const headerLine = trimmed.match(/^diff --git a\/.+ b\/.+/)?.[0];
+      if (headerLine) {
+        const withoutPrefix = headerLine.slice('diff --git '.length);
+        const lastBSlash = withoutPrefix.lastIndexOf(' b/');
+        if (lastBSlash !== -1) {
+          const aPath = withoutPrefix.slice(2, lastBSlash);
+          const bPath = withoutPrefix.slice(lastBSlash + 3);
+          gitMatch = [headerLine, aPath, bPath];
+        }
+      }
+    }
 
     // Strip the "diff --git a/... b/..." line and optional metadata lines
     const withoutGitHeader = trimmed
