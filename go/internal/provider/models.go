@@ -37,16 +37,47 @@ type Review struct {
 	SubmittedAt time.Time
 }
 
-// Comment represents a normalized comment
+// Comment represents a normalized comment. Kind discriminates issue vs. inline
+// review comments. Anchoring fields (CommitSHA … ThreadID) are populated only
+// for kind='review'; they are zero/nil for kind='issue'.
 type Comment struct {
 	ID        string
 	PRID      string
 	Author    string
 	Body      string
+	Kind      string // "issue" | "review"
+	// Anchoring fields — review comments only.
+	CommitSHA        string
+	OriginalSHA      string
+	Side             string // "LEFT" | "RIGHT"
+	Position         *int
+	OriginalPosition *int
+	InReplyTo        string // ID of parent comment, or "" for root
+	ThreadID         string // provider-opaque thread ID
+	// PatchsetNumber is the patchset this comment was made on.
+	// nil for freshly-fetched comments (not yet persisted); populated by the
+	// anchor resolver from the DB so that original-position geometry uses exact
+	// patchset identity (comments.patchset_number → patchsets.number).
+	PatchsetNumber *int
+	// Shared.
 	LineNo    int    // 0 if general comment, >0 for specific line
-	FilePath  string // Only if line comment
+	FilePath  string // reuses existing column; no new path column
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+// ReviewThread groups inline review comments under a single thread.
+// StateKnown is false when GraphQL enrichment failed and resolution state
+// could not be determined (REST-only fallback).
+type ReviewThread struct {
+	ID         string
+	PRID       string
+	FilePath   string
+	Line       int  // 0 if outdated/unknown
+	Resolved   bool
+	Outdated   bool
+	StateKnown bool
+	Comments   []*Comment // ordered; first is the root
 }
 
 // Repo represents a normalized repository

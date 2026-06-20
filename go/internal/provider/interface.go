@@ -46,3 +46,18 @@ type PRFilters struct {
 	Limit  int    // max results per page
 	Offset int    // pagination offset
 }
+
+// ThreadProvider is an optional capability for providers that support
+// fetching inline review threads. Discovered via type assertion — it is NOT
+// part of the core Provider interface so non-GitHub providers compile without it.
+type ThreadProvider interface {
+	GetReviewThreads(ctx context.Context, prID string) ([]*ReviewThread, error)
+}
+
+// ThreadResolver is an optional capability for providers that support
+// resolving and unresolving review threads via GraphQL mutations.
+// Requires StateKnown=true threads with a canonical GraphQL node ID.
+type ThreadResolver interface {
+	ResolveThread(ctx context.Context, threadID string) error
+	UnresolveThread(ctx context.Context, threadID string) error
+}

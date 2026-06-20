@@ -17,6 +17,16 @@ type MockProvider struct {
 	GetUsernameFunc func(ctx context.Context) (string, error)
 	// Repos is the list returned by ListUserRepos.
 	Repos []*provider.Repo
+	// Thread provider fields.
+	reviewThreads    []*provider.ReviewThread
+	reviewThreadsErr error
+	// ThreadResolver fields.
+	resolveErr   error
+	unresolveErr error
+	// ResolvedCalls records thread IDs passed to ResolveThread.
+	ResolvedCalls []string
+	// UnresolvedCalls records thread IDs passed to UnresolveThread.
+	UnresolvedCalls []string
 }
 
 // NewMockProvider creates a new mock provider with empty state.
@@ -152,3 +162,57 @@ func (m *MockProvider) ListUserRepos(_ context.Context) ([]*provider.Repo, error
 	}
 	return m.Repos, nil
 }
+
+// PRs returns the configured PR list (useful in tests to grab a reference).
+func (m *MockProvider) PRs() []*provider.PR {
+	return m.prs
+}
+
+// SetPRs sets the mock's PR list in-place.
+func (m *MockProvider) SetPRs(prs []*provider.PR) {
+	m.prs = prs
+}
+
+// SetReviewThreads configures the mock's GetReviewThreads return value.
+func (m *MockProvider) SetReviewThreads(threads []*provider.ReviewThread) {
+	m.reviewThreads = threads
+}
+
+// SetReviewThreadsError configures GetReviewThreads to return an error.
+func (m *MockProvider) SetReviewThreadsError(err error) {
+	m.reviewThreadsErr = err
+}
+
+// GetReviewThreads implements provider.ThreadProvider.
+func (m *MockProvider) GetReviewThreads(_ context.Context, _ string) ([]*provider.ReviewThread, error) {
+	if m.reviewThreadsErr != nil {
+		return nil, m.reviewThreadsErr
+	}
+	return m.reviewThreads, nil
+}
+
+// SetResolveError configures ResolveThread to return an error.
+func (m *MockProvider) SetResolveError(err error) {
+	m.resolveErr = err
+}
+
+// SetUnresolveError configures UnresolveThread to return an error.
+func (m *MockProvider) SetUnresolveError(err error) {
+	m.unresolveErr = err
+}
+
+// ResolveThread implements provider.ThreadResolver.
+func (m *MockProvider) ResolveThread(_ context.Context, threadID string) error {
+	m.ResolvedCalls = append(m.ResolvedCalls, threadID)
+	return m.resolveErr
+}
+
+// UnresolveThread implements provider.ThreadResolver.
+func (m *MockProvider) UnresolveThread(_ context.Context, threadID string) error {
+	m.UnresolvedCalls = append(m.UnresolvedCalls, threadID)
+	return m.unresolveErr
+}
+
+// Compile-time assertions.
+var _ provider.ThreadProvider = (*MockProvider)(nil)
+var _ provider.ThreadResolver = (*MockProvider)(nil)
