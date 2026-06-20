@@ -4,6 +4,7 @@ import { AppFooter } from './components/AppFooter';
 import { CommandPalette } from './components/CommandPalette';
 import { FooterSlotProvider } from './components/FooterSlot';
 import { HelpOverlay } from './components/HelpOverlay';
+import { RepoPicker } from './components/RepoPicker';
 import ToastContainer from './components/ToastContainer';
 import { useAppHotkeys } from './hooks/useAppHotkeys';
 import { useSettingsEffect } from './hooks/useSettingsEffect';
@@ -23,6 +24,8 @@ const queryClient = new QueryClient();
 
 export function AppContent(): React.ReactElement {
   const mode = useStore(appStore, (state: UIState) => state.mode);
+  const repoPickerDialogRef = React.useRef<HTMLDivElement>(null);
+  const repoPickerReturnFocusRef = React.useRef<HTMLElement | null>(null);
   const confirmingAction = useStore(
     appStore,
     (state: UIState) => state.confirmingAction,
@@ -40,6 +43,63 @@ export function AppContent(): React.ReactElement {
     }
   }, [confirmingAction]);
 
+  React.useEffect(() => {
+    if (mode !== 'repo-picker') return;
+
+    repoPickerReturnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    const getFocusableElements = (): HTMLElement[] => {
+      const dialog = repoPickerDialogRef.current;
+      if (!dialog) return [];
+
+      return Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      );
+    };
+
+    const trapFocus = (event: KeyboardEvent): void => {
+      if (event.key !== 'Tab') return;
+
+      const dialog = repoPickerDialogRef.current;
+      if (!dialog) return;
+
+      const focusableElements = getFocusableElements();
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      const activeElement = document.activeElement;
+
+      if (!dialog.contains(activeElement)) {
+        event.preventDefault();
+        firstElement.focus();
+        return;
+      }
+
+      if (event.shiftKey && activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    document.addEventListener('keydown', trapFocus, true);
+    return () => document.removeEventListener('keydown', trapFocus, true);
+  }, [mode]);
+
   const renderPage = (): React.ReactElement => {
     switch (mode) {
       case 'onboarding':
@@ -51,10 +111,19 @@ export function AppContent(): React.ReactElement {
       case 'settings':
         return <SettingsPage />;
       default:
-        // list | search | filter | help | command all keep the PR list visible
-        // underneath any overlay.
+        // list | search | filter | help | command | repo-picker all keep the PR
+        // list visible underneath any overlay.
         return <PRListPage />;
     }
+  };
+
+  const closeRepoPicker = (): void => {
+    const returnFocusTo = repoPickerReturnFocusRef.current;
+    appStore.setState((s) => ({ ...s, mode: 'list' }));
+    window.requestAnimationFrame(() => {
+      if (returnFocusTo?.isConnected === true) returnFocusTo.focus();
+      repoPickerReturnFocusRef.current = null;
+    });
   };
 
   return (
@@ -62,6 +131,23 @@ export function AppContent(): React.ReactElement {
       <div className="flex-1 min-h-0 flex flex-col">{renderPage()}</div>
       <AppFooter />
       <CommandPalette />
+      {mode === 'repo-picker' && (
+        <div
+          ref={repoPickerDialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Repository picker"
+          tabIndex={-1}
+          className="fixed inset-0 z-40 bg-transparent backdrop-blur-[20px] flex items-start justify-center pt-[153px]"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeRepoPicker();
+          }}
+        >
+          <div className="w-full max-w-2xl mx-4 bg-surface-container-lowest border border-primary shadow-[0_10px_30px_rgba(25,28,29,0.04)] overflow-hidden p-4">
+            <RepoPicker onClose={closeRepoPicker} />
+          </div>
+        </div>
+      )}
       <HelpOverlay />
       <ToastContainer />
     </div>

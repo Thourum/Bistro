@@ -95,4 +95,13 @@ describe('CommandPalette', () => {
     await userEvent.keyboard('{Enter}');
     expect(appStore.state.mode).toBe('help');
   });
+
+  it('Enter on repository picker command launches RepoPicker mode', async () => {
+    appStore.setState((s) => ({ ...s, mode: 'command' }));
+    render(<CommandPalette />);
+    const input = screen.getByPlaceholderText(/Type a command/i);
+    await userEvent.type(input, 'repository picker');
+    await userEvent.keyboard('{Enter}');
+    expect(appStore.state.mode).toBe('repo-picker');
+  });
 });
