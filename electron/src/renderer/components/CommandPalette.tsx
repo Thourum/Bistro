@@ -1,11 +1,12 @@
+import { useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useStore } from '../hooks/useStore';
+import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { useWebSocketPRList as usePRList } from '../hooks/useWebSocketPRList';
+import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
-import { initialUIState, type UIState } from '../store/ui';
+import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
 
 type Icon = string;
@@ -78,15 +79,17 @@ const COMMANDS: readonly CommandItem[] = [
  * Escape closes.
  */
 export function CommandPalette(): React.ReactElement | null {
-  const mode = useStore(appStore, (s: UIState) => s.mode);
-  const filterState = useStore(appStore, (s: UIState) => s.filterState);
-  const isOpen = mode === 'command';
+  const { activeOverlay, closeOverlay, openHelp, openRepoPicker } =
+    useOverlays();
+  const isOpen = activeOverlay === 'command';
   const [query, setQuery] = useState('');
   const { send } = useWebSocket();
   const prefetchedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
-  const { data: prs = [] } = usePRList(filterState);
+  // C2: use canonical useVisiblePRs — drops divergent usePRList call.
+  const { prs } = useVisiblePRs();
   const recentPRs = useMemo(() => prs.slice(0, 5), [prs]);
 
   const filteredPRs = useMemo(() => {
@@ -131,51 +134,54 @@ export function CommandPalette(): React.ReactElement | null {
   }, [query, send]);
 
   const handleClose = (): void => {
-    appStore.setState((s) => ({ ...s, mode: 'list' }));
+    closeOverlay();
     setQuery('');
     prefetchedRef.current = false;
   };
 
   const handleExecutePR = (pr: PR): void => {
-    const idx = prs.findIndex((p) => p.id === pr.id);
-    appStore.setState((s) => ({
-      ...s,
-      mode: 'detail',
-      selectedPRIndex: idx >= 0 ? idx : 0,
-    }));
+    // C2: navigate by stable pr.id — never write selectedPRIndex as identity.
+    void navigate({ to: '/prs/$prId', params: { prId: pr.id } });
+    closeOverlay();
     setQuery('');
   };
 
   const handleExecuteCommand = (command: CommandItem): void => {
     switch (command.id) {
       case 'settings':
-        appStore.setState((s) => ({ ...s, mode: 'settings' }));
+        void navigate({ to: '/settings' });
+        closeOverlay();
         setQuery('');
         return;
       case 'help':
-        appStore.setState((s) => ({ ...s, mode: 'help' }));
+        openHelp('list');
         setQuery('');
         return;
       case 'focus-list':
-        appStore.setState((s) => ({ ...s, mode: 'list' }));
+        // Navigate to /prs; route↔mode coherence effect will correct mode.
+        void navigate({
+          to: '/prs',
+          search: (prev: Record<string, unknown>) => prev,
+        });
+        closeOverlay();
         setQuery('');
         return;
       case 'focus-detail':
-        appStore.setState((s) => ({ ...s, mode: 'detail' }));
+        // Cannot navigate to detail without a prId — this command is a no-op
+        // when there is no current routed PR.
         setQuery('');
         return;
       case 'clear':
         appStore.setState((s) => ({
           ...s,
-          mode: 'list',
           searchQuery: '',
           filterState: 'open',
-          filterMenuOpen: false,
         }));
+        closeOverlay();
         setQuery('');
         return;
       case 'repo-picker':
-        appStore.setState((s) => ({ ...s, mode: 'repo-picker' }));
+        openRepoPicker();
         setQuery('');
         return;
       case 'sync':
@@ -183,12 +189,13 @@ export function CommandPalette(): React.ReactElement | null {
         appStore.setState((s) => ({
           ...s,
           syncStatus: 'syncing',
-          mode: 'list',
         }));
+        closeOverlay();
         setQuery('');
         return;
       case 'reset-store':
-        appStore.setState(() => ({ ...initialUIState, mode: 'list' }));
+        appStore.setState(() => ({ ...initialUIState }));
+        closeOverlay();
         setQuery('');
         return;
       default:

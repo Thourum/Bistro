@@ -1,5 +1,6 @@
 import type React from 'react';
 import { useStore } from '../hooks/useStore';
+import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 
@@ -14,9 +15,11 @@ const FILTER_OPTIONS: { label: string; value: FilterValue; hint: string }[] = [
 
 function FilterPanel(): React.ReactElement {
   const filterState = useStore(appStore, (s) => s.filterState);
+  const { closeOverlay } = useOverlays();
 
   const handleSelect = (value: FilterValue): void => {
     appStore.setState((s) => ({ ...s, filterState: value }));
+    closeOverlay();
   };
 
   return (
@@ -57,22 +60,14 @@ function FilterPanel(): React.ReactElement {
 }
 
 export function FilterMenu(): React.ReactElement {
-  const isOpen = useStore(appStore, (s) => s.filterMenuOpen);
-
-  const handleToggle = (): void => {
-    const isCurrentlyOpen = appStore.state.filterMenuOpen;
-    appStore.setState((s) => ({
-      ...s,
-      filterMenuOpen: !isCurrentlyOpen,
-      mode: isCurrentlyOpen ? 'list' : 'filter',
-    }));
-  };
+  const { activeOverlay, toggleFilter } = useOverlays();
+  const isOpen = activeOverlay === 'filter';
 
   return (
     <div className="relative">
       <button
         type="button"
-        onClick={handleToggle}
+        onClick={toggleFilter}
         className="inline-flex items-center gap-2 px-3 py-1.5 border border-outline-variant rounded text-sm hover:bg-surface-container transition-colors"
         aria-label="Filter"
       >
