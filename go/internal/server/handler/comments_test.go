@@ -12,19 +12,54 @@ import (
 
 func setupCommentsTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite3", ":memory:?_foreign_keys=on")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	// Minimal prs table so the LEFT JOIN in the comments query doesn't fail.
+	_, err = db.Exec(`CREATE TABLE prs (
+		id       TEXT PRIMARY KEY,
+		head_sha TEXT,
+		base_sha TEXT
+	)`)
+	if err != nil {
+		t.Fatalf("create prs table: %v", err)
+	}
+	// Minimal patchsets table for the new patchset join.
+	_, err = db.Exec(`CREATE TABLE patchsets (
+		pr_id    TEXT NOT NULL,
+		number   INTEGER NOT NULL,
+		head_sha TEXT NOT NULL,
+		base_sha TEXT NOT NULL,
+		PRIMARY KEY (pr_id, number)
+	)`)
+	if err != nil {
+		t.Fatalf("create patchsets table: %v", err)
+	}
 	_, err = db.Exec(`CREATE TABLE comments (
-		id          TEXT     PRIMARY KEY,
-		pr_id       TEXT     NOT NULL,
-		author      TEXT     NOT NULL,
-		body        TEXT     NOT NULL,
-		created_at  DATETIME NOT NULL,
-		updated_at  DATETIME NOT NULL,
-		line_number INTEGER,
-		file_path   TEXT
+		id                    TEXT     PRIMARY KEY,
+		pr_id                 TEXT     NOT NULL,
+		author                TEXT     NOT NULL,
+		body                  TEXT     NOT NULL,
+		created_at            DATETIME NOT NULL,
+		updated_at            DATETIME NOT NULL,
+		line_number           INTEGER,
+		file_path             TEXT,
+		kind                  TEXT     NOT NULL DEFAULT 'issue',
+		commit_sha            TEXT,
+		original_sha          TEXT,
+		side                  TEXT,
+		position              INTEGER,
+		original_position     INTEGER,
+		in_reply_to           TEXT,
+		thread_id             TEXT,
+		patchset_number       INTEGER,
+		anchored_line         INTEGER,
+		anchor_head_sha       TEXT,
+		outdated              INTEGER NOT NULL DEFAULT 0,
+		outdated_near_line    INTEGER,
+		anchor_patchset_number INTEGER,
+		anchor_current_patchset_number INTEGER
 	)`)
 	if err != nil {
 		t.Fatalf("create comments table: %v", err)

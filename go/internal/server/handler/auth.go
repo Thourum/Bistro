@@ -32,15 +32,28 @@ type UsernameCache interface {
 
 var knownProviders = []string{"github", "gitlab", "gitea"}
 
+// CurrentUserWriter is the narrow persistence interface used by auth handlers.
+type CurrentUserWriter interface {
+	SetCurrentUser(ctx context.Context, provider, login string) error
+}
+
+// CurrentUserWriterFunc adapts a function to CurrentUserWriter.
+type CurrentUserWriterFunc func(ctx context.Context, provider, login string) error
+
+func (f CurrentUserWriterFunc) SetCurrentUser(ctx context.Context, prov, login string) error {
+	return f(ctx, prov, login)
+}
+
 // AuthDeps bundles the dependencies needed by the authentication handlers.
 type AuthDeps struct {
-	Log             *slog.Logger
-	Tokens          TokenStore
-	Cache           UsernameCache
-	Broadcast       func(msg interface{})
-	SetProvider     func(prov provider.Provider, name string)
-	GetClientID     func() string
-	GetClientSecret func() string
+	Log               *slog.Logger
+	Tokens            TokenStore
+	Cache             UsernameCache
+	Broadcast         func(msg interface{})
+	SetProvider       func(prov provider.Provider, name string)
+	GetClientID       func() string
+	GetClientSecret   func() string
+	CurrentUserWriter CurrentUserWriter // optional; nil → skip
 }
 
 func fetchUsername(providerName, token string) (string, error) {
@@ -108,13 +121,19 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 			client := github.NewClient(result.Token)
 			deps.SetProvider(client, providerName)
 
-			username := ""
-			if u, err := fetchUsername(providerName, result.Token); err == nil {
-				username = u
-				deps.Cache.Set(providerName, u)
-			} else {
-				deps.Log.Warn("failed to fetch username after OAuth", "error", err)
+		username := ""
+		if u, err := fetchUsername(providerName, result.Token); err == nil {
+			username = u
+			deps.Cache.Set(providerName, u)
+			if deps.CurrentUserWriter != nil {
+				if werr := deps.CurrentUserWriter.SetCurrentUser(context.Background(), providerName, u); werr != nil {
+					deps.Log.Warn("failed to persist current user", "provider", providerName, "error", werr)
+					// non-fatal: auth still succeeds
+				}
 			}
+		} else {
+			deps.Log.Warn("failed to fetch username after OAuth", "error", err)
+		}
 
 			deps.Broadcast(map[string]interface{}{
 				"type": "AUTH_SUCCESS",
@@ -250,6 +269,11 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 			username, expired, found := deps.Cache.Get(p)
 			if found && !expired {
 				logger.Debug("username cache hit", "provider", p)
+				if deps.CurrentUserWriter != nil {
+					if werr := deps.CurrentUserWriter.SetCurrentUser(ctx, p, username); werr != nil {
+						logger.Warn("failed to persist current user", "provider", p, "error", werr)
+					}
+				}
 				providers = append(providers, providerInfo{Provider: p, Username: username})
 				continue
 			}
@@ -262,6 +286,11 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 				continue
 			}
 			deps.Cache.Set(p, fetched)
+			if deps.CurrentUserWriter != nil {
+				if werr := deps.CurrentUserWriter.SetCurrentUser(ctx, p, fetched); werr != nil {
+					logger.Warn("failed to persist current user", "provider", p, "error", werr)
+				}
+			}
 			providers = append(providers, providerInfo{Provider: p, Username: fetched})
 		}
 

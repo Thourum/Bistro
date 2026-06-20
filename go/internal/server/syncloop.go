@@ -149,6 +149,7 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 	a.provMu.RLock()
 	orch := a.orchestrator
 	prov := a.prov
+	orchCtx := a.provCtx // per-provider context; cancelled on disconnect/replace
 	a.provMu.RUnlock()
 
 	if prov == nil || orch == nil {
@@ -168,6 +169,11 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 	passStart := time.Now()
 	var synced, failed int
 	for _, r := range repos {
+		// Abort the whole pass if the provider was disconnected/replaced.
+		if orchCtx.Err() != nil {
+			a.log.Debug("syncWatchedRepos: provider changed, aborting pass")
+			return
+		}
 		req := &sync.SyncRequest{
 			Provider:        r.provider,
 			Owner:           r.owner,
@@ -178,7 +184,7 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 			State:           "open",
 		}
 		repoStart := time.Now()
-		result, syncErr := orch.Sync(ctx, req)
+		result, syncErr := orch.Sync(orchCtx, req)
 		if syncErr != nil {
 			failed++
 			a.log.Error("syncWatchedRepos: sync failed",
@@ -186,7 +192,9 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 				"duration_ms", time.Since(repoStart).Milliseconds(),
 				"err", syncErr,
 			)
-			a.broadcastSyncError(r.id, syncErr)
+			if orchCtx.Err() == nil {
+				a.broadcastSyncError(r.id, syncErr)
+			}
 			continue
 		}
 		synced++
@@ -203,10 +211,13 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 		"duration_ms", time.Since(passStart).Milliseconds(),
 	)
 
-	a.wsServer.Broadcast(map[string]interface{}{
-		"type": "SYNC_COMPLETE",
-		"data": map[string]interface{}{},
-	})
+	// Only broadcast SYNC_COMPLETE if still on the same provider.
+	if orchCtx.Err() == nil {
+		a.wsServer.Broadcast(map[string]interface{}{
+			"type": "SYNC_COMPLETE",
+			"data": map[string]interface{}{},
+		})
+	}
 }
 
 type watchedRepo struct {
@@ -244,6 +255,7 @@ func (a *App) syncSingleRepo(ctx context.Context, repoID string) {
 	a.provMu.RLock()
 	orch := a.orchestrator
 	prov := a.prov
+	orchCtx := a.provCtx // per-provider context; cancelled on disconnect/replace
 	a.provMu.RUnlock()
 
 	if prov == nil || orch == nil {
@@ -271,14 +283,16 @@ func (a *App) syncSingleRepo(ctx context.Context, repoID string) {
 		State:           "open",
 	}
 	repoStart := time.Now()
-	result, err := orch.Sync(ctx, req)
+	result, err := orch.Sync(orchCtx, req)
 	if err != nil {
 		a.log.Error("syncSingleRepo: sync failed",
 			"repo_id", repoID,
 			"duration_ms", time.Since(repoStart).Milliseconds(),
 			"err", err,
 		)
-		a.broadcastSyncError(repoID, err)
+		if orchCtx.Err() == nil {
+			a.broadcastSyncError(repoID, err)
+		}
 		return
 	}
 	a.log.Info("syncSingleRepo: synced",
@@ -287,8 +301,11 @@ func (a *App) syncSingleRepo(ctx context.Context, repoID string) {
 		"duration_ms", time.Since(repoStart).Milliseconds(),
 	)
 
-	a.wsServer.Broadcast(map[string]interface{}{
-		"type": "SYNC_COMPLETE",
-		"data": map[string]interface{}{"repo_id": repoID},
-	})
+	// Only broadcast if still on the same provider.
+	if orchCtx.Err() == nil {
+		a.wsServer.Broadcast(map[string]interface{}{
+			"type": "SYNC_COMPLETE",
+			"data": map[string]interface{}{"repo_id": repoID},
+		})
+	}
 }
