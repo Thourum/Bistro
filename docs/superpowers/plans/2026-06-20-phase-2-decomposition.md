@@ -20,7 +20,7 @@ Each slice runs: ponytail-audit (assumptions) → brainstorm → spec → plan �
 
 | Slice | Spec | Plan | Issue/PR | Status |
 |---|---|---|---|---|
-| Groundwork | ✅ `specs/2026-06-20-phase-2-groundwork-design.md` | ⏳ next | — | spec written + reviewed 2026-06-20; migration **012** |
+| Groundwork | ✅ `specs/2026-06-20-phase-2-groundwork-design.md` | ✅ `plans/2026-06-20-phase-2-groundwork.md` | — | spec+plan written + both reviewed 2026-06-20; migration **012**; **ready to implement** |
 | 2.1 + 2.2 Patchset timeline + since-last-review | ✅ `specs/2026-06-20-phase-2-1-2-2-patchset-timeline-design.md` | ✅ `plans/2026-06-20-phase-2-1-2-2-patchset-timeline.md` | — | spec+plan written 2026-06-20; migration **014**; blocked on Groundwork |
 | 2.3 Comment anchoring across rebase | ✅ `specs/2026-06-20-phase-2-3-comment-anchoring-design.md` | ✅ `plans/2026-06-20-phase-2-3-comment-anchoring.md` | — | spec+plan written 2026-06-20; migration **015**; blocked on Groundwork |
 | 2.4 Unresolved-threads view + resolve/unresolve write-back + resolved/reopened event | ✅ `specs/2026-06-20-phase-2-4-unresolved-threads-design.md` | ✅ `plans/2026-06-20-phase-2-4-unresolved-threads.md` | — | spec+plan written 2026-06-20; **no migration** (uses Groundwork's `review_threads`); blocked on Groundwork. Shrunk: thread *data layer* moved into Groundwork; 2.4 is now UI + write-back only |
