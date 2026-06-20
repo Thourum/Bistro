@@ -69,14 +69,24 @@ func (c *Client) Clone(ctx context.Context, repoURL, baseSHA, headSHA string) (*
 		return nil, fmt.Errorf("headSHA cannot be empty")
 	}
 
-	// Check composite cache — keyed on both SHAs to avoid stale hits after force-pushes
+	// Check composite cache — keyed on both SHAs to avoid stale hits after force-pushes.
+	// A hit is only honored when the clone still exists on disk: the in-memory cache
+	// outlives the directory, which can be removed by the OS cache reaper or a user
+	// clearing ~/Library/Caches. Returning a path that no longer exists would surface
+	// go-git's misleading "repository does not exist" on the next diff. If the dir is
+	// gone, drop the stale entry and fall through to a fresh clone.
 	if cached, ok := c.cache.Get(repoURL, baseSHA, headSHA); ok {
-		log.Debug("git clone cache hit", "local_path", cached.LocalPath)
-		return &CloneResult{
-			LocalPath: cached.LocalPath,
-			BaseSHA:   cached.BaseSHA,
-			HeadSHA:   cached.HeadSHA,
-		}, nil
+		if localRepoExists(cached.LocalPath) {
+			log.Debug("git clone cache hit", "local_path", cached.LocalPath)
+			return &CloneResult{
+				LocalPath: cached.LocalPath,
+				BaseSHA:   cached.BaseSHA,
+				HeadSHA:   cached.HeadSHA,
+			}, nil
+		}
+		log.Warn("git clone cache entry points at a missing directory; re-cloning",
+			"local_path", cached.LocalPath)
+		c.cache.Clear(repoURL, baseSHA, headSHA)
 	}
 
 	log.Debug("git clone start")
@@ -163,6 +173,16 @@ func (c *Client) Clone(ctx context.Context, repoURL, baseSHA, headSHA string) (*
 		"local_path", tmpDir,
 	)
 	return result, nil
+}
+
+// localRepoExists reports whether path is a non-empty string naming an existing
+// filesystem entry. Used to validate a cache hit before trusting its clone path.
+func localRepoExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // truncateSHAForLog returns a 7-char prefix of a SHA for compact log output.

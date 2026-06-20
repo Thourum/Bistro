@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"os"
 	"testing"
 )
 
@@ -57,9 +58,12 @@ func TestCloneEmptyHeadSHA(t *testing.T) {
 func TestCloneWithCachedRepo(t *testing.T) {
 	cache := NewCache()
 
+	// Cache hits are only honored when the path still exists on disk, so the
+	// cached entry must point at a real directory (mirrors a live clone).
+	cachedDir := t.TempDir()
 	entry := &RepoEntry{
 		URL:       "https://github.com/org/repo",
-		LocalPath: "/tmp/cached",
+		LocalPath: cachedDir,
 		BaseSHA:   "base123",
 		HeadSHA:   "head456",
 	}
@@ -73,17 +77,72 @@ func TestCloneWithCachedRepo(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.LocalPath != "/tmp/cached" {
-		t.Errorf("expected cached path /tmp/cached, got %s", result.LocalPath)
+	if result.LocalPath != cachedDir {
+		t.Errorf("expected cached path %s, got %s", cachedDir, result.LocalPath)
+	}
+}
+
+// TestCloneCacheHitMissingDirNotReturned reproduces the production bug: an
+// in-memory cache entry survives the on-disk clone being deleted (by the OS
+// cache reaper, a user clearing ~/Library/Caches, or a stray cleanup). A cache
+// hit pointing at a now-missing directory must NOT be returned — go-git would
+// then fail with the misleading "repository does not exist".
+func TestCloneCacheHitMissingDirNotReturned(t *testing.T) {
+	cache := NewCache()
+	const url = "https://github.com/org/repo"
+	deadDir := t.TempDir()
+	cache.Set(url, "base1", "head1", &RepoEntry{
+		URL:       url,
+		LocalPath: deadDir,
+		BaseSHA:   "base1",
+		HeadSHA:   "head1",
+	})
+	// Delete the clone out from under the cache.
+	if err := os.RemoveAll(deadDir); err != nil {
+		t.Fatalf("setup: remove dir: %v", err)
+	}
+
+	client := NewClient(cache)
+	// The bogus host fails DNS fast and offline; we only assert that Clone does
+	// NOT short-circuit to the dead cached path. (A real re-clone is exercised
+	// in live sync; here we just prove the stale hit is rejected.)
+	result, err := client.Clone(context.Background(), url, "base1", "head1")
+	if err == nil && result != nil && result.LocalPath == deadDir {
+		t.Fatalf("returned stale cache path pointing at a deleted dir: %s", deadDir)
+	}
+	// The stale entry must have been cleared so a future clone can repopulate it.
+	if _, ok := cache.Get(url, "base1", "head1"); ok {
+		t.Error("stale cache entry should have been cleared after detecting missing dir")
+	}
+}
+
+// TestLocalRepoExists covers the on-disk validity guard used by the cache-hit path.
+func TestLocalRepoExists(t *testing.T) {
+	if localRepoExists("") {
+		t.Error("empty path should report not-exists")
+	}
+	if localRepoExists("/nonexistent/bistro/definitely/not/here") {
+		t.Error("missing path should report not-exists")
+	}
+	dir := t.TempDir()
+	if !localRepoExists(dir) {
+		t.Error("existing directory should report exists")
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("remove dir: %v", err)
+	}
+	if localRepoExists(dir) {
+		t.Error("removed directory should report not-exists")
 	}
 }
 
 func TestCloneCachesResult(t *testing.T) {
 	cache := NewCache()
 
+	cachedDir := t.TempDir()
 	entry := &RepoEntry{
 		URL:       "https://github.com/org/cached-repo",
-		LocalPath: "/tmp/cached-repo",
+		LocalPath: cachedDir,
 		BaseSHA:   "abc",
 		HeadSHA:   "def",
 	}

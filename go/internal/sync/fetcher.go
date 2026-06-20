@@ -3,7 +3,6 @@ package sync
 import (
 	"context"
 	"fmt"
-	"os"
 	gosync "sync"
 	"time"
 
@@ -162,7 +161,12 @@ func (o *Orchestrator) FetchPRDetails(
 						"local_path", cloneResult.LocalPath,
 						"duration_ms", cloneDur,
 					)
-					defer func() { _ = os.RemoveAll(cloneResult.LocalPath) }()
+					// NOTE: do NOT remove cloneResult.LocalPath here. The git
+					// Client owns this directory via its process-lifetime cache
+					// (keyed on base+head SHA) and reuses it across sync cycles
+					// and for range-diff. Deleting it leaves a live cache entry
+					// pointing at a missing dir, which surfaces as the misleading
+					// "repository does not exist" on the next diff.
 
 					diffStart := time.Now()
 					diffResult, err := o.git.GenerateDiff(cloneResult.LocalPath, prCopy.BaseSHA, prCopy.HeadSHA)
