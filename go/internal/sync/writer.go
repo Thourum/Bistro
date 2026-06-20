@@ -73,6 +73,7 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 	prSkipped := 0
 	prErrors := 0
 	commentCount := 0
+	diffCount := 0
 
 	for _, result := range results {
 		if result == nil {
@@ -134,6 +135,26 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 			}
 			commentCount++
 		}
+
+		if len(result.Diffs) > 0 {
+			diffStart := time.Now()
+			written, err := w.writeDiffs(ctx, tx, result.PR.ID, result.Diffs)
+			if err != nil {
+				log.Error("failed to write diffs",
+					"pr_id", result.PR.ID,
+					"files", len(result.Diffs),
+					"duration_ms", time.Since(diffStart).Milliseconds(),
+					"error", err,
+				)
+				continue
+			}
+			diffCount += written
+			log.Debug("diffs written",
+				"pr_id", result.PR.ID,
+				"files", written,
+				"duration_ms", time.Since(diffStart).Milliseconds(),
+			)
+		}
 	}
 
 	commitStart := time.Now()
@@ -156,6 +177,7 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 		"prs_skipped", prSkipped,
 		"prs_errors", prErrors,
 		"comments", commentCount,
+		"diffs", diffCount,
 		"duration_ms", totalDur,
 	)
 	return nil
@@ -287,4 +309,35 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 	}
 
 	return nil
+}
+
+// writeDiffs inserts or updates per-file diffs for a PR inside the writer's
+// batch transaction. It must run after writePR so pr_diffs' foreign key to prs
+// is satisfied in the same transaction.
+func (w *Writer) writeDiffs(ctx context.Context, tx *sql.Tx, prID string, diffs []store.DiffFile) (int, error) {
+	if len(diffs) == 0 {
+		return 0, nil
+	}
+	if prID == "" {
+		return 0, fmt.Errorf("PR ID cannot be empty for diffs")
+	}
+
+	const query = `
+		INSERT INTO pr_diffs (pr_id, file_path, patch, additions, deletions)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(pr_id, file_path) DO UPDATE SET
+			patch      = excluded.patch,
+			additions  = excluded.additions,
+			deletions  = excluded.deletions
+	`
+
+	written := 0
+	for _, d := range diffs {
+		if _, err := tx.ExecContext(ctx, query, prID, d.FilePath, d.Patch, d.Additions, d.Deletions); err != nil {
+			return written, fmt.Errorf("failed to write diff %s/%s: %w", prID, d.FilePath, err)
+		}
+		written++
+	}
+
+	return written, nil
 }

@@ -21,6 +21,9 @@ type PRFetchResult struct {
 	PR       *provider.PR
 	Comments []*provider.Comment
 	CI       *provider.CIStatus
+	// Diffs holds per-file diffs fetched during the details phase. The writer
+	// persists them in its batch transaction after the PR row exists.
+	Diffs    []store.DiffFile
 	DiffSize int64
 	Error    error
 }
@@ -32,8 +35,8 @@ type PRFetchResult struct {
 // fatal pool failures; individual PR errors are stored in PRFetchResult.Error.
 //
 // Each PR's fetch emits Debug records at every sub-step (start/comments/ci/diff
-// clone/diff generate/diff save) so a stuck or dropped PR can be diagnosed
-// from the logs alone.
+// clone/diff generate) so a stuck or dropped PR can be diagnosed from the logs
+// alone.
 func (o *Orchestrator) FetchPRDetails(
 	ctx context.Context,
 	prs []*provider.PR,
@@ -179,36 +182,22 @@ func (o *Orchestrator) FetchPRDetails(
 						)
 					} else if diffResult != nil {
 						result.DiffSize = diffResult.Size
-						prLog.Debug("pr diff generated",
-							"bytes", diffResult.Size,
-							"files", len(diffResult.Files),
-							"duration_ms", diffDur,
-						)
 						if o.diffStore != nil {
-							diffFiles := make([]store.DiffFile, 0, len(diffResult.Files))
+							result.Diffs = make([]store.DiffFile, 0, len(diffResult.Files))
 							for _, f := range diffResult.Files {
-								diffFiles = append(diffFiles, store.DiffFile{
+								result.Diffs = append(result.Diffs, store.DiffFile{
 									FilePath:  f.Path,
 									Patch:     f.Patch,
 									Additions: f.AddedLines,
 									Deletions: f.RemovedLines,
 								})
 							}
-							saveStart := time.Now()
-							if saveErr := o.diffStore.SaveDiffs(prCopy.ID, diffFiles); saveErr != nil {
-								errs = append(errs, fmt.Sprintf("diff save: %v", saveErr))
-								prLog.Error("failed to persist diffs",
-									"files", len(diffFiles),
-									"duration_ms", time.Since(saveStart).Milliseconds(),
-									"error", saveErr,
-								)
-							} else {
-								prLog.Debug("diffs persisted",
-									"files", len(diffFiles),
-									"duration_ms", time.Since(saveStart).Milliseconds(),
-								)
-							}
 						}
+						prLog.Debug("pr diff generated",
+							"bytes", diffResult.Size,
+							"files", len(diffResult.Files),
+							"duration_ms", diffDur,
+						)
 					}
 				}
 			}
@@ -266,4 +255,3 @@ func truncateSHA(sha string) string {
 	}
 	return sha
 }
-

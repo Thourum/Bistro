@@ -157,6 +157,61 @@ func TestWriteSyncResultsActuallyWrites(t *testing.T) {
 	}
 }
 
+// TestWriteSyncResultsWritesDiffsAfterPR verifies diffs are persisted by the
+// writer after the PR row exists, avoiding pr_diffs' foreign-key ordering bug.
+func TestWriteSyncResultsWritesDiffsAfterPR(t *testing.T) {
+	db := openTestDB(t)
+	writer := NewWriter(nil, db)
+
+	now := time.Now().UTC()
+	pr := &provider.PR{
+		ID:         "github:org/repo:diffs",
+		Provider:   "github",
+		Owner:      "org",
+		Repo:       "repo",
+		Number:     9,
+		Title:      "Store diffs",
+		Author:     "alice",
+		State:      "open",
+		BaseBranch: "main",
+		HeadBranch: "diffs",
+		BaseSHA:    "base123",
+		HeadSHA:    "head456",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+
+	results := []*PRFetchResult{
+		{
+			PR: pr,
+			Diffs: []store.DiffFile{
+				{FilePath: "go/main.go", Patch: "@@ -1 +1 @@\n", Additions: 2, Deletions: 1},
+				{FilePath: "go/other.go", Patch: "@@ -2 +2 @@\n", Additions: 1, Deletions: 3},
+			},
+		},
+	}
+
+	if err := writer.WriteSyncResults(results); err != nil {
+		t.Fatalf("WriteSyncResults error: %v", err)
+	}
+
+	var prCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM prs WHERE id = ?", pr.ID).Scan(&prCount); err != nil {
+		t.Fatalf("PR count query: %v", err)
+	}
+	if prCount != 1 {
+		t.Fatalf("expected PR row to be written, got %d", prCount)
+	}
+
+	var diffCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM pr_diffs WHERE pr_id = ?", pr.ID).Scan(&diffCount); err != nil {
+		t.Fatalf("diff count query: %v", err)
+	}
+	if diffCount != 2 {
+		t.Fatalf("expected 2 diff rows, got %d", diffCount)
+	}
+}
+
 // TestWriteSyncResultsUpsert verifies that writing the same PR twice updates
 // mutable fields rather than erroring on the unique constraint.
 func TestWriteSyncResultsUpsert(t *testing.T) {
