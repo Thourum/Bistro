@@ -44,5 +44,5 @@ electron/src/renderer/.vite/
 # Worktrees
 .worktrees/
 
-# Deepwork local planning state
+# Local agent working state
 .slim/deepwork/
