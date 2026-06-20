@@ -182,8 +182,8 @@ per PR (existing worker-pool fan-out):
   ├─ if provider implements ThreadProvider:
   │     GetReviewThreads(prID)                   → []*ReviewThread       [REST + GraphQL, new]
   │     (not capable → skip; real error → log, continue with nil)
-  └─ writer, ONE tx per PR:
-        ├─ writePR            → upsert PR + observed-patchset capture
+  └─ writer, single batch tx (one tx for the whole sync batch; per-item errors continue/skip, never roll back the batch):
+        ├─ writePR            → upsert PR + observed-patchset capture (same batch tx)
         ├─ writeComment       → issue comments (kind='issue')
         └─ writeReviewThreads → review_threads rows + their comments (kind='review')
 ```
@@ -212,7 +212,7 @@ then upsert the PR row (existing)
   `observed_at`) so Stage 2's server backfills true push times into the same column
   — code + migration comments state this so no one "fixes" the name.
 - First observation = P1; **no claim** about pushes before watching began.
-- Atomic with the PR write (never diverge). No event emitted (deferred).
+- Atomic with the PR write (never diverge): `writePR` receives the batch tx and passes it to `recordPatchsetIfChanged` — both run inside the single batch transaction that covers the whole sync. No event emitted (deferred).
 - Helper `recordPatchsetIfChanged(tx, prID, headSHA, baseSHA)` keeps `writePR`
   readable and the logic unit-testable.
 
@@ -230,7 +230,7 @@ Phase 4) key on `current_user.login`.
   REST-only threads, `StateKnown=false`, no error. Resolution shows *unknown*, not
   *resolved*. A real REST failure → logged error, PR continues with nil threads.
 - **Provider lacks `ThreadProvider`:** capability check skips; no error.
-- **Per-item write failure:** logged and skipped inside the per-PR tx; never aborts.
+- **Per-item write failure:** logged and skipped (continue) inside the batch tx; never aborts the batch.
 - **Patchset capture failure:** logged, does not abort PR write; recoverable next
   sync (idempotent).
 - **current_user write failure:** logged; auth still succeeds (cache write already
