@@ -132,6 +132,7 @@ const ALL_OVERLAYS: OverlayKind[] = [
   'search',
   'filter',
   'repoPicker',
+  'threads',
 ];
 
 const globalBindings: KeyBinding[] = [
@@ -547,6 +548,15 @@ const detailBindings: KeyBinding[] = [
     },
   },
   {
+    actionId: 'detail.threads',
+    keys: ['g', 'u'],
+    description: 'Review threads',
+    activation: { routes: ['detail'] },
+    action: (ctx) => {
+      ctx.overlays.openThreads();
+    },
+  },
+  {
     actionId: 'detail.approve',
     keys: ['a', 'a'],
     description: 'Approve (double-tap)',
@@ -570,6 +580,32 @@ const detailBindings: KeyBinding[] = [
     activation: { routes: ['detail'] },
     action: (ctx) => {
       ctx.store.setState((s) => ({ ...s, confirmingAction: 'comment' }));
+    },
+  },
+  {
+    actionId: 'diff.sinceLastReview',
+    keys: 's',
+    description: 'Since last review',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      // Toggle the since-last-review range diff. DiffPage owns the request;
+      // here we only flip the intent flag on the store.
+      const active = ctx.store.state.confirmingAction === 'since-last-review';
+      ctx.store.setState((s) => ({
+        ...s,
+        confirmingAction: active ? null : 'since-last-review',
+      }));
+    },
+  },
+  {
+    actionId: 'diff.markViewed',
+    keys: 'v',
+    description: 'Mark file viewed',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      // DiffPage performs the MARK_FILE_VIEWED request for the current file
+      // and clears the flag once acknowledged.
+      ctx.store.setState((s) => ({ ...s, confirmingAction: 'mark-viewed' }));
     },
   },
   {
@@ -779,6 +815,47 @@ const detailScrollBindings: KeyBinding[] = [
   },
 ];
 
+// ─── Review-threads bindings (active in threads mode only) ───────────────────
+// These dispatch DOM custom events rather than mutating the store: the focused
+// thread lives inside UnresolvedThreadsView (it owns the list + sort order), so
+// the view listens for these events and acts on whichever row is focused.
+
+function emitThreadsEvent(name: string): void {
+  if (typeof document === 'undefined') return;
+  document.dispatchEvent(new CustomEvent(name));
+}
+
+const threadsBindings: KeyBinding[] = [
+  {
+    actionId: 'threads.next',
+    keys: 'j',
+    description: 'Next thread',
+    activation: { overlays: ['threads'] },
+    action: (_ctx) => emitThreadsEvent('bistro:threads:next'),
+  },
+  {
+    actionId: 'threads.prev',
+    keys: 'k',
+    description: 'Previous thread',
+    activation: { overlays: ['threads'] },
+    action: (_ctx) => emitThreadsEvent('bistro:threads:prev'),
+  },
+  {
+    actionId: 'threads.resolve',
+    keys: 'r',
+    description: 'Resolve thread',
+    activation: { overlays: ['threads'] },
+    action: (_ctx) => emitThreadsEvent('bistro:threads:resolve'),
+  },
+  {
+    actionId: 'threads.unresolve',
+    keys: 'u',
+    description: 'Unresolve thread',
+    activation: { overlays: ['threads'] },
+    action: (_ctx) => emitThreadsEvent('bistro:threads:unresolve'),
+  },
+];
+
 /**
  * Default (code-defined) keybindings. This is the authoritative source of
  * truth; overrides from `settings.keybindings` are merged on top via
@@ -790,6 +867,7 @@ export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   ...listBindings,
   ...detailBindings,
   ...detailScrollBindings,
+  ...threadsBindings,
   ...filterBindings,
 ];
 

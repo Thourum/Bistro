@@ -15,6 +15,7 @@ import {
 } from '@tanstack/react-router';
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FooterSlotProvider } from '../../src/renderer/components/FooterSlot';
 import { PRDetailPage } from '../../src/renderer/pages/PRDetailPage';
 import type { RouterContext } from '../../src/renderer/router';
 import * as storeModule from '../../src/renderer/store';
@@ -44,7 +45,19 @@ vi.mock('../../src/renderer/hooks/useWebSocketPRList', () => ({
 }));
 
 vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
-  useWebSocket: () => ({ request: vi.fn().mockResolvedValue({}) }),
+  useWebSocket: () => ({
+    request: vi.fn().mockResolvedValue({}),
+    send: vi.fn(),
+  }),
+}));
+
+vi.mock('../../src/renderer/hooks/useReviewThreads', () => ({
+  useReviewThreads: () => ({
+    threads: [],
+    loading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
 }));
 
 vi.mock('../../src/renderer/hooks/useCIChecks', () => ({
@@ -65,6 +78,7 @@ const mockStore = {
   state: {
     selectedPRIndex: 0,
     filterState: 'open' as const,
+    mode: 'detail' as const,
     confirmingAction: null,
     pendingAction: null,
     actionResult: null,

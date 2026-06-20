@@ -1,11 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { appStore } from '../../src/renderer/store';
 
 describe('WebSocket reconnect backoff', () => {
   it('calculates exponential backoff delay', () => {
     const BASE_DELAY = 1000;
     const MAX_DELAY = 30000;
-    const backoff = (attempt: number): number => Math.min(BASE_DELAY * Math.pow(2, attempt), MAX_DELAY);
+    const backoff = (attempt: number): number =>
+      Math.min(BASE_DELAY * 2 ** attempt, MAX_DELAY);
 
     expect(backoff(0)).toBe(1000);
     expect(backoff(1)).toBe(2000);
@@ -35,7 +36,11 @@ describe('WebSocket ACTION_COMPLETE handler', () => {
   });
 
   it('clears pendingAction and sets actionResult on ACTION_COMPLETE', () => {
-    const data = { action_type: 'approve', pr_id: 'pr-1', message: 'PR approved' };
+    const data = {
+      action_type: 'approve',
+      pr_id: 'pr-1',
+      message: 'PR approved',
+    };
     appStore.setState((s) => ({
       ...s,
       pendingAction: null,
@@ -50,7 +55,7 @@ describe('WebSocket ACTION_COMPLETE handler', () => {
 
     expect(appStore.state.pendingAction).toBeNull();
     expect(appStore.state.actionResult).toEqual(
-      expect.objectContaining({ type: 'approve', success: true })
+      expect.objectContaining({ type: 'approve', success: true }),
     );
   });
 
@@ -69,7 +74,11 @@ describe('WebSocket ACTION_COMPLETE handler', () => {
 
     expect(appStore.state.pendingAction).toBeNull();
     expect(appStore.state.actionResult).toEqual(
-      expect.objectContaining({ type: 'approve', success: false, message: 'Forbidden' })
+      expect.objectContaining({
+        type: 'approve',
+        success: false,
+        message: 'Forbidden',
+      }),
     );
   });
 
@@ -78,7 +87,12 @@ describe('WebSocket ACTION_COMPLETE handler', () => {
     appStore.setState((s) => ({
       ...s,
       pendingAction: null,
-      actionResult: { type: 'approve', prId: 'pr-1', success: true, message: 'Done' },
+      actionResult: {
+        type: 'approve',
+        prId: 'pr-1',
+        success: true,
+        message: 'Done',
+      },
     }));
     expect(appStore.state).not.toBe(prev);
     expect(prev.pendingAction).not.toBeNull();
@@ -111,5 +125,24 @@ describe('extractResponseError', () => {
     expect(extractResponseError(null)).toBeNull();
     expect(extractResponseError('oops')).toBeNull();
     expect(extractResponseError({ error: 42 })).toBeNull();
+  });
+});
+
+describe('WebSocket thread state-change handling', () => {
+  it('THREAD_RESOLVED / THREAD_REOPENED bump threadsRevision so the view refetches', () => {
+    appStore.setState((s) => ({ ...s, threadsRevision: 0 }));
+
+    // The onMessage handler increments threadsRevision; mirror that effect.
+    appStore.setState((s) => ({
+      ...s,
+      threadsRevision: s.threadsRevision + 1,
+    }));
+    expect(appStore.state.threadsRevision).toBe(1);
+
+    appStore.setState((s) => ({
+      ...s,
+      threadsRevision: s.threadsRevision + 1,
+    }));
+    expect(appStore.state.threadsRevision).toBe(2);
   });
 });

@@ -1,13 +1,19 @@
 import { Link, useParams } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import ActionFeedback from '../components/ActionFeedback';
+import { FooterCenterSlot } from '../components/FooterSlot';
+import { MergeReadinessBadge } from '../components/MergeReadinessBadge';
+import { PatchsetTimeline } from '../components/PatchsetTimeline';
+import { UnresolvedThreadsView } from '../components/UnresolvedThreadsView';
 import { useActionDispatch } from '../hooks/useActionDispatch';
+import { usePatchsets } from '../hooks/usePatchsets';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
+import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
-import type { CICheck, Comment, PR } from '../types';
+import type { CICheck, Comment, Patchset, PR } from '../types';
 import { createLogger } from '../utils/logger';
 
 // Route API for reading the stable $prId param; detail never resolves by list index.
@@ -44,7 +50,7 @@ function relativeTime(iso: string): string {
 export function PRDetailPage() {
   // Resolve PR by stable id from route params — NEVER by selectedPRIndex.
   const { prId } = useParams({ strict: false }) as { prId: string };
-
+  const { activeOverlay } = useOverlays();
   const confirmingAction = useStore(
     appStore,
     (s: UIState) => s.confirmingAction,
@@ -63,6 +69,14 @@ export function PRDetailPage() {
     allPRs.find((p) => p.id === prId) ?? filteredPRs.find((p) => p.id === prId);
 
   const { request } = useWebSocket();
+  const { patchsets } = usePatchsets(pr?.id);
+
+  function handleSelectPair(from: Patchset, to: Patchset): void {
+    appStore.setState((s) => ({
+      ...s,
+      selectedPatchsetPair: [from.number, to.number],
+    }));
+  }
 
   const { dispatchApprove, clearActionResult } = useActionDispatch(pr?.id);
 
@@ -161,8 +175,13 @@ export function PRDetailPage() {
   return (
     <main
       data-testid="pr-detail-page"
-      className="flex-1 flex flex-row overflow-hidden"
+      className="relative flex-1 flex flex-row overflow-hidden"
     >
+      {/* Merge-readiness summary lives in the global footer's center slot. */}
+      <FooterCenterSlot>
+        <MergeReadinessBadge prId={pr.id} />
+      </FooterCenterSlot>
+
       <article className="w-[90%] overflow-y-auto p-12 lg:p-16 flex flex-col space-y-12 bg-surface">
         <Header pr={pr} stats={stats} />
         <Description pr={pr} />
@@ -173,24 +192,40 @@ export function PRDetailPage() {
           onDismiss={clearActionResult}
         />
 
+        <PatchsetTimeline
+          patchsets={patchsets}
+          onSelectPair={handleSelectPair}
+        />
+
         {comments.length > 0 && <RecentComments comments={comments} />}
 
         {files.length > 0 && <FileList files={files} />}
 
         <footer className="mt-auto pt-12">
-          <div className="inline-flex items-center space-x-3 bg-surface-container-high px-4 py-2">
-            <span className="material-symbols-outlined text-base">
-              keyboard_command_key
-            </span>
-            <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface">
-              Press <span className="font-black text-primary">[SPACE]</span> to
-              view diff
-            </span>
+          <div className="inline-flex items-center gap-x-6">
+            <div className="inline-flex items-center space-x-3 bg-surface-container-high px-4 py-2">
+              <span className="material-symbols-outlined text-base">
+                keyboard_command_key
+              </span>
+              <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface">
+                Press <span className="font-black text-primary">[SPACE]</span>{' '}
+                to view diff
+              </span>
+            </div>
+            <div className="inline-flex items-center space-x-3 bg-surface-container-high px-4 py-2">
+              <span className="material-symbols-outlined text-base">forum</span>
+              <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface">
+                Press <span className="font-black text-primary">[G U]</span> for
+                review threads
+              </span>
+            </div>
           </div>
         </footer>
       </article>
 
       <StatusRail pr={pr} ciChecks={ciChecks} />
+
+      {activeOverlay === 'threads' && <UnresolvedThreadsView prId={pr.id} />}
     </main>
   );
 }

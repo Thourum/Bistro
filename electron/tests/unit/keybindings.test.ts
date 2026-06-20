@@ -56,6 +56,7 @@ function makeCtx(
     openFilter: vi.fn(),
     toggleFilter: vi.fn(),
     openRepoPicker: vi.fn(),
+    openThreads: vi.fn(),
     closeOverlay: vi.fn(),
     closeSearch: vi.fn(),
     ...overlayOverrides,
@@ -196,7 +197,34 @@ describe('DEFAULT_KEYBINDINGS', () => {
     expect(byId('global.escape').activation.routes).toContain('diff');
   });
 
-  it('help binding is active in list and detail routes', () => {
+  it('adds since-last-review (s) and mark-viewed (v), scoped to diff route only', () => {
+    const sinceReview = byId('diff.sinceLastReview');
+    expect(sinceReview.keys).toBe('s');
+    expect(sinceReview.activation.routes).toEqual(['diff']);
+
+    const markViewed = byId('diff.markViewed');
+    expect(markViewed.keys).toBe('v');
+    expect(markViewed.activation.routes).toEqual(['diff']);
+
+    // 's' is reused across routes: star in list, since-last-review in diff.
+    expect(byId('list.star').activation.routes).toEqual(['list']);
+  });
+
+  it('s toggles the since-last-review intent flag', () => {
+    const store = makeStore({ confirmingAction: null });
+    byId('diff.sinceLastReview').action(makeCtx(store, 'diff'));
+    expect(store.state.confirmingAction).toBe('since-last-review');
+    byId('diff.sinceLastReview').action(makeCtx(store, 'diff'));
+    expect(store.state.confirmingAction).toBeNull();
+  });
+
+  it('v sets the mark-viewed intent flag', () => {
+    const store = makeStore({ confirmingAction: null });
+    byId('diff.markViewed').action(makeCtx(store, 'diff'));
+    expect(store.state.confirmingAction).toBe('mark-viewed');
+  });
+
+  it('help binding is active in list and detail and records its source', () => {
     const b = byId('global.help');
     expect(b.activation.routes).toContain('list');
     expect(b.activation.routes).toContain('detail');
@@ -482,4 +510,63 @@ describe('isActive — empty routes array means never-active', () => {
   it('inactive on detail', () => expect(isActive(neverBinding, { routeBase: 'detail', activeOverlay: null })).toBe(false));
   it('inactive with overlay', () => expect(isActive(neverBinding, { routeBase: 'list', activeOverlay: 'command' })).toBe(false));
   it('inactive with null routeBase', () => expect(isActive(neverBinding, { routeBase: null, activeOverlay: null })).toBe(false));
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2.4 — review-threads bindings
+// ---------------------------------------------------------------------------
+
+describe('review-threads bindings', () => {
+  it('gu (detail.threads) is a sequence binding scoped to the detail route', () => {
+    const binding = byId('detail.threads');
+    expect(binding.keys).toEqual(['g', 'u']);
+    expect(binding.activation.routes).toEqual(['detail']);
+  });
+
+  it('gu opens the threads overlay', () => {
+    const openThreadsMock = vi.fn();
+    const ctx = makeCtx(makeStore(), 'detail', { openThreads: openThreadsMock });
+    byId('detail.threads').action(ctx);
+    expect(openThreadsMock).toHaveBeenCalled();
+  });
+
+  it('Escape closes the threads overlay', () => {
+    const closeOverlayMock = vi.fn();
+    const ctx = makeCtx(makeStore(), 'detail', {
+      closeOverlay: closeOverlayMock,
+      activeOverlay: 'threads',
+    });
+    byId('global.escape').action(ctx);
+    expect(closeOverlayMock).toHaveBeenCalled();
+  });
+
+  it('threads navigation/action keys are scoped to threads overlay only', () => {
+    for (const id of [
+      'threads.next',
+      'threads.prev',
+      'threads.resolve',
+      'threads.unresolve',
+    ]) {
+      expect(byId(id).activation.overlays).toEqual(['threads']);
+    }
+  });
+
+  it('threads keys dispatch their matching DOM custom events', () => {
+    const cases: Array<[string, string]> = [
+      ['threads.next', 'bistro:threads:next'],
+      ['threads.prev', 'bistro:threads:prev'],
+      ['threads.resolve', 'bistro:threads:resolve'],
+      ['threads.unresolve', 'bistro:threads:unresolve'],
+    ];
+    for (const [id, eventName] of cases) {
+      const seen: string[] = [];
+      const listener = (): void => {
+        seen.push(eventName);
+      };
+      document.addEventListener(eventName, listener);
+      byId(id).action(makeCtx(makeStore(), null));
+      document.removeEventListener(eventName, listener);
+      expect(seen).toEqual([eventName]);
+    }
+  });
 });
