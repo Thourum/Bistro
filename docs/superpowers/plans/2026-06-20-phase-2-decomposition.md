@@ -20,10 +20,13 @@ Each slice runs: ponytail-audit (assumptions) → brainstorm → spec → plan �
 
 | Slice | Spec | Plan | Issue/PR | Status |
 |---|---|---|---|---|
-| 2.0 Foundation | ⏳ in progress | — | — | brainstorming started 2026-06-20 |
+| 2.0 Foundation | ✅ `specs/2026-06-20-phase-2-0-foundation-design.md` | ⏳ next | — | spec written 2026-06-20; migration **012** |
 | 2.1 + 2.2 Patchset timeline + since-last-review | — | — | — | not started (blocked on 2.0) |
 | 2.3 Comment anchoring across rebase | — | — | — | not started (blocked on 2.0) |
-| 2.4 Unresolved-threads view (+2.4.1 resolve/unresolve, +2.4.2 resolved/reopened event) | — | — | — | not started (blocked on 2.0) |
+| 2.4 Unresolved-threads view + resolve/unresolve write-back + resolved/reopened event | — | — | — | not started (blocked on 2.0). Shrunk: thread *data layer* moved into 2.0; 2.4 is now UI + write-back only |
+
+> **Migration numbering:** Phase 2 builds before Phase 3, so Phase 2.0 = migration
+> **012** and the Phase 3 classification slice = **013**. Later 2.x slices take 014+.
 
 > Update this table as each slice's spec/plan/issue is created. Build order if serial:
 > **2.0 → 2.3 → 2.1+2.2 → 2.4** (see "Slice structure" below for rationale).

@@ -26,16 +26,15 @@ past 40 nits to find the 1 critical. After this slice: the sidebar reads
 >   a `kind` discriminator `'issue' | 'review'`, introduced by Phase 2.0). The
 >   classification columns and the `comment_classification_state` table apply
 >   uniformly to every row regardless of `kind` — no separate path for inline
->   comments. Migration 012 here adds the classification columns to that one table.
-> - **Partial coverage until Phase 2.0 lands.** Bot findings (CodeRabbit, Greptile,
->   Copilot, …) are posted mostly as **inline review comments**, but today only
->   *issue-level* comments are fetched (`Issues.ListComments`). Phase 2.0 adds the
->   inline fetch (`PullRequests.ListComments`). Built before 2.0, this slice
->   classifies issue-level comments only — largely missing the inline bot findings
->   that are the wedge's whole point. **Shipping this slice is not "classification is
->   done"**; full coverage completes when 2.0's inline fetch lands. This is an
->   accepted, deliberate ordering (migration 012 here precedes Phase 2.0's
->   migrations), not a gap.
+>   comments. Migration 013 here adds the classification columns to that one table.
+> - **Build order: Phase 2.0 ships first.** Bot findings (CodeRabbit, Greptile,
+>   Copilot, …) are posted mostly as **inline review comments**. Phase 2.0 adds the
+>   inline fetch (`PullRequests.ListComments`) + the unified `comments` table; this
+>   classification slice builds *on top of* 2.0, so inline bot findings already exist
+>   in the cache when classification ships — full coverage from day one. Migration
+>   numbering reflects this: Phase 2.0 = **012**, this classification slice = **013**.
+>   (If the order ever flips and 3 ships before 2.0, classification would cover
+>   issue-level comments only until 2.0 lands — not the planned path.)
 
 ## Non-goals (deferred to later slices)
 
@@ -81,7 +80,7 @@ Plus the matching `_test.go` files.
 
 | File | Change |
 |---|---|
-| `go/internal/store/migrations/012_add_comment_classification.sql` | New columns on `comments` + `comment_classification_state` table |
+| `go/internal/store/migrations/013_add_comment_classification.sql` | New columns on `comments` + `comment_classification_state` table |
 | `go/internal/sync/writer.go` | Classify each comment before persist; store classification + current fingerprint (synchronous) |
 | `go/internal/server/handler/comments.go` | Before returning comments, run `RefreshIfStale(prID)` — re-classify comments whose stored fingerprint ≠ current |
 | `go/cmd/bistro-sync/main.go` | On startup: `classify.SeedAndUpdate(rulesDir)` once, then construct the engine |
@@ -135,7 +134,7 @@ classifications without restarting the app.*
 
 ## Data Model
 
-### Migration `012_add_comment_classification.sql`
+### Migration `013_add_comment_classification.sql`
 
 ```sql
 ALTER TABLE comments ADD COLUMN author_type TEXT;            -- 'human'|'bot'|'unknown'
