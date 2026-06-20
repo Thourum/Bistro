@@ -7,35 +7,56 @@
 // diffFileKeys are cleared when prId changes to prevent stale key carryover.
 
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PierreDiffView } from '../components/PierreDiffView';
+import { RangeDiffView } from '../components/RangeDiffView';
+import { addToast } from '../components/ToastContainer';
+import { useMarkFileViewed } from '../hooks/useMarkFileViewed';
+import { type RangeDiffRequest, useRangeDiff } from '../hooks/useRangeDiff';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
+import type { UIState } from '../store/ui';
+import type { DiffFile } from '../types';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('DiffPage');
 
-// Route API: resolves both $prId param (inherited from parent) and ?file/?side search.
-
 /**
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
  *
- * Layout: `h-screen` flex column with:
- *   - top bar (PR id / merge path / find input, h-10)
- *   - 25/75 split (file navigator / diff canvas)
- *   - LOC / UTF-8 / CRLF footer
+ * Two diff surfaces share this page:
+ *   - the full PR diff (default), rendered by {@link PierreDiffView}
+ *   - a range diff (since-last-review or a timeline patchset pair), rendered
+ *     by {@link RangeDiffView}
  *
  * PR resolved by $prId route param; file resolved by ?file canonical key.
+ *
+ * Keyboard-first affordances (registered in `keybindings.ts`, driven here):
+ *   - `s` toggles the since-last-review range diff
+ *   - `v` marks the current file viewed
  */
 export function DiffPage() {
   // Resolve PR by stable id from route params — NEVER by selectedPRIndex.
-  // PR identity is the stable pr.id (route param), never a list index.
   const { prId } = useParams({ strict: false }) as { prId: string };
   const { file: fileKey } = useSearch({ strict: false }) as { file: string };
   const navigate = useNavigate();
+
+  // Phase 2 store reads: range-diff intent and file-viewed tracking.
+  const selectedFileIndex = useStore(
+    appStore,
+    (s: UIState) => s.selectedFileIndex,
+  );
+  const confirmingAction = useStore(
+    appStore,
+    (s: UIState) => s.confirmingAction,
+  );
+  const selectedPatchsetPair = useStore(
+    appStore,
+    (s: UIState) => s.selectedPatchsetPair,
+  );
 
   const theme = useStore(settingsStore, (s) => s.appearance.theme);
 
@@ -44,20 +65,46 @@ export function DiffPage() {
   const pr = allPRs.find((p) => p.id === prId);
 
   const { request } = useWebSocket();
+  const { markViewed } = useMarkFileViewed();
 
   const [diff, setDiff] = useState<string>('');
+  const [files, setFiles] = useState<DiffFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [findQuery, setFindQuery] = useState('');
 
+  // ── Range-diff intent ──────────────────────────────────────────────
+  const sinceLastReview = confirmingAction === 'since-last-review';
+
+  const rangeReq = useMemo<RangeDiffRequest | null>(() => {
+    if (sinceLastReview) return { kind: 'sinceLastReview' };
+    if (selectedPatchsetPair !== null) {
+      const [from, to] = selectedPatchsetPair;
+      if (from !== to) {
+        return { kind: 'pair', fromPatchset: from, toPatchset: to };
+      }
+    }
+    return null;
+  }, [sinceLastReview, selectedPatchsetPair]);
+
+  const {
+    result: rangeResult,
+    loading: rangeLoading,
+    error: rangeError,
+  } = useRangeDiff(pr?.id, rangeReq);
+
+  const showRangeDiff = rangeReq !== null;
+
+  // ── Full diff (default surface) ────────────────────────────────────
   useEffect(() => {
     if (pr === undefined) return;
     setLoading(true);
     setDiffError(null);
     request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` })
       .then((data) => {
-        const payload = data as { diff?: string };
+        const payload = data as { diff?: string; files?: DiffFile[] };
         setDiff(payload.diff ?? '');
+        setFiles(payload.files ?? []);
         setLoading(false);
       })
       .catch((err: unknown) => {
@@ -80,6 +127,51 @@ export function DiffPage() {
     appStore.setState((s) => ({ ...s, diffFileKeys: canonicalKeys }));
   };
 
+  // ── Mark-file-viewed (triggered by `v`) ────────────────────────────
+  const currentFile = files[selectedFileIndex];
+  const markInFlight = useRef(false);
+
+  const doMarkViewed = useCallback(() => {
+    if (pr === undefined || currentFile === undefined) return;
+    if (markInFlight.current) return;
+    markInFlight.current = true;
+    const { path, content_hash } = currentFile;
+    void markViewed(pr.id, path, content_hash)
+      .then((ack) => {
+        if (ack?.ok) {
+          setFiles((prev) =>
+            prev.map((f) => (f.path === path ? { ...f, viewed: true } : f)),
+          );
+        } else if (ack?.reason) {
+          addToast({
+            type: 'warning',
+            message: `Could not mark viewed: ${ack.reason}`,
+            dismissible: true,
+          });
+        }
+      })
+      .finally(() => {
+        markInFlight.current = false;
+      });
+  }, [pr, currentFile, markViewed]);
+
+  useEffect(() => {
+    if (confirmingAction !== 'mark-viewed') return;
+    doMarkViewed();
+    appStore.setState((s) => ({ ...s, confirmingAction: null }));
+  }, [confirmingAction, doMarkViewed]);
+
+  // Clear range-diff intent when leaving the diff view.
+  useEffect(() => {
+    return () => {
+      appStore.setState((s) =>
+        s.confirmingAction === 'since-last-review'
+          ? { ...s, confirmingAction: null }
+          : s,
+      );
+    };
+  }, []);
+
   const handleBack = (): void => {
     void navigate({ to: '/prs/$prId', params: { prId } });
   };
@@ -91,6 +183,8 @@ export function DiffPage() {
       </div>
     );
   }
+
+  const viewedCount = files.filter((f) => f.viewed).length;
 
   return (
     <main className="flex-1 flex flex-col overflow-hidden bg-surface text-on-surface">
@@ -114,17 +208,26 @@ export function DiffPage() {
                 <span className="text-outline-variant"> → </span>
                 {pr.base_branch}
               </span>
+              {showRangeDiff && (
+                <span className="font-mono text-[10px] uppercase tracking-widest text-primary border border-primary/40 px-2 py-0.5">
+                  {sinceLastReview
+                    ? 'Since last review'
+                    : `P${selectedPatchsetPair?.[0]} → P${selectedPatchsetPair?.[1]}`}
+                </span>
+              )}
             </>
           )}
         </div>
         <div className="flex items-center gap-3">
-          <input
-            type="text"
-            value={findQuery}
-            onChange={(e) => setFindQuery(e.target.value)}
-            placeholder="Find in diff…"
-            className="font-mono text-[11px] px-3 py-1 w-64 bg-surface border border-outline-variant/40 placeholder:text-outline-variant"
-          />
+          {!showRangeDiff && (
+            <input
+              type="text"
+              value={findQuery}
+              onChange={(e) => setFindQuery(e.target.value)}
+              placeholder="Find in diff…"
+              className="font-mono text-[11px] px-3 py-1 w-64 bg-surface border border-outline-variant/40 placeholder:text-outline-variant"
+            />
+          )}
           <span className="font-mono text-[10px] uppercase tracking-widest text-outline">
             ESC to exit
           </span>
@@ -133,14 +236,20 @@ export function DiffPage() {
 
       {/* Body */}
       <div className="flex-1 min-h-0">
-        {loading ? (
-          <div className="w-full h-full flex items-center justify-center text-on-surface-variant font-mono uppercase tracking-widest text-xs">
-            Loading diff…
-          </div>
+        {showRangeDiff ? (
+          rangeLoading ? (
+            <LoadingState label="Loading range diff…" />
+          ) : rangeError !== null ? (
+            <ErrorState message={`Failed to load range diff: ${rangeError}`} />
+          ) : rangeResult !== null ? (
+            <RangeDiffView result={rangeResult} />
+          ) : (
+            <LoadingState label="Loading range diff…" />
+          )
+        ) : loading ? (
+          <LoadingState label="Loading diff…" />
         ) : diffError !== null ? (
-          <div className="w-full h-full flex items-center justify-center text-error text-sm">
-            Failed to load diff: {diffError}
-          </div>
+          <ErrorState message={`Failed to load diff: ${diffError}`} />
         ) : (
           <PierreDiffView
             diff={diff}
@@ -152,17 +261,47 @@ export function DiffPage() {
         )}
       </div>
 
-      {/* Status bar (LOC / encoding) */}
+      {/* Status bar (LOC / encoding / viewed) */}
       <div className="shrink-0 h-6 px-4 flex items-center justify-between border-t border-outline-variant/30 bg-surface-container-low">
         <div className="font-mono text-[10px] uppercase tracking-widest text-outline">
-          {diff.split('\n').length} lines
+          {showRangeDiff && rangeResult !== null
+            ? `${rangeResult.raw.split('\n').length} lines`
+            : `${diff.split('\n').length} lines`}
+          {currentFile !== undefined && (
+            <span
+              className={`ml-4 ${currentFile.viewed ? 'text-primary' : 'text-outline'}`}
+            >
+              {currentFile.viewed ? '✓ viewed' : 'press v to mark viewed'}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-6 font-mono text-[10px] uppercase tracking-widest text-outline">
+          {files.length > 0 && (
+            <span>
+              {viewedCount}/{files.length} viewed
+            </span>
+          )}
           <span>UTF-8</span>
           <span>LF</span>
           <span>DIFF</span>
         </div>
       </div>
     </main>
+  );
+}
+
+function LoadingState({ label }: { label: string }): React.ReactElement {
+  return (
+    <div className="w-full h-full flex items-center justify-center text-on-surface-variant font-mono uppercase tracking-widest text-xs">
+      {label}
+    </div>
+  );
+}
+
+function ErrorState({ message }: { message: string }): React.ReactElement {
+  return (
+    <div className="w-full h-full flex items-center justify-center text-error text-sm">
+      {message}
+    </div>
   );
 }

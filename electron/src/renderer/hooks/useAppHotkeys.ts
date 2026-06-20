@@ -1,3 +1,4 @@
+import type { HotkeySequence, RegisterableHotkey } from '@tanstack/hotkeys';
 import {
   type UseHotkeyDefinition,
   type UseHotkeySequenceDefinition,
@@ -10,10 +11,10 @@ import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import {
+  type KeyActionContext,
   getEffectiveBindings,
   isActive,
   isSequenceBinding,
-  type KeyActionContext,
   routeBaseFromPath,
 } from '../utils/keybindings';
 import { useStore } from './useStore';
@@ -70,9 +71,7 @@ export function useAppHotkeys(): void {
       bindings
         .filter((b) => !isSequenceBinding(b))
         .map((binding) => ({
-          hotkey: binding.keys as unknown as Parameters<
-            typeof useHotkeys
-          >[0][0]['hotkey'],
+          hotkey: binding.keys as RegisterableHotkey,
           callback: () => binding.action(makeCtx()),
           options: {
             enabled: isActive(binding, { routeBase, activeOverlay }),
@@ -85,9 +84,7 @@ export function useAppHotkeys(): void {
   const sequenceDefs = useMemo<UseHotkeySequenceDefinition[]>(
     () =>
       bindings.filter(isSequenceBinding).map((binding) => ({
-        sequence: [...binding.keys] as unknown as Parameters<
-          typeof useHotkeySequences
-        >[0][0]['sequence'],
+        sequence: [...binding.keys] as HotkeySequence,
         callback: () => binding.action(makeCtx()),
         options: {
           enabled: isActive(binding, { routeBase, activeOverlay }),

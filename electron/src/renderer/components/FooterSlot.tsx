@@ -85,11 +85,15 @@ function FooterSlotImpl({ id, children }: { id: SlotId } & SlotProps): null {
 }
 
 /** Mount anywhere in a page to populate the footer's left region. */
-export function FooterLeftSlot({ children }: SlotProps): null {
+export function FooterLeftSlot({
+  children,
+}: SlotProps): React.ReactElement | null {
   return <FooterSlotImpl id="left">{children}</FooterSlotImpl>;
 }
 
 /** Mount anywhere in a page to populate the footer's center region. */
-export function FooterCenterSlot({ children }: SlotProps): null {
+export function FooterCenterSlot({
+  children,
+}: SlotProps): React.ReactElement | null {
   return <FooterSlotImpl id="center">{children}</FooterSlotImpl>;
 }

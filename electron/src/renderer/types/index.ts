@@ -53,6 +53,61 @@ export interface File {
 }
 
 /**
+ * A single changed file as returned in a `DIFF_READY` payload.
+ *
+ * `content_hash` is computed by the Go engine (SHA-256 of the file's unified
+ * diff) and `viewed` reflects the engine's stored viewed state for the current
+ * user. The UI never derives these itself — it echoes `content_hash` back
+ * unchanged when marking a file viewed.
+ */
+export interface DiffFile {
+  path: string;
+  additions: number;
+  deletions: number;
+  content_hash: string;
+  viewed: boolean;
+}
+
+/**
+ * An observed patchset snapshot — one row of the `patchsets` table, surfaced
+ * via `GET_PATCHSETS` / `PATCHSETS_READY`. `number` is 1-based (P1, P2, …).
+ */
+export interface Patchset {
+  pr_id: string;
+  number: number;
+  head_sha: string;
+  base_sha: string;
+  pushed_at: string; // ISO 8601
+}
+
+/**
+ * Result of a `REQUEST_RANGE_DIFF` → `RANGE_DIFF_READY` round-trip.
+ *
+ * `raw` is the diff text to render. When `degraded` is true the engine fell
+ * back from `git range-diff`; `fallback_reason` explains why.
+ */
+export interface RangeDiffResult {
+  pr_id: string;
+  from_patchset: number;
+  to_patchset: number;
+  from_sha: string;
+  to_sha: string;
+  raw: string;
+  degraded: boolean;
+  fallback_reason: string;
+}
+
+/**
+ * Acknowledgement of a `MARK_FILE_VIEWED` request.
+ */
+export interface FileViewedAck {
+  pr_id: string;
+  file_path: string;
+  ok: boolean;
+  reason?: string;
+}
+
+/**
  * CI check status.
  */
 export interface CICheck {

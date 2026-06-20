@@ -62,6 +62,11 @@ export interface UIState {
    * to navigate the ?file search param without needing a hook context.
    */
   diffFileKeys: string[];
+  /**
+   * Patchset pair selected in PatchsetTimeline for range diff.
+   * [fromPatchsetNumber, toPatchsetNumber] — null when no pair is selected.
+   */
+  selectedPatchsetPair: [number, number] | null;
 }
 
 export const initialUIState: UIState = {
@@ -92,6 +97,7 @@ export const initialUIState: UIState = {
   repoFilter: null,
   visiblePRIds: [],
   diffFileKeys: [],
+  selectedPatchsetPair: null,
 };
 
 export function createUIStore(): Store<UIState> {
