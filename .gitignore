@@ -43,3 +43,6 @@ electron/src/renderer/.vite/
 
 # Worktrees
 .worktrees/
+
+# Deepwork local planning state
+.slim/deepwork/

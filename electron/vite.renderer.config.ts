@@ -6,6 +6,7 @@ import { version } from './package.json';
 
 export default defineConfig({
   root: resolve(__dirname, 'src/renderer'),
+  base: './',
   plugins: [react(), tailwindcss()],
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(version),
