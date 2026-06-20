@@ -80,3 +80,45 @@ func TestActionResultFailure(t *testing.T) {
 		t.Errorf("expected error message, got %s", result.Error)
 	}
 }
+
+func TestResolveThreadCommandValidation(t *testing.T) {
+	cases := []struct {
+		name    string
+		req     ActionRequest
+		wantErr bool
+	}{
+		{
+			name:    "valid resolve",
+			req:     ActionRequest{PRID: "pr1", Action: ResolveThreadCommand, Body: "PRRT_abc"},
+			wantErr: false,
+		},
+		{
+			name:    "missing thread id (body)",
+			req:     ActionRequest{PRID: "pr1", Action: ResolveThreadCommand, Body: ""},
+			wantErr: true,
+		},
+		{
+			name:    "missing pr id",
+			req:     ActionRequest{PRID: "", Action: ResolveThreadCommand, Body: "PRRT_abc"},
+			wantErr: true,
+		},
+		{
+			name:    "valid unresolve",
+			req:     ActionRequest{PRID: "pr1", Action: UnresolveThreadCommand, Body: "PRRT_abc"},
+			wantErr: false,
+		},
+		{
+			name:    "unresolve missing body",
+			req:     ActionRequest{PRID: "pr1", Action: UnresolveThreadCommand, Body: ""},
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.req.Validate()
+			if (err != nil) != tc.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}

@@ -170,3 +170,71 @@ func TestPostCommentHandlerMissingBody(t *testing.T) {
 		t.Error("expected failure for missing body")
 	}
 }
+
+func TestResolveThreadHandler_Success(t *testing.T) {
+	prov := mock.NewMockProvider()
+	h := NewResolveThreadHandler(prov)
+	result, err := h.Handle(context.Background(), &ActionRequest{
+		PRID: "pr1", Action: ResolveThreadCommand, Body: "PRRT_abc123",
+	})
+	if err != nil { t.Fatalf("unexpected error: %v", err) }
+	if !result.Success { t.Errorf("expected success, got: %s", result.Error) }
+	if len(prov.ResolvedCalls) != 1 || prov.ResolvedCalls[0] != "PRRT_abc123" {
+		t.Errorf("ResolveThread not called correctly: %v", prov.ResolvedCalls)
+	}
+}
+
+func TestUnresolveThreadHandler_Success(t *testing.T) {
+	prov := mock.NewMockProvider()
+	h := NewUnresolveThreadHandler(prov)
+	result, err := h.Handle(context.Background(), &ActionRequest{
+		PRID: "pr1", Action: UnresolveThreadCommand, Body: "PRRT_xyz",
+	})
+	if err != nil { t.Fatalf("unexpected error: %v", err) }
+	if !result.Success { t.Errorf("expected success, got: %s", result.Error) }
+	if len(prov.UnresolvedCalls) != 1 || prov.UnresolvedCalls[0] != "PRRT_xyz" {
+		t.Errorf("UnresolveThread not called correctly: %v", prov.UnresolvedCalls)
+	}
+}
+
+func TestResolveThreadHandler_NoCapability_PermanentError(t *testing.T) {
+	type onlyProvider struct{ provider.Provider }
+	prov := mock.NewMockProvider()
+	h := NewResolveThreadHandler(onlyProvider{prov})
+	result, err := h.Handle(context.Background(), &ActionRequest{
+		PRID: "pr1", Action: ResolveThreadCommand, Body: "PRRT_x",
+	})
+	if err != nil { t.Fatalf("unexpected error: %v", err) }
+	if result.Success { t.Error("expected failure: provider lacks ThreadResolver") }
+	if result.IsRecoverable() { t.Error("no-capability must be permanent (not recoverable)") }
+}
+
+func TestResolveThreadHandler_NotFound_PermanentError(t *testing.T) {
+	prov := mock.NewMockProvider()
+	prov.SetResolveError(errors.New("could not resolve to a node: 404 not found"))
+	h := NewResolveThreadHandler(prov)
+	result, err := h.Handle(context.Background(), &ActionRequest{
+		PRID: "pr1", Action: ResolveThreadCommand, Body: "MISSING",
+	})
+	if err != nil { t.Fatalf("unexpected error: %v", err) }
+	if result.Success { t.Error("expected failure") }
+	if result.IsRecoverable() { t.Error("not-found must not be recoverable") }
+}
+
+func TestIsPermanentThreadError(t *testing.T) {
+	cases := []struct{ msg string; perm bool }{
+		{"404 not found", true},
+		{"could not resolve to a node", true},
+		{"not resolve", true},
+		{"500 internal server error", false},
+		{"timeout", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		var err error
+		if tc.msg != "" { err = errors.New(tc.msg) }
+		if got := isPermanentThreadError(err); got != tc.perm {
+			t.Errorf("isPermanentThreadError(%q) = %v, want %v", tc.msg, got, tc.perm)
+		}
+	}
+}

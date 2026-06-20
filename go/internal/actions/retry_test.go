@@ -164,3 +164,73 @@ func TestZeroJitterNoDrift(t *testing.T) {
 		t.Errorf("expected deterministic delay without jitter: %v vs %v", d1, d2)
 	}
 }
+
+// ── Liveness / context-cancellation guards ────────────────────────────────
+
+// TestRetryWithBackoff_ContextCancelledDuringFn verifies that when fn() returns
+// success but the context is already cancelled (liveness fired mid-call),
+// RetryWithBackoff does NOT accept that as a success and instead returns
+// a failure result with the cancellation error.
+func TestRetryWithBackoff_ContextCancelledDuringFn(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	backoff := NewExponentialBackoff(1*time.Millisecond, 10*time.Millisecond, 2.0)
+
+	result := RetryWithBackoff(ctx, backoff, 3, func() (*ActionResult, error) {
+		// Cancel the context to simulate provider returning success after liveness
+		// fired during the network call.
+		cancel()
+		return &ActionResult{
+			PRID:    "pr-1",
+			Action:  ApproveCommand,
+			Success: true,
+		}, nil
+	})
+
+	if result.Success {
+		t.Error("RetryWithBackoff must not accept success when context is cancelled during fn()")
+	}
+	if result.Error == "" {
+		t.Error("expected non-empty error on cancelled-during-fn result")
+	}
+}
+
+// TestRetryWithBackoff_ContextAlreadyCancelledBeforeFn verifies the existing
+// pre-fn cancellation check still works (regression guard).
+func TestRetryWithBackoff_ContextAlreadyCancelledBeforeFn(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before any attempts
+	backoff := NewExponentialBackoff(1*time.Millisecond, 10*time.Millisecond, 2.0)
+
+	called := 0
+	result := RetryWithBackoff(ctx, backoff, 3, func() (*ActionResult, error) {
+		called++
+		return &ActionResult{Success: true}, nil
+	})
+
+	if result.Success {
+		t.Error("must not succeed when context cancelled before fn")
+	}
+	if called > 1 {
+		t.Errorf("fn should be called at most once after pre-cancel, called %d times", called)
+	}
+}
+
+// TestRetryWithBackoff_ContextCancelledDuringFn_SentinelPrefix verifies that
+// the cancellation-after-success error carries ErrAmbiguousRemoteSuccess prefix
+// so replay can detect it and mark the queue row terminal.
+func TestRetryWithBackoff_ContextCancelledDuringFn_SentinelPrefix(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	backoff := NewExponentialBackoff(1*time.Millisecond, 10*time.Millisecond, 2.0)
+
+	result := RetryWithBackoff(ctx, backoff, 3, func() (*ActionResult, error) {
+		cancel() // cancel mid-call, then return success
+		return &ActionResult{Success: true}, nil
+	})
+
+	if result.Success {
+		t.Error("must not be success when context cancelled during fn")
+	}
+	if !result.IsAmbiguousRemoteSuccess() {
+		t.Errorf("error must carry ErrAmbiguousRemoteSuccess prefix; got: %q", result.Error)
+	}
+}
