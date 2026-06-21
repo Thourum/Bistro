@@ -377,8 +377,8 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 		INSERT INTO comments (
 			id, pr_id, author, body, created_at, updated_at, line_number, file_path,
 			kind, commit_sha, original_sha, side, position, original_position, in_reply_to, thread_id,
-			patchset_number
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			patchset_number, diff_hunk
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			body              = excluded.body,
 			updated_at        = excluded.updated_at,
@@ -388,7 +388,8 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 			position          = excluded.position,
 			original_position = excluded.original_position,
 			thread_id         = excluded.thread_id,
-			patchset_number   = COALESCE(excluded.patchset_number, comments.patchset_number)
+			patchset_number   = COALESCE(excluded.patchset_number, comments.patchset_number),
+			diff_hunk         = excluded.diff_hunk
 	`
 
 	_, err := tx.ExecContext(ctx, query,
@@ -409,6 +410,7 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 		nullableString(comment.InReplyTo),
 		nullableString(comment.ThreadID),
 		patchsetNumVal,
+		nullableString(comment.DiffHunk),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write comment %s: %w", comment.ID, err)

@@ -225,7 +225,9 @@ export function PRDetailPage() {
 
       <StatusRail pr={pr} ciChecks={ciChecks} />
 
-      {activeOverlay === 'threads' && <UnresolvedThreadsView prId={pr.id} />}
+      {activeOverlay === 'threads' && (
+        <UnresolvedThreadsView prId={pr.id} comments={comments} />
+      )}
     </main>
   );
 }

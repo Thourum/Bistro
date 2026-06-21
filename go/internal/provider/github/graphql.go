@@ -11,15 +11,14 @@ import (
 	"github.com/itterno/bistro/internal/provider"
 )
 
-// NewGraphQLClient builds a githubv4 client authenticated with the given token.
-// Reuses the same oauth2.StaticTokenSource pattern as NewClient (client.go:33-35).
-// When token is empty an unauthenticated client is returned (for testing).
-func NewGraphQLClient(token string) *githubv4.Client {
-	var httpClient *http.Client
-	if token != "" {
+// NewGraphQLClient builds a githubv4 client. When httpClient is nil, it falls
+// back to a small standalone client for tests and direct construction.
+func NewGraphQLClient(token string, httpClient *http.Client) *githubv4.Client {
+	if httpClient == nil && token != "" {
 		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 		httpClient = oauth2.NewClient(context.Background(), ts)
-	} else {
+	}
+	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 	return githubv4.NewClient(httpClient)

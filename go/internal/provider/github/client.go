@@ -48,7 +48,7 @@ func NewClient(token string) *Client {
 	return &Client{
 		token:     token,
 		gh:        github.NewClient(httpClient),
-		gqlClient: NewGraphQLClient(token),
+		gqlClient: NewGraphQLClient(token, httpClient),
 	}
 }
 

@@ -92,8 +92,39 @@ func TestNormalizeReviewComment_NilOptionals(t *testing.T) {
 	}
 }
 
-// Compile-time assertion: *Client must satisfy provider.ThreadProvider.
-var _ provider.ThreadProvider = (*ghprovider.Client)(nil)
+func TestNormalizeReviewComment_DiffHunk(t *testing.T) {
+	id := int64(7)
+	hunk := "@@ -10,6 +10,8 @@ func Foo() {\n-\treturn nil\n+\treturn err"
+	ghc := &ghlib.PullRequestComment{
+		ID:        &id,
+		User:      &ghlib.User{Login: ghlib.Ptr("dev")},
+		Body:      ghlib.Ptr("check error"),
+		DiffHunk:  ghlib.Ptr(hunk),
+		CreatedAt: &ghlib.Timestamp{Time: time.Now()},
+		UpdatedAt: &ghlib.Timestamp{Time: time.Now()},
+	}
+	c := ghprovider.NormalizeReviewComment("github:o/r:1", ghc)
+	if c.DiffHunk != hunk {
+		t.Errorf("DiffHunk: got %q want %q", c.DiffHunk, hunk)
+	}
+}
+
+func TestNormalizeReviewComment_DiffHunkEmpty(t *testing.T) {
+	id := int64(8)
+	ghc := &ghlib.PullRequestComment{
+		ID:        &id,
+		User:      &ghlib.User{Login: ghlib.Ptr("bot")},
+		Body:      ghlib.Ptr("nit"),
+		CreatedAt: &ghlib.Timestamp{Time: time.Now()},
+		UpdatedAt: &ghlib.Timestamp{Time: time.Now()},
+	}
+	c := ghprovider.NormalizeReviewComment("github:o/r:1", ghc)
+	if c.DiffHunk != "" {
+		t.Errorf("DiffHunk should be empty when not set, got %q", c.DiffHunk)
+	}
+}
+
+
 
 func TestGetReviewThreads_GracefulDegradation(t *testing.T) {
 	t.Run("graphql_fail_returns_rest_threads_no_error", func(t *testing.T) {

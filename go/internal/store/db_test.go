@@ -436,3 +436,33 @@ func TestMigration016_UpgradesOldPatchsetsHeadOnlyIdentity(t *testing.T) {
 		t.Error("expected upgraded UNIQUE violation on (pr_id, base_sha, head_sha)")
 	}
 }
+
+func TestMigration020_AddsDiffHunkColumn(t *testing.T) {
+	db := newTestDB(t)
+
+	cols := tableColumns(t, db, "comments")
+	if !cols["diff_hunk"] {
+		t.Error("comments missing column \"diff_hunk\"")
+	}
+
+	// Verify NULL default for existing rows (diff_hunk not set).
+	mustInsertPR(t, db, "p020")
+	mustExec(t, db, `INSERT INTO comments (id, pr_id, author, body, created_at, updated_at, kind)
+		VALUES ('c020','p020','alice','hello','2026-01-01','2026-01-01','issue')`)
+	var hunk *string
+	if err := db.QueryRow(`SELECT diff_hunk FROM comments WHERE id='c020'`).Scan(&hunk); err != nil {
+		t.Fatalf("query diff_hunk: %v", err)
+	}
+	if hunk != nil {
+		t.Errorf("diff_hunk default: got %q want NULL", *hunk)
+	}
+
+	// Verify it can be set for review comments.
+	mustExec(t, db, `UPDATE comments SET diff_hunk = '@@ -1,3 +1,4 @@' WHERE id='c020'`)
+	if err := db.QueryRow(`SELECT diff_hunk FROM comments WHERE id='c020'`).Scan(&hunk); err != nil {
+		t.Fatalf("query diff_hunk after update: %v", err)
+	}
+	if hunk == nil || *hunk != "@@ -1,3 +1,4 @@" {
+		t.Errorf("diff_hunk after update: got %v want '@@ -1,3 +1,4 @@'", hunk)
+	}
+}

@@ -44,6 +44,8 @@ type commentRow struct {
 	InReplyTo        *string `json:"in_reply_to,omitempty"`
 	ThreadID         *string `json:"thread_id,omitempty"`
 	PatchsetNumber   *int    `json:"patchset_number,omitempty"`
+	// migration 020: diff hunk for review comments
+	DiffHunk *string `json:"diff_hunk,omitempty"`
 	// migration 015+018+019 anchor fields
 	AnchoredLine                *int    `json:"anchored_line,omitempty"`
 	AnchorHeadSHA               *string `json:"anchor_head_sha,omitempty"`
@@ -78,6 +80,7 @@ func NewRequestCommentsHandler(db prLister, log *slog.Logger) ws.MessageHandler 
 			        c.line_number, c.file_path,
 			        c.kind, c.commit_sha, c.original_sha, c.side, c.position,
 			        c.original_position, c.in_reply_to, c.thread_id, c.patchset_number,
+			        c.diff_hunk,
 			        c.anchored_line, c.anchor_head_sha, c.outdated, c.outdated_near_line,
 			        c.anchor_patchset_number,
 			        c.anchor_current_patchset_number,
@@ -118,6 +121,7 @@ func NewRequestCommentsHandler(db prLister, log *slog.Logger) ws.MessageHandler 
 				&c.Kind, &c.CommitSHA, &c.OriginalSHA, &c.Side,
 				&c.Position, &c.OriginalPosition,
 				&c.InReplyTo, &c.ThreadID, &c.PatchsetNumber,
+				&c.DiffHunk,
 				&c.AnchoredLine, &c.AnchorHeadSHA, &c.Outdated, &c.OutdatedNearLine,
 				&c.AnchorPatchsetNumber,
 				&c.AnchorCurrentPatchsetNumber,

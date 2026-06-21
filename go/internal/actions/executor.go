@@ -354,7 +354,11 @@ func (ae *ActionExecutor) recordLastReviewedSHA(ctx context.Context, prID string
 		return
 	}
 
-	login, ok, _ := ae.reviewLogin.GetCurrentUser(ctx, "github")
+	login, ok, err := ae.reviewLogin.GetCurrentUser(ctx, "github")
+	if err != nil {
+		ae.log.Warn("recordLastReviewedSHA: could not fetch current user", "pr_id", prID, "error", err)
+		return
+	}
 	if !ok || login == "" {
 		ae.log.Debug("recordLastReviewedSHA: no current user, skipping", "pr_id", prID)
 		return

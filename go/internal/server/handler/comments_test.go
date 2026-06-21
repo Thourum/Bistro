@@ -59,7 +59,8 @@ func setupCommentsTestDB(t *testing.T) *sql.DB {
 		outdated              INTEGER NOT NULL DEFAULT 0,
 		outdated_near_line    INTEGER,
 		anchor_patchset_number INTEGER,
-		anchor_current_patchset_number INTEGER
+		anchor_current_patchset_number INTEGER,
+		diff_hunk TEXT
 	)`)
 	if err != nil {
 		t.Fatalf("create comments table: %v", err)

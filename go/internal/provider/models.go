@@ -54,6 +54,7 @@ type Comment struct {
 	OriginalPosition *int
 	InReplyTo        string // ID of parent comment, or "" for root
 	ThreadID         string // provider-opaque thread ID
+	DiffHunk         string // raw diff hunk from GitHub (review comments only; "" for issue comments)
 	// PatchsetNumber is the patchset this comment was made on.
 	// nil for freshly-fetched comments (not yet persisted); populated by the
 	// anchor resolver from the DB so that original-position geometry uses exact

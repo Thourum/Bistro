@@ -9,6 +9,7 @@ import {
 import { useReviewThreads } from '../hooks/useReviewThreads';
 import { useThreadActions } from '../hooks/useThreadActions';
 import {
+  type Comment,
   type ReviewThread,
   type ThreadLifecycle,
   threadLifecycle,
@@ -16,6 +17,12 @@ import {
 
 interface Props {
   prId: string;
+  /**
+   * Comments already fetched by the parent (PRDetailPage's `REQUEST_COMMENTS`).
+   * Joined to threads on `thread_id` so each thread's discussion renders inline.
+   * No extra fetch — these are the same comments the detail page holds.
+   */
+  comments?: Comment[];
   /**
    * Optional override for tests — lets a test assert the WS payload without a
    * live socket. In the app this is undefined and the component uses
@@ -82,6 +89,7 @@ function sortThreads(threads: ReviewThread[]): ReviewThread[] {
  */
 export function UnresolvedThreadsView({
   prId,
+  comments,
   sendAction,
 }: Props): React.ReactElement {
   const { threads, loading, error, refetch } = useReviewThreads(prId);
@@ -89,6 +97,19 @@ export function UnresolvedThreadsView({
     useThreadActions(prId);
 
   const sorted = useMemo(() => sortThreads(threads), [threads]);
+
+  // Group the already-fetched comments by their thread_id once, so each row can
+  // pull its own discussion without re-scanning the full list.
+  const commentsByThread = useMemo(() => {
+    const map = new Map<string, Comment[]>();
+    for (const c of comments ?? []) {
+      if (c.thread_id === undefined) continue;
+      const bucket = map.get(c.thread_id);
+      if (bucket === undefined) map.set(c.thread_id, [c]);
+      else bucket.push(c);
+    }
+    return map;
+  }, [comments]);
 
   const [focusedIndex, setFocusedIndex] = useState(0);
   const rowRefs = useRef<Array<HTMLLIElement | null>>([]);
@@ -198,6 +219,7 @@ export function UnresolvedThreadsView({
                   rowRefs.current[i] = el;
                 }}
                 thread={thread}
+                comments={commentsByThread.get(thread.id) ?? []}
                 focused={i === focusedIndex}
                 pending={isThreadPending(thread.id)}
                 onFocusRow={() => setFocusedIndex(i)}
@@ -214,6 +236,7 @@ export function UnresolvedThreadsView({
 
 interface ThreadRowProps {
   thread: ReviewThread;
+  comments: Comment[];
   focused: boolean;
   pending: boolean;
   onFocusRow: () => void;
@@ -222,7 +245,7 @@ interface ThreadRowProps {
 }
 
 const ThreadRow = forwardRef<HTMLLIElement, ThreadRowProps>(function ThreadRow(
-  { thread, focused, pending, onFocusRow, onResolve, onUnresolve },
+  { thread, comments, focused, pending, onFocusRow, onResolve, onUnresolve },
   ref,
 ): React.ReactElement {
   const lifecycle = threadLifecycle(thread);
@@ -235,7 +258,7 @@ const ThreadRow = forwardRef<HTMLLIElement, ThreadRowProps>(function ThreadRow(
       tabIndex={focused ? 0 : -1}
       onFocus={onFocusRow}
       aria-label={`Thread on ${thread.file_path} line ${thread.line}, ${LIFECYCLE_LABEL[lifecycle]}`}
-      className={`group relative flex items-center gap-5 px-8 py-4 outline-none transition-colors ${
+      className={`group relative flex flex-col gap-3 px-8 py-4 outline-none transition-colors ${
         focused
           ? 'bg-surface-container-low'
           : 'hover:bg-surface-container-lowest'
@@ -249,37 +272,85 @@ const ThreadRow = forwardRef<HTMLLIElement, ThreadRowProps>(function ThreadRow(
         }`}
       />
 
-      <LifecycleBadge lifecycle={lifecycle} />
+      {/* Row header: lifecycle + file:line + controls */}
+      <div className="flex items-center gap-5">
+        <LifecycleBadge lifecycle={lifecycle} />
 
-      <div className="min-w-0 flex-1">
-        <div className="font-mono text-xs text-on-surface truncate">
-          {thread.file_path}
-          <span className="text-outline-variant">:{thread.line}</span>
+        <div className="min-w-0 flex-1">
+          <div className="font-mono text-xs text-on-surface truncate">
+            {thread.file_path}
+            <span className="text-outline-variant">:{thread.line}</span>
+          </div>
+          {!thread.state_known && (
+            <p className="mt-1 font-mono text-[10px] text-outline-variant">
+              State unconfirmed — resolve/unresolve unavailable until the next
+              sync.
+            </p>
+          )}
         </div>
-        {!thread.state_known && (
-          <p className="mt-1 font-mono text-[10px] text-outline-variant">
-            State unconfirmed — resolve/unresolve unavailable until the next
-            sync.
-          </p>
-        )}
+
+        <div className="shrink-0 flex items-center gap-2">
+          {pending ? (
+            <span className="font-mono text-[10px] uppercase tracking-widest text-outline">
+              Working…
+            </span>
+          ) : canResolve ? (
+            <RowButton onClick={onResolve}>Resolve</RowButton>
+          ) : canUnresolve ? (
+            <RowButton onClick={onUnresolve} variant="muted">
+              Unresolve
+            </RowButton>
+          ) : null}
+        </div>
       </div>
 
-      <div className="shrink-0 flex items-center gap-2">
-        {pending ? (
-          <span className="font-mono text-[10px] uppercase tracking-widest text-outline">
-            Working…
-          </span>
-        ) : canResolve ? (
-          <RowButton onClick={onResolve}>Resolve</RowButton>
-        ) : canUnresolve ? (
-          <RowButton onClick={onUnresolve} variant="muted">
-            Unresolve
-          </RowButton>
-        ) : null}
-      </div>
+      {/* Discussion: the thread's comments, indented under the file row. */}
+      {comments.length > 0 ? (
+        <ol className="ml-7 pl-4 border-l border-outline-variant/30 space-y-3">
+          {comments.map((c) => (
+            <CommentBlock key={c.id} comment={c} />
+          ))}
+        </ol>
+      ) : (
+        <p className="ml-7 pl-4 font-mono text-[10px] text-outline-variant">
+          No comment text available for this thread.
+        </p>
+      )}
     </li>
   );
 });
+
+/**
+ * One comment in a thread: author + relative metadata on top, body below.
+ * Body preserves author line breaks (`whitespace-pre-wrap`) but is otherwise
+ * plain text — matches the sparse terminal aesthetic of RecentComments.
+ * When a diff_hunk is present it is rendered above the comment body in a
+ * compact <pre> block so the reviewer sees the code context inline.
+ */
+function CommentBlock({ comment }: { comment: Comment }): React.ReactElement {
+  return (
+    <li className="space-y-1 list-none">
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface">
+          @{comment.author}
+        </span>
+        {comment.line !== undefined && (
+          <span className="font-mono text-[10px] text-outline-variant">
+            line {comment.line}
+          </span>
+        )}
+      </div>
+      {comment.diff_hunk !== undefined && comment.diff_hunk !== '' && (
+        <pre className="font-mono text-[10px] leading-snug text-outline bg-surface-container-lowest border border-outline-variant/20 px-3 py-2 overflow-x-auto whitespace-pre">
+          {comment.diff_hunk}
+        </pre>
+      )}
+      <p className="font-mono text-xs leading-relaxed text-on-surface-variant whitespace-pre-wrap break-words">
+        {comment.body}
+      </p>
+    </li>
+  );
+}
 
 function LifecycleBadge({
   lifecycle,

@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	ghlib "github.com/google/go-github/v84/github"
-	"github.com/shurcooL/githubv4"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/shurcooL/githubv4"
 )
 
 // NormalizeReviewComment converts a GitHub PullRequestComment (inline review
@@ -31,6 +31,7 @@ func NormalizeReviewComment(prID string, ghc *ghlib.PullRequestComment) *provide
 		Side:        ghc.GetSide(),
 		FilePath:    ghc.GetPath(),
 		LineNo:      ghc.GetLine(),
+		DiffHunk:    ghc.GetDiffHunk(),
 		CreatedAt:   ghc.GetCreatedAt().Time,
 		UpdatedAt:   ghc.GetUpdatedAt().Time,
 	}
@@ -81,7 +82,7 @@ func (c *Client) listReviewComments(
 // the canonical node ID, resolution state, and the REST database IDs of its
 // comments — which are the cross-reference key to REST PullRequestComment.ID.
 type graphqlThreadInfo struct {
-	NodeID       string  // canonical GraphQL thread node ID (formatted from githubv4.ID)
+	NodeID       string // canonical GraphQL thread node ID (formatted from githubv4.ID)
 	IsResolved   bool
 	IsOutdated   bool
 	CommentDBIDs []int64 // REST numeric IDs of comments in this thread
@@ -95,8 +96,6 @@ type graphqlThreadInfo struct {
 // Returns nil, nil on any GraphQL error — callers should fall back to the
 // REST-only provisional grouping with StateKnown=false.
 func (c *Client) fetchGraphQLThreads(ctx context.Context, owner, repo string, number int) ([]graphqlThreadInfo, error) {
-	gqlClient := NewGraphQLClient(c.token)
-
 	var q struct {
 		Repository struct {
 			PullRequest struct {
@@ -122,7 +121,7 @@ func (c *Client) fetchGraphQLThreads(ctx context.Context, owner, repo string, nu
 		"number": githubv4.Int(number),
 	}
 
-	if err := gqlClient.Query(ctx, &q, vars); err != nil {
+	if err := c.gqlClient.Query(ctx, &q, vars); err != nil {
 		return nil, err
 	}
 

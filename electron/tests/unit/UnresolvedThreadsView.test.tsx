@@ -122,3 +122,98 @@ describe('UnresolvedThreadsView', () => {
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
   });
 });
+
+function comment(over: Record<string, unknown> = {}) {
+  return {
+    id: 'C1',
+    pr_id: 'pr1',
+    author: 'alice',
+    body: 'Please fix this nil check.',
+    created_at: '2025-01-01T00:00:00Z',
+    updated_at: '2025-01-01T00:00:00Z',
+    line: 42,
+    file: 'src/foo.ts',
+    thread_id: 'T1',
+    ...over,
+  };
+}
+
+describe('UnresolvedThreadsView — inline comments', () => {
+  it('renders the comment body and author under the matching thread', () => {
+    mockThreads.mockReturnValue(state([thread({ id: 'T1' })]));
+    render(
+      <UnresolvedThreadsView
+        prId="pr1"
+        comments={[comment({ thread_id: 'T1' })]}
+      />,
+    );
+    expect(screen.getByText('Please fix this nil check.')).toBeInTheDocument();
+    expect(screen.getByText('@alice')).toBeInTheDocument();
+  });
+
+  it('joins comments to threads by thread_id', () => {
+    mockThreads.mockReturnValue(
+      state([
+        thread({ id: 'T1' }),
+        thread({ id: 'T2', file_path: 'src/bar.ts' }),
+      ]),
+    );
+    render(
+      <UnresolvedThreadsView
+        prId="pr1"
+        comments={[
+          comment({ id: 'C1', thread_id: 'T1', body: 'belongs to T1' }),
+          comment({ id: 'C2', thread_id: 'T2', body: 'belongs to T2' }),
+        ]}
+      />,
+    );
+    expect(screen.getByText('belongs to T1')).toBeInTheDocument();
+    expect(screen.getByText('belongs to T2')).toBeInTheDocument();
+  });
+
+  it('shows a no-text fallback when a thread has no comments', () => {
+    mockThreads.mockReturnValue(state([thread({ id: 'T1' })]));
+    render(<UnresolvedThreadsView prId="pr1" comments={[]} />);
+    expect(screen.getByText(/no comment text available/i)).toBeInTheDocument();
+  });
+
+  it('ignores comments whose thread_id does not match any thread', () => {
+    mockThreads.mockReturnValue(state([thread({ id: 'T1' })]));
+    render(
+      <UnresolvedThreadsView
+        prId="pr1"
+        comments={[comment({ id: 'C9', thread_id: 'T-other', body: 'orphan' })]}
+      />,
+    );
+    expect(screen.queryByText('orphan')).not.toBeInTheDocument();
+    expect(screen.getByText(/no comment text available/i)).toBeInTheDocument();
+  });
+
+  it('renders diff_hunk in a pre block when present', () => {
+    const hunk = '@@ -10,6 +10,8 @@ func Foo() {\n-\treturn nil\n+\treturn err';
+    mockThreads.mockReturnValue(state([thread({ id: 'T1' })]));
+    render(
+      <UnresolvedThreadsView
+        prId="pr1"
+        comments={[comment({ thread_id: 'T1', diff_hunk: hunk })]}
+      />,
+    );
+    const pre = screen.getByText(
+      (_, el) => el?.tagName === 'PRE' && el.textContent === hunk,
+    );
+    expect(pre).toBeInTheDocument();
+  });
+
+  it('does not render a diff_hunk block when diff_hunk is absent', () => {
+    mockThreads.mockReturnValue(state([thread({ id: 'T1' })]));
+    render(
+      <UnresolvedThreadsView
+        prId="pr1"
+        comments={[comment({ thread_id: 'T1' })]}
+      />,
+    );
+    // No <pre> elements should exist for this comment (no diff_hunk).
+    const pres = document.querySelectorAll('pre');
+    expect(pres.length).toBe(0);
+  });
+});

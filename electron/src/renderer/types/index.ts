@@ -40,6 +40,17 @@ export interface Comment {
   line?: number;
   file?: string;
   is_reply_to?: string;
+  /**
+   * Review-thread this comment belongs to, when it is a thread reply. Already
+   * present in the `COMMENTS_READY` payload (comments.thread_id FK); the
+   * threads view joins on it to show each thread's discussion inline.
+   */
+  thread_id?: string;
+  /**
+   * Raw diff hunk from GitHub for inline review comments. Present only for
+   * kind='review'; undefined for issue comments.
+   */
+  diff_hunk?: string;
 }
 
 /**
