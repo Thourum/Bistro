@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Slice 1 shell tests:
+// Authed shell routing tests:
 // 1. mode='detail' → PRDetailPage rendered, PRListPage NOT rendered
 // 2. mode='list' → PRListPage rendered (via Outlet), PRDetailPage NOT rendered
 // 3. Sync: initial URL /prs/?filter=draft&sort=created&q=foo hydrates store
@@ -146,7 +146,7 @@ function makeTestRouter(initialUrl: string) {
     component: PrsIndexRouteComponent,
   });
 
-  // Slice 2: prDetailRoute — renders PRDetailPage via Outlet.
+  // prDetailRoute — renders PRDetailPage via Outlet.
   const prDetailRoute = createRoute({
     getParentRoute: () => prsRoute,
     path: '$prId',
@@ -179,7 +179,7 @@ function makeTestRouter(initialUrl: string) {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('AuthedRouteShell — mode gating (Slice 1)', () => {
+describe('AuthedRouteShell — route-based rendering', () => {
   beforeEach(() => {
     // Reset store to defaults before each test
     appStore.setState(() => ({ ...initialUIState, isAuthenticated: true, authChecked: true }));
@@ -190,8 +190,8 @@ describe('AuthedRouteShell — mode gating (Slice 1)', () => {
     appStore.setState(() => ({ ...initialUIState }));
   });
 
-  it('renders PRDetailPage when navigated to /prs/$prId; PRListPage NOT rendered (Slice 2)', async () => {
-    // Slice 2: detail is router-owned — navigate to /prs/$prId, mode='detail'.
+  it('renders PRDetailPage when navigated to /prs/$prId; PRListPage NOT rendered', async () => {
+    // Detail is router-owned — navigate to /prs/$prId.
     appStore.setState((s) => ({ ...s, mode: 'detail' }));
 
     const { queryByTestId } = makeTestRouter('/prs/some-pr-id');
@@ -228,7 +228,7 @@ describe('AuthedRouteShell — mode gating (Slice 1)', () => {
   });
 });
 
-describe('usePrsSearchStoreBridge — route↔store sync (Slice 1)', () => {
+describe('usePrsSearchStoreBridge — route↔store sync', () => {
   beforeEach(() => {
     appStore.setState(() => ({
       ...initialUIState,

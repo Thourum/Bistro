@@ -14,9 +14,10 @@ import type { PR } from '../types';
  *   `settings.prList.view === 'grouped'`
  * - CI status dots (green / red / yellow / neutral)
  *
- * Slice 1: `prs`, `isLoading`, `error` are provided by the parent (PRListPage),
+ * `prs`, `isLoading`, `error` are provided by the parent (PRListPage),
  * which calls `useVisiblePRs()`. The internal hook call has been removed so that
- * this component no longer has its own data source (C1 ownership principle).
+ * this component no longer has its own data source (the router is the single
+ * source of navigation truth).
  */
 
 function ciColor(pr: PR): string {
@@ -73,7 +74,7 @@ function PRRow({
   const isSelected = selectedIndex === globalIndex;
   const navigate = useNavigate();
   const open = (): void => {
-    // C2: navigate by stable pr.id — globalIndex is cursor only.
+    // Navigate by stable pr.id — globalIndex is cursor only.
     void navigate({ to: '/prs/$prId', params: { prId: pr.id } });
     appStore.setState((s) => ({
       ...s,

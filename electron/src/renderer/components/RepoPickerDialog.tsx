@@ -1,4 +1,4 @@
-// Slice 6+7 — RepoPickerDialog
+// RepoPickerDialog
 //
 // Repo-picker as a Radix Dialog, open = activeOverlay==='repoPicker'.
 // Preserves existing visuals/positioning; Radix manages focus-trap, Escape,

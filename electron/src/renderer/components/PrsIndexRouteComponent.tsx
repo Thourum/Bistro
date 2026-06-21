@@ -1,4 +1,4 @@
-// Slice 1 — PrsIndexRouteComponent
+// PrsIndexRouteComponent
 //
 // Rendered by the /prs/ index route. Bridges route search params ↔ UIState,
 // then renders PRListPage with the route-authoritative filter/sort/q values.

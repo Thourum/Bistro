@@ -10,7 +10,7 @@ beforeEach(() => {
   appStore.setState(() => ({ ...initialUIState, authChecked: false }));
 });
 
-describe('router (Slice 0 — smoke)', () => {
+describe('router smoke tests', () => {
   it('instantiates without throwing', () => {
     expect(router).toBeDefined();
   });

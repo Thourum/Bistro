@@ -165,17 +165,17 @@ describe('buildFileKeys', () => {
 });
 
 // ---------------------------------------------------------------------------
-// FIX 1 — round-trip through PierreDiffView's key authority (diffFileKey.ts)
+// Round-trip through PierreDiffView's key authority (diffFileKey.ts)
 //
 // These tests use the SAME buildFileKeys / findFileByKey functions that
-// PierreDiffView now uses (after buildCanonicalPathKeys was deleted).
+// PierreDiffView uses (after buildCanonicalPathKeys was deleted).
 // They verify that a key generated for rename / space / duplicate paths
 // resolves back to the correct file — proving one keyspace across
 // generation (PierreDiffView → store.diffFileKeys) and resolution
 // (PierreDiffView selectedFileKey effect → active file).
 // ---------------------------------------------------------------------------
 
-describe('FIX 1 — PierreDiffView key authority round-trips', () => {
+describe('PierreDiffView key authority round-trips', () => {
   it('rename: key is new path, resolves back to the renamed file', () => {
     const renamed = f('a/old-name.ts', 'b/new-name.ts');
     const files = [renamed];

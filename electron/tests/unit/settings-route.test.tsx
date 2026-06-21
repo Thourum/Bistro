@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Slice 5 — /settings route integration tests
+// /settings route integration tests
 //
 // Covers:
 //   1. /settings deep-link renders SettingsPage (not collapsed to /prs by pin effect).
@@ -150,7 +150,7 @@ const prsIndexSearchSchema = z.object({
   q: z.string().default(''),
 });
 
-function makeSlice5Router(initialUrl: string) {
+function makeSettingsRouteRouter(initialUrl: string) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -259,10 +259,10 @@ afterEach(() => {
 // 1. /settings deep-link renders SettingsPage (NOT collapsed to /prs)
 // ---------------------------------------------------------------------------
 
-describe('Slice 5 — /settings deep-link', () => {
+describe('/settings deep-link', () => {
   it('renders SettingsPage on deep-link /settings', async () => {
     
-    makeSlice5Router('/settings');
+    makeSettingsRouteRouter('/settings');
 
     await waitFor(() => {
       expect(screen.getByTestId('settings-page')).toBeInTheDocument();
@@ -273,7 +273,7 @@ describe('Slice 5 — /settings deep-link', () => {
 
   it('/settings deep-link is NOT collapsed to /prs by pin effect', async () => {
     
-    const { testRouter } = makeSlice5Router('/settings');
+    const { testRouter } = makeSettingsRouteRouter('/settings');
 
     await waitFor(() => {
       expect(testRouter.state.location.pathname).toBe('/settings');
@@ -282,12 +282,12 @@ describe('Slice 5 — /settings deep-link', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. Cold-start /settings — router renders SettingsPage (Slice 9: mode removed)
+// 2. Cold-start /settings — router renders SettingsPage (routes own state)
 // ---------------------------------------------------------------------------
 
-describe('Slice 5 — cold-start /settings renders SettingsPage', () => {
+describe('cold-start /settings renders SettingsPage', () => {
   it('navigating to /settings renders SettingsPage', async () => {
-    makeSlice5Router('/settings');
+    makeSettingsRouteRouter('/settings');
 
     await waitFor(() => {
       expect(screen.getByTestId('settings-page')).toBeInTheDocument();
@@ -299,7 +299,7 @@ describe('Slice 5 — cold-start /settings renders SettingsPage', () => {
 // 3. global.settings hotkey navigates to /settings
 // ---------------------------------------------------------------------------
 
-describe('Slice 5 — global.settings hotkey', () => {
+describe('global.settings hotkey', () => {
   it('navigates to /settings (uses router.navigate)', () => {
     byId('global.settings').action(makeTestCtx('list'));
 
@@ -320,7 +320,7 @@ describe('Slice 5 — global.settings hotkey', () => {
 // 5. Settings escape navigates to /prs
 // ---------------------------------------------------------------------------
 
-describe('Slice 5 — settings escape', () => {
+describe('settings escape', () => {
   it('Escape on settings navigates to /prs', () => {
     mockRouterState.location.pathname = '/settings';
 
@@ -333,16 +333,16 @@ describe('Slice 5 — settings escape', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6–8. Coherence tests removed — mode field deleted in Slice 9.
+// 6–8. Coherence tests removed — mode field deleted; routes own state.
 // Route ownership is 100% router-controlled; SettingsPage renders when on
-// /settings. Routing behavior tested in test #2 above and slice8 guard tests.
+// /settings. Routing behavior tested in test #2 above and auth-guards tests.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // 9. Onboarding: renders even though route is /prs (route-primary override)
 // ---------------------------------------------------------------------------
 
-// Slice 5 test #9 removed: onboarding is now a real route under RootShell
-// (Slice 8). AuthedRouteShell no longer renders OnboardingPage — it is
+// Test #9 removed: onboarding is now a real route under RootShell.
+// AuthedRouteShell no longer renders OnboardingPage — it is
 // accessed via the /onboarding route with its own guard. This is covered by
-// slice8-auth-guards.test.tsx instead.
+// auth-guards.test.tsx instead.

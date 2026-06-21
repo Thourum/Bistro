@@ -1,4 +1,4 @@
-// Slice 3 — DiffPage (C5: route-owned diff screen, FIX 3: diffFileKeys lifecycle)
+// DiffPage — route-owned diff screen with stable file identity via canonical path keys
 //
 // PR resolved by $prId from /prs/$prId/diff route param (NEVER selectedPRIndex).
 // File resolved by ?file canonical key via findFileByKey (NEVER selectedFileIndex).
@@ -31,7 +31,8 @@ const log = createLogger('DiffPage');
  * PR resolved by $prId route param; file resolved by ?file canonical key.
  */
 export function DiffPage() {
-  // C5: resolve PR by stable id from route params — NEVER by selectedPRIndex.
+  // Resolve PR by stable id from route params — NEVER by selectedPRIndex.
+  // PR identity is the stable pr.id (route param), never a list index.
   const { prId } = useParams({ strict: false }) as { prId: string };
   const { file: fileKey } = useSearch({ strict: false }) as { file: string };
   const navigate = useNavigate();
@@ -67,13 +68,13 @@ export function DiffPage() {
       });
   }, [pr, request]);
 
-  // FIX 3: clear stale diffFileKeys whenever the target PR changes.
+  // Clear stale diffFileKeys whenever the target PR changes.
   // This prevents keybindings from using keys from a previous PR's diff.
   useLayoutEffect(() => {
     appStore.setState((s) => ({ ...s, diffFileKeys: [] }));
   }, [prId]);
 
-  // FIX 3: consume onFilesResolved via useLayoutEffect to ensure diffFileKeys
+  // Consume onFilesResolved via useLayoutEffect to ensure diffFileKeys
   // commits synchronously before the next user input (mirrors visiblePRIds pattern).
   const handleFilesResolved = (canonicalKeys: string[]): void => {
     appStore.setState((s) => ({ ...s, diffFileKeys: canonicalKeys }));

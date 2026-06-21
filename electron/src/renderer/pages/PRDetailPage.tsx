@@ -10,7 +10,7 @@ import type { UIState } from '../store/ui';
 import type { CICheck, Comment, PR } from '../types';
 import { createLogger } from '../utils/logger';
 
-// Route API for reading $prId param — C2: id is the ONLY PR identity.
+// Route API for reading the stable $prId param; detail never resolves by list index.
 
 const log = createLogger('PRDetailPage');
 
@@ -42,7 +42,7 @@ function relativeTime(iso: string): string {
  * re-enabled once `@pierre/diffs` gains first-class comment gutters.
  */
 export function PRDetailPage() {
-  // C2: resolve PR by stable id from route params — NEVER by selectedPRIndex.
+  // Resolve PR by stable id from route params — NEVER by selectedPRIndex.
   const { prId } = useParams({ strict: false }) as { prId: string };
 
   const confirmingAction = useStore(

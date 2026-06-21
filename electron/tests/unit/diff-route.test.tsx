@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Slice 3 — /prs/$prId/diff route integration tests
+// /prs/$prId/diff route integration tests
 //
 // Covers:
 //   1. Diff route renders the PR matching $prId (NOT selectedPRIndex).
@@ -220,7 +220,7 @@ const diffSearchSchema = z.object({
   side: z.enum(['left', 'right']).default('right'),
 });
 
-function makeSlice3Router(initialUrl = '/prs/pr-aaa/diff') {
+function makeDiffRouteRouter(initialUrl = '/prs/pr-aaa/diff') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -340,12 +340,12 @@ afterEach(() => {
 // 1. Diff route renders PR by $prId (not selectedPRIndex)
 // ---------------------------------------------------------------------------
 
-describe('Slice 3 — DiffPage resolves PR by id', () => {
+describe('DiffPage resolves PR by id', () => {
   it('shows PR-101 header for pr-aaa even when selectedPRIndex=1 (pr-bbb)', async () => {
     // selectedPRIndex=1 points to pr-bbb (PR-102), but route is for pr-aaa (PR-101).
     appStore.setState((s) => ({ ...s, selectedPRIndex: 1 }));
 
-    makeSlice3Router('/prs/pr-aaa/diff?file=src%2Falpha.ts&side=right');
+    makeDiffRouteRouter('/prs/pr-aaa/diff?file=src%2Falpha.ts&side=right');
 
     await waitFor(() => {
       expect(screen.getByText('PR-101')).toBeInTheDocument();
@@ -357,7 +357,7 @@ describe('Slice 3 — DiffPage resolves PR by id', () => {
 
   it('shows not-found UI for unknown prId', async () => {
     // no-op (mode removed)
-    makeSlice3Router('/prs/pr-unknown-xyz/diff');
+    makeDiffRouteRouter('/prs/pr-unknown-xyz/diff');
 
     await waitFor(() => {
       expect(screen.getByText('PR not found')).toBeInTheDocument();
@@ -369,11 +369,11 @@ describe('Slice 3 — DiffPage resolves PR by id', () => {
 // 2. ?file canonical resolution
 // ---------------------------------------------------------------------------
 
-describe('Slice 3 — ?file canonical resolution', () => {
+describe('?file canonical resolution', () => {
   it('passes ?file key to PierreDiffView as selectedFileKey', async () => {
     // no-op (mode removed)
 
-    makeSlice3Router('/prs/pr-aaa/diff?file=src%2Falpha.ts&side=right');
+    makeDiffRouteRouter('/prs/pr-aaa/diff?file=src%2Falpha.ts&side=right');
 
     await waitFor(() => {
       expect(screen.getByTestId('pierre-diff-view')).toBeInTheDocument();
@@ -387,7 +387,7 @@ describe('Slice 3 — ?file canonical resolution', () => {
     // no-op (mode removed)
 
     // No ?file param → defaults to '' per schema
-    makeSlice3Router('/prs/pr-aaa/diff');
+    makeDiffRouteRouter('/prs/pr-aaa/diff');
 
     await waitFor(() => {
       expect(screen.getByTestId('pierre-diff-view')).toBeInTheDocument();
@@ -401,7 +401,7 @@ describe('Slice 3 — ?file canonical resolution', () => {
   it('passes ?file with spaces decoded correctly (path with space)', async () => {
     // no-op (mode removed)
 
-    makeSlice3Router(
+    makeDiffRouteRouter(
       '/prs/pr-aaa/diff?file=src%2Fmy%20file.ts&side=right',
     );
 
@@ -418,7 +418,7 @@ describe('Slice 3 — ?file canonical resolution', () => {
 // 4. detail.viewDiff (Space) navigation
 // ---------------------------------------------------------------------------
 
-describe('Slice 3 — detail.viewDiff navigation', () => {
+describe('detail.viewDiff navigation', () => {
   it('Space on /prs/$prId navigates to /prs/$prId/diff', () => {
     // Simulate being on /prs/pr-aaa (detail route).
     mockRouterState.location.pathname = '/prs/pr-aaa';
@@ -435,12 +435,12 @@ describe('Slice 3 — detail.viewDiff navigation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5–7. Route behavior for diff route (Slice 9: mode coherence effect deleted)
+// 5–7. Route behavior for diff route (routes own state; no mode coherence)
 // ---------------------------------------------------------------------------
 
-describe('Slice 3 — diff route navigation', () => {
+describe('diff route navigation', () => {
   it('cold-start /prs/$prId/diff renders at diff pathname', async () => {
-    const { testRouter } = makeSlice3Router('/prs/pr-aaa/diff');
+    const { testRouter } = makeDiffRouteRouter('/prs/pr-aaa/diff');
 
     await waitFor(() => {
       expect(testRouter.state.location.pathname).toBe('/prs/pr-aaa/diff');
@@ -448,7 +448,7 @@ describe('Slice 3 — diff route navigation', () => {
   });
 
   it('navigate from diff to detail sets pathname to /prs/$prId', async () => {
-    const { testRouter } = makeSlice3Router('/prs/pr-aaa/diff');
+    const { testRouter } = makeDiffRouteRouter('/prs/pr-aaa/diff');
 
     await waitFor(() => {
       expect(testRouter.state.location.pathname).toBe('/prs/pr-aaa/diff');
@@ -465,7 +465,7 @@ describe('Slice 3 — diff route navigation', () => {
   });
 
   it('diff route renders expected content', async () => {
-    makeSlice3Router('/prs/pr-aaa/diff');
+    makeDiffRouteRouter('/prs/pr-aaa/diff');
 
     await waitFor(() => {
       expect(screen.queryByTestId('pr-not-found')).not.toBeInTheDocument();
@@ -477,7 +477,7 @@ describe('Slice 3 — diff route navigation', () => {
 // 8. In-diff next/prev updates ?file
 // ---------------------------------------------------------------------------
 
-describe('Slice 3 — in-diff n/p keybindings update ?file', () => {
+describe('in-diff n/p keybindings update ?file', () => {
   beforeEach(() => {
     // Pre-populate diffFileKeys as if DiffPage already loaded the diff.
     appStore.setState((s) => ({
@@ -536,18 +536,18 @@ describe('Slice 3 — in-diff n/p keybindings update ?file', () => {
 });
 
 // ---------------------------------------------------------------------------
-// FIX 2 — coherence behaviour for route-owned vs legacy modes
+// Route-owned vs legacy mode coherence
 // ---------------------------------------------------------------------------
 
-// FIX 2 coherence tests removed — mode field deleted in Slice 9.
+// Route-owned coherence tests removed — mode field deleted; routes own state.
 // Route ownership is now 100% router-controlled; there is no store mode
 // to "correct". The underlying routing behavior (pathname) is tested above.
 
 // ---------------------------------------------------------------------------
-// FIX 3 — diffFileKeys lifecycle: no stale carryover across PRs
+// diffFileKeys lifecycle: no stale carryover across PRs
 // ---------------------------------------------------------------------------
 
-describe('FIX 3 — diffFileKeys cleared on prId change', () => {
+describe('diffFileKeys cleared on prId change', () => {
   it('DiffPage clears diffFileKeys when mounted with a new prId', async () => {
     // Seed stale keys from a previous PR's diff.
     appStore.setState((s) => ({
@@ -555,7 +555,7 @@ describe('FIX 3 — diffFileKeys cleared on prId change', () => {
       diffFileKeys: ['old-pr/file-a.ts', 'old-pr/file-b.ts'],
     }));
 
-    makeSlice3Router('/prs/pr-bbb/diff');
+    makeDiffRouteRouter('/prs/pr-bbb/diff');
 
     // After mounting, diffFileKeys should be cleared (then repopulated by the
     // mock PierreDiffView via onFilesResolved).

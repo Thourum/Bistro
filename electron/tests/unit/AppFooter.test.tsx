@@ -124,9 +124,9 @@ describe('AppFooter', () => {
     expect(screen.getByText('Back / Cancel')).toBeInTheDocument();
   });
 
-  // Slice 8: AppFooter has NO RouterSafe — it's only rendered under authedRoute
+  // AppFooter has NO RouterSafe — it's only rendered under authedRoute
   // (inside RouterProvider). The old "renders without RouterProvider" test is
-  // superseded by the slice8 guard test that confirms AppFooter is absent on
+  // superseded by the auth-guards test that confirms AppFooter is absent on
   // /login. Verify the component has no RouterSafe class.
   it('AppFooter renders with router context mocked (no RouterSafe needed)', () => {
     // With the mock in place this should render cleanly.

@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 //
-// FIX 3 — Real CommandPalette C2 integration test
+// Command palette navigation integration test
 //
 // Renders the REAL CommandPalette (NOT mocked) inside a router provider with
 // seeded PR data, opens it, selects a PR result, and asserts:
 //   - the route becomes /prs/<that pr.id>
 //   - mode is set to 'detail'
-//   - the correct pr.id is navigated to (C2: not selectedPRIndex)
+//   - the correct pr.id is navigated to (PR identity is the stable pr.id, not selectedPRIndex)
 
 import * as matchers from '@testing-library/jest-dom/matchers';
 import {
@@ -114,7 +114,7 @@ vi.mock('../../src/renderer/pages/PRDetailPage', () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Test PR data — repo2 PRs have global indices 2 and 3 (C2 distinguishes them)
+// Test PR data — repo2 PRs have global indices 2 and 3
 // ---------------------------------------------------------------------------
 
 const PALETTE_PRS: PR[] = [
@@ -222,7 +222,7 @@ function makePaletteRouter(initialUrl = '/prs/') {
   const utils = render(
     <QueryClientProvider client={queryClient}>
       {/* OverlayProvider wraps the router since AuthedRouteShell no longer
-          contains it (moved to RootShell in Slice 8). CommandPalette (real,
+          contains it (moved to RootShell). CommandPalette (real,
           not mocked) uses useOverlays() and needs the provider here.
           ConfirmingActionBridgeForTest ensures confirmingAction==='command'
           still opens the palette (bridge is in RootShell in prod). */}
@@ -240,7 +240,7 @@ function makePaletteRouter(initialUrl = '/prs/') {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('FIX 3 — real CommandPalette: PR open navigates by pr.id', () => {
+describe('command palette: PR open navigates by pr.id', () => {
   beforeEach(() => {
     appStore.setState(() => ({
       ...initialUIState,
@@ -284,7 +284,7 @@ describe('FIX 3 — real CommandPalette: PR open navigates by pr.id', () => {
     // Click the 'Palette PR Beta' result within the dialog (pal-pr-b, global index 1 — NOT index 0).
     fireEvent.click(within(dialog).getByText('Palette PR Beta'));
 
-    // C2: route must be /prs/pal-pr-b (the clicked PR's id), not /prs/pal-pr-a.
+    // Route must be /prs/pal-pr-b (the clicked PR's id), not /prs/pal-pr-a.
     await waitFor(() => {
       expect(testRouter.state.location.pathname).toBe('/prs/pal-pr-b');
     });

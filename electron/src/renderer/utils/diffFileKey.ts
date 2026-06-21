@@ -1,5 +1,5 @@
 /**
- * diffFileKey.ts — canonical diff-file identity utility (P0a).
+ * diffFileKey.ts — canonical diff-file identity utility.
  *
  * Key design decisions:
  * - PRIMARY identity is PATH-BASED: newFile path for added/modified/renamed files,

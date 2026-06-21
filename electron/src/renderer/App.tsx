@@ -1,7 +1,5 @@
-// Slice 8 — RouterProvider outside AuthGate
-//
-// The old AuthGate (auth-branching, mode-sync effect, pre-router branches) is
-// replaced by:
+// RouterProvider is mounted unconditionally (after settings are ready).
+// The old auth-branching gate is replaced by:
 //
 //   Bootstrap — non-visual component that:
 //     • runs useSettingsEffect() + useWebSocket() BESIDE RouterProvider so the

@@ -1,6 +1,7 @@
-// Slice 6+7 — OverlayContext
+// OverlayContext
 //
-// Overlays become React context (not mode). Single activeOverlay at a time.
+// Overlays are local UI state (not routes or navigation modes).
+// Single activeOverlay at a time.
 // Components consume useOverlays(); hotkeys gate on route+overlay via isActive.
 
 import type React from 'react';

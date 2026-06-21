@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Slice 2 remediation — C2 extended integration tests
+// PR navigation integration tests
 //
 // Covers:
 //   1. Real PRDetailPage resolves by $prId while selectedPRIndex points elsewhere.
@@ -323,7 +323,7 @@ afterEach(() => {
 // 1. Real PRDetailPage resolves by $prId while selectedPRIndex points elsewhere
 // ---------------------------------------------------------------------------
 
-describe('C2 extended — real PRDetailPage resolver', () => {
+describe('PR detail — real PRDetailPage resolver', () => {
   it('renders the ROUTED PR title, not the PR at selectedPRIndex', async () => {
     // selectedPRIndex=0 points to pr-repo1-a; but we route to pr-repo2-c.
     appStore.setState((s) => ({ ...s, selectedPRIndex: 0 }));
@@ -352,7 +352,7 @@ describe('C2 extended — real PRDetailPage resolver', () => {
 // 2. Action dispatch targets the routed prId, not selectedPRIndex
 // ---------------------------------------------------------------------------
 
-describe('C2 extended — action dispatch by routed prId', () => {
+describe('PR navigation — action dispatch by routed prId', () => {
   it('approve_confirmed dispatch sends pr_id from route param, not selectedPRIndex', async () => {
     // selectedPRIndex=0 → pr-repo1-a; route is pr-repo2-c.
     appStore.setState((s) => ({
@@ -394,7 +394,7 @@ describe('C2 extended — action dispatch by routed prId', () => {
 // 3. Keyboard Enter (list.open) — routes to the correct visible pr by id
 // ---------------------------------------------------------------------------
 
-describe('C2 extended — keyboard Enter (list.open) action', () => {
+describe('PR navigation — keyboard Enter (list.open) action', () => {
   it('Enter on filtered list (selectedPRIndex=0) navigates to the visible pr id, not global index 0', () => {
     // Seed filtered visible list: only repo2 PRs visible.
     // global index 0 = pr-repo1-a, but visible index 0 = pr-repo2-c.
@@ -447,7 +447,7 @@ describe('C2 extended — keyboard Enter (list.open) action', () => {
 // 4. Shift+G then Enter — routes to the LAST visible pr
 // ---------------------------------------------------------------------------
 
-describe('C2 extended — Shift+G then Enter', () => {
+describe('PR navigation — Shift+G then Enter', () => {
   it('Shift+G sets cursor to last index; Enter then routes to that last pr id', () => {
     // 4 PRs visible after no filter.
     appStore.setState((s) => ({
@@ -499,11 +499,11 @@ describe('C2 extended — Shift+G then Enter', () => {
 // 5. Command-palette PR open — navigates by pr.id
 // ---------------------------------------------------------------------------
 
-describe('C2 extended — command palette navigate by pr.id', () => {
+describe('PR navigation — command palette navigate by pr.id', () => {
   it('handleExecutePR navigates by pr.id without touching selectedPRIndex', () => {
     // The CommandPalette.handleExecutePR contract:
     //   void navigate({ to: '/prs/$prId', params: { prId: pr.id } })
-    // The critical C2 assertion: navigate is called with pr.id, not selectedPRIndex.
+    // The critical assertion: navigate is called with pr.id, not selectedPRIndex.
 
     // selectedPRIndex=0 → pr-repo1-a; but we open pr-repo2-c from the palette.
     appStore.setState((s) => ({
@@ -515,7 +515,7 @@ describe('C2 extended — command palette navigate by pr.id', () => {
     const targetPr = ALL_PRS.find((p) => p.id === 'pr-repo2-c')!;
     mockRouterNavigate({ to: '/prs/$prId', params: { prId: targetPr.id } });
 
-    // Key C2 assertion: navigate was called with pr.id, NOT with selectedPRIndex as identity.
+    // Key assertion: navigate was called with pr.id, NOT with selectedPRIndex as identity.
     expect(mockRouterNavigate).toHaveBeenCalledWith({
       to: '/prs/$prId',
       params: { prId: 'pr-repo2-c' },
@@ -529,10 +529,10 @@ describe('C2 extended — command palette navigate by pr.id', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. Route behavior (Slice 9: mode coherence effect deleted; routes own state)
+// 6. Route behavior (routes own state; no mode coherence effect)
 // ---------------------------------------------------------------------------
 
-describe('C2 extended — route↔navigation', () => {
+describe('PR navigation — route↔navigation', () => {
   // (a) Escape from /prs/$prId: router.navigate called to /prs.
   it('Escape in detail route calls router.navigate to /prs', () => {
     byId('global.escape').action(makeTestCtx('detail'));
@@ -601,7 +601,7 @@ describe('C2 extended — route↔navigation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// FIX 4 — Real visiblePRIds stale-path test
+// visiblePRIds freshness test
 //
 // Renders the real PRListPage (with real PRListTable rows), changes
 // repoFilter so the rendered rows change, lets React commit the
@@ -611,7 +611,7 @@ describe('C2 extended — route↔navigation', () => {
 // the fresh ids before the action runs.
 // ---------------------------------------------------------------------------
 
-describe('FIX 4 — real visiblePRIds freshness via rendered PRListPage', () => {
+describe('visiblePRIds freshness via rendered PRListPage', () => {
   it('list.open after repoFilter change navigates to new first row id (not pre-filter id)', async () => {
     // Start: no filter, all 4 PRs visible.
     // Pre-filter first row: pr-repo1-a (updated_at: 2025-01-04 → sorted first by updated).

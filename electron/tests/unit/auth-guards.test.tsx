@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Slice 8 — Auth guard integration tests
+// Auth guard integration tests
 //
 // Oracle 12-test checklist:
 // 1. RouterProvider renders for unauthed app; /login renders LoginPage
@@ -133,7 +133,7 @@ afterEach(() => {
 // Test 10 — Login hotkeys active only on /login
 // ---------------------------------------------------------------------------
 
-describe('Slice 8 — login hotkeys scoped to /login only', () => {
+describe('login hotkeys scoped to /login only', () => {
   const loginBindings = DEFAULT_KEYBINDINGS.filter((b) =>
     b.actionId.startsWith('login.provider.'),
   );
@@ -171,7 +171,7 @@ describe('Slice 8 — login hotkeys scoped to /login only', () => {
 // Test 11 — isActive works for authed route bindings
 // ---------------------------------------------------------------------------
 
-describe('Slice 8 — authed hotkeys still gate correctly', () => {
+describe('authed hotkeys still gate correctly', () => {
   it('list bindings active on /prs', () => {
     const b = DEFAULT_KEYBINDINGS.find((x) => x.actionId === 'list.down')!;
     expect(isActive(b, { routeBase: 'list', activeOverlay: null })).toBe(true);
@@ -194,7 +194,7 @@ describe('Slice 8 — authed hotkeys still gate correctly', () => {
 // Test 2 — AppFooter has no RouterSafe; only rendered under authedRoute
 // ---------------------------------------------------------------------------
 
-describe('Slice 8 — AppFooter only under authedRoute', () => {
+describe('AppFooter only under authedRoute', () => {
   it('12b. AppFooter has no RouterSafe error boundary class', async () => {
     const fs = await import('fs');
     const path = await import('path');
@@ -205,7 +205,7 @@ describe('Slice 8 — AppFooter only under authedRoute', () => {
       ),
       'utf-8',
     );
-    // RouterSafe class was removed in Slice 8 (AppFooter now always inside router).
+    // RouterSafe class was removed (AppFooter now always inside router).
     expect(src).not.toContain('getDerivedStateFromError');
     expect(src).not.toContain('class RouterSafe');
   });
@@ -215,7 +215,7 @@ describe('Slice 8 — AppFooter only under authedRoute', () => {
 // Tests 3, 4, 5, 6, 7, 8 — Guard behavior via router.navigate + store seeding
 // ---------------------------------------------------------------------------
 
-describe('Slice 8 — requireAuthedAndOnboarded guard behavior', () => {
+describe('requireAuthedAndOnboarded guard behavior', () => {
   // Test 3: authChecked:false → guard waits, no /login redirect
   it('3. deep-link /prs with authChecked:false → waits, does NOT redirect to /login', async () => {
     // Set up: not yet auth-checked
@@ -338,10 +338,10 @@ describe('Slice 8 — requireAuthedAndOnboarded guard behavior', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 3b — index route awaits authChecked (BLOCKING fix)
+// Test 3b — index route awaits authChecked
 // ---------------------------------------------------------------------------
 
-describe('Slice 8 — index route awaits authChecked (C3)', () => {
+describe('index route awaits authChecked (auth and onboarding enforced by declarative guards)', () => {
   it('3b. / with authChecked:false → does NOT navigate to /login; resolves to /prs when auth known', async () => {
     // authChecked starts false
     appStore.setState((s) => ({ ...s, authChecked: false, isAuthenticated: false }));
@@ -404,7 +404,7 @@ describe('Slice 8 — index route awaits authChecked (C3)', () => {
 // Test 9 — Protected loader does not run before authChecked
 // ---------------------------------------------------------------------------
 
-describe('Slice 8 — loader blocking', () => {
+describe('loader blocking', () => {
   it('9. child loader spy does NOT run before authChecked resolves', async () => {
     const {
       createRouter: createTestRouter,
@@ -497,7 +497,7 @@ describe('Slice 8 — loader blocking', () => {
 // (structural test via imports — full render would need real WS infra)
 // ---------------------------------------------------------------------------
 
-describe('Slice 8 — ToastContainer in RootShell', () => {
+describe('ToastContainer in RootShell', () => {
   it('12. RootShell exports include ToastContainer usage', async () => {
     const fs = await import('fs');
     const path = await import('path');

@@ -1,4 +1,4 @@
-// Slice 1 — usePrsSearchStoreBridge
+// usePrsSearchStoreBridge
 //
 // Bidirectional sync between /prs/ route search params and UIState fields.
 //

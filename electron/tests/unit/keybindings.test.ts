@@ -418,7 +418,7 @@ describe('getEffectiveBindings', () => {
 // ---------------------------------------------------------------------------
 
 describe('isActive — login bindings inactive on authed routes', () => {
-  // All login.provider.* bindings use activation: { routes: ["login"] } (Slice 8)
+  // All login.provider.* bindings use activation: { routes: ["login"] }
   const loginBinding = DEFAULT_KEYBINDINGS.find((b) =>
     b.actionId.startsWith('login.provider.'),
   );

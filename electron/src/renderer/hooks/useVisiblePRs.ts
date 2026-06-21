@@ -7,7 +7,7 @@ import { useWebSocketPRList } from './useWebSocketPRList';
 
 /**
  * Optional overrides that let callers feed filter/sort/q/repoFilter from route
- * search params (Slice 1+) instead of the store. Any omitted field falls back
+ * search params instead of the store. Any omitted field falls back
  * to the current store value — a one-line change per field when migrating.
  */
 export interface VisiblePRsOverride {
@@ -32,21 +32,21 @@ export interface UseVisiblePRsResult {
  * All consumers MUST derive their row index from this list so that
  * `selectedPRIndex` always addresses the same row everywhere.
  *
- * @param overrides  Optional route-param values (Slice 1+). Omit in pre-routing
- *                   code — the hook reads the store automatically.
+ * @param overrides  Optional route-param values. Omit in code that reads
+ *                   the store directly — the hook reads the store automatically.
  *
  * @example
  *   // Current (pre-routing) — reads everything from the store:
  *   const { prs, isLoading, error } = useVisiblePRs();
  *
- *   // Slice 1+ (route search params override):
+ *   // Read filter/sort/q from route search params:
  *   const { filter, sort, q } = useSearch({ from: '/prs' });
  *   const { prs } = useVisiblePRs({ filter, sort, q });
  *
  * Caller helper: `prs[clamp(selectedPRIndex, 0, prs.length - 1)]` resolves the
  * PR under the keyboard cursor without any separate list derivation.
  *
- * TODO(slice-2): CommandPalette still builds its own list — adopt useVisiblePRs there.
+ * TODO: CommandPalette still builds its own list — adopt useVisiblePRs there.
  */
 export function useVisiblePRs(
   overrides?: VisiblePRsOverride,

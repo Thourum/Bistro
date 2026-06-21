@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
-// Slice 2 — C2 integration tests
+// PR detail route integration tests
 //
-// C2 contract: $prId (a stable pr.id) is the ONLY identity for detail.
+// Contract: $prId (a stable pr.id) is the ONLY identity for detail.
 // NO detail code path may resolve a PR via selectedPRIndex.
 // selectedPRIndex is a keyboard CURSOR only.
 //
@@ -208,10 +208,10 @@ const prsIndexSearchSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Test router factory — uses the real route structure (Slice 2)
+// Test router factory — uses the real route structure
 // ---------------------------------------------------------------------------
 
-function makeC2Router(initialUrl = '/prs/') {
+function makePrDetailRouteRouter(initialUrl = '/prs/') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -233,7 +233,7 @@ function makeC2Router(initialUrl = '/prs/') {
     component: PrsIndexRouteComponent,
   });
 
-  // Slice 2: prDetailRoute — rendered by PRDetailPage (mocked above).
+  // prDetailRoute — rendered by PRDetailPage (mocked above).
   const prDetailRoute = createRoute({
     getParentRoute: () => prsRoute,
     path: '$prId',
@@ -263,10 +263,10 @@ function makeC2Router(initialUrl = '/prs/') {
 }
 
 // ---------------------------------------------------------------------------
-// C2 integration test suite
+// PR detail route integration test suite
 // ---------------------------------------------------------------------------
 
-describe('C2: $prId is the ONLY PR identity', () => {
+describe('PR detail resolves by stable id, not list index', () => {
   beforeEach(() => {
     appStore.setState(() => ({
       ...initialUIState,
@@ -295,7 +295,7 @@ describe('C2: $prId is the ONLY PR identity', () => {
       mode: 'list',
     }));
 
-    const { testRouter } = makeC2Router('/prs/');
+    const { testRouter } = makePrDetailRouteRouter('/prs/');
 
     // Wait for the PR list to render.
     await waitFor(() => {
@@ -305,7 +305,7 @@ describe('C2: $prId is the ONLY PR identity', () => {
     // Click the first visible row (PR Repo2-C, filtered index 0, global index 2).
     fireEvent.click(screen.getByText('PR Repo2-C'));
 
-    // C2: must navigate to /prs/pr-repo2-c (navigate by id, not by index 0).
+    // Must navigate to /prs/pr-repo2-c (navigate by id, not by index 0).
     await waitFor(() => {
       expect(testRouter.state.location.pathname).toBe('/prs/pr-repo2-c');
     });
@@ -326,7 +326,7 @@ describe('C2: $prId is the ONLY PR identity', () => {
       mode: 'list',
     }));
 
-    const { testRouter } = makeC2Router('/prs/');
+    const { testRouter } = makePrDetailRouteRouter('/prs/');
 
     await waitFor(() => {
       expect(screen.getByText('PR Repo2-D')).toBeInTheDocument();
@@ -334,7 +334,7 @@ describe('C2: $prId is the ONLY PR identity', () => {
 
     fireEvent.click(screen.getByText('PR Repo2-D'));
 
-    // C2: navigate by pr.id — NOT by global index.
+    // Navigate by pr.id — NOT by global index.
     await waitFor(() => {
       expect(testRouter.state.location.pathname).toBe('/prs/pr-repo2-d');
     });
@@ -351,7 +351,7 @@ describe('C2: $prId is the ONLY PR identity', () => {
     // Cold-start at a specific PR URL.
     appStore.setState((s) => ({ ...s, mode: 'detail' }));
 
-    const { testRouter } = makeC2Router('/prs/pr-repo2-c');
+    const { testRouter } = makePrDetailRouteRouter('/prs/pr-repo2-c');
 
     await waitFor(() => {
       // Detail stub is rendered.
@@ -370,7 +370,7 @@ describe('C2: $prId is the ONLY PR identity', () => {
     // Navigate directly to PR-repo2-c by id (as if user clicked it).
     appStore.setState((s) => ({ ...s, mode: 'detail' }));
 
-    const { testRouter } = makeC2Router('/prs/pr-repo2-c');
+    const { testRouter } = makePrDetailRouteRouter('/prs/pr-repo2-c');
 
     await waitFor(() => {
       expect(screen.getByTestId('pr-detail-stub')).toBeInTheDocument();
@@ -396,7 +396,7 @@ describe('C2: $prId is the ONLY PR identity', () => {
   it('navigating to an unknown prId renders detail with that prId in the param', async () => {
     appStore.setState((s) => ({ ...s, mode: 'detail' }));
 
-    const { testRouter } = makeC2Router('/prs/unknown-id-xyz');
+    const { testRouter } = makePrDetailRouteRouter('/prs/unknown-id-xyz');
 
     await waitFor(() => {
       expect(screen.getByTestId('pr-detail-stub')).toBeInTheDocument();
@@ -417,7 +417,7 @@ describe('C2: $prId is the ONLY PR identity', () => {
       mode: 'list',
     }));
 
-    makeC2Router('/prs/');
+    makePrDetailRouteRouter('/prs/');
 
     await waitFor(() => {
       expect(screen.getByText('PR Repo1-A')).toBeInTheDocument();

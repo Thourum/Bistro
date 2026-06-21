@@ -1,7 +1,5 @@
-// Slice 9 — AuthedRouteShell (final)
-//
 // Authed-layout component: chrome (AppFooter, overlays) + Outlet.
-// mode / coherence machinery deleted — navigation is 100% router-owned.
+// Navigation is 100% router-owned — there is no mode or coherence machinery.
 // OverlayProvider, HotkeyRegistrar, ConfirmingActionOverlayBridge, and
 // ToastContainer live in RootShell (root route component).
 

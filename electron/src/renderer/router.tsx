@@ -1,6 +1,6 @@
-// Slice 8 — RouterProvider outside AuthGate (C3)
+// Route tree and auth guards.
 //
-// RouterContext is now { queryClient } only — auth state is read directly
+// RouterContext is { queryClient } only — auth state is read directly
 // from appStore / settingsStore inside guards so the router never receives
 // stale context values from React props.
 //
@@ -59,7 +59,7 @@ import { appStore } from './store';
 import { settingsStore } from './store/settings';
 
 // ---------------------------------------------------------------------------
-// Router context type (Slice 8: auth fields removed, guards read stores)
+// Router context type — auth fields are read from stores directly inside guards
 // ---------------------------------------------------------------------------
 
 export interface RouterContext {
@@ -179,7 +179,8 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
 
 /** Index — awaits authChecked then redirects to the right screen.
  * Shows ConnectingScreen (pendingComponent) while waiting.
- * Never redirects while authChecked===false — satisfies C3. */
+ * Never redirects while authChecked===false — auth and onboarding are
+ * enforced by declarative route guards. */
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
@@ -255,7 +256,7 @@ const prsRoute = createRoute({
   component: () => <Outlet />,
 });
 
-// /prs/ index — owned by router (Slice 1)
+// /prs/ index route
 const prsIndexRoute = createRoute({
   getParentRoute: () => prsRoute,
   path: '/',
@@ -263,14 +264,15 @@ const prsIndexRoute = createRoute({
   component: PrsIndexRouteComponent,
 });
 
-// /prs/$prId — Slice 2: real detail route (C2 fix)
+// /prs/$prId — detail route; PR identity is the stable pr.id (route param),
+// never a list index — prevents opening/acting on the wrong PR under filtering/sorting
 export const prDetailRoute = createRoute({
   getParentRoute: () => prsRoute,
   path: '$prId',
   component: PRDetailPage,
 });
 
-// /prs/$prId/diff — Slice 3: real diff route (C5)
+// /prs/$prId/diff — diff route with canonical, path-based file identity (stable across renames/reorder)
 export const prDiffRoute = createRoute({
   getParentRoute: () => prsRoute,
   path: '$prId/diff',
@@ -278,7 +280,7 @@ export const prDiffRoute = createRoute({
   component: DiffPage,
 });
 
-// /settings — Slice 5: real settings route
+// /settings route
 const settingsRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/settings',

@@ -88,7 +88,7 @@ export function CommandPalette(): React.ReactElement | null {
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
-  // C2: use canonical useVisiblePRs — drops divergent usePRList call.
+  // Use the shared visible-PR source so palette results match the list route.
   const { prs } = useVisiblePRs();
   const recentPRs = useMemo(() => prs.slice(0, 5), [prs]);
 
@@ -140,7 +140,7 @@ export function CommandPalette(): React.ReactElement | null {
   };
 
   const handleExecutePR = (pr: PR): void => {
-    // C2: navigate by stable pr.id — never write selectedPRIndex as identity.
+    // Navigate by stable pr.id — never write selectedPRIndex as identity.
     void navigate({ to: '/prs/$prId', params: { prId: pr.id } });
     closeOverlay();
     setQuery('');

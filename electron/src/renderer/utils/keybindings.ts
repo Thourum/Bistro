@@ -10,7 +10,7 @@ import type { UIState } from '../store/ui';
 
 // RouteBase: the "base" route derived from the current pathname.
 // Includes 'login' and 'onboarding' so their bindings can be properly gated
-// (Slice 8: login/onboarding are now real routes under RootShell).
+// (auth and onboarding are enforced by declarative route guards).
 export type RouteBase =
   | 'list'
   | 'detail'
@@ -20,7 +20,7 @@ export type RouteBase =
   | 'onboarding';
 
 // AppBase: the "base" route derived from the current pathname.
-// Slice 9: AppMode deleted — navigation is 100% router-owned.
+// Navigation is 100% router-owned; there is no separate AppMode enum.
 
 /**
  * Derive the RouteBase from the current pathname.
@@ -252,8 +252,8 @@ const loginBindings: KeyBinding[] = PROVIDERS.map((provider) => ({
   actionId: `login.provider.${provider.id}`,
   keys: provider.key,
   description: `Login with ${provider.label}`,
-  // Slice 8: /login is now a real route. Login provider keys (g/l/t) are
-  // active ONLY on /login — they must never fire on /prs, /settings, etc.
+  // Login provider keys (g/l/t) are active ONLY on /login —
+  // they must never fire on /prs, /settings, etc.
   activation: { routes: ['login'] as RouteBase[] },
   action: (ctx: KeyActionContext) => {
     ctx.store.setState((s) => ({
@@ -346,7 +346,7 @@ const listBindings: KeyBinding[] = [
     description: 'Jump to bottom',
     activation: { routes: ['list'] },
     action: (ctx) => {
-      // C2: set cursor to last visible index (not MAX_SAFE_INTEGER as identity).
+      // Set cursor to the last visible row; row index is only a cursor, not PR identity.
       const len = ctx.store.state.visiblePRIds.length;
       ctx.store.setState((s) => ({
         ...s,
@@ -360,7 +360,7 @@ const listBindings: KeyBinding[] = [
     description: 'Open',
     activation: { routes: ['list'] },
     action: (ctx) => {
-      // C2: navigate by id — cursor is clamped to actual list length.
+      // Navigate by stable PR id after clamping the cursor to the visible list.
       const { selectedPRIndex, visiblePRIds } = ctx.store.state;
       const clampedIdx = Math.min(
         Math.max(0, selectedPRIndex),

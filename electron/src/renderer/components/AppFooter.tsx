@@ -1,7 +1,5 @@
-// Slice 8 — AppFooter (simplified: RouterSafe removed)
-//
-// AppFooter now only renders under AuthedRouteShell (which is only mounted
-// under authedRoute) — it is NEVER rendered on /login or /onboarding.
+// AppFooter is only rendered under AuthedRouteShell, which is mounted
+// under the authed route guard — it is NEVER rendered on /login or /onboarding.
 // Therefore it is always inside a RouterProvider and can call router hooks
 // directly without an error-boundary wrapper.
 

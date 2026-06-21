@@ -1,4 +1,4 @@
-// Slice 8 — RootShell
+// RootShell
 //
 // Root route component shared by ALL routes (login, onboarding, authed).
 // Owns: OverlayProvider, HotkeyRegistrar, ConfirmingActionOverlayBridge,
