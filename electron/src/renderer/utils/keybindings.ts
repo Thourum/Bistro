@@ -472,15 +472,17 @@ const detailBindings: KeyBinding[] = [
     activation: { routes: ['detail', 'diff'] },
     action: (ctx) => {
       const { diffFileKeys, selectedFileIndex } = ctx.store.state;
-      const newIdx = selectedFileIndex + 1;
+      const newIdx = Math.min(
+        selectedFileIndex + 1,
+        Math.max(0, diffFileKeys.length - 1),
+      );
       ctx.store.setState((s) => ({
         ...s,
         selectedFileIndex: newIdx,
       }));
       // In diff route, also update the ?file route param.
       if (ctx.routeBase === 'diff' && diffFileKeys.length > 0) {
-        const clamped = Math.min(newIdx, diffFileKeys.length - 1);
-        const newKey = diffFileKeys[clamped];
+        const newKey = diffFileKeys[newIdx];
         if (newKey !== undefined) {
           const pathname = router.state.location.pathname;
           const m = /^\/prs\/([^/]+)\/diff$/.exec(pathname);

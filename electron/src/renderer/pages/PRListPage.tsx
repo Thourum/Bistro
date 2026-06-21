@@ -39,10 +39,11 @@ export function PRListPage({
 }): React.ReactElement {
   const storeFilter = useStore(appStore, (s: UIState) => s.filterState);
   const storeSortBy = useStore(appStore, (s: UIState) => s.sortBy);
+  const storeSearchQuery = useStore(appStore, (s: UIState) => s.searchQuery);
 
   const filterState = routeSearch?.filter ?? storeFilter;
   const sortBy = routeSearch?.sort ?? storeSortBy;
-  const q = routeSearch?.q ?? '';
+  const q = routeSearch?.q ?? storeSearchQuery;
 
   const username = useStore(
     appStore,

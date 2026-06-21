@@ -56,7 +56,8 @@ export function AppFooter(): React.ReactElement {
 
   const handleShortcuts = () => {
     if (overlayContext) {
-      const source = routeBase === 'detail' ? 'detail' : 'list';
+      const source =
+        routeBase === 'detail' || routeBase === 'diff' ? 'detail' : 'list';
       overlayContext.openHelp(source);
     }
   };
