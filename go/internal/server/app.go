@@ -22,6 +22,10 @@ import (
 	"github.com/itterno/bistro/internal/ws"
 )
 
+// syncSettingsMsg is an alias for the handler type to keep the field
+// declaration readable within the server package.
+type syncSettingsMsg = handler.SyncSettingsMsg
+
 // App is the top-level orchestrator for the bistro-sync process.
 type App struct {
 	log                *slog.Logger
@@ -38,8 +42,10 @@ type App struct {
 	providerCache      *cache.ProviderCache
 	tokenManager       *keychain.TokenManager
 	syncTrigger        chan string
+	syncSettings       chan syncSettingsMsg
 	provMu             stdsync.RWMutex
 	syncInterval       time.Duration
+	autoSync           bool
 	readyWriter        io.Writer
 }
 
@@ -101,14 +107,22 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 		dbPath:        dbPath,
 		providerCache: cache.NewProviderCache(cachePath),
 		tokenManager:  keychain.NewTokenManager(),
-		syncTrigger:   make(chan string, 8),
-		syncInterval:  5 * time.Minute,
+		syncTrigger:  make(chan string, 8),
+		syncSettings: make(chan syncSettingsMsg, 4),
+		syncInterval: 5 * time.Minute,
+		autoSync:     true,
 	}
 }
 
 // SetSyncInterval configures the interval between automatic sync cycles.
 func (a *App) SetSyncInterval(d time.Duration) {
 	a.syncInterval = d
+}
+
+// SetAutoSync enables or disables the automatic periodic sync ticker.
+// Manual FORCE_SYNC always works regardless of this setting.
+func (a *App) SetAutoSync(enabled bool) {
+	a.autoSync = enabled
 }
 
 // getProvider safely returns the current provider under a read lock.
@@ -194,6 +208,7 @@ func (a *App) Run(ctx context.Context) error {
 	a.wsServer.RegisterHandler("TOGGLE_WATCH_REPO",
 		handler.NewToggleWatchHandler(a.db.DB, a.syncTrigger, a.log))
 	a.wsServer.RegisterHandler("FORCE_SYNC", handler.NewForceSyncHandler(a.syncTrigger, a.log))
+	a.wsServer.RegisterHandler("SET_SYNC_SETTINGS", handler.NewSetSyncSettingsHandler(a.syncSettings, a.log))
 
 	wsAddr := fmt.Sprintf(":%d", a.wsPort)
 	if err := a.wsServer.Start(wsAddr); err != nil {

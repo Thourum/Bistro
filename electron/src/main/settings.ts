@@ -39,6 +39,7 @@ export class SettingsService {
   private readonly filePath: string;
   private writing = false;
   private watchHandle: ReturnType<typeof watchFile> | null = null;
+  private changeListeners: Array<(s: AppSettings) => void> = [];
 
   constructor(
     private readonly logger: Logger,
@@ -118,6 +119,11 @@ export class SettingsService {
     }
   }
 
+  /** Register a callback invoked whenever settings change (set, reset, or external edit). */
+  addChangeListener(fn: (s: AppSettings) => void): void {
+    this.changeListeners.push(fn);
+  }
+
   stop(): void {
     if (this.watchHandle !== null) {
       unwatchFile(this.filePath);
@@ -180,6 +186,9 @@ export class SettingsService {
       if (!win.isDestroyed()) {
         win.webContents.send('settings:changed', state);
       }
+    }
+    for (const fn of this.changeListeners) {
+      fn(state);
     }
   }
 }

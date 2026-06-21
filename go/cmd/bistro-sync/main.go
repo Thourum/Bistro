@@ -24,6 +24,7 @@ func main() {
 	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, error")
 	logFile := flag.String("log-file", "", "Log file path (default: stderr only)")
 	syncInterval := flag.Duration("sync-interval", 5*time.Minute, "Interval between sync cycles")
+	autoSync := flag.Bool("auto-sync", true, "Enable automatic periodic sync (manual FORCE_SYNC is unaffected)")
 	exitOnStdinClose := flag.Bool("exit-on-stdin-close", false,
 		"Exit when stdin closes (set by the Electron shell so the engine dies with its parent)")
 	flag.Parse()
@@ -78,6 +79,7 @@ func main() {
 
 	app := server.NewWithLogger(*wsPort, *dbPath, log)
 	app.SetSyncInterval(*syncInterval)
+	app.SetAutoSync(*autoSync)
 
 	// Read GitHub OAuth credentials from environment.
 	clientID := os.Getenv("GITHUB_CLIENT_ID")

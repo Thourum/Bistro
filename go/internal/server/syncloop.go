@@ -21,21 +21,116 @@ func (a *App) broadcastSyncError(repoID string, err error) {
 	})
 }
 
+// applyPendingSyncSettings drains the syncSettings channel and applies the
+// latest coalesced value. Returns true if any settings were consumed.
+// This must only be called from the sync loop goroutine.
+func (a *App) applyPendingSyncSettings(ticker *time.Ticker, autoSync *bool, interval *time.Duration) bool {
+	var latest *syncSettingsMsg
+	for {
+		select {
+		case msg := <-a.syncSettings:
+			m := msg
+			latest = &m
+		default:
+			goto done
+		}
+	}
+done:
+	if latest == nil {
+		return false
+	}
+	a.log.Info("sync settings updated",
+		"autoSync", latest.AutoSync, "interval", latest.Interval.String())
+	*autoSync = latest.AutoSync
+	*interval = latest.Interval
+	if *autoSync && *interval > 0 {
+		ticker.Reset(*interval)
+	} else {
+		ticker.Stop()
+	}
+	return true
+}
+
 // runSyncLoop runs the periodic sync goroutine. It exits when ctx is cancelled.
 func (a *App) runSyncLoop(ctx context.Context) {
 	ticker := time.NewTicker(a.syncInterval)
+	autoSync := a.autoSync
+	interval := a.syncInterval
+	if !autoSync {
+		ticker.Stop()
+	}
 	defer ticker.Stop()
 
-	a.log.Debug("sync loop started", "interval", a.syncInterval.String())
+	a.log.Debug("sync loop started", "interval", a.syncInterval.String(), "autoSync", autoSync)
 
 	for {
+		// Prioritise settings changes over ticker ticks so that a disable/
+		// interval-change applied while a sync was running takes effect before
+		// the next automatic tick fires.
+		select {
+		case msg := <-a.syncSettings:
+			// Fast-path: at least one settings message is ready. Drain the rest
+			// so we always act on the latest value.
+			latest := msg
+		drainLoop:
+			for {
+				select {
+				case m := <-a.syncSettings:
+					latest = m
+				default:
+					break drainLoop
+				}
+			}
+			a.log.Info("sync settings updated",
+				"autoSync", latest.AutoSync, "interval", latest.Interval.String())
+			autoSync = latest.AutoSync
+			interval = latest.Interval
+			if autoSync && interval > 0 {
+				ticker.Reset(interval)
+			} else {
+				ticker.Stop()
+			}
+			continue
+		default:
+		}
+
 		select {
 		case <-ctx.Done():
 			a.log.Debug("sync loop stopping", "reason", ctx.Err())
 			return
+		case msg := <-a.syncSettings:
+			latest := msg
+		drainLoop2:
+			for {
+				select {
+				case m := <-a.syncSettings:
+					latest = m
+				default:
+					break drainLoop2
+				}
+			}
+			a.log.Info("sync settings updated",
+				"autoSync", latest.AutoSync, "interval", latest.Interval.String())
+			autoSync = latest.AutoSync
+			interval = latest.Interval
+			if autoSync && interval > 0 {
+				ticker.Reset(interval)
+			} else {
+				ticker.Stop()
+			}
 		case <-ticker.C:
-			a.log.Debug("sync tick fired", "next_tick_in", a.syncInterval.String())
+			// Drain any pending settings that arrived during the last sync pass
+			// before deciding whether to run.
+			a.applyPendingSyncSettings(ticker, &autoSync, &interval)
+			if !autoSync {
+				// ticker fired but autoSync was disabled; skip
+				continue
+			}
+			a.log.Debug("sync tick fired", "next_tick_in", interval.String())
 			a.syncWatchedRepos(ctx)
+			// After a (potentially long) sync pass, re-check for settings
+			// updates that arrived while we were busy.
+			a.applyPendingSyncSettings(ticker, &autoSync, &interval)
 		case repoID := <-a.syncTrigger:
 			a.log.Debug("sync trigger received", "repo_id", repoID)
 			if repoID == "" {
@@ -43,6 +138,8 @@ func (a *App) runSyncLoop(ctx context.Context) {
 			} else {
 				a.syncSingleRepo(ctx, repoID)
 			}
+			// Re-check settings after manual sync too.
+			a.applyPendingSyncSettings(ticker, &autoSync, &interval)
 		}
 	}
 }

@@ -2,6 +2,8 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, ipcMain, shell } from 'electron';
 import log from 'electron-log';
+import type { SyncSettings } from '../types/settings';
+import { DEFAULT_SETTINGS } from '../types/settings';
 import { killGoProcess, spawnGoProcess } from './go-spawn';
 import { setupIPC } from './ipc';
 import { SettingsService } from './settings';
@@ -10,6 +12,48 @@ import { WebSocketClient } from './websocket-client';
 import { createWindow } from './window';
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
+/** Minimum and maximum sync interval in seconds (mirrors UI slider bounds). */
+const SYNC_INTERVAL_MIN_SECS = 30;
+const SYNC_INTERVAL_MAX_SECS = 3600;
+
+type GoSyncSettings = Pick<SyncSettings, 'autoSync' | 'syncInterval'>;
+
+/**
+ * Normalise sync settings before using them for Go startup flags or runtime
+ * WebSocket updates. Falls back to DEFAULT_SETTINGS for invalid values so a
+ * hand-edited settings.json cannot produce invalid process flags.
+ */
+function normaliseSyncForGo(sync: SyncSettings): GoSyncSettings {
+  const autoSync =
+    typeof sync.autoSync === 'boolean'
+      ? sync.autoSync
+      : DEFAULT_SETTINGS.sync.autoSync;
+
+  const rawInterval = sync.syncInterval;
+  const syncInterval =
+    typeof rawInterval === 'number' &&
+    Number.isFinite(rawInterval) &&
+    rawInterval > 0
+      ? Math.min(
+          SYNC_INTERVAL_MAX_SECS,
+          Math.max(SYNC_INTERVAL_MIN_SECS, rawInterval),
+        )
+      : DEFAULT_SETTINGS.sync.syncInterval;
+
+  return { autoSync, syncInterval };
+}
+
+function syncSettingsPayload(sync: SyncSettings): {
+  auto_sync: boolean;
+  sync_interval_secs: number;
+} {
+  const normalised = normaliseSyncForGo(sync);
+  return {
+    auto_sync: normalised.autoSync,
+    sync_interval_secs: normalised.syncInterval,
+  };
+}
 
 /**
  * Resolve paths for data storage.
@@ -40,7 +84,8 @@ function resolveGoBinaryPath(): string {
   return join(process.resourcesPath, 'go-bin', 'bistro-sync');
 }
 
-function buildConfig(): AppConfig {
+function buildConfig(sync: SyncSettings = DEFAULT_SETTINGS.sync): AppConfig {
+  const normalisedSync = normaliseSyncForGo(sync);
   const dataDir = resolveDataDir();
   const logsDir = join(dataDir, 'logs');
 
@@ -81,6 +126,8 @@ function buildConfig(): AppConfig {
       logLevel,
       logFile: join(logsDir, 'bistro-sync.log'),
       replayQueue: true,
+      syncInterval: normalisedSync.syncInterval,
+      autoSync: normalisedSync.autoSync,
     },
   };
 }
@@ -95,7 +142,12 @@ let settingsService: SettingsService | null = null;
 let runtimeConfig: AppConfig | null = null;
 
 app.on('ready', async () => {
-  const appConfig = buildConfig();
+  // Load settings first so we can pass sync config to the Go process.
+  settingsService = new SettingsService(log);
+  await settingsService.load();
+  log.info(`Settings loaded from ${settingsService.path}`);
+
+  const appConfig = buildConfig(settingsService.snapshot.sync);
 
   log.info(`Go binary: ${appConfig.goProcess.binaryPath}`);
   log.info(`DB path: ${appConfig.goProcess.dbPath}`);
@@ -130,15 +182,27 @@ app.on('ready', async () => {
     // 2. Create WebSocket client and connect (Go is now ready)
     const wsUrl = `ws://localhost:${actualWsPort}/ws`;
     wsClient = new WebSocketClient(wsUrl, log);
+    const activeSettingsService = settingsService;
+
+    const sendSyncSettingsToGo = (sync: SyncSettings) => {
+      if (!wsClient?.isConnected()) return;
+      wsClient.send({
+        type: 'SET_SYNC_SETTINGS',
+        data: syncSettingsPayload(sync),
+      });
+    };
+    wsClient.on('connected', () => {
+      sendSyncSettingsToGo(activeSettingsService.snapshot.sync);
+    });
     wsClient.connect();
 
-    // 3. Load settings from userData/settings.json (creates defaults on first run)
-    settingsService = new SettingsService(log);
-    await settingsService.load();
-    log.info(`Settings loaded from ${settingsService.path}`);
-
-    // 4. Setup IPC handlers (DB should exist now that Go has started)
+    // 3. Setup IPC handlers (DB should exist now that Go has started)
     setupIPC(appConfig.goProcess.dbPath, log, wsClient, settingsService);
+
+    // 4a. Forward runtime sync-settings changes to Go engine over WebSocket.
+    settingsService.addChangeListener((s) => {
+      sendSyncSettingsToGo(s.sync);
+    });
 
     // 3b. Register open-external IPC handler (HTTPS-only URL validation)
     ipcMain.handle('open-external', async (_event, url: unknown) => {

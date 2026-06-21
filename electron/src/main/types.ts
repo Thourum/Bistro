@@ -17,6 +17,10 @@ export interface GoProcessConfig {
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   logFile: string;
   replayQueue: boolean;
+  /** Seconds between automatic sync ticks. Passed as -sync-interval on startup. */
+  syncInterval: number;
+  /** Whether the automatic ticker is enabled. Passed as -auto-sync on startup. */
+  autoSync: boolean;
 }
 
 export interface AppConfig {

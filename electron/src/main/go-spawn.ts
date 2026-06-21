@@ -123,6 +123,9 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
       `-log-level`,
       config.logLevel,
       `-replay-queue=${config.replayQueue}`,
+      `-sync-interval`,
+      `${config.syncInterval}s`,
+      `-auto-sync=${config.autoSync}`,
       // Go exits when its stdin pipe closes, so it can never outlive us
       // even if this process is SIGKILLed (see stdio below).
       `-exit-on-stdin-close`,
