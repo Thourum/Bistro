@@ -270,7 +270,7 @@ describe('PR detail resolves by stable id, not list index', () => {
   beforeEach(() => {
     appStore.setState(() => ({
       ...initialUIState,
-      isAuthenticated: true,      mode: 'list' as const,
+      isAuthenticated: true,
     }));
   });
 
@@ -292,7 +292,6 @@ describe('PR detail resolves by stable id, not list index', () => {
     appStore.setState((s) => ({
       ...s,
       repoFilter: 'acme/repo2',
-      mode: 'list',
     }));
 
     const { testRouter } = makePrDetailRouteRouter('/prs/');
@@ -323,7 +322,6 @@ describe('PR detail resolves by stable id, not list index', () => {
     appStore.setState((s) => ({
       ...s,
       repoFilter: 'acme/repo2',
-      mode: 'list',
     }));
 
     const { testRouter } = makePrDetailRouteRouter('/prs/');
@@ -349,8 +347,6 @@ describe('PR detail resolves by stable id, not list index', () => {
 
   it('deep-link to /prs/$prId renders the correct PR without collapsing to /prs', async () => {
     // Cold-start at a specific PR URL.
-    appStore.setState((s) => ({ ...s, mode: 'detail' }));
-
     const { testRouter } = makePrDetailRouteRouter('/prs/pr-repo2-c');
 
     await waitFor(() => {
@@ -368,8 +364,6 @@ describe('PR detail resolves by stable id, not list index', () => {
 
   it('navigating to /prs/$prId by id is stable across list reorders', async () => {
     // Navigate directly to PR-repo2-c by id (as if user clicked it).
-    appStore.setState((s) => ({ ...s, mode: 'detail' }));
-
     const { testRouter } = makePrDetailRouteRouter('/prs/pr-repo2-c');
 
     await waitFor(() => {
@@ -394,8 +388,6 @@ describe('PR detail resolves by stable id, not list index', () => {
   // ---------------------------------------------------------------------------
 
   it('navigating to an unknown prId renders detail with that prId in the param', async () => {
-    appStore.setState((s) => ({ ...s, mode: 'detail' }));
-
     const { testRouter } = makePrDetailRouteRouter('/prs/unknown-id-xyz');
 
     await waitFor(() => {
@@ -414,7 +406,6 @@ describe('PR detail resolves by stable id, not list index', () => {
     appStore.setState((s) => ({
       ...s,
       repoFilter: 'acme/repo1',
-      mode: 'list',
     }));
 
     makePrDetailRouteRouter('/prs/');

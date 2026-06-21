@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS } from '../../src/types/settings';
 
 beforeEach(() => {
   appStore.setState(() => ({ ...initialUIState, authChecked: false }));
+  settingsStore.setState(() => DEFAULT_SETTINGS);
 });
 
 describe('router smoke tests', () => {

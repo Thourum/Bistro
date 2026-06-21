@@ -44,11 +44,11 @@ function renderWithCommand() {
 
 describe('CommandPalette', () => {
   beforeEach(() => {
-    appStore.setState((s) => ({ ...s, mode: 'list', searchQuery: '', filterState: 'open' }));
+    appStore.setState((s) => ({ ...s, searchQuery: '', filterState: 'open' }));
   });
 
   afterEach(() => {
-    appStore.setState((s) => ({ ...s, mode: 'list' }));
+    appStore.setState((s) => ({ ...s, searchQuery: '', filterState: 'open' }));
   });
 
   it('does not render when overlay is not "command"', () => {
@@ -89,8 +89,8 @@ describe('CommandPalette', () => {
     };
     render(<TestComp />, { wrapper: OverlayProvider as React.ComponentType });
     await userEvent.keyboard('{Escape}');
-    // Mode is NOT changed (overlay-only close)
-    expect(appStore.state.mode).toBe('list');
+    // Dialog is dismissed after Escape (overlay-only close, no store side-effects)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('autofocuses the input on open', async () => {

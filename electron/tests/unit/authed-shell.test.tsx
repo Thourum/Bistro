@@ -192,8 +192,6 @@ describe('AuthedRouteShell — route-based rendering', () => {
 
   it('renders PRDetailPage when navigated to /prs/$prId; PRListPage NOT rendered', async () => {
     // Detail is router-owned — navigate to /prs/$prId.
-    appStore.setState((s) => ({ ...s, mode: 'detail' }));
-
     const { queryByTestId } = makeTestRouter('/prs/some-pr-id');
 
     // PRDetailPage stub is rendered by the prDetailRoute via Outlet.
@@ -204,9 +202,7 @@ describe('AuthedRouteShell — route-based rendering', () => {
     expect(queryByTestId('pr-list-page')).not.toBeInTheDocument();
   });
 
-  it('renders PRListPage when mode=list', async () => {
-    appStore.setState((s) => ({ ...s, mode: 'list' }));
-
+  it('renders PRListPage when navigated to /prs/', async () => {
     const { queryByTestId } = makeTestRouter('/prs/');
 
     await waitFor(() => {
@@ -216,8 +212,6 @@ describe('AuthedRouteShell — route-based rendering', () => {
   });
 
   it('deep-link to /prs/$prId is NOT collapsed back to /prs by the pin effect', async () => {
-    appStore.setState((s) => ({ ...s, mode: 'detail' }));
-
     const { testRouter } = makeTestRouter('/prs/some-pr-id');
 
     await waitFor(() => {

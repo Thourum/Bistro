@@ -32,7 +32,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 
 beforeEach(() => {
   mockPathname.current = '/prs';
-  appStore.setState(() => ({ ...initialUIState, mode: 'list' }));
+  appStore.setState(() => ({ ...initialUIState }));
   settingsStore.setState(() => DEFAULT_SETTINGS);
 });
 
