@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -432,12 +433,19 @@ func (o *Orchestrator) ApplyAction(ctx context.Context, req *actions.ActionReque
 				}
 			}
 			log.Debug("action queued", "queue_id", queuedAction.ID)
+			return &actions.ActionResult{
+				PRID:      req.PRID,
+				Action:    req.Action,
+				Success:   false,
+				Error:     "rate limited: action queued for later replay",
+				Timestamp: time.Now(),
+			}
 		}
 		return &actions.ActionResult{
 			PRID:      req.PRID,
 			Action:    req.Action,
 			Success:   false,
-			Error:     "rate limited: action queued for later replay",
+			Error:     "rate limited: no action queue configured, action dropped",
 			Timestamp: time.Now(),
 		}
 	}
@@ -565,16 +573,24 @@ func (o *Orchestrator) handleThreadActionSuccess(ctx context.Context, req *actio
 }
 
 // queuedActionID returns a stable unique ID for a queued action.
-// For actions that target a specific thread (resolve/unresolve), the thread ID
-// (req.Body) is included so that multiple thread mutations on the same PR do
-// not overwrite each other in the action queue.
-// For actions without a body (e.g. approve), the ID is pr_id+action,
-// preserving idempotent deduplication behaviour.
+// For thread actions (resolve/unresolve), Body is the thread node ID — short
+// and stable — so it is included directly.
+// For all other actions, if Body is non-empty it is hashed (sha256 prefix) so
+// that arbitrary user text does not appear raw in the queue row ID.
+// Actions without a body keep their deduplication behaviour (pr_id+action).
 func queuedActionID(req *actions.ActionRequest) string {
-	if req.Body != "" {
-		return req.PRID + "-" + string(req.Action) + "-" + req.Body
+	if req.Body == "" {
+		return req.PRID + "-" + string(req.Action)
 	}
-	return req.PRID + "-" + string(req.Action)
+	switch req.Action {
+	case actions.ResolveThreadCommand, actions.UnresolveThreadCommand:
+		// Body is a thread node ID: stable, safe to use directly.
+		return req.PRID + "-" + string(req.Action) + "-" + req.Body
+	default:
+		// Hash arbitrary body text to keep the ID compact and free of raw user content.
+		h := sha256.Sum256([]byte(req.Body))
+		return req.PRID + "-" + string(req.Action) + "-" + hex.EncodeToString(h[:8])
+	}
 }
 
 // ReplayQueuedActions replays pending actions after a rate limit clears.

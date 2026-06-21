@@ -162,9 +162,9 @@ func NewSubmitActionHandler(getApplier ApplierGetter, log *slog.Logger) ws.Messa
 			return nil, fmt.Errorf("SUBMIT_ACTION requires action")
 		}
 
-		// For thread actions, thread_id is the canonical field; map to Body.
+		// For thread actions, thread_id is the canonical field and takes priority.
 		body := req.Body
-		if req.ThreadID != "" && body == "" {
+		if req.ThreadID != "" {
 			body = req.ThreadID
 		}
 

@@ -126,7 +126,7 @@ func NewRangeDiffHandlerWithDeps(deps RangeDiffHandlerDeps, log *slog.Logger) ws
 		// Resolve from_patchset.
 		from := req.FromPatchset
 		if req.SinceLastReview && deps.LastReviewed != nil && deps.CurrentUser != nil {
-			login, ok := deps.CurrentUser.GetCurrentUser(ctx, "github")
+			login, ok, _ := deps.CurrentUser.GetCurrentUser(ctx, "github")
 			if !ok || login == "" {
 				return emptyDegraded(msg.ID, req.PRID, 0, to, "", "",
 					"since_last_review: no authenticated user"), nil

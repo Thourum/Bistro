@@ -14,7 +14,7 @@ func TestNewGraphQLClient_NonNilForToken(t *testing.T) {
 	}
 }
 
-func TestNewGraphQLClient_NilForEmptyToken(t *testing.T) {
+func TestNewGraphQLClient_NonNilForEmptyToken(t *testing.T) {
 	// Empty token should still return a client (unauthenticated), not panic.
 	c := ghprovider.NewGraphQLClient("")
 	if c == nil {

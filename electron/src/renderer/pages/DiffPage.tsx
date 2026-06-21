@@ -148,6 +148,12 @@ export function DiffPage() {
             message: `Could not mark viewed: ${ack.reason}`,
             dismissible: true,
           });
+        } else {
+          addToast({
+            type: 'warning',
+            message: 'Could not mark viewed: network or communication error',
+            dismissible: true,
+          });
         }
       })
       .finally(() => {

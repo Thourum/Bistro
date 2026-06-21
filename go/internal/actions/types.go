@@ -21,13 +21,14 @@ const (
 // server-side mutations if executed more than once (e.g. creates a new DB
 // record on GitHub rather than updating an existing one).
 //
-//   - post_comment  → each call creates a new comment thread.
-//   - request_changes → each call creates a new review submission.
-//   - approve, resolve_thread, unresolve_thread are idempotent: retrying them
+//   - post_comment     → each call creates a new comment thread.
+//   - request_changes  → each call creates a new review submission.
+//   - approve          → uses CreateReview; each call creates a new review record.
+//   - resolve_thread, unresolve_thread are idempotent: retrying them
 //     when the previous attempt is unknown is safe.
 func (a ActionCommand) isNonIdempotent() bool {
 	switch a {
-	case PostCommentCommand, RequestChangesCommand:
+	case PostCommentCommand, RequestChangesCommand, ApproveCommand:
 		return true
 	}
 	return false

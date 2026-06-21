@@ -41,19 +41,20 @@ func (s *CurrentUserStore) SetCurrentUser(ctx context.Context, providerName, log
 	return nil
 }
 
-// GetCurrentUser returns the stored login and true, or ("", false) if not set.
-func (s *CurrentUserStore) GetCurrentUser(ctx context.Context, providerName string) (string, bool) {
+// GetCurrentUser returns the stored login and true, or ("", false, nil) if not set.
+// A non-nil error indicates a DB failure distinct from the not-set case.
+func (s *CurrentUserStore) GetCurrentUser(ctx context.Context, providerName string) (string, bool, error) {
 	var login string
 	err := s.db.QueryRowContext(ctx,
 		`SELECT login FROM current_user WHERE provider = ?`,
 		providerName,
 	).Scan(&login)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", false
+		return "", false, nil
 	}
 	if err != nil {
 		s.log.Error("get current user failed", "provider", providerName, "error", err)
-		return "", false
+		return "", false, err
 	}
-	return login, true
+	return login, true, nil
 }

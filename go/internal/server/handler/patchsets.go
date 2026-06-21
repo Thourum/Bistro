@@ -23,7 +23,7 @@ type fileViewedMarker interface {
 
 // currentUserReader is the subset used to resolve the authenticated login.
 type currentUserReader interface {
-	GetCurrentUser(ctx context.Context, provider string) (string, bool)
+	GetCurrentUser(ctx context.Context, provider string) (string, bool, error)
 }
 
 // NewListPatchsetsHandler returns a WS handler for GET_PATCHSETS.
@@ -123,7 +123,7 @@ func newMarkFileViewedHandler(db fileViewedMarker, cu currentUserReader, ds diff
 			return nil, fmt.Errorf("MARK_FILE_VIEWED requires pr_id, file_path, and content_hash")
 		}
 
-		login, ok := cu.GetCurrentUser(ctx, "github")
+		login, ok, _ := cu.GetCurrentUser(ctx, "github")
 		if !ok || login == "" {
 			logger.Warn("MARK_FILE_VIEWED: no current user, skipping",
 				"pr_id", req.PRID, "file_path", req.FilePath)
@@ -154,12 +154,12 @@ func newMarkFileViewedHandler(db fileViewedMarker, cu currentUserReader, ds diff
 
 // validateFileHash computes the canonical content hash for filePath in the
 // stored diffs and checks it against the client-supplied hash.
-// Returns (true, "") when valid or when the file isn't in stored diffs.
+// Fails closed: returns (false, reason) when GetDiffs errors or the file is
+// not found in stored diffs, so stale hashes cannot be accepted silently.
 func validateFileHash(_ context.Context, ds diffReader, prID, filePath, clientHash string) (bool, string) {
 	diffs, err := ds.GetDiffs(prID)
 	if err != nil {
-		// Can't validate → accept (hash store may be unavailable).
-		return true, ""
+		return false, fmt.Sprintf("could not validate content_hash: GetDiffs failed: %v", err)
 	}
 	for _, f := range diffs {
 		if f.FilePath == filePath {
@@ -178,8 +178,8 @@ func validateFileHash(_ context.Context, ds diffReader, prID, filePath, clientHa
 			return true, ""
 		}
 	}
-	// File not found in stored diffs → accept (can't validate).
-	return true, ""
+	// File not found in stored diffs → fail closed; cannot verify.
+	return false, fmt.Sprintf("could not validate content_hash: file %q not found in stored diffs", filePath)
 }
 
 func fileViewedACK(msgID, prID, filePath string, ok bool, reason string) interface{} {

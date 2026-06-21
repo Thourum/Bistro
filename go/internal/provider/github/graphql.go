@@ -42,7 +42,6 @@ type unresolveReviewThreadInput struct {
 // Only threads with StateKnown=true carry valid node IDs; callers should
 // verify before calling.
 func (c *Client) ResolveThread(ctx context.Context, threadID string) error {
-	gqlClient := NewGraphQLClient(c.token)
 	var m struct {
 		ResolveReviewThread struct {
 			Thread struct {
@@ -51,7 +50,7 @@ func (c *Client) ResolveThread(ctx context.Context, threadID string) error {
 			}
 		} `graphql:"resolveReviewThread(input: $input)"`
 	}
-	if err := gqlClient.Mutate(ctx, &m, resolveReviewThreadInput{ThreadID: githubv4.ID(threadID)}, nil); err != nil {
+	if err := c.gqlClient.Mutate(ctx, &m, resolveReviewThreadInput{ThreadID: githubv4.ID(threadID)}, nil); err != nil {
 		return fmt.Errorf("resolveReviewThread %s: %w", threadID, err)
 	}
 	return nil
@@ -59,7 +58,6 @@ func (c *Client) ResolveThread(ctx context.Context, threadID string) error {
 
 // UnresolveThread executes the unresolveReviewThread GraphQL mutation.
 func (c *Client) UnresolveThread(ctx context.Context, threadID string) error {
-	gqlClient := NewGraphQLClient(c.token)
 	var m struct {
 		UnresolveReviewThread struct {
 			Thread struct {
@@ -68,7 +66,7 @@ func (c *Client) UnresolveThread(ctx context.Context, threadID string) error {
 			}
 		} `graphql:"unresolveReviewThread(input: $input)"`
 	}
-	if err := gqlClient.Mutate(ctx, &m, unresolveReviewThreadInput{ThreadID: githubv4.ID(threadID)}, nil); err != nil {
+	if err := c.gqlClient.Mutate(ctx, &m, unresolveReviewThreadInput{ThreadID: githubv4.ID(threadID)}, nil); err != nil {
 		return fmt.Errorf("unresolveReviewThread %s: %w", threadID, err)
 	}
 	return nil

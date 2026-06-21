@@ -504,17 +504,25 @@ func provisionalThreadIDs(thread *provider.ReviewThread) []string {
 	}
 
 	memo := make(map[string]string, len(byID))
+	visiting := make(map[string]bool, len(byID))
 	var rootOf func(id string) string
 	rootOf = func(id string) string {
 		if root, ok := memo[id]; ok {
 			return root
+		}
+		if visiting[id] {
+			// Cycle detected: treat this node as its own root.
+			memo[id] = id
+			return id
 		}
 		c, ok := byID[id]
 		if !ok || c.InReplyTo == "" {
 			memo[id] = id
 			return id
 		}
+		visiting[id] = true
 		root := rootOf(c.InReplyTo)
+		visiting[id] = false
 		memo[id] = root
 		return root
 	}

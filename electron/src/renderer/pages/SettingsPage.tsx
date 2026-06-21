@@ -413,14 +413,16 @@ function KeyboardSection() {
                     {b.description}
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
-                    {(isSequenceBinding(b) ? Array.from(b.keys) : [b.keys as string]).map((k, j) => (
-                      <kbd
-                        key={`${k}-${j}`}
-                        className="px-2 py-0.5 text-[10px] font-mono font-bold bg-surface-container-high text-on-surface border border-outline-variant/40"
-                      >
-                        {formatForDisplay(k as string)}
-                      </kbd>
-                    ))}
+                    {(isSequenceBinding(b) ? b.keys : [b.keys as string]).map(
+                      (k, j) => (
+                        <kbd
+                          key={`${k}-${j}`}
+                          className="px-2 py-0.5 text-[10px] font-mono font-bold bg-surface-container-high text-on-surface border border-outline-variant/40"
+                        >
+                          {formatForDisplay(k)}
+                        </kbd>
+                      ),
+                    )}
                   </div>
                 </div>
               ))}

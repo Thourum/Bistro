@@ -242,6 +242,9 @@ func tableColumns(t *testing.T, db interface {
 		}
 		cols[n] = true
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("tableColumns rows.Err: %v", err)
+	}
 	return cols
 }
 

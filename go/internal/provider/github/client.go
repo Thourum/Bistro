@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-github/v84/github"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 )
 
@@ -16,8 +17,9 @@ var _ provider.Provider = (*Client)(nil)
 
 // Client wraps GitHub API client with authentication token
 type Client struct {
-	token string
-	gh    *github.Client
+	token     string
+	gh        *github.Client
+	gqlClient *githubv4.Client
 }
 
 // NewClient creates a new GitHub client with authentication token.
@@ -44,8 +46,9 @@ func NewClient(token string) *Client {
 	// the whole sync pass silently never completes.
 	httpClient.Timeout = 30 * time.Second
 	return &Client{
-		token: token,
-		gh:    github.NewClient(httpClient),
+		token:     token,
+		gh:        github.NewClient(httpClient),
+		gqlClient: NewGraphQLClient(token),
 	}
 }
 

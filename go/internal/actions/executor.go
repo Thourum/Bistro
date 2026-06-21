@@ -15,7 +15,7 @@ import (
 // ReviewLoginGetter resolves the authenticated login for a provider.
 // Satisfied by *store.CurrentUserStore.
 type ReviewLoginGetter interface {
-	GetCurrentUser(ctx context.Context, providerName string) (string, bool)
+	GetCurrentUser(ctx context.Context, providerName string) (string, bool, error)
 }
 
 // ReviewSHAWriter persists full patchset identity for the last-reviewed record.
@@ -354,7 +354,7 @@ func (ae *ActionExecutor) recordLastReviewedSHA(ctx context.Context, prID string
 		return
 	}
 
-	login, ok := ae.reviewLogin.GetCurrentUser(ctx, "github")
+	login, ok, _ := ae.reviewLogin.GetCurrentUser(ctx, "github")
 	if !ok || login == "" {
 		ae.log.Debug("recordLastReviewedSHA: no current user, skipping", "pr_id", prID)
 		return

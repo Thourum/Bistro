@@ -160,8 +160,8 @@ type stubLoginGetter struct {
 	found bool
 }
 
-func (s *stubLoginGetter) GetCurrentUser(_ context.Context, _ string) (string, bool) {
-	return s.login, s.found
+func (s *stubLoginGetter) GetCurrentUser(_ context.Context, _ string) (string, bool, error) {
+	return s.login, s.found, nil
 }
 
 // stubSHAWriter implements ReviewSHAWriter and captures calls for assertions.
@@ -666,10 +666,11 @@ func TestExecute_RequestChanges_RecoverableTransportError_IsAmbiguous(t *testing
 	}
 }
 
-// TestExecute_Approve_RecoverableTransportError_NotAmbiguous verifies that
-// the idempotent approve action with a recoverable error is NOT marked
-// ambiguous — retrying approve is safe.
-func TestExecute_Approve_RecoverableTransportError_NotAmbiguous(t *testing.T) {
+// TestExecute_Approve_RecoverableTransportError_IsAmbiguous verifies that
+// approve with a recoverable transport error IS marked ambiguous — approve
+// uses CreateReview (non-idempotent) so we cannot safely retry without risk
+// of creating a duplicate review.
+func TestExecute_Approve_RecoverableTransportError_IsAmbiguous(t *testing.T) {
 	ctx := context.Background()
 
 	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -684,11 +685,8 @@ func TestExecute_Approve_RecoverableTransportError_NotAmbiguous(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if result.IsAmbiguousRemoteSuccess() {
-		t.Error("approve recoverable error must NOT be ambiguous — retrying is safe")
-	}
-	if !result.IsRecoverable() {
-		t.Error("approve recoverable error should still be recoverable for retry")
+	if !result.IsAmbiguousRemoteSuccess() {
+		t.Errorf("approve recoverable error must be ambiguous (CreateReview is non-idempotent); got: %q", result.Error)
 	}
 }
 

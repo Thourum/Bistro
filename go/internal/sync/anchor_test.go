@@ -260,8 +260,10 @@ func TestResolveAnchors_OriginalPosition_WithDB_PatchsetFound_AttemptedNotSkippe
 	psNum := 1
 	db := newSyncTestDB(t)
 	mustInsertPRForAnchorTest(t, db, "pr-anc-2")
-	db.Exec(`INSERT INTO patchsets (pr_id, number, head_sha, base_sha, pushed_at)
-		VALUES ('pr-anc-2', 1, 'sha-P1-head', 'sha-P1-base', CURRENT_TIMESTAMP)`) //nolint:errcheck
+	if _, err := db.Exec(`INSERT INTO patchsets (pr_id, number, head_sha, base_sha, pushed_at)
+		VALUES ('pr-anc-2', 1, 'sha-P1-head', 'sha-P1-base', CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatalf("insert patchset: %v", err)
+	}
 
 	o := &Orchestrator{
 		anchorResolver: git.NewAnchorResolver(silentLog()),

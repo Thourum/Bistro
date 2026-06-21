@@ -37,8 +37,8 @@ type mockCurrentUserReader struct {
 	found bool
 }
 
-func (m *mockCurrentUserReader) GetCurrentUser(_ context.Context, _ string) (string, bool) {
-	return m.login, m.found
+func (m *mockCurrentUserReader) GetCurrentUser(_ context.Context, _ string) (string, bool, error) {
+	return m.login, m.found, nil
 }
 
 type mockRangeDiffRunner struct {
