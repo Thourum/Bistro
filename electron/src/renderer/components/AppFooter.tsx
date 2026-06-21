@@ -1,45 +1,52 @@
+// AppFooter is only rendered under AuthedRouteShell, which is mounted
+// under the authed route guard — it is NEVER rendered on /login or /onboarding.
+// Therefore it is always inside a RouterProvider and can call router hooks
+// directly without an error-boundary wrapper.
+
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { LoaderCircle } from 'lucide-react';
 import React from 'react';
 import { useStore } from '../hooks/useStore';
+import { useOptionalOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
-import { getEffectiveBindings } from '../utils/keybindings';
-import { buildLegendForMode } from '../utils/legendPresets';
+import type { RouteBase } from '../utils/keybindings';
+import { getEffectiveBindings, routeBaseFromPath } from '../utils/keybindings';
+import { buildLegendForRouteBase } from '../utils/legendPresets';
 import { useFooterSlotContent } from './FooterSlot';
 import { SyncStatusHoverCard } from './SyncStatusHoverCard';
 
 /**
- * Global bottom system bar rendered on every screen.
+ * Global bottom system bar for the authed layout.
  *
  * Three regions:
  *   ┌──────────────────────────┬──────────────────────┬────────────────────────────────┐
- *   │ LEFT: mode-aware legend  │ CENTER: page slot    │ RIGHT: status + shortcut chrome │
+ *   │ LEFT: route-aware legend │ CENTER: page slot    │ RIGHT: status + shortcut chrome │
  *   └──────────────────────────┴──────────────────────┴────────────────────────────────┘
- *
- * Left + center are slottable (see FooterSlot.tsx); when left is unset we
- * fall back to the binding-derived legend for the current mode so user
- * overrides in `settings.json` show through automatically.
- *
- * Right is fixed: Shortcuts button, Settings button, and a live sync status
- * indicator. The label for the status is hidden in normal operation (dot
- * speaks for itself) with details available through its hover card.
  */
 export function AppFooter(): React.ReactElement {
-  const mode = useStore(appStore, (state: UIState) => state.mode);
   const syncStatus = useStore(appStore, (state: UIState) => state.syncStatus);
   const lastSyncAt = useStore(appStore, (state: UIState) => state.lastSyncAt);
   const isOffline = useStore(appStore, (state: UIState) => state.isOffline);
   const overrides = useStore(settingsStore, (s) => s.keybindings);
   const syncSettings = useStore(settingsStore, (s) => s.sync);
 
+  const overlayContext = useOptionalOverlays();
   const slots = useFooterSlotContent();
+  const navigate = useNavigate();
+  const routerState = useRouterState();
+
+  const routeBase: RouteBase | null = routeBaseFromPath(
+    routerState.location.pathname,
+  );
+  const activeOverlay = overlayContext?.activeOverlay ?? null;
 
   const legendEntries = React.useMemo(() => {
     if (slots.left) return [];
     const bindings = getEffectiveBindings(overrides);
-    return buildLegendForMode(mode, bindings);
-  }, [mode, overrides, slots.left]);
+    return buildLegendForRouteBase(routeBase, activeOverlay, bindings);
+  }, [routeBase, activeOverlay, overrides, slots.left]);
 
   const { label: statusLabel, dotClass: statusDot } = deriveStatus(
     syncStatus,
@@ -47,9 +54,17 @@ export function AppFooter(): React.ReactElement {
   );
   const isSyncing = syncStatus === 'syncing' && !isOffline;
 
+  const handleShortcuts = () => {
+    if (overlayContext) {
+      const source =
+        routeBase === 'detail' || routeBase === 'diff' ? 'detail' : 'list';
+      overlayContext.openHelp(source);
+    }
+  };
+
   return (
     <footer className="shrink-0 h-8 border-t border-outline-variant/40 bg-surface-container-high/80 backdrop-blur flex items-center z-50 text-[10px] uppercase tracking-widest font-mono">
-      {/* LEFT — mode-aware keybindings (or page-provided override) */}
+      {/* LEFT — route-aware keybindings (or page-provided override) */}
       <div className="flex-1 min-w-0 flex items-center gap-4 px-4 overflow-hidden">
         {slots.left ?? <LegendStrip entries={legendEntries} />}
       </div>
@@ -63,14 +78,14 @@ export function AppFooter(): React.ReactElement {
       <div className="flex-1 min-w-0 flex items-center justify-end gap-4 px-4">
         <button
           type="button"
-          onClick={() => appStore.setState((s) => ({ ...s, mode: 'help' }))}
+          onClick={handleShortcuts}
           className="text-outline hover:text-on-surface transition-colors"
         >
           Shortcuts
         </button>
         <button
           type="button"
-          onClick={() => appStore.setState((s) => ({ ...s, mode: 'settings' }))}
+          onClick={() => void navigate({ to: '/settings' })}
           className="text-outline hover:text-on-surface transition-colors"
         >
           Settings
@@ -103,7 +118,7 @@ export function AppFooter(): React.ReactElement {
 }
 
 interface LegendStripProps {
-  entries: ReturnType<typeof buildLegendForMode>;
+  entries: ReturnType<typeof buildLegendForRouteBase>;
 }
 
 function LegendStrip({ entries }: LegendStripProps): React.ReactElement | null {

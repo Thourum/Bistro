@@ -1,16 +1,65 @@
 import type { Store } from '@tanstack/store';
 import type { KeybindingOverrides } from '../../types/settings';
+import type {
+  OverlayContextValue,
+  OverlayKind,
+} from '../overlays/OverlayContext';
 import { authAction, PROVIDERS } from '../providers';
+import { router } from '../router';
 import type { UIState } from '../store/ui';
 
-export type AppMode = UIState['mode'];
+// RouteBase: the "base" route derived from the current pathname.
+// Includes 'login' and 'onboarding' so their bindings can be properly gated
+// (auth and onboarding are enforced by declarative route guards).
+export type RouteBase =
+  | 'list'
+  | 'detail'
+  | 'diff'
+  | 'settings'
+  | 'login'
+  | 'onboarding';
+
+// AppBase: the "base" route derived from the current pathname.
+// Navigation is 100% router-owned; there is no separate AppMode enum.
 
 /**
- * A single keyboard binding. `keys` uses TanStack Hotkeys syntax verbatim:
- * a hotkey string for single chords (`'j'`, `'Shift+G'`, `'Mod+/'`,
- * `'Escape'`) or an array of hotkey strings for Vim-style sequences
- * (`['g', 'g']`). No translation layer exists — what is written here is what
- * gets registered.
+ * Derive the RouteBase from the current pathname.
+ */
+export function routeBaseFromPath(pathname: string): RouteBase | null {
+  if (/^\/prs\/[^/]+\/diff$/.test(pathname)) return 'diff';
+  if (/^\/prs\/[^/]+$/.test(pathname)) return 'detail';
+  if (pathname === '/prs' || pathname === '/prs/') return 'list';
+  if (pathname === '/settings') return 'settings';
+  if (pathname === '/login') return 'login';
+  if (pathname === '/onboarding') return 'onboarding';
+  return null;
+}
+
+/**
+ * Binding activation descriptor.
+ * - `routes`: the base routes this binding fires on (omit = all routes).
+ * - `overlays`: the overlay kinds this binding fires on (overlay-exclusive).
+ * When an overlay is active, ONLY bindings with a matching `overlays` entry fire.
+ * When no overlay is active, only route-gated bindings fire.
+ */
+export interface BindingActivation {
+  routes?: RouteBase[];
+  overlays?: OverlayKind[];
+}
+
+/**
+ * Context passed to every keybinding action.
+ */
+export interface KeyActionContext {
+  store: Store<UIState>;
+  routeBase: RouteBase | null;
+  activeOverlay: OverlayKind | null;
+  overlays: OverlayContextValue;
+  location: { pathname: string };
+}
+
+/**
+ * A single keyboard binding.
  */
 export interface KeyBinding {
   /** Stable, human-legible id used by settings overrides, e.g. `list.down`. */
@@ -18,11 +67,14 @@ export interface KeyBinding {
   /** TanStack hotkey string, or an array of them for a sequence. */
   keys: string | readonly string[];
   description: string;
-  /** Modes in which this binding is active. Empty array = all modes. */
-  modes: readonly AppMode[];
+  /**
+   * Activation descriptor: routes (no overlay) or overlays.
+   * Empty = all routes (no overlay active).
+   */
+  activation: BindingActivation;
   /** Excluded from the help overlay (e.g. the repetitive 2–9 jump keys). */
   hidden?: boolean;
-  action: (store: Store<UIState>) => void;
+  action: (ctx: KeyActionContext) => void;
 }
 
 /** True when the binding is a multi-chord sequence (['g','g']). */
@@ -32,7 +84,55 @@ export function isSequenceBinding(
   return Array.isArray(binding.keys);
 }
 
+/**
+ * Determine if a binding is active given the current route and overlay state.
+ *
+ * Semantics:
+ *  • When an overlay is active, ONLY bindings whose `activation.overlays`
+ *    includes the active overlay fire.
+ *  • When no overlay is active, only route-gated (non-overlay-only) bindings
+ *    fire:
+ *    – `routes === undefined`  → active on every non-null routeBase.
+ *    – `routes.length === 0`   → NEVER active (used by login bindings).
+ *    – `routes.includes(r)`    → active only on those routes.
+ *    – Overlay-only bindings (`overlays` set, `routes` absent) → never fire
+ *      when no overlay is active.
+ */
+export function isActive(
+  binding: KeyBinding,
+  {
+    routeBase,
+    activeOverlay,
+  }: { routeBase: RouteBase | null; activeOverlay: OverlayKind | null },
+): boolean {
+  if (activeOverlay !== null) {
+    return binding.activation.overlays?.includes(activeOverlay) === true;
+  }
+  // No overlay active.
+  // Overlay-only bindings (have overlays but no routes) never fire here.
+  if (
+    binding.activation.overlays !== undefined &&
+    binding.activation.routes === undefined
+  ) {
+    return false;
+  }
+  const routes = binding.activation.routes;
+  // routes: [] means "never active on any route" (e.g. login bindings).
+  if (routes !== undefined && routes.length === 0) return false;
+  return (
+    routeBase !== null && (routes === undefined || routes.includes(routeBase))
+  );
+}
+
 // ─── Global bindings ─────────────────────────────────────────────────────────
+
+const ALL_OVERLAYS: OverlayKind[] = [
+  'command',
+  'help',
+  'search',
+  'filter',
+  'repoPicker',
+];
 
 const globalBindings: KeyBinding[] = [
   {
@@ -41,36 +141,49 @@ const globalBindings: KeyBinding[] = [
     // written as Shift + the physical base key ('?' = Shift+/ on US layouts).
     keys: 'Shift+/',
     description: 'Help',
-    modes: ['list', 'detail'],
-    action: (store) => {
-      store.setState((s) => ({
-        ...s,
-        mode: 'help',
-        helpSourceMode: s.mode === 'detail' ? 'detail' : 'list',
-      }));
+    activation: { routes: ['list', 'detail'] },
+    action: (ctx) => {
+      const source = ctx.routeBase === 'detail' ? 'detail' : 'list';
+      ctx.overlays.openHelp(source);
     },
   },
   {
     actionId: 'global.escape',
     keys: 'Escape',
     description: 'Back / Cancel',
-    modes: ['list', 'detail', 'diff', 'help', 'search', 'settings'],
-    action: (store) => {
-      const { mode } = store.state;
-      if (mode === 'help') {
-        store.setState((s) => ({ ...s, mode: 'list' }));
-      } else if (mode === 'diff') {
-        store.setState((s) => ({ ...s, mode: 'detail' }));
-      } else if (mode === 'detail') {
-        store.setState((s) => ({ ...s, mode: 'list' }));
-      } else if (mode === 'search') {
-        store.setState((s) => ({ ...s, mode: 'list', searchQuery: '' }));
-      } else if (mode === 'settings') {
-        store.setState((s) => ({ ...s, mode: 'list' }));
-      } else if (mode === 'list') {
-        store.setState((s) => ({
+    activation: {
+      routes: ['list', 'detail', 'diff', 'settings'],
+      overlays: ALL_OVERLAYS,
+    },
+    action: (ctx) => {
+      const { activeOverlay, routeBase } = ctx;
+      if (activeOverlay === 'search') {
+        ctx.overlays.closeSearch({ clearQuery: true });
+      } else if (activeOverlay !== null) {
+        ctx.overlays.closeOverlay();
+      } else if (routeBase === 'diff') {
+        // Navigate back to /prs/$prId
+        const pathname = router.state.location.pathname;
+        const m = /^\/prs\/([^/]+)\/diff$/.exec(pathname);
+        if (m) {
+          void router.navigate({
+            to: '/prs/$prId',
+            params: { prId: m[1]! },
+          });
+        }
+      } else if (routeBase === 'detail') {
+        void router.navigate({
+          to: '/prs',
+          search: (prev: Record<string, unknown>) => prev,
+        });
+      } else if (routeBase === 'settings') {
+        void router.navigate({
+          to: '/prs',
+          search: (prev: Record<string, unknown>) => prev,
+        });
+      } else if (routeBase === 'list') {
+        ctx.store.setState((s) => ({
           ...s,
-          filterMenuOpen: false,
           confirmingAction: null,
         }));
       }
@@ -80,26 +193,31 @@ const globalBindings: KeyBinding[] = [
     actionId: 'global.command',
     keys: 'Shift+;', // ':' on US layouts
     description: 'Commands',
-    modes: ['list', 'detail'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, mode: 'command' }));
+    activation: { routes: ['list', 'detail'] },
+    action: (ctx) => {
+      ctx.overlays.openCommand();
     },
   },
   {
     actionId: 'global.settings',
     keys: 'Mod+,',
     description: 'Settings',
-    modes: ['list', 'detail'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, mode: 'settings' }));
+    activation: { routes: ['list', 'detail'] },
+    action: (_ctx) => {
+      void router.navigate({ to: '/settings' });
     },
   },
   {
     actionId: 'global.quit.mac',
     keys: 'Meta+Q',
     description: 'Quit',
-    modes: ['list', 'detail', 'help', 'search'],
-    action: (_store) => {
+    // Active on all base routes AND while help/search overlays are open
+    // (matches old behaviour: quit worked in list/detail/help/search modes).
+    activation: {
+      routes: ['list', 'detail', 'diff', 'settings'] as RouteBase[],
+      overlays: ['help', 'search'] as OverlayKind[],
+    },
+    action: (_ctx) => {
       window.electronAPI?.quitApp?.();
     },
   },
@@ -107,8 +225,11 @@ const globalBindings: KeyBinding[] = [
     actionId: 'global.quit.win',
     keys: 'Alt+F4',
     description: 'Quit',
-    modes: ['list', 'detail', 'help', 'search'],
-    action: (_store) => {
+    activation: {
+      routes: ['list', 'detail', 'diff', 'settings'] as RouteBase[],
+      overlays: ['help', 'search'] as OverlayKind[],
+    },
+    action: (_ctx) => {
       window.electronAPI?.quitApp?.();
     },
   },
@@ -118,14 +239,9 @@ const globalBindings: KeyBinding[] = [
     // covers all platforms, and formatForDisplay renders it natively.
     keys: 'Mod+/',
     description: 'Search',
-    modes: ['list', 'detail'],
-    action: (store) => {
-      const { mode } = store.state;
-      if (mode === 'search') {
-        store.setState((s) => ({ ...s, mode: 'list', searchQuery: '' }));
-      } else {
-        store.setState((s) => ({ ...s, mode: 'search' }));
-      }
+    activation: { routes: ['list', 'detail'] },
+    action: (ctx) => {
+      ctx.overlays.openSearch();
     },
   },
 ];
@@ -136,9 +252,14 @@ const loginBindings: KeyBinding[] = PROVIDERS.map((provider) => ({
   actionId: `login.provider.${provider.id}`,
   keys: provider.key,
   description: `Login with ${provider.label}`,
-  modes: ['login'] as AppMode[],
-  action: (store: Store<UIState>) => {
-    store.setState((s) => ({ ...s, confirmingAction: authAction(provider) }));
+  // Login provider keys (g/l/t) are active ONLY on /login —
+  // they must never fire on /prs, /settings, etc.
+  activation: { routes: ['login'] as RouteBase[] },
+  action: (ctx: KeyActionContext) => {
+    ctx.store.setState((s) => ({
+      ...s,
+      confirmingAction: authAction(provider),
+    }));
   },
 }));
 
@@ -151,10 +272,10 @@ const jumpBindings: KeyBinding[] = Array.from({ length: 9 }, (_, i) => {
     actionId: `list.jumpTo${digit}`,
     keys: String(digit),
     description: digit === 1 ? 'Jump to PR (1–9)' : `Jump to PR #${digit}`,
-    modes: ['list'] as AppMode[],
+    activation: { routes: ['list'] as RouteBase[] },
     hidden: digit !== 1,
-    action: (store: Store<UIState>) => {
-      store.setState((s) => ({ ...s, selectedPRIndex: digit - 1 }));
+    action: (ctx: KeyActionContext) => {
+      ctx.store.setState((s) => ({ ...s, selectedPRIndex: digit - 1 }));
     },
   };
 });
@@ -164,18 +285,21 @@ const listBindings: KeyBinding[] = [
     actionId: 'list.down',
     keys: 'j',
     description: 'Next',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, selectedPRIndex: s.selectedPRIndex + 1 }));
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({
+        ...s,
+        selectedPRIndex: s.selectedPRIndex + 1,
+      }));
     },
   },
   {
     actionId: 'list.up',
     keys: 'k',
     description: 'Previous',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({
         ...s,
         selectedPRIndex: Math.max(0, s.selectedPRIndex - 1),
       }));
@@ -185,20 +309,23 @@ const listBindings: KeyBinding[] = [
     actionId: 'list.downArrow',
     keys: 'ArrowDown',
     description: 'Next',
-    modes: ['list'],
+    activation: { routes: ['list'] },
     hidden: true,
-    action: (store) => {
-      store.setState((s) => ({ ...s, selectedPRIndex: s.selectedPRIndex + 1 }));
+    action: (ctx) => {
+      ctx.store.setState((s) => ({
+        ...s,
+        selectedPRIndex: s.selectedPRIndex + 1,
+      }));
     },
   },
   {
     actionId: 'list.upArrow',
     keys: 'ArrowUp',
     description: 'Previous',
-    modes: ['list'],
+    activation: { routes: ['list'] },
     hidden: true,
-    action: (store) => {
-      store.setState((s) => ({
+    action: (ctx) => {
+      ctx.store.setState((s) => ({
         ...s,
         selectedPRIndex: Math.max(0, s.selectedPRIndex - 1),
       }));
@@ -208,20 +335,22 @@ const listBindings: KeyBinding[] = [
     actionId: 'list.top',
     keys: ['g', 'g'],
     description: 'Jump to top',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, selectedPRIndex: 0 }));
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({ ...s, selectedPRIndex: 0 }));
     },
   },
   {
     actionId: 'list.bottom',
     keys: 'Shift+G',
     description: 'Jump to bottom',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      // Set cursor to the last visible row; row index is only a cursor, not PR identity.
+      const len = ctx.store.state.visiblePRIds.length;
+      ctx.store.setState((s) => ({
         ...s,
-        selectedPRIndex: Number.MAX_SAFE_INTEGER,
+        selectedPRIndex: len > 0 ? len - 1 : 0,
       }));
     },
   },
@@ -229,50 +358,57 @@ const listBindings: KeyBinding[] = [
     actionId: 'list.open',
     keys: 'Enter',
     description: 'Open',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, mode: 'detail' }));
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      // Navigate by stable PR id after clamping the cursor to the visible list.
+      const { selectedPRIndex, visiblePRIds } = ctx.store.state;
+      const clampedIdx = Math.min(
+        Math.max(0, selectedPRIndex),
+        Math.max(0, visiblePRIds.length - 1),
+      );
+      const prId = visiblePRIds[clampedIdx];
+      if (prId !== undefined) {
+        void router.navigate({ to: '/prs/$prId', params: { prId } });
+      }
     },
   },
   {
     actionId: 'list.search',
     keys: '/',
     description: 'Search',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, mode: 'search' }));
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      ctx.overlays.openSearch();
     },
   },
   {
     actionId: 'list.filter',
     keys: 'f',
     description: 'Filter',
-    modes: ['list'],
-    action: (store) => {
-      const isOpen = store.state.filterMenuOpen;
-      store.setState((s) => ({
-        ...s,
-        filterMenuOpen: !isOpen,
-        mode: isOpen ? 'list' : 'filter',
-      }));
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      ctx.overlays.toggleFilter();
     },
   },
   {
     actionId: 'list.pageDown',
     keys: 'Control+D',
     description: 'Down (5 PRs)',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, selectedPRIndex: s.selectedPRIndex + 5 }));
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({
+        ...s,
+        selectedPRIndex: s.selectedPRIndex + 5,
+      }));
     },
   },
   {
     actionId: 'list.pageUp',
     keys: 'Control+U',
     description: 'Up (5 PRs)',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({
         ...s,
         selectedPRIndex: Math.max(0, s.selectedPRIndex - 5),
       }));
@@ -282,45 +418,45 @@ const listBindings: KeyBinding[] = [
     actionId: 'list.openBrowser',
     keys: 'o',
     description: 'Open (in Browser)',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, confirmingAction: 'open-browser' }));
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({ ...s, confirmingAction: 'open-browser' }));
     },
   },
   {
     actionId: 'list.preview',
     keys: 'Space',
     description: 'Preview',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, confirmingAction: 'preview' }));
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({ ...s, confirmingAction: 'preview' }));
     },
   },
   {
     actionId: 'list.draft',
     keys: 'd',
     description: 'Toggle draft',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, confirmingAction: 'draft' }));
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({ ...s, confirmingAction: 'draft' }));
     },
   },
   {
     actionId: 'list.mute',
     keys: 'm',
     description: 'Mute',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, confirmingAction: 'mute' }));
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({ ...s, confirmingAction: 'mute' }));
     },
   },
   {
     actionId: 'list.star',
     keys: 's',
     description: 'Star',
-    modes: ['list'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, confirmingAction: 'star' }));
+    activation: { routes: ['list'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({ ...s, confirmingAction: 'star' }));
     },
   },
   ...jumpBindings,
@@ -333,49 +469,97 @@ const detailBindings: KeyBinding[] = [
     actionId: 'detail.nextFile',
     keys: 'n',
     description: 'Next file',
-    modes: ['detail', 'diff'],
-    action: (store) => {
-      store.setState((s) => ({
+    activation: { routes: ['detail', 'diff'] },
+    action: (ctx) => {
+      const { diffFileKeys, selectedFileIndex } = ctx.store.state;
+      const newIdx = Math.min(
+        selectedFileIndex + 1,
+        Math.max(0, diffFileKeys.length - 1),
+      );
+      ctx.store.setState((s) => ({
         ...s,
-        selectedFileIndex: s.selectedFileIndex + 1,
+        selectedFileIndex: newIdx,
       }));
+      // In diff route, also update the ?file route param.
+      if (ctx.routeBase === 'diff' && diffFileKeys.length > 0) {
+        const newKey = diffFileKeys[newIdx];
+        if (newKey !== undefined) {
+          const pathname = router.state.location.pathname;
+          const m = /^\/prs\/([^/]+)\/diff$/.exec(pathname);
+          if (m) {
+            void router.navigate({
+              to: '/prs/$prId/diff',
+              params: { prId: m[1]! },
+              search: { file: newKey, side: 'right' },
+              replace: true,
+            });
+          }
+        }
+      }
     },
   },
   {
     actionId: 'detail.prevFile',
     keys: 'p',
     description: 'Previous file',
-    modes: ['detail', 'diff'],
-    action: (store) => {
-      store.setState((s) => ({
+    activation: { routes: ['detail', 'diff'] },
+    action: (ctx) => {
+      const { diffFileKeys, selectedFileIndex } = ctx.store.state;
+      const newIdx = Math.max(0, selectedFileIndex - 1);
+      ctx.store.setState((s) => ({
         ...s,
-        selectedFileIndex: Math.max(0, s.selectedFileIndex - 1),
+        selectedFileIndex: newIdx,
       }));
+      // In diff route, also update the ?file route param.
+      if (ctx.routeBase === 'diff' && diffFileKeys.length > 0) {
+        const newKey = diffFileKeys[newIdx];
+        if (newKey !== undefined) {
+          const pathname = router.state.location.pathname;
+          const m = /^\/prs\/([^/]+)\/diff$/.exec(pathname);
+          if (m) {
+            void router.navigate({
+              to: '/prs/$prId/diff',
+              params: { prId: m[1]! },
+              search: { file: newKey, side: 'right' },
+              replace: true,
+            });
+          }
+        }
+      }
     },
   },
   {
     actionId: 'detail.viewDiff',
     keys: 'Space',
     description: 'View diff',
-    modes: ['detail'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, mode: 'diff' }));
+    activation: { routes: ['detail'] },
+    action: (ctx) => {
+      // Derive prId from the current route pathname (/prs/$prId).
+      const pathname = router.state.location.pathname;
+      const m = /^\/prs\/([^/]+)$/.exec(pathname);
+      if (!m) return;
+      const prId = m[1]!;
+      void router.navigate({
+        to: '/prs/$prId/diff',
+        params: { prId },
+        search: { file: '', side: 'right' },
+      });
     },
   },
   {
     actionId: 'detail.approve',
     keys: ['a', 'a'],
     description: 'Approve (double-tap)',
-    modes: ['detail'],
-    action: (store) => {
-      const { confirmingAction } = store.state;
+    activation: { routes: ['detail'] },
+    action: (ctx) => {
+      const { confirmingAction } = ctx.store.state;
       if (confirmingAction === 'approve') {
-        store.setState((s) => ({
+        ctx.store.setState((s) => ({
           ...s,
           confirmingAction: 'approve_confirmed',
         }));
       } else {
-        store.setState((s) => ({ ...s, confirmingAction: 'approve' }));
+        ctx.store.setState((s) => ({ ...s, confirmingAction: 'approve' }));
       }
     },
   },
@@ -383,37 +567,36 @@ const detailBindings: KeyBinding[] = [
     actionId: 'detail.comment',
     keys: 'c',
     description: 'Comment',
-    modes: ['detail'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, confirmingAction: 'comment' }));
+    activation: { routes: ['detail'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({ ...s, confirmingAction: 'comment' }));
     },
   },
   {
     actionId: 'detail.reply',
     keys: 'r',
     description: 'Reply',
-    modes: ['detail'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, confirmingAction: 'reply' }));
+    activation: { routes: ['detail'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({ ...s, confirmingAction: 'reply' }));
     },
   },
 ];
 
-// ─── Filter mode bindings (active when filter menu is open) ──────────────────
-// Selecting a filter applies it AND closes the menu, so `f a` behaves like a
+// ─── Filter overlay bindings (active when filter overlay is open) ─────────────
+// Selecting a filter applies it AND closes the overlay, so `f a` behaves like a
 // sequence: `f` reveals the options in the footer legend, the next key picks
 // one and returns to the list.
 
 function applyFilter(
-  store: Store<UIState>,
+  ctx: KeyActionContext,
   filterState: UIState['filterState'],
 ): void {
-  store.setState((s) => ({
+  ctx.store.setState((s) => ({
     ...s,
     filterState,
-    filterMenuOpen: false,
-    mode: 'list',
   }));
+  ctx.overlays.closeOverlay();
 }
 
 const filterBindings: KeyBinding[] = [
@@ -421,54 +604,54 @@ const filterBindings: KeyBinding[] = [
     actionId: 'filter.needsAction',
     keys: 'n',
     description: 'Needs Action',
-    modes: ['filter'],
-    action: (store) => {
-      applyFilter(store, 'needs_action');
+    activation: { overlays: ['filter'] },
+    action: (ctx) => {
+      applyFilter(ctx, 'needs_action');
     },
   },
   {
     actionId: 'filter.open',
     keys: 'o',
     description: 'Open',
-    modes: ['filter'],
-    action: (store) => {
-      applyFilter(store, 'open');
+    activation: { overlays: ['filter'] },
+    action: (ctx) => {
+      applyFilter(ctx, 'open');
     },
   },
   {
     actionId: 'filter.draft',
     keys: 'd',
     description: 'Draft',
-    modes: ['filter'],
-    action: (store) => {
-      applyFilter(store, 'draft');
+    activation: { overlays: ['filter'] },
+    action: (ctx) => {
+      applyFilter(ctx, 'draft');
     },
   },
   {
     actionId: 'filter.all',
     keys: 'a',
     description: 'All',
-    modes: ['filter'],
-    action: (store) => {
-      applyFilter(store, 'all');
+    activation: { overlays: ['filter'] },
+    action: (ctx) => {
+      applyFilter(ctx, 'all');
     },
   },
   {
     actionId: 'filter.close',
     keys: 'Escape',
     description: 'Close',
-    modes: ['filter'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, filterMenuOpen: false, mode: 'list' }));
+    activation: { overlays: ['filter'] },
+    action: (ctx) => {
+      ctx.overlays.closeOverlay();
     },
   },
   {
     actionId: 'filter.toggle',
     keys: 'f',
     description: 'Close',
-    modes: ['filter'],
-    action: (store) => {
-      store.setState((s) => ({ ...s, filterMenuOpen: false, mode: 'list' }));
+    activation: { overlays: ['filter'] },
+    action: (ctx) => {
+      ctx.overlays.closeOverlay();
     },
   },
 ];
@@ -480,8 +663,8 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollLeft',
     keys: 'h',
     description: 'Scroll left',
-    modes: ['detail', 'diff'],
-    action: (_store) => {
+    activation: { routes: ['detail', 'diff'] },
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ left: -80 });
     },
   },
@@ -489,8 +672,8 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollDown',
     keys: 'j',
     description: 'Scroll down',
-    modes: ['detail', 'diff'],
-    action: (_store) => {
+    activation: { routes: ['detail', 'diff'] },
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 40 });
     },
   },
@@ -498,8 +681,8 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollUp',
     keys: 'k',
     description: 'Scroll up',
-    modes: ['detail', 'diff'],
-    action: (_store) => {
+    activation: { routes: ['detail', 'diff'] },
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -40 });
     },
   },
@@ -507,8 +690,8 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollRight',
     keys: 'l',
     description: 'Scroll right',
-    modes: ['detail', 'diff'],
-    action: (_store) => {
+    activation: { routes: ['detail', 'diff'] },
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ left: 80 });
     },
   },
@@ -516,9 +699,9 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollDownArrow',
     keys: 'ArrowDown',
     description: 'Scroll down',
-    modes: ['detail', 'diff'],
+    activation: { routes: ['detail', 'diff'] },
     hidden: true,
-    action: (_store) => {
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 40 });
     },
   },
@@ -526,9 +709,9 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollUpArrow',
     keys: 'ArrowUp',
     description: 'Scroll up',
-    modes: ['detail', 'diff'],
+    activation: { routes: ['detail', 'diff'] },
     hidden: true,
-    action: (_store) => {
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -40 });
     },
   },
@@ -536,9 +719,9 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollLeftArrow',
     keys: 'ArrowLeft',
     description: 'Scroll left',
-    modes: ['detail', 'diff'],
+    activation: { routes: ['detail', 'diff'] },
     hidden: true,
-    action: (_store) => {
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ left: -80 });
     },
   },
@@ -546,9 +729,9 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollRightArrow',
     keys: 'ArrowRight',
     description: 'Scroll right',
-    modes: ['detail', 'diff'],
+    activation: { routes: ['detail', 'diff'] },
     hidden: true,
-    action: (_store) => {
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ left: 80 });
     },
   },
@@ -556,8 +739,8 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.pageDown',
     keys: 'Control+D',
     description: 'Page down',
-    modes: ['detail', 'diff'],
-    action: (_store) => {
+    activation: { routes: ['detail', 'diff'] },
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 300 });
     },
   },
@@ -565,8 +748,8 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.pageUp',
     keys: 'Control+U',
     description: 'Page up',
-    modes: ['detail', 'diff'],
-    action: (_store) => {
+    activation: { routes: ['detail', 'diff'] },
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -300 });
     },
   },
@@ -574,8 +757,8 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollTop',
     keys: '0',
     description: 'Jump to top',
-    modes: ['detail', 'diff'],
-    action: (_store) => {
+    activation: { routes: ['detail', 'diff'] },
+    action: (_ctx) => {
       const el = document.querySelector(
         '[data-diff-viewport]',
       ) as HTMLElement | null;
@@ -586,8 +769,8 @@ const detailScrollBindings: KeyBinding[] = [
     actionId: 'detail.scrollBottom',
     keys: 'Shift+4', // '$' on US layouts
     description: 'Jump to bottom',
-    modes: ['detail', 'diff'],
-    action: (_store) => {
+    activation: { routes: ['detail', 'diff'] },
+    action: (_ctx) => {
       const el = document.querySelector(
         '[data-diff-viewport]',
       ) as HTMLElement | null;

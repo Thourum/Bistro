@@ -1,24 +1,23 @@
 import { formatForDisplay } from '@tanstack/react-hotkeys';
+import type { OverlayKind } from '../overlays/OverlayContext';
 import {
-  type AppMode,
   isSequenceBinding,
   type KeyBinding,
+  type RouteBase,
 } from './keybindings';
 
 /**
- * Per-mode footer legend preset.
+ * Per-route footer legend preset.
  *
  * Each entry is an ordered list of `actionId`s. The footer looks up the
  * effective binding for each id (respecting user overrides) and renders it as
  * `<key> <description>`.
  *
- * Keep this list short — roughly 3–5 entries per mode — so it stays readable
+ * Keep this list short — roughly 3–5 entries per route — so it stays readable
  * in the 32px-tall footer. Less common bindings are reachable via the `?`
  * help overlay.
  */
-export const FOOTER_LEGEND_PRESETS: Record<AppMode, string[]> = {
-  login: [],
-  onboarding: [],
+export const FOOTER_LEGEND_PRESETS_BY_ROUTE: Record<RouteBase, string[]> = {
   list: ['list.down', 'list.up', 'list.open', 'list.filter', 'list.search'],
   detail: [
     'detail.nextFile',
@@ -34,6 +33,16 @@ export const FOOTER_LEGEND_PRESETS: Record<AppMode, string[]> = {
     'detail.prevFile',
     'global.escape',
   ],
+  settings: ['global.escape'],
+  // Login and onboarding footers show no legend (empty chrome).
+  login: [],
+  onboarding: [],
+};
+
+/** Per-overlay footer legend preset. */
+export const FOOTER_LEGEND_PRESETS_BY_OVERLAY: Record<OverlayKind, string[]> = {
+  command: ['global.escape'],
+  help: ['global.escape'],
   search: ['global.escape'],
   filter: [
     'filter.needsAction',
@@ -42,9 +51,7 @@ export const FOOTER_LEGEND_PRESETS: Record<AppMode, string[]> = {
     'filter.all',
     'filter.close',
   ],
-  help: ['global.escape'],
-  command: ['global.escape'],
-  settings: ['global.escape'],
+  repoPicker: ['global.escape'],
 };
 
 export interface FooterLegendEntry {
@@ -67,18 +74,39 @@ export function formatBindingKeys(
       .map((step) => formatForDisplay(step, options))
       .join(' ');
   }
-  return formatForDisplay(binding.keys, options);
+  return formatForDisplay(binding.keys as string, options);
 }
 
 /**
- * Build the ordered legend entries for the given mode using the effective
- * (user-overridden) bindings.
+ * Build the ordered legend entries for the given route/overlay context
+ * using the effective (user-overridden) bindings.
  */
-export function buildLegendForMode(
-  mode: AppMode,
+export function buildLegendForRouteBase(
+  routeBase: RouteBase | null,
+  activeOverlay: OverlayKind | null,
   bindings: KeyBinding[],
 ): FooterLegendEntry[] {
-  const preset = FOOTER_LEGEND_PRESETS[mode];
+  // When an overlay is active, show overlay-specific legend.
+  if (activeOverlay !== null) {
+    const preset = FOOTER_LEGEND_PRESETS_BY_OVERLAY[activeOverlay];
+    if (!preset || preset.length === 0) return [];
+    const byId = new Map(bindings.map((b) => [b.actionId, b]));
+    const entries: FooterLegendEntry[] = [];
+    for (const id of preset) {
+      const binding = byId.get(id);
+      if (!binding) continue;
+      if (binding.keys.length === 0) continue;
+      entries.push({
+        actionId: id,
+        label: formatBindingKeys(binding),
+        description: binding.description,
+      });
+    }
+    return entries;
+  }
+
+  if (routeBase === null) return [];
+  const preset = FOOTER_LEGEND_PRESETS_BY_ROUTE[routeBase];
   if (!preset || preset.length === 0) return [];
   const byId = new Map(bindings.map((b) => [b.actionId, b]));
   const entries: FooterLegendEntry[] = [];

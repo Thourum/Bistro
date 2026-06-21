@@ -1,14 +1,24 @@
-import { useEffect, useState } from 'react';
+// DiffPage — route-owned diff screen with stable file identity via canonical path keys
+//
+// PR resolved by $prId from /prs/$prId/diff route param (NEVER selectedPRIndex).
+// File resolved by ?file canonical key via findFileByKey (NEVER selectedFileIndex).
+// Unknown ?file → first-file fallback.
+// Back button navigates to /prs/$prId via router.
+// diffFileKeys are cleared when prId changes to prevent stale key carryover.
+
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { PierreDiffView } from '../components/PierreDiffView';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { useWebSocketPRList as usePRList } from '../hooks/useWebSocketPRList';
+import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
-import type { UIState } from '../store/ui';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('DiffPage');
+
+// Route API: resolves both $prId param (inherited from parent) and ?file/?side search.
 
 /**
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
@@ -18,16 +28,21 @@ const log = createLogger('DiffPage');
  *   - 25/75 split (file navigator / diff canvas)
  *   - LOC / UTF-8 / CRLF footer
  *
- * Diff rendering is delegated to {@link PierreDiffView} which wraps
- * `@pierre/diffs/react`. Inline comments are disabled this pass.
+ * PR resolved by $prId route param; file resolved by ?file canonical key.
  */
 export function DiffPage() {
-  const selectedIndex = useStore(appStore, (s: UIState) => s.selectedPRIndex);
-  const filterState = useStore(appStore, (s: UIState) => s.filterState);
+  // Resolve PR by stable id from route params — NEVER by selectedPRIndex.
+  // PR identity is the stable pr.id (route param), never a list index.
+  const { prId } = useParams({ strict: false }) as { prId: string };
+  const { file: fileKey } = useSearch({ strict: false }) as { file: string };
+  const navigate = useNavigate();
+
   const theme = useStore(settingsStore, (s) => s.appearance.theme);
 
-  const { data: prs = [] } = usePRList(filterState);
-  const pr = prs[selectedIndex];
+  // Fetch ALL PRs so deep-linked PRs (any status) are always resolvable.
+  const { data: allPRs = [], isLoading: prLoading } = useWebSocketPRList('all');
+  const pr = allPRs.find((p) => p.id === prId);
+
   const { request } = useWebSocket();
 
   const [diff, setDiff] = useState<string>('');
@@ -53,7 +68,23 @@ export function DiffPage() {
       });
   }, [pr, request]);
 
-  if (pr === undefined) {
+  // Clear stale diffFileKeys whenever the target PR changes.
+  // This prevents keybindings from using keys from a previous PR's diff.
+  useLayoutEffect(() => {
+    appStore.setState((s) => ({ ...s, diffFileKeys: [] }));
+  }, [prId]);
+
+  // Consume onFilesResolved via useLayoutEffect to ensure diffFileKeys
+  // commits synchronously before the next user input (mirrors visiblePRIds pattern).
+  const handleFilesResolved = (canonicalKeys: string[]): void => {
+    appStore.setState((s) => ({ ...s, diffFileKeys: canonicalKeys }));
+  };
+
+  const handleBack = (): void => {
+    void navigate({ to: '/prs/$prId', params: { prId } });
+  };
+
+  if (!prLoading && pr === undefined) {
     return (
       <div className="flex-1 flex items-center justify-center text-error">
         PR not found
@@ -68,19 +99,23 @@ export function DiffPage() {
         <div className="flex items-center gap-4 min-w-0">
           <button
             type="button"
-            onClick={() => appStore.setState((s) => ({ ...s, mode: 'detail' }))}
+            onClick={handleBack}
             className="font-mono text-[10px] uppercase tracking-widest text-outline hover:text-on-surface transition-colors"
           >
             ← Back
           </button>
-          <span className="font-mono text-[11px] font-bold tracking-widest text-primary">
-            PR-{pr.number}
-          </span>
-          <span className="font-mono text-[10px] text-outline truncate">
-            {pr.head_branch}
-            <span className="text-outline-variant"> → </span>
-            {pr.base_branch}
-          </span>
+          {pr !== undefined && (
+            <>
+              <span className="font-mono text-[11px] font-bold tracking-widest text-primary">
+                PR-{pr.number}
+              </span>
+              <span className="font-mono text-[10px] text-outline truncate">
+                {pr.head_branch}
+                <span className="text-outline-variant"> → </span>
+                {pr.base_branch}
+              </span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <input
@@ -107,7 +142,13 @@ export function DiffPage() {
             Failed to load diff: {diffError}
           </div>
         ) : (
-          <PierreDiffView diff={diff} theme={theme} findQuery={findQuery} />
+          <PierreDiffView
+            diff={diff}
+            theme={theme}
+            findQuery={findQuery}
+            selectedFileKey={fileKey}
+            onFilesResolved={handleFilesResolved}
+          />
         )}
       </div>
 

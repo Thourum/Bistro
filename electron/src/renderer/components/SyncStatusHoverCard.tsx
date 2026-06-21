@@ -163,7 +163,6 @@ export function getSyncStatusDetails({
   };
 }
 
-
 function getNextSyncAt(
   lastSyncAt: string | null,
   syncIntervalSeconds: number,

@@ -35,10 +35,14 @@ const mockStore = {
     selectedPRIndex: 0,
     filterState: 'open' as const,
     sortBy: 'updated' as const,
+    searchQuery: '',
     repoFilter: null,
     repos: [{ owner: 'acme', repo: 'widgets', watched: true }],
+    connectedProviders: [],
+    visiblePRIds: [],
   },
   subscribe: vi.fn(() => () => {}),
+  setState: vi.fn(),
 };
 
 describe('PRListPage', () => {
@@ -86,5 +90,27 @@ describe('PRListPage', () => {
     );
     expect(screen.getByText(/IS:OPEN/)).toBeInTheDocument();
     expect(screen.getByText(/UPDATED_FIRST/)).toBeInTheDocument();
+  });
+
+  it('accepts routeSearch prop and uses route-authoritative values', () => {
+    render(
+      <FooterSlotProvider>
+        <PRListPage
+          routeSearch={{ filter: 'draft', sort: 'created', q: '' }}
+        />
+      </FooterSlotProvider>,
+    );
+    expect(screen.getByText('Draft Pull Requests')).toBeInTheDocument();
+    expect(screen.getByText(/IS:DRAFT/)).toBeInTheDocument();
+    expect(screen.getByText(/CREATED_FIRST/)).toBeInTheDocument();
+  });
+
+  it('has pr-list-page testid', () => {
+    render(
+      <FooterSlotProvider>
+        <PRListPage />
+      </FooterSlotProvider>,
+    );
+    expect(screen.getByTestId('pr-list-page')).toBeInTheDocument();
   });
 });

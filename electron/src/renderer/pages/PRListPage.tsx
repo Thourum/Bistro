@@ -1,6 +1,8 @@
+import React from 'react';
 import { FooterCenterSlot } from '../components/FooterSlot';
 import { PRListTable } from '../components/PRListTable';
 import { useStore } from '../hooks/useStore';
+import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
@@ -13,27 +15,67 @@ const FILTER_TITLES: Record<UIState['filterState'], string> = {
   all: 'All Pull Requests',
 };
 
+export interface PRListRouteSearch {
+  filter: UIState['filterState'];
+  sort: UIState['sortBy'];
+  q: string;
+}
+
 /**
  * PR inbox — matches `pr_inbox_minimal_light/code.html`.
  *
  * The legend shortcuts are rendered by the global `AppFooter` (binding-derived),
  * and the filter/sort status is projected into the footer's center region via
  * `FooterCenterSlot`.
+ *
+ * @param routeSearch  When rendered by the /prs/ route, the route-authoritative
+ *                     filter/sort/q values are passed here. When omitted (tests,
+ *                     legacy callers), the component falls back to the store.
  */
-export function PRListPage() {
-  const filterState = useStore(appStore, (s: UIState) => s.filterState);
-  const sortBy = useStore(appStore, (s: UIState) => s.sortBy);
+export function PRListPage({
+  routeSearch,
+}: {
+  routeSearch?: PRListRouteSearch;
+}): React.ReactElement {
+  const storeFilter = useStore(appStore, (s: UIState) => s.filterState);
+  const storeSortBy = useStore(appStore, (s: UIState) => s.sortBy);
+  const storeSearchQuery = useStore(appStore, (s: UIState) => s.searchQuery);
+
+  const filterState = routeSearch?.filter ?? storeFilter;
+  const sortBy = routeSearch?.sort ?? storeSortBy;
+  const q = routeSearch?.q ?? storeSearchQuery;
+
   const username = useStore(
     appStore,
     (s: UIState) => (s.connectedProviders ?? [])[0]?.username ?? '',
   );
-  const { data: prs = [] } = useWebSocketPRList(filterState);
+
+  const { prs, isLoading, error } = useVisiblePRs({
+    filter: filterState,
+    sort: sortBy,
+    q,
+  });
+
+  // Sync visible PR ids to store so keybinding actions (list.open, list.bottom)
+  // can navigate by id without a React hook context.
+  // useLayoutEffect ensures ids are committed BEFORE any synchronous user input
+  // (e.g. filter-then-immediate-Enter) reads the list.
+  React.useLayoutEffect(() => {
+    appStore.setState((s) => ({
+      ...s,
+      visiblePRIds: prs.map((p) => p.id),
+    }));
+  }, [prs]);
+
   // Counters always reflect the full open lane, independent of the filter.
   const { data: openPRs = [] } = useWebSocketPRList('open');
   const triage = countTriageLanes(openPRs, username);
 
   return (
-    <main className="flex-1 overflow-y-auto bg-surface-container-lowest text-on-surface relative">
+    <main
+      data-testid="pr-list-page"
+      className="flex-1 overflow-y-auto bg-surface-container-lowest text-on-surface relative"
+    >
       <FooterCenterSlot>
         <span className="text-primary font-bold">
           {`FILTER:${filterState.toUpperCase()} // SORT:${sortBy.toUpperCase()}`}
@@ -64,7 +106,7 @@ export function PRListPage() {
           </div>
         </header>
 
-        <PRListTable />
+        <PRListTable prs={prs} isLoading={isLoading} error={error} />
       </div>
 
       {/* Floating filter / sort card */}

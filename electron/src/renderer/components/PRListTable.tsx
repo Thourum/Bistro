@@ -1,6 +1,6 @@
+import { useNavigate } from '@tanstack/react-router';
 import type React from 'react';
 import { useStore } from '../hooks/useStore';
-import { useWebSocketPRList as usePRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -13,6 +13,11 @@ import type { PR } from '../types';
  * - Optional repo grouping via `<details>/<summary>` when
  *   `settings.prList.view === 'grouped'`
  * - CI status dots (green / red / yellow / neutral)
+ *
+ * `prs`, `isLoading`, `error` are provided by the parent (PRListPage),
+ * which calls `useVisiblePRs()`. The internal hook call has been removed so that
+ * this component no longer has its own data source (the router is the single
+ * source of navigation truth).
  */
 
 function ciColor(pr: PR): string {
@@ -67,11 +72,13 @@ function PRRow({
   selectedIndex,
 }: PRRowProps): React.ReactElement {
   const isSelected = selectedIndex === globalIndex;
+  const navigate = useNavigate();
   const open = (): void => {
+    // Navigate by stable pr.id — globalIndex is cursor only.
+    void navigate({ to: '/prs/$prId', params: { prId: pr.id } });
     appStore.setState((s) => ({
       ...s,
       selectedPRIndex: globalIndex,
-      mode: 'detail',
     }));
   };
   return (
@@ -161,17 +168,23 @@ function PRGroup({
   );
 }
 
-export function PRListTable() {
-  const filterState = useStore(appStore, (state: UIState) => state.filterState);
+export interface PRListTableProps {
+  prs: PR[];
+  isLoading: boolean;
+  error: Error | null;
+}
+
+export function PRListTable({
+  prs: visiblePRs,
+  isLoading,
+  error,
+}: PRListTableProps) {
   const selectedIndex = useStore(
     appStore,
     (state: UIState) => state.selectedPRIndex,
   );
   const prListView = useStore(settingsStore, (s) => s.prList.view);
-  const repoFilter = useStore(appStore, (state: UIState) => state.repoFilter);
   const repos = useStore(appStore, (state: UIState) => state.repos);
-
-  const { data: prs = [], isLoading, error } = usePRList(filterState);
 
   if (isLoading) {
     return (
@@ -190,7 +203,7 @@ export function PRListTable() {
   }
 
   const watchedRepos = (repos ?? []).filter((r) => r.watched);
-  if (prs.length === 0 && watchedRepos.length === 0) {
+  if (visiblePRs.length === 0 && watchedRepos.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant space-y-2">
         <p className="text-lg font-semibold">No repositories watched</p>
@@ -209,13 +222,9 @@ export function PRListTable() {
     );
   }
 
-  const filteredPRs: PR[] = repoFilter
-    ? prs.filter((pr) => `${pr.owner}/${pr.repo}` === repoFilter)
-    : prs;
-
   if (prListView === 'grouped') {
     const groups = new Map<string, PR[]>();
-    for (const pr of filteredPRs) {
+    for (const pr of visiblePRs) {
       const key = `${pr.owner}/${pr.repo}`;
       const existing = groups.get(key);
       if (existing) existing.push(pr);
@@ -244,7 +253,7 @@ export function PRListTable() {
 
   return (
     <div className="space-y-0">
-      {filteredPRs.map((pr, idx) => (
+      {visiblePRs.map((pr, idx) => (
         <PRRow
           key={pr.id}
           pr={pr}

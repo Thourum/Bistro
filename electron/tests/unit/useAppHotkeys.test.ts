@@ -1,14 +1,33 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import React from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppHotkeys } from '../../src/renderer/hooks/useAppHotkeys';
+import { OverlayProvider, useOverlays } from '../../src/renderer/overlays/OverlayContext';
 import { appStore } from '../../src/renderer/store';
 import { settingsStore } from '../../src/renderer/store/settings';
 import { initialUIState } from '../../src/renderer/store/ui';
 
+// Mock the router so list.open can call router.navigate without a RouterProvider.
+const mockRouterNavigate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('../../src/renderer/router', () => ({
+  router: {
+    navigate: mockRouterNavigate,
+    state: { location: { pathname: '/prs' } },
+  },
+  prDetailRoute: {},
+}));
+
+// Mock @tanstack/react-router so useRouterState works without RouterProvider.
+const mockPathname = { current: '/prs' };
+vi.mock('@tanstack/react-router', () => ({
+  useRouterState: vi.fn(() => ({ location: { pathname: mockPathname.current } })),
+  useNavigate: vi.fn(() => vi.fn()),
+}));
+
 // Integration tests: real KeyboardEvents dispatched through the DOM, handled
 // by TanStack Hotkeys (which listens on `document` by default), asserting
-// appStore transitions.
+// appStore transitions and overlay context state.
 
 function fireKey(
   key: string,
@@ -25,19 +44,36 @@ function fireKey(
   );
 }
 
+/** Wrapper that provides OverlayProvider context. */
+function wrapper({ children }: { children: React.ReactNode }) {
+  return React.createElement(OverlayProvider, null, children);
+}
+
+/** Renders useAppHotkeys + useOverlays so we can assert overlay state. */
+function renderWithOverlays() {
+  return renderHook(
+    () => {
+      useAppHotkeys();
+      return useOverlays();
+    },
+    { wrapper },
+  );
+}
+
 describe('useAppHotkeys', () => {
   beforeEach(() => {
-    appStore.setState(() => ({ ...initialUIState, mode: 'list' as const }));
+    mockPathname.current = '/prs';
+    appStore.setState(() => ({ ...initialUIState }));
     settingsStore.setState((s) => ({ ...s, keybindings: {} }));
     document.body.innerHTML = '';
   });
 
   it('mounts without throwing', () => {
-    expect(() => renderHook(() => useAppHotkeys())).not.toThrow();
+    expect(() => renderWithOverlays()).not.toThrow();
   });
 
   it('moves selection down on "j" in list mode', () => {
-    renderHook(() => useAppHotkeys());
+    renderWithOverlays();
     act(() => {
       fireKey('j', { code: 'KeyJ' });
     });
@@ -45,60 +81,66 @@ describe('useAppHotkeys', () => {
   });
 
   it('does not move selection below zero on "k" from index 0', () => {
-    renderHook(() => useAppHotkeys());
+    renderWithOverlays();
     act(() => {
       fireKey('k', { code: 'KeyK' });
     });
     expect(appStore.state.selectedPRIndex).toBe(0);
   });
 
-  it('opens detail mode on Enter', () => {
-    renderHook(() => useAppHotkeys());
+  it('Enter on list route navigates to the PR by id', () => {
+    // Seed a visible PR so list.open can navigate by id.
+    mockRouterNavigate.mockClear();
+    appStore.setState((s) => ({ ...s, visiblePRIds: ['pr-1'] }));
+    renderWithOverlays();
     act(() => {
       fireKey('Enter', { code: 'Enter' });
     });
-    expect(appStore.state.mode).toBe('detail');
+    // Navigation is router-owned; verify router.navigate was called.
+    expect(mockRouterNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/prs/$prId', params: { prId: 'pr-1' } }),
+    );
   });
 
-  it('switches to search mode on "/"', () => {
-    renderHook(() => useAppHotkeys());
+  it('opens search overlay on "/"', () => {
+    const { result } = renderWithOverlays();
     act(() => {
       fireKey('/', { code: 'Slash' });
     });
-    expect(appStore.state.mode).toBe('search');
+    expect(result.current.activeOverlay).toBe('search');
   });
 
-  it('toggles the filter menu on "f"', () => {
-    renderHook(() => useAppHotkeys());
+  it('toggles the filter overlay on "f"', () => {
+    const { result } = renderWithOverlays();
     act(() => {
       fireKey('f', { code: 'KeyF' });
     });
-    expect(appStore.state.filterMenuOpen).toBe(true);
+    expect(result.current.activeOverlay).toBe('filter');
     act(() => {
       fireKey('f', { code: 'KeyF' });
     });
-    expect(appStore.state.filterMenuOpen).toBe(false);
+    expect(result.current.activeOverlay).toBeNull();
   });
 
-  it('opens help on "?" (Shift+/ physically)', () => {
-    renderHook(() => useAppHotkeys());
+  it('opens help overlay on "?" (Shift+/ physically)', () => {
+    const { result } = renderWithOverlays();
     act(() => {
       fireKey('?', { code: 'Slash', shiftKey: true });
     });
-    expect(appStore.state.mode).toBe('help');
-    expect(appStore.state.helpSourceMode).toBe('list');
+    expect(result.current.activeOverlay).toBe('help');
+    expect(result.current.helpSourceRoute).toBe('list');
   });
 
-  it('opens command mode on ":" (Shift+; physically)', () => {
-    renderHook(() => useAppHotkeys());
+  it('opens command overlay on ":" (Shift+; physically)', () => {
+    const { result } = renderWithOverlays();
     act(() => {
       fireKey(':', { code: 'Semicolon', shiftKey: true });
     });
-    expect(appStore.state.mode).toBe('command');
+    expect(result.current.activeOverlay).toBe('command');
   });
 
   it('moves selection with the arrow keys', () => {
-    renderHook(() => useAppHotkeys());
+    renderWithOverlays();
     act(() => {
       fireKey('ArrowDown', { code: 'ArrowDown' });
     });
@@ -109,18 +151,32 @@ describe('useAppHotkeys', () => {
     expect(appStore.state.selectedPRIndex).toBe(0);
   });
 
-  it('returns from detail mode to list on Escape', () => {
-    appStore.setState((s) => ({ ...s, mode: 'detail' as const }));
-    renderHook(() => useAppHotkeys());
+  it('Escape on detail route calls router.navigate to /prs', () => {
+    mockPathname.current = '/prs/some-pr';
+    mockRouterNavigate.mockClear();
+    renderWithOverlays();
     act(() => {
       fireKey('Escape', { code: 'Escape' });
     });
-    expect(appStore.state.mode).toBe('list');
+    expect(mockRouterNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/prs' }),
+    );
+  });
+
+  it('closes overlay on Escape when command overlay is open', () => {
+    const { result } = renderWithOverlays();
+    // Open command overlay first
+    act(() => { result.current.openCommand(); });
+    expect(result.current.activeOverlay).toBe('command');
+    act(() => {
+      fireKey('Escape', { code: 'Escape' });
+    });
+    expect(result.current.activeOverlay).toBeNull();
   });
 
   it('runs the "g g" sequence to jump to the top', () => {
     appStore.setState((s) => ({ ...s, selectedPRIndex: 6 }));
-    renderHook(() => useAppHotkeys());
+    renderWithOverlays();
     act(() => {
       fireKey('g', { code: 'KeyG' });
       fireKey('g', { code: 'KeyG' });
@@ -128,9 +184,10 @@ describe('useAppHotkeys', () => {
     expect(appStore.state.selectedPRIndex).toBe(0);
   });
 
-  it('mode-gates bindings: "j" in detail mode does not move the PR selection', () => {
-    appStore.setState((s) => ({ ...s, mode: 'detail' as const }));
-    renderHook(() => useAppHotkeys());
+  it('route-gates bindings: "j" in detail route does not move the PR selection', () => {
+    // Simulate being on a detail route, not list
+    mockPathname.current = '/prs/some-pr';
+    renderWithOverlays();
     act(() => {
       fireKey('j', { code: 'KeyJ' });
     });
@@ -138,7 +195,7 @@ describe('useAppHotkeys', () => {
   });
 
   it('suppresses bindings while typing in an input', () => {
-    renderHook(() => useAppHotkeys());
+    renderWithOverlays();
     const input = document.createElement('input');
     document.body.appendChild(input);
     input.focus();
@@ -149,15 +206,16 @@ describe('useAppHotkeys', () => {
   });
 
   it('Escape still works while typing in an input', () => {
-    appStore.setState((s) => ({ ...s, mode: 'search' as const }));
-    renderHook(() => useAppHotkeys());
+    const { result } = renderWithOverlays();
+    // Open command overlay first so Escape fires when overlay is active
+    act(() => { result.current.openCommand(); });
     const input = document.createElement('input');
     document.body.appendChild(input);
     input.focus();
     act(() => {
       fireKey('Escape', { code: 'Escape' }, input);
     });
-    expect(appStore.state.mode).toBe('list');
+    expect(result.current.activeOverlay).toBeNull();
   });
 
   it('applies settings overrides: list.down remapped to "x"', () => {
@@ -165,7 +223,7 @@ describe('useAppHotkeys', () => {
       ...s,
       keybindings: { 'list.down': ['x'] },
     }));
-    const { rerender } = renderHook(() => useAppHotkeys());
+    const { rerender } = renderWithOverlays();
     rerender();
     act(() => {
       fireKey('x', { code: 'KeyX' });
@@ -178,7 +236,7 @@ describe('useAppHotkeys', () => {
   });
 
   it('stops firing after unmount', () => {
-    const { unmount } = renderHook(() => useAppHotkeys());
+    const { unmount } = renderWithOverlays();
     unmount();
     act(() => {
       fireKey('j', { code: 'KeyJ' });

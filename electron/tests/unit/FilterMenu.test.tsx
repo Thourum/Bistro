@@ -1,85 +1,100 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, vi, beforeEach, afterEach } from 'vitest';
+import React from 'react';
+import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { FilterMenu } from '../../src/renderer/components/FilterMenu';
-import * as storeModule from '../../src/renderer/store';
+import { OverlayProvider, useOverlays } from '../../src/renderer/overlays/OverlayContext';
+import { appStore } from '../../src/renderer/store';
+import { initialUIState } from '../../src/renderer/store/ui';
 
 expect.extend(matchers);
 
-const mockState = { filterState: 'open' as const, filterMenuOpen: false, mode: 'list' as const };
-let stateRef = { ...mockState };
+function wrapper({ children }: { children: React.ReactNode }) {
+  return React.createElement(OverlayProvider, null, children);
+}
 
-const mockStore = {
-  get state() {
-    return stateRef;
-  },
-  subscribe: vi.fn((cb: () => void) => {
-    void cb;
-    return () => {};
-  }),
-  setState: vi.fn((updater: (s: typeof stateRef) => typeof stateRef) => {
-    stateRef = updater(stateRef);
-  }),
-};
+/** Renders FilterMenu + overlay state indicator in one tree */
+function renderFilterMenu(initialOpen = false) {
+  let overlayRef: ReturnType<typeof useOverlays> | null = null;
+  const TestComp = () => {
+    overlayRef = useOverlays();
+    if (initialOpen && overlayRef.activeOverlay !== 'filter') {
+      overlayRef.openFilter();
+    }
+    return <FilterMenu />;
+  };
+  const result = render(<TestComp />, { wrapper });
+  return { ...result, getOverlays: () => overlayRef! };
+}
 
 describe('FilterMenu', () => {
   beforeEach(() => {
-    stateRef = { filterState: 'open', filterMenuOpen: false, mode: 'list' };
-    vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue(
-      mockStore as unknown as typeof storeModule.appStore,
-    );
+    appStore.setState(() => ({ ...initialUIState }));
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    appStore.setState(() => ({ ...initialUIState }));
   });
 
   it('renders filter button', () => {
-    render(<FilterMenu />);
+    renderFilterMenu();
     expect(screen.getByRole('button', { name: /Filter/i })).toBeInTheDocument();
   });
 
   it('shows keyboard hint for filter shortcut', () => {
-    render(<FilterMenu />);
+    renderFilterMenu();
     expect(screen.getByText('f')).toBeInTheDocument();
   });
 
-  it('does not show filter panel when filterMenuOpen is false', () => {
-    render(<FilterMenu />);
+  it('does not show filter panel when filter overlay is not active', () => {
+    renderFilterMenu();
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
-  it('shows filter panel when filterMenuOpen is true', () => {
-    stateRef = { filterState: 'open', filterMenuOpen: true, mode: 'filter' };
-    render(<FilterMenu />);
-    expect(screen.getByRole('menu')).toBeInTheDocument();
-    expect(screen.getByText('Open')).toBeInTheDocument();
-    expect(screen.getByText('Draft')).toBeInTheDocument();
-    expect(screen.getByText('All')).toBeInTheDocument();
+  it('shows filter panel when filter overlay is active', () => {
+    // Use state-based open via the button click
+    renderFilterMenu();
+    const btn = screen.getByRole('button', { name: /Filter/i });
+    // Click to open
+    return userEvent.click(btn).then(() => {
+      expect(screen.getByRole('menu')).toBeInTheDocument();
+      expect(screen.getByText('Open')).toBeInTheDocument();
+      expect(screen.getByText('Draft')).toBeInTheDocument();
+      expect(screen.getByText('All')).toBeInTheDocument();
+    });
   });
 
-  it('displays filter options keyboard hints when open', () => {
-    stateRef = { filterState: 'open', filterMenuOpen: true, mode: 'filter' };
-    render(<FilterMenu />);
+  it('displays filter options keyboard hints when open', async () => {
+    renderFilterMenu();
+    const btn = screen.getByRole('button', { name: /Filter/i });
+    await userEvent.click(btn);
     expect(screen.getByText('o')).toBeInTheDocument();
     expect(screen.getByText('d')).toBeInTheDocument();
     expect(screen.getByText('a')).toBeInTheDocument();
   });
 
-  it('changes filter state when option is clicked', async () => {
-    stateRef = { filterState: 'open', filterMenuOpen: true, mode: 'filter' };
-    render(<FilterMenu />);
+  it('changes filter state and closes overlay when option is clicked', async () => {
+    renderFilterMenu();
+    const btn = screen.getByRole('button', { name: /Filter/i });
+    await userEvent.click(btn);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
     const draftOption = screen.getByText('Draft');
     await userEvent.click(draftOption);
-    expect(mockStore.setState).toHaveBeenCalled();
+    expect(appStore.state.filterState).toBe('draft');
+    // Overlay should be closed after selection
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
-  it('toggles filter menu open state when button is clicked', async () => {
-    render(<FilterMenu />);
-    const button = screen.getByRole('button', { name: /Filter/i });
-    await userEvent.click(button);
-    expect(mockStore.setState).toHaveBeenCalled();
+  it('toggles filter overlay open/closed when button is clicked', async () => {
+    renderFilterMenu();
+    const btn = screen.getByRole('button', { name: /Filter/i });
+    await userEvent.click(btn);
+    // Panel should be visible
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    await userEvent.click(btn);
+    // Panel should be hidden
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 });

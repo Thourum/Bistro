@@ -1,8 +1,8 @@
 import type React from 'react';
 import { useStore } from '../hooks/useStore';
-import { appStore } from '../store';
+import { useOverlays } from '../overlays/OverlayContext';
 import { settingsStore } from '../store/settings';
-import type { KeyBinding } from '../utils/keybindings';
+import type { KeyBinding, RouteBase } from '../utils/keybindings';
 import { getEffectiveBindings } from '../utils/keybindings';
 import { formatBindingKeys } from '../utils/legendPresets';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
@@ -78,12 +78,21 @@ const SEARCH_IDS = new Set([
 
 function buildSections(
   bindings: KeyBinding[],
-  sourceMode: 'list' | 'detail',
+  sourceRoute: RouteBase,
 ): ShortcutSection[] {
-  // Only show bindings usable from where the user opened the overlay —
-  // diff-view scroll keys are noise when browsing the PR list.
+  // Only show route-active bindings usable from where the user opened the
+  // overlay. Skip bindings that are exclusively overlay-only (they have
+  // overlays but no routes) — these are for the filter/command menus.
   const visible = bindings.filter(
-    (b) => b.hidden !== true && b.modes.includes(sourceMode),
+    (b) =>
+      b.hidden !== true &&
+      // Overlay-only bindings (have overlays but no routes) are excluded.
+      !(
+        b.activation.overlays !== undefined && b.activation.routes === undefined
+      ) &&
+      // Must be active on the current source route (or unrestricted).
+      (b.activation.routes === undefined ||
+        b.activation.routes.includes(sourceRoute)),
   );
 
   const navBindings = visible.filter((b) => NAVIGATION_IDS.has(b.actionId));
@@ -110,17 +119,16 @@ function buildSections(
 }
 
 export function HelpOverlay(): React.ReactElement | null {
-  const mode = useStore(appStore, (s) => s.mode);
-  const helpSourceMode = useStore(appStore, (s) => s.helpSourceMode);
+  const { activeOverlay, helpSourceRoute, closeOverlay } = useOverlays();
   const overrides = useStore(settingsStore, (s) => s.keybindings);
-  const isOpen = mode === 'help';
+  const isOpen = activeOverlay === 'help';
   const sections = buildSections(
     getEffectiveBindings(overrides),
-    helpSourceMode,
+    helpSourceRoute,
   );
 
   const handleClose = (): void => {
-    appStore.setState((s) => ({ ...s, mode: 'list' }));
+    closeOverlay();
   };
 
   return (
