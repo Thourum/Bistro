@@ -4,6 +4,7 @@ package actions
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/itterno/bistro/internal/provider"
@@ -106,6 +107,98 @@ func (pch *PostCommentHandler) Handle(ctx context.Context, req *ActionRequest) (
 		return result, nil
 	}
 
+	result.Success = true
+	return result, nil
+}
+
+// isPermanentThreadError reports whether the error indicates a permanent
+// failure (thread not found / could not resolve) that should not be retried.
+// Only 404/not-found and "could not resolve" / "not resolve" errors are treated
+// as permanent.
+func isPermanentThreadError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, kw := range []string{"not found", "404", "could not resolve", "not resolve"} {
+		if strings.Contains(msg, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// ResolveThreadHandler executes resolve_thread via the ThreadResolver capability.
+type ResolveThreadHandler struct {
+	provider provider.Provider
+}
+
+// NewResolveThreadHandler creates a ResolveThreadHandler.
+func NewResolveThreadHandler(prov provider.Provider) *ResolveThreadHandler {
+	return &ResolveThreadHandler{provider: prov}
+}
+
+// Handle resolves the thread identified by req.Body (thread node ID).
+// Returns a permanent failure if the provider does not support ThreadResolver
+// or if the thread is not found (no retry). Transient errors are returned
+// with a retryable error message.
+func (h *ResolveThreadHandler) Handle(ctx context.Context, req *ActionRequest) (*ActionResult, error) {
+	result := &ActionResult{
+		PRID:      req.PRID,
+		Action:    ResolveThreadCommand,
+		Timestamp: time.Now(),
+	}
+	resolver, ok := h.provider.(provider.ThreadResolver)
+	if !ok {
+		result.Success = false
+		result.Error = "provider does not support thread resolution (403 permanent)"
+		return result, nil
+	}
+	if err := resolver.ResolveThread(ctx, req.Body); err != nil {
+		result.Success = false
+		if isPermanentThreadError(err) {
+			result.Error = fmt.Sprintf("permanent: failed to resolve thread: %v", err)
+		} else {
+			result.Error = fmt.Sprintf("failed to resolve thread: %v", err)
+		}
+		return result, nil
+	}
+	result.Success = true
+	return result, nil
+}
+
+// UnresolveThreadHandler executes unresolve_thread via the ThreadResolver capability.
+type UnresolveThreadHandler struct {
+	provider provider.Provider
+}
+
+// NewUnresolveThreadHandler creates an UnresolveThreadHandler.
+func NewUnresolveThreadHandler(prov provider.Provider) *UnresolveThreadHandler {
+	return &UnresolveThreadHandler{provider: prov}
+}
+
+// Handle unresolves the thread identified by req.Body (thread node ID).
+func (h *UnresolveThreadHandler) Handle(ctx context.Context, req *ActionRequest) (*ActionResult, error) {
+	result := &ActionResult{
+		PRID:      req.PRID,
+		Action:    UnresolveThreadCommand,
+		Timestamp: time.Now(),
+	}
+	resolver, ok := h.provider.(provider.ThreadResolver)
+	if !ok {
+		result.Success = false
+		result.Error = "provider does not support thread resolution (403 permanent)"
+		return result, nil
+	}
+	if err := resolver.UnresolveThread(ctx, req.Body); err != nil {
+		result.Success = false
+		if isPermanentThreadError(err) {
+			result.Error = fmt.Sprintf("permanent: failed to unresolve thread: %v", err)
+		} else {
+			result.Error = fmt.Sprintf("failed to unresolve thread: %v", err)
+		}
+		return result, nil
+	}
 	result.Success = true
 	return result, nil
 }

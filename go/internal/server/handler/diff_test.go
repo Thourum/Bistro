@@ -74,8 +74,8 @@ func TestRequestDiffHandler_IncludesFileStats(t *testing.T) {
 		diffs: map[string]string{"pr-1": "diff --git a/a.go b/a.go\n+x\n"},
 		files: map[string][]store.DiffFile{
 			"pr-1": {
-				{FilePath: "a.go", Additions: 10, Deletions: 2},
-				{FilePath: "b.go", Additions: 5, Deletions: 1},
+				{FilePath: "a.go", Additions: 10, Deletions: 2, Patch: "patch-a"},
+				{FilePath: "b.go", Additions: 5, Deletions: 1, Patch: "patch-b"},
 			},
 		},
 	}
@@ -87,9 +87,10 @@ func TestRequestDiffHandler_IncludesFileStats(t *testing.T) {
 	}
 	data := resp.(map[string]interface{})["data"].(map[string]interface{})
 
-	files, ok := data["files"].([]diffFileStat)
+	// Files are now []diffFileDetail (not []diffFileStat).
+	files, ok := data["files"].([]diffFileDetail)
 	if !ok {
-		t.Fatalf("files is %T, want []diffFileStat", data["files"])
+		t.Fatalf("files is %T, want []diffFileDetail", data["files"])
 	}
 	if len(files) != 2 {
 		t.Fatalf("got %d files, want 2", len(files))
@@ -102,6 +103,15 @@ func TestRequestDiffHandler_IncludesFileStats(t *testing.T) {
 	}
 	if data["deletions"] != 3 {
 		t.Errorf("deletions = %v, want 3", data["deletions"])
+	}
+
+	// content_hash must be non-empty.
+	if files[0].ContentHash == "" {
+		t.Error("content_hash should be non-empty for a.go")
+	}
+	// viewed should default to false when no CurrentUser dep is provided.
+	if files[0].Viewed {
+		t.Error("viewed should be false when no CurrentUser dep")
 	}
 }
 
@@ -156,5 +166,114 @@ func TestRequestDiffHandler_InvalidPayload(t *testing.T) {
 	_, err := handler(context.Background(), msg)
 	if err == nil {
 		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
+// ---- content_hash and viewed tests ----
+
+type stubViewedChecker struct {
+	viewed map[string]bool // key: "prID|filePath|hash"
+}
+
+func (s *stubViewedChecker) IsFileViewed(_ context.Context, prID, filePath, _, contentHash string) (bool, error) {
+	key := prID + "|" + filePath + "|" + contentHash
+	return s.viewed[key], nil
+}
+
+func TestRequestDiffHandler_ContentHashIsDeterministic(t *testing.T) {
+	// The same patch must always produce the same content_hash.
+	patch := "@@ -1,2 +1,3 @@\n context\n+new line\n context\n"
+	hash1 := PatchContentHash(patch)
+	hash2 := PatchContentHash(patch)
+	if hash1 != hash2 {
+		t.Error("PatchContentHash is not deterministic")
+	}
+	if len(hash1) != 64 { // 32 bytes hex-encoded
+		t.Errorf("expected 64-char hex hash, got len %d: %q", len(hash1), hash1)
+	}
+}
+
+func TestRequestDiffHandler_DifferentPatchesDifferentHash(t *testing.T) {
+	if PatchContentHash("patch-a") == PatchContentHash("patch-b") {
+		t.Error("different patches must produce different hashes")
+	}
+}
+
+func TestRequestDiffHandler_ViewedFlagTrueWhenFileViewed(t *testing.T) {
+	const patch = "--- a.go\n+++ a.go\n+added line\n"
+	hash := PatchContentHash(patch)
+
+	stub := &stubDiffReader{
+		diffs: map[string]string{"pr-1": patch},
+		files: map[string][]store.DiffFile{
+			"pr-1": {{FilePath: "a.go", Patch: patch, Additions: 1}},
+		},
+	}
+	viewed := &stubViewedChecker{viewed: map[string]bool{
+		"pr-1|a.go|" + hash: true,
+	}}
+	cu := &mockCurrentUserReader{login: "alice", found: true}
+
+	h := NewRequestDiffHandlerWithDeps(DiffHandlerDeps{
+		DiffStore:   stub,
+		ViewedStore: viewed,
+		CurrentUser: cu,
+	})
+
+	resp, err := h(context.Background(), makeMsg(t, "r1", "pr-1"))
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	data := resp.(map[string]interface{})["data"].(map[string]interface{})
+	files := data["files"].([]diffFileDetail)
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1", len(files))
+	}
+	if !files[0].Viewed {
+		t.Error("viewed should be true for a file with matching hash")
+	}
+	if files[0].ContentHash != hash {
+		t.Errorf("content_hash mismatch: got %q want %q", files[0].ContentHash, hash)
+	}
+}
+
+func TestRequestDiffHandler_ViewedFalseWhenHashMismatch(t *testing.T) {
+	const patch = "some patch content"
+	hash := PatchContentHash(patch)
+
+	stub := &stubDiffReader{
+		diffs: map[string]string{"pr-2": patch},
+		files: map[string][]store.DiffFile{
+			"pr-2": {{FilePath: "main.go", Patch: patch}},
+		},
+	}
+	// Viewed with a STALE hash (different from current patch hash).
+	staleHash := PatchContentHash("old patch content")
+	viewed := &stubViewedChecker{viewed: map[string]bool{
+		"pr-2|main.go|" + staleHash: true,
+		// Current hash is NOT in viewed store → viewed=false.
+	}}
+	cu := &mockCurrentUserReader{login: "alice", found: true}
+
+	h := NewRequestDiffHandlerWithDeps(DiffHandlerDeps{
+		DiffStore:   stub,
+		ViewedStore: viewed,
+		CurrentUser: cu,
+	})
+
+	resp, err := h(context.Background(), makeMsg(t, "r2", "pr-2"))
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	data := resp.(map[string]interface{})["data"].(map[string]interface{})
+	files := data["files"].([]diffFileDetail)
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1", len(files))
+	}
+	if files[0].Viewed {
+		t.Error("viewed should be false when stored hash doesn't match current patch hash")
+	}
+	if files[0].ContentHash != hash {
+		t.Errorf("content_hash should be current: got %q want %q", files[0].ContentHash, hash)
 	}
 }

@@ -1,10 +1,6 @@
 // @vitest-environment jsdom
 
-import * as matchers from '@testing-library/jest-dom/matchers';
-import {
-  QueryClient,
-  QueryClientProvider,
-} from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRouteWithContext,
@@ -13,8 +9,11 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FooterSlotProvider } from '../../src/renderer/components/FooterSlot';
+import { OverlayProvider } from '../../src/renderer/overlays/OverlayContext';
 import { PRDetailPage } from '../../src/renderer/pages/PRDetailPage';
 import type { RouterContext } from '../../src/renderer/router';
 import * as storeModule from '../../src/renderer/store';
@@ -44,7 +43,19 @@ vi.mock('../../src/renderer/hooks/useWebSocketPRList', () => ({
 }));
 
 vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
-  useWebSocket: () => ({ request: vi.fn().mockResolvedValue({}) }),
+  useWebSocket: () => ({
+    request: vi.fn().mockResolvedValue({}),
+    send: vi.fn(),
+  }),
+}));
+
+vi.mock('../../src/renderer/hooks/useReviewThreads', () => ({
+  useReviewThreads: () => ({
+    threads: [],
+    loading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
 }));
 
 vi.mock('../../src/renderer/hooks/useCIChecks', () => ({
@@ -65,6 +76,7 @@ const mockStore = {
   state: {
     selectedPRIndex: 0,
     filterState: 'open' as const,
+    mode: 'detail' as const,
     confirmingAction: null,
     pendingAction: null,
     actionResult: null,
@@ -121,7 +133,11 @@ function renderWithPRRoute(prId: string) {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={testRouter} />
+      <OverlayProvider>
+        <FooterSlotProvider>
+          <RouterProvider router={testRouter} />
+        </FooterSlotProvider>
+      </OverlayProvider>
     </QueryClientProvider>,
   );
 }

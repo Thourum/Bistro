@@ -62,6 +62,18 @@ export interface UIState {
    * to navigate the ?file search param without needing a hook context.
    */
   diffFileKeys: string[];
+  /**
+   * Patchset pair selected in the timeline, as 1-based patchset numbers
+   * `[from, to]`. Drives the range diff in the diff view. Null = compare the
+   * full PR (default head-to-base behaviour).
+   */
+  selectedPatchsetPair: [number, number] | null;
+  /**
+   * Bumped every time a `THREAD_RESOLVED` / `THREAD_REOPENED` push event
+   * arrives. The threads view depends on this so a remote state change (or our
+   * own write landing) re-fetches the thread list without a full sync.
+   */
+  threadsRevision: number;
 }
 
 export const initialUIState: UIState = {
@@ -92,6 +104,8 @@ export const initialUIState: UIState = {
   repoFilter: null,
   visiblePRIds: [],
   diffFileKeys: [],
+  selectedPatchsetPair: null,
+  threadsRevision: 0,
 };
 
 export function createUIStore(): Store<UIState> {

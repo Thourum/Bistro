@@ -97,6 +97,16 @@ func RetryWithBackoff(ctx context.Context, backoff *ExponentialBackoff, maxAttem
 		lastResult = result
 
 		if result.Success {
+			// Check whether the context was cancelled during fn(). A provider
+			// that catches late cancellation and still returns success must not
+			// be treated as authoritative — the caller's session may already be
+			// disconnected/replaced and side-effects must be suppressed.
+			// Use the ErrAmbiguousRemoteSuccess sentinel so replay can detect
+			// this case and mark the queue row terminal rather than retrying.
+			if ctx.Err() != nil {
+				result.Success = false
+				result.Error = ErrAmbiguousRemoteSuccess + "context cancelled during provider execution"
+			}
 			result.Retries = attempt
 			return result
 		}

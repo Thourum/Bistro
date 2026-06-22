@@ -159,6 +159,95 @@ func TestDiffStore_SaveDiffs_Empty(t *testing.T) {
 	}
 }
 
+// ---- Stale-row removal tests (Blocker 2 fix) ----
+
+func TestDiffStore_SaveDiffs_RemovesDeletedFile(t *testing.T) {
+	// First diff has two files; second diff has only one.
+	// The removed file must not appear in GetDiffs after the second SaveDiffs.
+	db := setupTestDB(t)
+	seedPR(t, db, "pr-stale")
+	ds := NewDiffStore(db.DB)
+
+	// Save initial: main.go + utils.go
+	if err := ds.SaveDiffs("pr-stale", []DiffFile{
+		{FilePath: "main.go", Patch: "patch-main"},
+		{FilePath: "utils.go", Patch: "patch-utils"},
+	}); err != nil {
+		t.Fatalf("first save: %v", err)
+	}
+
+	// Save updated: only main.go (utils.go deleted from PR)
+	if err := ds.SaveDiffs("pr-stale", []DiffFile{
+		{FilePath: "main.go", Patch: "patch-main-v2"},
+	}); err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+
+	got, err := ds.GetDiffs("pr-stale")
+	if err != nil {
+		t.Fatalf("GetDiffs: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 file after deletion, got %d: %v", len(got), got)
+	}
+	if got[0].FilePath != "main.go" {
+		t.Errorf("expected main.go, got %q", got[0].FilePath)
+	}
+	if got[0].Patch != "patch-main-v2" {
+		t.Errorf("expected updated patch, got %q", got[0].Patch)
+	}
+}
+
+func TestDiffStore_SaveDiffs_EmptyClearsStaleRows(t *testing.T) {
+	// Saving an empty diff list must delete all existing rows.
+	db := setupTestDB(t)
+	seedPR(t, db, "pr-empty")
+	ds := NewDiffStore(db.DB)
+
+	if err := ds.SaveDiffs("pr-empty", []DiffFile{
+		{FilePath: "a.go", Patch: "patch-a"},
+		{FilePath: "b.go", Patch: "patch-b"},
+	}); err != nil {
+		t.Fatalf("initial save: %v", err)
+	}
+
+	// Simulate a sync that found no changed files (e.g. revert to base).
+	if err := ds.SaveDiffs("pr-empty", nil); err != nil {
+		t.Fatalf("empty save: %v", err)
+	}
+
+	got, err := ds.GetDiffs("pr-empty")
+	if err != nil {
+		t.Fatalf("GetDiffs after empty save: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected 0 diffs after empty save, got %d: %v", len(got), got)
+	}
+}
+
+func TestDiffStore_SaveDiffs_RenameFile(t *testing.T) {
+	// Rename: old file gone, new file appears. GetDiffs must return only the new name.
+	db := setupTestDB(t)
+	seedPR(t, db, "pr-rename")
+	ds := NewDiffStore(db.DB)
+
+	if err := ds.SaveDiffs("pr-rename", []DiffFile{
+		{FilePath: "old_name.go", Patch: "patch-old"},
+	}); err != nil {
+		t.Fatalf("save old: %v", err)
+	}
+	if err := ds.SaveDiffs("pr-rename", []DiffFile{
+		{FilePath: "new_name.go", Patch: "patch-new"},
+	}); err != nil {
+		t.Fatalf("save new: %v", err)
+	}
+
+	got, _ := ds.GetDiffs("pr-rename")
+	if len(got) != 1 || got[0].FilePath != "new_name.go" {
+		t.Errorf("after rename: got %v", got)
+	}
+}
+
 // seedPR inserts a minimal PR row so foreign-key constraints are satisfied.
 func seedPR(t *testing.T, db *DB, prID string) {
 	t.Helper()

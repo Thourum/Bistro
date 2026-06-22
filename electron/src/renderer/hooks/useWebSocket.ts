@@ -65,6 +65,11 @@ interface ActionFailedData {
   error: string;
 }
 
+interface ThreadStateChangedData {
+  pr_id: string;
+  thread_id: string;
+}
+
 const DEFAULT_WS_PORT = 8080;
 
 /**
@@ -217,6 +222,22 @@ function handleActionFailed(data: ActionFailedData): void {
   }
 }
 
+/**
+ * A thread's resolved/reopened state changed on the server (our write landed,
+ * or a teammate changed it). Bump `threadsRevision` so the open threads view
+ * and merge-readiness badge re-fetch — no full sync cycle needed.
+ */
+function handleThreadStateChanged(_data: ThreadStateChangedData): void {
+  try {
+    appStore.setState((s) => ({
+      ...s,
+      threadsRevision: s.threadsRevision + 1,
+    }));
+  } catch {
+    // Store not available (test environment)
+  }
+}
+
 function onMessage(event: MessageEvent<string>): void {
   let message: WSMessage;
   try {
@@ -280,6 +301,10 @@ function onMessage(event: MessageEvent<string>): void {
         message: formatErrorMessage((message.data as ActionFailedData).error),
         dismissible: true,
       });
+      break;
+    case 'THREAD_RESOLVED':
+    case 'THREAD_REOPENED':
+      handleThreadStateChanged(message.data as ThreadStateChangedData);
       break;
     case 'AUTH_REDIRECT': {
       const payload = message.data as { provider: string; url: string };
@@ -399,6 +424,10 @@ function onMessage(event: MessageEvent<string>): void {
     }
     case 'DIFF_READY':
     case 'COMMENTS_READY':
+    case 'PATCHSETS_READY':
+    case 'RANGE_DIFF_READY':
+    case 'FILE_VIEWED_ACK':
+    case 'REVIEW_THREADS_READY':
     case 'PR_LIST_READY': {
       const handler = messageHandlers.get(message.id);
       if (handler) {

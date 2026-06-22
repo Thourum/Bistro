@@ -41,8 +41,13 @@ export const FOOTER_LEGEND_PRESETS_BY_ROUTE: Record<RouteBase, string[]> = {
 
 /** Per-overlay footer legend preset. */
 export const FOOTER_LEGEND_PRESETS_BY_OVERLAY: Record<OverlayKind, string[]> = {
-  command: ['global.escape'],
-  help: ['global.escape'],
+  threads: [
+    'threads.next',
+    'threads.prev',
+    'threads.resolve',
+    'threads.unresolve',
+    'global.escape',
+  ],
   search: ['global.escape'],
   filter: [
     'filter.needsAction',
@@ -51,6 +56,8 @@ export const FOOTER_LEGEND_PRESETS_BY_OVERLAY: Record<OverlayKind, string[]> = {
     'filter.all',
     'filter.close',
   ],
+  help: ['global.escape'],
+  command: ['global.escape'],
   repoPicker: ['global.escape'],
 };
 
