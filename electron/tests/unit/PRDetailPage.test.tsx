@@ -1,10 +1,6 @@
 // @vitest-environment jsdom
 
-import * as matchers from '@testing-library/jest-dom/matchers';
-import {
-  QueryClient,
-  QueryClientProvider,
-} from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRouteWithContext,
@@ -13,9 +9,11 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FooterSlotProvider } from '../../src/renderer/components/FooterSlot';
+import { OverlayProvider } from '../../src/renderer/overlays/OverlayContext';
 import { PRDetailPage } from '../../src/renderer/pages/PRDetailPage';
 import type { RouterContext } from '../../src/renderer/router';
 import * as storeModule from '../../src/renderer/store';
@@ -135,7 +133,11 @@ function renderWithPRRoute(prId: string) {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={testRouter} />
+      <OverlayProvider>
+        <FooterSlotProvider>
+          <RouterProvider router={testRouter} />
+        </FooterSlotProvider>
+      </OverlayProvider>
     </QueryClientProvider>,
   );
 }

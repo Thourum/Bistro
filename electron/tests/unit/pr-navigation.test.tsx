@@ -10,11 +10,7 @@
 //   5. Command-palette PR open navigates by pr.id.
 //   6. Route↔mode coherence: Escape, back-nav, filter-then-Enter freshness.
 
-import * as matchers from '@testing-library/jest-dom/matchers';
-import {
-  QueryClient,
-  QueryClientProvider,
-} from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRouteWithContext,
@@ -23,32 +19,22 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
-import {
-  act,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import * as matchers from '@testing-library/jest-dom/matchers';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod/v4';
 import { AuthedRouteShell } from '../../src/renderer/components/AuthedRouteShell';
 import { PrsIndexRouteComponent } from '../../src/renderer/components/PrsIndexRouteComponent';
+import { OverlayProvider } from '../../src/renderer/overlays/OverlayContext';
 import { PRDetailPage } from '../../src/renderer/pages/PRDetailPage';
 import type { RouterContext } from '../../src/renderer/router';
 import { appStore } from '../../src/renderer/store';
 import { initialUIState } from '../../src/renderer/store/ui';
+import type { PR } from '../../src/renderer/types';
 import {
   DEFAULT_KEYBINDINGS,
   type KeyBinding,
 } from '../../src/renderer/utils/keybindings';
-import type { PR } from '../../src/renderer/types';
 
 expect.extend(matchers);
 
@@ -207,7 +193,10 @@ vi.mock('../../src/renderer/hooks/useWebSocketPRList', () => ({
 // ---------------------------------------------------------------------------
 
 vi.mock('../../src/renderer/router', () => ({
-  router: { navigate: mockRouterNavigate, state: { location: { pathname: '/prs/' } } },
+  router: {
+    navigate: mockRouterNavigate,
+    state: { location: { pathname: '/prs/' } },
+  },
   prDetailRoute: {},
 }));
 
@@ -260,12 +249,15 @@ function makeExtRouter(initialUrl = '/prs/') {
     routeTree,
     history,
     context: {
-      queryClient,    },
+      queryClient,
+    },
   });
 
   const utils = render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={testRouter} />
+      <OverlayProvider>
+        <RouterProvider router={testRouter} />
+      </OverlayProvider>
     </QueryClientProvider>,
   );
 
@@ -280,7 +272,9 @@ function byId(actionId: string): KeyBinding {
 }
 
 function makeTestCtx(
-  routeBase: import('../../src/renderer/utils/keybindings').RouteBase | null = 'list',
+  routeBase:
+    | import('../../src/renderer/utils/keybindings').RouteBase
+    | null = 'list',
 ): import('../../src/renderer/utils/keybindings').KeyActionContext {
   return {
     store: appStore,
@@ -295,6 +289,7 @@ function makeTestCtx(
       openFilter: vi.fn(),
       toggleFilter: vi.fn(),
       openRepoPicker: vi.fn(),
+      openThreads: vi.fn(),
       closeOverlay: vi.fn(),
       closeSearch: vi.fn(),
     },
@@ -311,7 +306,8 @@ beforeEach(() => {
   mockRouterNavigate.mockClear();
   appStore.setState(() => ({
     ...initialUIState,
-    isAuthenticated: true,  }));
+    isAuthenticated: true,
+  }));
 });
 
 afterEach(() => {
@@ -386,7 +382,12 @@ describe('PR navigation — action dispatch by routed prId', () => {
     const calls = mockSend.mock.calls.filter(
       ([type]: [string]) => type === 'APPROVE_PR',
     );
-    expect(calls.every(([, payload]: [string, { pr_id: string }]) => payload.pr_id === 'pr-repo2-c')).toBe(true);
+    expect(
+      calls.every(
+        ([, payload]: [string, { pr_id: string }]) =>
+          payload.pr_id === 'pr-repo2-c',
+      ),
+    ).toBe(true);
   });
 });
 
@@ -452,12 +453,7 @@ describe('PR navigation — Shift+G then Enter', () => {
     // 4 PRs visible after no filter.
     appStore.setState((s) => ({
       ...s,
-      visiblePRIds: [
-        'pr-repo1-a',
-        'pr-repo1-b',
-        'pr-repo2-c',
-        'pr-repo2-d',
-      ],
+      visiblePRIds: ['pr-repo1-a', 'pr-repo1-b', 'pr-repo2-c', 'pr-repo2-d'],
       selectedPRIndex: 0,
     }));
 
@@ -512,7 +508,8 @@ describe('PR navigation — command palette navigate by pr.id', () => {
     }));
 
     // Simulate what CommandPalette.handleExecutePR does for PR pr-repo2-c:
-    const targetPr = ALL_PRS.find((p) => p.id === 'pr-repo2-c')!;
+    const targetPr = ALL_PRS.find((p) => p.id === 'pr-repo2-c');
+    if (targetPr === undefined) throw new Error('missing fixture PR');
     mockRouterNavigate({ to: '/prs/$prId', params: { prId: targetPr.id } });
 
     // Key assertion: navigate was called with pr.id, NOT with selectedPRIndex as identity.
@@ -522,7 +519,9 @@ describe('PR navigation — command palette navigate by pr.id', () => {
     });
 
     // selectedPRIndex (0 = pr-repo1-a) must NOT have been used as the navigation target.
-    const args = mockRouterNavigate.mock.calls[0][0] as { params: { prId: string } };
+    const args = mockRouterNavigate.mock.calls[0][0] as {
+      params: { prId: string };
+    };
     expect(args.params.prId).toBe('pr-repo2-c');
     expect(args.params.prId).not.toBe('pr-repo1-a');
   });
