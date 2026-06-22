@@ -67,6 +67,7 @@ export function PRDetailPage() {
 
   const pr =
     allPRs.find((p) => p.id === prId) ?? filteredPRs.find((p) => p.id === prId);
+  const selectedPrId = pr?.id;
 
   const { request } = useWebSocket();
   const { patchsets } = usePatchsets(pr?.id);
@@ -79,6 +80,12 @@ export function PRDetailPage() {
   }
 
   const { dispatchApprove, clearActionResult } = useActionDispatch(pr?.id);
+
+  // Reset patchset pair selection when the user navigates to a different PR.
+  useEffect(() => {
+    if (selectedPrId === undefined) return;
+    appStore.setState((s) => ({ ...s, selectedPatchsetPair: null }));
+  }, [selectedPrId]);
 
   useEffect(() => {
     if (confirmingAction === 'approve_confirmed') {
@@ -151,7 +158,7 @@ export function PRDetailPage() {
     );
   }
 
-  if (error !== null || pr === undefined) {
+  if (pr === undefined) {
     return (
       <div
         data-testid="pr-not-found"

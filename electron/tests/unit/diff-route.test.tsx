@@ -313,6 +313,7 @@ function makeTestCtx(
       openHelp: vi.fn(),
       openSearch: vi.fn(),
       openFilter: vi.fn(),
+      openThreads: vi.fn(),
       toggleFilter: vi.fn(),
       openRepoPicker: vi.fn(),
       closeOverlay: vi.fn(),
