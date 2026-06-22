@@ -11,16 +11,27 @@ import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import {
-  type KeyActionContext,
   getEffectiveBindings,
   isActive,
   isSequenceBinding,
+  type KeyActionContext,
   routeBaseFromPath,
 } from '../utils/keybindings';
 import { useStore } from './useStore';
 
 /** Sequence steps must follow each other within this window (was 500ms before the migration). */
 const SEQUENCE_TIMEOUT_MS = 500;
+
+function routePrId(
+  matches: readonly { params?: Record<string, unknown> }[] | undefined,
+): string | undefined {
+  if (matches === undefined) return undefined;
+  for (let i = matches.length - 1; i >= 0; i -= 1) {
+    const prId = matches[i]?.params?.prId;
+    if (typeof prId === 'string') return prId;
+  }
+  return undefined;
+}
 
 /**
  * Registers every effective keybinding (defaults + settings overrides)
@@ -51,18 +62,21 @@ export function useAppHotkeys(): void {
   activeOverlayRef.current = activeOverlay;
   const locationRef = useRef(routerState.location);
   locationRef.current = routerState.location;
+  const matchesRef = useRef(routerState.matches);
+  matchesRef.current = routerState.matches;
 
   // Stable makeCtx that always reads current values from refs.
-  const makeCtx = useCallback(
-    (): KeyActionContext => ({
+  const makeCtx = useCallback((): KeyActionContext => {
+    const prId = routePrId(matchesRef.current);
+    const ctx: KeyActionContext = {
       store: appStore,
       routeBase: routeBaseRef.current,
       activeOverlay: activeOverlayRef.current,
       overlays: overlaysRef.current,
       location: locationRef.current,
-    }),
-    [],
-  ); // eslint-disable-line react-hooks/exhaustive-deps
+    };
+    return prId === undefined ? ctx : { ...ctx, prId };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const bindings = useMemo(() => getEffectiveBindings(overrides), [overrides]);
 

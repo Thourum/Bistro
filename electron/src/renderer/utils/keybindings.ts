@@ -56,6 +56,7 @@ export interface KeyActionContext {
   activeOverlay: OverlayKind | null;
   overlays: OverlayContextValue;
   location: { pathname: string };
+  prId?: string;
 }
 
 /**
@@ -164,12 +165,10 @@ const globalBindings: KeyBinding[] = [
         ctx.overlays.closeOverlay();
       } else if (routeBase === 'diff') {
         // Navigate back to /prs/$prId
-        const pathname = router.state.location.pathname;
-        const m = /^\/prs\/([^/]+)\/diff$/.exec(pathname);
-        if (m) {
+        if (ctx.prId !== undefined) {
           void router.navigate({
             to: '/prs/$prId',
-            params: { prId: m[1]! },
+            params: { prId: ctx.prId },
           });
         }
       } else if (routeBase === 'detail') {
@@ -485,12 +484,10 @@ const detailBindings: KeyBinding[] = [
       if (ctx.routeBase === 'diff' && diffFileKeys.length > 0) {
         const newKey = diffFileKeys[newIdx];
         if (newKey !== undefined) {
-          const pathname = router.state.location.pathname;
-          const m = /^\/prs\/([^/]+)\/diff$/.exec(pathname);
-          if (m) {
+          if (ctx.prId !== undefined) {
             void router.navigate({
               to: '/prs/$prId/diff',
-              params: { prId: m[1]! },
+              params: { prId: ctx.prId },
               search: { file: newKey, side: 'right' },
               replace: true,
             });
@@ -515,12 +512,10 @@ const detailBindings: KeyBinding[] = [
       if (ctx.routeBase === 'diff' && diffFileKeys.length > 0) {
         const newKey = diffFileKeys[newIdx];
         if (newKey !== undefined) {
-          const pathname = router.state.location.pathname;
-          const m = /^\/prs\/([^/]+)\/diff$/.exec(pathname);
-          if (m) {
+          if (ctx.prId !== undefined) {
             void router.navigate({
               to: '/prs/$prId/diff',
-              params: { prId: m[1]! },
+              params: { prId: ctx.prId },
               search: { file: newKey, side: 'right' },
               replace: true,
             });
@@ -535,14 +530,10 @@ const detailBindings: KeyBinding[] = [
     description: 'View diff',
     activation: { routes: ['detail'] },
     action: (ctx) => {
-      // Derive prId from the current route pathname (/prs/$prId).
-      const pathname = router.state.location.pathname;
-      const m = /^\/prs\/([^/]+)$/.exec(pathname);
-      if (!m) return;
-      const prId = m[1]!;
+      if (ctx.prId === undefined) return;
       void router.navigate({
         to: '/prs/$prId/diff',
-        params: { prId },
+        params: { prId: ctx.prId },
         search: { file: '', side: 'right' },
       });
     },

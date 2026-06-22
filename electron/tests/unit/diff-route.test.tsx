@@ -12,11 +12,7 @@
 //   7. Overlay close on diff route restores mode:'diff'.
 //   8. In-diff n/p keybindings call router.navigate to update ?file.
 
-import * as matchers from '@testing-library/jest-dom/matchers';
-import {
-  QueryClient,
-  QueryClientProvider,
-} from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRouteWithContext,
@@ -25,32 +21,21 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
-import {
-  act,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
+import * as matchers from '@testing-library/jest-dom/matchers';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod/v4';
 import { AuthedRouteShell } from '../../src/renderer/components/AuthedRouteShell';
 import { DiffPage } from '../../src/renderer/pages/DiffPage';
 import type { RouterContext } from '../../src/renderer/router';
 import { appStore } from '../../src/renderer/store';
 import { initialUIState } from '../../src/renderer/store/ui';
+import type { PR } from '../../src/renderer/types';
 import {
   DEFAULT_KEYBINDINGS,
   type KeyBinding,
 } from '../../src/renderer/utils/keybindings';
-import type { PR } from '../../src/renderer/types';
 
 expect.extend(matchers);
 
@@ -192,6 +177,26 @@ const ALL_PRS: PR[] = [
     body: '',
     ci_status: 'success',
   },
+  {
+    id: 'github:Itterno/Bistro:14',
+    provider_id: 'github:default',
+    owner: 'Itterno',
+    repo: 'Bistro',
+    number: 14,
+    title: 'Router migration',
+    author: 'alice',
+    state: 'open',
+    review_status: 'pending',
+    created_at: '2025-01-05T00:00:00Z',
+    updated_at: '2025-01-05T00:00:00Z',
+    base_branch: 'main',
+    head_branch: 'refactor/react-router-migration',
+    additions: 1,
+    deletions: 1,
+    changed_files: 1,
+    body: '',
+    ci_status: 'success',
+  },
 ];
 
 vi.mock('../../src/renderer/hooks/useWebSocketPRList', () => ({
@@ -249,9 +254,7 @@ function makeDiffRouteRouter(initialUrl = '/prs/pr-aaa/diff') {
   const prDetailRoute = createRoute({
     getParentRoute: () => prsRoute,
     path: '$prId',
-    component: () => (
-      <div data-testid="pr-detail-page">DetailPage</div>
-    ),
+    component: () => <div data-testid="pr-detail-page">DetailPage</div>,
   });
 
   const prDiffRoute = createRoute({
@@ -262,11 +265,7 @@ function makeDiffRouteRouter(initialUrl = '/prs/pr-aaa/diff') {
   });
 
   const routeTree = rootRoute.addChildren([
-    prsRoute.addChildren([
-      prsIndexRoute,
-      prDetailRoute,
-      prDiffRoute,
-    ]),
+    prsRoute.addChildren([prsIndexRoute, prDetailRoute, prDiffRoute]),
   ]);
 
   const history = createMemoryHistory({ initialEntries: [initialUrl] });
@@ -275,7 +274,8 @@ function makeDiffRouteRouter(initialUrl = '/prs/pr-aaa/diff') {
     routeTree,
     history,
     context: {
-      queryClient,    },
+      queryClient,
+    },
   });
 
   const utils = render(
@@ -297,7 +297,10 @@ function byId(actionId: string): KeyBinding {
 /** Create a minimal KeyActionContext for testing binding actions. */
 function makeTestCtx(
   store = appStore,
-  routeBase: import('../../src/renderer/utils/keybindings').RouteBase | null = 'detail',
+  routeBase:
+    | import('../../src/renderer/utils/keybindings').RouteBase
+    | null = 'detail',
+  prId = 'pr-test-id',
 ): import('../../src/renderer/utils/keybindings').KeyActionContext {
   return {
     store,
@@ -316,6 +319,7 @@ function makeTestCtx(
       closeSearch: vi.fn(),
     },
     location: { pathname: '/prs/pr-test-id' },
+    prId,
   };
 }
 
@@ -328,7 +332,8 @@ beforeEach(() => {
   mockPierreDiffViewSelectedKey.mockClear();
   appStore.setState(() => ({
     ...initialUIState,
-    isAuthenticated: true,  }));
+    isAuthenticated: true,
+  }));
 });
 
 afterEach(() => {
@@ -362,6 +367,19 @@ describe('DiffPage resolves PR by id', () => {
     await waitFor(() => {
       expect(screen.getByText('PR not found')).toBeInTheDocument();
     });
+  });
+
+  it('resolves URL-encoded provider PR ids without double-encoding', async () => {
+    makeDiffRouteRouter('/prs/github%3AItterno%2FBistro%3A14/diff');
+
+    await waitFor(() => {
+      expect(screen.getByText('PR-14')).toBeInTheDocument();
+    });
+
+    expect(mockRequest).toHaveBeenCalledWith(
+      'REQUEST_DIFF',
+      expect.objectContaining({ pr_id: 'github:Itterno/Bistro:14' }),
+    );
   });
 });
 
@@ -401,9 +419,7 @@ describe('?file canonical resolution', () => {
   it('passes ?file with spaces decoded correctly (path with space)', async () => {
     // no-op (mode removed)
 
-    makeDiffRouteRouter(
-      '/prs/pr-aaa/diff?file=src%2Fmy%20file.ts&side=right',
-    );
+    makeDiffRouteRouter('/prs/pr-aaa/diff?file=src%2Fmy%20file.ts&side=right');
 
     await waitFor(() => {
       expect(screen.getByTestId('pierre-diff-view')).toBeInTheDocument();
@@ -420,15 +436,25 @@ describe('?file canonical resolution', () => {
 
 describe('detail.viewDiff navigation', () => {
   it('Space on /prs/$prId navigates to /prs/$prId/diff', () => {
-    // Simulate being on /prs/pr-aaa (detail route).
-    mockRouterState.location.pathname = '/prs/pr-aaa';
-
-    byId('detail.viewDiff').action(makeTestCtx());
+    byId('detail.viewDiff').action(makeTestCtx(appStore, 'detail', 'pr-aaa'));
 
     expect(mockRouterNavigate).toHaveBeenCalledWith(
       expect.objectContaining({
         to: '/prs/$prId/diff',
         params: { prId: 'pr-aaa' },
+      }),
+    );
+  });
+
+  it('Space passes the clean provider PR id from route params', () => {
+    byId('detail.viewDiff').action(
+      makeTestCtx(appStore, 'detail', 'github:Itterno/Bistro:14'),
+    );
+
+    expect(mockRouterNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '/prs/$prId/diff',
+        params: { prId: 'github:Itterno/Bistro:14' },
       }),
     );
   });
@@ -456,7 +482,10 @@ describe('diff route navigation', () => {
 
     // Navigate back to detail route.
     act(() => {
-      void testRouter.navigate({ to: '/prs/$prId', params: { prId: 'pr-aaa' } });
+      void testRouter.navigate({
+        to: '/prs/$prId',
+        params: { prId: 'pr-aaa' },
+      });
     });
 
     await waitFor(() => {
@@ -470,6 +499,19 @@ describe('diff route navigation', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('pr-not-found')).not.toBeInTheDocument();
     });
+  });
+
+  it('Escape returns to detail using the clean provider PR id from route params', () => {
+    byId('global.escape').action(
+      makeTestCtx(appStore, 'diff', 'github:Itterno/Bistro:14'),
+    );
+
+    expect(mockRouterNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '/prs/$prId',
+        params: { prId: 'github:Itterno/Bistro:14' },
+      }),
+    );
   });
 });
 
@@ -490,7 +532,7 @@ describe('in-diff n/p keybindings update ?file', () => {
   });
 
   it('n (nextFile) in diff mode calls navigate with next ?file key', () => {
-    byId('detail.nextFile').action(makeTestCtx(appStore, 'diff'));
+    byId('detail.nextFile').action(makeTestCtx(appStore, 'diff', 'pr-aaa'));
 
     expect(mockRouterNavigate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -505,7 +547,7 @@ describe('in-diff n/p keybindings update ?file', () => {
 
   it('p (prevFile) at index 0 stays at index 0 and does not navigate past first file', () => {
     appStore.setState((s) => ({ ...s, selectedFileIndex: 0 }));
-    byId('detail.prevFile').action(makeTestCtx(appStore, 'diff'));
+    byId('detail.prevFile').action(makeTestCtx(appStore, 'diff', 'pr-aaa'));
 
     // Navigate called with file='src/alpha.ts' (clamped to 0).
     expect(mockRouterNavigate).toHaveBeenCalledWith(
@@ -518,7 +560,7 @@ describe('in-diff n/p keybindings update ?file', () => {
 
   it('p (prevFile) at index 1 navigates back to first file', () => {
     appStore.setState((s) => ({ ...s, selectedFileIndex: 1 }));
-    byId('detail.prevFile').action(makeTestCtx(appStore, 'diff'));
+    byId('detail.prevFile').action(makeTestCtx(appStore, 'diff', 'pr-aaa'));
 
     expect(mockRouterNavigate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -572,9 +614,7 @@ describe('diffFileKeys cleared on prId change', () => {
       ...s,
       diffFileKeys: ['stale/key.ts'],
     }));
-    mockRouterState.location.pathname = '/prs/pr-bbb';
-
-    byId('detail.viewDiff').action(makeTestCtx());
+    byId('detail.viewDiff').action(makeTestCtx(appStore, 'detail', 'pr-bbb'));
 
     expect(mockRouterNavigate).toHaveBeenCalledWith(
       expect.objectContaining({

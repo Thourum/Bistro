@@ -42,6 +42,7 @@ function makeCtx(
   storeOrOverrides: Store<UIState> | Partial<UIState> = {},
   routeBase: RouteBase | null = 'list',
   overlayOverrides: Partial<OverlayContextValue> = {},
+  prId = 'pr-test-id',
 ): KeyActionContext {
   const store =
     storeOrOverrides instanceof Store
@@ -67,6 +68,7 @@ function makeCtx(
     activeOverlay: overlays.activeOverlay,
     overlays,
     location: { pathname: '/prs' },
+    prId,
   };
 }
 
@@ -317,7 +319,8 @@ describe('binding actions', () => {
   it('Space in detail opens the diff view (navigates to /prs/$prId/diff)', async () => {
     const store = makeStore({});
     const { router } = await import('../../src/renderer/router');
-    (router.state.location as { pathname: string }).pathname = '/prs/pr-test-id';
+    (router.state.location as { pathname: string }).pathname =
+      '/prs/pr-test-id';
     byId('detail.viewDiff').action(makeCtx(store, 'detail'));
     // Router navigates; mode is no longer written.
     expect(router.navigate).toHaveBeenCalledWith(
@@ -348,7 +351,8 @@ describe('binding actions', () => {
 
     it('detail route → navigates to /prs (router.navigate called)', async () => {
       const { router } = await import('../../src/renderer/router');
-      (router.state.location as { pathname: string }).pathname = '/prs/pr-test-id';
+      (router.state.location as { pathname: string }).pathname =
+        '/prs/pr-test-id';
       const store = makeStore({});
       byId('global.escape').action(makeCtx(store, 'detail'));
       expect(router.navigate).toHaveBeenCalledWith(
@@ -358,7 +362,8 @@ describe('binding actions', () => {
 
     it('diff route → navigates back to detail (router.navigate called)', async () => {
       const { router } = await import('../../src/renderer/router');
-      (router.state.location as { pathname: string }).pathname = '/prs/pr-test-id/diff';
+      (router.state.location as { pathname: string }).pathname =
+        '/prs/pr-test-id/diff';
       const store = makeStore({});
       byId('global.escape').action(makeCtx(store, 'diff'));
       expect(router.navigate).toHaveBeenCalledWith(
@@ -396,10 +401,12 @@ describe('binding actions', () => {
       it(`${actionId} sets filterState=${expected} and closes overlay`, () => {
         const closeOverlay = vi.fn();
         const store = makeStore();
-        byId(actionId).action(makeCtx(store, 'list', {
-          closeOverlay,
-          activeOverlay: 'filter' as const,
-        }));
+        byId(actionId).action(
+          makeCtx(store, 'list', {
+            closeOverlay,
+            activeOverlay: 'filter' as const,
+          }),
+        );
         expect(store.state.filterState).toBe(expected);
         expect(closeOverlay).toHaveBeenCalled();
       });
@@ -456,16 +463,29 @@ describe('isActive — login bindings inactive on authed routes', () => {
     expect(loginBinding?.activation.routes).toEqual(['login']);
   });
 
-  const routes: Array<RouteBase | null> = ['list', 'detail', 'diff', 'settings', null];
-  const overlays = [null, 'command', 'help', 'search', 'filter', 'repoPicker'] as const;
+  const routes: Array<RouteBase | null> = [
+    'list',
+    'detail',
+    'diff',
+    'settings',
+    null,
+  ];
+  const overlays = [
+    null,
+    'command',
+    'help',
+    'search',
+    'filter',
+    'repoPicker',
+  ] as const;
 
   for (const routeBase of routes) {
     for (const activeOverlay of overlays) {
       it(`inactive: routeBase=${String(routeBase)} overlay=${String(activeOverlay)}`, () => {
         if (!loginBinding) return;
-        expect(
-          isActive(loginBinding, { routeBase, activeOverlay }),
-        ).toBe(false);
+        expect(isActive(loginBinding, { routeBase, activeOverlay })).toBe(
+          false,
+        );
       });
     }
   }
@@ -476,20 +496,28 @@ describe('isActive — login bindings inactive on authed routes', () => {
 // ---------------------------------------------------------------------------
 
 describe('isActive — global.quit fires on routes AND help/search overlays', () => {
-  const quitMac = DEFAULT_KEYBINDINGS.find((b) => b.actionId === 'global.quit.mac')!;
+  const quitMac = byId('global.quit.mac');
 
   it('active on list route, no overlay', () => {
-    expect(isActive(quitMac, { routeBase: 'list', activeOverlay: null })).toBe(true);
+    expect(isActive(quitMac, { routeBase: 'list', activeOverlay: null })).toBe(
+      true,
+    );
   });
   it('active while help overlay is open', () => {
-    expect(isActive(quitMac, { routeBase: null, activeOverlay: 'help' })).toBe(true);
+    expect(isActive(quitMac, { routeBase: null, activeOverlay: 'help' })).toBe(
+      true,
+    );
   });
   it('active while search overlay is open', () => {
-    expect(isActive(quitMac, { routeBase: null, activeOverlay: 'search' })).toBe(true);
+    expect(
+      isActive(quitMac, { routeBase: null, activeOverlay: 'search' }),
+    ).toBe(true);
   });
   it('inactive while command overlay is open', () => {
     // command was NOT in old quit modes — keep it inactive.
-    expect(isActive(quitMac, { routeBase: null, activeOverlay: 'command' })).toBe(false);
+    expect(
+      isActive(quitMac, { routeBase: null, activeOverlay: 'command' }),
+    ).toBe(false);
   });
 });
 
@@ -506,10 +534,22 @@ describe('isActive — empty routes array means never-active', () => {
     action: () => undefined,
   };
 
-  it('inactive on list', () => expect(isActive(neverBinding, { routeBase: 'list', activeOverlay: null })).toBe(false));
-  it('inactive on detail', () => expect(isActive(neverBinding, { routeBase: 'detail', activeOverlay: null })).toBe(false));
-  it('inactive with overlay', () => expect(isActive(neverBinding, { routeBase: 'list', activeOverlay: 'command' })).toBe(false));
-  it('inactive with null routeBase', () => expect(isActive(neverBinding, { routeBase: null, activeOverlay: null })).toBe(false));
+  it('inactive on list', () =>
+    expect(
+      isActive(neverBinding, { routeBase: 'list', activeOverlay: null }),
+    ).toBe(false));
+  it('inactive on detail', () =>
+    expect(
+      isActive(neverBinding, { routeBase: 'detail', activeOverlay: null }),
+    ).toBe(false));
+  it('inactive with overlay', () =>
+    expect(
+      isActive(neverBinding, { routeBase: 'list', activeOverlay: 'command' }),
+    ).toBe(false));
+  it('inactive with null routeBase', () =>
+    expect(
+      isActive(neverBinding, { routeBase: null, activeOverlay: null }),
+    ).toBe(false));
 });
 
 // ---------------------------------------------------------------------------
@@ -525,7 +565,9 @@ describe('review-threads bindings', () => {
 
   it('gu opens the threads overlay', () => {
     const openThreadsMock = vi.fn();
-    const ctx = makeCtx(makeStore(), 'detail', { openThreads: openThreadsMock });
+    const ctx = makeCtx(makeStore(), 'detail', {
+      openThreads: openThreadsMock,
+    });
     byId('detail.threads').action(ctx);
     expect(openThreadsMock).toHaveBeenCalled();
   });

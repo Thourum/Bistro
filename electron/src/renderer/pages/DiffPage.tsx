@@ -7,7 +7,14 @@
 // diffFileKeys are cleared when prId changes to prevent stale key carryover.
 
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { PierreDiffView } from '../components/PierreDiffView';
 import { RangeDiffView } from '../components/RangeDiffView';
 import { addToast } from '../components/ToastContainer';
@@ -118,6 +125,7 @@ export function DiffPage() {
   // Clear stale diffFileKeys whenever the target PR changes.
   // This prevents keybindings from using keys from a previous PR's diff.
   useLayoutEffect(() => {
+    if (prId === '') return;
     appStore.setState((s) => ({ ...s, diffFileKeys: [] }));
   }, [prId]);
 
