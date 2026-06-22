@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ca-certificates dbus-x11 gnome-keyring libsecret-1-dev
+          mkdir -p "$HOME/.cache" "$HOME/.local/share/keyrings"
+          chmod 700 "$HOME/.local" "$HOME/.local/share" "$HOME/.local/share/keyrings"
+
+      - name: Vet
+        working-directory: go
+        run: go vet ./...
+
+      - name: Test
+        working-directory: go
+        shell: dbus-run-session -- bash --noprofile --norc -eo pipefail {0}
+        run: |
+          echo 'bistro-ci-keyring-passphrase' | gnome-keyring-daemon --unlock
+          go test -race ./...
+
+  electron:
+    name: Electron
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: electron/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: electron
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        working-directory: electron
+        run: pnpm type-check
+
+      - name: Lint
+        working-directory: electron
+        run: pnpm lint
+
+      - name: Test
+        working-directory: electron
+        run: pnpm test

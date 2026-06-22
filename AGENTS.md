@@ -30,7 +30,7 @@ Where things live: Go engine in `go/` (entry `go/cmd/bistro-sync/`, packages und
 
 - **Go 1.26** — go-git, go-github, gorilla/websocket, mattn/go-sqlite3, go-keyring, x/oauth2.
 - **Electron + Electron Forge + Vite** — React 19, TypeScript, TanStack (React Query / Hotkeys / Virtual / Store), Radix UI, Tailwind, Biome (lint+format), Vitest (test).
-- **Package manager: pnpm** (pnpm workspace). Versions live in `go/go.mod` and `electron/package.json` — check there, don't assume.
+- **Package manager: pnpm** for the Electron app. Run pnpm commands from `electron/`; the lockfile is `electron/pnpm-lock.yaml`. Versions live in `go/go.mod` and `electron/package.json` — check there, don't assume.
 
 ## Conventions
 
