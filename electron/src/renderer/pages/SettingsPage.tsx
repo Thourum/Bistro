@@ -339,6 +339,7 @@ function NumberPicker({ label, min, max, value, onChange }: NumberPickerProps) {
         <Button
           variant="outline"
           size="icon"
+          aria-label={`Decrease ${label}`}
           onClick={() => onChange(clamp(value - 1))}
           className="h-10 w-10 border-outline-variant"
         >
@@ -359,6 +360,7 @@ function NumberPicker({ label, min, max, value, onChange }: NumberPickerProps) {
         <Button
           variant="outline"
           size="icon"
+          aria-label={`Increase ${label}`}
           onClick={() => onChange(clamp(value + 1))}
           className="h-10 w-10 border-outline-variant"
         >
@@ -681,6 +683,7 @@ function RowStepper({
         <Button
           variant="ghost"
           size="icon"
+          aria-label={`Decrease ${title}`}
           onClick={() => onChange(clamp(value - step))}
           className="h-8 w-8"
         >
@@ -690,6 +693,7 @@ function RowStepper({
         <Button
           variant="ghost"
           size="icon"
+          aria-label={`Increase ${title}`}
           onClick={() => onChange(clamp(value + step))}
           className="h-8 w-8"
         >

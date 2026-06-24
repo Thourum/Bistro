@@ -9,12 +9,16 @@
  * - details + summary are allowed; details.open is the only extra attribute
  */
 
-import type { Schema } from 'hast-util-sanitize';
+import type { Options as RehypeSanitizeOptions } from 'rehype-sanitize';
 import { defaultSchema } from 'rehype-sanitize';
 
+type MarkdownSchema = NonNullable<RehypeSanitizeOptions>;
+type SchemaAttributes = NonNullable<MarkdownSchema['attributes']>;
+type SchemaProtocols = NonNullable<MarkdownSchema['protocols']>;
+
 // Build a clean copy of the default attributes without any image-related keys.
-const { img: _img, ...attributesWithoutImg } =
-  defaultSchema.attributes as Record<string, unknown>;
+const { img: _img, ...attributesWithoutImg } = (defaultSchema.attributes ??
+  {}) as SchemaAttributes;
 
 // Protocols: keep only https for hrefs; remove src/longDesc entirely.
 const {
@@ -22,14 +26,14 @@ const {
   longDesc: _longDesc,
   href: _href,
   ...otherProtocols
-} = (defaultSchema.protocols ?? {}) as Record<string, unknown>;
+} = (defaultSchema.protocols ?? {}) as SchemaProtocols;
 
 // Tag names: exclude img / picture / source.
 const cleanTagNames = (defaultSchema.tagNames ?? []).filter(
   (t) => t !== 'img' && t !== 'picture' && t !== 'source',
 );
 
-export const markdownSchema: Schema = {
+export const markdownSchema: MarkdownSchema = {
   ...defaultSchema,
   tagNames: [...cleanTagNames, 'details', 'summary'],
   strip: [...(defaultSchema.strip ?? []), 'script'],
