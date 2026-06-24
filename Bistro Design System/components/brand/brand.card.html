@@ -1,0 +1,52 @@
+<!-- @dsCard group="Components" viewport="700x380" name="Brand — logo, mark, lockup" subtitle="BistroMark, BistroWordmark, BistroLockup" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>
+  body { margin: 0; padding: 28px; background: var(--color-surface); }
+  .row { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; margin-bottom: 24px; }
+  .lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--color-outline); width: 78px; flex-shrink: 0; }
+  .dark { background: var(--color-on-surface); padding: 16px; display: inline-flex; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+  const { BistroMark, BistroWordmark, BistroLockup } = window.BistroDesignSystem_8e22c3;
+  function Demo() {
+    return (
+      <div>
+        <div className="row">
+          <span className="lbl">Lockup</span>
+          <BistroLockup size={34} />
+          <div className="dark"><BistroLockup size={28} variant="inverse" /></div>
+        </div>
+        <div className="row">
+          <span className="lbl">Stacked</span>
+          <BistroLockup size={30} orientation="stacked" />
+        </div>
+        <div className="row">
+          <span className="lbl">Mark</span>
+          <BistroMark size={72} />
+          <div className="dark"><BistroMark size={64} variant="inverse" /></div>
+          <BistroMark size={64} variant="mono" style={{ color: 'var(--color-on-surface)' }} />
+          <BistroMark size={32} />
+          <BistroMark size={20} />
+        </div>
+        <div className="row">
+          <span className="lbl">Wordmark</span>
+          <BistroWordmark size={40} />
+        </div>
+      </div>
+    );
+  }
+  ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
+</body>
+</html>

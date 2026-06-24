@@ -1,0 +1,42 @@
+<!-- @dsCard group="Components" viewport="700x400" name="Review — PR row, diff, comment" subtitle="PRRow, DiffLine, CommentCard — the code-review primitives" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style> body { margin: 0; padding: 22px; background: var(--color-surface); } .sec { margin-bottom: 18px; } </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+  const { PRRow, DiffLine, CommentCard, Button } = window.BistroDesignSystem_8e22c3;
+  function Demo() {
+    const [sel, setSel] = React.useState(0);
+    return (
+      <div>
+        <div className="sec" style={{ border: '1px solid var(--color-outline-variant)', background: 'var(--color-surface-container-lowest)' }}>
+          <PRRow number={1042} title="feat: implement zero-radius architecture for canvas nodes" author="alice" time="2m ago" ci="success" selected={sel===0} onClick={()=>setSel(0)} />
+          <PRRow number={1041} title="fix: memory leak in viewport observer cleanup" author="bob_dev" time="15m ago" ci="failure" selected={sel===1} onClick={()=>setSel(1)} />
+          <PRRow number={1039} title="refactor: migrate tailwind config to typescript" author="charlie" time="1h ago" ci="running" selected={sel===2} onClick={()=>setSel(2)} />
+        </div>
+        <div className="sec" style={{ border: '1px solid var(--color-outline-variant)', background: 'var(--color-surface-container-lowest)' }}>
+          <DiffLine oldNo={42} newNo={42}>{"    log::info!(\"Starting Monolith Kernel…\");"}</DiffLine>
+          <DiffLine newNo={43} type="remove">{"    self.status = EngineStatus::Initializing;"}</DiffLine>
+          <DiffLine oldNo={43} type="add">{"    self.set_state(EngineStatus::Initializing)?;"}</DiffLine>
+          <DiffLine oldNo={44} type="add" focused>{"    self.verify_integrity_hash()?;"}</DiffLine>
+        </div>
+        <div style={{ maxWidth: 460 }}>
+          <CommentCard author="J_Doe System Arch" tag="ACTIVE_DRAFT"
+            actions={<><Button variant="ghost" size="sm">Cancel</Button><Button variant="primary" size="sm">Comment</Button></>} />
+        </div>
+      </div>
+    );
+  }
+  ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
+</body>
+</html>

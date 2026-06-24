@@ -1,0 +1,27 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Surface ladder" subtitle="Near-white planes. Depth comes from container steps + hairlines, not shadow." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 20px; background: var(--color-surface); }
+  .ramp { display: flex; gap: 0; border: 1px solid var(--color-outline-variant); }
+  .sw { flex: 1; height: 88px; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; box-sizing: border-box; border-right: 1px solid var(--color-outline-variant); }
+  .sw:last-child { border-right: none; }
+  .nm { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-on-surface-variant); }
+  .hex { font-family: var(--font-mono); font-size: 9px; margin-top: 2px; color: var(--color-outline); }
+</style>
+</head>
+<body>
+<div class="ramp">
+  <div class="sw" style="background:var(--color-surface-container-lowest)"><span class="nm">lowest</span><span class="hex">#FFFFFF</span></div>
+  <div class="sw" style="background:var(--color-surface-container-low)"><span class="nm">low</span><span class="hex">#F3F4F5</span></div>
+  <div class="sw" style="background:var(--color-surface)"><span class="nm">surface</span><span class="hex">#F8F9FA</span></div>
+  <div class="sw" style="background:var(--color-surface-container)"><span class="nm">container</span><span class="hex">#EDEEEF</span></div>
+  <div class="sw" style="background:var(--color-surface-container-high)"><span class="nm">high</span><span class="hex">#E7E8E9</span></div>
+  <div class="sw" style="background:var(--color-surface-container-highest)"><span class="nm">highest</span><span class="hex">#E1E3E4</span></div>
+  <div class="sw" style="background:var(--color-surface-dim)"><span class="nm">dim</span><span class="hex">#D9DADB</span></div>
+</div>
+</body>
+</html>

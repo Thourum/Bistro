@@ -1,0 +1,35 @@
+<!-- @dsCard group="Brand" viewport="700x170" name="Keyboard chrome" subtitle="Every action is a key. Legends, hints, and kbd caps are core brand furniture." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 0; background: var(--color-surface); display: flex; flex-direction: column; height: 170px; box-sizing: border-box; }
+  .body { flex: 1; padding: 24px; display: flex; flex-wrap: wrap; gap: 10px; align-content: flex-start; }
+  kbd { font-family: var(--font-mono); font-size: 11px; padding: 4px 9px; background: var(--color-surface-container-lowest); border: 1px solid var(--color-outline-variant); color: var(--color-on-surface); }
+  .pair { display: inline-flex; align-items: center; gap: 8px; margin-right: 14px; }
+  .desc { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-outline); }
+  .bar { display: flex; align-items: center; gap: 18px; height: 32px; padding: 0 16px; border-top: 1px solid var(--color-outline-variant); background: var(--color-surface-container-high); }
+  .bar .desc { color: var(--color-outline); }
+  .bar kbd { font-size: 9px; padding: 2px 6px; }
+  .status { margin-left: auto; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-primary); }
+</style>
+</head>
+<body>
+  <div class="body">
+    <span class="pair"><kbd>J</kbd><kbd>K</kbd><span class="desc">Navigate</span></span>
+    <span class="pair"><kbd>↩</kbd><span class="desc">Open</span></span>
+    <span class="pair"><kbd>A</kbd><kbd>A</kbd><span class="desc">Approve</span></span>
+    <span class="pair"><kbd>C</kbd><span class="desc">Comment</span></span>
+    <span class="pair"><kbd>:</kbd><span class="desc">Command</span></span>
+    <span class="pair"><kbd>?</kbd><span class="desc">Help</span></span>
+    <span class="pair"><kbd>ESC</kbd><span class="desc">Back</span></span>
+  </div>
+  <div class="bar">
+    <span class="pair"><kbd>J/K</kbd><span class="desc">Navigate</span></span>
+    <span class="pair"><kbd>SPACE</kbd><span class="desc">Toggle fold</span></span>
+    <span class="status">System_Status: Operational // V.01</span>
+  </div>
+</body>
+</html>

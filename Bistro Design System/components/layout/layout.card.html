@@ -1,0 +1,50 @@
+<!-- @dsCard group="Components" viewport="700x340" name="Layout — panel, toolbar, system bar" subtitle="Panel, Toolbar, SystemBar" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style> body { margin: 0; padding: 24px; background: var(--color-surface); } </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+  const { Panel, Toolbar, SystemBar, Button, Eyebrow, Badge, StatusDot } = window.BistroDesignSystem_8e22c3;
+  function Demo() {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ border: '1px solid var(--color-outline-variant)' }}>
+          <Toolbar
+            leading={<Eyebrow>PR_#1042 // 8f2a9c</Eyebrow>}
+            trailing={<Button variant="primary" size="sm" keyHint="A">Approve</Button>}
+          >
+            <Eyebrow tone="primary">merge: feature/arch-refactor → main</Eyebrow>
+          </Toolbar>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, padding: 16, background: 'var(--color-surface)' }}>
+            <Panel title="Review">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--color-on-surface)' }}>
+                <Badge tone="success">Approved</Badge> by @alice
+              </div>
+            </Panel>
+            <Panel title="CI Checks" action={<Eyebrow>3/4</Eyebrow>}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                <span style={{ display:'flex', alignItems:'center', gap:8 }}><StatusDot status="success" size={10}/> tests (45/45)</span>
+                <span style={{ display:'flex', alignItems:'center', gap:8 }}><StatusDot status="running" size={10}/> security scan</span>
+              </div>
+            </Panel>
+          </div>
+          <SystemBar
+            legend={[{ key: 'J/K', label: 'Navigate' }, { key: 'SPACE', label: 'Toggle' }, { key: 'ENTER', label: 'View PR' }]}
+            status="System_Status: Operational" version="V.01" />
+        </div>
+      </div>
+    );
+  }
+  ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
+</body>
+</html>

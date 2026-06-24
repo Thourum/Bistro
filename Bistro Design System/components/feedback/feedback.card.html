@@ -1,0 +1,48 @@
+<!-- @dsCard group="Components" viewport="700x300" name="Feedback — command row, toast, chip" subtitle="CommandRow, Toast, LineFocusChip" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style> body { margin: 0; padding: 24px; background: var(--color-surface); } .lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--color-outline); margin: 0 0 8px; } </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+  const { CommandRow, Toast, LineFocusChip } = window.BistroDesignSystem_8e22c3;
+  function Demo() {
+    const [sel, setSel] = React.useState(1);
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div>
+          <p className="lbl">Command rows</p>
+          <div style={{ maxWidth: 480, background: 'var(--color-surface-container-lowest)', border: '1px solid var(--color-outline-variant)' }}>
+            <CommandRow icon="keyboard" title="Show keyboard shortcuts" shortcut={['?']} selected={sel===0} onClick={()=>setSel(0)} />
+            <CommandRow icon="settings" title="Open project settings" shortcut={['⌘',',']} selected={sel===1} onClick={()=>setSel(1)} />
+            <CommandRow icon="sync" title="Sync now" subtitle="Force sync all watched repos" selected={sel===2} onClick={()=>setSel(2)} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div>
+            <p className="lbl">Toasts</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start' }}>
+              <Toast message="PR approved." tone="success" />
+              <Toast message="GitHub API rate limited" tone="error" keyHint="R" />
+            </div>
+          </div>
+          <div>
+            <p className="lbl">Position chip</p>
+            <LineFocusChip label="Line_focus: 44" sub="src/core/monolith_engine.rs" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+  ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
+</body>
+</html>

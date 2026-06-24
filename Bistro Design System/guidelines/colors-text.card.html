@@ -1,0 +1,31 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Text & outline" subtitle="Near-black on-surface, gray variants, hairline borders." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 20px; background: var(--color-surface-container-lowest); }
+  .grid { display: flex; gap: 24px; align-items: flex-start; }
+  .col { flex: 1; }
+  .line { font-family: var(--font-sans); font-size: 15px; margin-bottom: 10px; }
+  .tag { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-outline); display: block; margin-top: 1px; }
+  .bar { height: 18px; border: 1px solid; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="grid">
+  <div class="col">
+    <div class="line" style="color:var(--color-on-surface)">On-surface — primary text<span class="tag">on-surface · #191C1D</span></div>
+    <div class="line" style="color:var(--color-on-surface-variant)">On-surface-variant — secondary<span class="tag">on-surface-variant · #434655</span></div>
+    <div class="line" style="color:var(--color-outline);font-family:var(--font-mono);font-size:12px;letter-spacing:0.12em;text-transform:uppercase">Outline — mono metadata<span class="tag">outline · #737686</span></div>
+  </div>
+  <div class="col">
+    <div class="bar" style="border-color:var(--color-outline-variant)"></div>
+    <span class="tag">outline-variant — hairline · #C3C6D7</span>
+    <div class="bar" style="border-color:var(--color-outline);margin-top:14px"></div>
+    <span class="tag">outline — strong border · #737686</span>
+  </div>
+</div>
+</body>
+</html>

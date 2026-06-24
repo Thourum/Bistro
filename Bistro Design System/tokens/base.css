@@ -1,0 +1,89 @@
+/* ============================================================================
+   BISTRO — BASE / RESET
+   Minimal document defaults so specimen cards & kits inherit the brand without
+   a utility framework. Mirrors the Electron renderer's globals.css base layer.
+   ============================================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-radius: 0; /* zero-radius architecture, enforced */
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+  font-family: var(--app-ui-font);
+  font-size: var(--app-ui-font-size);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+code,
+pre,
+samp,
+kbd {
+  font-family: var(--app-code-font);
+}
+
+code,
+pre,
+samp {
+  font-size: var(--app-code-font-size);
+}
+
+/* Signature mono-eyebrow utility — uppercase, wide-tracked, monospace. */
+.bistro-eyebrow {
+  font-family: var(--type-eyebrow-font);
+  font-size: var(--type-eyebrow-size);
+  font-weight: var(--type-eyebrow-weight);
+  letter-spacing: var(--type-eyebrow-tracking);
+  text-transform: var(--type-eyebrow-transform);
+  color: var(--color-outline);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  background: none;
+  border: 1px solid transparent;
+  color: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  color: inherit;
+  background: transparent;
+}
+
+/* Neutral square scrollbars, both modes. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-outline-variant);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-outline);
+}

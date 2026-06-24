@@ -1,0 +1,33 @@
+/* ============================================================================
+   BISTRO — WEBFONTS
+   Geist (UI/display) + JetBrains Mono (code/chrome) + Material Symbols Outlined
+   (the app's icon set, inherited from its Google Stitch origins).
+
+   NOTE: served from Google Fonts CDN. The original app bundles no font binaries
+   — it relies on the same CDN (Material Symbols) plus system font fallbacks for
+   Geist / JetBrains Mono. Swap these @imports for self-hosted woff2 if you need
+   a fully offline build.
+   ============================================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap");
+
+/* Material Symbols Outlined — the app's icon font (variable axes). */
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap");
+
+/* ── Icon helper (mirrors globals.css) ─────────────────────────────────── */
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined", sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}

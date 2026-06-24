@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bistro — PR Client (Print)</title>
+    <link rel="stylesheet" href="../../styles.css" />
+    <style>
+      @page {
+        size: letter landscape;
+        margin: 0;
+      }
+      * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #ffffff;
+      }
+      body {
+        padding: 0.4in;
+        font-family: var(--font-sans);
+      }
+
+      .print-page {
+        break-inside: avoid;
+      }
+      .print-page + .print-page {
+        break-before: page;
+      }
+      .frame-label {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--color-outline);
+        margin: 0 0 8px;
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+      }
+      .frame-label b {
+        color: var(--color-primary);
+        font-weight: 400;
+      }
+      .frame-wrap {
+        width: 979px;
+        height: 612px;
+        overflow: hidden;
+        border: 1px solid var(--color-outline-variant);
+        background: var(--color-surface);
+      }
+      .frame {
+        width: 1440px;
+        height: 900px;
+        transform: scale(0.6798);
+        transform-origin: top left;
+      }
+
+      /* Cover */
+      .cover {
+        height: 7in;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .cover .mark {
+        font-family: var(--font-sans);
+        font-weight: 800;
+        font-size: 88px;
+        letter-spacing: -0.04em;
+        text-transform: uppercase;
+        color: var(--color-on-surface);
+        display: inline-flex;
+        align-items: center;
+        gap: 24px;
+      }
+      .cover .mark img {
+        width: 96px;
+        height: 96px;
+      }
+      .cover .sub {
+        font-family: var(--font-sans);
+        font-size: 22px;
+        color: var(--color-on-surface-variant);
+        margin-top: 16px;
+      }
+      .cover .meta {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--color-outline);
+        margin-top: 40px;
+        display: flex;
+        gap: 24px;
+      }
+      .cover .meta span b {
+        color: var(--color-primary);
+        font-weight: 400;
+      }
+      .cover .rule {
+        height: 1px;
+        background: var(--color-outline-variant);
+        margin: 28px 0;
+        width: 520px;
+      }
+    </style>
+    <script
+      crossorigin
+      src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"
+    ></script>
+    <script
+      crossorigin
+      src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"
+    ></script>
+    <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+    <script src="../../_ds_bundle.js"></script>
+    <script src="data.js"></script>
+    <script type="text/babel" src="LoginScreen.jsx"></script>
+    <script type="text/babel" src="InboxScreen.jsx"></script>
+    <script type="text/babel" src="OverviewScreen.jsx"></script>
+    <script type="text/babel" src="DiffScreen.jsx"></script>
+    <script type="text/babel" src="SettingsScreen.jsx"></script>
+    <script type="text/babel">
+      const { SystemBar, Toolbar, Eyebrow, IconButton, Button } =
+        window.BistroDesignSystem_8e22c3;
+      const D = window.BistroData;
+
+      function Frame({ index, name, sub, children }) {
+        return (
+          <div className="print-page">
+            <div className="frame-label">
+              <b>{index}</b> {name}{" "}
+              <span style={{ color: "var(--color-outline-variant)" }}>
+                — {sub}
+              </span>
+            </div>
+            <div className="frame-wrap">
+              <div className="frame">{children}</div>
+            </div>
+          </div>
+        );
+      }
+
+      function Shell({ toolbar, legend, children }) {
+        return (
+          <div
+            style={{
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+              background: "var(--color-surface)",
+            }}
+          >
+            {toolbar}
+            <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+              {children}
+            </div>
+            <SystemBar
+              legend={legend}
+              status="System_Status: Operational"
+              version="V.01"
+              statusTone="success"
+            />
+          </div>
+        );
+      }
+
+      const reviewTrailing = (
+        <>
+          <Button variant="ghost" size="sm" keyHint="C">
+            Comment
+          </Button>
+          <Button variant="primary" size="sm" keyHint="A">
+            Approve
+          </Button>
+        </>
+      );
+
+      function Showcase() {
+        return (
+          <div>
+            {/* Cover */}
+            <div className="print-page">
+              <div className="cover">
+                <div className="mark">
+                  <img src="../../assets/bistro-mark.svg" alt="" />
+                  Bistro
+                </div>
+                <div className="sub">
+                  The keyboard-first code review client for the AI-PR era.
+                </div>
+                <div className="rule"></div>
+                <div className="meta">
+                  <span>
+                    <b>Surface:</b> Desktop client
+                  </span>
+                  <span>
+                    <b>Screens:</b> 05
+                  </span>
+                  <span>
+                    <b>Theme:</b> Minimal Light
+                  </span>
+                </div>
+                <div className="meta" style={{ marginTop: 12 }}>
+                  <span>
+                    Bistro // Technical Atelier &nbsp;© 2026 Itterno ApS
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <Frame index="01" name="Login" sub="provider connect">
+              <window.LoginScreen onLogin={() => {}} />
+            </Frame>
+
+            <Frame index="02" name="PR Inbox" sub="triage, grouped by repo">
+              <Shell
+                legend={[
+                  { key: "J/K", label: "Navigate" },
+                  { key: "Space", label: "Toggle fold" },
+                  { key: "Enter", label: "View PR" },
+                  { key: ":", label: "Command" },
+                ]}
+              >
+                <window.InboxScreen onOpenPR={() => {}} />
+              </Shell>
+            </Frame>
+
+            <Frame
+              index="03"
+              name="PR Overview"
+              sub="metadata, impact, comments"
+            >
+              <Shell
+                toolbar={
+                  <Toolbar
+                    leading={<IconButton icon="arrow_back" label="Back" />}
+                    trailing={reviewTrailing}
+                  >
+                    <Eyebrow tone="primary">
+                      PR-{D.pr.number} // {D.pr.source} → {D.pr.target}
+                    </Eyebrow>
+                  </Toolbar>
+                }
+                legend={[
+                  { key: "Space", label: "View diff" },
+                  { key: "A A", label: "Approve" },
+                  { key: "Esc", label: "Back" },
+                ]}
+              >
+                <window.OverviewScreen onViewDiff={() => {}} />
+              </Shell>
+            </Frame>
+
+            <Frame index="04" name="Diff View" sub="file nav, inline comment">
+              <Shell
+                toolbar={
+                  <Toolbar
+                    leading={<IconButton icon="arrow_back" label="Back" />}
+                    trailing={reviewTrailing}
+                  >
+                    <Eyebrow tone="primary">
+                      merge: {D.pr.source} → {D.pr.target}
+                    </Eyebrow>
+                  </Toolbar>
+                }
+                legend={[
+                  { key: "H J K L", label: "Scroll" },
+                  { key: "N/P", label: "File" },
+                  { key: "C", label: "Comment" },
+                  { key: "Esc", label: "Back" },
+                ]}
+              >
+                <window.DiffScreen />
+              </Shell>
+            </Frame>
+
+            <Frame
+              index="05"
+              name="Settings"
+              sub="appearance, sync, keybindings"
+            >
+              <Shell
+                toolbar={
+                  <Toolbar
+                    leading={<IconButton icon="arrow_back" label="Back" />}
+                    trailing={
+                      <Eyebrow style={{ fontSize: 10 }}>⌘, to open</Eyebrow>
+                    }
+                  >
+                    <Eyebrow>Settings // Workspace</Eyebrow>
+                  </Toolbar>
+                }
+                legend={[
+                  { key: "↑ ↓", label: "Navigate" },
+                  { key: "Esc", label: "Back" },
+                ]}
+              >
+                <window.SettingsScreen />
+              </Shell>
+            </Frame>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<Showcase />);
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      addEventListener("load", () => {
+        (async () => {
+          // Wait for Babel to mount the React tree.
+          const start = Date.now();
+          while (Date.now() - start < 10000) {
+            const root = document.getElementById("root");
+            if (root && root.querySelector(".frame-wrap")) break;
+            await new Promise((r) => setTimeout(r, 100));
+          }
+          try {
+            await document.fonts.ready;
+          } catch (e) {}
+          const imgs = Array.from(document.images).filter((i) => !i.complete);
+          await Promise.race([
+            Promise.allSettled(imgs.map((i) => i.decode())),
+            new Promise((r) => setTimeout(r, 8000)),
+          ]);
+          setTimeout(() => window.print(), 600);
+        })();
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,58 @@
+<!-- @dsCard group="Components" viewport="700x320" name="Forms — input, toggle, segments" subtitle="Input, Checkbox, Switch, SegmentedControl" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>
+  body { margin: 0; padding: 28px; background: var(--color-surface); }
+  .row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  .lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--color-outline); width: 70px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+  const { Input, Checkbox, Switch, SegmentedControl } = window.BistroDesignSystem_8e22c3;
+  function Demo() {
+    const [filter, setFilter] = React.useState('open');
+    const [watch, setWatch] = React.useState(true);
+    const [auto, setAuto] = React.useState(true);
+    return (
+      <div>
+        <div className="row">
+          <span className="lbl">Input</span>
+          <div style={{ width: 360 }}>
+            <Input icon="search" placeholder="Search by title, author, file, repo…" />
+          </div>
+        </div>
+        <div className="row">
+          <span className="lbl">Segments</span>
+          <SegmentedControl value={filter} onChange={setFilter} options={[
+            { value: 'needs', label: 'Needs Action', count: 5 },
+            { value: 'open', label: 'Open', count: 12 },
+            { value: 'draft', label: 'Draft', count: 2 },
+            { value: 'all', label: 'All' },
+          ]} />
+        </div>
+        <div className="row">
+          <span className="lbl">Checkbox</span>
+          <Checkbox checked={watch} onChange={e => setWatch(e.target.checked)} label="Watch this repo" />
+          <Checkbox checked={false} label="Include drafts" />
+        </div>
+        <div className="row">
+          <span className="lbl">Switch</span>
+          <Switch checked={auto} onChange={e => setAuto(e.target.checked)} label="Auto-sync every 60s" />
+          <Switch checked={false} label="Dark mode" />
+        </div>
+      </div>
+    );
+  }
+  ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
+</body>
+</html>

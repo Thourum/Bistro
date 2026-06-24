@@ -1,0 +1,27 @@
+<!-- @dsCard group="Brand" viewport="700x160" name="Zero-radius & hairlines" subtitle="Every corner is square. Depth is built from 1px borders + the surface ladder." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 24px; background: var(--color-surface); display: flex; gap: 18px; align-items: stretch; }
+  .card { flex: 1; background: var(--color-surface-container-lowest); border: 1px solid var(--color-outline-variant); padding: 16px; }
+  .h { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-outline); margin-bottom: 10px; }
+  .chip { display:inline-block; background: var(--color-primary); color: var(--color-on-primary); font-family: var(--font-mono); font-size: 11px; padding: 6px 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .note { font-family: var(--font-sans); font-size: 13px; color: var(--color-on-surface-variant); line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="h">Radius — all zero</div>
+    <span class="chip">No rounded corners</span>
+    <p class="note" style="margin:12px 0 0">--radius-* tokens all resolve to 0px. Buttons, cards, inputs, avatars, status dots: hard square edges, everywhere.</p>
+  </div>
+  <div class="card">
+    <div class="h">Elevation — near flat</div>
+    <div style="height:36px;background:var(--color-surface-container-lowest);border:1px solid var(--color-outline-variant);box-shadow:var(--shadow-ambient);display:flex;align-items:center;padding:0 12px;font-family:var(--font-mono);font-size:11px;color:var(--color-outline)">shadow-ambient · only for overlays</div>
+    <p class="note" style="margin:12px 0 0">One whisper shadow (0 10px 30px / 4%). Everything else gets depth from the container ladder.</p>
+  </div>
+</body>
+</html>

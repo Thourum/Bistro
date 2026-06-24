@@ -1,0 +1,61 @@
+<!-- @dsCard group="Brand" viewport="700x200" name="Logo & wordmark" subtitle="The cursor-card mark + the Geist 800 wordmark. Mono B matches the wordmark." -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="../styles.css" />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--color-surface-container-lowest);
+        display: flex;
+      }
+      .a {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        padding: 28px;
+      }
+      .b {
+        flex: 0 0 38%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 28px;
+        background: var(--color-on-surface);
+      }
+      .mark {
+        width: 96px;
+        height: 96px;
+      }
+      .word {
+        font-family: var(--font-sans);
+        font-weight: 800;
+        font-size: 48px;
+        letter-spacing: -0.04em;
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="a">
+      <img
+        class="mark"
+        src="../assets/bistro-mark.svg"
+        alt="Bistro mark"
+        style="object-fit: cover; width: 96px; opacity: 1"
+      />
+      <span class="word" style="color: var(--color-on-surface)">Bistro</span>
+    </div>
+    <div class="b" style="background-color: rgb(0, 74, 198)">
+      <span
+        class="word"
+        style="color: var(--color-surface-container-lowest); font-size: 36px"
+        >Bistro</span
+      >
+    </div>
+  </body>
+</html>
