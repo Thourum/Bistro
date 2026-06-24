@@ -2,6 +2,7 @@ import { Link, useParams } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import ActionFeedback from '../components/ActionFeedback';
 import { FooterCenterSlot } from '../components/FooterSlot';
+import { Markdown } from '../components/Markdown';
 import { MergeReadinessBadge } from '../components/MergeReadinessBadge';
 import { PatchsetTimeline } from '../components/PatchsetTimeline';
 import { UnresolvedThreadsView } from '../components/UnresolvedThreadsView';
@@ -314,9 +315,7 @@ function Description({ pr }: { pr: PR }) {
   return (
     <section className="max-w-3xl space-y-6">
       <div className="border-l-2 border-primary-container pl-6 py-2">
-        <p className="text-lg leading-relaxed text-on-surface-variant font-medium whitespace-pre-wrap">
-          {pr.body}
-        </p>
+        <Markdown body={pr.body} />
       </div>
     </section>
   );
@@ -348,9 +347,7 @@ function RecentComments({ comments }: { comments: Comment[] }) {
                 {relativeTime(c.created_at)}
               </span>
             </div>
-            <p className="text-sm text-on-surface-variant font-medium leading-relaxed whitespace-pre-wrap">
-              {c.body}
-            </p>
+            <Markdown body={c.body} compact />
           </div>
         ))}
       </div>

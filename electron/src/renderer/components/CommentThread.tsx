@@ -1,6 +1,7 @@
 import type React from 'react';
 import { useState } from 'react';
 import type { Comment } from '../types';
+import { Markdown } from './Markdown';
 
 interface CommentThreadProps {
   comments: Comment[];
@@ -81,6 +82,7 @@ export function CommentThread({
                   {isAuthor && !isEditing && (
                     <div className="flex items-center gap-1">
                       <button
+                        type="button"
                         onClick={() => {
                           setEditingId(comment.id);
                           setEditText(comment.body);
@@ -91,6 +93,7 @@ export function CommentThread({
                       </button>
                       {onDelete != null && (
                         <button
+                          type="button"
                           onClick={() => onDelete(comment.id)}
                           className="text-[10px] text-error hover:underline transition-colors"
                         >
@@ -111,6 +114,7 @@ export function CommentThread({
                     />
                     <div className="flex gap-2">
                       <button
+                        type="button"
                         onClick={() => handleEditSubmit(comment.id)}
                         disabled={!editText.trim()}
                         className="text-[10px] text-primary hover:underline disabled:opacity-50"
@@ -118,6 +122,7 @@ export function CommentThread({
                         Save
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
                           setEditingId(null);
                           setEditText('');
@@ -129,9 +134,7 @@ export function CommentThread({
                     </div>
                   </div>
                 ) : (
-                  <p className="text-on-surface text-xs leading-relaxed">
-                    {comment.body}
-                  </p>
+                  <Markdown body={comment.body} compact />
                 )}
               </div>
             );
@@ -160,6 +163,7 @@ export function CommentThread({
                   />
                   <div className="flex gap-2">
                     <button
+                      type="button"
                       onClick={handleReplySubmit}
                       disabled={!replyText.trim()}
                       className="text-[10px] text-primary hover:underline disabled:opacity-50"
@@ -167,6 +171,7 @@ export function CommentThread({
                       Reply
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         setShowReply(false);
                         setReplyText('');
@@ -179,6 +184,7 @@ export function CommentThread({
                 </div>
               ) : (
                 <button
+                  type="button"
                   onClick={() => setShowReply(true)}
                   className="text-[10px] text-on-surface-variant hover:text-primary transition-colors"
                 >

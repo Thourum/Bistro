@@ -14,6 +14,8 @@ import {
   type ThreadLifecycle,
   threadLifecycle,
 } from '../types';
+import { HighlightedCode } from './HighlightedCode';
+import { Markdown } from './Markdown';
 
 interface Props {
   prId: string;
@@ -341,13 +343,9 @@ function CommentBlock({ comment }: { comment: Comment }): React.ReactElement {
         )}
       </div>
       {comment.diff_hunk !== undefined && comment.diff_hunk !== '' && (
-        <pre className="font-mono text-[10px] leading-snug text-outline bg-surface-container-lowest border border-outline-variant/20 px-3 py-2 overflow-x-auto whitespace-pre">
-          {comment.diff_hunk}
-        </pre>
+        <HighlightedCode code={comment.diff_hunk} lang="diff" />
       )}
-      <p className="font-mono text-xs leading-relaxed text-on-surface-variant whitespace-pre-wrap break-words">
-        {comment.body}
-      </p>
+      <Markdown body={comment.body} compact />
     </li>
   );
 }
