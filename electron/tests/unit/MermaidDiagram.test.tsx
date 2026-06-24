@@ -65,6 +65,31 @@ describe('<MermaidDiagram>', () => {
     );
   });
 
+  it('neutralizes Mermaid rect directive colors to Bistro surfaces', async () => {
+    mockedMermaid.render.mockResolvedValue({
+      svg: '<svg><rect x="0" y="0" fill="rgb(200, 255, 200)" width="100" height="40" class="rect"></rect></svg>',
+      bindFunctions: undefined,
+    });
+    render(
+      <MermaidDiagram source="sequenceDiagram\nrect rgb(200, 255, 200)\nA->>B: x\nend" />,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector('rect.rect')?.getAttribute('fill')).toBe(
+        '#f1f3f4',
+      );
+    });
+    expect(document.querySelector('rect.rect')?.getAttribute('stroke')).toBe(
+      '#c3c6d7',
+    );
+    expect(
+      document.querySelector('rect.rect')?.getAttribute('stroke-width'),
+    ).toBe('2');
+    expect(document.querySelector('rect.rect')?.getAttribute('opacity')).toBe(
+      '0.35',
+    );
+  });
+
   it('routes ```mermaid fences through MermaidDiagram from Markdown', async () => {
     render(<Markdown body={'```mermaid\ngraph TD; A-->B\n```'} />);
 
