@@ -264,7 +264,7 @@ git commit -m "feat: hljs theme CSS for fenced code blocks (light + dark)"
 
 ## Task 4: Sanitize schema — details/summary + `open` (TDD)
 
-`rehype-sanitize`'s `defaultSchema` is GitHub's. It allows `className` matching `/^language-/` on `code` (so language survives) but not `details`/`summary`, nor the `open` attribute. `defaultSchema.attributes` is a `Record<tagName, allowed[]>`. Extend immutably — never mutate `defaultSchema`.
+`rehype-sanitize`'s `defaultSchema` is GitHub's. It allows `className` matching `/^language-/` on `code` (so language survives) but not `details`/`summary`, nor the `open` attribute. `defaultSchema.attributes` is a `Record<tagName, allowed[]>`. Extend immutably — never mutate `defaultSchema`. The shipped schema is stricter than this minimal TDD step: it also removes image-bearing tags (`img`/`picture`/`source`) and narrows markdown links to `https` hrefs only.
 
 **Files:** Create `electron/src/renderer/utils/markdownSchema.ts`; create `electron/tests/unit/markdownSchema.test.ts`
 
@@ -792,4 +792,3 @@ GitHub refs/mentions (`#123`, `owner/repo#123`, `@user`, SHAs) are a deliberate 
 cd electron && pnpm type-check && pnpm lint && pnpm test   # Go side untouched — no go vet/test needed
 ```
 Manual smoke: open a PR whose description has a table, a ` ```ts ` block, an unlabeled fence, and a `<details open>` containing a nested ` ```diff `. Confirm: table renders; code blocks are colored in light AND dark mode; the unlabeled fence is a `<pre>` block (not inline); diff lines are green/red; `<details>` starts open; a review comment shows its `diff_hunk` colored above the body; a markdown link opens in the OS browser (app does not navigate); a comment containing `<script>` shows the text but executes nothing.
-
