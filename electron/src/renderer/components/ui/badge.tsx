@@ -2,18 +2,28 @@ import { cn } from '@renderer/lib/utils';
 import { cva, type VariantProps } from 'class-variance-authority';
 import type * as React from 'react';
 
+/**
+ * Bistro-branded Badge primitive (shadcn base, restyled).
+ *
+ * Zero radius, mono uppercase, 1px hairlines. Used for branch tags, file lang
+ * markers, and thread lifecycle states. Status badges read as a hard square +
+ * a word, so the badge itself is just the bordered chrome around the label.
+ */
 const badgeVariants = cva(
-  'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  'inline-flex items-center gap-1.5 rounded-none border px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-widest transition-colors duration-150',
   {
     variants: {
       variant: {
-        default:
-          'border-transparent bg-primary text-primary-foreground hover:bg-primary/80',
-        secondary:
-          'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        destructive:
-          'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80',
-        outline: 'text-foreground',
+        default: 'border-primary/50 text-primary',
+        neutral: 'border-outline-variant/50 text-outline',
+        surface: 'border-transparent bg-surface-container text-on-surface',
+        outline: 'border-outline-variant/50 text-on-surface',
+        // Thread / CI lifecycle tones — open is the only "loud" state.
+        open: 'border-yellow-600/50 text-yellow-600',
+        resolved: 'border-primary/50 text-primary',
+        outdated: 'border-outline-variant/40 text-outline',
+        unknown: 'border-outline-variant/40 text-outline-variant',
+        danger: 'border-error/50 text-error',
       },
     },
     defaultVariants: {
@@ -23,12 +33,12 @@ const badgeVariants = cva(
 );
 
 export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends React.HTMLAttributes<HTMLSpanElement>,
     VariantProps<typeof badgeVariants> {}
 
 function Badge({ className, variant, ...props }: BadgeProps) {
   return (
-    <div className={cn(badgeVariants({ variant }), className)} {...props} />
+    <span className={cn(badgeVariants({ variant }), className)} {...props} />
   );
 }
 
