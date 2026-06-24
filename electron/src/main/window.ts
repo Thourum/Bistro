@@ -13,6 +13,13 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
   mainWindow = new BrowserWindow({
     width: config.windowWidth,
     height: config.windowHeight,
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    trafficLightPosition: { x: 14, y: 10 },
+    titleBarOverlay: {
+      color: '#f8f9fa',
+      symbolColor: '#191c1d',
+      height: 32,
+    },
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
