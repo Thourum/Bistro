@@ -17,6 +17,8 @@ import {
 import { HighlightedCode } from './HighlightedCode';
 import { Markdown } from './Markdown';
 import { type StatusKind, StatusSquare } from './StatusSquare';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
 
 interface Props {
   prId: string;
@@ -54,15 +56,18 @@ const LIFECYCLE_LABEL: Record<ThreadLifecycle, string> = {
 };
 
 /**
- * Badge color per lifecycle. Open is the only "loud" state (amber) because it
- * is the only one demanding action; resolved is the calm accent; outdated and
- * unknown are dimmed so they recede.
+ * Badge variant per lifecycle. Open is the only "loud" state (amber) because
+ * it is the only one demanding action; resolved is the calm accent; outdated
+ * and unknown are dimmed so they recede.
  */
-const LIFECYCLE_BADGE: Record<ThreadLifecycle, string> = {
-  open: 'border-yellow-600/50 text-yellow-600',
-  resolved: 'border-primary/50 text-primary',
-  outdated: 'border-outline-variant/40 text-outline',
-  unknown: 'border-outline-variant/40 text-outline-variant',
+const LIFECYCLE_VARIANT: Record<
+  ThreadLifecycle,
+  'open' | 'resolved' | 'outdated' | 'unknown'
+> = {
+  open: 'open',
+  resolved: 'resolved',
+  outdated: 'outdated',
+  unknown: 'unknown',
 };
 
 const LIFECYCLE_SQUARE: Record<ThreadLifecycle, StatusKind> = {
@@ -205,13 +210,9 @@ export function UnresolvedThreadsView({
         ) : error !== null ? (
           <CenteredNote tone="error">
             <span>Couldn’t load review threads.</span>
-            <button
-              type="button"
-              onClick={refetch}
-              className="font-mono text-[10px] uppercase tracking-widest text-primary border border-primary/40 px-3 py-1 hover:bg-primary/10 transition-colors"
-            >
+            <Button variant="outline" size="sm" onClick={refetch}>
               Retry
-            </button>
+            </Button>
           </CenteredNote>
         ) : sorted.length === 0 ? (
           <CenteredNote tone="muted">
@@ -364,8 +365,9 @@ function LifecycleBadge({
   lifecycle: ThreadLifecycle;
 }): React.ReactElement {
   return (
-    <span
-      className={`shrink-0 flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-widest px-2 py-1 border ${LIFECYCLE_BADGE[lifecycle]}`}
+    <Badge
+      variant={LIFECYCLE_VARIANT[lifecycle]}
+      className="shrink-0 px-2 py-1"
     >
       <StatusSquare
         status={LIFECYCLE_SQUARE[lifecycle]}
@@ -373,7 +375,7 @@ function LifecycleBadge({
         label={LIFECYCLE_LABEL[lifecycle]}
       />
       {LIFECYCLE_LABEL[lifecycle]}
-    </span>
+    </Badge>
   );
 }
 
@@ -386,18 +388,14 @@ function RowButton({
   onClick: () => void;
   variant?: 'primary' | 'muted';
 }): React.ReactElement {
-  const tone =
-    variant === 'primary'
-      ? 'border-primary/50 text-primary hover:bg-primary hover:text-on-primary'
-      : 'border-outline-variant/50 text-outline hover:border-outline hover:text-on-surface';
   return (
-    <button
-      type="button"
+    <Button
+      variant={variant === 'primary' ? 'default' : 'outline'}
+      size="sm"
       onClick={onClick}
-      className={`font-mono text-[10px] uppercase tracking-widest px-3 py-1 border transition-colors ${tone}`}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
