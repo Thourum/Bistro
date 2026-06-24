@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 
 type MermaidThemeMode = 'light' | 'dark';
 
+const MAX_MERMAID_SOURCE_CHARS = 8000;
+const MAX_CONCURRENT_MERMAID_RENDERS = 2;
+const MERMAID_RENDER_TIMEOUT_MS = 2500;
+
 const MERMAID_THEME_CSS = `
   .node rect, .node polygon, .cluster rect { rx: 0 !important; ry: 0 !important; }
   .edgePath path { stroke-width: 2px; }
@@ -86,20 +90,36 @@ const DARK_THEME_VARIABLES = {
   errorTextColor: '#ffdcd7',
 };
 
+const LIGHT_RUNTIME_COLORS = {
+  surface: '#ffffff',
+  surfaceLow: '#f1f3f4',
+  outline: '#c3c6d7',
+  shadow: '#000000',
+  text: '#191c1d',
+  metadata: '#737686',
+};
+
+const DARK_RUNTIME_COLORS = {
+  surface: '#1f2223',
+  surfaceLow: '#25292b',
+  outline: '#4d5357',
+  shadow: '#ffffff',
+  text: '#e1e3e4',
+  metadata: '#8d9199',
+};
+
+function runtimeColors(mode: MermaidThemeMode): typeof LIGHT_RUNTIME_COLORS {
+  return mode === 'dark' ? DARK_RUNTIME_COLORS : LIGHT_RUNTIME_COLORS;
+}
+
 function runtimeCss(mode: MermaidThemeMode): string {
-  const surface = mode === 'dark' ? '#1f2223' : '#ffffff';
-  const surfaceLow = mode === 'dark' ? '#25292b' : '#f1f3f4';
-  const outline = mode === 'dark' ? '#4d5357' : '#c3c6d7';
-  const shadow = mode === 'dark' ? '#111314' : '#c3c6d7';
-  const text = mode === 'dark' ? '#e1e3e4' : '#191c1d';
-  const metadata = mode === 'dark' ? '#8d9199' : '#737686';
+  const colors = runtimeColors(mode);
 
   return `
     [data-bistro-mermaid] svg {
       background: transparent !important;
       font-family: "JetBrains Mono", monospace !important;
     }
-    [data-bistro-mermaid] .actor,
     [data-bistro-mermaid] rect.actor,
     [data-bistro-mermaid] .actor-man rect,
     [data-bistro-mermaid] .node rect,
@@ -107,19 +127,19 @@ function runtimeCss(mode: MermaidThemeMode): string {
     [data-bistro-mermaid] .cluster rect,
     [data-bistro-mermaid] .note,
     [data-bistro-mermaid] .labelBox {
-      fill: ${surface} !important;
-      stroke: ${outline} !important;
+      fill: ${colors.surface} !important;
+      stroke: ${colors.outline} !important;
       stroke-width: 2px !important;
       rx: 0 !important;
       ry: 0 !important;
-      filter: drop-shadow(3px 3px 0 ${shadow}) !important;
+      filter: drop-shadow(4px 4px 0 ${colors.shadow}) !important;
     }
     [data-bistro-mermaid] svg.sequenceDiagram rect:not(.actor):not(.note):not(.activation0):not(.activation1):not(.activation2):not(.labelBox),
     [data-bistro-mermaid] svg[class*="sequence"] rect.rect,
     [data-bistro-mermaid] g[class*="sequence"] rect.rect,
     [data-bistro-mermaid] rect.rect {
-      fill: ${surfaceLow} !important;
-      stroke: ${outline} !important;
+      fill: ${colors.surfaceLow} !important;
+      stroke: ${colors.outline} !important;
       stroke-width: 2px !important;
       opacity: 0.35 !important;
       rx: 0 !important;
@@ -128,10 +148,10 @@ function runtimeCss(mode: MermaidThemeMode): string {
     [data-bistro-mermaid] .activation0,
     [data-bistro-mermaid] .activation1,
     [data-bistro-mermaid] .activation2 {
-      fill: ${surfaceLow} !important;
-      stroke: ${outline} !important;
+      fill: ${colors.surfaceLow} !important;
+      stroke: ${colors.outline} !important;
       stroke-width: 2px !important;
-      filter: drop-shadow(3px 3px 0 ${shadow}) !important;
+      filter: drop-shadow(4px 4px 0 ${colors.shadow}) !important;
     }
     [data-bistro-mermaid] .actor-line,
     [data-bistro-mermaid] .actor-man line,
@@ -139,13 +159,13 @@ function runtimeCss(mode: MermaidThemeMode): string {
     [data-bistro-mermaid] .messageLine1,
     [data-bistro-mermaid] .edgePath path,
     [data-bistro-mermaid] .loopLine {
-      stroke: ${metadata} !important;
+      stroke: ${colors.metadata} !important;
       stroke-width: 2px !important;
     }
     [data-bistro-mermaid] marker path,
     [data-bistro-mermaid] marker polygon {
-      fill: ${metadata} !important;
-      stroke: ${metadata} !important;
+      fill: ${colors.metadata} !important;
+      stroke: ${colors.metadata} !important;
     }
     [data-bistro-mermaid] text,
     [data-bistro-mermaid] .label,
@@ -155,8 +175,8 @@ function runtimeCss(mode: MermaidThemeMode): string {
     [data-bistro-mermaid] .loopText,
     [data-bistro-mermaid] .labelText,
     [data-bistro-mermaid] .actor > tspan {
-      fill: ${text} !important;
-      color: ${text} !important;
+      fill: ${colors.text} !important;
+      color: ${colors.text} !important;
       font-family: "JetBrains Mono", monospace !important;
       font-size: 12px !important;
     }
@@ -167,19 +187,18 @@ function neutralizeDecorativeRectFills(
   svg: string,
   mode: MermaidThemeMode,
 ): string {
-  const surfaceLow = mode === 'dark' ? '#25292b' : '#f1f3f4';
-  const outline = mode === 'dark' ? '#4d5357' : '#c3c6d7';
+  const colors = runtimeColors(mode);
 
   return svg.replace(/<rect\b[^>]*>/g, (tag) => {
     if (!/fill\s*=\s*"rgb\(/i.test(tag) && !/fill\s*:\s*rgb\(/i.test(tag)) {
       return tag;
     }
     const withFill = tag
-      .replace(/\sfill\s*=\s*"rgb\([^"']+\)"/gi, ` fill="${surfaceLow}"`)
-      .replace(/fill\s*:\s*rgb\([^)]+\)\s*;?/gi, `fill: ${surfaceLow};`);
+      .replace(/\sfill\s*=\s*"rgb\([^"']+\)"/gi, ` fill="${colors.surfaceLow}"`)
+      .replace(/fill\s*:\s*rgb\([^)]+\)\s*;?/gi, `fill: ${colors.surfaceLow};`);
     const withStroke = /\sstroke\s*=/.test(withFill)
       ? withFill
-      : withFill.replace(/>$/, ` stroke="${outline}">`);
+      : withFill.replace(/>$/, ` stroke="${colors.outline}">`);
     const withStrokeWidth = /\sstroke-width\s*=/.test(withStroke)
       ? withStroke.replace(/\sstroke-width\s*=\s*"[^"]+"/, ' stroke-width="2"')
       : withStroke.replace(/>$/, ' stroke-width="2">');
@@ -208,6 +227,7 @@ mermaid.initialize(mermaidConfig('light'));
 
 let componentCounter = 0;
 let renderCounter = 0;
+let activeRenderCount = 0;
 
 function nextComponentId(): string {
   componentCounter += 1;
@@ -217,6 +237,22 @@ function nextComponentId(): string {
 function nextRenderId(componentId: string): string {
   renderCounter += 1;
   return `${componentId}-${renderCounter}`;
+}
+
+function renderMermaidWithTimeout(renderId: string, source: string) {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error('Mermaid render timed out')),
+      MERMAID_RENDER_TIMEOUT_MS,
+    );
+  });
+
+  return Promise.race([mermaid.render(renderId, source), timeout]).finally(
+    () => {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    },
+  );
 }
 
 function currentThemeMode(): MermaidThemeMode {
@@ -261,17 +297,30 @@ export function MermaidDiagram({
     let cancelled = false;
     setSvg(null);
     setFailed(false);
+    if (
+      source.length > MAX_MERMAID_SOURCE_CHARS ||
+      activeRenderCount >= MAX_CONCURRENT_MERMAID_RENDERS
+    ) {
+      setFailed(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     mermaid.initialize(mermaidConfig(mode));
     const renderId = nextRenderId(componentId.current);
+    activeRenderCount += 1;
 
     void ResultAsync.fromPromise(
-      mermaid.render(renderId, source),
+      renderMermaidWithTimeout(renderId, source),
       () => null,
     ).match(
       (result) => {
+        activeRenderCount = Math.max(0, activeRenderCount - 1);
         if (!cancelled) setSvg(neutralizeDecorativeRectFills(result.svg, mode));
       },
       () => {
+        activeRenderCount = Math.max(0, activeRenderCount - 1);
         if (!cancelled) setFailed(true);
       },
     );
@@ -299,7 +348,7 @@ export function MermaidDiagram({
 
   return (
     <div
-      className="my-3 overflow-x-auto border-2 border-outline-variant/60 bg-surface-container-low p-3 shadow-[4px_4px_0_var(--color-outline-variant)] [&_svg]:mx-auto [&_svg]:max-w-full"
+      className="my-3 overflow-x-auto border-2 border-outline-variant/60 bg-surface-container-low p-3 shadow-[4px_4px_0_#000000] dark:shadow-[4px_4px_0_#ffffff] [&_svg]:mx-auto [&_svg]:max-w-full"
       data-bistro-mermaid
     >
       <style>{runtimeCss(mode)}</style>

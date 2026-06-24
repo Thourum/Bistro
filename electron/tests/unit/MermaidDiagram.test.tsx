@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import * as matchers from '@testing-library/jest-dom/matchers';
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import mermaid from 'mermaid';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Markdown } from '../../src/renderer/components/Markdown';
 import { MermaidDiagram } from '../../src/renderer/components/MermaidDiagram';
 
@@ -24,6 +24,10 @@ beforeEach(() => {
     svg: '<svg data-testid="mermaid-svg"><text>A → B</text></svg>',
     bindFunctions: undefined,
   });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('<MermaidDiagram>', () => {
@@ -51,6 +55,30 @@ describe('<MermaidDiagram>', () => {
       );
     });
     expect(container.querySelector('svg')).toBeNull();
+  });
+
+  it('falls back to plaintext without rendering oversized sources', async () => {
+    const oversized = `graph TD; A-->B\n${'x'.repeat(8001)}`;
+    const { container } = render(<MermaidDiagram source={oversized} />);
+
+    await waitFor(() => {
+      expect(container.querySelector('pre code')?.textContent).toBe(oversized);
+    });
+    expect(mockedMermaid.render).not.toHaveBeenCalled();
+  });
+
+  it('falls back to plaintext when Mermaid rendering times out', async () => {
+    vi.useFakeTimers();
+    mockedMermaid.render.mockReturnValue(new Promise(() => {}));
+    const { container } = render(<MermaidDiagram source="graph TD; A-->B" />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+
+    expect(container.querySelector('pre code')?.textContent).toBe(
+      'graph TD; A-->B',
+    );
   });
 
   it('uses dark theme variables when the app has the dark class', async () => {
