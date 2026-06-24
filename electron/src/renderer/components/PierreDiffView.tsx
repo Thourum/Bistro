@@ -37,6 +37,10 @@ function sameIds(left: string[], right: string[]): boolean {
   return left.every((value, index) => value === right[index]);
 }
 
+function hasCurrentInlineAnchor(thread: ReviewThread): boolean {
+  return thread.line > 0 && thread.state_known && !thread.outdated;
+}
+
 export interface PierreDiffViewProps {
   /** Full unified-diff string (`diff --git …` separated). */
   diff: string;
@@ -147,7 +151,7 @@ export function PierreDiffView({
     const entries: AnnotationEntry[] = [];
     files.forEach((file, fileIndex) => {
       const fileThreads = threads
-        .filter((t) => t.file_path === file.path)
+        .filter((t) => t.file_path === file.path && hasCurrentInlineAnchor(t))
         .sort((a, b) => a.line - b.line || a.id.localeCompare(b.id));
       for (const t of fileThreads) {
         entries.push({
@@ -505,7 +509,9 @@ function DiffCanvas({
           // matches this file. Placed on the additions side (new-file line
           // numbers) — old-side line info is not yet available.
           const fileAnnotations: DiffLineAnnotation<ReviewThread>[] = threads
-            .filter((t) => t.file_path === file.path)
+            .filter(
+              (t) => t.file_path === file.path && hasCurrentInlineAnchor(t),
+            )
             .map((t) => ({
               side: 'additions' as const,
               lineNumber: t.line,

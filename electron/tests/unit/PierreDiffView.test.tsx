@@ -264,6 +264,27 @@ describe('PierreDiffView annotation wiring', () => {
     expect(patchDiff!.getAttribute('data-has-render-annotation')).toBe('false');
   });
 
+  it('does NOT publish invalid or outdated thread anchors as inline annotations', () => {
+    const invalidThreads: ReviewThread[] = [
+      { ...THREAD_FOO, id: 'line-zero', line: 0 },
+      { ...THREAD_FOO, id: 'outdated', outdated: true },
+      { ...THREAD_FOO, id: 'unknown', state_known: false },
+    ];
+
+    render(
+      <PierreDiffView
+        diff={MINIMAL_PATCH}
+        theme="light"
+        threads={invalidThreads}
+        comments={[]}
+      />,
+    );
+
+    const patchDiff = screen.getAllByTestId('patch-diff')[0];
+    expect(patchDiff!.getAttribute('data-has-annotations')).toBe('false');
+    expect(appStore.state.inlineCommentThreadIds).toEqual([]);
+  });
+
   it('does NOT pass lineAnnotations when no threads provided', () => {
     render(<PierreDiffView diff={MINIMAL_PATCH} theme="light" />);
 
