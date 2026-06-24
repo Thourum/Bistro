@@ -2,6 +2,7 @@
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { act, render, waitFor } from '@testing-library/react';
 import mermaid from 'mermaid';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Markdown } from '../../src/renderer/components/Markdown';
 import { MermaidDiagram } from '../../src/renderer/components/MermaidDiagram';
@@ -130,5 +131,66 @@ describe('<MermaidDiagram>', () => {
       expect.any(String),
       'graph TD; A-->B\n',
     );
+  });
+
+  it('renders multiple Mermaid fences in the same markdown comment under StrictMode', async () => {
+    mockedMermaid.render.mockImplementation((id, source) =>
+      Promise.resolve({
+        svg: `<svg data-testid="mermaid-svg" data-render-id="${id}"><text>${source.includes('DiffPage') ? 'inline diff comment flow' : 'markdown rendering flow'}</text></svg>`,
+        bindFunctions: undefined,
+      }),
+    );
+
+    render(
+      <StrictMode>
+        <Markdown
+          body={`## Sequence Diagram(s)
+
+**Markdown rendering flow**
+
+
+\`\`\`mermaid
+sequenceDiagram
+  participant Markdown
+  participant ReactMarkdown
+  participant markdownComponents
+  participant HighlightedCode
+  participant MermaidDiagram
+  participant ExternalLink
+  Markdown->>ReactMarkdown: render body
+  ReactMarkdown->>markdownComponents: resolve markdown nodes
+  markdownComponents->>HighlightedCode: render fenced code blocks
+  markdownComponents->>MermaidDiagram: render mermaid fences
+  markdownComponents->>ExternalLink: render https links
+\`\`\`
+
+**Inline diff comment flow**
+
+\`\`\`mermaid
+sequenceDiagram
+  participant DiffPage
+  participant request
+  participant PierreDiffView
+  participant appStore
+  participant keybindings
+  participant ReplyComposer
+  DiffPage->>request: REQUEST_COMMENTS for pr_id
+  request-->>DiffPage: comments
+  DiffPage->>PierreDiffView: threads and comments
+  PierreDiffView->>appStore: inlineCommentThreadIds and active thread
+  keybindings->>appStore: j/k, Enter, and Esc update inline reply state
+  PierreDiffView->>ReplyComposer: open inline reply composer
+\`\`\``}
+        />
+      </StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(
+        document.querySelectorAll('[data-testid="mermaid-svg"]'),
+      ).toHaveLength(2);
+    });
+    expect(document.body.textContent).toContain('markdown rendering flow');
+    expect(document.body.textContent).toContain('inline diff comment flow');
   });
 });

@@ -228,6 +228,7 @@ mermaid.initialize(mermaidConfig('light'));
 let componentCounter = 0;
 let renderCounter = 0;
 let activeRenderCount = 0;
+const pendingRenderSlots: Array<() => void> = [];
 
 function nextComponentId(): string {
   componentCounter += 1;
@@ -237,6 +238,26 @@ function nextComponentId(): string {
 function nextRenderId(componentId: string): string {
   renderCounter += 1;
   return `${componentId}-${renderCounter}`;
+}
+
+function acquireMermaidRenderSlot(): Promise<void> {
+  if (activeRenderCount < MAX_CONCURRENT_MERMAID_RENDERS) {
+    activeRenderCount += 1;
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    pendingRenderSlots.push(() => {
+      activeRenderCount += 1;
+      resolve();
+    });
+  });
+}
+
+function releaseMermaidRenderSlot(): void {
+  activeRenderCount = Math.max(0, activeRenderCount - 1);
+  const next = pendingRenderSlots.shift();
+  if (next !== undefined) next();
 }
 
 function renderMermaidWithTimeout(renderId: string, source: string) {
@@ -297,10 +318,7 @@ export function MermaidDiagram({
     let cancelled = false;
     setSvg(null);
     setFailed(false);
-    if (
-      source.length > MAX_MERMAID_SOURCE_CHARS ||
-      activeRenderCount >= MAX_CONCURRENT_MERMAID_RENDERS
-    ) {
+    if (source.length > MAX_MERMAID_SOURCE_CHARS) {
       setFailed(true);
       return () => {
         cancelled = true;
@@ -309,18 +327,21 @@ export function MermaidDiagram({
 
     mermaid.initialize(mermaidConfig(mode));
     const renderId = nextRenderId(componentId.current);
-    activeRenderCount += 1;
+    const renderTask = acquireMermaidRenderSlot().then(() => {
+      if (cancelled) {
+        releaseMermaidRenderSlot();
+        return Promise.reject(new Error('Mermaid render cancelled'));
+      }
+      return renderMermaidWithTimeout(renderId, source).finally(
+        releaseMermaidRenderSlot,
+      );
+    });
 
-    void ResultAsync.fromPromise(
-      renderMermaidWithTimeout(renderId, source),
-      () => null,
-    ).match(
+    void ResultAsync.fromPromise(renderTask, () => null).match(
       (result) => {
-        activeRenderCount = Math.max(0, activeRenderCount - 1);
         if (!cancelled) setSvg(neutralizeDecorativeRectFills(result.svg, mode));
       },
       () => {
-        activeRenderCount = Math.max(0, activeRenderCount - 1);
         if (!cancelled) setFailed(true);
       },
     );
