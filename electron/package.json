@@ -44,6 +44,7 @@
     "electron-log": "^5.4.3",
     "highlight.js": "^11.11.1",
     "lucide-react": "^1.8.0",
+    "mermaid": "^11.15.0",
     "neverthrow": "^8.2.0",
     "pino": "^10.3.1",
     "react": "^19.2.5",
