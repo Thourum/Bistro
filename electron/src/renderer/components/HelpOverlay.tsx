@@ -6,6 +6,7 @@ import type { KeyBinding, RouteBase } from '../utils/keybindings';
 import { getEffectiveBindings } from '../utils/keybindings';
 import { formatBindingKeys } from '../utils/legendPresets';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Kbd } from './ui/kbd';
 import { ScrollArea } from './ui/scroll-area';
 
 interface ShortcutRow {
@@ -135,22 +136,20 @@ export function HelpOverlay(): React.ReactElement | null {
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-2xl max-h-[80vh]">
         <DialogHeader>
-          <DialogTitle className="font-mono">Keyboard Shortcuts</DialogTitle>
+          <DialogTitle>Keyboard Shortcuts</DialogTitle>
         </DialogHeader>
 
         <ScrollArea className="h-full pr-4">
           <div className="space-y-6">
             {sections.map((section) => (
               <section key={section.title}>
-                <h3 className="font-bold text-sm text-on-surface uppercase tracking-widest mb-3">
+                <h3 className="mb-3 font-mono text-[11px] font-bold uppercase tracking-widest text-outline">
                   {section.title}
                 </h3>
                 <div className="space-y-2 text-sm">
                   {section.shortcuts.map((shortcut) => (
                     <div key={shortcut.key} className="flex justify-between">
-                      <kbd className=" text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded border text-sm  border-gray-500/20 text-center">
-                        {shortcut.key}
-                      </kbd>
+                      <Kbd>{shortcut.key}</Kbd>
                       <span className="text-on-surface">
                         {shortcut.description}
                       </span>
@@ -160,16 +159,8 @@ export function HelpOverlay(): React.ReactElement | null {
               </section>
             ))}
 
-            <div className="text-xs text-on-surface-variant text-center mt-4 pt-4 border-t border-outline-variant">
-              Press{' '}
-              <kbd className="font-mono bg-surface-container px-1 rounded">
-                ?
-              </kbd>{' '}
-              or{' '}
-              <kbd className="font-mono bg-surface-container px-1 rounded">
-                Esc
-              </kbd>{' '}
-              to close
+            <div className="mt-4 border-t border-outline-variant pt-4 text-center text-xs text-on-surface-variant">
+              Press <Kbd>?</Kbd> or <Kbd>Esc</Kbd> to close
             </div>
           </div>
         </ScrollArea>

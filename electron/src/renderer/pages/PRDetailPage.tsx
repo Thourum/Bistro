@@ -7,6 +7,7 @@ import { MergeReadinessBadge } from '../components/MergeReadinessBadge';
 import { PatchsetTimeline } from '../components/PatchsetTimeline';
 import { type StatusKind, StatusSquare } from '../components/StatusSquare';
 import { UnresolvedThreadsView } from '../components/UnresolvedThreadsView';
+import { Badge } from '../components/ui/badge';
 import { useActionDispatch } from '../hooks/useActionDispatch';
 import { usePatchsets } from '../hooks/usePatchsets';
 import { useStore } from '../hooks/useStore';
@@ -262,8 +263,28 @@ function Header({ pr, stats }: HeaderProps) {
       <div className="flex flex-wrap gap-x-8 gap-y-4 pt-2">
         <MetaCell label="Author" value={`@${pr.author}`} />
         <MetaCell label="Date" value={formatTimestamp(pr.created_at)} />
-        <MetaCell label="Source" value={<Badge>{pr.head_branch}</Badge>} />
-        <MetaCell label="Target" value={<Badge>{pr.base_branch}</Badge>} />
+        <MetaCell
+          label="Source"
+          value={
+            <Badge
+              variant="surface"
+              className="text-xs normal-case tracking-normal"
+            >
+              {pr.head_branch}
+            </Badge>
+          }
+        />
+        <MetaCell
+          label="Target"
+          value={
+            <Badge
+              variant="surface"
+              className="text-xs normal-case tracking-normal"
+            >
+              {pr.base_branch}
+            </Badge>
+          }
+        />
         <MetaCell label="Files" value={stats.filesCount} />
         <MetaCell
           label="Added"
@@ -277,14 +298,6 @@ function Header({ pr, stats }: HeaderProps) {
         />
       </div>
     </header>
-  );
-}
-
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="font-mono text-xs font-medium bg-surface-container px-2 py-0.5">
-      {children}
-    </span>
   );
 }
 
