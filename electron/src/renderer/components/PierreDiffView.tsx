@@ -17,6 +17,9 @@ import {
 } from '../utils/diffFileKey';
 import { Markdown } from './Markdown';
 import { type StatusKind, StatusSquare } from './StatusSquare';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Textarea } from './ui/textarea';
 
 /** A flattened, ordered annotation entry used for j/k keyboard navigation. */
 interface AnnotationEntry {
@@ -580,11 +583,14 @@ function DiffCanvas({
 // Inline thread annotation card
 // ---------------------------------------------------------------------------
 
-const LIFECYCLE_BADGE: Record<ThreadLifecycle, string> = {
-  open: 'border-yellow-600/50 text-yellow-600',
-  resolved: 'border-primary/50 text-primary',
-  outdated: 'border-outline-variant/40 text-outline',
-  unknown: 'border-outline-variant/40 text-outline-variant',
+const LIFECYCLE_VARIANT: Record<
+  ThreadLifecycle,
+  'open' | 'resolved' | 'outdated' | 'unknown'
+> = {
+  open: 'open',
+  resolved: 'resolved',
+  outdated: 'outdated',
+  unknown: 'unknown',
 };
 
 const LIFECYCLE_SQUARE: Record<ThreadLifecycle, StatusKind> = {
@@ -652,16 +658,14 @@ function ThreadAnnotationCard({
     >
       {/* Header: lifecycle badge + file:line */}
       <div className="flex items-center gap-2">
-        <span
-          className={`flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 border ${LIFECYCLE_BADGE[lifecycle]}`}
-        >
+        <Badge variant={LIFECYCLE_VARIANT[lifecycle]}>
           <StatusSquare
             status={LIFECYCLE_SQUARE[lifecycle]}
             size="w-2 h-2"
             label={LIFECYCLE_LABEL[lifecycle]}
           />
           {LIFECYCLE_LABEL[lifecycle]}
-        </span>
+        </Badge>
         <span className="font-mono text-[10px] text-outline truncate">
           {thread.file_path}
           <span className="text-outline-variant">:{thread.line}</span>
@@ -703,6 +707,11 @@ function ThreadAnnotationCard({
  * UI-only: no submission is wired. Shows a textarea labelled "Reply to thread"
  * and a Cancel button. Submit is rendered but disabled with a tooltip noting
  * that reply submission is not yet implemented.
+ *
+ * Focus contract: the textarea auto-focuses on mount (the composer mounts when
+ * `Enter` triggers reply for the selected inline comment), and is explicitly
+ * blurred before `onClose` runs on `Escape` so focus returns to the diff
+ * canvas rather than lingering on a removed node.
  */
 function ReplyComposer({
   threadId,
@@ -711,9 +720,21 @@ function ReplyComposer({
   threadId: string;
   onClose?: () => void;
 }): React.ReactElement {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-focus the reply textarea when the composer appears.
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  const closeAndBlur = (): void => {
+    textareaRef.current?.blur();
+    onClose?.();
+  };
+
   return (
     <div
-      className="mt-2 border border-outline-variant/40 bg-surface p-3 space-y-2"
+      className="mt-2 space-y-2 border border-outline-variant/40 bg-surface p-3"
       data-testid="reply-composer"
       data-thread-id={threadId}
       // Prevent click-on-composer from bubbling to the card's onActivate.
@@ -722,7 +743,7 @@ function ReplyComposer({
         e.stopPropagation();
         if (e.key === 'Escape') {
           e.preventDefault();
-          onClose?.();
+          closeAndBlur();
         }
       }}
       role="presentation"
@@ -733,32 +754,29 @@ function ReplyComposer({
       >
         Reply to thread
       </label>
-      <textarea
+      <Textarea
+        ref={textareaRef}
         id={`reply-textarea-${threadId}`}
         rows={3}
         placeholder="Write a reply…"
-        className="w-full bg-surface-container text-on-surface font-mono text-xs px-2 py-1.5 resize-none border border-outline-variant/30 focus:outline-none focus:border-primary/60"
+        className="bg-surface-container text-xs"
         aria-label="Reply to thread"
       />
       <p className="font-mono text-[9px] text-outline-variant">
         Reply submission is not yet implemented.
       </p>
-      <div className="flex gap-2 justify-end">
-        <button
-          type="button"
-          onClick={onClose}
-          className="font-mono text-[10px] uppercase tracking-widest px-3 py-1 border border-outline-variant/50 text-outline hover:border-outline hover:text-on-surface transition-colors"
-        >
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={closeAndBlur}>
           Cancel
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           disabled
           title="Reply submission is not yet implemented"
-          className="font-mono text-[10px] uppercase tracking-widest px-3 py-1 border border-outline-variant/20 text-outline-variant cursor-not-allowed"
         >
           Reply
-        </button>
+        </Button>
       </div>
     </div>
   );
