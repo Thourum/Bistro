@@ -1,6 +1,7 @@
 import type { Components } from 'react-markdown';
 import { ExternalLink } from '../components/ExternalLink';
 import { HighlightedCode } from '../components/HighlightedCode';
+import { MermaidDiagram } from '../components/MermaidDiagram';
 
 /** Minimal structural view of a HAST node (avoids a direct `hast` type dep). */
 interface HastNode {
@@ -49,11 +50,7 @@ export const markdownComponents: Components = {
   pre({ node, children }) {
     const hastNode = node as HastNode | undefined;
     const codeNode = hastNode?.children?.[0];
-    if (
-      !codeNode ||
-      codeNode.type !== 'element' ||
-      codeNode.tagName !== 'code'
-    ) {
+    if (codeNode?.type !== 'element' || codeNode.tagName !== 'code') {
       // Fallback: non-code pre (rare in practice)
       return (
         <pre className="my-3 overflow-x-auto border border-outline-variant/40 bg-surface-container-low p-3">
@@ -62,7 +59,9 @@ export const markdownComponents: Components = {
       );
     }
     const lang = languageFromClassName(classNameOf(codeNode));
-    return <HighlightedCode code={textOf(codeNode)} lang={lang} />;
+    const code = textOf(codeNode);
+    if (lang === 'mermaid') return <MermaidDiagram source={code} />;
+    return <HighlightedCode code={code} lang={lang} />;
   },
 
   /**
