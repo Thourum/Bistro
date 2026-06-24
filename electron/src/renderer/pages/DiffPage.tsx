@@ -17,6 +17,7 @@ import {
 } from 'react';
 import { PierreDiffView } from '../components/PierreDiffView';
 import { RangeDiffView } from '../components/RangeDiffView';
+import { StatusSquare } from '../components/StatusSquare';
 import { addToast } from '../components/ToastContainer';
 import { useMarkFileViewed } from '../hooks/useMarkFileViewed';
 import { type RangeDiffRequest, useRangeDiff } from '../hooks/useRangeDiff';
@@ -297,15 +298,24 @@ export function DiffPage() {
 
       {/* Status bar (LOC / encoding / viewed) */}
       <div className="shrink-0 h-6 px-4 flex items-center justify-between border-t border-outline-variant/30 bg-surface-container-low">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-outline">
-          {showRangeDiff && rangeResult !== null
-            ? `${rangeResult.raw.split('\n').length} lines`
-            : `${diff.split('\n').length} lines`}
+        <div className="flex items-center gap-4 font-mono text-[10px] uppercase tracking-widest text-outline">
+          <span>
+            {showRangeDiff && rangeResult !== null
+              ? `${rangeResult.raw.split('\n').length} lines`
+              : `${diff.split('\n').length} lines`}
+          </span>
           {currentFile !== undefined && (
-            <span
-              className={`ml-4 ${currentFile.viewed ? 'text-primary' : 'text-outline'}`}
-            >
-              {currentFile.viewed ? '✓ viewed' : 'press v to mark viewed'}
+            <span className="flex items-center gap-1.5">
+              <StatusSquare
+                status={currentFile.viewed ? 'success' : 'neutral'}
+                size="w-2 h-2"
+                label={currentFile.viewed ? 'VIEWED' : 'NOT VIEWED'}
+              />
+              <span
+                className={currentFile.viewed ? 'text-primary' : 'text-outline'}
+              >
+                {currentFile.viewed ? 'viewed' : 'press v to mark viewed'}
+              </span>
             </span>
           )}
         </div>

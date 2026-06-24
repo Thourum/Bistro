@@ -16,6 +16,7 @@ import {
   findFileByKey,
 } from '../utils/diffFileKey';
 import { Markdown } from './Markdown';
+import { type StatusKind, StatusSquare } from './StatusSquare';
 
 /** A flattened, ordered annotation entry used for j/k keyboard navigation. */
 interface AnnotationEntry {
@@ -379,10 +380,10 @@ function FileNav({ files, activeId, onSelect, totalCount }: FileNavProps) {
                 key={f.id}
                 type="button"
                 onClick={() => onSelect(f.id)}
-                className={`w-full flex items-center gap-2 px-2 py-1.5 text-left transition-colors ${
+                className={`w-full flex items-center gap-2 px-2 py-1.5 text-left cursor-crosshair transition-colors duration-150 ${
                   isActive
                     ? 'bg-surface-container-lowest text-primary border-l-2 border-primary'
-                    : 'hover:bg-surface-container-highest/50 text-on-surface border-l-2 border-transparent'
+                    : 'hover:bg-surface-container-highest/50 text-on-surface border-l-2 border-transparent hover:border-primary/40'
                 }`}
               >
                 <span
@@ -586,6 +587,13 @@ const LIFECYCLE_BADGE: Record<ThreadLifecycle, string> = {
   unknown: 'border-outline-variant/40 text-outline-variant',
 };
 
+const LIFECYCLE_SQUARE: Record<ThreadLifecycle, StatusKind> = {
+  open: 'running',
+  resolved: 'success',
+  outdated: 'neutral',
+  unknown: 'neutral',
+};
+
 const LIFECYCLE_LABEL: Record<ThreadLifecycle, string> = {
   open: 'Open',
   resolved: 'Resolved',
@@ -636,17 +644,22 @@ function ThreadAnnotationCard({
       }}
       role={onActivate !== undefined ? 'button' : undefined}
       tabIndex={onActivate !== undefined ? 0 : undefined}
-      className={`border-l-2 bg-surface-container-low px-3 py-2 space-y-2 text-[11px] transition-colors ${
+      className={`border-l-2 bg-surface-container-low px-3 py-2 space-y-2 text-[11px] transition-colors duration-150 ${
         isActive
           ? 'border-primary bg-surface-container'
           : 'border-outline-variant/30'
-      } ${isDimmed ? 'opacity-50' : ''} ${onActivate !== undefined ? 'cursor-pointer' : ''}`}
+      } ${isDimmed ? 'opacity-50' : ''} ${onActivate !== undefined ? 'cursor-crosshair' : ''}`}
     >
       {/* Header: lifecycle badge + file:line */}
       <div className="flex items-center gap-2">
         <span
-          className={`font-mono text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 border ${LIFECYCLE_BADGE[lifecycle]}`}
+          className={`flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 border ${LIFECYCLE_BADGE[lifecycle]}`}
         >
+          <StatusSquare
+            status={LIFECYCLE_SQUARE[lifecycle]}
+            size="w-2 h-2"
+            label={LIFECYCLE_LABEL[lifecycle]}
+          />
           {LIFECYCLE_LABEL[lifecycle]}
         </span>
         <span className="font-mono text-[10px] text-outline truncate">
