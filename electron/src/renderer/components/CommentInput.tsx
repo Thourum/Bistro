@@ -43,7 +43,7 @@ export function CommentInput({
       className="border-t border-outline-variant bg-surface-container p-3"
       data-testid={`comment-input-file-${fileIndex}-line-${lineNumber}`}
     >
-      <div className="text-[10px] text-on-surface-variant mb-1 font-mono">
+      <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-outline">
         Comment on line {lineNumber}
       </div>
       <div className="flex flex-col gap-2">
@@ -54,19 +54,21 @@ export function CommentInput({
           onKeyDown={handleKeyDown}
           placeholder="Add comment (Ctrl+Enter to send, Esc to cancel)"
           rows={3}
-          className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+          className="w-full resize-none border border-outline-variant bg-surface px-3 py-2 font-mono text-sm text-on-surface focus:border-primary focus:outline-none"
         />
         <div className="flex items-center gap-3 justify-end">
           <button
+            type="button"
             onClick={onCancel}
-            className="text-xs text-on-surface-variant hover:text-on-surface transition-colors"
+            className="font-mono text-[10px] uppercase tracking-widest text-outline transition-colors duration-150 hover:text-on-surface"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleSend}
             disabled={!text.trim()}
-            className="text-xs text-primary hover:underline disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="font-mono text-[10px] uppercase tracking-widest text-primary transition-colors duration-150 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
           >
             Send
           </button>

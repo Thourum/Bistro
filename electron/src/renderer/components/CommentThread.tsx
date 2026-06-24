@@ -45,9 +45,9 @@ export function CommentThread({
   };
 
   return (
-    <div className="border-l-2 border-primary/30 ml-4 bg-surface-container rounded-sm">
+    <div className="ml-4 border-l-2 border-primary/40 bg-surface-container-low">
       <div
-        className="flex items-center gap-2 px-3 py-1 cursor-pointer select-none text-xs text-on-surface-variant hover:text-on-surface"
+        className="flex cursor-crosshair select-none items-center gap-2 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-outline transition-colors duration-150 hover:text-on-surface"
         onClick={() => setIsCollapsed((prev) => !prev)}
         role="button"
         aria-expanded={!isCollapsed}
@@ -68,26 +68,26 @@ export function CommentThread({
             return (
               <div
                 key={comment.id}
-                className="px-3 py-2 border-t border-outline-variant/30 text-sm"
+                className="border-t border-outline-variant/30 px-3 py-2.5 text-sm"
               >
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-xs text-on-surface">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface">
                       @{comment.author}
                     </span>
-                    <span className="text-[10px] text-on-surface-variant">
+                    <span className="font-mono text-[10px] text-outline">
                       {new Date(comment.created_at).toLocaleDateString()}
                     </span>
                   </div>
                   {isAuthor && !isEditing && (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => {
                           setEditingId(comment.id);
                           setEditText(comment.body);
                         }}
-                        className="text-[10px] text-on-surface-variant hover:text-on-surface transition-colors"
+                        className="font-mono text-[10px] uppercase tracking-widest text-outline transition-colors duration-150 hover:text-on-surface"
                       >
                         edit
                       </button>
@@ -95,7 +95,7 @@ export function CommentThread({
                         <button
                           type="button"
                           onClick={() => onDelete(comment.id)}
-                          className="text-[10px] text-error hover:underline transition-colors"
+                          className="font-mono text-[10px] uppercase tracking-widest text-error transition-colors duration-150 hover:underline"
                         >
                           delete
                         </button>
@@ -105,19 +105,19 @@ export function CommentThread({
                 </div>
 
                 {isEditing ? (
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-2">
                     <textarea
                       value={editText}
                       onChange={(e) => setEditText(e.target.value)}
-                      className="w-full text-xs bg-surface border border-outline-variant rounded px-2 py-1 text-on-surface resize-none"
+                      className="w-full resize-none border border-outline-variant bg-surface px-2 py-1 font-mono text-xs text-on-surface focus:border-primary/60 focus:outline-none"
                       rows={2}
                     />
-                    <div className="flex gap-2">
+                    <div className="flex gap-3">
                       <button
                         type="button"
                         onClick={() => handleEditSubmit(comment.id)}
                         disabled={!editText.trim()}
-                        className="text-[10px] text-primary hover:underline disabled:opacity-50"
+                        className="font-mono text-[10px] uppercase tracking-widest text-primary transition-colors duration-150 hover:underline disabled:opacity-50"
                       >
                         Save
                       </button>
@@ -127,7 +127,7 @@ export function CommentThread({
                           setEditingId(null);
                           setEditText('');
                         }}
-                        className="text-[10px] text-on-surface-variant hover:text-on-surface"
+                        className="font-mono text-[10px] uppercase tracking-widest text-outline transition-colors duration-150 hover:text-on-surface"
                       >
                         Cancel
                       </button>
@@ -141,14 +141,14 @@ export function CommentThread({
           })}
 
           {onReply != null && (
-            <div className="px-3 py-2 border-t border-outline-variant/30">
+            <div className="border-t border-outline-variant/30 px-3 py-2">
               {showReply ? (
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-2">
                   <textarea
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
-                    placeholder="Write a reply..."
-                    className="w-full text-xs bg-surface border border-outline-variant rounded px-2 py-1 text-on-surface resize-none"
+                    placeholder="Write a reply…"
+                    className="w-full resize-none border border-outline-variant bg-surface px-2 py-1 font-mono text-xs text-on-surface focus:border-primary/60 focus:outline-none"
                     rows={2}
                     onKeyDown={(e) => {
                       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -161,12 +161,12 @@ export function CommentThread({
                       }
                     }}
                   />
-                  <div className="flex gap-2">
+                  <div className="flex gap-3">
                     <button
                       type="button"
                       onClick={handleReplySubmit}
                       disabled={!replyText.trim()}
-                      className="text-[10px] text-primary hover:underline disabled:opacity-50"
+                      className="font-mono text-[10px] uppercase tracking-widest text-primary transition-colors duration-150 hover:underline disabled:opacity-50"
                     >
                       Reply
                     </button>
@@ -176,7 +176,7 @@ export function CommentThread({
                         setShowReply(false);
                         setReplyText('');
                       }}
-                      className="text-[10px] text-on-surface-variant hover:text-on-surface"
+                      className="font-mono text-[10px] uppercase tracking-widest text-outline transition-colors duration-150 hover:text-on-surface"
                     >
                       Cancel
                     </button>
@@ -186,7 +186,7 @@ export function CommentThread({
                 <button
                   type="button"
                   onClick={() => setShowReply(true)}
-                  className="text-[10px] text-on-surface-variant hover:text-primary transition-colors"
+                  className="font-mono text-[10px] uppercase tracking-widest text-outline transition-colors duration-150 hover:text-primary"
                 >
                   Reply...
                 </button>

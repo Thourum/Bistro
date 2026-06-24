@@ -16,6 +16,7 @@ import {
 } from '../types';
 import { HighlightedCode } from './HighlightedCode';
 import { Markdown } from './Markdown';
+import { type StatusKind, StatusSquare } from './StatusSquare';
 
 interface Props {
   prId: string;
@@ -62,6 +63,13 @@ const LIFECYCLE_BADGE: Record<ThreadLifecycle, string> = {
   resolved: 'border-primary/50 text-primary',
   outdated: 'border-outline-variant/40 text-outline',
   unknown: 'border-outline-variant/40 text-outline-variant',
+};
+
+const LIFECYCLE_SQUARE: Record<ThreadLifecycle, StatusKind> = {
+  open: 'running',
+  resolved: 'success',
+  outdated: 'neutral',
+  unknown: 'neutral',
 };
 
 function sortThreads(threads: ReviewThread[]): ReviewThread[] {
@@ -260,7 +268,7 @@ const ThreadRow = forwardRef<HTMLLIElement, ThreadRowProps>(function ThreadRow(
       tabIndex={focused ? 0 : -1}
       onFocus={onFocusRow}
       aria-label={`Thread on ${thread.file_path} line ${thread.line}, ${LIFECYCLE_LABEL[lifecycle]}`}
-      className={`group relative flex flex-col gap-3 px-8 py-4 outline-none transition-colors ${
+      className={`group relative flex flex-col gap-3 px-8 py-4 outline-none cursor-crosshair transition-colors duration-150 ${
         focused
           ? 'bg-surface-container-low'
           : 'hover:bg-surface-container-lowest'
@@ -357,8 +365,13 @@ function LifecycleBadge({
 }): React.ReactElement {
   return (
     <span
-      className={`shrink-0 font-mono text-[9px] font-bold uppercase tracking-widest px-2 py-1 border ${LIFECYCLE_BADGE[lifecycle]}`}
+      className={`shrink-0 flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-widest px-2 py-1 border ${LIFECYCLE_BADGE[lifecycle]}`}
     >
+      <StatusSquare
+        status={LIFECYCLE_SQUARE[lifecycle]}
+        size="w-2 h-2"
+        label={LIFECYCLE_LABEL[lifecycle]}
+      />
       {LIFECYCLE_LABEL[lifecycle]}
     </span>
   );
