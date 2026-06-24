@@ -371,6 +371,19 @@ describe('binding actions', () => {
       );
     });
 
+    it('diff route → closes inline reply before navigating back', async () => {
+      const { router } = await import('../../src/renderer/router');
+      mockNavigate.mockClear();
+      const store = makeStore({
+        inlineCommentThreadIds: ['T1'],
+        activeInlineCommentThreadId: 'T1',
+        replyingInlineCommentThreadId: 'T1',
+      });
+      byId('global.escape').action(makeCtx(store, 'diff'));
+      expect(store.state.replyingInlineCommentThreadId).toBeNull();
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
+
     it('settings route → navigates to /prs (router.navigate called)', async () => {
       const { router } = await import('../../src/renderer/router');
       (router.state.location as { pathname: string }).pathname = '/settings';
@@ -387,6 +400,67 @@ describe('binding actions', () => {
       });
       byId('global.escape').action(makeCtx(store, 'list'));
       expect(store.state.confirmingAction).toBeNull();
+    });
+  });
+
+  describe('inline diff comment hotkeys', () => {
+    it('j selects the first inline comment instead of scrolling when annotations exist', () => {
+      const viewport = document.createElement('div');
+      viewport.setAttribute('data-diff-viewport', '');
+      const scrollBy = vi.fn();
+      viewport.scrollBy = scrollBy;
+      document.body.appendChild(viewport);
+      const store = makeStore({ inlineCommentThreadIds: ['T1', 'T2'] });
+
+      byId('detail.scrollDown').action(makeCtx(store, 'diff'));
+
+      expect(store.state.activeInlineCommentThreadId).toBe('T1');
+      expect(scrollBy).not.toHaveBeenCalled();
+      viewport.remove();
+    });
+
+    it('k selects the previous inline comment instead of scrolling when annotations exist', () => {
+      const viewport = document.createElement('div');
+      viewport.setAttribute('data-diff-viewport', '');
+      const scrollBy = vi.fn();
+      viewport.scrollBy = scrollBy;
+      document.body.appendChild(viewport);
+      const store = makeStore({
+        inlineCommentThreadIds: ['T1', 'T2'],
+        activeInlineCommentThreadId: 'T2',
+      });
+
+      byId('detail.scrollUp').action(makeCtx(store, 'diff'));
+
+      expect(store.state.activeInlineCommentThreadId).toBe('T1');
+      expect(scrollBy).not.toHaveBeenCalled();
+      viewport.remove();
+    });
+
+    it('j keeps existing scroll behavior when no inline annotations exist', () => {
+      const viewport = document.createElement('div');
+      viewport.setAttribute('data-diff-viewport', '');
+      const scrollBy = vi.fn();
+      viewport.scrollBy = scrollBy;
+      document.body.appendChild(viewport);
+      const store = makeStore({ inlineCommentThreadIds: [] });
+
+      byId('detail.scrollDown').action(makeCtx(store, 'diff'));
+
+      expect(store.state.activeInlineCommentThreadId).toBeNull();
+      expect(scrollBy).toHaveBeenCalledWith({ top: 40 });
+      viewport.remove();
+    });
+
+    it('Enter starts inline reply for the active diff comment', () => {
+      const store = makeStore({
+        inlineCommentThreadIds: ['T1'],
+        activeInlineCommentThreadId: 'T1',
+      });
+
+      byId('detail.inlineReply').action(makeCtx(store, 'diff'));
+
+      expect(store.state.replyingInlineCommentThreadId).toBe('T1');
     });
   });
 

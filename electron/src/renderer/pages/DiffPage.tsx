@@ -20,13 +20,14 @@ import { RangeDiffView } from '../components/RangeDiffView';
 import { addToast } from '../components/ToastContainer';
 import { useMarkFileViewed } from '../hooks/useMarkFileViewed';
 import { type RangeDiffRequest, useRangeDiff } from '../hooks/useRangeDiff';
+import { useReviewThreads } from '../hooks/useReviewThreads';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
-import type { DiffFile } from '../types';
+import type { Comment, DiffFile } from '../types';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('DiffPage');
@@ -79,6 +80,10 @@ export function DiffPage() {
   const [loading, setLoading] = useState(true);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [findQuery, setFindQuery] = useState('');
+  const [comments, setComments] = useState<Comment[]>([]);
+
+  // Review threads for inline annotations (full diff path only).
+  const { threads } = useReviewThreads(pr?.id);
 
   // ── Range-diff intent ──────────────────────────────────────────────
   const sinceLastReview = confirmingAction === 'since-last-review';
@@ -119,6 +124,19 @@ export function DiffPage() {
         log.error({ err: msg }, 'failed to fetch diff');
         setDiffError(msg);
         setLoading(false);
+      });
+  }, [pr, request]);
+
+  // Fetch comments for inline thread annotations (full diff surface only).
+  useEffect(() => {
+    if (pr === undefined) return;
+    request('REQUEST_COMMENTS', { pr_id: pr.id })
+      .then((data) => {
+        const payload = data as { comments?: Comment[] };
+        setComments(payload.comments ?? []);
+      })
+      .catch((err: unknown) => {
+        log.warn({ err }, 'failed to fetch comments for diff annotations');
       });
   }, [pr, request]);
 
@@ -271,6 +289,8 @@ export function DiffPage() {
             findQuery={findQuery}
             selectedFileKey={fileKey}
             onFilesResolved={handleFilesResolved}
+            threads={threads}
+            comments={comments}
           />
         )}
       </div>

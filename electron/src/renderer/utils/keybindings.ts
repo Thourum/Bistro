@@ -136,6 +136,54 @@ const ALL_OVERLAYS: OverlayKind[] = [
   'threads',
 ];
 
+function moveInlineDiffComment(ctx: KeyActionContext, delta: 1 | -1): boolean {
+  if (ctx.routeBase !== 'diff') return false;
+  const ids = ctx.store.state.inlineCommentThreadIds;
+  if (ids.length === 0) return false;
+
+  const current = ctx.store.state.activeInlineCommentThreadId;
+  const currentIndex = current === null ? -1 : ids.indexOf(current);
+  const nextIndex =
+    currentIndex < 0
+      ? delta > 0
+        ? 0
+        : ids.length - 1
+      : Math.min(Math.max(currentIndex + delta, 0), ids.length - 1);
+  const nextId = ids[nextIndex];
+  if (nextId === undefined) return false;
+
+  ctx.store.setState((s) => ({
+    ...s,
+    activeInlineCommentThreadId: nextId,
+    replyingInlineCommentThreadId: null,
+  }));
+  return true;
+}
+
+function startInlineDiffReply(ctx: KeyActionContext): boolean {
+  if (ctx.routeBase !== 'diff') return false;
+  const active = ctx.store.state.activeInlineCommentThreadId;
+  if (active === null) return false;
+  if (!ctx.store.state.inlineCommentThreadIds.includes(active)) return false;
+
+  ctx.store.setState((s) => ({
+    ...s,
+    replyingInlineCommentThreadId: active,
+  }));
+  return true;
+}
+
+function closeInlineDiffReply(ctx: KeyActionContext): boolean {
+  if (ctx.routeBase !== 'diff') return false;
+  if (ctx.store.state.replyingInlineCommentThreadId === null) return false;
+
+  ctx.store.setState((s) => ({
+    ...s,
+    replyingInlineCommentThreadId: null,
+  }));
+  return true;
+}
+
 const globalBindings: KeyBinding[] = [
   {
     actionId: 'global.help',
@@ -164,6 +212,7 @@ const globalBindings: KeyBinding[] = [
       } else if (activeOverlay !== null) {
         ctx.overlays.closeOverlay();
       } else if (routeBase === 'diff') {
+        if (closeInlineDiffReply(ctx)) return;
         // Navigate back to /prs/$prId
         if (ctx.prId !== undefined) {
           void router.navigate({
@@ -700,7 +749,8 @@ const detailScrollBindings: KeyBinding[] = [
     keys: 'j',
     description: 'Scroll down',
     activation: { routes: ['detail', 'diff'] },
-    action: (_ctx) => {
+    action: (ctx) => {
+      if (moveInlineDiffComment(ctx, 1)) return;
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 40 });
     },
   },
@@ -709,8 +759,18 @@ const detailScrollBindings: KeyBinding[] = [
     keys: 'k',
     description: 'Scroll up',
     activation: { routes: ['detail', 'diff'] },
-    action: (_ctx) => {
+    action: (ctx) => {
+      if (moveInlineDiffComment(ctx, -1)) return;
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -40 });
+    },
+  },
+  {
+    actionId: 'detail.inlineReply',
+    keys: 'Enter',
+    description: 'Reply to inline comment',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      startInlineDiffReply(ctx);
     },
   },
   {

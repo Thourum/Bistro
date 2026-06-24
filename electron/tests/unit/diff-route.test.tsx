@@ -83,7 +83,10 @@ const { mockRouterNavigate, mockRouterState, mockRequest } = vi.hoisted(() => {
   return {
     mockRouterNavigate: vi.fn().mockResolvedValue(undefined),
     mockRouterState,
-    mockRequest: vi.fn().mockResolvedValue({ diff: '' }),
+    mockRequest: vi.fn((type: string) => {
+      if (type === 'REQUEST_COMMENTS') return Promise.resolve({ comments: [] });
+      return Promise.resolve({ diff: '' });
+    }),
   };
 });
 
@@ -96,27 +99,48 @@ vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
   }),
 }));
 
+// Mock useReviewThreads so DiffPage's inline annotation path doesn't need a WS.
+vi.mock('../../src/renderer/hooks/useReviewThreads', () => ({
+  useReviewThreads: () => ({
+    threads: [],
+    loading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 // ---------------------------------------------------------------------------
 // Mock PierreDiffView so we can inspect which selectedFileKey was passed.
 // Render a testid marker so test assertions can query by file key.
 // ---------------------------------------------------------------------------
 
-const { mockPierreDiffViewSelectedKey } = vi.hoisted(() => ({
-  mockPierreDiffViewSelectedKey: vi.fn<[string | undefined], null>(() => null),
-}));
+const { mockPierreDiffViewSelectedKey, mockPierreDiffViewProps } = vi.hoisted(
+  () => ({
+    mockPierreDiffViewSelectedKey: vi.fn<[string | undefined], null>(() => null),
+    mockPierreDiffViewProps: vi.fn<
+      [{ threads?: unknown[]; comments?: unknown[] }],
+      null
+    >(() => null),
+  }),
+);
 
 vi.mock('../../src/renderer/components/PierreDiffView', () => ({
   PierreDiffView: ({
     selectedFileKey,
     onFilesResolved,
+    threads,
+    comments,
   }: {
     diff: string;
     theme: string;
     findQuery?: string;
     selectedFileKey?: string;
     onFilesResolved?: (keys: string[]) => void;
+    threads?: unknown[];
+    comments?: unknown[];
   }) => {
     mockPierreDiffViewSelectedKey(selectedFileKey);
+    mockPierreDiffViewProps({ threads, comments });
     // Simulate resolving 2 files so next/prev keybinding tests work.
     React.useEffect(() => {
       onFilesResolved?.(['src/alpha.ts', 'src/beta.ts']);
@@ -331,6 +355,7 @@ function makeTestCtx(
 beforeEach(() => {
   mockRouterNavigate.mockClear();
   mockPierreDiffViewSelectedKey.mockClear();
+  mockPierreDiffViewProps.mockClear();
   appStore.setState(() => ({
     ...initialUIState,
     isAuthenticated: true,
@@ -585,6 +610,41 @@ describe('in-diff n/p keybindings update ?file', () => {
 // Route-owned coherence tests removed — mode field deleted; routes own state.
 // Route ownership is now 100% router-controlled; there is no store mode
 // to "correct". The underlying routing behavior (pathname) is tested above.
+
+// ---------------------------------------------------------------------------
+// DiffPage passes comments and threads to PierreDiffView
+// ---------------------------------------------------------------------------
+
+describe('DiffPage inline annotations', () => {
+  it('passes threads and comments props to PierreDiffView', async () => {
+    makeDiffRouteRouter('/prs/pr-aaa/diff');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pierre-diff-view')).toBeInTheDocument();
+    });
+
+    // DiffPage should pass threads and comments arrays (even if empty from mocks).
+    expect(mockPierreDiffViewProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threads: expect.any(Array),
+        comments: expect.any(Array),
+      }),
+    );
+  });
+
+  it('calls REQUEST_COMMENTS with the current pr_id', async () => {
+    makeDiffRouteRouter('/prs/pr-aaa/diff');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pierre-diff-view')).toBeInTheDocument();
+    });
+
+    expect(mockRequest).toHaveBeenCalledWith(
+      'REQUEST_COMMENTS',
+      expect.objectContaining({ pr_id: 'pr-aaa' }),
+    );
+  });
+});
 
 // ---------------------------------------------------------------------------
 // diffFileKeys lifecycle: no stale carryover across PRs
