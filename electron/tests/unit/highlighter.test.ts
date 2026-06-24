@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { detectLanguage, highlightCode } from '../../src/renderer/utils/highlighter';
+import { detectLanguage, highlightCode, REGISTERED_LANGUAGES } from '../../src/renderer/utils/highlighter';
 
 describe('detectLanguage', () => {
   it('detects TypeScript from .ts extension', () => {
@@ -74,5 +74,16 @@ describe('highlightCode', () => {
   it('falls back to escaped HTML for unknown language', () => {
     const result = highlightCode('<unknown>', 'nonexistent-lang');
     expect(result).toContain('&lt;unknown&gt;');
+  });
+});
+
+describe('diff grammar', () => {
+  it('emits addition/deletion token classes', () => {
+    const html = highlightCode('+added\n-removed\n context', 'diff');
+    expect(html).toContain('hljs-addition');
+    expect(html).toContain('hljs-deletion');
+  });
+  it('exposes diff in the registered-language allowlist', () => {
+    expect(REGISTERED_LANGUAGES.has('diff')).toBe(true);
   });
 });
