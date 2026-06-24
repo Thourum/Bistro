@@ -41,7 +41,7 @@ export function HighlightedCode({
   lang,
 }: HighlightedCodeProps): React.JSX.Element {
   const preClass =
-    'overflow-x-auto rounded bg-surface-container-low p-2 font-mono text-xs';
+    'my-2 overflow-x-auto border border-outline-variant/40 bg-surface-container-low p-3 font-mono text-xs leading-relaxed';
 
   // Normalise alias → canonical name for highlighting; keep original for class
   const lower = lang?.toLowerCase() ?? null;

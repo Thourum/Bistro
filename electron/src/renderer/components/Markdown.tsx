@@ -25,7 +25,9 @@ function MarkdownImpl({
 }: MarkdownProps): React.JSX.Element {
   const base = compact ? 'text-xs leading-relaxed' : 'text-sm leading-relaxed';
   return (
-    <div className={`${base} text-on-surface-variant ${className ?? ''}`}>
+    <div
+      className={`${base} font-sans text-on-surface-variant break-words [&_strong]:font-bold [&_strong]:text-on-surface [&_em]:italic ${className ?? ''}`}
+    >
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
         // biome-ignore lint/suspicious/noExplicitAny: rehype plugin-tuple typing
