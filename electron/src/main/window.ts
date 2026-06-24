@@ -22,6 +22,25 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
     },
   });
 
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const devServerUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL;
+    if (
+      devServerUrl !== undefined &&
+      (devServerUrl.startsWith('http://') ||
+        devServerUrl.startsWith('https://')) &&
+      (url.startsWith('http://') || url.startsWith('https://'))
+    ) {
+      const devOrigin = new URL(devServerUrl).origin;
+      const navOrigin = new URL(url).origin;
+      if (navOrigin === devOrigin) {
+        return;
+      }
+    }
+    event.preventDefault();
+  });
+
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools();

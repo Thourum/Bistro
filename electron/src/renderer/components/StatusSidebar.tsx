@@ -1,4 +1,5 @@
 import type { CICheck, PR } from '../types';
+import ExternalLink from './ExternalLink';
 
 const REVIEW_COLORS: Record<string, string> = {
   approved: 'text-green-600 dark:text-green-400',
@@ -87,14 +88,13 @@ export default function StatusSidebar({ pr, ciChecks }: StatusSidebarProps) {
                   {CI_ICONS[check.state] ?? '?'}
                 </span>
                 {check.url != null ? (
-                  <a
+                  <ExternalLink
                     href={check.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="text-primary hover:underline truncate"
+                    aria-label={check.name}
                   >
                     {check.name}
-                  </a>
+                  </ExternalLink>
                 ) : (
                   <span className="text-on-surface">{check.name}</span>
                 )}
