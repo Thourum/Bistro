@@ -165,6 +165,8 @@ BenchmarkGenerateDiffForPRInMemoryT3Code         ~4.3s   in-memory targeted fetc
 
 Conclusion: targeted fetch delivers the largest current improvement (~9× vs broad clone across the t3code live fixtures). In-memory avoids APFS writes but does not yet meet the <2s goal, implying the remaining floor is likely network transfer and go-git object/diff processing. The in-memory path remains prototype/diff-only because production anchor resolution still needs a local repository path.
 
+Production-sync validation after these phases still measured the full t3code one-PR sync at roughly **50.5s**. That means the current anchor-safe production path is not yet meeting the whole-plan target: for the XXL PR fixture it can still fall back to the broad clone when shallow targeted fetch cannot satisfy required anchor or historical patchset SHAs. Further work should focus on either avoiding that fallback for anchoring, materializing memory/disk only when required, or introducing a separate fast-display diff path.
+
 Prototype limitations before production use:
 
 - no fallback/depth escalation inside `GenerateDiffForPRInMemory`;

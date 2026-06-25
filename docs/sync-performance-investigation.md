@@ -81,6 +81,7 @@ Interpretation of prototype results:
 - In-memory targeted fetch + diff avoids APFS writes, but currently lands around **4–6s**, not the whole-plan <2s target.
 - The in-memory path is currently a **diff-only prototype**, not production eligible, because anchor resolution still requires an on-disk `localPath` and production safety controls/fallbacks are not implemented.
 - The next bottleneck is likely network/object transfer and go-git object processing, not SQLite or checkout writes.
+- Final production-sync validation after Phase 3/4 still measured `BenchmarkTypicalSyncT3CodeXXLPRLive` at roughly **50.5s**. The git-only targeted benchmarks prove the narrower fetch path can be ~5s, but the production anchor-safe path can still fall back to the broad clone when required anchor or historical patchset SHAs are not available in the shallow window. The Phase 1 timing instrumentation now makes those fallback/phase costs visible during normal app runs.
 
 Interpretation:
 
