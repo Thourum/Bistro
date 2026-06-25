@@ -1,6 +1,6 @@
-import { cn } from "@renderer/lib/utils";
-import { formatForDisplay } from "@tanstack/react-hotkeys";
-import type React from "react";
+import { cn } from '@renderer/lib/utils';
+import { formatForDisplay } from '@tanstack/react-hotkeys';
+import type React from 'react';
 
 export interface ShortcutBadgeProps {
   hotkey: string;
@@ -21,7 +21,7 @@ export function ShortcutBadge({
   return (
     <kbd
       className={cn(
-        "ml-0.5 inline-flex items-center justify-center rounded-none border border-current/35 px-1.5 py-0.5 font-mono text-[9px] leading-none text-current",
+        'ml-0.5 inline-flex items-center justify-center rounded-none border border-current/35 px-1.5 py-0.5 font-mono text-[9px] leading-none text-current',
         className,
       )}
     >

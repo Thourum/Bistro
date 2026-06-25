@@ -1,35 +1,35 @@
-import { Link, useParams } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import ActionFeedback from "../components/ActionFeedback";
-import { FooterCenterSlot } from "../components/FooterSlot";
-import { Markdown } from "../components/Markdown";
-import { MergeReadinessBadge } from "../components/MergeReadinessBadge";
-import { PatchsetTimeline } from "../components/PatchsetTimeline";
-import { type StatusKind, StatusSquare } from "../components/StatusSquare";
-import { UnresolvedThreadsView } from "../components/UnresolvedThreadsView";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import { ShortcutBadge } from "../components/ui/shortcut-badge";
-import { Textarea } from "../components/ui/textarea";
-import { useActionDispatch } from "../hooks/useActionDispatch";
-import { usePatchsets } from "../hooks/usePatchsets";
-import { useStore } from "../hooks/useStore";
-import { useWebSocket } from "../hooks/useWebSocket";
-import { useWebSocketPRList } from "../hooks/useWebSocketPRList";
-import { useOverlays } from "../overlays/OverlayContext";
-import { appStore } from "../store";
-import type { UIState } from "../store/ui";
-import type { CICheck, Comment, Patchset, PR } from "../types";
-import { createLogger } from "../utils/logger";
+import { Link, useParams } from '@tanstack/react-router';
+import { useEffect, useRef, useState } from 'react';
+import ActionFeedback from '../components/ActionFeedback';
+import { FooterCenterSlot } from '../components/FooterSlot';
+import { Markdown } from '../components/Markdown';
+import { MergeReadinessBadge } from '../components/MergeReadinessBadge';
+import { PatchsetTimeline } from '../components/PatchsetTimeline';
+import { type StatusKind, StatusSquare } from '../components/StatusSquare';
+import { UnresolvedThreadsView } from '../components/UnresolvedThreadsView';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { ShortcutBadge } from '../components/ui/shortcut-badge';
+import { Textarea } from '../components/ui/textarea';
+import { useActionDispatch } from '../hooks/useActionDispatch';
+import { usePatchsets } from '../hooks/usePatchsets';
+import { useStore } from '../hooks/useStore';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
+import { useOverlays } from '../overlays/OverlayContext';
+import { appStore } from '../store';
+import type { UIState } from '../store/ui';
+import type { CICheck, Comment, Patchset, PR } from '../types';
+import { createLogger } from '../utils/logger';
 
 // Route API for reading the stable $prId param; detail never resolves by list index.
 
-const log = createLogger("PRDetailPage");
+const log = createLogger('PRDetailPage');
 
 function formatTimestamp(iso: string): string {
   return iso
-    .replace("T", " ")
-    .replace(/\.\d+Z$/, "")
+    .replace('T', ' ')
+    .replace(/\.\d+Z$/, '')
     .slice(0, 19);
 }
 
@@ -71,7 +71,7 @@ export function PRDetailPage() {
 
   // Fetch ALL PRs via current filter and find by id.
   // We use 'all' to ensure deep-linked PRs (any status) are always resolvable.
-  const { data: allPRs = [], isLoading, error } = useWebSocketPRList("all");
+  const { data: allPRs = [], isLoading, error } = useWebSocketPRList('all');
   // Also try the current filter as a fallback source — whichever has the PR.
   const { data: filteredPRs = [] } = useWebSocketPRList(filterState);
 
@@ -99,7 +99,7 @@ export function PRDetailPage() {
   }, [selectedPrId]);
 
   useEffect(() => {
-    if (confirmingAction === "approve_confirmed") {
+    if (confirmingAction === 'approve_confirmed') {
       dispatchApprove();
     }
   }, [confirmingAction, dispatchApprove]);
@@ -117,21 +117,21 @@ export function PRDetailPage() {
 
   useEffect(() => {
     if (pr === undefined) return;
-    log.debug({ commentsRevision }, "fetching comments");
-    request("REQUEST_COMMENTS", { pr_id: pr.id })
+    log.debug({ commentsRevision }, 'fetching comments');
+    request('REQUEST_COMMENTS', { pr_id: pr.id })
       .then((data) => {
         const payload = data as { comments?: Comment[] };
         setComments(payload.comments ?? []);
       })
       .catch((err) => {
-        log.warn({ err }, "failed to fetch comments");
+        log.warn({ err }, 'failed to fetch comments');
       });
   }, [pr, request, commentsRevision]);
 
   useEffect(() => {
     if (pr === undefined) return;
 
-    request("REQUEST_DIFF", { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` })
+    request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` })
       .then((data) => {
         const payload = data as {
           files?: Array<{
@@ -153,10 +153,10 @@ export function PRDetailPage() {
         });
       })
       .catch((err) => {
-        log.warn({ err }, "failed to fetch diff stats");
+        log.warn({ err }, 'failed to fetch diff stats');
       });
 
-    request("REQUEST_CI_CHECKS", { pr_id: pr.id })
+    request('REQUEST_CI_CHECKS', { pr_id: pr.id })
       .then((data) => {
         const payload = data as { checks?: CICheck[] };
         setCIChecks(payload.checks ?? []);
@@ -220,7 +220,7 @@ export function PRDetailPage() {
           onSelectPair={handleSelectPair}
         />
 
-        {confirmingAction === "comment" && (
+        {confirmingAction === 'comment' && (
           <PRCommentComposer
             onCancel={() => {
               appStore.setState((s) => ({ ...s, confirmingAction: null }));
@@ -240,7 +240,7 @@ export function PRDetailPage() {
                 keyboard_command_key
               </span>
               <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface">
-                Press <span className="font-black text-primary">[SPACE]</span>{" "}
+                Press <span className="font-black text-primary">[SPACE]</span>{' '}
                 to view diff
               </span>
             </div>
@@ -257,7 +257,7 @@ export function PRDetailPage() {
 
       <StatusRail pr={pr} ciChecks={ciChecks} />
 
-      {activeOverlay === "threads" && (
+      {activeOverlay === 'threads' && (
         <UnresolvedThreadsView prId={pr.id} comments={comments} />
       )}
     </main>
@@ -271,7 +271,7 @@ function PRCommentComposer({
   onCancel: () => void;
   onSubmit: (body: string) => void;
 }): React.ReactElement {
-  const [body, setBody] = useState("");
+  const [body, setBody] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const trimmed = body.trim();
 
@@ -282,7 +282,7 @@ function PRCommentComposer({
   const submit = (): void => {
     if (trimmed.length === 0) return;
     onSubmit(trimmed);
-    setBody("");
+    setBody('');
   };
 
   return (
@@ -297,11 +297,11 @@ function PRCommentComposer({
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
             e.preventDefault();
             submit();
           }
-          if (e.key === "Escape") {
+          if (e.key === 'Escape') {
             e.preventDefault();
             onCancel();
           }
@@ -396,7 +396,7 @@ interface MetaCellProps {
 function MetaCell({
   label,
   value,
-  valueClassName = "",
+  valueClassName = '',
 }: MetaCellProps): React.ReactElement {
   return (
     <div className="flex flex-col">
@@ -430,7 +430,7 @@ function RecentComments({ comments }: { comments: Comment[] }) {
           Recent Comments
         </h2>
         <span className="font-mono text-[10px] text-outline">
-          {unresolved.toString().padStart(2, "0")} UNRESOLVED
+          {unresolved.toString().padStart(2, '0')} UNRESOLVED
         </span>
       </div>
       <div className="space-y-3">
@@ -467,7 +467,7 @@ function FileList({
           Files Changed
         </h2>
         <span className="font-mono text-[10px] text-outline">
-          {files.length.toString().padStart(2, "0")} FILES
+          {files.length.toString().padStart(2, '0')} FILES
         </span>
       </div>
       <div className="space-y-1">
@@ -492,34 +492,34 @@ interface StatusRailProps {
 }
 
 function StatusRail({ pr, ciChecks }: StatusRailProps) {
-  const ciPending = ciChecks.some((c) => c.state === "pending");
-  const ciFailed = ciChecks.some((c) => c.state === "failure");
+  const ciPending = ciChecks.some((c) => c.state === 'pending');
+  const ciFailed = ciChecks.some((c) => c.state === 'failure');
   const ciKind: StatusKind = ciFailed
-    ? "failure"
+    ? 'failure'
     : ciPending
-      ? "running"
+      ? 'running'
       : ciChecks.length > 0
-        ? "success"
-        : "neutral";
+        ? 'success'
+        : 'neutral';
   const ciLabel = ciFailed
-    ? "Checks Failed"
+    ? 'Checks Failed'
     : ciPending
-      ? "Checks Running"
+      ? 'Checks Running'
       : ciChecks.length > 0
-        ? "Checks Passing"
-        : "No CI";
+        ? 'Checks Passing'
+        : 'No CI';
   const reviewKind: StatusKind =
-    pr.review_status === "approved"
-      ? "success"
-      : pr.review_status === "changes_requested"
-        ? "failure"
-        : "neutral";
+    pr.review_status === 'approved'
+      ? 'success'
+      : pr.review_status === 'changes_requested'
+        ? 'failure'
+        : 'neutral';
   const reviewLabel =
-    pr.review_status === "approved"
-      ? "Approved"
-      : pr.review_status === "changes_requested"
-        ? "Changes Requested"
-        : "Awaiting Review";
+    pr.review_status === 'approved'
+      ? 'Approved'
+      : pr.review_status === 'changes_requested'
+        ? 'Changes Requested'
+        : 'Awaiting Review';
 
   return (
     <aside className="w-[10%] min-w-[96px] bg-surface-container-low flex flex-col border-l border-outline-variant/10">
@@ -528,7 +528,7 @@ function StatusRail({ pr, ciChecks }: StatusRailProps) {
           <StatusSquare status={ciKind} size="w-5 h-5" label={ciLabel} />
           <span
             className={`font-mono text-[9px] font-bold tracking-widest uppercase text-center px-2 ${
-              ciFailed ? "text-error" : "text-on-surface"
+              ciFailed ? 'text-error' : 'text-on-surface'
             }`}
           >
             {ciLabel}
