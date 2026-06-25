@@ -24,15 +24,14 @@ Date: 2026-06-25
 
 ```bash
 cd go
-go test -run='^$' -bench='Benchmark(CloneCacheHitT3Code|CloneColdMissT3Code|GenerateDiffT3CodeWarmClone|CloneAndGenerateDiffT3Code|FetchPRDetailsT3CodeXXLPRLive|WriteSyncResultsT3CodeXXLPRLive|TypicalSyncT3CodeXXLPRLive)$' -benchtime=1x -count=1 ./internal/git ./internal/sync
+go test -run='^$' -bench='Benchmark(CloneCacheHitT3Code|CloneColdMissT3Code|GenerateDiffT3CodeWarmClone|CloneAndGenerateDiffT3Code|CloneForPRTargetedColdMissT3Code|CloneForPRTargetedAndGenerateDiffT3Code|GenerateDiffForPRInMemoryT3Code|FetchPRDetailsT3CodeXXLPRLive|WriteSyncResultsT3CodeXXLPRLive|TypicalSyncT3CodeXXLPRLive)$' -benchtime=1x -count=1 ./internal/git ./internal/sync
 ```
 
 Fixtures:
 
 - Read-only repo: `https://github.com/pingdotgg/t3code`
-- Base SHA: `a3422a9bb51d73724b9b665ae0ef1fb756f753d1`
-- Head SHA: `c2776c233691ad1b6b9b891a500d9eac6c6586a2`
-- PR fixture: `https://github.com/pingdotgg/t3code/pull/3548` (`size:XXL`)
+- Broad range fixture: base `a3422a9bb51d73724b9b665ae0ef1fb756f753d1`, head `c2776c233691ad1b6b9b891a500d9eac6c6586a2`.
+- PR-specific targeted-fetch fixture: `https://github.com/pingdotgg/t3code/pull/3548` (`size:XXL`), base `31dfe3596e429725d95d31ecff396caa02a47d12`, head `cfbdaf4b4a091baf98a6984f574cf42fb401f7df`.
 
 Safety rule: benchmarks must never create PRs, comments, replies, approvals, request-changes reviews, or any other mutation against `pingdotgg/t3code`. Future mutation tests must use only the internal fixture repo `https://github.com/Thourum/testing`, and only README changes/comments.
 
@@ -43,6 +42,9 @@ Coverage:
   - `BenchmarkCloneColdMissT3Code`
   - `BenchmarkGenerateDiffT3CodeWarmClone`
   - `BenchmarkCloneAndGenerateDiffT3Code`
+  - `BenchmarkCloneForPRTargetedColdMissT3Code`
+  - `BenchmarkCloneForPRTargetedAndGenerateDiffT3Code`
+  - `BenchmarkGenerateDiffForPRInMemoryT3Code`
 - `go/internal/sync/performance_test.go`
   - `BenchmarkFetchPRDetailsT3CodeXXLPRLive`
   - `BenchmarkWriteSyncResultsT3CodeXXLPRLive`
@@ -62,6 +64,23 @@ BenchmarkFetchPRDetailsT3CodeXXLPRLive     52,051.512 ms/op
 BenchmarkWriteSyncResultsT3CodeXXLPRLive        1.648 ms/op
 BenchmarkTypicalSyncT3CodeXXLPRLive        53,860.158 ms/op
 ```
+
+After Phase 3/4 prototype work, directional single-iteration live benchmark results on the same machine:
+
+```text
+BenchmarkCloneColdMissT3Code                    ~45.6s   broad disk clone of range fixture
+BenchmarkCloneAndGenerateDiffT3Code             ~46.1s   broad disk clone + diff of range fixture
+BenchmarkCloneForPRTargetedColdMissT3Code        ~5.7s   disk targeted shallow fetch of PR fixture
+BenchmarkCloneForPRTargetedAndGenerateDiffT3Code ~5.2s   disk targeted shallow fetch + diff of PR fixture
+BenchmarkGenerateDiffForPRInMemoryT3Code         ~4.4s   in-memory targeted fetch + diff of PR fixture
+```
+
+Interpretation of prototype results:
+
+- PR-specific targeted fetch is the major win: roughly **9× faster** than the broad clone path across the comparable t3code live fixtures.
+- In-memory targeted fetch + diff avoids APFS writes, but currently lands around **4–6s**, not the whole-plan <2s target.
+- The in-memory path is currently a **diff-only prototype**, not production eligible, because anchor resolution still requires an on-disk `localPath` and production safety controls/fallbacks are not implemented.
+- The next bottleneck is likely network/object transfer and go-git object processing, not SQLite or checkout writes.
 
 Interpretation:
 

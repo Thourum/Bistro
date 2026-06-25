@@ -301,30 +301,13 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 		return nil, false
 	}
 
-	refSpecs := make([]config.RefSpec, 0, 2)
-	if opts.PRNumber > 0 {
-		// Destination refs live under a private refs/bistro/* namespace rather
-		// than refs/remotes/origin/* so a targeted fetch can never collide with
-		// or shadow refs written by the broad clone path (which owns
-		// refs/remotes/origin/*). The destination ref is irrelevant to commit
-		// reachability — we resolve commits by SHA, not by ref — so an isolated
-		// namespace is purely defensive and costs nothing.
-		refSpecs = append(refSpecs, config.RefSpec(fmt.Sprintf(
-			"+refs/pull/%d/head:refs/bistro/pull/%d/head", opts.PRNumber, opts.PRNumber)))
-	}
-	if opts.BaseBranch != "" {
-		refSpecs = append(refSpecs, config.RefSpec(fmt.Sprintf(
-			"+refs/heads/%s:refs/bistro/base/%s", opts.BaseBranch, opts.BaseBranch)))
-	}
+	refSpecs := targetedRefSpecs(opts)
 	if len(refSpecs) == 0 {
 		os.RemoveAll(tmpDir)
 		return nil, false
 	}
 
-	depth := opts.Depth
-	if depth <= 0 {
-		depth = defaultTargetedFetchDepth
-	}
+	depth := targetedDepth(opts)
 
 	fetchOpts := &gitlib.FetchOptions{
 		Auth:     c.auth(),
@@ -353,20 +336,11 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 	// PR base SHA (which is usually an ancestor, not the tip) or an older
 	// comment commit; when any required commit is missing we fall back to the
 	// broad clone rather than cache an incomplete repo.
-	required := make([]string, 0, 2+len(opts.RequiredSHAs))
-	required = append(required, baseSHA, headSHA)
-	required = append(required, opts.RequiredSHAs...)
-	for _, sha := range required {
-		if sha == "" {
-			continue
-		}
-		if _, err := repo.CommitObject(plumbing.NewHash(sha)); err != nil {
-			os.RemoveAll(tmpDir)
-			log.Debug("targeted fetch fallback: required commit missing in shallow fetch",
-				"missing_sha", truncateSHAForLog(sha),
-				"depth", depth, "error", err)
-			return nil, false
-		}
+	if missing := verifyRequiredCommits(repo, baseSHA, headSHA, opts); missing != "" {
+		os.RemoveAll(tmpDir)
+		log.Debug("targeted fetch fallback: required commit missing in shallow fetch",
+			"missing_sha", truncateSHAForLog(missing), "depth", depth)
+		return nil, false
 	}
 
 	c.cache.Set(repoURL, baseSHA, headSHA, &RepoEntry{
@@ -389,6 +363,61 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 		BaseSHA:   baseSHA,
 		HeadSHA:   headSHA,
 	}, true
+}
+
+// targetedRefSpecs builds the PR-specific refspecs for a targeted fetch.
+// Destination refs live under a private refs/bistro/* namespace rather than
+// refs/remotes/origin/* so a targeted fetch can never collide with or shadow
+// refs written by the broad clone path (which owns refs/remotes/origin/*). The
+// destination ref is irrelevant to commit reachability — commits are resolved
+// by SHA, not by ref — so the isolated namespace is purely defensive. Shared by
+// the disk targeted path and the in-memory PR-specific path. Returns an empty
+// slice when opts supplies neither a PR number nor a base branch.
+func targetedRefSpecs(opts *CloneOptions) []config.RefSpec {
+	refSpecs := make([]config.RefSpec, 0, 2)
+	if opts == nil {
+		return refSpecs
+	}
+	if opts.PRNumber > 0 {
+		refSpecs = append(refSpecs, config.RefSpec(fmt.Sprintf(
+			"+refs/pull/%d/head:refs/bistro/pull/%d/head", opts.PRNumber, opts.PRNumber)))
+	}
+	if opts.BaseBranch != "" {
+		refSpecs = append(refSpecs, config.RefSpec(fmt.Sprintf(
+			"+refs/heads/%s:refs/bistro/base/%s", opts.BaseBranch, opts.BaseBranch)))
+	}
+	return refSpecs
+}
+
+// targetedDepth returns the shallow fetch depth for a targeted fetch, applying
+// defaultTargetedFetchDepth when opts is nil or specifies no positive depth.
+func targetedDepth(opts *CloneOptions) int {
+	if opts == nil || opts.Depth <= 0 {
+		return defaultTargetedFetchDepth
+	}
+	return opts.Depth
+}
+
+// verifyRequiredCommits checks that baseSHA, headSHA, and every non-empty
+// opts.RequiredSHA resolve to a commit object in repo. It returns the first
+// missing SHA, or "" when all required commits are present. Shared by the disk
+// targeted path and the in-memory path so both enforce identical commit
+// availability before trusting a shallow fetch.
+func verifyRequiredCommits(repo *gitlib.Repository, baseSHA, headSHA string, opts *CloneOptions) string {
+	required := make([]string, 0, 2)
+	required = append(required, baseSHA, headSHA)
+	if opts != nil {
+		required = append(required, opts.RequiredSHAs...)
+	}
+	for _, sha := range required {
+		if sha == "" {
+			continue
+		}
+		if _, err := repo.CommitObject(plumbing.NewHash(sha)); err != nil {
+			return sha
+		}
+	}
+	return ""
 }
 
 // firstMissingCommit opens the repository at localPath and returns the first

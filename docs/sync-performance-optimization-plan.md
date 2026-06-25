@@ -112,7 +112,7 @@ go-git v5.17.2 supports this with `FetchOptions.RefSpecs`, `FetchOptions.Depth`,
 
 ## Phase 4 — In-memory go-git prototype
 
-Status: preferred major optimization.
+Status: preferred major optimization; prototype implemented as diff-only path, **not production eligible yet**.
 
 Avoid APFS writes by cloning/fetching into `memory.NewStorage()` for diff-only operations, then persist the computed diff to SQLite. Disk clone can remain as fallback and/or non-macOS path if benchmarks show disk is acceptable.
 
@@ -151,6 +151,29 @@ True partial clone can be reconsidered when go-git v6 partial clone support is s
 - It has a safe fallback to existing disk behavior.
 - `go test ./...` passes.
 
+### Prototype result
+
+Directional single-iteration live benchmark results on Apple M3 Max:
+
+```text
+BenchmarkCloneColdMissT3Code                    ~45.6s   broad disk clone of range fixture
+BenchmarkCloneAndGenerateDiffT3Code             ~46.1s   broad disk clone + diff of range fixture
+BenchmarkCloneForPRTargetedColdMissT3Code        ~5.7s   disk targeted shallow fetch of PR fixture
+BenchmarkCloneForPRTargetedAndGenerateDiffT3Code ~5.2s   disk targeted shallow fetch + diff of PR fixture
+BenchmarkGenerateDiffForPRInMemoryT3Code         ~4.4s   in-memory targeted fetch + diff of PR fixture
+```
+
+Conclusion: targeted fetch delivers the largest current improvement (~9× vs broad clone across the t3code live fixtures). In-memory avoids APFS writes but does not yet meet the <2s goal, implying the remaining floor is likely network transfer and go-git object/diff processing. The in-memory path remains prototype/diff-only because production anchor resolution still needs a local repository path.
+
+Prototype limitations before production use:
+
+- no fallback/depth escalation inside `GenerateDiffForPRInMemory`;
+- no explicit memory budget or diff-size budget;
+- no local path for anchor resolution;
+- no production integration in `FetchPRDetails`.
+
+Therefore Phase 4 acceptance is **not complete** for production. The current value is benchmark support and a validated experimental path for future work.
+
 ## Phase 5 — Optional GitHub raw diff fast display
 
 Status: caution / later.
@@ -176,6 +199,7 @@ Run before and after each implementation phase:
 ```bash
 cd go
 go test -run='^$' -bench='Benchmark(CloneCacheHitT3Code|CloneColdMissT3Code|GenerateDiffT3CodeWarmClone|CloneAndGenerateDiffT3Code)$' -benchtime=1x -count=1 ./internal/git
+go test -run='^$' -bench='Benchmark(CloneForPRTargetedColdMissT3Code|CloneForPRTargetedAndGenerateDiffT3Code|GenerateDiffForPRInMemoryT3Code)$' -benchtime=1x -count=1 ./internal/git
 go test -run='^$' -bench='Benchmark(FetchPRDetailsT3CodeXXLPRLive|WriteSyncResultsT3CodeXXLPRLive|TypicalSyncT3CodeXXLPRLive)$' -benchtime=1x -count=1 ./internal/sync
 go test ./...
 ```
