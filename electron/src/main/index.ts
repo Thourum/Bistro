@@ -141,6 +141,11 @@ let wsClient: WebSocketClient | null = null;
 let settingsService: SettingsService | null = null;
 let runtimeConfig: AppConfig | null = null;
 
+ipcMain.handle('app:quit', () => {
+  app.quit();
+  return { ok: true as const };
+});
+
 app.on('ready', async () => {
   // Load settings first so we can pass sync config to the Go process.
   settingsService = new SettingsService(log);

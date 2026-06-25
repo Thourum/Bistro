@@ -114,6 +114,10 @@ contextBridge.exposeInMainWorld('electron', {
     return ipcRenderer.invoke('open-external', url);
   },
 
+  quitApp(): Promise<{ ok: true }> {
+    return ipcRenderer.invoke('app:quit');
+  },
+
   /**
    * User settings persisted to `userData/settings.json`.
    */
@@ -163,6 +167,7 @@ declare global {
         ) => void,
       ) => () => void;
       openExternal: (url: string) => Promise<{ ok: true } | { err: string }>;
+      quitApp: () => Promise<{ ok: true }>;
       settings: {
         get: () => Promise<{ ok: AppSettings } | IPCError>;
         set: (

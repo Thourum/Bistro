@@ -39,6 +39,7 @@ declare global {
         ) => void,
       ) => () => void;
       openExternal: (url: string) => Promise<{ ok: true } | { err: string }>;
+      quitApp: () => Promise<{ ok: true }>;
       settings: {
         get: () => Promise<{ ok: AppSettings } | IPCError>;
         set: (
@@ -48,9 +49,6 @@ declare global {
         openFile: () => Promise<{ ok: true } | { err: string }>;
         path: () => Promise<{ ok: string } | IPCError>;
       };
-    };
-    electronAPI?: {
-      quitApp?: () => void;
     };
   }
 }

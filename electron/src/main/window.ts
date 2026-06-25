@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import type { Logger } from 'electron-log';
 import type { AppConfig } from './types';
 import { wsPortToArg } from './ws-port';
@@ -30,6 +30,19 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
   });
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    const key = input.key.toLowerCase();
+    const isMacQuit =
+      process.platform === 'darwin' && input.meta && key === 'q';
+    const isWindowsQuit =
+      process.platform === 'win32' && input.alt && key === 'f4';
+
+    if (isMacQuit || isWindowsQuit) {
+      event.preventDefault();
+      app.quit();
+    }
+  });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
     const devServerUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL;

@@ -136,6 +136,15 @@ const ALL_OVERLAYS: OverlayKind[] = [
   'threads',
 ];
 
+const ALL_ROUTES: RouteBase[] = [
+  'list',
+  'detail',
+  'diff',
+  'settings',
+  'login',
+  'onboarding',
+];
+
 function moveInlineDiffComment(ctx: KeyActionContext, delta: 1 | -1): boolean {
   if (ctx.routeBase !== 'diff') return false;
   const ids = ctx.store.state.inlineCommentThreadIds;
@@ -260,14 +269,14 @@ const globalBindings: KeyBinding[] = [
     actionId: 'global.quit.mac',
     keys: 'Meta+Q',
     description: 'Quit',
-    // Active on all base routes AND while help/search overlays are open
-    // (matches old behaviour: quit worked in list/detail/help/search modes).
+    // Keep quit available from every app route/overlay; the main process also
+    // catches this accelerator before renderer focus/input handling can block it.
     activation: {
-      routes: ['list', 'detail', 'diff', 'settings'] as RouteBase[],
-      overlays: ['help', 'search'] as OverlayKind[],
+      routes: ALL_ROUTES,
+      overlays: ALL_OVERLAYS,
     },
     action: (_ctx) => {
-      window.electronAPI?.quitApp?.();
+      void window.electron.quitApp();
     },
   },
   {
@@ -275,11 +284,11 @@ const globalBindings: KeyBinding[] = [
     keys: 'Alt+F4',
     description: 'Quit',
     activation: {
-      routes: ['list', 'detail', 'diff', 'settings'] as RouteBase[],
-      overlays: ['help', 'search'] as OverlayKind[],
+      routes: ALL_ROUTES,
+      overlays: ALL_OVERLAYS,
     },
     action: (_ctx) => {
-      window.electronAPI?.quitApp?.();
+      void window.electron.quitApp();
     },
   },
   {

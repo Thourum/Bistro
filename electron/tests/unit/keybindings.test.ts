@@ -566,10 +566,10 @@ describe('isActive — login bindings inactive on authed routes', () => {
 });
 
 // ---------------------------------------------------------------------------
-// NIT 3 — global.quit fires while help/search overlays are open
+// NIT 3 — global.quit fires from all app routes/overlays
 // ---------------------------------------------------------------------------
 
-describe('isActive — global.quit fires on routes AND help/search overlays', () => {
+describe('isActive — global.quit fires on routes and overlays', () => {
   const quitMac = byId('global.quit.mac');
 
   it('active on list route, no overlay', () => {
@@ -587,11 +587,23 @@ describe('isActive — global.quit fires on routes AND help/search overlays', ()
       isActive(quitMac, { routeBase: null, activeOverlay: 'search' }),
     ).toBe(true);
   });
-  it('inactive while command overlay is open', () => {
-    // command was NOT in old quit modes — keep it inactive.
+  it('active while command overlay is open', () => {
     expect(
       isActive(quitMac, { routeBase: null, activeOverlay: 'command' }),
-    ).toBe(false);
+    ).toBe(true);
+  });
+  it('active while repo picker overlay is open', () => {
+    expect(
+      isActive(quitMac, { routeBase: null, activeOverlay: 'repoPicker' }),
+    ).toBe(true);
+  });
+  it('active on login and onboarding routes', () => {
+    expect(isActive(quitMac, { routeBase: 'login', activeOverlay: null })).toBe(
+      true,
+    );
+    expect(
+      isActive(quitMac, { routeBase: 'onboarding', activeOverlay: null }),
+    ).toBe(true);
   });
 });
 
