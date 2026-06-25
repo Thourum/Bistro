@@ -1,5 +1,5 @@
 import { Link, useParams } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ActionFeedback from '../components/ActionFeedback';
 import { FooterCenterSlot } from '../components/FooterSlot';
 import { Markdown } from '../components/Markdown';
@@ -8,6 +8,9 @@ import { PatchsetTimeline } from '../components/PatchsetTimeline';
 import { type StatusKind, StatusSquare } from '../components/StatusSquare';
 import { UnresolvedThreadsView } from '../components/UnresolvedThreadsView';
 import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { ShortcutBadge } from '../components/ui/shortcut-badge';
+import { Textarea } from '../components/ui/textarea';
 import { useActionDispatch } from '../hooks/useActionDispatch';
 import { usePatchsets } from '../hooks/usePatchsets';
 import { useStore } from '../hooks/useStore';
@@ -58,6 +61,10 @@ export function PRDetailPage() {
     appStore,
     (s: UIState) => s.confirmingAction,
   );
+  const commentsRevision = useStore(
+    appStore,
+    (s: UIState) => s.commentsRevision,
+  );
   const pendingAction = useStore(appStore, (s: UIState) => s.pendingAction);
   const actionResult = useStore(appStore, (s: UIState) => s.actionResult);
   const filterState = useStore(appStore, (s: UIState) => s.filterState);
@@ -82,7 +89,8 @@ export function PRDetailPage() {
     }));
   }
 
-  const { dispatchApprove, clearActionResult } = useActionDispatch(pr?.id);
+  const { dispatchApprove, dispatchPostComment, clearActionResult } =
+    useActionDispatch(pr?.id);
 
   // Reset patchset pair selection when the user navigates to a different PR.
   useEffect(() => {
@@ -109,6 +117,7 @@ export function PRDetailPage() {
 
   useEffect(() => {
     if (pr === undefined) return;
+    log.debug({ commentsRevision }, 'fetching comments');
     request('REQUEST_COMMENTS', { pr_id: pr.id })
       .then((data) => {
         const payload = data as { comments?: Comment[] };
@@ -117,6 +126,10 @@ export function PRDetailPage() {
       .catch((err) => {
         log.warn({ err }, 'failed to fetch comments');
       });
+  }, [pr, request, commentsRevision]);
+
+  useEffect(() => {
+    if (pr === undefined) return;
 
     request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` })
       .then((data) => {
@@ -207,6 +220,15 @@ export function PRDetailPage() {
           onSelectPair={handleSelectPair}
         />
 
+        {confirmingAction === 'comment' && (
+          <PRCommentComposer
+            onCancel={() => {
+              appStore.setState((s) => ({ ...s, confirmingAction: null }));
+            }}
+            onSubmit={dispatchPostComment}
+          />
+        )}
+
         {comments.length > 0 && <RecentComments comments={comments} />}
 
         {files.length > 0 && <FileList files={files} />}
@@ -239,6 +261,70 @@ export function PRDetailPage() {
         <UnresolvedThreadsView prId={pr.id} comments={comments} />
       )}
     </main>
+  );
+}
+
+function PRCommentComposer({
+  onCancel,
+  onSubmit,
+}: {
+  onCancel: () => void;
+  onSubmit: (body: string) => void;
+}): React.ReactElement {
+  const [body, setBody] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const trimmed = body.trim();
+
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  const submit = (): void => {
+    if (trimmed.length === 0) return;
+    onSubmit(trimmed);
+    setBody('');
+  };
+
+  return (
+    <section className="max-w-3xl border border-outline-variant/40 bg-surface-container-low p-5 space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="font-mono text-[11px] font-bold tracking-[0.25em] uppercase">
+          Add PR comment
+        </h2>
+      </div>
+      <Textarea
+        ref={textareaRef}
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            e.preventDefault();
+            submit();
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        rows={5}
+        placeholder="Write a PR comment…"
+        aria-label="PR comment"
+      />
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          variant="default"
+          size="sm"
+          onClick={submit}
+          disabled={trimmed.length === 0}
+        >
+          Comment
+          <ShortcutBadge hotkey="Mod+Enter" />
+        </Button>
+      </div>
+    </section>
   );
 }
 

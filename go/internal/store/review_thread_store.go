@@ -104,3 +104,28 @@ func (db *DB) SetThreadResolved(ctx context.Context, prID, threadID string, reso
 	return nil
 }
 
+// ReplyTargetCommentIDForThread returns a replyable review-comment ID for a
+// thread scoped by PR. Prefer the root review comment because GitHub threads are
+// anchored by the original review comment; fall back to the oldest available
+// comment if cached reply metadata is incomplete.
+func (db *DB) ReplyTargetCommentIDForThread(ctx context.Context, prID, threadID string) (string, error) {
+	row := db.QueryRowContext(ctx,
+		`SELECT id
+		 FROM comments
+		 WHERE pr_id = ? AND thread_id = ? AND kind = 'review'
+		 ORDER BY CASE WHEN in_reply_to IS NULL OR in_reply_to = '' THEN 0 ELSE 1 END,
+		          created_at ASC,
+		          id ASC
+		 LIMIT 1`,
+		prID, threadID,
+	)
+	var id string
+	err := row.Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reply target comment for thread (%s, %s): %w", prID, threadID, err)
+	}
+	return id, nil
+}

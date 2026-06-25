@@ -111,6 +111,56 @@ func (pch *PostCommentHandler) Handle(ctx context.Context, req *ActionRequest) (
 	return result, nil
 }
 
+// ReplyCommentHandler executes reply_comment via the CommentReplier capability.
+type ReplyCommentHandler struct {
+	provider provider.Provider
+}
+
+// NewReplyCommentHandler creates a ReplyCommentHandler.
+func NewReplyCommentHandler(prov provider.Provider) *ReplyCommentHandler {
+	return &ReplyCommentHandler{provider: prov}
+}
+
+// Handle replies to the existing review comment identified by req.InReplyTo.
+func (h *ReplyCommentHandler) Handle(ctx context.Context, req *ActionRequest) (*ActionResult, error) {
+	result := &ActionResult{
+		PRID:      req.PRID,
+		Action:    ReplyCommentCommand,
+		Timestamp: time.Now(),
+	}
+
+	if req.Body == "" {
+		result.Success = false
+		result.Error = "Body is required for reply_comment"
+		return result, nil
+	}
+	inReplyTo := req.InReplyTo
+	if inReplyTo == "" {
+		inReplyTo = req.ThreadID
+	}
+	if inReplyTo == "" {
+		result.Success = false
+		result.Error = "InReplyTo or ThreadID is required for reply_comment"
+		return result, nil
+	}
+
+	replier, ok := h.provider.(provider.CommentReplier)
+	if !ok {
+		result.Success = false
+		result.Error = "provider does not support comment replies (403 permanent)"
+		return result, nil
+	}
+
+	if err := replier.ReplyToComment(ctx, req.PRID, inReplyTo, req.Body); err != nil {
+		result.Success = false
+		result.Error = fmt.Sprintf("failed to reply to comment: %v", err)
+		return result, nil
+	}
+
+	result.Success = true
+	return result, nil
+}
+
 // isPermanentThreadError reports whether the error indicates a permanent
 // failure (thread not found / could not resolve) that should not be retried.
 // Only 404/not-found and "could not resolve" / "not resolve" errors are treated

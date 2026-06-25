@@ -147,6 +147,50 @@ func TestSubmitActionHandler_ThreadIDMappedToBody(t *testing.T) {
 	}
 }
 
+func TestSubmitActionHandler_ReplyCommentKeepsBodyAndMapsCommentID(t *testing.T) {
+	var captured *actions.ActionRequest
+	applier := &captureApplier{capture: &captured}
+	h := NewSubmitActionHandler(staticGetter(applier), testRepoLogger())
+	data, _ := json.Marshal(map[string]string{
+		"action":     "reply_comment",
+		"pr_id":      "pr-1",
+		"body":       "Reply body",
+		"comment_id": "github-review-comment-123",
+	})
+	h(context.Background(), ws.InboundMessage{ID: "reply-1", Data: data}) //nolint:errcheck
+	if captured == nil {
+		t.Fatal("expected captured action request")
+	}
+	if captured.Body != "Reply body" {
+		t.Errorf("expected Body to remain reply text, got %q", captured.Body)
+	}
+	if captured.InReplyTo != "github-review-comment-123" {
+		t.Errorf("expected InReplyTo mapped from comment_id, got %q", captured.InReplyTo)
+	}
+}
+
+func TestSubmitActionHandler_ReplyCommentKeepsThreadIDSeparateFromBody(t *testing.T) {
+	var captured *actions.ActionRequest
+	applier := &captureApplier{capture: &captured}
+	h := NewSubmitActionHandler(staticGetter(applier), testRepoLogger())
+	data, _ := json.Marshal(map[string]string{
+		"action":    "reply_comment",
+		"pr_id":     "pr-1",
+		"body":      "Reply body",
+		"thread_id": "PRRT_abc",
+	})
+	h(context.Background(), ws.InboundMessage{ID: "reply-2", Data: data}) //nolint:errcheck
+	if captured == nil {
+		t.Fatal("expected captured action request")
+	}
+	if captured.Body != "Reply body" {
+		t.Errorf("expected Body to remain reply text, got %q", captured.Body)
+	}
+	if captured.ThreadID != "PRRT_abc" {
+		t.Errorf("expected ThreadID mapped, got %q", captured.ThreadID)
+	}
+}
+
 func TestSubmitActionHandler_MissingAction(t *testing.T) {
 	h := NewSubmitActionHandler(staticGetter(&mockActionApplier{}), testRepoLogger())
 	data, _ := json.Marshal(map[string]string{"pr_id": "pr-1"})
@@ -231,4 +275,3 @@ func (c *captureApplier) ApplyAction(_ context.Context, req *actions.ActionReque
 	*c.capture = req
 	return &actions.ActionResult{PRID: req.PRID, Action: req.Action, Success: true}
 }
-

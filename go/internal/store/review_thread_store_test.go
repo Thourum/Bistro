@@ -156,3 +156,21 @@ func TestGetReviewThread_WrongPR(t *testing.T) {
 	}
 }
 
+func TestReplyTargetCommentIDForThread_PrefersRootComment(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	mustInsertPR(t, db, "pr-reply")
+	mustExec(t, db, `INSERT INTO review_threads (id, pr_id, resolved) VALUES ('PRRT_reply', 'pr-reply', 0)`)
+	mustExec(t, db, `INSERT INTO comments (id, pr_id, author, body, created_at, updated_at, kind, thread_id, in_reply_to)
+		VALUES ('github-review-comment-2', 'pr-reply', 'a', 'child', '2024-01-02', '2024-01-02', 'review', 'PRRT_reply', 'github-review-comment-1')`)
+	mustExec(t, db, `INSERT INTO comments (id, pr_id, author, body, created_at, updated_at, kind, thread_id)
+		VALUES ('github-review-comment-1', 'pr-reply', 'a', 'root', '2024-01-01', '2024-01-01', 'review', 'PRRT_reply')`)
+
+	id, err := db.ReplyTargetCommentIDForThread(ctx, "pr-reply", "PRRT_reply")
+	if err != nil {
+		t.Fatalf("ReplyTargetCommentIDForThread: %v", err)
+	}
+	if id != "github-review-comment-1" {
+		t.Fatalf("target id = %q, want root comment", id)
+	}
+}

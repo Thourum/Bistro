@@ -75,6 +75,45 @@ func (c *Client) postComment(ctx context.Context, owner, repo string, number, li
 	return nil
 }
 
+// replyToComment replies to an existing pull request review comment.
+func (c *Client) replyToComment(ctx context.Context, owner, repo string, number int, inReplyTo string, body string) error {
+	if owner == "" || repo == "" || number <= 0 {
+		return fmt.Errorf("invalid PR parameters: owner=%q, repo=%q, number=%d", owner, repo, number)
+	}
+	if body == "" {
+		return fmt.Errorf("reply body cannot be empty")
+	}
+
+	commentID := parseReviewCommentReplyID(inReplyTo)
+	if commentID <= 0 {
+		return fmt.Errorf("in_reply_to must be a review comment ID")
+	}
+
+	_, _, err := c.gh.PullRequests.CreateCommentInReplyTo(ctx, owner, repo, number, body, commentID)
+	if err != nil {
+		return fmt.Errorf("failed to reply to review comment %d on PR %s/%s#%d: %w", commentID, owner, repo, number, err)
+	}
+
+	return nil
+}
+
+// parseReviewCommentReplyID accepts the Bistro domain ID shape used in cached
+// comments and the raw numeric GitHub review-comment database ID.
+func parseReviewCommentReplyID(inReplyTo string) int64 {
+	inReplyTo = strings.TrimSpace(inReplyTo)
+	if inReplyTo == "" {
+		return 0
+	}
+	if id := restDBIDFromDomainID(inReplyTo); id > 0 {
+		return id
+	}
+	id, err := strconv.ParseInt(inReplyTo, 10, 64)
+	if err != nil || id <= 0 {
+		return 0
+	}
+	return id
+}
+
 // Approve implements provider.Provider, parsing the "github:owner/repo:number" ID format.
 func (c *Client) Approve(ctx context.Context, prID string) error {
 	owner, repo, number, err := parsePRID(prID)
@@ -103,6 +142,17 @@ func (c *Client) PostComment(ctx context.Context, prID string, line int, body st
 	}
 
 	return c.postComment(ctx, owner, repo, number, line, body)
+}
+
+// ReplyToComment implements provider.CommentReplier, parsing the
+// "github:owner/repo:number" ID format and replying to an inline review comment.
+func (c *Client) ReplyToComment(ctx context.Context, prID string, inReplyTo string, body string) error {
+	owner, repo, number, err := parsePRID(prID)
+	if err != nil {
+		return err
+	}
+
+	return c.replyToComment(ctx, owner, repo, number, inReplyTo, body)
 }
 
 // listReviews fetches all review submissions for a PR, normalized to domain types.

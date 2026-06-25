@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	gosync "sync"
@@ -366,6 +367,41 @@ func (o *Orchestrator) validateThreadPreflight(ctx context.Context, req *actions
 	return nil
 }
 
+// prepareReplyCommentTarget resolves thread-oriented reply requests to a
+// concrete GitHub review-comment ID before provider execution or queueing.
+// The UI is thread-oriented, while GitHub's REST reply endpoint requires a
+// review-comment database ID.
+func (o *Orchestrator) prepareReplyCommentTarget(ctx context.Context, req *actions.ActionRequest) *actions.ActionResult {
+	if req.Action != actions.ReplyCommentCommand || req.InReplyTo != "" || req.ThreadID == "" {
+		return nil
+	}
+	if o.store == nil {
+		return nil
+	}
+
+	targetID, err := o.store.ReplyTargetCommentIDForThread(ctx, req.PRID, req.ThreadID)
+	if err != nil {
+		return &actions.ActionResult{
+			PRID:      req.PRID,
+			Action:    req.Action,
+			Success:   false,
+			Error:     fmt.Sprintf("reply target lookup failed: %v", err),
+			Timestamp: time.Now(),
+		}
+	}
+	if targetID == "" {
+		return &actions.ActionResult{
+			PRID:      req.PRID,
+			Action:    req.Action,
+			Success:   false,
+			Error:     fmt.Sprintf("thread %s has no cached review comment target in pr %s", req.ThreadID, req.PRID),
+			Timestamp: time.Now(),
+		}
+	}
+	req.InReplyTo = targetID
+	return nil
+}
+
 // ApplyAction executes an action immediately or queues it when rate limited.
 func (o *Orchestrator) ApplyAction(ctx context.Context, req *actions.ActionRequest) *actions.ActionResult {
 	log := logging.FromContext(ctx).With(
@@ -393,6 +429,9 @@ func (o *Orchestrator) ApplyAction(ctx context.Context, req *actions.ActionReque
 	if result := o.validateThreadPreflight(ctx, req); result != nil {
 		return result
 	}
+	if result := o.prepareReplyCommentTarget(ctx, req); result != nil {
+		return result
+	}
 
 	if o.IsRateLimited() {
 		log.Info("rate limited, queueing action")
@@ -411,6 +450,21 @@ func (o *Orchestrator) ApplyAction(ctx context.Context, req *actions.ActionReque
 			}
 		}
 
+		payload := req.Body
+		if req.Action == actions.ReplyCommentCommand {
+			encoded, err := json.Marshal(actions.ReplyCommentPayload{Body: req.Body, InReplyTo: req.InReplyTo, ThreadID: req.ThreadID})
+			if err != nil {
+				return &actions.ActionResult{
+					PRID:      req.PRID,
+					Action:    req.Action,
+					Success:   false,
+					Error:     fmt.Sprintf("failed to encode reply_comment payload: %v", err),
+					Timestamp: time.Now(),
+				}
+			}
+			payload = string(encoded)
+		}
+
 		queuedAction := &store.QueuedAction{
 			// Include Body in the ID so that multiple thread actions on the same
 			// PR (e.g. resolve thread-A and resolve thread-B) get distinct rows
@@ -419,7 +473,7 @@ func (o *Orchestrator) ApplyAction(ctx context.Context, req *actions.ActionReque
 			ID:         queuedActionID(req),
 			ActionType: string(req.Action),
 			PRID:       req.PRID,
-			Payload:    req.Body,
+			Payload:    payload,
 		}
 		if o.queue != nil {
 			if err := o.queue.Enqueue(ctx, queuedAction); err != nil {
@@ -522,10 +576,30 @@ func (o *Orchestrator) executeAction(ctx context.Context, req *actions.ActionReq
 		switch req.Action {
 		case actions.ResolveThreadCommand, actions.UnresolveThreadCommand:
 			o.handleThreadActionSuccess(ctx, req, log)
+		case actions.ReplyCommentCommand:
+			o.handleReplyCommentSuccess(req)
 		}
 	}
 
 	return result
+}
+
+// handleReplyCommentSuccess emits a refresh hint after a successful reply. The
+// created GitHub comment is not synchronously written to SQLite, so consumers
+// should re-request/sync comments to observe the new reply.
+func (o *Orchestrator) handleReplyCommentSuccess(req *actions.ActionRequest) {
+	if o.emitter == nil {
+		return
+	}
+	o.emitter.Emit(&events.Event{
+		Type: "COMMENT_POSTED",
+		Data: map[string]interface{}{
+			"pr_id":       req.PRID,
+			"thread_id":   req.ThreadID,
+			"in_reply_to": req.InReplyTo,
+		},
+		Timestamp: time.Now(),
+	})
 }
 
 // handleThreadActionSuccess updates local thread state and emits a WS event
@@ -586,6 +660,10 @@ func queuedActionID(req *actions.ActionRequest) string {
 	case actions.ResolveThreadCommand, actions.UnresolveThreadCommand:
 		// Body is a thread node ID: stable, safe to use directly.
 		return req.PRID + "-" + string(req.Action) + "-" + req.Body
+	case actions.ReplyCommentCommand:
+		// Include both the target and body without leaking arbitrary user text.
+		h := sha256.Sum256([]byte(req.InReplyTo + "\x00" + req.Body))
+		return req.PRID + "-" + string(req.Action) + "-" + hex.EncodeToString(h[:8])
 	default:
 		// Hash arbitrary body text to keep the ID compact and free of raw user content.
 		h := sha256.Sum256([]byte(req.Body))
@@ -624,6 +702,20 @@ func (o *Orchestrator) ReplayQueuedActions(ctx context.Context) error {
 			PRID:   action.PRID,
 			Action: actions.ActionCommand(action.ActionType),
 			Body:   action.Payload,
+		}
+		if req.Action == actions.ReplyCommentCommand {
+			var payload actions.ReplyCommentPayload
+			if err := json.Unmarshal([]byte(action.Payload), &payload); err != nil {
+				log.Warn("replay: invalid reply_comment payload, marking failed",
+					"id", action.ID, "error", err)
+				if markErr := o.queue.MarkFailed(ctx, action.ID, err.Error(), store.MaxRetryCount); markErr != nil {
+					log.Error("failed to mark action failed after payload decode", "id", action.ID, "error", markErr)
+				}
+				continue
+			}
+			req.Body = payload.Body
+			req.InReplyTo = payload.InReplyTo
+			req.ThreadID = payload.ThreadID
 		}
 
 		// Re-validate thread ownership and state_known before executing.
@@ -926,4 +1018,3 @@ func (o *Orchestrator) syncPRList(ctx context.Context, req *SyncRequest) ([]*pro
 
 	return prs, nil
 }
-

@@ -19,6 +19,7 @@ import { Markdown } from './Markdown';
 import { type StatusKind, StatusSquare } from './StatusSquare';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { ShortcutBadge } from './ui/shortcut-badge';
 import { Textarea } from './ui/textarea';
 
 /** A flattened, ordered annotation entry used for j/k keyboard navigation. */
@@ -73,6 +74,8 @@ export interface PierreDiffViewProps {
    * discussion cards.
    */
   comments?: Comment[];
+  /** Called when a user submits a reply to an inline review thread. */
+  onThreadReply?: (threadId: string, body: string) => void;
 }
 
 interface ParsedFile {
@@ -124,6 +127,7 @@ export function PierreDiffView({
   onFilesResolved,
   threads = [],
   comments = [],
+  onThreadReply,
 }: PierreDiffViewProps) {
   const files = useMemo(() => splitUnifiedDiff(diff), [diff]);
   const [activeId, setActiveId] = useState<string | null>(files[0]?.id ?? null);
@@ -360,6 +364,7 @@ export function PierreDiffView({
             replyingInlineCommentThreadId: null,
           }));
         }}
+        {...(onThreadReply !== undefined ? { onThreadReply } : {})}
       />
     </div>
   );
@@ -427,6 +432,7 @@ interface DiffCanvasProps {
   replyingToThreadId: string | null;
   onAnnotationActivate: (key: string) => void;
   onReplyClose: () => void;
+  onThreadReply?: (threadId: string, body: string) => void;
 }
 
 /** Estimated rendered height of one diff line, used until measurement. */
@@ -452,6 +458,7 @@ function DiffCanvas({
   replyingToThreadId,
   onAnnotationActivate,
   onReplyClose,
+  onThreadReply,
 }: DiffCanvasProps) {
   const scrollRef = useRef<HTMLElement>(null);
 
@@ -571,6 +578,9 @@ function DiffCanvas({
                                 }
                               : {})}
                             onReplyClose={onReplyClose}
+                            {...(onThreadReply !== undefined
+                              ? { onThreadReply }
+                              : {})}
                           />
                         );
                       },
@@ -629,6 +639,7 @@ function ThreadAnnotationCard({
   isReplying = false,
   onActivate,
   onReplyClose,
+  onThreadReply,
 }: {
   thread: ReviewThread | undefined;
   comments: Comment[];
@@ -636,6 +647,7 @@ function ThreadAnnotationCard({
   isReplying?: boolean;
   onActivate?: () => void;
   onReplyClose?: () => void;
+  onThreadReply?: (threadId: string, body: string) => void;
 }): React.ReactElement | null {
   if (thread === undefined) return null;
   const lifecycle = threadLifecycle(thread);
@@ -652,7 +664,10 @@ function ThreadAnnotationCard({
       data-replying={isReplying ? 'true' : 'false'}
       onClick={onActivate}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') onActivate?.();
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onActivate?.();
+        }
       }}
       role={onActivate !== undefined ? 'button' : undefined}
       tabIndex={onActivate !== undefined ? 0 : undefined}
@@ -700,6 +715,7 @@ function ThreadAnnotationCard({
       {isReplying && (
         <ReplyComposer
           threadId={thread.id}
+          {...(onThreadReply !== undefined ? { onSubmit: onThreadReply } : {})}
           {...(onReplyClose !== undefined ? { onClose: onReplyClose } : {})}
         />
       )}
@@ -710,10 +726,6 @@ function ThreadAnnotationCard({
 /**
  * Compact reply composer for an inline thread.
  *
- * UI-only: no submission is wired. Shows a textarea labelled "Reply to thread"
- * and a Cancel button. Submit is rendered but disabled with a tooltip noting
- * that reply submission is not yet implemented.
- *
  * Focus contract: the textarea auto-focuses on mount (the composer mounts when
  * `Enter` triggers reply for the selected inline comment), and is explicitly
  * blurred before `onClose` runs on `Escape` so focus returns to the diff
@@ -721,12 +733,16 @@ function ThreadAnnotationCard({
  */
 function ReplyComposer({
   threadId,
+  onSubmit,
   onClose,
 }: {
   threadId: string;
+  onSubmit?: (threadId: string, body: string) => void;
   onClose?: () => void;
 }): React.ReactElement {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [body, setBody] = useState('');
+  const trimmed = body.trim();
 
   // Auto-focus the reply textarea when the composer appears.
   useEffect(() => {
@@ -738,6 +754,13 @@ function ReplyComposer({
     onClose?.();
   };
 
+  const submit = (): void => {
+    if (trimmed.length === 0 || onSubmit === undefined) return;
+    onSubmit(threadId, trimmed);
+    setBody('');
+    closeAndBlur();
+  };
+
   return (
     <div
       className="mt-2 space-y-2 border border-outline-variant/40 bg-surface p-3"
@@ -747,6 +770,10 @@ function ReplyComposer({
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation();
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+          e.preventDefault();
+          submit();
+        }
         if (e.key === 'Escape') {
           e.preventDefault();
           closeAndBlur();
@@ -763,25 +790,25 @@ function ReplyComposer({
       <Textarea
         ref={textareaRef}
         id={`reply-textarea-${threadId}`}
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
         rows={3}
         placeholder="Write a reply…"
         className="bg-surface-container text-xs"
         aria-label="Reply to thread"
       />
-      <p className="font-mono text-[9px] text-outline-variant">
-        Reply submission is not yet implemented.
-      </p>
       <div className="flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={closeAndBlur}>
           Cancel
         </Button>
         <Button
-          variant="outline"
+          variant="default"
           size="sm"
-          disabled
-          title="Reply submission is not yet implemented"
+          onClick={submit}
+          disabled={trimmed.length === 0 || onSubmit === undefined}
         >
           Reply
+          <ShortcutBadge hotkey="Mod+Enter" />
         </Button>
       </div>
     </div>

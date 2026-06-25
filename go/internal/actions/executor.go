@@ -247,6 +247,8 @@ func (ae *ActionExecutor) handlerFor(action ActionCommand) (Handler, bool) {
 		return NewRequestChangesHandler(ae.provider), true
 	case PostCommentCommand:
 		return NewPostCommentHandler(ae.provider), true
+	case ReplyCommentCommand:
+		return NewReplyCommentHandler(ae.provider), true
 	case ResolveThreadCommand:
 		return NewResolveThreadHandler(ae.provider), true
 	case UnresolveThreadCommand:
@@ -338,8 +340,9 @@ func (ae *ActionExecutor) updatePRReviewStatus(ctx context.Context, req *ActionR
 	}
 
 	// Record which SHA the current user reviewed, for the since-last-review
-	// feature (phase 2.2). All three review-action types count as a review.
-	// Thread resolve/unresolve do not constitute a "review" for SHA tracking.
+	// feature (phase 2.2). Review submissions and new top-level comments count
+	// as a review. Replies to existing threads and thread resolve/unresolve do
+	// not constitute a "review" for SHA tracking.
 	switch req.Action {
 	case ApproveCommand, RequestChangesCommand, PostCommentCommand:
 		ae.recordLastReviewedSHA(ctx, req.PRID)

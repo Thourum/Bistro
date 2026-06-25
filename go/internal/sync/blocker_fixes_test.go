@@ -3,12 +3,14 @@ package sync
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/itterno/bistro/internal/actions"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider/mock"
 	"github.com/itterno/bistro/internal/store"
 )
 
@@ -638,6 +640,92 @@ func TestApplyAction_GeneralComment_RateLimited_Queued(t *testing.T) {
 	if len(pending) != 1 {
 		t.Errorf("expected 1 queued action for general comment, got %d", len(pending))
 	}
+}
+
+func TestApplyAction_ReplyComment_RateLimited_QueuesResolvedTarget(t *testing.T) {
+	db := openTestDB(t)
+	q := store.NewActionQueue(db.DB)
+	prepareReplyThreadFixture(t, db, "github:owner/repo:3", "PRRT_reply_q", "github-review-comment-321")
+	orch := NewOrchestrator(nil, nil, db, nil).WithActionQueue(q)
+	orch.rateLimitState = &provider.RateLimitState{ResetAt: time.Now().Add(5 * time.Minute)}
+
+	result := orch.ApplyAction(context.Background(), &actions.ActionRequest{
+		PRID:     "github:owner/repo:3",
+		Action:   actions.ReplyCommentCommand,
+		Body:     "reply body",
+		ThreadID: "PRRT_reply_q",
+	})
+	if result.Success {
+		t.Error("rate-limited queue path should not return Success=true")
+	}
+
+	pending, err := q.GetPending(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("GetPending: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("expected 1 queued reply, got %d", len(pending))
+	}
+	var payload actions.ReplyCommentPayload
+	if err := json.Unmarshal([]byte(pending[0].Payload), &payload); err != nil {
+		t.Fatalf("decode queued payload: %v", err)
+	}
+	if payload.Body != "reply body" || payload.InReplyTo != "github-review-comment-321" || payload.ThreadID != "PRRT_reply_q" {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+}
+
+func TestReplayQueuedActions_ReplyComment_CallsProvider(t *testing.T) {
+	db := openTestDB(t)
+	q := store.NewActionQueue(db.DB)
+	prov := mock.NewMockProvider()
+	orch := NewOrchestrator(nil, prov, db, nil).WithActionQueue(q)
+	payload, _ := json.Marshal(actions.ReplyCommentPayload{Body: "reply body", InReplyTo: "github-review-comment-654"})
+	if err := q.Enqueue(context.Background(), &store.QueuedAction{
+		ID: "reply-queued", ActionType: string(actions.ReplyCommentCommand), PRID: "github:owner/repo:4", Payload: string(payload),
+	}); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	if err := orch.ReplayQueuedActions(context.Background()); err != nil {
+		t.Fatalf("ReplayQueuedActions: %v", err)
+	}
+	if len(prov.ReplyCalls) != 1 {
+		t.Fatalf("expected one reply call, got %d", len(prov.ReplyCalls))
+	}
+	if prov.ReplyCalls[0].InReplyTo != "github-review-comment-654" || prov.ReplyCalls[0].Body != "reply body" {
+		t.Fatalf("unexpected reply call: %+v", prov.ReplyCalls[0])
+	}
+}
+
+func TestReplayQueuedActions_ReplyComment_InvalidPayloadTerminal(t *testing.T) {
+	db := openTestDB(t)
+	q := store.NewActionQueue(db.DB)
+	orch := NewOrchestrator(nil, mock.NewMockProvider(), db, nil).WithActionQueue(q)
+	if err := q.Enqueue(context.Background(), &store.QueuedAction{
+		ID: "reply-bad-json", ActionType: string(actions.ReplyCommentCommand), PRID: "github:owner/repo:5", Payload: "{bad-json",
+	}); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	if err := orch.ReplayQueuedActions(context.Background()); err != nil {
+		t.Fatalf("ReplayQueuedActions: %v", err)
+	}
+	pending, err := q.GetPending(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("GetPending: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("invalid reply payload must be terminal, still pending: %+v", pending)
+	}
+}
+
+func prepareReplyThreadFixture(t *testing.T, db *store.DB, prID, threadID, commentID string) {
+	t.Helper()
+	insertPRForSync(t, db.DB, prID)
+	mustExecSync(t, db.DB, `INSERT INTO review_threads (id, pr_id, resolved, state_known) VALUES (?, ?, 0, 1)`, threadID, prID)
+	mustExecSync(t, db.DB, `INSERT INTO comments (id, pr_id, author, body, created_at, updated_at, kind, thread_id)
+		VALUES (?, ?, 'a', 'root', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'review', ?)`, commentID, prID, threadID)
 }
 
 // containsStr is a test helper.
