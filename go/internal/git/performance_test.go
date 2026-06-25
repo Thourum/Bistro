@@ -7,7 +7,9 @@ import (
 	"time"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 const (
@@ -23,13 +25,11 @@ const (
 	benchT3CodeRangeBaseSHA = "a3422a9bb51d73724b9b665ae0ef1fb756f753d1"
 	benchT3CodeRangeHeadSHA = "c2776c233691ad1b6b9b891a500d9eac6c6586a2"
 
-	// PR-specific fixture for targeted fetch benchmarks. These SHAs are the live
-	// base/head of pingdotgg/t3code#3548 at the time the benchmark was authored.
-	// Targeted benchmarks use this fixture so refs/pull/<N>/head resolves to the
-	// pinned head SHA instead of accidentally measuring only a base-branch fetch.
+	// PR-specific fixture for targeted fetch benchmarks. The PR head can move, so
+	// targeted benchmarks resolve refs/heads/main and refs/pull/3548/head at run
+	// time and assert the fetched private PR ref matches that live head. This
+	// keeps the benchmark measuring the PR-ref path without relying on stale SHAs.
 	benchT3CodePRNumber   = 3548
-	benchT3CodePRBaseSHA  = "31dfe3596e429725d95d31ecff396caa02a47d12"
-	benchT3CodePRHeadSHA  = "cfbdaf4b4a091baf98a6984f574cf42fb401f7df"
 	benchT3CodeBaseBranch = "main"
 	benchT3CodeDepth      = 500
 )
@@ -42,6 +42,41 @@ func benchT3CodeOpts() *CloneOptions {
 		BaseBranch: benchT3CodeBaseBranch,
 		Depth:      benchT3CodeDepth,
 	}
+}
+
+type benchT3CodePRFixture struct {
+	BaseSHA string
+	HeadSHA string
+}
+
+func benchT3CodeLivePRFixture(b *testing.B) benchT3CodePRFixture {
+	b.Helper()
+	remote := gogit.NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{benchT3CodeRepoURL},
+	})
+	refs, err := remote.List(&gogit.ListOptions{})
+	if err != nil {
+		b.Fatalf("list benchmark refs: %v", err)
+	}
+	baseRef := plumbing.ReferenceName("refs/heads/" + benchT3CodeBaseBranch)
+	prRef := plumbing.ReferenceName(fmt.Sprintf("refs/pull/%d/head", benchT3CodePRNumber))
+	fixture := benchT3CodePRFixture{}
+	for _, ref := range refs {
+		switch ref.Name() {
+		case baseRef:
+			fixture.BaseSHA = ref.Hash().String()
+		case prRef:
+			fixture.HeadSHA = ref.Hash().String()
+		}
+	}
+	if fixture.BaseSHA == "" {
+		b.Fatalf("benchmark base ref %s not found", baseRef)
+	}
+	if fixture.HeadSHA == "" {
+		b.Fatalf("benchmark PR ref %s not found", prRef)
+	}
+	return fixture
 }
 
 func BenchmarkCloneCacheHitT3Code(b *testing.B) {
@@ -132,17 +167,18 @@ func BenchmarkCloneAndGenerateDiffT3Code(b *testing.B) {
 // dir, with no warm cache. Compare against BenchmarkCloneColdMissT3Code (broad
 // Clone) to see the targeted-fetch improvement.
 func BenchmarkCloneForPRTargetedColdMissT3Code(b *testing.B) {
+	fixture := benchT3CodeLivePRFixture(b)
 	b.Setenv("BISTRO_REPO_DIR", b.TempDir())
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		client := NewClient(NewCache())
 		result, err := client.CloneForPR(context.Background(), benchT3CodeRepoURL,
-			benchT3CodePRBaseSHA, benchT3CodePRHeadSHA, benchT3CodeOpts())
+			fixture.BaseSHA, fixture.HeadSHA, benchT3CodeOpts())
 		if err != nil {
 			b.Fatalf("CloneForPR targeted: %v", err)
 		}
-		assertBenchmarkPRRefMatchesHead(b, result.LocalPath)
+		assertBenchmarkPRRefMatchesHead(b, result.LocalPath, fixture.HeadSHA)
 		if result.LocalPath == "" {
 			b.Fatal("expected clone local path")
 		}
@@ -152,18 +188,19 @@ func BenchmarkCloneForPRTargetedColdMissT3Code(b *testing.B) {
 // BenchmarkCloneForPRTargetedAndGenerateDiffT3Code measures the full disk
 // targeted path end to end: targeted shallow clone + on-disk GenerateDiff.
 func BenchmarkCloneForPRTargetedAndGenerateDiffT3Code(b *testing.B) {
+	fixture := benchT3CodeLivePRFixture(b)
 	b.Setenv("BISTRO_REPO_DIR", b.TempDir())
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		client := NewClient(NewCache())
 		result, err := client.CloneForPR(context.Background(), benchT3CodeRepoURL,
-			benchT3CodePRBaseSHA, benchT3CodePRHeadSHA, benchT3CodeOpts())
+			fixture.BaseSHA, fixture.HeadSHA, benchT3CodeOpts())
 		if err != nil {
 			b.Fatalf("CloneForPR targeted: %v", err)
 		}
-		assertBenchmarkPRRefMatchesHead(b, result.LocalPath)
-		diff, err := client.GenerateDiff(result.LocalPath, benchT3CodePRBaseSHA, benchT3CodePRHeadSHA)
+		assertBenchmarkPRRefMatchesHead(b, result.LocalPath, fixture.HeadSHA)
+		diff, err := client.GenerateDiff(result.LocalPath, fixture.BaseSHA, fixture.HeadSHA)
 		if err != nil {
 			b.Fatalf("GenerateDiff: %v", err)
 		}
@@ -178,11 +215,12 @@ func BenchmarkCloneForPRTargetedAndGenerateDiffT3Code(b *testing.B) {
 // from the in-memory object store, with no disk writes. Compare against
 // BenchmarkCloneForPRTargetedAndGenerateDiffT3Code (disk targeted + diff).
 func BenchmarkGenerateDiffForPRInMemoryT3Code(b *testing.B) {
+	fixture := benchT3CodeLivePRFixture(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		client := NewClient(NewCache())
 		diff, err := client.GenerateDiffForPRInMemory(context.Background(), benchT3CodeRepoURL,
-			benchT3CodePRBaseSHA, benchT3CodePRHeadSHA, benchT3CodeOpts())
+			fixture.BaseSHA, fixture.HeadSHA, benchT3CodeOpts())
 		if err != nil {
 			b.Fatalf("GenerateDiffForPRInMemory: %v", err)
 		}
@@ -192,7 +230,7 @@ func BenchmarkGenerateDiffForPRInMemoryT3Code(b *testing.B) {
 	}
 }
 
-func assertBenchmarkPRRefMatchesHead(b *testing.B, localPath string) {
+func assertBenchmarkPRRefMatchesHead(b *testing.B, localPath, wantHeadSHA string) {
 	b.Helper()
 	repo, err := gogit.PlainOpen(localPath)
 	if err != nil {
@@ -203,7 +241,7 @@ func assertBenchmarkPRRefMatchesHead(b *testing.B, localPath string) {
 	if err != nil {
 		b.Fatalf("targeted benchmark did not fetch PR ref %s: %v", refName, err)
 	}
-	if got, want := ref.Hash().String(), benchT3CodePRHeadSHA; got != want {
+	if got, want := ref.Hash().String(), wantHeadSHA; got != want {
 		b.Fatalf("targeted benchmark PR ref mismatch: got %s, want %s", got, want)
 	}
 }

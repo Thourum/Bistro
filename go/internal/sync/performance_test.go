@@ -22,8 +22,6 @@ const (
 	benchT3CodeOwner  = "pingdotgg"
 	benchT3CodeRepo   = "t3code"
 	benchT3CodePR     = 3548
-	benchT3CodeBase   = "31dfe3596e429725d95d31ecff396caa02a47d12"
-	benchT3CodeHead   = "cfbdaf4b4a091baf98a6984f574cf42fb401f7df"
 	benchT3CodePRID   = "github:pingdotgg/t3code:3548"
 	benchT3CodeGitURL = "https://github.com/pingdotgg/t3code.git"
 

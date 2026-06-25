@@ -158,9 +158,9 @@ Directional single-iteration live benchmark results on Apple M3 Max:
 ```text
 BenchmarkCloneColdMissT3Code                    ~45.6s   broad disk clone of range fixture
 BenchmarkCloneAndGenerateDiffT3Code             ~46.1s   broad disk clone + diff of range fixture
-BenchmarkCloneForPRTargetedColdMissT3Code        ~5.7s   disk targeted shallow fetch of PR fixture
+BenchmarkCloneForPRTargetedColdMissT3Code        ~5.2s   disk targeted shallow fetch of PR fixture
 BenchmarkCloneForPRTargetedAndGenerateDiffT3Code ~5.2s   disk targeted shallow fetch + diff of PR fixture
-BenchmarkGenerateDiffForPRInMemoryT3Code         ~4.4s   in-memory targeted fetch + diff of PR fixture
+BenchmarkGenerateDiffForPRInMemoryT3Code         ~4.3s   in-memory targeted fetch + diff of PR fixture
 ```
 
 Conclusion: targeted fetch delivers the largest current improvement (~9× vs broad clone across the t3code live fixtures). In-memory avoids APFS writes but does not yet meet the <2s goal, implying the remaining floor is likely network transfer and go-git object/diff processing. The in-memory path remains prototype/diff-only because production anchor resolution still needs a local repository path.

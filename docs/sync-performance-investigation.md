@@ -31,7 +31,7 @@ Fixtures:
 
 - Read-only repo: `https://github.com/pingdotgg/t3code`
 - Broad range fixture: base `a3422a9bb51d73724b9b665ae0ef1fb756f753d1`, head `c2776c233691ad1b6b9b891a500d9eac6c6586a2`.
-- PR-specific targeted-fetch fixture: `https://github.com/pingdotgg/t3code/pull/3548` (`size:XXL`), base `31dfe3596e429725d95d31ecff396caa02a47d12`, head `cfbdaf4b4a091baf98a6984f574cf42fb401f7df`.
+- PR-specific targeted-fetch fixture: `https://github.com/pingdotgg/t3code/pull/3548` (`size:XXL`). Because this live PR can move, targeted benchmarks resolve `refs/heads/main` and `refs/pull/3548/head` at runtime and assert the fetched private PR ref matches the live head.
 
 Safety rule: benchmarks must never create PRs, comments, replies, approvals, request-changes reviews, or any other mutation against `pingdotgg/t3code`. Future mutation tests must use only the internal fixture repo `https://github.com/Thourum/testing`, and only README changes/comments.
 
@@ -70,9 +70,9 @@ After Phase 3/4 prototype work, directional single-iteration live benchmark resu
 ```text
 BenchmarkCloneColdMissT3Code                    ~45.6s   broad disk clone of range fixture
 BenchmarkCloneAndGenerateDiffT3Code             ~46.1s   broad disk clone + diff of range fixture
-BenchmarkCloneForPRTargetedColdMissT3Code        ~5.7s   disk targeted shallow fetch of PR fixture
+BenchmarkCloneForPRTargetedColdMissT3Code        ~5.2s   disk targeted shallow fetch of PR fixture
 BenchmarkCloneForPRTargetedAndGenerateDiffT3Code ~5.2s   disk targeted shallow fetch + diff of PR fixture
-BenchmarkGenerateDiffForPRInMemoryT3Code         ~4.4s   in-memory targeted fetch + diff of PR fixture
+BenchmarkGenerateDiffForPRInMemoryT3Code         ~4.3s   in-memory targeted fetch + diff of PR fixture
 ```
 
 Interpretation of prototype results:
