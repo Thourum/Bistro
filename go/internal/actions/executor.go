@@ -340,10 +340,11 @@ func (ae *ActionExecutor) updatePRReviewStatus(ctx context.Context, req *ActionR
 	}
 
 	// Record which SHA the current user reviewed, for the since-last-review
-	// feature (phase 2.2). All three review-action types count as a review.
-	// Thread resolve/unresolve do not constitute a "review" for SHA tracking.
+	// feature (phase 2.2). Review submissions and new top-level comments count
+	// as a review. Replies to existing threads and thread resolve/unresolve do
+	// not constitute a "review" for SHA tracking.
 	switch req.Action {
-	case ApproveCommand, RequestChangesCommand, PostCommentCommand, ReplyCommentCommand:
+	case ApproveCommand, RequestChangesCommand, PostCommentCommand:
 		ae.recordLastReviewedSHA(ctx, req.PRID)
 	}
 }
