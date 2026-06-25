@@ -110,7 +110,11 @@ func (c *Client) Clone(ctx context.Context, repoURL, baseSHA, headSHA string) (*
 	}
 
 	cloneStart := time.Now()
-	repo, err := gitlib.PlainCloneContext(ctx, tmpDir, false, opts)
+	// Clone bare (no working tree): diff generation reads commit objects and
+	// trees directly via the object store, so a checkout is pure overhead —
+	// it doubles disk I/O and writes files we never open. GenerateDiff and
+	// FetchRefs both go through PlainOpen, which works against bare repos.
+	repo, err := gitlib.PlainCloneContext(ctx, tmpDir, true, opts)
 	cloneDur := time.Since(cloneStart).Milliseconds()
 	if err != nil {
 		os.RemoveAll(tmpDir)
