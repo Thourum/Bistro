@@ -61,3 +61,11 @@ type ThreadResolver interface {
 	ResolveThread(ctx context.Context, threadID string) error
 	UnresolveThread(ctx context.Context, threadID string) error
 }
+
+// CommentReplier is an optional capability for providers that support replying
+// to an existing inline review comment. The inReplyTo value is provider-specific;
+// GitHub accepts either a domain comment ID like "github-review-comment-123" or
+// the raw numeric review-comment database ID.
+type CommentReplier interface {
+	ReplyToComment(ctx context.Context, prID string, inReplyTo string, body string) error
+}

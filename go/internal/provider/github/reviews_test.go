@@ -2,7 +2,12 @@ package github
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	ghlib "github.com/google/go-github/v84/github"
 )
 
 func TestApprove(t *testing.T) {
@@ -149,5 +154,62 @@ func TestPostComment_InvalidID(t *testing.T) {
 	err := client.PostComment(ctx, "not-a-pr-id", 0, "body")
 	if err == nil {
 		t.Error("expected error for invalid PR ID, got nil")
+	}
+}
+
+func TestParseReviewCommentReplyID(t *testing.T) {
+	cases := []struct {
+		input string
+		want  int64
+	}{
+		{"github-review-comment-123", 123},
+		{"456", 456},
+		{" 789 ", 789},
+		{"PRRT_node", 0},
+		{"github-review-comment-nope", 0},
+		{"", 0},
+	}
+	for _, tc := range cases {
+		if got := parseReviewCommentReplyID(tc.input); got != tc.want {
+			t.Errorf("parseReviewCommentReplyID(%q) = %d, want %d", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestReplyToComment_CreatesGitHubReviewReply(t *testing.T) {
+	var gotPath string
+	var gotMethod string
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		buf, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		gotBody = string(buf)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"id":999,"body":"reply"}`)) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	client := NewClient("test-token")
+	ghClient := ghlib.NewClient(nil)
+	ghClient.BaseURL, _ = ghClient.BaseURL.Parse(srv.URL + "/")
+	client.gh = ghClient
+
+	err := client.ReplyToComment(context.Background(), "github:owner/repo:42", "github-review-comment-123", "Reply body")
+	if err != nil {
+		t.Fatalf("ReplyToComment failed: %v", err)
+	}
+	if gotMethod != http.MethodPost {
+		t.Errorf("method = %s, want POST", gotMethod)
+	}
+	if gotPath != "/repos/owner/repo/pulls/42/comments" {
+		t.Errorf("path = %s", gotPath)
+	}
+	if gotBody != `{"body":"Reply body","in_reply_to":123}`+"\n" {
+		t.Errorf("body = %q", gotBody)
 	}
 }

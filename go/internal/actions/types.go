@@ -13,6 +13,7 @@ const (
 	ApproveCommand         ActionCommand = "approve"
 	RequestChangesCommand  ActionCommand = "request_changes"
 	PostCommentCommand     ActionCommand = "post_comment"
+	ReplyCommentCommand    ActionCommand = "reply_comment"
 	ResolveThreadCommand   ActionCommand = "resolve_thread"
 	UnresolveThreadCommand ActionCommand = "unresolve_thread"
 )
@@ -22,13 +23,14 @@ const (
 // record on GitHub rather than updating an existing one).
 //
 //   - post_comment     → each call creates a new comment thread.
+//   - reply_comment    → each call creates a new review-thread reply.
 //   - request_changes  → each call creates a new review submission.
 //   - approve          → uses CreateReview; each call creates a new review record.
 //   - resolve_thread, unresolve_thread are idempotent: retrying them
 //     when the previous attempt is unknown is safe.
 func (a ActionCommand) isNonIdempotent() bool {
 	switch a {
-	case PostCommentCommand, RequestChangesCommand, ApproveCommand:
+	case PostCommentCommand, ReplyCommentCommand, RequestChangesCommand, ApproveCommand:
 		return true
 	}
 	return false
@@ -40,6 +42,13 @@ type ActionRequest struct {
 	Action ActionCommand // approve, request_changes, post_comment, resolve_thread, unresolve_thread
 	Body   string        // approval comment, change message, or thread node ID for resolve/unresolve
 	Line   int           // for post_comment: which line (0 = general comment)
+	// InReplyTo is the existing review-comment ID for reply_comment. GitHub accepts
+	// the cached domain ID (github-review-comment-N) or raw numeric database ID.
+	InReplyTo string
+	// ThreadID is the review-thread node ID for reply_comment requests that target
+	// a thread instead of a concrete comment. The sync orchestrator resolves it to
+	// InReplyTo before provider execution or queueing.
+	ThreadID string
 }
 
 // ResolveThreadPayload is JSON-serialised into ActionQueue.payload for
@@ -47,6 +56,14 @@ type ActionRequest struct {
 type ResolveThreadPayload struct {
 	ThreadID string `json:"thread_id"`
 	PRID     string `json:"pr_id"`
+}
+
+// ReplyCommentPayload is JSON-serialised into ActionQueue.payload for
+// reply_comment actions so replay preserves both user text and target comment.
+type ReplyCommentPayload struct {
+	Body      string `json:"body"`
+	InReplyTo string `json:"in_reply_to"`
+	ThreadID  string `json:"thread_id,omitempty"`
 }
 
 // Validate checks if ActionRequest has all required fields
@@ -69,6 +86,14 @@ func (ar *ActionRequest) Validate() error {
 			return fmt.Errorf("Body is required for post_comment")
 		}
 		return nil
+	case ReplyCommentCommand:
+		if ar.Body == "" {
+			return fmt.Errorf("Body is required for reply_comment")
+		}
+		if ar.InReplyTo == "" && ar.ThreadID == "" {
+			return fmt.Errorf("InReplyTo or ThreadID is required for reply_comment")
+		}
+		return nil
 	case ResolveThreadCommand, UnresolveThreadCommand:
 		if ar.Body == "" {
 			return fmt.Errorf("Body (thread node ID) is required for %s", ar.Action)
@@ -81,10 +106,10 @@ func (ar *ActionRequest) Validate() error {
 
 // ActionResult represents the result of an action execution
 type ActionResult struct {
-	PRID      string        // PR ID
+	PRID      string // PR ID
 	Action    ActionCommand
 	Success   bool
-	Error     string    // error message if !Success
+	Error     string // error message if !Success
 	Timestamp time.Time
 	Retries   int // number of retries before success/failure
 }

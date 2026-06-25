@@ -122,3 +122,40 @@ func TestResolveThreadCommandValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestReplyCommentCommandValidation(t *testing.T) {
+	cases := []struct {
+		name    string
+		req     ActionRequest
+		wantErr bool
+	}{
+		{
+			name:    "valid reply",
+			req:     ActionRequest{PRID: "pr1", Action: ReplyCommentCommand, Body: "reply", InReplyTo: "github-review-comment-1"},
+			wantErr: false,
+		},
+		{
+			name:    "missing body",
+			req:     ActionRequest{PRID: "pr1", Action: ReplyCommentCommand, InReplyTo: "github-review-comment-1"},
+			wantErr: true,
+		},
+		{
+			name:    "missing in reply to",
+			req:     ActionRequest{PRID: "pr1", Action: ReplyCommentCommand, Body: "reply"},
+			wantErr: true,
+		},
+		{
+			name:    "valid thread target",
+			req:     ActionRequest{PRID: "pr1", Action: ReplyCommentCommand, Body: "reply", ThreadID: "PRRT_abc"},
+			wantErr: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.req.Validate()
+			if (err != nil) != tc.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}

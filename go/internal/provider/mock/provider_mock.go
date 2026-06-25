@@ -27,6 +27,15 @@ type MockProvider struct {
 	ResolvedCalls []string
 	// UnresolvedCalls records thread IDs passed to UnresolveThread.
 	UnresolvedCalls []string
+	// ReplyCalls records reply_comment provider calls.
+	ReplyCalls []ReplyCall
+}
+
+// ReplyCall records a comment reply mutation request.
+type ReplyCall struct {
+	PRID      string
+	InReplyTo string
+	Body      string
 }
 
 // NewMockProvider creates a new mock provider with empty state.
@@ -147,6 +156,12 @@ func (m *MockProvider) PostComment(_ context.Context, _ string, _ int, _ string)
 	return m.err
 }
 
+// ReplyToComment implements provider.CommentReplier.
+func (m *MockProvider) ReplyToComment(_ context.Context, prID string, inReplyTo string, body string) error {
+	m.ReplyCalls = append(m.ReplyCalls, ReplyCall{PRID: prID, InReplyTo: inReplyTo, Body: body})
+	return m.err
+}
+
 // GetUsername returns the mock username or delegates to GetUsernameFunc if set.
 func (m *MockProvider) GetUsername(ctx context.Context) (string, error) {
 	if m.GetUsernameFunc != nil {
@@ -216,3 +231,4 @@ func (m *MockProvider) UnresolveThread(_ context.Context, threadID string) error
 // Compile-time assertions.
 var _ provider.ThreadProvider = (*MockProvider)(nil)
 var _ provider.ThreadResolver = (*MockProvider)(nil)
+var _ provider.CommentReplier = (*MockProvider)(nil)

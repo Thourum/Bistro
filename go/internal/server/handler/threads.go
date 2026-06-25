@@ -146,11 +146,13 @@ func NewSubmitActionHandler(getApplier ApplierGetter, log *slog.Logger) ws.Messa
 		}
 
 		var req struct {
-			Action   string `json:"action"`
-			PRID     string `json:"pr_id"`
-			Body     string `json:"body"`
-			ThreadID string `json:"thread_id"` // alias: thread actions use this field
-			Line     int    `json:"line"`
+			Action    string `json:"action"`
+			PRID      string `json:"pr_id"`
+			Body      string `json:"body"`
+			ThreadID  string `json:"thread_id"` // alias: resolve/unresolve actions use this field
+			CommentID string `json:"comment_id"`
+			InReplyTo string `json:"in_reply_to"`
+			Line      int    `json:"line"`
 		}
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
 			return nil, fmt.Errorf("parse SUBMIT_ACTION: %w", err)
@@ -162,17 +164,24 @@ func NewSubmitActionHandler(getApplier ApplierGetter, log *slog.Logger) ws.Messa
 			return nil, fmt.Errorf("SUBMIT_ACTION requires action")
 		}
 
-		// For thread actions, thread_id is the canonical field and takes priority.
+		// For resolve/unresolve actions, thread_id is the canonical field and takes priority.
 		body := req.Body
-		if req.ThreadID != "" {
+		if (req.Action == string(actions.ResolveThreadCommand) || req.Action == string(actions.UnresolveThreadCommand)) && req.ThreadID != "" {
 			body = req.ThreadID
 		}
 
+		inReplyTo := req.InReplyTo
+		if inReplyTo == "" {
+			inReplyTo = req.CommentID
+		}
+
 		actionReq := &actions.ActionRequest{
-			PRID:   req.PRID,
-			Action: actions.ActionCommand(req.Action),
-			Body:   body,
-			Line:   req.Line,
+			PRID:      req.PRID,
+			Action:    actions.ActionCommand(req.Action),
+			Body:      body,
+			Line:      req.Line,
+			InReplyTo: inReplyTo,
+			ThreadID:  req.ThreadID,
 		}
 
 		if err := actionReq.Validate(); err != nil {
