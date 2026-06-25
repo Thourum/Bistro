@@ -371,6 +371,19 @@ describe('binding actions', () => {
       );
     });
 
+    it('diff route → closes inline reply before navigating back', async () => {
+      const { router } = await import('../../src/renderer/router');
+      mockNavigate.mockClear();
+      const store = makeStore({
+        inlineCommentThreadIds: ['T1'],
+        activeInlineCommentThreadId: 'T1',
+        replyingInlineCommentThreadId: 'T1',
+      });
+      byId('global.escape').action(makeCtx(store, 'diff'));
+      expect(store.state.replyingInlineCommentThreadId).toBeNull();
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
+
     it('settings route → navigates to /prs (router.navigate called)', async () => {
       const { router } = await import('../../src/renderer/router');
       (router.state.location as { pathname: string }).pathname = '/settings';
@@ -387,6 +400,67 @@ describe('binding actions', () => {
       });
       byId('global.escape').action(makeCtx(store, 'list'));
       expect(store.state.confirmingAction).toBeNull();
+    });
+  });
+
+  describe('inline diff comment hotkeys', () => {
+    it('j selects the first inline comment instead of scrolling when annotations exist', () => {
+      const viewport = document.createElement('div');
+      viewport.setAttribute('data-diff-viewport', '');
+      const scrollBy = vi.fn();
+      viewport.scrollBy = scrollBy;
+      document.body.appendChild(viewport);
+      const store = makeStore({ inlineCommentThreadIds: ['T1', 'T2'] });
+
+      byId('detail.scrollDown').action(makeCtx(store, 'diff'));
+
+      expect(store.state.activeInlineCommentThreadId).toBe('T1');
+      expect(scrollBy).not.toHaveBeenCalled();
+      viewport.remove();
+    });
+
+    it('k selects the previous inline comment instead of scrolling when annotations exist', () => {
+      const viewport = document.createElement('div');
+      viewport.setAttribute('data-diff-viewport', '');
+      const scrollBy = vi.fn();
+      viewport.scrollBy = scrollBy;
+      document.body.appendChild(viewport);
+      const store = makeStore({
+        inlineCommentThreadIds: ['T1', 'T2'],
+        activeInlineCommentThreadId: 'T2',
+      });
+
+      byId('detail.scrollUp').action(makeCtx(store, 'diff'));
+
+      expect(store.state.activeInlineCommentThreadId).toBe('T1');
+      expect(scrollBy).not.toHaveBeenCalled();
+      viewport.remove();
+    });
+
+    it('j keeps existing scroll behavior when no inline annotations exist', () => {
+      const viewport = document.createElement('div');
+      viewport.setAttribute('data-diff-viewport', '');
+      const scrollBy = vi.fn();
+      viewport.scrollBy = scrollBy;
+      document.body.appendChild(viewport);
+      const store = makeStore({ inlineCommentThreadIds: [] });
+
+      byId('detail.scrollDown').action(makeCtx(store, 'diff'));
+
+      expect(store.state.activeInlineCommentThreadId).toBeNull();
+      expect(scrollBy).toHaveBeenCalledWith({ top: 40 });
+      viewport.remove();
+    });
+
+    it('Enter starts inline reply for the active diff comment', () => {
+      const store = makeStore({
+        inlineCommentThreadIds: ['T1'],
+        activeInlineCommentThreadId: 'T1',
+      });
+
+      byId('detail.inlineReply').action(makeCtx(store, 'diff'));
+
+      expect(store.state.replyingInlineCommentThreadId).toBe('T1');
     });
   });
 
@@ -492,10 +566,10 @@ describe('isActive — login bindings inactive on authed routes', () => {
 });
 
 // ---------------------------------------------------------------------------
-// NIT 3 — global.quit fires while help/search overlays are open
+// NIT 3 — global.quit fires from all app routes/overlays
 // ---------------------------------------------------------------------------
 
-describe('isActive — global.quit fires on routes AND help/search overlays', () => {
+describe('isActive — global.quit fires on routes and overlays', () => {
   const quitMac = byId('global.quit.mac');
 
   it('active on list route, no overlay', () => {
@@ -513,11 +587,23 @@ describe('isActive — global.quit fires on routes AND help/search overlays', ()
       isActive(quitMac, { routeBase: null, activeOverlay: 'search' }),
     ).toBe(true);
   });
-  it('inactive while command overlay is open', () => {
-    // command was NOT in old quit modes — keep it inactive.
+  it('active while command overlay is open', () => {
     expect(
       isActive(quitMac, { routeBase: null, activeOverlay: 'command' }),
-    ).toBe(false);
+    ).toBe(true);
+  });
+  it('active while repo picker overlay is open', () => {
+    expect(
+      isActive(quitMac, { routeBase: null, activeOverlay: 'repoPicker' }),
+    ).toBe(true);
+  });
+  it('active on login and onboarding routes', () => {
+    expect(isActive(quitMac, { routeBase: 'login', activeOverlay: null })).toBe(
+      true,
+    );
+    expect(
+      isActive(quitMac, { routeBase: 'onboarding', activeOverlay: null }),
+    ).toBe(true);
   });
 });
 

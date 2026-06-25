@@ -1,5 +1,7 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
+import { Button } from './ui/button';
+import { Textarea } from './ui/textarea';
 
 interface CommentInputProps {
   fileIndex: number;
@@ -43,33 +45,25 @@ export function CommentInput({
       className="border-t border-outline-variant bg-surface-container p-3"
       data-testid={`comment-input-file-${fileIndex}-line-${lineNumber}`}
     >
-      <div className="text-[10px] text-on-surface-variant mb-1 font-mono">
+      <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-outline">
         Comment on line {lineNumber}
       </div>
       <div className="flex flex-col gap-2">
-        <textarea
+        <Textarea
           ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Add comment (Ctrl+Enter to send, Esc to cancel)"
           rows={3}
-          className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface resize-none focus:outline-none focus:ring-1 focus:ring-primary"
         />
-        <div className="flex items-center gap-3 justify-end">
-          <button
-            onClick={onCancel}
-            className="text-xs text-on-surface-variant hover:text-on-surface transition-colors"
-          >
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onCancel}>
             Cancel
-          </button>
-          <button
-            onClick={handleSend}
-            disabled={!text.trim()}
-            className="text-xs text-primary hover:underline disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
+          </Button>
+          <Button size="sm" onClick={handleSend} disabled={!text.trim()}>
             Send
-          </button>
+          </Button>
         </div>
       </div>
     </div>

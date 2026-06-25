@@ -1,6 +1,7 @@
 import hljs from 'highlight.js/lib/core';
 import bash from 'highlight.js/lib/languages/bash';
 import css from 'highlight.js/lib/languages/css';
+import diff from 'highlight.js/lib/languages/diff';
 import go from 'highlight.js/lib/languages/go';
 import javascript from 'highlight.js/lib/languages/javascript';
 import json from 'highlight.js/lib/languages/json';
@@ -24,6 +25,24 @@ hljs.registerLanguage('yaml', yaml);
 hljs.registerLanguage('sql', sql);
 hljs.registerLanguage('markdown', markdown);
 hljs.registerLanguage('rust', rust);
+hljs.registerLanguage('diff', diff);
+
+/** Languages registered above — the single source of truth for the markdown overrides. */
+export const REGISTERED_LANGUAGES = new Set([
+  'typescript',
+  'javascript',
+  'go',
+  'python',
+  'json',
+  'css',
+  'xml',
+  'bash',
+  'yaml',
+  'sql',
+  'markdown',
+  'rust',
+  'diff',
+]);
 
 const EXTENSION_MAP: Record<string, string> = {
   '.ts': 'typescript',

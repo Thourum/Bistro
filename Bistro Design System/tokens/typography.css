@@ -1,0 +1,105 @@
+/* ============================================================================
+   BISTRO — TYPOGRAPHY TOKENS
+   Two families do all the work:
+     • Geist        — UI + display. Big headings carry tight negative tracking.
+     • JetBrains Mono — code, metadata, system chrome. UPPERCASE + wide tracking.
+   The contrast between a clean grotesque and a technical monospace IS the brand.
+   ============================================================================ */
+
+:root {
+  /* ── Families ──────────────────────────────────────────────────────────
+     Runtime-overridable in-app via --app-ui-font / --app-code-font. */
+  --font-sans: "Geist", "Geist Variable", "Inter", system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "JetBrains Mono Variable", ui-monospace,
+    "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+
+  /* App-bound runtime aliases (mirror the Electron renderer) */
+  --app-ui-font: var(--font-sans);
+  --app-code-font: var(--font-mono);
+  --app-ui-font-size: 14px;
+  --app-code-font-size: 13px;
+
+  /* ── Type scale (px) ──────────────────────────────────────────────────
+     Bistro skews small + dense. 9–12px mono chrome, 14px body, large display. */
+  --text-9: 9px;     /* footer chrome, micro-labels */
+  --text-10: 10px;   /* kbd, system bar, group hints */
+  --text-11: 11px;   /* row metadata, PR numbers */
+  --text-12: 12px;   /* mono eyebrows, line numbers */
+  --text-13: 13px;   /* code / diff body */
+  --text-14: 14px;   /* UI body, PR titles */
+  --text-16: 16px;
+  --text-18: 18px;   /* section subheads */
+  --text-20: 20px;
+  --text-24: 24px;   /* H1 in-app */
+  --text-30: 30px;
+  --text-36: 36px;
+  --text-48: 48px;   /* display */
+  --text-60: 60px;   /* page display (Settings) */
+
+  /* ── Weights ──────────────────────────────────────────────────────────── */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+  --font-weight-black: 900;
+
+  /* ── Letter spacing ───────────────────────────────────────────────────
+     Two signature extremes: tight for display, wide for mono chrome. */
+  --tracking-display: -0.05em;   /* -3px @ 60px — big Geist headings */
+  --tracking-tighter: -0.03em;
+  --tracking-tight: -0.015em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.1em;        /* mono labels */
+  --tracking-widest: 0.15em;     /* uppercase system chrome, +1.2px @ 12px */
+
+  /* ── Line heights ─────────────────────────────────────────────────────── */
+  --leading-none: 1;
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* ── Semantic roles ───────────────────────────────────────────────────── */
+  /* Display — Geist, huge, tight */
+  --type-display-font: var(--font-sans);
+  --type-display-size: var(--text-60);
+  --type-display-weight: var(--font-weight-regular);
+  --type-display-tracking: var(--tracking-display);
+  --type-display-leading: var(--leading-none);
+
+  /* Wordmark — Geist black, uppercase, tight */
+  --type-wordmark-font: var(--font-sans);
+  --type-wordmark-weight: var(--font-weight-extrabold);
+  --type-wordmark-tracking: var(--tracking-tighter);
+
+  /* Heading (in-app H1) */
+  --type-heading-font: var(--font-sans);
+  --type-heading-size: var(--text-24);
+  --type-heading-weight: var(--font-weight-bold);
+  --type-heading-tracking: var(--tracking-tight);
+
+  /* Body */
+  --type-body-font: var(--font-sans);
+  --type-body-size: var(--text-14);
+  --type-body-weight: var(--font-weight-regular);
+  --type-body-leading: var(--leading-normal);
+
+  /* Eyebrow / mono label — the connective tissue of the UI */
+  --type-eyebrow-font: var(--font-mono);
+  --type-eyebrow-size: var(--text-12);
+  --type-eyebrow-weight: var(--font-weight-regular);
+  --type-eyebrow-tracking: var(--tracking-widest);
+  --type-eyebrow-transform: uppercase;
+
+  /* Code / diff */
+  --type-code-font: var(--font-mono);
+  --type-code-size: var(--text-13);
+  --type-code-leading: var(--leading-normal);
+
+  /* Metadata (timestamps, authors, counts) */
+  --type-meta-font: var(--font-mono);
+  --type-meta-size: var(--text-11);
+  --type-meta-weight: var(--font-weight-regular);
+}

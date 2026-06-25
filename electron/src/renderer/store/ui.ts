@@ -74,6 +74,15 @@ export interface UIState {
    * own write landing) re-fetches the thread list without a full sync.
    */
   threadsRevision: number;
+  /**
+   * Ordered review-thread ids currently rendered as inline diff annotations.
+   * Set by PierreDiffView; consumed by centralized diff hotkeys.
+   */
+  inlineCommentThreadIds: string[];
+  /** Currently selected inline diff-comment thread, if any. */
+  activeInlineCommentThreadId: string | null;
+  /** Inline diff-comment thread currently showing the reply composer, if any. */
+  replyingInlineCommentThreadId: string | null;
 }
 
 export const initialUIState: UIState = {
@@ -106,6 +115,9 @@ export const initialUIState: UIState = {
   diffFileKeys: [],
   selectedPatchsetPair: null,
   threadsRevision: 0,
+  inlineCommentThreadIds: [],
+  activeInlineCommentThreadId: null,
+  replyingInlineCommentThreadId: null,
 };
 
 export function createUIStore(): Store<UIState> {

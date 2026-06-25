@@ -2,9 +2,12 @@ import { Link, useParams } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import ActionFeedback from '../components/ActionFeedback';
 import { FooterCenterSlot } from '../components/FooterSlot';
+import { Markdown } from '../components/Markdown';
 import { MergeReadinessBadge } from '../components/MergeReadinessBadge';
 import { PatchsetTimeline } from '../components/PatchsetTimeline';
+import { type StatusKind, StatusSquare } from '../components/StatusSquare';
 import { UnresolvedThreadsView } from '../components/UnresolvedThreadsView';
+import { Badge } from '../components/ui/badge';
 import { useActionDispatch } from '../hooks/useActionDispatch';
 import { usePatchsets } from '../hooks/usePatchsets';
 import { useStore } from '../hooks/useStore';
@@ -260,8 +263,28 @@ function Header({ pr, stats }: HeaderProps) {
       <div className="flex flex-wrap gap-x-8 gap-y-4 pt-2">
         <MetaCell label="Author" value={`@${pr.author}`} />
         <MetaCell label="Date" value={formatTimestamp(pr.created_at)} />
-        <MetaCell label="Source" value={<Badge>{pr.head_branch}</Badge>} />
-        <MetaCell label="Target" value={<Badge>{pr.base_branch}</Badge>} />
+        <MetaCell
+          label="Source"
+          value={
+            <Badge
+              variant="surface"
+              className="text-xs normal-case tracking-normal"
+            >
+              {pr.head_branch}
+            </Badge>
+          }
+        />
+        <MetaCell
+          label="Target"
+          value={
+            <Badge
+              variant="surface"
+              className="text-xs normal-case tracking-normal"
+            >
+              {pr.base_branch}
+            </Badge>
+          }
+        />
         <MetaCell label="Files" value={stats.filesCount} />
         <MetaCell
           label="Added"
@@ -275,14 +298,6 @@ function Header({ pr, stats }: HeaderProps) {
         />
       </div>
     </header>
-  );
-}
-
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="font-mono text-xs font-medium bg-surface-container px-2 py-0.5">
-      {children}
-    </span>
   );
 }
 
@@ -313,10 +328,8 @@ function Description({ pr }: { pr: PR }) {
   if (pr.body === null || pr.body.trim().length === 0) return null;
   return (
     <section className="max-w-3xl space-y-6">
-      <div className="border-l-2 border-primary-container pl-6 py-2">
-        <p className="text-lg leading-relaxed text-on-surface-variant font-medium whitespace-pre-wrap">
-          {pr.body}
-        </p>
+      <div className="border-l-2 border-primary/50 pl-6 py-2">
+        <Markdown body={pr.body} />
       </div>
     </section>
   );
@@ -334,23 +347,21 @@ function RecentComments({ comments }: { comments: Comment[] }) {
           {unresolved.toString().padStart(2, '0')} UNRESOLVED
         </span>
       </div>
-      <div className="space-y-4">
+      <div className="space-y-3">
         {comments.slice(0, 5).map((c) => (
           <div
             key={c.id}
-            className="p-6 bg-surface-container-lowest hover:bg-surface-container-low transition-colors duration-150 flex flex-col space-y-3"
+            className="cursor-crosshair border-l-2 border-transparent bg-surface-container-lowest p-6 transition-colors duration-150 hover:border-primary hover:bg-surface-container-low flex flex-col space-y-3"
           >
             <div className="flex justify-between items-center">
-              <span className="font-mono text-[10px] font-bold text-on-surface uppercase">
+              <span className="font-mono text-[10px] font-bold text-on-surface uppercase tracking-widest">
                 @{c.author}
               </span>
               <span className="font-mono text-[10px] text-outline">
                 {relativeTime(c.created_at)}
               </span>
             </div>
-            <p className="text-sm text-on-surface-variant font-medium leading-relaxed whitespace-pre-wrap">
-              {c.body}
-            </p>
+            <Markdown body={c.body} compact />
           </div>
         ))}
       </div>
@@ -377,7 +388,7 @@ function FileList({
         {files.map((f) => (
           <div
             key={f.path}
-            className="grid grid-cols-[1fr_auto_auto] gap-4 items-center py-2 px-3 hover:bg-surface-container-low transition-colors font-mono text-xs"
+            className="grid grid-cols-[1fr_auto_auto] gap-4 items-center py-2 px-3 cursor-crosshair border-l-2 border-transparent hover:border-primary hover:bg-surface-container-low transition-colors duration-150 font-mono text-xs"
           >
             <span className="truncate text-on-surface">{f.path}</span>
             <span className="text-primary">+{f.additions}</span>
@@ -397,6 +408,13 @@ interface StatusRailProps {
 function StatusRail({ pr, ciChecks }: StatusRailProps) {
   const ciPending = ciChecks.some((c) => c.state === 'pending');
   const ciFailed = ciChecks.some((c) => c.state === 'failure');
+  const ciKind: StatusKind = ciFailed
+    ? 'failure'
+    : ciPending
+      ? 'running'
+      : ciChecks.length > 0
+        ? 'success'
+        : 'neutral';
   const ciLabel = ciFailed
     ? 'Checks Failed'
     : ciPending
@@ -404,6 +422,12 @@ function StatusRail({ pr, ciChecks }: StatusRailProps) {
       : ciChecks.length > 0
         ? 'Checks Passing'
         : 'No CI';
+  const reviewKind: StatusKind =
+    pr.review_status === 'approved'
+      ? 'success'
+      : pr.review_status === 'changes_requested'
+        ? 'failure'
+        : 'neutral';
   const reviewLabel =
     pr.review_status === 'approved'
       ? 'Approved'
@@ -414,35 +438,23 @@ function StatusRail({ pr, ciChecks }: StatusRailProps) {
   return (
     <aside className="w-[10%] min-w-[96px] bg-surface-container-low flex flex-col border-l border-outline-variant/10">
       <div className="flex-1 flex flex-col items-center justify-center space-y-16 py-12">
-        <div className="flex flex-col items-center space-y-2">
-          <div
-            className={`w-8 h-8 border-2 flex items-center justify-center ${
-              ciFailed ? 'border-error' : 'border-primary'
-            }`}
-          >
-            <span
-              className={`material-symbols-outlined text-lg ${
-                ciFailed ? 'text-error' : 'text-primary'
-              } ${ciPending ? 'animate-spin' : ''}`}
-            >
-              {ciFailed ? 'close' : ciPending ? 'sync' : 'check'}
-            </span>
-          </div>
+        <div className="flex flex-col items-center space-y-3">
+          <StatusSquare status={ciKind} size="w-5 h-5" label={ciLabel} />
           <span
             className={`font-mono text-[9px] font-bold tracking-widest uppercase text-center px-2 ${
-              ciFailed ? 'text-error' : 'text-primary'
+              ciFailed ? 'text-error' : 'text-on-surface'
             }`}
           >
             {ciLabel}
           </span>
         </div>
 
-        <div className="flex flex-col items-center space-y-2">
-          <div className="w-8 h-8 border-2 border-outline-variant flex items-center justify-center">
-            <span className="material-symbols-outlined text-outline text-lg">
-              person
-            </span>
-          </div>
+        <div className="flex flex-col items-center space-y-3">
+          <StatusSquare
+            status={reviewKind}
+            size="w-5 h-5"
+            label={reviewLabel}
+          />
           <span className="font-mono text-[9px] font-bold tracking-widest text-outline uppercase text-center px-2">
             {reviewLabel}
           </span>

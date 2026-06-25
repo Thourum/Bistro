@@ -1,0 +1,79 @@
+<!-- @dsCard group="Components" viewport="700x430" name="Core — buttons, badges, keys" subtitle="Square primitives: Button, IconButton, Badge, StatusDot, Kbd, Avatar, Eyebrow" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>
+  body { margin: 0; padding: 28px; background: var(--color-surface); }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--color-outline); width: 78px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+  const { Button, IconButton, Badge, StatusDot, Kbd, Avatar, Eyebrow } = window.BistroDesignSystem_8e22c3;
+  function Demo() {
+    return (
+      <div>
+        <div className="row">
+          <span className="lbl">Button</span>
+          <Button variant="primary" keyHint="A">Approve</Button>
+          <Button variant="outline" icon="sync">Sync now</Button>
+          <Button variant="ghost">Cancel</Button>
+          <Button variant="danger" keyHint="R">Request changes</Button>
+          <Button variant="outline" size="sm">Small</Button>
+        </div>
+        <div className="row">
+          <span className="lbl">Icon</span>
+          <IconButton icon="search" label="Search" variant="outline" />
+          <IconButton icon="filter_alt" label="Filter" />
+          <IconButton icon="close" label="Close" />
+          <IconButton icon="rebase" label="Rebase" variant="primary" />
+        </div>
+        <div className="row">
+          <span className="lbl">Badge</span>
+          <Badge>RUST</Badge>
+          <Badge tone="primary">GROUP</Badge>
+          <Badge tone="success">APPROVED</Badge>
+          <Badge tone="danger">CHANGES REQ</Badge>
+          <Badge tone="warning">DRAFT</Badge>
+          <Badge tone="danger" variant="solid">FAILED</Badge>
+        </div>
+        <div className="row">
+          <span className="lbl">Status</span>
+          <StatusDot status="success" />
+          <StatusDot status="failure" />
+          <StatusDot status="running" />
+          <StatusDot status="unknown" />
+          <span style={{ marginLeft: 8 }}><StatusDot status="success" size={8} /></span>
+        </div>
+        <div className="row">
+          <span className="lbl">Keys</span>
+          <Kbd>?</Kbd><Kbd>J</Kbd><Kbd>K</Kbd>
+          <Kbd tone="muted">ESC</Kbd>
+          <Kbd tone="primary">⌘K</Kbd>
+        </div>
+        <div className="row">
+          <span className="lbl">Avatar</span>
+          <Avatar name="J Doe System Arch" />
+          <Avatar name="alice" tone="neutral" />
+          <Avatar name="Bistro Sync" tone="inverse" />
+        </div>
+        <div className="row">
+          <span className="lbl">Eyebrow</span>
+          <Eyebrow tone="primary">Workspace / Global</Eyebrow>
+          <Eyebrow>Files changed (12)</Eyebrow>
+        </div>
+      </div>
+    );
+  }
+  ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
+</body>
+</html>

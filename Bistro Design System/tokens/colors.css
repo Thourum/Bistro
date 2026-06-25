@@ -1,0 +1,127 @@
+/* ============================================================================
+   BISTRO — COLOR TOKENS
+   Source of truth: electron/src/renderer/styles/globals.css (@theme block).
+   A Material-3-derived role system. Light is the primary, designed theme;
+   dark is the app's "smoke palette" follow-up (functional, not yet refined).
+   ============================================================================ */
+
+:root {
+  /* ── Surface hierarchy ─────────────────────────────────────────────────
+     Bistro layers near-white planes. `surface`/`background` is the desk;
+     containers step from pure white (lowest) up through cool grays. */
+  --color-surface: #f8f9fa;
+  --color-surface-bright: #f8f9fa;
+  --color-background: #f8f9fa;
+  --color-surface-dim: #d9dadb;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f3f4f5;
+  --color-surface-container: #edeeef;
+  --color-surface-container-high: #e7e8e9;
+  --color-surface-container-highest: #e1e3e4;
+  --color-surface-variant: #e1e3e4;
+  --color-surface-tint: #0053db;
+
+  /* ── Primary — the one accent. Bistro blue. ──────────────────────────── */
+  --color-primary: #004ac6;
+  --color-primary-container: #2563eb;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #eeefff;
+  --color-primary-fixed: #dbe1ff;
+  --color-primary-fixed-dim: #b4c5ff;
+  --color-on-primary-fixed: #00174b;
+  --color-on-primary-fixed-variant: #003ea8;
+
+  /* ── Secondary — muted indigo, rarely used ───────────────────────────── */
+  --color-secondary: #495c95;
+  --color-secondary-container: #acbfff;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #394c84;
+  --color-secondary-fixed: #dbe1ff;
+  --color-secondary-fixed-dim: #b4c5ff;
+  --color-on-secondary-fixed: #00174b;
+  --color-on-secondary-fixed-variant: #31447b;
+
+  /* ── Tertiary — burnt orange, accent-of-last-resort ──────────────────── */
+  --color-tertiary: #943700;
+  --color-tertiary-container: #bc4800;
+  --color-on-tertiary: #ffffff;
+  --color-on-tertiary-container: #ffede6;
+  --color-tertiary-fixed: #ffdbcd;
+  --color-tertiary-fixed-dim: #ffb596;
+  --color-on-tertiary-fixed: #360f00;
+  --color-on-tertiary-fixed-variant: #7d2d00;
+
+  /* ── Outline / on-surface (text + borders) ───────────────────────────── */
+  --color-outline: #737686;          /* metadata text, mono labels */
+  --color-outline-variant: #c3c6d7;  /* hairline borders, dividers */
+  --color-on-surface: #191c1d;       /* primary text, near-black */
+  --color-on-surface-variant: #434655; /* secondary text */
+  --color-on-background: #191c1d;
+
+  /* ── Error ────────────────────────────────────────────────────────────── */
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+
+  /* ── Inverse (tooltips / line-focus chip) ────────────────────────────── */
+  --color-inverse-surface: #2e3132;
+  --color-inverse-on-surface: #f0f1f2;
+  --color-inverse-primary: #b4c5ff;
+
+  /* ── Status / functional signals ──────────────────────────────────────
+     Color is used ONLY functionally in Bistro: CI dots, diff gutters,
+     review state. Squares, never decorative. */
+  --color-success: #22c55e;        /* CI pass / green dot (Tailwind green-500) */
+  --color-success-strong: #22863a; /* approved text */
+  --color-warning: #eab308;        /* CI running / pending (Tailwind yellow-500) */
+  --color-danger: #ba1a1a;         /* CI fail / changes requested (== error) */
+  --color-neutral-dot: #c3c6d7;    /* unknown / idle (== outline-variant) */
+
+  /* Diff surfaces (from the Minimal Light diff view) */
+  --color-diff-add-bg: #e6ffec;        /* added line background */
+  --color-diff-add-text: #22863a;      /* added code / +N counter */
+  --color-diff-remove-bg: #ffebe9;     /* removed line background */
+  --color-diff-remove-text: #d73a49;   /* removed code / -N counter */
+  --color-diff-add-gutter: #ccffd8;
+  --color-diff-remove-gutter: #ffd7d5;
+}
+
+/* ── Dark "smoke" palette — toggled via .dark on <html> ──────────────────
+   Minimal high-contrast overrides. A full dark design is a follow-up pass. */
+html.dark,
+.dark {
+  --color-surface: #0a0a0a;
+  --color-surface-bright: #111111;
+  --color-background: #0a0a0a;
+  --color-surface-dim: #050505;
+  --color-surface-container-lowest: #000000;
+  --color-surface-container-low: #0f0f0f;
+  --color-surface-container: #151515;
+  --color-surface-container-high: #1c1c1c;
+  --color-surface-container-highest: #242424;
+  --color-surface-variant: #242424;
+
+  --color-on-surface: #fafafa;
+  --color-on-surface-variant: #c0c0c0;
+  --color-on-background: #fafafa;
+
+  --color-outline: #6b6b6b;
+  --color-outline-variant: #333333;
+
+  --color-primary: #7aa4ff;
+  --color-primary-container: #3b82f6;
+  --color-on-primary: #000000;
+  --color-on-primary-container: #eaf0ff;
+
+  --color-error: #ff6e6e;
+  --color-on-error: #000000;
+  --color-error-container: #5a1a1a;
+  --color-on-error-container: #ffdad6;
+
+  --color-inverse-surface: #f0f1f2;
+  --color-inverse-on-surface: #191c1d;
+
+  --color-diff-add-bg: #12261a;
+  --color-diff-remove-bg: #2d1416;
+}

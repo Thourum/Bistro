@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./highlight.css";
 
 /* Dark mode enabled via the `dark` class on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));

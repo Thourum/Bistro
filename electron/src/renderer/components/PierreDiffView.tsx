@@ -1,14 +1,45 @@
-import { PatchDiff } from '@pierre/diffs/react';
+import { type DiffLineAnnotation, PatchDiff } from '@pierre/diffs/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AppSettings } from '../../types/settings';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import {
+  type Comment,
+  type ReviewThread,
+  type ThreadLifecycle,
+  threadLifecycle,
+} from '../types';
+import {
   buildFileKeys,
   type DiffFileIdentity,
   findFileByKey,
 } from '../utils/diffFileKey';
+import { Markdown } from './Markdown';
+import { type StatusKind, StatusSquare } from './StatusSquare';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Textarea } from './ui/textarea';
+
+/** A flattened, ordered annotation entry used for j/k keyboard navigation. */
+interface AnnotationEntry {
+  /** Unique key = thread id. */
+  key: string;
+  threadId: string;
+  /** Index of the owning file in the `files` array — for scroll-to-file. */
+  fileIndex: number;
+  fileId: string;
+  line: number;
+}
+
+function sameIds(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+}
+
+function hasCurrentInlineAnchor(thread: ReviewThread): boolean {
+  return thread.line > 0 && thread.state_known && !thread.outdated;
+}
 
 export interface PierreDiffViewProps {
   /** Full unified-diff string (`diff --git …` separated). */
@@ -31,6 +62,17 @@ export interface PierreDiffViewProps {
    * `store.diffFileKeys` so n/p keybindings can navigate by key.
    */
   onFilesResolved?: (canonicalKeys: string[]) => void;
+  /**
+   * Review threads for the PR. When provided together with `comments`,
+   * inline annotation cards are rendered in the diff canvas at each thread's
+   * line position (additions side).
+   */
+  threads?: ReviewThread[];
+  /**
+   * All PR comments. Joined to `threads` by `thread_id` to build per-thread
+   * discussion cards.
+   */
+  comments?: Comment[];
 }
 
 interface ParsedFile {
@@ -68,8 +110,11 @@ interface ParsedFile {
  * unified-diff payload using the 25/75 split layout from
  * `diff_view_minimal_light/code.html`.
  *
- * Inline comments are intentionally NOT wired this pass (see `renderAnnotation`
- * omitted below) — we'll re-enable them once we have `actionId`-based keybinds.
+ * Inline thread annotations are rendered via `PatchDiff`'s `lineAnnotations` /
+ * `renderAnnotation` API. Each `ReviewThread` whose `file_path` matches the
+ * current file is placed on the `additions` side at `thread.line`. Comments
+ * whose `thread_id` matches the thread are joined and rendered in a compact
+ * card.
  */
 export function PierreDiffView({
   diff,
@@ -77,12 +122,109 @@ export function PierreDiffView({
   findQuery = '',
   selectedFileKey,
   onFilesResolved,
+  threads = [],
+  comments = [],
 }: PierreDiffViewProps) {
   const files = useMemo(() => splitUnifiedDiff(diff), [diff]);
   const [activeId, setActiveId] = useState<string | null>(files[0]?.id ?? null);
   // Registered by DiffCanvas so nav clicks can jump the virtualized list.
   const scrollToFileRef = useRef<(id: string) => void>(() => undefined);
   const selectedFileIndex = useStore(appStore, (s) => s.selectedFileIndex);
+
+  // ── Inline annotation hotkey state ───────────────────────────────
+  // Centralized keybindings own j/k/Enter/Escape. PierreDiffView publishes the
+  // ordered inline-thread ids and renders the selected/replying state.
+  const activeAnnotationKey = useStore(
+    appStore,
+    (s) => s.activeInlineCommentThreadId,
+  );
+  const replyingToThreadId = useStore(
+    appStore,
+    (s) => s.replyingInlineCommentThreadId,
+  );
+
+  /**
+   * Flat ordered annotation list: file order → line number → thread id.
+   * Used by j/k navigation to move between all threads in the diff.
+   */
+  const orderedAnnotations = useMemo<AnnotationEntry[]>(() => {
+    const entries: AnnotationEntry[] = [];
+    files.forEach((file, fileIndex) => {
+      const fileThreads = threads
+        .filter((t) => t.file_path === file.path && hasCurrentInlineAnchor(t))
+        .sort((a, b) => a.line - b.line || a.id.localeCompare(b.id));
+      for (const t of fileThreads) {
+        entries.push({
+          key: t.id,
+          threadId: t.id,
+          fileIndex,
+          fileId: file.id,
+          line: t.line,
+        });
+      }
+    });
+    return entries;
+  }, [files, threads]);
+
+  // Publish ordered annotation ids to the central hotkey layer. When the list
+  // shrinks, clear stale selected/replying ids.
+  useEffect(() => {
+    const ids = orderedAnnotations.map((entry) => entry.key);
+    appStore.setState((s) => {
+      const activeStillValid =
+        s.activeInlineCommentThreadId !== null &&
+        ids.includes(s.activeInlineCommentThreadId);
+      const replyingStillValid =
+        s.replyingInlineCommentThreadId !== null &&
+        ids.includes(s.replyingInlineCommentThreadId);
+      if (
+        sameIds(s.inlineCommentThreadIds, ids) &&
+        (s.activeInlineCommentThreadId === null || activeStillValid) &&
+        (s.replyingInlineCommentThreadId === null || replyingStillValid)
+      ) {
+        return s;
+      }
+      return {
+        ...s,
+        inlineCommentThreadIds: ids,
+        activeInlineCommentThreadId: activeStillValid
+          ? s.activeInlineCommentThreadId
+          : null,
+        replyingInlineCommentThreadId: replyingStillValid
+          ? s.replyingInlineCommentThreadId
+          : null,
+      };
+    });
+  }, [orderedAnnotations]);
+
+  useEffect(() => {
+    return () => {
+      appStore.setState((s) => ({
+        ...s,
+        inlineCommentThreadIds: [],
+        activeInlineCommentThreadId: null,
+        replyingInlineCommentThreadId: null,
+      }));
+    };
+  }, []);
+
+  // Scroll the active annotation card into view whenever it changes.
+  useEffect(() => {
+    if (activeAnnotationKey === null) return;
+    const entry = orderedAnnotations.find((e) => e.key === activeAnnotationKey);
+    if (entry === undefined) return;
+    // First, make sure the file containing the annotation is scrolled into view.
+    scrollToFileRef.current(entry.fileId);
+    // Then scroll the card itself into view. The DOM element may not be mounted
+    // yet if the virtualizer hasn't caught up, so we defer one frame.
+    const raf = requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(
+        `[data-annotation-key="${CSS.escape(activeAnnotationKey)}"]`,
+      );
+      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [activeAnnotationKey, orderedAnnotations]);
 
   useEffect(() => {
     if (files.length === 0) {
@@ -163,6 +305,18 @@ export function PierreDiffView({
     return files.filter((f) => f.path.toLowerCase().includes(q));
   }, [files, findQuery]);
 
+  // Group comments by thread_id for O(1) lookup in DiffCanvas.
+  const commentsByThread = useMemo(() => {
+    const map = new Map<string, Comment[]>();
+    for (const c of comments) {
+      if (c.thread_id === undefined) continue;
+      const bucket = map.get(c.thread_id);
+      if (bucket === undefined) map.set(c.thread_id, [c]);
+      else bucket.push(c);
+    }
+    return map;
+  }, [comments]);
+
   if (files.length === 0) {
     return (
       <div className="w-full h-full flex items-center justify-center text-outline font-mono text-xs uppercase tracking-widest">
@@ -189,6 +343,22 @@ export function PierreDiffView({
         onActiveChange={handleActiveChange}
         registerScrollTo={(fn) => {
           scrollToFileRef.current = fn;
+        }}
+        threads={threads}
+        commentsByThread={commentsByThread}
+        activeAnnotationKey={activeAnnotationKey}
+        replyingToThreadId={replyingToThreadId}
+        onAnnotationActivate={(threadId) => {
+          appStore.setState((s) => ({
+            ...s,
+            activeInlineCommentThreadId: threadId,
+          }));
+        }}
+        onReplyClose={() => {
+          appStore.setState((s) => ({
+            ...s,
+            replyingInlineCommentThreadId: null,
+          }));
         }}
       />
     </div>
@@ -217,10 +387,10 @@ function FileNav({ files, activeId, onSelect, totalCount }: FileNavProps) {
                 key={f.id}
                 type="button"
                 onClick={() => onSelect(f.id)}
-                className={`w-full flex items-center gap-2 px-2 py-1.5 text-left transition-colors ${
+                className={`w-full flex items-center gap-2 px-2 py-1.5 text-left cursor-crosshair transition-colors duration-150 ${
                   isActive
                     ? 'bg-surface-container-lowest text-primary border-l-2 border-primary'
-                    : 'hover:bg-surface-container-highest/50 text-on-surface border-l-2 border-transparent'
+                    : 'hover:bg-surface-container-highest/50 text-on-surface border-l-2 border-transparent hover:border-primary/40'
                 }`}
               >
                 <span
@@ -251,6 +421,12 @@ interface DiffCanvasProps {
   theme: AppSettings['appearance']['theme'];
   onActiveChange: (id: string) => void;
   registerScrollTo: (fn: (id: string) => void) => void;
+  threads: ReviewThread[];
+  commentsByThread: Map<string, Comment[]>;
+  activeAnnotationKey: string | null;
+  replyingToThreadId: string | null;
+  onAnnotationActivate: (key: string) => void;
+  onReplyClose: () => void;
 }
 
 /** Estimated rendered height of one diff line, used until measurement. */
@@ -270,6 +446,12 @@ function DiffCanvas({
   theme: _theme,
   onActiveChange,
   registerScrollTo,
+  threads,
+  commentsByThread,
+  activeAnnotationKey,
+  replyingToThreadId,
+  onAnnotationActivate,
+  onReplyClose,
 }: DiffCanvasProps) {
   const scrollRef = useRef<HTMLElement>(null);
 
@@ -323,6 +505,19 @@ function DiffCanvas({
         {virtualItems.map((virtualRow) => {
           const file = files[virtualRow.index];
           if (file === undefined) return null;
+          // Build per-file line annotations from threads whose file_path
+          // matches this file. Placed on the additions side (new-file line
+          // numbers) — old-side line info is not yet available.
+          const fileAnnotations: DiffLineAnnotation<ReviewThread>[] = threads
+            .filter(
+              (t) => t.file_path === file.path && hasCurrentInlineAnchor(t),
+            )
+            .map((t) => ({
+              side: 'additions' as const,
+              lineNumber: t.line,
+              metadata: t,
+            }));
+
           return (
             <div
               key={virtualRow.key}
@@ -353,12 +548,243 @@ function DiffCanvas({
                 patch={file.patch}
                 disableWorkerPool
                 className="block w-full"
+                {...(fileAnnotations.length > 0
+                  ? {
+                      lineAnnotations: fileAnnotations,
+                      renderAnnotation: (
+                        annotation: DiffLineAnnotation<ReviewThread>,
+                      ) => {
+                        const tid = annotation.metadata?.id;
+                        return (
+                          <ThreadAnnotationCard
+                            thread={annotation.metadata}
+                            comments={
+                              tid !== undefined
+                                ? (commentsByThread.get(tid) ?? [])
+                                : []
+                            }
+                            isActive={tid === activeAnnotationKey}
+                            isReplying={tid === replyingToThreadId}
+                            {...(tid !== undefined
+                              ? {
+                                  onActivate: () => onAnnotationActivate(tid),
+                                }
+                              : {})}
+                            onReplyClose={onReplyClose}
+                          />
+                        );
+                      },
+                    }
+                  : {})}
               />
             </div>
           );
         })}
       </div>
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inline thread annotation card
+// ---------------------------------------------------------------------------
+
+const LIFECYCLE_VARIANT: Record<
+  ThreadLifecycle,
+  'open' | 'resolved' | 'outdated' | 'unknown'
+> = {
+  open: 'open',
+  resolved: 'resolved',
+  outdated: 'outdated',
+  unknown: 'unknown',
+};
+
+const LIFECYCLE_SQUARE: Record<ThreadLifecycle, StatusKind> = {
+  open: 'running',
+  resolved: 'success',
+  outdated: 'neutral',
+  unknown: 'neutral',
+};
+
+const LIFECYCLE_LABEL: Record<ThreadLifecycle, string> = {
+  open: 'Open',
+  resolved: 'Resolved',
+  outdated: 'Outdated',
+  unknown: 'Unknown',
+};
+
+/**
+ * Compact annotation card rendered inline in the diff canvas below a thread's
+ * anchor line. Resolved and outdated threads are visually dimmed so the
+ * reviewer's eye is drawn to open threads first.
+ *
+ * Keyboard navigation (j/k) highlights the active card with a primary border.
+ * When `isReplying` is true a compact reply composer is shown; cancel (Escape
+ * or Cancel button) calls `onReplyClose`.
+ */
+function ThreadAnnotationCard({
+  thread,
+  comments,
+  isActive = false,
+  isReplying = false,
+  onActivate,
+  onReplyClose,
+}: {
+  thread: ReviewThread | undefined;
+  comments: Comment[];
+  isActive?: boolean;
+  isReplying?: boolean;
+  onActivate?: () => void;
+  onReplyClose?: () => void;
+}): React.ReactElement | null {
+  if (thread === undefined) return null;
+  const lifecycle = threadLifecycle(thread);
+  const isDimmed =
+    !isActive && (lifecycle === 'resolved' || lifecycle === 'outdated');
+
+  return (
+    <div
+      // data-annotation-key is used to scroll the active card into view.
+      data-annotation-key={thread.id}
+      data-testid="thread-annotation-card"
+      data-thread-id={thread.id}
+      data-active={isActive ? 'true' : 'false'}
+      data-replying={isReplying ? 'true' : 'false'}
+      onClick={onActivate}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onActivate?.();
+      }}
+      role={onActivate !== undefined ? 'button' : undefined}
+      tabIndex={onActivate !== undefined ? 0 : undefined}
+      className={`border-l-2 bg-surface-container-low px-3 py-2 space-y-2 text-[11px] transition-colors duration-150 ${
+        isActive
+          ? 'border-primary bg-surface-container'
+          : 'border-outline-variant/30'
+      } ${isDimmed ? 'opacity-50' : ''} ${onActivate !== undefined ? 'cursor-crosshair' : ''}`}
+    >
+      {/* Header: lifecycle badge + file:line */}
+      <div className="flex items-center gap-2">
+        <Badge variant={LIFECYCLE_VARIANT[lifecycle]}>
+          <StatusSquare
+            status={LIFECYCLE_SQUARE[lifecycle]}
+            size="w-2 h-2"
+            label={LIFECYCLE_LABEL[lifecycle]}
+          />
+          {LIFECYCLE_LABEL[lifecycle]}
+        </Badge>
+        <span className="font-mono text-[10px] text-outline truncate">
+          {thread.file_path}
+          <span className="text-outline-variant">:{thread.line}</span>
+        </span>
+      </div>
+
+      {/* Discussion */}
+      {comments.length > 0 ? (
+        <ol className="space-y-2 pl-2 border-l border-outline-variant/20">
+          {comments.map((c) => (
+            <li key={c.id} className="space-y-0.5 list-none">
+              <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface">
+                @{c.author}
+              </span>
+              <Markdown body={c.body} compact />
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="font-mono text-[10px] text-outline-variant pl-2">
+          No comment text available for this thread.
+        </p>
+      )}
+
+      {/* Reply composer — shown only when isReplying */}
+      {isReplying && (
+        <ReplyComposer
+          threadId={thread.id}
+          {...(onReplyClose !== undefined ? { onClose: onReplyClose } : {})}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Compact reply composer for an inline thread.
+ *
+ * UI-only: no submission is wired. Shows a textarea labelled "Reply to thread"
+ * and a Cancel button. Submit is rendered but disabled with a tooltip noting
+ * that reply submission is not yet implemented.
+ *
+ * Focus contract: the textarea auto-focuses on mount (the composer mounts when
+ * `Enter` triggers reply for the selected inline comment), and is explicitly
+ * blurred before `onClose` runs on `Escape` so focus returns to the diff
+ * canvas rather than lingering on a removed node.
+ */
+function ReplyComposer({
+  threadId,
+  onClose,
+}: {
+  threadId: string;
+  onClose?: () => void;
+}): React.ReactElement {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-focus the reply textarea when the composer appears.
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  const closeAndBlur = (): void => {
+    textareaRef.current?.blur();
+    onClose?.();
+  };
+
+  return (
+    <div
+      className="mt-2 space-y-2 border border-outline-variant/40 bg-surface p-3"
+      data-testid="reply-composer"
+      data-thread-id={threadId}
+      // Prevent click-on-composer from bubbling to the card's onActivate.
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closeAndBlur();
+        }
+      }}
+      role="presentation"
+    >
+      <label
+        className="font-mono text-[9px] font-bold uppercase tracking-widest text-outline"
+        htmlFor={`reply-textarea-${threadId}`}
+      >
+        Reply to thread
+      </label>
+      <Textarea
+        ref={textareaRef}
+        id={`reply-textarea-${threadId}`}
+        rows={3}
+        placeholder="Write a reply…"
+        className="bg-surface-container text-xs"
+        aria-label="Reply to thread"
+      />
+      <p className="font-mono text-[9px] text-outline-variant">
+        Reply submission is not yet implemented.
+      </p>
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={closeAndBlur}>
+          Cancel
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled
+          title="Reply submission is not yet implemented"
+        >
+          Reply
+        </Button>
+      </div>
+    </div>
   );
 }
 

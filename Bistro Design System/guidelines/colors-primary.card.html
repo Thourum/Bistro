@@ -1,0 +1,24 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Primary — Bistro blue" subtitle="The single accent. Used functionally, never decoratively." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 20px; background: var(--color-surface); }
+  .ramp { display: flex; gap: 0; border: 1px solid var(--color-outline-variant); }
+  .sw { flex: 1; height: 88px; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; box-sizing: border-box; }
+  .nm { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .hex { font-family: var(--font-mono); font-size: 10px; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="ramp">
+  <div class="sw" style="background:var(--color-on-primary-container)"><span class="nm" style="color:var(--color-primary)">container</span><span class="hex" style="color:var(--color-primary)">#EEEFFF</span></div>
+  <div class="sw" style="background:var(--color-primary-container)"><span class="nm" style="color:#fff">prim-cont</span><span class="hex" style="color:#fff">#2563EB</span></div>
+  <div class="sw" style="background:var(--color-primary)"><span class="nm" style="color:#fff">primary</span><span class="hex" style="color:#fff">#004AC6</span></div>
+  <div class="sw" style="background:var(--color-on-primary-fixed-variant)"><span class="nm" style="color:#fff">fixed-var</span><span class="hex" style="color:#fff">#003EA8</span></div>
+  <div class="sw" style="background:var(--color-on-primary-fixed)"><span class="nm" style="color:#fff">on-fixed</span><span class="hex" style="color:#fff">#00174B</span></div>
+</div>
+</body>
+</html>

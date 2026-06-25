@@ -1,0 +1,37 @@
+/* ============================================================================
+   BISTRO — RADIUS & ELEVATION TOKENS
+   Two hard rules of the brand:
+     1. ZERO-RADIUS ARCHITECTURE — every corner is square. No exceptions.
+     2. NEAR-FLAT ELEVATION — one whisper-soft ambient shadow, used sparingly.
+        Depth comes from the surface-container ladder + 1px hairlines, not shadow.
+   ============================================================================ */
+
+:root {
+  /* ── Radius — all zero, by design ─────────────────────────────────────── */
+  --radius-none: 0px;
+  --radius: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-full: 0px;
+
+  /* ── Shadow ───────────────────────────────────────────────────────────
+     The single elevation in the system. Floats menus / command palette a hair
+     above the desk. Everything else is flat. */
+  --shadow-none: none;
+  --shadow-ambient: 0 10px 30px rgba(25, 28, 29, 0.04);
+  --shadow-overlay: 0 10px 30px rgba(25, 28, 29, 0.04); /* command palette, dialogs */
+
+  /* ── Focus ring ───────────────────────────────────────────────────────
+     2px primary, offset. Never removed — keyboard-first means focus is sacred. */
+  --focus-ring-width: 2px;
+  --focus-ring-color: var(--color-primary);
+  --focus-ring-offset: 2px;
+
+  /* ── Backdrop ─────────────────────────────────────────────────────────
+     Command palette blurs the app behind it instead of dimming it. */
+  --backdrop-blur: 20px;
+  --backdrop-dialog: rgba(0, 0, 0, 0.6);
+}

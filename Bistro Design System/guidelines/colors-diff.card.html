@@ -1,0 +1,27 @@
+<!-- @dsCard group="Colors" viewport="700x170" name="Diff palette" subtitle="Added / removed line surfaces and code colors from the diff view." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 0; background: var(--color-surface-container-lowest); }
+  .diff { font-family: var(--font-mono); font-size: 13px; line-height: 26px; border: 1px solid var(--color-outline-variant); }
+  .ln { display: grid; grid-template-columns: 48px 48px 1fr; }
+  .g { text-align: center; color: var(--color-outline-variant); user-select: none; }
+  .c { padding-left: 12px; white-space: pre; }
+  .add { background: var(--color-diff-add-bg); }
+  .rem { background: var(--color-diff-remove-bg); }
+  .mk-add { color: var(--color-diff-add-text); }
+  .mk-rem { color: var(--color-diff-remove-text); }
+</style>
+</head>
+<body>
+<div class="diff">
+  <div class="ln"><span class="g">42</span><span class="g">42</span><code class="c">  log::info!("Starting Kernel…");</code></div>
+  <div class="ln rem"><span class="g" style="background:var(--color-diff-remove-gutter)"></span><span class="g">43</span><code class="c"><span class="mk-rem">- </span>self.status = EngineStatus::Initializing;</code></div>
+  <div class="ln add"><span class="g">43</span><span class="g" style="background:var(--color-diff-add-gutter)"></span><code class="c"><span class="mk-add">+ </span>self.set_state(EngineStatus::Initializing)?;</code></div>
+  <div class="ln add"><span class="g">44</span><span class="g" style="background:var(--color-diff-add-gutter)"></span><code class="c"><span class="mk-add">+ </span>self.verify_integrity_hash()?;</code></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,265 @@
+<!-- @dsCard group="Bistro App" viewport="1440x860" name="Bistro — keyboard-first PR client" subtitle="Interactive: login → inbox → PR overview → diff → settings, with command palette (:) and help (?)" -->
+<!-- @startingPoint section="Bistro App" subtitle="Full keyboard-first code-review client" viewport="1440x860" -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bistro — PR Client</title>
+    <link rel="icon" type="image/svg" href="../../assets/bistro-mark.svg" />
+    <link rel="stylesheet" href="../../styles.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--color-surface);
+      }
+      #root {
+        height: 100vh;
+      }
+      .app-shell {
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+      .app-body {
+        flex: 1;
+        min-height: 0;
+        position: relative;
+      }
+    </style>
+    <script
+      crossorigin
+      src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"
+    ></script>
+    <script
+      crossorigin
+      src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"
+    ></script>
+    <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+    <script src="../../_ds_bundle.js"></script>
+    <script src="data.js"></script>
+    <script type="text/babel" src="LoginScreen.jsx"></script>
+    <script type="text/babel" src="InboxScreen.jsx"></script>
+    <script type="text/babel" src="OverviewScreen.jsx"></script>
+    <script type="text/babel" src="DiffScreen.jsx"></script>
+    <script type="text/babel" src="SettingsScreen.jsx"></script>
+    <script type="text/babel" src="Overlays.jsx"></script>
+    <script type="text/babel">
+      const { SystemBar, Toolbar, Eyebrow, IconButton, Button } =
+        window.BistroDesignSystem_8e22c3;
+
+      const LEGENDS = {
+        inbox: [
+          { key: "J/K", label: "Navigate" },
+          { key: "Space", label: "Toggle fold" },
+          { key: "Enter", label: "View PR" },
+          { key: ":", label: "Command" },
+        ],
+        overview: [
+          { key: "Space", label: "View diff" },
+          { key: "A A", label: "Approve" },
+          { key: "Esc", label: "Back" },
+        ],
+        diff: [
+          { key: "H J K L", label: "Scroll" },
+          { key: "N/P", label: "File" },
+          { key: "C", label: "Comment" },
+          { key: "Esc", label: "Back" },
+        ],
+        settings: [
+          { key: "↑ ↓", label: "Navigate" },
+          { key: "Esc", label: "Back" },
+        ],
+      };
+
+      function App() {
+        const [screen, setScreen] = React.useState("login"); // login | inbox | overview | diff | settings
+        const [overlay, setOverlay] = React.useState(null); // null | command | help
+        const [toast, setToast] = React.useState(null);
+        const persistKey = "bistro-kit-screen";
+
+        React.useEffect(() => {
+          const saved = sessionStorage.getItem(persistKey);
+          if (saved) setScreen(saved);
+        }, []);
+        React.useEffect(() => {
+          sessionStorage.setItem(persistKey, screen);
+        }, [screen]);
+
+        const showToast = (msg, tone = "success") => {
+          setToast({ msg, tone });
+          setTimeout(() => setToast(null), 2200);
+        };
+
+        React.useEffect(() => {
+          const onKey = (e) => {
+            if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")
+              return;
+            if (screen === "login") return;
+            if (
+              e.key === ":" ||
+              (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey))
+            ) {
+              e.preventDefault();
+              setOverlay((o) => (o === "command" ? null : "command"));
+            } else if (e.key === "?") {
+              e.preventDefault();
+              setOverlay((o) => (o === "help" ? null : "help"));
+            } else if (e.key === "Escape") {
+              if (overlay) setOverlay(null);
+              else if (screen === "diff") setScreen("overview");
+              else if (screen === "overview" || screen === "settings")
+                setScreen("inbox");
+            } else if (overlay) return;
+            else if (e.key === " " && screen === "overview") {
+              e.preventDefault();
+              setScreen("diff");
+            } else if (
+              e.key.toLowerCase() === "a" &&
+              (screen === "overview" || screen === "diff")
+            ) {
+              showToast("PR approved.");
+            }
+          };
+          window.addEventListener("keydown", onKey);
+          return () => window.removeEventListener("keydown", onKey);
+        }, [screen, overlay]);
+
+        const runCommand = (id) => {
+          setOverlay(null);
+          if (id === "settings") setScreen("settings");
+          else if (id === "help") setOverlay("help");
+          else if (id === "focus-list") setScreen("inbox");
+          else if (id === "sync") showToast("Syncing watched repos…", "info");
+          else if (id === "clear") showToast("Filters cleared.", "info");
+        };
+
+        if (screen === "login") {
+          return (
+            <div className="app-shell">
+              <window.LoginScreen onLogin={() => setScreen("inbox")} />
+            </div>
+          );
+        }
+
+        const TopBar = () => {
+          if (screen === "inbox") return null;
+          const titles = {
+            overview: (
+              <Eyebrow tone="primary">
+                PR-{window.BistroData.pr.number} //{" "}
+                {window.BistroData.pr.source} → {window.BistroData.pr.target}
+              </Eyebrow>
+            ),
+            diff: (
+              <Eyebrow tone="primary">
+                merge: {window.BistroData.pr.source} →{" "}
+                {window.BistroData.pr.target}
+              </Eyebrow>
+            ),
+            settings: <Eyebrow>Settings // Workspace</Eyebrow>,
+          };
+          return (
+            <Toolbar
+              leading={
+                <IconButton
+                  icon="arrow_back"
+                  label="Back"
+                  onClick={() =>
+                    setScreen(screen === "diff" ? "overview" : "inbox")
+                  }
+                />
+              }
+              trailing={
+                screen === "diff" || screen === "overview" ? (
+                  <>
+                    <Button variant="ghost" size="sm" keyHint="C">
+                      Comment
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      keyHint="A"
+                      onClick={() => showToast("PR approved.")}
+                    >
+                      Approve
+                    </Button>
+                  </>
+                ) : (
+                  <Eyebrow style={{ fontSize: 10 }}>⌘, to open</Eyebrow>
+                )
+              }
+            >
+              {titles[screen]}
+            </Toolbar>
+          );
+        };
+
+        const screens = {
+          inbox: <window.InboxScreen onOpenPR={() => setScreen("overview")} />,
+          overview: (
+            <window.OverviewScreen onViewDiff={() => setScreen("diff")} />
+          ),
+          diff: <window.DiffScreen />,
+          settings: <window.SettingsScreen />,
+        };
+
+        return (
+          <div className="app-shell">
+            <TopBar />
+            <div className="app-body">
+              {screens[screen]}
+              {overlay === "command" && (
+                <window.CommandPalette
+                  onClose={() => setOverlay(null)}
+                  onCommand={runCommand}
+                />
+              )}
+              {overlay === "help" && (
+                <window.HelpOverlay onClose={() => setOverlay(null)} />
+              )}
+              {toast && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: 24,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    zIndex: 60,
+                  }}
+                >
+                  {React.createElement(window.BistroDesignSystem_8e22c3.Toast, {
+                    message: toast.msg,
+                    tone: toast.tone,
+                  })}
+                </div>
+              )}
+            </div>
+            <SystemBar
+              legend={LEGENDS[screen] || LEGENDS.inbox}
+              center={
+                overlay ? (
+                  <Eyebrow style={{ fontSize: 10 }}>
+                    {overlay === "command" ? "Command Palette" : "Help"}
+                  </Eyebrow>
+                ) : null
+              }
+              status="System_Status: Operational"
+              version="V.01"
+              statusTone="success"
+            />
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

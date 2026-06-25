@@ -32,7 +32,7 @@ export function AuthedRouteShell(): React.ReactElement {
   }, []);
 
   return (
-    <div className="w-full h-screen flex flex-col bg-surface text-on-surface">
+    <div className="flex h-full w-full flex-col bg-surface text-on-surface">
       <div className="flex-1 min-h-0 flex flex-col">
         <Outlet />
       </div>

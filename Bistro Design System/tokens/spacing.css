@@ -1,0 +1,41 @@
+/* ============================================================================
+   BISTRO — SPACING & SIZING TOKENS
+   4px base grid (Tailwind heritage). Bistro is dense: rows breathe on 12–16px,
+   not 24–32px. Whitespace separates concepts; it is never decorative.
+   ============================================================================ */
+
+:root {
+  --space-0: 0px;
+  --space-px: 1px;
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-3: 12px;   /* row vertical padding */
+  --space-4: 16px;   /* row horizontal padding, default gap */
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;  /* section gaps in settings/marketing */
+  --space-20: 80px;  /* page padding (settings main content) */
+  --space-24: 96px;
+
+  /* ── Fixed chrome heights (the app's structural rhythm) ───────────────── */
+  --size-system-bar: 32px;   /* footer system bar, h-8 */
+  --size-command-input: 56px; /* command palette search header, h-14 */
+  --size-input: 36px;         /* form input height, h-9 */
+  --size-row: 48px;           /* PR row */
+  --size-dot: 12px;           /* CI status square, w-3 h-3 */
+  --size-dot-sm: 8px;         /* footer status dot, w-2 h-2 */
+
+  /* ── Hairlines / borders ──────────────────────────────────────────────── */
+  --border-width: 1px;
+  --border-width-accent: 2px;  /* left-accent on selected rows */
+
+  /* ── Layout maxima ────────────────────────────────────────────────────── */
+  --layout-content-max: 1152px; /* settings / docs column */
+  --layout-sidebar: 224px;      /* status sidebar, w-56 */
+  --layout-file-nav: 268px;     /* diff file navigator */
+}

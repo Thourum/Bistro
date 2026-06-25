@@ -1,6 +1,9 @@
 import type React from 'react';
 import { useState } from 'react';
 import type { Comment } from '../types';
+import { Markdown } from './Markdown';
+import { Button } from './ui/button';
+import { Textarea } from './ui/textarea';
 
 interface CommentThreadProps {
   comments: Comment[];
@@ -44,9 +47,9 @@ export function CommentThread({
   };
 
   return (
-    <div className="border-l-2 border-primary/30 ml-4 bg-surface-container rounded-sm">
+    <div className="ml-4 border-l-2 border-primary/40 bg-surface-container-low">
       <div
-        className="flex items-center gap-2 px-3 py-1 cursor-pointer select-none text-xs text-on-surface-variant hover:text-on-surface"
+        className="flex cursor-crosshair select-none items-center gap-2 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-outline transition-colors duration-150 hover:text-on-surface"
         onClick={() => setIsCollapsed((prev) => !prev)}
         role="button"
         aria-expanded={!isCollapsed}
@@ -67,85 +70,91 @@ export function CommentThread({
             return (
               <div
                 key={comment.id}
-                className="px-3 py-2 border-t border-outline-variant/30 text-sm"
+                className="border-t border-outline-variant/30 px-3 py-2.5 text-sm"
               >
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-xs text-on-surface">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface">
                       @{comment.author}
                     </span>
-                    <span className="text-[10px] text-on-surface-variant">
+                    <span className="font-mono text-[10px] text-outline">
                       {new Date(comment.created_at).toLocaleDateString()}
                     </span>
                   </div>
                   {isAuthor && !isEditing && (
                     <div className="flex items-center gap-1">
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto px-1.5 py-0.5 normal-case tracking-widest hover:text-on-surface"
                         onClick={() => {
                           setEditingId(comment.id);
                           setEditText(comment.body);
                         }}
-                        className="text-[10px] text-on-surface-variant hover:text-on-surface transition-colors"
                       >
                         edit
-                      </button>
+                      </Button>
                       {onDelete != null && (
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto px-1.5 py-0.5 normal-case tracking-widest text-error hover:text-error hover:underline"
                           onClick={() => onDelete(comment.id)}
-                          className="text-[10px] text-error hover:underline transition-colors"
                         >
                           delete
-                        </button>
+                        </Button>
                       )}
                     </div>
                   )}
                 </div>
 
                 {isEditing ? (
-                  <div className="flex flex-col gap-1">
-                    <textarea
+                  <div className="flex flex-col gap-2">
+                    <Textarea
                       value={editText}
                       onChange={(e) => setEditText(e.target.value)}
-                      className="w-full text-xs bg-surface border border-outline-variant rounded px-2 py-1 text-on-surface resize-none"
+                      className="text-xs"
                       rows={2}
                     />
                     <div className="flex gap-2">
-                      <button
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto px-0"
                         onClick={() => handleEditSubmit(comment.id)}
                         disabled={!editText.trim()}
-                        className="text-[10px] text-primary hover:underline disabled:opacity-50"
                       >
                         Save
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto px-0 hover:text-on-surface"
                         onClick={() => {
                           setEditingId(null);
                           setEditText('');
                         }}
-                        className="text-[10px] text-on-surface-variant hover:text-on-surface"
                       >
                         Cancel
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ) : (
-                  <p className="text-on-surface text-xs leading-relaxed">
-                    {comment.body}
-                  </p>
+                  <Markdown body={comment.body} compact />
                 )}
               </div>
             );
           })}
 
           {onReply != null && (
-            <div className="px-3 py-2 border-t border-outline-variant/30">
+            <div className="border-t border-outline-variant/30 px-3 py-2">
               {showReply ? (
-                <div className="flex flex-col gap-1">
-                  <textarea
+                <div className="flex flex-col gap-2">
+                  <Textarea
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
-                    placeholder="Write a reply..."
-                    className="w-full text-xs bg-surface border border-outline-variant rounded px-2 py-1 text-on-surface resize-none"
+                    placeholder="Write a reply…"
+                    className="text-xs"
                     rows={2}
                     onKeyDown={(e) => {
                       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -159,31 +168,37 @@ export function CommentThread({
                     }}
                   />
                   <div className="flex gap-2">
-                    <button
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto px-0"
                       onClick={handleReplySubmit}
                       disabled={!replyText.trim()}
-                      className="text-[10px] text-primary hover:underline disabled:opacity-50"
                     >
                       Reply
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto px-0 hover:text-on-surface"
                       onClick={() => {
                         setShowReply(false);
                         setReplyText('');
                       }}
-                      className="text-[10px] text-on-surface-variant hover:text-on-surface"
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : (
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-0 hover:text-primary"
                   onClick={() => setShowReply(true)}
-                  className="text-[10px] text-on-surface-variant hover:text-primary transition-colors"
                 >
                   Reply...
-                </button>
+                </Button>
               )}
             </div>
           )}

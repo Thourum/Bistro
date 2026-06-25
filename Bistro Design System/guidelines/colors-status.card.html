@@ -1,0 +1,24 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Status signals" subtitle="Functional only. Hard squares — never circles, never decorative." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 22px; background: var(--color-surface-container-lowest); }
+  .row { display: flex; gap: 28px; flex-wrap: wrap; }
+  .item { display: flex; align-items: center; gap: 10px; }
+  .sq { width: 16px; height: 16px; }
+  .nm { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-on-surface); }
+  .hex { font-family: var(--font-mono); font-size: 9px; color: var(--color-outline); display:block; }
+</style>
+</head>
+<body>
+<div class="row">
+  <div class="item"><span class="sq" style="background:var(--color-success)"></span><span class="nm">Success<span class="hex">#22C55E · CI pass</span></span></div>
+  <div class="item"><span class="sq" style="background:var(--color-warning)"></span><span class="nm">Running<span class="hex">#EAB308 · CI pending</span></span></div>
+  <div class="item"><span class="sq" style="background:var(--color-danger)"></span><span class="nm">Failed<span class="hex">#BA1A1A · changes req</span></span></div>
+  <div class="item"><span class="sq" style="background:var(--color-neutral-dot)"></span><span class="nm">Unknown<span class="hex">#C3C6D7 · idle</span></span></div>
+</div>
+</body>
+</html>

@@ -14,6 +14,7 @@ import { useStore } from '../hooks/useStore';
 import { OverlayProvider, useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
+import { AppTitleBar } from './AppTitleBar';
 import ToastContainer from './ToastContainer';
 
 /** Registers hotkeys. Lives inside OverlayProvider. */
@@ -45,12 +46,15 @@ function ConfirmingActionOverlayBridge(): null {
 
 function RootShellInner(): React.ReactElement {
   return (
-    <>
+    <div className="flex h-screen flex-col bg-surface text-on-surface">
       <HotkeyRegistrar />
       <ConfirmingActionOverlayBridge />
-      <Outlet />
+      <AppTitleBar />
+      <div className="min-h-0 flex-1">
+        <Outlet />
+      </div>
       <ToastContainer />
-    </>
+    </div>
   );
 }
 

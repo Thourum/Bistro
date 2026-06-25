@@ -6,6 +6,10 @@ import {
   fontChoiceId,
   UI_FONT_CHOICES,
 } from '../../types/settings';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Kbd } from '../components/ui/kbd';
+import { Switch } from '../components/ui/switch';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { PROVIDERS } from '../providers';
@@ -332,14 +336,16 @@ function NumberPicker({ label, min, max, value, onChange }: NumberPickerProps) {
         {label}
       </label>
       <div className="flex items-center">
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label={`Decrease ${label}`}
           onClick={() => onChange(clamp(value - 1))}
-          className="w-10 h-10 border border-outline-variant hover:bg-surface-container-low transition-colors font-mono"
+          className="h-10 w-10 border-outline-variant"
         >
           −
-        </button>
-        <input
+        </Button>
+        <Input
           id={inputId}
           type="number"
           min={min}
@@ -349,15 +355,17 @@ function NumberPicker({ label, min, max, value, onChange }: NumberPickerProps) {
             const n = Number.parseInt(e.target.value, 10);
             if (!Number.isNaN(n)) onChange(clamp(n));
           }}
-          className="w-full h-10 border-y border-outline-variant bg-surface text-center font-mono text-sm focus:outline-none focus:border-primary"
+          className="h-10 border-x-0 border-y-outline-variant text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label={`Increase ${label}`}
           onClick={() => onChange(clamp(value + 1))}
-          className="w-10 h-10 border border-outline-variant hover:bg-surface-container-low transition-colors font-mono"
+          className="h-10 w-10 border-outline-variant"
         >
           +
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -386,15 +394,16 @@ function KeyboardSection() {
     <Section id="keyboard" title="Keyboard">
       <p className="font-mono text-[11px] text-on-surface-variant tracking-wide">
         Rebinding UI is coming in the next release. Until then, edit{' '}
-        <button
-          type="button"
+        <Button
+          variant="link"
+          size="sm"
           onClick={() => {
             void openSettingsFile();
           }}
-          className="underline text-primary hover:opacity-80"
+          className="h-auto px-0 py-0 align-baseline normal-case tracking-normal"
         >
           settings.json
-        </button>{' '}
+        </Button>{' '}
         directly under the <code>keybindings</code> key.
       </p>
       <div className="space-y-8">
@@ -415,12 +424,12 @@ function KeyboardSection() {
                   <div className="flex items-center gap-1 shrink-0">
                     {(isSequenceBinding(b) ? b.keys : [b.keys as string]).map(
                       (k, j) => (
-                        <kbd
+                        <Kbd
                           key={`${k}-${j}`}
-                          className="px-2 py-0.5 text-[10px] font-mono font-bold bg-surface-container-high text-on-surface border border-outline-variant/40"
+                          className="px-2 text-[10px] font-bold text-on-surface"
                         >
                           {formatForDisplay(k)}
-                        </kbd>
+                        </Kbd>
                       ),
                     )}
                   </div>
@@ -486,22 +495,23 @@ function ConnectionsSection() {
                 </div>
               </div>
               {isConnected ? (
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => handleDisconnect(provider.id)}
-                  className="font-mono text-[10px] border border-outline px-5 py-2.5 hover:bg-slate-900 hover:text-white transition-colors uppercase tracking-widest"
+                  className="px-5"
                 >
                   Disconnect
-                </button>
+                </Button>
               ) : (
-                <button
-                  type="button"
+                <Button
+                  size="sm"
                   disabled={authLoading}
                   onClick={() => handleConnect(provider.id)}
-                  className="font-mono text-[10px] bg-primary text-primary-foreground px-5 py-2.5 hover:opacity-90 disabled:opacity-50 transition-opacity uppercase tracking-widest"
+                  className="px-5"
                 >
                   Connect
-                </button>
+                </Button>
               )}
             </div>
           );
@@ -561,26 +571,26 @@ function AdvancedSection() {
   return (
     <Section id="advanced" title="Advanced">
       <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={() => {
             void openSettingsFile();
           }}
-          className="font-mono text-[11px] uppercase tracking-widest px-5 py-3 bg-surface-container-high hover:bg-surface-container-highest transition-colors"
+          className="px-5 py-3"
         >
           Open settings.json
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="destructive"
           onClick={() => {
             if (window.confirm('Reset all settings to defaults?') === true) {
               void resetSettings();
             }
           }}
-          className="font-mono text-[11px] uppercase tracking-widest px-5 py-3 border border-error/50 text-error hover:bg-error/10 transition-colors"
+          className="px-5 py-3"
         >
           Reset to Defaults
-        </button>
+        </Button>
       </div>
     </Section>
   );
@@ -636,21 +646,7 @@ function RowToggle({
           {description}
         </p>
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={on}
-        onClick={() => onChange(!on)}
-        className={`relative w-12 h-6 flex items-center p-1 transition-colors ${
-          on ? 'bg-primary' : 'bg-outline-variant'
-        }`}
-      >
-        <div
-          className={`w-4 h-4 bg-white transition-transform ${
-            on ? 'ml-auto' : ''
-          }`}
-        />
-      </button>
+      <Switch checked={on} onCheckedChange={onChange} aria-label={title} />
     </div>
   );
 }
@@ -684,21 +680,25 @@ function RowStepper({
         </p>
       </div>
       <div className="flex items-center border border-outline-variant font-mono text-sm">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`Decrease ${title}`}
           onClick={() => onChange(clamp(value - step))}
-          className="w-8 h-8 hover:bg-surface-container-low"
+          className="h-8 w-8"
         >
           −
-        </button>
+        </Button>
         <span className="px-3 min-w-[3rem] text-center">{value}</span>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`Increase ${title}`}
           onClick={() => onChange(clamp(value + step))}
-          className="w-8 h-8 hover:bg-surface-container-low"
+          className="h-8 w-8"
         >
           +
-        </button>
+        </Button>
       </div>
     </div>
   );

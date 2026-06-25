@@ -1,0 +1,23 @@
+<!-- @dsCard group="Spacing" viewport="700x190" name="Structural rhythm" subtitle="Fixed chrome heights that give the app its skeleton." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 22px; background: var(--color-surface); }
+  .stack { border: 1px solid var(--color-outline-variant); background: var(--color-surface-container-lowest); }
+  .seg { display: flex; align-items: center; padding: 0 14px; border-bottom: 1px solid var(--color-outline-variant); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-outline); }
+  .seg:last-child { border-bottom: none; }
+  .v { margin-left: auto; color: var(--color-primary); }
+</style>
+</head>
+<body>
+<div class="stack">
+  <div class="seg" style="height:56px">Command input — size-command-input<span class="v">56px</span></div>
+  <div class="seg" style="height:48px">PR row — size-row<span class="v">48px</span></div>
+  <div class="seg" style="height:36px">Input / button — size-input<span class="v">36px</span></div>
+  <div class="seg" style="height:32px">System bar — size-system-bar<span class="v">32px</span></div>
+</div>
+</body>
+</html>

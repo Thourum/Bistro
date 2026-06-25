@@ -1,10 +1,14 @@
-'use client';
-
 import * as CheckboxPrimitive from '@radix-ui/react-checkbox';
 import { cn } from '@renderer/lib/utils';
-import { Check } from 'lucide-react';
 import * as React from 'react';
 
+/**
+ * Bistro-branded Checkbox primitive (shadcn base, restyled).
+ *
+ * Zero radius, 1px hairline, primary fill when checked. The check glyph is a
+ * Material Symbol (`check`) rather than a Lucide SVG — the brand's icon system
+ * is Material Symbols Outlined.
+ */
 const Checkbox = React.forwardRef<
   React.ElementRef<typeof CheckboxPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root>
@@ -12,7 +16,7 @@ const Checkbox = React.forwardRef<
   <CheckboxPrimitive.Root
     ref={ref}
     className={cn(
-      'grid place-content-center peer h-4 w-4 shrink-0 rounded-sm border border-primary ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground',
+      'peer grid h-4 w-4 shrink-0 place-content-center rounded-none border border-outline-variant transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-on-primary',
       className,
     )}
     {...props}
@@ -20,7 +24,9 @@ const Checkbox = React.forwardRef<
     <CheckboxPrimitive.Indicator
       className={cn('grid place-content-center text-current')}
     >
-      <Check className="h-4 w-4" />
+      <span className="material-symbols-outlined text-[14px] leading-none">
+        check
+      </span>
     </CheckboxPrimitive.Indicator>
   </CheckboxPrimitive.Root>
 ));
