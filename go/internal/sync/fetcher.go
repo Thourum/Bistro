@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	gosync "sync"
 	"time"
 
@@ -15,6 +16,27 @@ import (
 // perPRFetchTimeout caps how long the detail fetch (comments, reviews, CI,
 // diff) may take for a single PR before it is abandoned with an error.
 const perPRFetchTimeout = 2 * time.Minute
+
+// slowSubstepThresholdMs is the per-PR substep duration (comments, reviews,
+// threads, CI, clone, diff, anchor) above which a normally-Debug timing record
+// is escalated to Warn so unusually slow steps surface in ordinary runs.
+const slowSubstepThresholdMs = 5000
+
+// logSubstep emits a per-PR substep timing record. It stays at Debug for
+// ordinary durations and escalates to Warn once duration_ms crosses
+// slowSubstepThresholdMs, so a slow comments/CI/clone/diff step is visible
+// without enabling Debug logging globally. attrs are appended after the
+// standard duration_ms field.
+func logSubstep(log *slog.Logger, msg string, durMs int64, attrs ...any) {
+	all := make([]any, 0, len(attrs)+2)
+	all = append(all, "duration_ms", durMs)
+	all = append(all, attrs...)
+	if durMs >= slowSubstepThresholdMs {
+		log.Warn(msg+" (slow)", all...)
+		return
+	}
+	log.Debug(msg, all...)
+}
 
 // PRFetchResult holds the fetched data for a single PR, including any
 // per-PR error encountered during concurrent fetching.
@@ -79,6 +101,7 @@ func (o *Orchestrator) FetchPRDetails(
 				"pr_number", prCopy.Number,
 				"pr_id", prCopy.ID,
 				"pr_state", prCopy.State,
+				"pr_base_sha", truncateSHA(prCopy.BaseSHA),
 				"pr_head_sha", truncateSHA(prCopy.HeadSHA),
 			)
 			// Hard ceiling per PR so one stuck fetch can never wedge the
@@ -105,9 +128,8 @@ func (o *Orchestrator) FetchPRDetails(
 					)
 				} else {
 					result.Comments = comments
-					prLog.Debug("pr comments fetched",
+					logSubstep(prLog, "pr comments fetched", subDur,
 						"count", len(comments),
-						"duration_ms", subDur,
 					)
 				}
 			}
@@ -129,10 +151,9 @@ func (o *Orchestrator) FetchPRDetails(
 					prCopy.ReviewStatus = status
 					prCopy.ApprovedBy = approvedBy
 					prCopy.ChangesRequestedBy = changesBy
-					prLog.Debug("pr reviews fetched",
+					logSubstep(prLog, "pr reviews fetched", subDur,
 						"count", len(reviews),
 						"review_status", status,
-						"duration_ms", subDur,
 					)
 				}
 			}
@@ -151,8 +172,8 @@ func (o *Orchestrator) FetchPRDetails(
 							"duration_ms", subDur, "error", threadErr)
 					} else {
 						result.Threads = threads
-						prLog.Debug("pr review threads fetched",
-							"count", len(threads), "duration_ms", subDur)
+						logSubstep(prLog, "pr review threads fetched", subDur,
+							"count", len(threads))
 					}
 				}
 			}
@@ -173,9 +194,8 @@ func (o *Orchestrator) FetchPRDetails(
 					if ci != nil {
 						status = ci.Status
 					}
-					prLog.Debug("pr ci fetched",
+					logSubstep(prLog, "pr ci fetched", subDur,
 						"status", status,
-						"duration_ms", subDur,
 					)
 				}
 			}
@@ -193,10 +213,14 @@ func (o *Orchestrator) FetchPRDetails(
 						"error", cloneErr,
 					)
 				} else {
-					prLog.Debug("repo cloned",
-						"local_path", cloneResult.LocalPath,
-						"duration_ms", cloneDur,
-					)
+					if cloneDur >= slowSubstepThresholdMs {
+						prLog.Warn("repo clone slow", "duration_ms", cloneDur)
+					} else {
+						prLog.Debug("repo cloned",
+							"local_path", cloneResult.LocalPath,
+							"duration_ms", cloneDur,
+						)
+					}
 					// NOTE: do NOT remove cloneResult.LocalPath here. The git
 					// Client owns this directory via its process-lifetime cache
 					// (keyed on base+head SHA) and reuses it across sync cycles
@@ -215,10 +239,9 @@ func (o *Orchestrator) FetchPRDetails(
 						)
 					} else if diffResult != nil {
 						result.DiffSize = diffResult.Size
-						prLog.Debug("pr diff generated",
+						logSubstep(prLog, "pr diff generated", diffDur,
 							"bytes", diffResult.Size,
 							"files", len(diffResult.Files),
-							"duration_ms", diffDur,
 						)
 
 						// Build DiffFiles to be persisted atomically with the PR row
@@ -247,9 +270,9 @@ func (o *Orchestrator) FetchPRDetails(
 								prCopy.ID, cloneResult.LocalPath, prCopy.HeadSHA, prCopy.BaseSHA,
 								prLog,
 							)
-							prLog.Debug("anchor resolution complete",
+							logSubstep(prLog, "anchor resolution complete",
+								time.Since(anchorStart).Milliseconds(),
 								"anchored", len(result.AnchorUpdates),
-								"duration_ms", time.Since(anchorStart).Milliseconds(),
 							)
 						}
 					}
