@@ -183,7 +183,7 @@ export interface PRDetail extends PR {
  * A PR action in progress.
  */
 export interface PendingAction {
-  type: 'approve' | 'request_changes' | 'post_comment';
+  type: 'approve' | 'request_changes' | 'post_comment' | 'reply_comment';
   prId: string;
   startedAt: number;
 }
@@ -192,7 +192,7 @@ export interface PendingAction {
  * Result of a completed PR action.
  */
 export interface ActionResult {
-  type: 'approve' | 'request_changes' | 'post_comment';
+  type: 'approve' | 'request_changes' | 'post_comment' | 'reply_comment';
   prId: string;
   success: boolean;
   message: string;

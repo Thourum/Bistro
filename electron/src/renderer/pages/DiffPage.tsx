@@ -19,6 +19,7 @@ import { PierreDiffView } from '../components/PierreDiffView';
 import { RangeDiffView } from '../components/RangeDiffView';
 import { StatusSquare } from '../components/StatusSquare';
 import { addToast } from '../components/ToastContainer';
+import { useActionDispatch } from '../hooks/useActionDispatch';
 import { useMarkFileViewed } from '../hooks/useMarkFileViewed';
 import { type RangeDiffRequest, useRangeDiff } from '../hooks/useRangeDiff';
 import { useReviewThreads } from '../hooks/useReviewThreads';
@@ -66,6 +67,10 @@ export function DiffPage() {
     appStore,
     (s: UIState) => s.selectedPatchsetPair,
   );
+  const commentsRevision = useStore(
+    appStore,
+    (s: UIState) => s.commentsRevision,
+  );
 
   const theme = useStore(settingsStore, (s) => s.appearance.theme);
 
@@ -74,6 +79,7 @@ export function DiffPage() {
   const pr = allPRs.find((p) => p.id === prId);
 
   const { request } = useWebSocket();
+  const { dispatchReplyComment } = useActionDispatch(pr?.id);
   const { markViewed } = useMarkFileViewed();
 
   const [diff, setDiff] = useState<string>('');
@@ -131,6 +137,7 @@ export function DiffPage() {
   // Fetch comments for inline thread annotations (full diff surface only).
   useEffect(() => {
     if (pr === undefined) return;
+    log.debug({ commentsRevision }, 'fetching comments for diff annotations');
     request('REQUEST_COMMENTS', { pr_id: pr.id })
       .then((data) => {
         const payload = data as { comments?: Comment[] };
@@ -139,7 +146,7 @@ export function DiffPage() {
       .catch((err: unknown) => {
         log.warn({ err }, 'failed to fetch comments for diff annotations');
       });
-  }, [pr, request]);
+  }, [pr, request, commentsRevision]);
 
   // Clear stale diffFileKeys whenever the target PR changes.
   // This prevents keybindings from using keys from a previous PR's diff.
@@ -292,6 +299,9 @@ export function DiffPage() {
             onFilesResolved={handleFilesResolved}
             threads={threads}
             comments={comments}
+            onThreadReply={(threadId, body) => {
+              dispatchReplyComment(body, { threadId });
+            }}
           />
         )}
       </div>

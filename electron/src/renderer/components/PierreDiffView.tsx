@@ -1,25 +1,26 @@
-import { type DiffLineAnnotation, PatchDiff } from '@pierre/diffs/react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { AppSettings } from '../../types/settings';
-import { useStore } from '../hooks/useStore';
-import { appStore } from '../store';
+import { type DiffLineAnnotation, PatchDiff } from "@pierre/diffs/react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { AppSettings } from "../../types/settings";
+import { useStore } from "../hooks/useStore";
+import { appStore } from "../store";
 import {
   type Comment,
   type ReviewThread,
   type ThreadLifecycle,
   threadLifecycle,
-} from '../types';
+} from "../types";
 import {
   buildFileKeys,
   type DiffFileIdentity,
   findFileByKey,
-} from '../utils/diffFileKey';
-import { Markdown } from './Markdown';
-import { type StatusKind, StatusSquare } from './StatusSquare';
-import { Badge } from './ui/badge';
-import { Button } from './ui/button';
-import { Textarea } from './ui/textarea';
+} from "../utils/diffFileKey";
+import { Markdown } from "./Markdown";
+import { type StatusKind, StatusSquare } from "./StatusSquare";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { ShortcutBadge } from "./ui/shortcut-badge";
+import { Textarea } from "./ui/textarea";
 
 /** A flattened, ordered annotation entry used for j/k keyboard navigation. */
 interface AnnotationEntry {
@@ -46,7 +47,7 @@ export interface PierreDiffViewProps {
   diff: string;
   /** Current theme; currently unused but we thread it through so the
    *  component can re-render when the user flips modes. */
-  theme: AppSettings['appearance']['theme'];
+  theme: AppSettings["appearance"]["theme"];
   /** Optional find query used to narrow the file list. Diff-canvas
    *  find-in-content is deferred to a later pass. */
   findQuery?: string;
@@ -73,6 +74,8 @@ export interface PierreDiffViewProps {
    * discussion cards.
    */
   comments?: Comment[];
+  /** Called when a user submits a reply to an inline review thread. */
+  onThreadReply?: (threadId: string, body: string) => void;
 }
 
 interface ParsedFile {
@@ -119,11 +122,12 @@ interface ParsedFile {
 export function PierreDiffView({
   diff,
   theme,
-  findQuery = '',
+  findQuery = "",
   selectedFileKey,
   onFilesResolved,
   threads = [],
   comments = [],
+  onThreadReply,
 }: PierreDiffViewProps) {
   const files = useMemo(() => splitUnifiedDiff(diff), [diff]);
   const [activeId, setActiveId] = useState<string | null>(files[0]?.id ?? null);
@@ -221,7 +225,7 @@ export function PierreDiffView({
       const el = document.querySelector<HTMLElement>(
         `[data-annotation-key="${CSS.escape(activeAnnotationKey)}"]`,
       );
-      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
     return () => cancelAnimationFrame(raf);
   }, [activeAnnotationKey, orderedAnnotations]);
@@ -255,7 +259,7 @@ export function PierreDiffView({
     // Resolve via the single canonical authority (findFileByKey).
     // Empty string means no ?file param — fall back to the first file.
     const match =
-      (selectedFileKey !== ''
+      (selectedFileKey !== ""
         ? findFileByKey(files, selectedFileKey)
         : undefined) ?? files[0];
     if (match !== undefined && match.id !== activeId) {
@@ -301,7 +305,7 @@ export function PierreDiffView({
 
   const filtered = useMemo(() => {
     const q = findQuery.trim().toLowerCase();
-    if (q === '') return files;
+    if (q === "") return files;
     return files.filter((f) => f.path.toLowerCase().includes(q));
   }, [files, findQuery]);
 
@@ -360,6 +364,7 @@ export function PierreDiffView({
             replyingInlineCommentThreadId: null,
           }));
         }}
+        {...(onThreadReply !== undefined ? { onThreadReply } : {})}
       />
     </div>
   );
@@ -377,7 +382,7 @@ function FileNav({ files, activeId, onSelect, totalCount }: FileNavProps) {
     <aside className="w-1/4 min-w-[220px] bg-surface-container-low border-r border-outline-variant/20 overflow-y-auto">
       <div className="p-4">
         <h3 className="font-mono text-[10px] font-bold text-outline tracking-widest uppercase mb-4">
-          Files Changed ({totalCount.toString().padStart(2, '0')})
+          Files Changed ({totalCount.toString().padStart(2, "0")})
         </h3>
         <nav className="space-y-1">
           {files.map((f) => {
@@ -389,13 +394,13 @@ function FileNav({ files, activeId, onSelect, totalCount }: FileNavProps) {
                 onClick={() => onSelect(f.id)}
                 className={`w-full flex items-center gap-2 px-2 py-1.5 text-left cursor-crosshair transition-colors duration-150 ${
                   isActive
-                    ? 'bg-surface-container-lowest text-primary border-l-2 border-primary'
-                    : 'hover:bg-surface-container-highest/50 text-on-surface border-l-2 border-transparent hover:border-primary/40'
+                    ? "bg-surface-container-lowest text-primary border-l-2 border-primary"
+                    : "hover:bg-surface-container-highest/50 text-on-surface border-l-2 border-transparent hover:border-primary/40"
                 }`}
               >
                 <span
                   className={`material-symbols-outlined text-[16px] ${
-                    isActive ? 'text-primary' : 'text-outline'
+                    isActive ? "text-primary" : "text-outline"
                   }`}
                 >
                   description
@@ -418,7 +423,7 @@ function FileNav({ files, activeId, onSelect, totalCount }: FileNavProps) {
 interface DiffCanvasProps {
   files: ParsedFile[];
   activeId: string | null;
-  theme: AppSettings['appearance']['theme'];
+  theme: AppSettings["appearance"]["theme"];
   onActiveChange: (id: string) => void;
   registerScrollTo: (fn: (id: string) => void) => void;
   threads: ReviewThread[];
@@ -427,6 +432,7 @@ interface DiffCanvasProps {
   replyingToThreadId: string | null;
   onAnnotationActivate: (key: string) => void;
   onReplyClose: () => void;
+  onThreadReply?: (threadId: string, body: string) => void;
 }
 
 /** Estimated rendered height of one diff line, used until measurement. */
@@ -452,6 +458,7 @@ function DiffCanvas({
   replyingToThreadId,
   onAnnotationActivate,
   onReplyClose,
+  onThreadReply,
 }: DiffCanvasProps) {
   const scrollRef = useRef<HTMLElement>(null);
 
@@ -471,7 +478,7 @@ function DiffCanvas({
     registerScrollTo((id: string) => {
       const idx = files.findIndex((f) => f.id === id);
       if (idx >= 0) {
-        virtualizer.scrollToIndex(idx, { align: 'start' });
+        virtualizer.scrollToIndex(idx, { align: "start" });
       }
     });
   }, [files, virtualizer, registerScrollTo]);
@@ -513,7 +520,7 @@ function DiffCanvas({
               (t) => t.file_path === file.path && hasCurrentInlineAnchor(t),
             )
             .map((t) => ({
-              side: 'additions' as const,
+              side: "additions" as const,
               lineNumber: t.line,
               metadata: t,
             }));
@@ -571,6 +578,9 @@ function DiffCanvas({
                                 }
                               : {})}
                             onReplyClose={onReplyClose}
+                            {...(onThreadReply !== undefined
+                              ? { onThreadReply }
+                              : {})}
                           />
                         );
                       },
@@ -591,26 +601,26 @@ function DiffCanvas({
 
 const LIFECYCLE_VARIANT: Record<
   ThreadLifecycle,
-  'open' | 'resolved' | 'outdated' | 'unknown'
+  "open" | "resolved" | "outdated" | "unknown"
 > = {
-  open: 'open',
-  resolved: 'resolved',
-  outdated: 'outdated',
-  unknown: 'unknown',
+  open: "open",
+  resolved: "resolved",
+  outdated: "outdated",
+  unknown: "unknown",
 };
 
 const LIFECYCLE_SQUARE: Record<ThreadLifecycle, StatusKind> = {
-  open: 'running',
-  resolved: 'success',
-  outdated: 'neutral',
-  unknown: 'neutral',
+  open: "running",
+  resolved: "success",
+  outdated: "neutral",
+  unknown: "neutral",
 };
 
 const LIFECYCLE_LABEL: Record<ThreadLifecycle, string> = {
-  open: 'Open',
-  resolved: 'Resolved',
-  outdated: 'Outdated',
-  unknown: 'Unknown',
+  open: "Open",
+  resolved: "Resolved",
+  outdated: "Outdated",
+  unknown: "Unknown",
 };
 
 /**
@@ -629,6 +639,7 @@ function ThreadAnnotationCard({
   isReplying = false,
   onActivate,
   onReplyClose,
+  onThreadReply,
 }: {
   thread: ReviewThread | undefined;
   comments: Comment[];
@@ -636,11 +647,12 @@ function ThreadAnnotationCard({
   isReplying?: boolean;
   onActivate?: () => void;
   onReplyClose?: () => void;
+  onThreadReply?: (threadId: string, body: string) => void;
 }): React.ReactElement | null {
   if (thread === undefined) return null;
   const lifecycle = threadLifecycle(thread);
   const isDimmed =
-    !isActive && (lifecycle === 'resolved' || lifecycle === 'outdated');
+    !isActive && (lifecycle === "resolved" || lifecycle === "outdated");
 
   return (
     <div
@@ -648,19 +660,19 @@ function ThreadAnnotationCard({
       data-annotation-key={thread.id}
       data-testid="thread-annotation-card"
       data-thread-id={thread.id}
-      data-active={isActive ? 'true' : 'false'}
-      data-replying={isReplying ? 'true' : 'false'}
+      data-active={isActive ? "true" : "false"}
+      data-replying={isReplying ? "true" : "false"}
       onClick={onActivate}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') onActivate?.();
+        if (e.key === "Enter" || e.key === " ") onActivate?.();
       }}
-      role={onActivate !== undefined ? 'button' : undefined}
+      role={onActivate !== undefined ? "button" : undefined}
       tabIndex={onActivate !== undefined ? 0 : undefined}
       className={`border-l-2 bg-surface-container-low px-3 py-2 space-y-2 text-[11px] transition-colors duration-150 ${
         isActive
-          ? 'border-primary bg-surface-container'
-          : 'border-outline-variant/30'
-      } ${isDimmed ? 'opacity-50' : ''} ${onActivate !== undefined ? 'cursor-crosshair' : ''}`}
+          ? "border-primary bg-surface-container"
+          : "border-outline-variant/30"
+      } ${isDimmed ? "opacity-50" : ""} ${onActivate !== undefined ? "cursor-crosshair" : ""}`}
     >
       {/* Header: lifecycle badge + file:line */}
       <div className="flex items-center gap-2">
@@ -700,6 +712,7 @@ function ThreadAnnotationCard({
       {isReplying && (
         <ReplyComposer
           threadId={thread.id}
+          {...(onThreadReply !== undefined ? { onSubmit: onThreadReply } : {})}
           {...(onReplyClose !== undefined ? { onClose: onReplyClose } : {})}
         />
       )}
@@ -710,10 +723,6 @@ function ThreadAnnotationCard({
 /**
  * Compact reply composer for an inline thread.
  *
- * UI-only: no submission is wired. Shows a textarea labelled "Reply to thread"
- * and a Cancel button. Submit is rendered but disabled with a tooltip noting
- * that reply submission is not yet implemented.
- *
  * Focus contract: the textarea auto-focuses on mount (the composer mounts when
  * `Enter` triggers reply for the selected inline comment), and is explicitly
  * blurred before `onClose` runs on `Escape` so focus returns to the diff
@@ -721,12 +730,16 @@ function ThreadAnnotationCard({
  */
 function ReplyComposer({
   threadId,
+  onSubmit,
   onClose,
 }: {
   threadId: string;
+  onSubmit?: (threadId: string, body: string) => void;
   onClose?: () => void;
 }): React.ReactElement {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [body, setBody] = useState("");
+  const trimmed = body.trim();
 
   // Auto-focus the reply textarea when the composer appears.
   useEffect(() => {
@@ -738,6 +751,13 @@ function ReplyComposer({
     onClose?.();
   };
 
+  const submit = (): void => {
+    if (trimmed.length === 0 || onSubmit === undefined) return;
+    onSubmit(threadId, trimmed);
+    setBody("");
+    closeAndBlur();
+  };
+
   return (
     <div
       className="mt-2 space-y-2 border border-outline-variant/40 bg-surface p-3"
@@ -747,7 +767,11 @@ function ReplyComposer({
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation();
-        if (e.key === 'Escape') {
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+          e.preventDefault();
+          submit();
+        }
+        if (e.key === "Escape") {
           e.preventDefault();
           closeAndBlur();
         }
@@ -763,25 +787,25 @@ function ReplyComposer({
       <Textarea
         ref={textareaRef}
         id={`reply-textarea-${threadId}`}
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
         rows={3}
         placeholder="Write a reply…"
         className="bg-surface-container text-xs"
         aria-label="Reply to thread"
       />
-      <p className="font-mono text-[9px] text-outline-variant">
-        Reply submission is not yet implemented.
-      </p>
       <div className="flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={closeAndBlur}>
           Cancel
         </Button>
         <Button
-          variant="outline"
+          variant="default"
           size="sm"
-          disabled
-          title="Reply submission is not yet implemented"
+          onClick={submit}
+          disabled={trimmed.length === 0 || onSubmit === undefined}
         >
           Reply
+          <ShortcutBadge hotkey="Mod+Enter" />
         </Button>
       </div>
     </div>
@@ -802,8 +826,8 @@ function ReplyComposer({
  * addition (old=/dev/null), paths with spaces (quoted git format).
  */
 function extractFileIdentity(patch: string): DiffFileIdentity {
-  let oldFile = '/dev/null';
-  let newFile = '/dev/null';
+  let oldFile = "/dev/null";
+  let newFile = "/dev/null";
 
   // Quoted form: diff --git "a/..." "b/..."
   const quotedMatch = /^diff --git "a\/(.+)" "b\/(.+)"/m.exec(patch);
@@ -814,8 +838,8 @@ function extractFileIdentity(patch: string): DiffFileIdentity {
     // Unquoted form: diff --git a/<oldPath> b/<newPath>
     const headerMatch = /^diff --git a\/.+ b\/.+$/m.exec(patch);
     if (headerMatch !== null) {
-      const body = headerMatch[0].slice('diff --git '.length);
-      const bIdx = body.lastIndexOf(' b/');
+      const body = headerMatch[0].slice("diff --git ".length);
+      const bIdx = body.lastIndexOf(" b/");
       if (bIdx !== -1) {
         oldFile = `a/${body.slice(2, bIdx)}`; // strip leading "a/"
         newFile = `b/${body.slice(bIdx + 3)}`; // after " b/"
@@ -828,8 +852,8 @@ function extractFileIdentity(patch: string): DiffFileIdentity {
   // even when the diff --git header shows the same path on both sides.
   const plusLine = /^\+\+\+ (.+)$/m.exec(patch)?.[1];
   const minusLine = /^--- (.+)$/m.exec(patch)?.[1];
-  if (plusLine === '/dev/null') newFile = '/dev/null';
-  if (minusLine === '/dev/null') oldFile = '/dev/null';
+  if (plusLine === "/dev/null") newFile = "/dev/null";
+  if (minusLine === "/dev/null") oldFile = "/dev/null";
 
   return { oldFile, newFile };
 }
@@ -849,16 +873,16 @@ function splitUnifiedDiff(raw: string): ParsedFile[] {
   if (!GIT_HEADER.test(raw)) {
     const { additions, deletions } = countChanges(raw);
     // Non-git diff: treat as a single unnamed file.
-    const identity: DiffFileIdentity = { oldFile: '', newFile: 'patch' };
+    const identity: DiffFileIdentity = { oldFile: "", newFile: "patch" };
     const [canonicalKey] = buildFileKeys([identity]);
     return [
       {
-        id: 'patch-0',
-        path: 'patch',
+        id: "patch-0",
+        path: "patch",
         oldFile: identity.oldFile,
         newFile: identity.newFile,
         canonicalKey: canonicalKey!,
-        lang: 'patch',
+        lang: "patch",
         additions,
         deletions,
         patch: raw,
@@ -867,18 +891,18 @@ function splitUnifiedDiff(raw: string): ParsedFile[] {
     ];
   }
 
-  const lines = raw.split('\n');
+  const lines = raw.split("\n");
   const chunks: string[] = [];
   let buf: string[] = [];
   for (const line of lines) {
-    if (line.startsWith('diff --git ')) {
-      if (buf.length > 0) chunks.push(buf.join('\n'));
+    if (line.startsWith("diff --git ")) {
+      if (buf.length > 0) chunks.push(buf.join("\n"));
       buf = [line];
     } else {
       buf.push(line);
     }
   }
-  if (buf.length > 0) chunks.push(buf.join('\n'));
+  if (buf.length > 0) chunks.push(buf.join("\n"));
 
   // Extract DiffFileIdentity for each chunk, then compute canonical keys via
   // the single authority: buildFileKeys from diffFileKey.ts.
@@ -887,7 +911,7 @@ function splitUnifiedDiff(raw: string): ParsedFile[] {
 
   return chunks.map((patch, i) => {
     const path = extractFilePath(patch) ?? `file-${i}`;
-    const lang = path.split('.').pop()?.toUpperCase() ?? '';
+    const lang = path.split(".").pop()?.toUpperCase() ?? "";
     const { additions, deletions } = countChanges(patch);
     return {
       id: `${path}::${i}`,
@@ -945,14 +969,14 @@ function extractFilePath(patch: string): string | null {
   if (headerLineMatch !== null) {
     const headerLine = headerLineMatch[0];
     // Strip the leading `diff --git ` prefix then split on the LAST ` b/`
-    const withoutPrefix = headerLine.slice('diff --git '.length);
-    const lastBSlash = withoutPrefix.lastIndexOf(' b/');
+    const withoutPrefix = headerLine.slice("diff --git ".length);
+    const lastBSlash = withoutPrefix.lastIndexOf(" b/");
     if (lastBSlash !== -1) {
       const bPath = withoutPrefix.slice(lastBSlash + 3); // after " b/"
-      if (bPath !== '/dev/null' && bPath !== '') return bPath;
+      if (bPath !== "/dev/null" && bPath !== "") return bPath;
       // Deletion: b/ is /dev/null, return the a/ path
       const aPath = withoutPrefix.slice(2, lastBSlash); // after "a/"
-      if (aPath !== '') return aPath;
+      if (aPath !== "") return aPath;
     }
   }
 
@@ -960,7 +984,7 @@ function extractFilePath(patch: string): string | null {
   const plusMatch = /^\+\+\+ b\/(.+)$/m.exec(patch);
   if (plusMatch !== null) {
     const p = plusMatch[1]?.trim() ?? null;
-    return p !== null && p !== '' ? p : null;
+    return p !== null && p !== "" ? p : null;
   }
 
   return null;
@@ -972,10 +996,10 @@ function countChanges(patch: string): {
 } {
   let additions = 0;
   let deletions = 0;
-  for (const line of patch.split('\n')) {
-    if (line.startsWith('+++') || line.startsWith('---')) continue;
-    if (line.startsWith('+')) additions += 1;
-    else if (line.startsWith('-')) deletions += 1;
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) additions += 1;
+    else if (line.startsWith("-")) deletions += 1;
   }
   return { additions, deletions };
 }

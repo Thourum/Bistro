@@ -136,6 +136,8 @@ function handleCommentPosted(_data: CommentPostedData): void {
     appStore.setState((s) => ({
       ...s,
       lastSyncAt: new Date().toISOString(),
+      commentsRevision: s.commentsRevision + 1,
+      threadsRevision: s.threadsRevision + 1,
     }));
   } catch {
     // Store not available (test environment)
@@ -188,7 +190,8 @@ function handleActionComplete(data: ActionCompleteData): void {
         type: data.action_type as
           | 'approve'
           | 'request_changes'
-          | 'post_comment',
+          | 'post_comment'
+          | 'reply_comment',
         prId: data.pr_id,
         success: true,
         message: data.message,
@@ -210,7 +213,8 @@ function handleActionFailed(data: ActionFailedData): void {
         type: data.action_type as
           | 'approve'
           | 'request_changes'
-          | 'post_comment',
+          | 'post_comment'
+          | 'reply_comment',
         prId: data.pr_id,
         success: false,
         message: data.error,
@@ -428,6 +432,7 @@ function onMessage(event: MessageEvent<string>): void {
     case 'RANGE_DIFF_READY':
     case 'FILE_VIEWED_ACK':
     case 'REVIEW_THREADS_READY':
+    case 'ACTION_RESULT':
     case 'PR_LIST_READY': {
       const handler = messageHandlers.get(message.id);
       if (handler) {

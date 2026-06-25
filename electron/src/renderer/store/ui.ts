@@ -37,6 +37,12 @@ export interface UIState {
   syncError: string | null;
   lastSyncAt: string | null;
   prListRevision: number;
+  /**
+   * Bumped whenever comments may have changed remotely or via a local action.
+   * Detail/diff pages depend on this to re-request comments without requiring
+   * navigation or a full PR-list sync.
+   */
+  commentsRevision: number;
   syncStats: SyncStats | null;
   toasts: Toast[];
   isOffline: boolean;
@@ -101,6 +107,7 @@ export const initialUIState: UIState = {
   syncError: null,
   lastSyncAt: null,
   prListRevision: 0,
+  commentsRevision: 0,
   syncStats: null,
   toasts: [],
   isOffline: false,
