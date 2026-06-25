@@ -202,8 +202,26 @@ func (o *Orchestrator) FetchPRDetails(
 
 			if includeDiff && o.git != nil {
 				cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", prCopy.Owner, prCopy.Repo)
+				// Collect the anchor-relevant commit SHAs referenced by the
+				// comments and review threads fetched above. The targeted
+				// shallow fetch must prove these are present (alongside base and
+				// head) or fall back to a broad clone — otherwise anchor
+				// resolution would silently degrade on a shallow clone that
+				// lacks an older comment's commit.
+				requiredSHAs := collectAnchorSHAs(result.Comments, result.Threads)
+				// Anchor resolution for original-position comments derives its
+				// diff-base from a historical patchset BaseSHA (selectDiffBaseSHA),
+				// not from prCopy.BaseSHA. Those commits must also be present in
+				// the clone, so fold the PR's patchset BaseSHAs into RequiredSHAs
+				// when anchoring could need them.
+				requiredSHAs = append(requiredSHAs,
+					o.collectPatchsetBaseSHAs(taskCtx, prCopy.ID, result.Comments, result.Threads, requiredSHAs)...)
 				subStart := time.Now()
-				cloneResult, cloneErr := o.git.Clone(taskCtx, cloneURL, prCopy.BaseSHA, prCopy.HeadSHA)
+				cloneResult, cloneErr := o.git.CloneForPR(taskCtx, cloneURL, prCopy.BaseSHA, prCopy.HeadSHA, &git.CloneOptions{
+					PRNumber:     prCopy.Number,
+					BaseBranch:   prCopy.BaseBranch,
+					RequiredSHAs: requiredSHAs,
+				})
 				cloneDur := time.Since(subStart).Milliseconds()
 				if cloneErr != nil {
 					errs = append(errs, fmt.Sprintf("diff clone: %v", cloneErr))
@@ -331,4 +349,125 @@ func truncateSHA(sha string) string {
 		return sha[:7]
 	}
 	return sha
+}
+
+// collectAnchorSHAs returns the unique, non-empty commit SHAs referenced by the
+// given comments and review threads that anchor resolution depends on
+// (per-comment CommitSHA and OriginalSHA). These are passed to the targeted
+// shallow fetch as RequiredSHAs so the clone is only accepted when every commit
+// anchoring will need is present; otherwise the clone falls back to broad.
+func collectAnchorSHAs(comments []*provider.Comment, threads []*provider.ReviewThread) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	add := func(sha string) {
+		if sha == "" {
+			return
+		}
+		if _, ok := seen[sha]; ok {
+			return
+		}
+		seen[sha] = struct{}{}
+		out = append(out, sha)
+	}
+	addComment := func(c *provider.Comment) {
+		if c == nil || c.Kind != "review" {
+			return
+		}
+		add(c.CommitSHA)
+		add(c.OriginalSHA)
+	}
+	for _, c := range comments {
+		addComment(c)
+	}
+	for _, th := range threads {
+		if th == nil {
+			continue
+		}
+		for _, c := range th.Comments {
+			addComment(c)
+		}
+	}
+	return out
+}
+
+// hasAnchorableOriginalPosition reports whether any review comment in the given
+// comments/threads is an anchorable original-position comment — i.e. anchorable
+// but lacking a current position, so anchor resolution would route through
+// selectDiffBaseSHA and need a historical patchset BaseSHA. Mirrors the
+// isCurrentPos test in resolveAnchors.
+func hasAnchorableOriginalPosition(comments []*provider.Comment, threads []*provider.ReviewThread) bool {
+	check := func(c *provider.Comment) bool {
+		if c == nil || c.Kind != "review" || c.FilePath == "" || !isAnchorable(c) {
+			return false
+		}
+		isCurrentPos := c.Position != nil && *c.Position > 0
+		return !isCurrentPos
+	}
+	for _, c := range comments {
+		if check(c) {
+			return true
+		}
+	}
+	for _, th := range threads {
+		if th == nil {
+			continue
+		}
+		for _, c := range th.Comments {
+			if check(c) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// collectPatchsetBaseSHAs returns the unique non-empty patchset BaseSHA values
+// for the PR that anchor resolution may need beyond the PR's current BaseSHA.
+//
+// Original-position comments resolve their diff geometry against a historical
+// patchset's BaseSHA (see selectDiffBaseSHA), which can differ from
+// prCopy.BaseSHA after a retarget/rebase. If the clone lacks that commit, those
+// anchors would silently fail on a targeted shallow fetch. Safe
+// over-approximation: when anchoring is enabled, there is at least one
+// anchorable original-position comment, and the store has patchsets for the PR,
+// include every non-empty patchset BaseSHA. SHAs already present in `existing`
+// (the per-comment anchor SHAs) are skipped to avoid duplicates.
+func (o *Orchestrator) collectPatchsetBaseSHAs(
+	ctx context.Context,
+	prID string,
+	comments []*provider.Comment,
+	threads []*provider.ReviewThread,
+	existing []string,
+) []string {
+	if o.anchorResolver == nil || o.store == nil || prID == "" {
+		return nil
+	}
+	if !hasAnchorableOriginalPosition(comments, threads) {
+		return nil
+	}
+	patchsets, err := o.store.ListPatchsets(ctx, prID)
+	if err != nil {
+		logging.FromContext(ctx).Warn(
+			"collectPatchsetBaseSHAs: could not load patchsets; anchor base SHAs may be missing from targeted clone",
+			"pr_id", prID, "error", err)
+		return nil
+	}
+	seen := make(map[string]struct{}, len(existing))
+	for _, s := range existing {
+		if s != "" {
+			seen[s] = struct{}{}
+		}
+	}
+	var out []string
+	for _, ps := range patchsets {
+		if ps.BaseSHA == "" {
+			continue
+		}
+		if _, ok := seen[ps.BaseSHA]; ok {
+			continue
+		}
+		seen[ps.BaseSHA] = struct{}{}
+		out = append(out, ps.BaseSHA)
+	}
+	return out
 }

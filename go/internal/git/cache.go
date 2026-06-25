@@ -19,17 +19,12 @@ func NewCache() *Cache {
 }
 
 // cacheKey builds a composite key from URL and both commit SHAs.
-// Using first 7 chars of each SHA matches git convention and avoids bloat.
+// Full SHAs are used (not truncated): a 7-char prefix risks collisions across
+// distinct commits that share a prefix, which would surface as a cache hit
+// pointing at a clone that lacks the requested commit. The exact-SHA key keeps
+// cache identity aligned with the commits actually verified on disk.
 func cacheKey(repoURL, baseSHA, headSHA string) string {
-	base := baseSHA
-	if len(base) > 7 {
-		base = base[:7]
-	}
-	head := headSHA
-	if len(head) > 7 {
-		head = head[:7]
-	}
-	return fmt.Sprintf("%s@%s..%s", repoURL, base, head)
+	return fmt.Sprintf("%s@%s..%s", repoURL, baseSHA, headSHA)
 }
 
 // Get retrieves a cached repo entry by URL and both SHAs.
