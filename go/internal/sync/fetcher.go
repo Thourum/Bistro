@@ -200,6 +200,38 @@ func (o *Orchestrator) FetchPRDetails(
 				}
 			}
 
+			// Phase 5 production-wiring decision: KEEP the disk CloneForPR path.
+			//
+			// The in-memory targeted fetch+diff (git.GenerateDiffForPRInMemory)
+			// is measurably faster (see internal/git benchmarks), but wiring it
+			// here as a diff-first path does NOT reduce user-visible latency,
+			// because of how this result is shaped and persisted:
+			//
+			//   - A single PRFetchResult carries BOTH the diff (DiffFiles/
+			//     DiffComputed) AND anchor results (AnchorUpdates). The writer
+			//     persists them together AFTER FetchPRDetails returns; there is
+			//     no path to persist/return the diff before anchors within one
+			//     result.
+			//   - Anchor resolution (resolveAnchors) requires an on-disk
+			//     localPath to open the repository, and correct anchoring needs
+			//     historical comment/patchset-base commits (RequiredSHAs) that
+			//     may be deep — which is exactly what can trigger a broad clone.
+			//
+			// So a memory-first design would compute the diff in RAM (~fast) but
+			// STILL need a disk CloneForPR (potentially a ~50s broad fallback in
+			// the deep-anchor case) for anchoring before this result completes —
+			// adding duplicate fetch work without delivering the diff any sooner.
+			// Per the Phase 5 guard ("if it can reintroduce 50s before
+			// FetchPRDetails returns, do not block initial PR diff; if the
+			// architecture cannot return diff before anchors in the same result,
+			// do not production-wire yet"), the in-memory path remains a
+			// benchmarked prototype. Promoting it requires either streaming the
+			// diff to the DB independently of anchors (split result/persistence)
+			// or an in-memory-capable anchor resolver — both out of scope here.
+			//
+			// IMPORTANT: do not silently drop anchors. This disk path continues
+			// to fold anchor RequiredSHAs into the clone so anchoring keeps its
+			// current correctness guarantees.
 			if includeDiff && o.git != nil {
 				cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", prCopy.Owner, prCopy.Repo)
 				// Collect the anchor-relevant commit SHAs referenced by the

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 )
 
 // TestGenerateDiffForPRInMemory_Success verifies the in-memory PR-specific
@@ -142,5 +143,45 @@ func TestVerifyRequiredCommits(t *testing.T) {
 	// Missing base reported.
 	if missing := verifyRequiredCommits(repo, bogus, headSHA, nil); missing != bogus {
 		t.Errorf("expected missing base=%s, got %s", bogus, missing)
+	}
+}
+
+// TestFetchForPRInMemory_RawVsVerifySplit documents the layering: the raw fetch
+// succeeds (returns a repo) even when the PR base commit lies outside a Depth:1
+// shallow window, while the verifying wrapper reports the base as missing. This
+// is the in-memory analogue of the disk targeted path's required-commit gate
+// (with no broad fallback in the prototype).
+func TestFetchForPRInMemory_RawVsVerifySplit(t *testing.T) {
+	remoteDir := t.TempDir()
+	const prNumber = 41
+	baseBranch, baseSHA, headSHA := buildDeepRemote(t, remoteDir, prNumber)
+	url := "file://" + remoteDir
+
+	client := NewClient(NewCache())
+	opts := &CloneOptions{PRNumber: prNumber, BaseBranch: baseBranch, Depth: 1}
+
+	// Raw fetch: no verification — succeeds and returns a usable repo even
+	// though the deep base commit is not in the Depth:1 window.
+	repo, err := client.fetchForPRInMemoryRaw(context.Background(), url, opts)
+	if err != nil {
+		t.Fatalf("fetchForPRInMemoryRaw: %v", err)
+	}
+	if repo == nil {
+		t.Fatal("expected non-nil repo from raw fetch")
+	}
+	// Head IS reachable at depth 1 (it is the PR ref tip); base is NOT.
+	if _, err := repo.CommitObject(plumbing.NewHash(headSHA)); err != nil {
+		t.Errorf("head should be present in raw depth=1 fetch: %v", err)
+	}
+
+	// Verifying wrapper: must reject because base is outside the window.
+	if _, err := client.fetchForPRInMemory(context.Background(), url, baseSHA, headSHA, opts); err == nil {
+		t.Fatal("expected fetchForPRInMemory to error: deep base outside Depth:1 window")
+	}
+
+	// With sufficient depth, verification passes.
+	optsDeep := &CloneOptions{PRNumber: prNumber, BaseBranch: baseBranch, Depth: 50}
+	if _, err := client.fetchForPRInMemory(context.Background(), url, baseSHA, headSHA, optsDeep); err != nil {
+		t.Fatalf("fetchForPRInMemory with adequate depth: %v", err)
 	}
 }

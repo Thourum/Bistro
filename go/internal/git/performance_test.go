@@ -230,6 +230,100 @@ func BenchmarkGenerateDiffForPRInMemoryT3Code(b *testing.B) {
 	}
 }
 
+// benchMemoryDepths is the depth matrix used by the in-memory depth-sensitivity
+// benchmarks. Low depths exercise the shallow window where the PR base commit
+// may not yet be reachable.
+var benchMemoryDepths = []int{1, 10, 50, 500}
+
+// BenchmarkFetchForPRInMemoryT3Code measures ONLY the in-memory targeted fetch
+// (Init + CreateRemote + FetchContext + required-commit verification), with no
+// diff generation. Isolating fetch from diff shows how much of the in-memory
+// path cost is transport vs. tree diffing. Compare against
+// BenchmarkCloneForPRTargetedColdMissT3Code (disk targeted fetch-only).
+func BenchmarkFetchForPRInMemoryT3Code(b *testing.B) {
+	fixture := benchT3CodeLivePRFixture(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		client := NewClient(NewCache())
+		repo, err := client.fetchForPRInMemory(context.Background(), benchT3CodeRepoURL,
+			fixture.BaseSHA, fixture.HeadSHA, benchT3CodeOpts())
+		if err != nil {
+			b.Fatalf("fetchForPRInMemory: %v", err)
+		}
+		if repo == nil {
+			b.Fatal("expected non-nil repo")
+		}
+	}
+}
+
+// BenchmarkFetchForPRInMemoryDepthT3Code measures the RAW in-memory fetch
+// (Init + CreateRemote + FetchContext, no commit verification, no diff) across a
+// depth matrix to expose depth sensitivity of the object transfer. Raw fetch is
+// used because low depths legitimately may not reach the PR base commit; here we
+// only want the transport cost, not a correctness gate.
+func BenchmarkFetchForPRInMemoryDepthT3Code(b *testing.B) {
+	// Resolve the fixture once so the benchmark fails fast if the PR ref is gone.
+	_ = benchT3CodeLivePRFixture(b)
+	for _, depth := range benchMemoryDepths {
+		depth := depth
+		b.Run(fmt.Sprintf("depth=%d", depth), func(b *testing.B) {
+			opts := &CloneOptions{
+				PRNumber:   benchT3CodePRNumber,
+				BaseBranch: benchT3CodeBaseBranch,
+				Depth:      depth,
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				client := NewClient(NewCache())
+				repo, err := client.fetchForPRInMemoryRaw(context.Background(), benchT3CodeRepoURL, opts)
+				if err != nil {
+					b.Fatalf("fetchForPRInMemoryRaw depth=%d: %v", depth, err)
+				}
+				if repo == nil {
+					b.Fatal("expected non-nil repo")
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkGenerateDiffForPRInMemoryDepthT3Code measures the full in-memory
+// fetch+verify+diff across the depth matrix. At depths too shallow to reach the
+// PR base commit the verification fails; those sub-benchmarks are skipped (not
+// failed) so the matrix still reports the depths where a complete diff is
+// possible and how depth affects fetch+diff cost.
+func BenchmarkGenerateDiffForPRInMemoryDepthT3Code(b *testing.B) {
+	fixture := benchT3CodeLivePRFixture(b)
+	for _, depth := range benchMemoryDepths {
+		depth := depth
+		b.Run(fmt.Sprintf("depth=%d", depth), func(b *testing.B) {
+			opts := &CloneOptions{
+				PRNumber:   benchT3CodePRNumber,
+				BaseBranch: benchT3CodeBaseBranch,
+				Depth:      depth,
+			}
+			// Probe once: if this depth cannot reach base, skip the sub-benchmark.
+			probe := NewClient(NewCache())
+			if _, err := probe.GenerateDiffForPRInMemory(context.Background(), benchT3CodeRepoURL,
+				fixture.BaseSHA, fixture.HeadSHA, opts); err != nil {
+				b.Skipf("depth=%d cannot complete diff (base not in shallow window): %v", depth, err)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				client := NewClient(NewCache())
+				diff, err := client.GenerateDiffForPRInMemory(context.Background(), benchT3CodeRepoURL,
+					fixture.BaseSHA, fixture.HeadSHA, opts)
+				if err != nil {
+					b.Fatalf("GenerateDiffForPRInMemory depth=%d: %v", depth, err)
+				}
+				if len(diff.Files) == 0 {
+					b.Fatal("expected non-empty diff")
+				}
+			}
+		})
+	}
+}
+
 func assertBenchmarkPRRefMatchesHead(b *testing.B, localPath, wantHeadSHA string) {
 	b.Helper()
 	repo, err := gogit.PlainOpen(localPath)
