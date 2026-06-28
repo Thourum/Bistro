@@ -10,8 +10,9 @@ import (
 
 func intPtr(n int) *int { return &n }
 
-// TestHasAnchorableOriginalPosition covers the routing predicate used to decide
-// whether patchset BaseSHAs must be folded into RequiredSHAs.
+// TestHasAnchorableOriginalPosition covers the routing predicate used by future
+// anchor-specific RequiredSHAs collection. The initial diff clone deliberately
+// does not use these SHAs.
 func TestHasAnchorableOriginalPosition(t *testing.T) {
 	pos := 5
 	orig := 4
@@ -143,5 +144,69 @@ func TestCollectPatchsetBaseSHAs_NoResolverOrStore(t *testing.T) {
 	o3 := &Orchestrator{anchorResolver: git.NewAnchorResolver(silentLog()), store: newSyncTestDB(t)}
 	if got := o3.collectPatchsetBaseSHAs(context.Background(), "", comments, nil, nil); got != nil {
 		t.Errorf("empty prID: expected nil, got %v", got)
+	}
+}
+
+// TestDiffCloneOptions_ExcludesRequiredSHAs is the Phase 6 regression guard: the
+// diff critical-path clone options must carry only PRNumber + BaseBranch and
+// must NEVER include RequiredSHAs. Folding anchor/historical SHAs here could
+// force a broad full clone before the diff is persisted, which Phase 6 removed.
+func TestDiffCloneOptions_ExcludesRequiredSHAs(t *testing.T) {
+	pr := &provider.PR{
+		Number:     4242,
+		BaseBranch: "main",
+		BaseSHA:    "base-sha",
+		HeadSHA:    "head-sha",
+	}
+	opts := diffCloneOptions(pr)
+	if opts == nil {
+		t.Fatal("expected non-nil options")
+	}
+	if opts.PRNumber != 4242 {
+		t.Errorf("PRNumber: got %d, want 4242", opts.PRNumber)
+	}
+	if opts.BaseBranch != "main" {
+		t.Errorf("BaseBranch: got %q, want \"main\"", opts.BaseBranch)
+	}
+	if len(opts.RequiredSHAs) != 0 {
+		t.Errorf("diff clone must not carry RequiredSHAs, got %v", opts.RequiredSHAs)
+	}
+}
+
+// TestDiffCloneOptions_NilPR keeps the helper total: a nil PR yields empty
+// options rather than panicking.
+func TestDiffCloneOptions_NilPR(t *testing.T) {
+	opts := diffCloneOptions(nil)
+	if opts == nil {
+		t.Fatal("expected non-nil options for nil PR")
+	}
+	if opts.PRNumber != 0 || opts.BaseBranch != "" || len(opts.RequiredSHAs) != 0 {
+		t.Errorf("expected zero-value options, got %+v", opts)
+	}
+}
+
+// TestDiffCloneOptions_IgnoresAnchorSHAs documents the Phase 6 invariant that
+// bogus historical anchor SHAs carried by comments cannot poison the diff
+// clone: diffCloneOptions is derived purely from the PR, so even when comments
+// reference commits that exist nowhere, the diff clone options are unaffected
+// (no RequiredSHAs) and a base/head clone proceeds independently of anchors.
+func TestDiffCloneOptions_IgnoresAnchorSHAs(t *testing.T) {
+	// Comments with bogus historical SHAs — these would previously have been
+	// folded into the diff clone's RequiredSHAs and could force a broad clone.
+	bogusComments := []*provider.Comment{
+		{Kind: "review", FilePath: "a.go", CommitSHA: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"},
+		{Kind: "review", FilePath: "b.go", OriginalSHA: "cafebabecafebabecafebabecafebabecafebabe"},
+	}
+	// Sanity: those bogus SHAs are indeed what collectAnchorSHAs would surface
+	// (still useful for a future anchor-backfill job), proving the helper is not
+	// removed — it simply no longer feeds the diff clone.
+	if got := collectAnchorSHAs(bogusComments, nil); len(got) != 2 {
+		t.Fatalf("collectAnchorSHAs expected 2 SHAs, got %v", got)
+	}
+
+	pr := &provider.PR{Number: 7, BaseBranch: "main", BaseSHA: "b", HeadSHA: "h"}
+	opts := diffCloneOptions(pr)
+	if len(opts.RequiredSHAs) != 0 {
+		t.Errorf("diff clone options must ignore comment anchor SHAs, got RequiredSHAs=%v", opts.RequiredSHAs)
 	}
 }

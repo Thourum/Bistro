@@ -200,60 +200,34 @@ func (o *Orchestrator) FetchPRDetails(
 				}
 			}
 
-			// Phase 5 production-wiring decision: KEEP the disk CloneForPR path.
+			// Phase 6 production path: the diff clone is BASE/HEAD-ONLY.
 			//
-			// The in-memory targeted fetch+diff (git.GenerateDiffForPRInMemory)
-			// is measurably faster (see internal/git benchmarks), but wiring it
-			// here as a diff-first path does NOT reduce user-visible latency,
-			// because of how this result is shaped and persisted:
+			// This CloneForPR is on the diff critical path — its only job is to
+			// make the PR's current base and head commits available so the diff
+			// can be generated and persisted quickly. It therefore passes only
+			// PRNumber + BaseBranch (targeted shallow fetch) and NO RequiredSHAs.
 			//
-			//   - A single PRFetchResult carries BOTH the diff (DiffFiles/
-			//     DiffComputed) AND anchor results (AnchorUpdates). The writer
-			//     persists them together AFTER FetchPRDetails returns; there is
-			//     no path to persist/return the diff before anchors within one
-			//     result.
-			//   - Anchor resolution (resolveAnchors) requires an on-disk
-			//     localPath to open the repository, and correct anchoring needs
-			//     historical comment/patchset-base commits (RequiredSHAs) that
-			//     may be deep — which is exactly what can trigger a broad clone.
+			// Why no anchor/historical RequiredSHAs here: folding per-comment
+			// CommitSHA/OriginalSHA and historical patchset BaseSHAs into this
+			// clone's RequiredSHAs could force a broad full clone (~50s) whenever
+			// any of those commits sits outside the shallow window — penalizing
+			// every PR's diff readiness for the sake of anchoring. Anchors are
+			// best-effort metadata; they must not gate or slow the diff.
 			//
-			// So a memory-first design would compute the diff in RAM (~fast) but
-			// STILL need a disk CloneForPR (potentially a ~50s broad fallback in
-			// the deep-anchor case) for anchoring before this result completes —
-			// adding duplicate fetch work without delivering the diff any sooner.
-			// Per the Phase 5 guard ("if it can reintroduce 50s before
-			// FetchPRDetails returns, do not block initial PR diff; if the
-			// architecture cannot return diff before anchors in the same result,
-			// do not production-wire yet"), the in-memory path remains a
-			// benchmarked prototype. Promoting it requires either streaming the
-			// diff to the DB independently of anchors (split result/persistence)
-			// or an in-memory-capable anchor resolver — both out of scope here.
-			//
-			// IMPORTANT: do not silently drop anchors. This disk path continues
-			// to fold anchor RequiredSHAs into the clone so anchoring keeps its
-			// current correctness guarantees.
+			// Anchor handling (see below): anchor resolution runs opportunistically
+			// against this same fast clone. If a comment's historical/commit SHA
+			// is not present in the shallow fetch, that specific anchor is skipped
+			// (resolveAnchors is already best-effort) — it does NOT trigger a broad
+			// fallback. Backfilling anchors that need deeper history is future work
+			// (a separate anchor-specific job). collectAnchorSHAs /
+			// collectPatchsetBaseSHAs and the git RequiredSHAs primitive are
+			// retained for that future job; they intentionally no longer feed this
+			// initial diff clone.
 			if includeDiff && o.git != nil {
 				cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", prCopy.Owner, prCopy.Repo)
-				// Collect the anchor-relevant commit SHAs referenced by the
-				// comments and review threads fetched above. The targeted
-				// shallow fetch must prove these are present (alongside base and
-				// head) or fall back to a broad clone — otherwise anchor
-				// resolution would silently degrade on a shallow clone that
-				// lacks an older comment's commit.
-				requiredSHAs := collectAnchorSHAs(result.Comments, result.Threads)
-				// Anchor resolution for original-position comments derives its
-				// diff-base from a historical patchset BaseSHA (selectDiffBaseSHA),
-				// not from prCopy.BaseSHA. Those commits must also be present in
-				// the clone, so fold the PR's patchset BaseSHAs into RequiredSHAs
-				// when anchoring could need them.
-				requiredSHAs = append(requiredSHAs,
-					o.collectPatchsetBaseSHAs(taskCtx, prCopy.ID, result.Comments, result.Threads, requiredSHAs)...)
 				subStart := time.Now()
-				cloneResult, cloneErr := o.git.CloneForPR(taskCtx, cloneURL, prCopy.BaseSHA, prCopy.HeadSHA, &git.CloneOptions{
-					PRNumber:     prCopy.Number,
-					BaseBranch:   prCopy.BaseBranch,
-					RequiredSHAs: requiredSHAs,
-				})
+				cloneResult, cloneErr := o.git.CloneForPR(taskCtx, cloneURL, prCopy.BaseSHA, prCopy.HeadSHA,
+					diffCloneOptions(prCopy))
 				cloneDur := time.Since(subStart).Milliseconds()
 				if cloneErr != nil {
 					errs = append(errs, fmt.Sprintf("diff clone: %v", cloneErr))
@@ -310,9 +284,14 @@ func (o *Orchestrator) FetchPRDetails(
 						result.DiffFiles = diffFiles
 						result.DiffComputed = true
 
-						// Run anchor resolution while the clone is still on disk.
-						// Results are carried in AnchorUpdates and written back to
-						// the DB by the writer (best-effort, outside the savepoint).
+						// Anchor resolution is OPPORTUNISTIC against the fast
+						// base/head-only clone above. Comments whose historical or
+						// commit SHA is absent from this shallow fetch are skipped
+						// by resolveAnchors (best-effort) rather than forcing a
+						// broad re-clone — an anchor-only miss must never slow the
+						// diff critical path. Results are carried in AnchorUpdates
+						// and written back to the DB by the writer (best-effort,
+						// outside the savepoint).
 						if o.anchorResolver != nil {
 							anchorStart := time.Now()
 							result.AnchorUpdates = o.resolveAnchors(
@@ -383,11 +362,31 @@ func truncateSHA(sha string) string {
 	return sha
 }
 
+// diffCloneOptions builds the CloneOptions for the Phase 6 diff critical path.
+// It is intentionally BASE/HEAD-ONLY: it carries the PR number and base branch
+// (to drive the targeted shallow fetch of the current base/head) and never sets
+// RequiredSHAs. Anchor/historical SHAs are deliberately excluded so an anchor-
+// only miss can never force a broad full clone before the diff is persisted.
+// This is the single source of truth for the diff clone's options.
+func diffCloneOptions(pr *provider.PR) *git.CloneOptions {
+	if pr == nil {
+		return &git.CloneOptions{}
+	}
+	return &git.CloneOptions{
+		PRNumber:   pr.Number,
+		BaseBranch: pr.BaseBranch,
+		// RequiredSHAs intentionally left nil — see comment above.
+	}
+}
+
 // collectAnchorSHAs returns the unique, non-empty commit SHAs referenced by the
 // given comments and review threads that anchor resolution depends on
-// (per-comment CommitSHA and OriginalSHA). These are passed to the targeted
-// shallow fetch as RequiredSHAs so the clone is only accepted when every commit
-// anchoring will need is present; otherwise the clone falls back to broad.
+// (per-comment CommitSHA and OriginalSHA).
+//
+// As of Phase 6 this is NOT used by the initial diff clone (the diff clone is
+// base/head-only — see diffCloneOptions). It is retained for a future
+// anchor-specific backfill job that may pre-fetch the commits needed to resolve
+// anchors that the fast shallow diff clone did not include.
 func collectAnchorSHAs(comments []*provider.Comment, threads []*provider.ReviewThread) []string {
 	seen := make(map[string]struct{})
 	var out []string
@@ -458,12 +457,16 @@ func hasAnchorableOriginalPosition(comments []*provider.Comment, threads []*prov
 //
 // Original-position comments resolve their diff geometry against a historical
 // patchset's BaseSHA (see selectDiffBaseSHA), which can differ from
-// prCopy.BaseSHA after a retarget/rebase. If the clone lacks that commit, those
-// anchors would silently fail on a targeted shallow fetch. Safe
-// over-approximation: when anchoring is enabled, there is at least one
-// anchorable original-position comment, and the store has patchsets for the PR,
-// include every non-empty patchset BaseSHA. SHAs already present in `existing`
-// (the per-comment anchor SHAs) are skipped to avoid duplicates.
+// prCopy.BaseSHA after a retarget/rebase.
+//
+// As of Phase 6 this is NOT used by the initial diff clone (the diff clone is
+// base/head-only — see diffCloneOptions); folding these deep historical bases
+// into the diff clone's RequiredSHAs could force a broad full clone and slow
+// every PR's diff. It is retained for a future anchor-specific backfill job.
+// Safe over-approximation when called: when anchoring is enabled, there is at
+// least one anchorable original-position comment, and the store has patchsets
+// for the PR, include every non-empty patchset BaseSHA. SHAs already present in
+// `existing` (the per-comment anchor SHAs) are skipped to avoid duplicates.
 func (o *Orchestrator) collectPatchsetBaseSHAs(
 	ctx context.Context,
 	prID string,

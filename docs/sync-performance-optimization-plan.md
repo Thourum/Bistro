@@ -176,6 +176,22 @@ Prototype limitations before production use:
 
 Therefore Phase 4 acceptance is **not complete** for production. The current value is benchmark support and a validated experimental path for future work.
 
+## Phase 6 — Minimal production wiring: base/head-only diff clone
+
+Status: **shipped (production path changed).**
+
+Phase 6 applies the selected "option A minimal": make the production sync used by Electron fast on the diff critical path by removing anchor/historical SHAs from the diff clone.
+
+What changed in `internal/sync/fetcher.go` (`FetchPRDetails`, `includeDiff` branch):
+
+- The diff clone (`o.git.CloneForPR`) is now **base/head-only**. It passes only `PRNumber` + `BaseBranch` (via the new `diffCloneOptions(pr)` helper) and **no `RequiredSHAs`**. Previously it folded per-comment `CommitSHA`/`OriginalSHA` (`collectAnchorSHAs`) and historical patchset BaseSHAs (`collectPatchsetBaseSHAs`) into `RequiredSHAs`, which could force a broad full clone (~50s) whenever any of those commits sat outside the shallow window — penalizing every PR's diff readiness for anchoring.
+- `GenerateDiff`, `DiffFiles` construction, `DiffComputed`, and writer behavior are **unchanged**.
+- Anchor resolution remains best-effort against the same fast clone. Comments whose historical/commit SHA is absent from the shallow fetch are skipped by `resolveAnchors` (already best-effort) — an anchor-only miss **never** triggers a broad fallback on the diff critical path.
+
+Anchoring trade-off (accepted): anchors that need commits outside the shallow window are skipped rather than guaranteed. This is opportunistic anchoring. Backfilling those anchors (a separate anchor-specific job that pre-fetches the needed commits) is **future work**. The `collectAnchorSHAs` / `collectPatchsetBaseSHAs` helpers and the git `RequiredSHAs` primitive are retained for that future job; they intentionally no longer feed the initial diff clone.
+
+Acceptance: the diff critical path can no longer be slowed by anchor-only SHA requirements; the expensive broad fallback is reserved for genuine base/head reachability misses (rare) rather than the common deep-anchor case.
+
 ## Phase 5 — Optional GitHub raw diff fast display
 
 Status: caution / later.
