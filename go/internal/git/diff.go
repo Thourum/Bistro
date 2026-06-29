@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	gitlib "github.com/go-git/go-git/v5"
-	fdiff "github.com/go-git/go-git/v5/plumbing/format/diff"
 	"github.com/go-git/go-git/v5/plumbing"
+	fdiff "github.com/go-git/go-git/v5/plumbing/format/diff"
 )
 
 // singleFilePatch wraps a FilePatch to implement the fdiff.Patch interface
@@ -31,7 +31,10 @@ func filePatchToString(fp fdiff.FilePatch) (string, error) {
 	return buf.String(), nil
 }
 
-// GenerateDiff creates per-file diffs between two commits
+// GenerateDiff creates per-file diffs between two commits in the on-disk
+// repository at localPath. Retained as the stable, disk-backed API; it opens
+// the repo and delegates to generateDiffFromRepo so the patch-conversion logic
+// is shared with the in-memory path.
 func (c *Client) GenerateDiff(localPath, baseSHA, headSHA string) (*DiffResult, error) {
 	if localPath == "" || baseSHA == "" || headSHA == "" {
 		return nil, fmt.Errorf("localPath, baseSHA, and headSHA cannot be empty")
@@ -40,6 +43,22 @@ func (c *Client) GenerateDiff(localPath, baseSHA, headSHA string) (*DiffResult, 
 	repo, err := gitlib.PlainOpen(localPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open repository: %w", err)
+	}
+
+	return generateDiffFromRepo(repo, baseSHA, headSHA)
+}
+
+// generateDiffFromRepo computes per-file diffs between baseSHA and headSHA using
+// an already-open *gitlib.Repository. It works identically against a disk-backed
+// repo (PlainOpen) and an in-memory repo (memory.Storage), since both expose the
+// same object store. This is the shared core behind GenerateDiff (disk) and the
+// in-memory PR-specific diff prototype.
+func generateDiffFromRepo(repo *gitlib.Repository, baseSHA, headSHA string) (*DiffResult, error) {
+	if repo == nil {
+		return nil, fmt.Errorf("repository cannot be nil")
+	}
+	if baseSHA == "" || headSHA == "" {
+		return nil, fmt.Errorf("baseSHA and headSHA cannot be empty")
 	}
 
 	baseHash := plumbing.NewHash(baseSHA)

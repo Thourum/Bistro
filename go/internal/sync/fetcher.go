@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	gosync "sync"
 	"time"
 
@@ -15,6 +16,27 @@ import (
 // perPRFetchTimeout caps how long the detail fetch (comments, reviews, CI,
 // diff) may take for a single PR before it is abandoned with an error.
 const perPRFetchTimeout = 2 * time.Minute
+
+// slowSubstepThresholdMs is the per-PR substep duration (comments, reviews,
+// threads, CI, clone, diff, anchor) above which a normally-Debug timing record
+// is escalated to Warn so unusually slow steps surface in ordinary runs.
+const slowSubstepThresholdMs = 5000
+
+// logSubstep emits a per-PR substep timing record. It stays at Debug for
+// ordinary durations and escalates to Warn once duration_ms crosses
+// slowSubstepThresholdMs, so a slow comments/CI/clone/diff step is visible
+// without enabling Debug logging globally. attrs are appended after the
+// standard duration_ms field.
+func logSubstep(log *slog.Logger, msg string, durMs int64, attrs ...any) {
+	all := make([]any, 0, len(attrs)+2)
+	all = append(all, "duration_ms", durMs)
+	all = append(all, attrs...)
+	if durMs >= slowSubstepThresholdMs {
+		log.Warn(msg+" (slow)", all...)
+		return
+	}
+	log.Debug(msg, all...)
+}
 
 // PRFetchResult holds the fetched data for a single PR, including any
 // per-PR error encountered during concurrent fetching.
@@ -79,6 +101,7 @@ func (o *Orchestrator) FetchPRDetails(
 				"pr_number", prCopy.Number,
 				"pr_id", prCopy.ID,
 				"pr_state", prCopy.State,
+				"pr_base_sha", truncateSHA(prCopy.BaseSHA),
 				"pr_head_sha", truncateSHA(prCopy.HeadSHA),
 			)
 			// Hard ceiling per PR so one stuck fetch can never wedge the
@@ -105,9 +128,8 @@ func (o *Orchestrator) FetchPRDetails(
 					)
 				} else {
 					result.Comments = comments
-					prLog.Debug("pr comments fetched",
+					logSubstep(prLog, "pr comments fetched", subDur,
 						"count", len(comments),
-						"duration_ms", subDur,
 					)
 				}
 			}
@@ -129,10 +151,9 @@ func (o *Orchestrator) FetchPRDetails(
 					prCopy.ReviewStatus = status
 					prCopy.ApprovedBy = approvedBy
 					prCopy.ChangesRequestedBy = changesBy
-					prLog.Debug("pr reviews fetched",
+					logSubstep(prLog, "pr reviews fetched", subDur,
 						"count", len(reviews),
 						"review_status", status,
-						"duration_ms", subDur,
 					)
 				}
 			}
@@ -151,8 +172,8 @@ func (o *Orchestrator) FetchPRDetails(
 							"duration_ms", subDur, "error", threadErr)
 					} else {
 						result.Threads = threads
-						prLog.Debug("pr review threads fetched",
-							"count", len(threads), "duration_ms", subDur)
+						logSubstep(prLog, "pr review threads fetched", subDur,
+							"count", len(threads))
 					}
 				}
 			}
@@ -173,17 +194,40 @@ func (o *Orchestrator) FetchPRDetails(
 					if ci != nil {
 						status = ci.Status
 					}
-					prLog.Debug("pr ci fetched",
+					logSubstep(prLog, "pr ci fetched", subDur,
 						"status", status,
-						"duration_ms", subDur,
 					)
 				}
 			}
 
+			// Phase 6 production path: the diff clone is BASE/HEAD-ONLY.
+			//
+			// This CloneForPR is on the diff critical path — its only job is to
+			// make the PR's current base and head commits available so the diff
+			// can be generated and persisted quickly. It therefore passes only
+			// PRNumber + BaseBranch (targeted shallow fetch) and NO RequiredSHAs.
+			//
+			// Why no anchor/historical RequiredSHAs here: folding per-comment
+			// CommitSHA/OriginalSHA and historical patchset BaseSHAs into this
+			// clone's RequiredSHAs could force a broad full clone (~50s) whenever
+			// any of those commits sits outside the shallow window — penalizing
+			// every PR's diff readiness for the sake of anchoring. Anchors are
+			// best-effort metadata; they must not gate or slow the diff.
+			//
+			// Anchor handling (see below): anchor resolution runs opportunistically
+			// against this same fast clone. If a comment's historical/commit SHA
+			// is not present in the shallow fetch, that specific anchor is skipped
+			// (resolveAnchors is already best-effort) — it does NOT trigger a broad
+			// fallback. Backfilling anchors that need deeper history is future work
+			// (a separate anchor-specific job). collectAnchorSHAs /
+			// collectPatchsetBaseSHAs and the git RequiredSHAs primitive are
+			// retained for that future job; they intentionally no longer feed this
+			// initial diff clone.
 			if includeDiff && o.git != nil {
 				cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", prCopy.Owner, prCopy.Repo)
 				subStart := time.Now()
-				cloneResult, cloneErr := o.git.Clone(taskCtx, cloneURL, prCopy.BaseSHA, prCopy.HeadSHA)
+				cloneResult, cloneErr := o.git.CloneForPR(taskCtx, cloneURL, prCopy.BaseSHA, prCopy.HeadSHA,
+					diffCloneOptions(prCopy))
 				cloneDur := time.Since(subStart).Milliseconds()
 				if cloneErr != nil {
 					errs = append(errs, fmt.Sprintf("diff clone: %v", cloneErr))
@@ -193,10 +237,14 @@ func (o *Orchestrator) FetchPRDetails(
 						"error", cloneErr,
 					)
 				} else {
-					prLog.Debug("repo cloned",
-						"local_path", cloneResult.LocalPath,
-						"duration_ms", cloneDur,
-					)
+					if cloneDur >= slowSubstepThresholdMs {
+						prLog.Warn("repo clone slow", "duration_ms", cloneDur)
+					} else {
+						prLog.Debug("repo cloned",
+							"local_path", cloneResult.LocalPath,
+							"duration_ms", cloneDur,
+						)
+					}
 					// NOTE: do NOT remove cloneResult.LocalPath here. The git
 					// Client owns this directory via its process-lifetime cache
 					// (keyed on base+head SHA) and reuses it across sync cycles
@@ -215,10 +263,9 @@ func (o *Orchestrator) FetchPRDetails(
 						)
 					} else if diffResult != nil {
 						result.DiffSize = diffResult.Size
-						prLog.Debug("pr diff generated",
+						logSubstep(prLog, "pr diff generated", diffDur,
 							"bytes", diffResult.Size,
 							"files", len(diffResult.Files),
-							"duration_ms", diffDur,
 						)
 
 						// Build DiffFiles to be persisted atomically with the PR row
@@ -237,9 +284,14 @@ func (o *Orchestrator) FetchPRDetails(
 						result.DiffFiles = diffFiles
 						result.DiffComputed = true
 
-						// Run anchor resolution while the clone is still on disk.
-						// Results are carried in AnchorUpdates and written back to
-						// the DB by the writer (best-effort, outside the savepoint).
+						// Anchor resolution is OPPORTUNISTIC against the fast
+						// base/head-only clone above. Comments whose historical or
+						// commit SHA is absent from this shallow fetch are skipped
+						// by resolveAnchors (best-effort) rather than forcing a
+						// broad re-clone — an anchor-only miss must never slow the
+						// diff critical path. Results are carried in AnchorUpdates
+						// and written back to the DB by the writer (best-effort,
+						// outside the savepoint).
 						if o.anchorResolver != nil {
 							anchorStart := time.Now()
 							result.AnchorUpdates = o.resolveAnchors(
@@ -247,9 +299,9 @@ func (o *Orchestrator) FetchPRDetails(
 								prCopy.ID, cloneResult.LocalPath, prCopy.HeadSHA, prCopy.BaseSHA,
 								prLog,
 							)
-							prLog.Debug("anchor resolution complete",
+							logSubstep(prLog, "anchor resolution complete",
+								time.Since(anchorStart).Milliseconds(),
 								"anchored", len(result.AnchorUpdates),
-								"duration_ms", time.Since(anchorStart).Milliseconds(),
 							)
 						}
 					}
@@ -308,4 +360,149 @@ func truncateSHA(sha string) string {
 		return sha[:7]
 	}
 	return sha
+}
+
+// diffCloneOptions builds the CloneOptions for the Phase 6 diff critical path.
+// It is intentionally BASE/HEAD-ONLY: it carries the PR number and base branch
+// (to drive the targeted shallow fetch of the current base/head) and never sets
+// RequiredSHAs. Anchor/historical SHAs are deliberately excluded so an anchor-
+// only miss can never force a broad full clone before the diff is persisted.
+// This is the single source of truth for the diff clone's options.
+func diffCloneOptions(pr *provider.PR) *git.CloneOptions {
+	if pr == nil {
+		return &git.CloneOptions{}
+	}
+	return &git.CloneOptions{
+		PRNumber:   pr.Number,
+		BaseBranch: pr.BaseBranch,
+		// RequiredSHAs intentionally left nil — see comment above.
+	}
+}
+
+// collectAnchorSHAs returns the unique, non-empty commit SHAs referenced by the
+// given comments and review threads that anchor resolution depends on
+// (per-comment CommitSHA and OriginalSHA).
+//
+// As of Phase 6 this is NOT used by the initial diff clone (the diff clone is
+// base/head-only — see diffCloneOptions). It is retained for a future
+// anchor-specific backfill job that may pre-fetch the commits needed to resolve
+// anchors that the fast shallow diff clone did not include.
+func collectAnchorSHAs(comments []*provider.Comment, threads []*provider.ReviewThread) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	add := func(sha string) {
+		if sha == "" {
+			return
+		}
+		if _, ok := seen[sha]; ok {
+			return
+		}
+		seen[sha] = struct{}{}
+		out = append(out, sha)
+	}
+	addComment := func(c *provider.Comment) {
+		if c == nil || c.Kind != "review" {
+			return
+		}
+		add(c.CommitSHA)
+		add(c.OriginalSHA)
+	}
+	for _, c := range comments {
+		addComment(c)
+	}
+	for _, th := range threads {
+		if th == nil {
+			continue
+		}
+		for _, c := range th.Comments {
+			addComment(c)
+		}
+	}
+	return out
+}
+
+// hasAnchorableOriginalPosition reports whether any review comment in the given
+// comments/threads is an anchorable original-position comment — i.e. anchorable
+// but lacking a current position, so anchor resolution would route through
+// selectDiffBaseSHA and need a historical patchset BaseSHA. Mirrors the
+// isCurrentPos test in resolveAnchors.
+func hasAnchorableOriginalPosition(comments []*provider.Comment, threads []*provider.ReviewThread) bool {
+	check := func(c *provider.Comment) bool {
+		if c == nil || c.Kind != "review" || c.FilePath == "" || !isAnchorable(c) {
+			return false
+		}
+		isCurrentPos := c.Position != nil && *c.Position > 0
+		return !isCurrentPos
+	}
+	for _, c := range comments {
+		if check(c) {
+			return true
+		}
+	}
+	for _, th := range threads {
+		if th == nil {
+			continue
+		}
+		for _, c := range th.Comments {
+			if check(c) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// collectPatchsetBaseSHAs returns the unique non-empty patchset BaseSHA values
+// for the PR that anchor resolution may need beyond the PR's current BaseSHA.
+//
+// Original-position comments resolve their diff geometry against a historical
+// patchset's BaseSHA (see selectDiffBaseSHA), which can differ from
+// prCopy.BaseSHA after a retarget/rebase.
+//
+// As of Phase 6 this is NOT used by the initial diff clone (the diff clone is
+// base/head-only — see diffCloneOptions); folding these deep historical bases
+// into the diff clone's RequiredSHAs could force a broad full clone and slow
+// every PR's diff. It is retained for a future anchor-specific backfill job.
+// Safe over-approximation when called: when anchoring is enabled, there is at
+// least one anchorable original-position comment, and the store has patchsets
+// for the PR, include every non-empty patchset BaseSHA. SHAs already present in
+// `existing` (the per-comment anchor SHAs) are skipped to avoid duplicates.
+func (o *Orchestrator) collectPatchsetBaseSHAs(
+	ctx context.Context,
+	prID string,
+	comments []*provider.Comment,
+	threads []*provider.ReviewThread,
+	existing []string,
+) []string {
+	if o.anchorResolver == nil || o.store == nil || prID == "" {
+		return nil
+	}
+	if !hasAnchorableOriginalPosition(comments, threads) {
+		return nil
+	}
+	patchsets, err := o.store.ListPatchsets(ctx, prID)
+	if err != nil {
+		logging.FromContext(ctx).Warn(
+			"collectPatchsetBaseSHAs: could not load patchsets; anchor base SHAs may be missing from targeted clone",
+			"pr_id", prID, "error", err)
+		return nil
+	}
+	seen := make(map[string]struct{}, len(existing))
+	for _, s := range existing {
+		if s != "" {
+			seen[s] = struct{}{}
+		}
+	}
+	var out []string
+	for _, ps := range patchsets {
+		if ps.BaseSHA == "" {
+			continue
+		}
+		if _, ok := seen[ps.BaseSHA]; ok {
+			continue
+		}
+		seen[ps.BaseSHA] = struct{}{}
+		out = append(out, ps.BaseSHA)
+	}
+	return out
 }

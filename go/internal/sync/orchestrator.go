@@ -871,7 +871,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 			for i, pr := range prs {
 				fetchedPRs[i] = &PRFetchResult{PR: pr}
 			}
-			log.Debug("phase list-prs done",
+			log.Info("phase list-prs done",
 				"count", len(prs),
 				"duration_ms", phaseDur,
 			)
@@ -913,7 +913,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 					result.Errors = append(result.Errors, r.Error.Error())
 				}
 			}
-			log.Debug("phase fetch-details done",
+			log.Info("phase fetch-details done",
 				"duration_ms", phaseDur,
 				"pr_ok", result.UpdatedPRs,
 				"pr_errors", len(detailResults)-result.UpdatedPRs,
@@ -937,7 +937,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 			)
 			o.emitter.Emit(events.NewErrorEvent(errMsg))
 		} else {
-			log.Debug("phase write-db done",
+			log.Info("phase write-db done",
 				"duration_ms", time.Since(phaseStart).Milliseconds(),
 			)
 		}
