@@ -10,6 +10,7 @@ import (
 
 	"log/slog"
 
+	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
@@ -18,8 +19,9 @@ import (
 
 // Writer handles database writes for sync results.
 type Writer struct {
-	log *slog.Logger
-	db  *store.DB
+	log     *slog.Logger
+	db      *store.DB
+	emitter *events.EventEmitter
 }
 
 // NewWriter creates a new database writer. If log is nil, slog.Default() is
@@ -32,6 +34,37 @@ func NewWriter(log *slog.Logger, db *store.DB) *Writer {
 		log: log,
 		db:  db,
 	}
+}
+
+// WithEmitter wires an EventEmitter into the writer so PR metadata and CI
+// status changes are broadcast after the sync transaction commits.
+func (w *Writer) WithEmitter(e *events.EventEmitter) *Writer {
+	w.emitter = e
+	return w
+}
+
+// prSnapshot holds the current PR fields tracked for change detection.
+type prSnapshot struct {
+	state    string
+	ciStatus string
+	title    string
+	draft    bool
+}
+
+// readPRSnapshot reads the current PR fields we care about for change detection.
+// Returns nil if the PR does not yet exist (new PR — no changes to detect).
+func (w *Writer) readPRSnapshot(ctx context.Context, tx *sql.Tx, prID string) *prSnapshot {
+	var s prSnapshot
+	var draftInt int
+	err := tx.QueryRowContext(ctx,
+		`SELECT state, COALESCE(ci_status,''), title, draft FROM prs WHERE id = ? LIMIT 1`,
+		prID,
+	).Scan(&s.state, &s.ciStatus, &s.title, &draftInt)
+	if err != nil {
+		return nil // not found or error — treat as new
+	}
+	s.draft = draftInt != 0
+	return &s
 }
 
 // WriteSyncResults persists all sync results to the database in a single transaction.
@@ -88,6 +121,8 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 	// It is always RELEASED (or ROLLBACK+RELEASE) before the next iteration.
 	const savepoint = "sp_pr"
 
+	var pendingEvents []*events.Event
+
 	for _, result := range results {
 		if result == nil {
 			prSkipped++
@@ -135,6 +170,9 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 		}
 
 		writeStart := time.Now()
+
+		// Read current snapshot for change detection (nil = new PR).
+		snap := w.readPRSnapshot(ctx, tx, prID)
 
 		// ── Critical write 1: PR row ───────────────────────────────────────
 		if err := w.writePRRow(ctx, tx, result.PR); err != nil {
@@ -221,6 +259,37 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 				"pr_id", prID, "count", len(result.AnchorUpdates))
 		}
 
+		// ── Detect and queue change events (emitted after tx.Commit) ──────
+		if snap != nil && w.emitter != nil {
+			pr := result.PR
+			draftStr := func(b bool) string {
+				if b {
+					return "true"
+				}
+				return "false"
+			}
+			if snap.state != pr.State {
+				pendingEvents = append(pendingEvents, events.NewPRMetadataChangedEvent(
+					prID, pr.Owner, pr.Repo, pr.Number, "state", snap.state, pr.State,
+				))
+			}
+			if snap.title != pr.Title {
+				pendingEvents = append(pendingEvents, events.NewPRMetadataChangedEvent(
+					prID, pr.Owner, pr.Repo, pr.Number, "title", snap.title, pr.Title,
+				))
+			}
+			if snap.draft != pr.Draft {
+				pendingEvents = append(pendingEvents, events.NewPRMetadataChangedEvent(
+					prID, pr.Owner, pr.Repo, pr.Number, "draft", draftStr(snap.draft), draftStr(pr.Draft),
+				))
+			}
+			if snap.ciStatus != pr.CIStatus {
+				pendingEvents = append(pendingEvents, events.NewCIStatusChangedEvent(
+					prID, pr.Owner, pr.Repo, pr.Number, snap.ciStatus, pr.CIStatus,
+				))
+			}
+		}
+
 		prCount++
 		log.Debug("pr written",
 			"pr_id", prID,
@@ -237,6 +306,11 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 			"error", err,
 		)
 		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Emit queued change events now that the transaction has committed.
+	for _, ev := range pendingEvents {
+		w.emitter.Emit(ev)
 	}
 
 	totalDur := time.Since(overallStart).Milliseconds()
@@ -377,8 +451,9 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 		INSERT INTO comments (
 			id, pr_id, author, body, created_at, updated_at, line_number, file_path,
 			kind, commit_sha, original_sha, side, position, original_position, in_reply_to, thread_id,
-			patchset_number, diff_hunk
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			patchset_number, diff_hunk,
+			original_line, start_line, original_start_line, start_side, subject_type
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			body              = excluded.body,
 			updated_at        = excluded.updated_at,
@@ -389,7 +464,12 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 			original_position = excluded.original_position,
 			thread_id         = excluded.thread_id,
 			patchset_number   = COALESCE(excluded.patchset_number, comments.patchset_number),
-			diff_hunk         = excluded.diff_hunk
+			diff_hunk         = excluded.diff_hunk,
+			original_line     = excluded.original_line,
+			start_line        = excluded.start_line,
+			original_start_line = excluded.original_start_line,
+			start_side        = excluded.start_side,
+			subject_type      = excluded.subject_type
 	`
 
 	_, err := tx.ExecContext(ctx, query,
@@ -411,6 +491,11 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 		nullableString(comment.ThreadID),
 		patchsetNumVal,
 		nullableString(comment.DiffHunk),
+		comment.OriginalLine,
+		comment.StartLine,
+		comment.OriginalStartLine,
+		nullableString(comment.StartSide),
+		nullableString(comment.SubjectType),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write comment %s: %w", comment.ID, err)
@@ -457,6 +542,9 @@ func (w *Writer) writeReviewThreads(ctx context.Context, tx *sql.Tx, threads []*
 		for _, c := range thread.Comments {
 			if c == nil {
 				continue
+			}
+			if c.ThreadID == "" {
+				c.ThreadID = thread.ID
 			}
 			// Apply the same patchset_number rule as flat review comments:
 			// only stamp for current-position comments; outdated ones preserve

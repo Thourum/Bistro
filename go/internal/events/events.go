@@ -94,6 +94,39 @@ func NewCompleteEvent(prCount, newPRs, updatedPRs, errors int, duration time.Dur
 	}
 }
 
+// NewPRMetadataChangedEvent fires when a PR's title, state, or draft flag changes.
+func NewPRMetadataChangedEvent(prID, owner, repo string, number int, field, oldVal, newVal string) *Event {
+	return &Event{
+		Type: "PR_METADATA_CHANGED",
+		Data: map[string]interface{}{
+			"pr_id":  prID,
+			"owner":  owner,
+			"repo":   repo,
+			"number": number,
+			"field":  field,
+			"old":    oldVal,
+			"new":    newVal,
+		},
+		Timestamp: time.Now(),
+	}
+}
+
+// NewCIStatusChangedEvent fires when a PR's CI status changes.
+func NewCIStatusChangedEvent(prID, owner, repo string, number int, oldStatus, newStatus string) *Event {
+	return &Event{
+		Type: "CI_STATUS_CHANGED",
+		Data: map[string]interface{}{
+			"pr_id":      prID,
+			"owner":      owner,
+			"repo":       repo,
+			"number":     number,
+			"old_status": oldStatus,
+			"new_status": newStatus,
+		},
+		Timestamp: time.Now(),
+	}
+}
+
 // NewErrorEvent creates an error event.
 func NewErrorEvent(message string) *Event {
 	return &Event{

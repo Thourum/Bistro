@@ -3,6 +3,7 @@ package mock
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/itterno/bistro/internal/provider"
 )
@@ -29,6 +30,12 @@ type MockProvider struct {
 	UnresolvedCalls []string
 	// ReplyCalls records reply_comment provider calls.
 	ReplyCalls []ReplyCall
+	// PostCommentCalls records post_comment provider calls.
+	PostCommentCalls []PostCommentCall
+	// Inbox discovery fields.
+	InboxDiscoveryResult *provider.InboxDiscoveryResult
+	InboxDiscoveryErr    error
+	InboxDiscoveryCalls  []provider.InboxDiscoveryOptions
 }
 
 // ReplyCall records a comment reply mutation request.
@@ -36,6 +43,13 @@ type ReplyCall struct {
 	PRID      string
 	InReplyTo string
 	Body      string
+}
+
+// PostCommentCall records a PR comment mutation request.
+type PostCommentCall struct {
+	PRID string
+	Line int
+	Body string
 }
 
 // NewMockProvider creates a new mock provider with empty state.
@@ -85,6 +99,14 @@ func (m *MockProvider) WithError(err error) *MockProvider {
 func (m *MockProvider) WithRepos(repos []*provider.Repo) *MockProvider {
 	clone := *m
 	clone.Repos = repos
+	return &clone
+}
+
+// WithInboxDiscovery returns a new MockProvider with inbox discovery configured.
+func (m *MockProvider) WithInboxDiscovery(result *provider.InboxDiscoveryResult, err error) *MockProvider {
+	clone := *m
+	clone.InboxDiscoveryResult = result
+	clone.InboxDiscoveryErr = err
 	return &clone
 }
 
@@ -152,7 +174,8 @@ func (m *MockProvider) RequestChanges(_ context.Context, _ string, _ string) err
 }
 
 // PostComment succeeds without error unless WithError was configured.
-func (m *MockProvider) PostComment(_ context.Context, _ string, _ int, _ string) error {
+func (m *MockProvider) PostComment(_ context.Context, prID string, line int, body string) error {
+	m.PostCommentCalls = append(m.PostCommentCalls, PostCommentCall{PRID: prID, Line: line, Body: body})
 	return m.err
 }
 
@@ -176,6 +199,18 @@ func (m *MockProvider) ListUserRepos(_ context.Context) ([]*provider.Repo, error
 		return nil, m.err
 	}
 	return m.Repos, nil
+}
+
+// DiscoverInboxPRs implements provider.InboxDiscoveryProvider.
+func (m *MockProvider) DiscoverInboxPRs(_ context.Context, opts provider.InboxDiscoveryOptions) (*provider.InboxDiscoveryResult, error) {
+	m.InboxDiscoveryCalls = append(m.InboxDiscoveryCalls, opts)
+	if m.InboxDiscoveryErr != nil {
+		return nil, m.InboxDiscoveryErr
+	}
+	if m.InboxDiscoveryResult != nil {
+		return m.InboxDiscoveryResult, nil
+	}
+	return &provider.InboxDiscoveryResult{HighWater: time.Now().UTC()}, nil
 }
 
 // PRs returns the configured PR list (useful in tests to grab a reference).
@@ -232,3 +267,4 @@ func (m *MockProvider) UnresolveThread(_ context.Context, threadID string) error
 var _ provider.ThreadProvider = (*MockProvider)(nil)
 var _ provider.ThreadResolver = (*MockProvider)(nil)
 var _ provider.CommentReplier = (*MockProvider)(nil)
+var _ provider.InboxDiscoveryProvider = (*MockProvider)(nil)

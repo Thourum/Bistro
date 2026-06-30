@@ -110,3 +110,24 @@ func TestMarkFileViewed_PRIsolation(t *testing.T) {
 		t.Fatal("pr-lv-4 should have no viewed files")
 	}
 }
+
+func TestMarkFileViewed_StoresExplicitAccountNamespace(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	mustInsertPR(t, db, "pr-account-fv")
+
+	if err := db.MarkFileViewed(ctx, "pr-account-fv", "a.go", "alice", "hash-a"); err != nil {
+		t.Fatalf("mark viewed: %v", err)
+	}
+
+	var provider, accountLogin string
+	if err := db.QueryRowContext(ctx,
+		`SELECT account_provider, account_login FROM files_viewed WHERE pr_id = ? AND file_path = ? AND login = ?`,
+		"pr-account-fv", "a.go", "alice",
+	).Scan(&provider, &accountLogin); err != nil {
+		t.Fatalf("query account namespace: %v", err)
+	}
+	if provider != "github" || accountLogin != "alice" {
+		t.Fatalf("account namespace = %s/%s, want github/alice", provider, accountLogin)
+	}
+}

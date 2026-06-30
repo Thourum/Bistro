@@ -351,9 +351,10 @@ func (a *App) Run(ctx context.Context) error {
 				a.log.Info("orchestrator initialized after auth")
 			}
 		},
-		GetClientID:       func() string { return a.githubClientID },
-		GetClientSecret:   func() string { return a.githubClientSecret },
-		CurrentUserWriter: currentUserStore,
+		GetClientID:        func() string { return a.githubClientID },
+		GetClientSecret:    func() string { return a.githubClientSecret },
+		CurrentUserWriter:  currentUserStore,
+		CurrentUserClearer: currentUserStore,
 	}
 
 	authCheck := handler.NewAuthCheckHandler(authDeps)

@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/itterno/bistro/internal/ws"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func setupCommentsTestDB(t *testing.T) *sql.DB {
@@ -60,7 +60,12 @@ func setupCommentsTestDB(t *testing.T) *sql.DB {
 		outdated_near_line    INTEGER,
 		anchor_patchset_number INTEGER,
 		anchor_current_patchset_number INTEGER,
-		diff_hunk TEXT
+		diff_hunk TEXT,
+		original_line INTEGER,
+		start_line INTEGER,
+		original_start_line INTEGER,
+		start_side TEXT,
+		subject_type TEXT
 	)`)
 	if err != nil {
 		t.Fatalf("create comments table: %v", err)

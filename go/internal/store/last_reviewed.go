@@ -7,6 +7,8 @@ import (
 	"fmt"
 )
 
+const localReviewAccountProvider = "github"
+
 // LastReviewedRecord holds the full patchset identity stored for a last-reviewed entry.
 // PatchsetNum == 0 means the record was written without a patchset number (legacy/unknown).
 type LastReviewedRecord struct {
@@ -25,14 +27,14 @@ func (db *DB) SetLastReviewedPatchset(ctx context.Context, prID, login string, p
 	} // else nil → SQL NULL (legacy/unknown)
 
 	const q = `
-		INSERT INTO last_reviewed_sha (pr_id, login, sha, patchset_number, base_sha, updated_at)
-		VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-		ON CONFLICT(pr_id, login) DO UPDATE SET
+		INSERT INTO last_reviewed_sha (pr_id, account_provider, account_login, login, sha, patchset_number, base_sha, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+		ON CONFLICT(pr_id, account_provider, account_login, login) DO UPDATE SET
 			sha             = excluded.sha,
 			patchset_number = excluded.patchset_number,
 			base_sha        = excluded.base_sha,
 			updated_at      = excluded.updated_at`
-	if _, err := db.ExecContext(ctx, q, prID, login, headSHA, numPtr, baseSHA); err != nil {
+	if _, err := db.ExecContext(ctx, q, prID, localReviewAccountProvider, login, login, headSHA, numPtr, baseSHA); err != nil {
 		return fmt.Errorf("set last reviewed patchset (%s, %s): %w", prID, login, err)
 	}
 	return nil
@@ -47,8 +49,9 @@ func (db *DB) GetLastReviewedPatchset(ctx context.Context, prID, login string) (
 	var baseSHA string
 	err := db.QueryRowContext(ctx,
 		`SELECT sha, COALESCE(patchset_number, 0), COALESCE(base_sha, '')
-		 FROM last_reviewed_sha WHERE pr_id = ? AND login = ?`,
-		prID, login,
+		 FROM last_reviewed_sha
+		 WHERE pr_id = ? AND account_provider = ? AND account_login = ? AND login = ?`,
+		prID, localReviewAccountProvider, login, login,
 	).Scan(&sha, &num, &baseSHA)
 	if errors.Is(err, sql.ErrNoRows) {
 		return LastReviewedRecord{}, false, nil
@@ -64,12 +67,12 @@ func (db *DB) GetLastReviewedPatchset(ctx context.Context, prID, login string) (
 // Prefer SetLastReviewedPatchset for new code so full patchset identity is captured.
 func (db *DB) SetLastReviewedSHA(ctx context.Context, prID, login, sha string) error {
 	const q = `
-		INSERT INTO last_reviewed_sha (pr_id, login, sha, updated_at)
-		VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-		ON CONFLICT(pr_id, login) DO UPDATE SET
+		INSERT INTO last_reviewed_sha (pr_id, account_provider, account_login, login, sha, updated_at)
+		VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+		ON CONFLICT(pr_id, account_provider, account_login, login) DO UPDATE SET
 			sha        = excluded.sha,
 			updated_at = excluded.updated_at`
-	if _, err := db.ExecContext(ctx, q, prID, login, sha); err != nil {
+	if _, err := db.ExecContext(ctx, q, prID, localReviewAccountProvider, login, login, sha); err != nil {
 		return fmt.Errorf("set last reviewed sha (%s, %s): %w", prID, login, err)
 	}
 	return nil
@@ -81,8 +84,9 @@ func (db *DB) SetLastReviewedSHA(ctx context.Context, prID, login, sha string) e
 func (db *DB) GetLastReviewedSHA(ctx context.Context, prID, login string) (string, bool, error) {
 	var sha string
 	err := db.QueryRowContext(ctx,
-		`SELECT sha FROM last_reviewed_sha WHERE pr_id = ? AND login = ?`,
-		prID, login,
+		`SELECT sha FROM last_reviewed_sha
+		 WHERE pr_id = ? AND account_provider = ? AND account_login = ? AND login = ?`,
+		prID, localReviewAccountProvider, login, login,
 	).Scan(&sha)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil

@@ -37,6 +37,18 @@ type CurrentUserWriter interface {
 	SetCurrentUser(ctx context.Context, provider, login string) error
 }
 
+// CurrentUserClearer is the narrow persistence interface used on sign-out.
+type CurrentUserClearer interface {
+	DeleteCurrentUser(ctx context.Context, provider string) error
+}
+
+const (
+	authStatusAuthenticated   = "authenticated"
+	authStatusUnauthenticated = "unauthenticated"
+	authReasonStoredToken     = "stored_token"
+	authReasonNoStoredToken   = "no_stored_token"
+)
+
 // CurrentUserWriterFunc adapts a function to CurrentUserWriter.
 type CurrentUserWriterFunc func(ctx context.Context, provider, login string) error
 
@@ -46,14 +58,15 @@ func (f CurrentUserWriterFunc) SetCurrentUser(ctx context.Context, prov, login s
 
 // AuthDeps bundles the dependencies needed by the authentication handlers.
 type AuthDeps struct {
-	Log               *slog.Logger
-	Tokens            TokenStore
-	Cache             UsernameCache
-	Broadcast         func(msg interface{})
-	SetProvider       func(prov provider.Provider, name string)
-	GetClientID       func() string
-	GetClientSecret   func() string
-	CurrentUserWriter CurrentUserWriter // optional; nil → skip
+	Log                *slog.Logger
+	Tokens             TokenStore
+	Cache              UsernameCache
+	Broadcast          func(msg interface{})
+	SetProvider        func(prov provider.Provider, name string)
+	GetClientID        func() string
+	GetClientSecret    func() string
+	CurrentUserWriter  CurrentUserWriter  // optional; nil → skip
+	CurrentUserClearer CurrentUserClearer // optional; nil → skip
 }
 
 func fetchUsername(providerName, token string) (string, error) {
@@ -121,19 +134,19 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 			client := github.NewClient(result.Token)
 			deps.SetProvider(client, providerName)
 
-		username := ""
-		if u, err := fetchUsername(providerName, result.Token); err == nil {
-			username = u
-			deps.Cache.Set(providerName, u)
-			if deps.CurrentUserWriter != nil {
-				if werr := deps.CurrentUserWriter.SetCurrentUser(context.Background(), providerName, u); werr != nil {
-					deps.Log.Warn("failed to persist current user", "provider", providerName, "error", werr)
-					// non-fatal: auth still succeeds
+			username := ""
+			if u, err := fetchUsername(providerName, result.Token); err == nil {
+				username = u
+				deps.Cache.Set(providerName, u)
+				if deps.CurrentUserWriter != nil {
+					if werr := deps.CurrentUserWriter.SetCurrentUser(context.Background(), providerName, u); werr != nil {
+						deps.Log.Warn("failed to persist current user", "provider", providerName, "error", werr)
+						// non-fatal: auth still succeeds
+					}
 				}
+			} else {
+				deps.Log.Warn("failed to fetch username after OAuth", "error", err)
 			}
-		} else {
-			deps.Log.Warn("failed to fetch username after OAuth", "error", err)
-		}
 
 			deps.Broadcast(map[string]interface{}{
 				"type": "AUTH_SUCCESS",
@@ -257,6 +270,7 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 
 		var providers []providerInfo
 		authenticated := false
+		authReason := authReasonNoStoredToken
 
 		for _, p := range knownProviders {
 			token, err := deps.Tokens.Get(p)
@@ -265,6 +279,7 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 				continue
 			}
 			authenticated = true
+			authReason = authReasonStoredToken
 
 			username, expired, found := deps.Cache.Get(p)
 			if found && !expired {
@@ -281,7 +296,7 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 			logger.Debug("username cache miss, fetching", "provider", p, "expired", expired)
 			fetched, fetchErr := fetchUsername(p, token)
 			if fetchErr != nil {
-				deps.Log.Warn("failed to fetch username", "provider", p, "error", fetchErr)
+				logger.Warn("failed to fetch username", "provider", p, "error", fetchErr)
 				providers = append(providers, providerInfo{Provider: p, Username: username})
 				continue
 			}
@@ -302,9 +317,19 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 			"data": map[string]interface{}{
 				"authenticated": authenticated,
 				"providers":     providers,
+				"auth_status":   authStatus(authenticated),
+				"auth_reason":   authReason,
+				"requires_auth": !authenticated,
 			},
 		}, nil
 	}
+}
+
+func authStatus(authenticated bool) string {
+	if authenticated {
+		return authStatusAuthenticated
+	}
+	return authStatusUnauthenticated
 }
 
 // NewAuthDisconnectHandler returns a handler for AUTH_DISCONNECT messages that
@@ -329,6 +354,11 @@ func NewAuthDisconnectHandler(deps AuthDeps, checkHandler ws.MessageHandler) ws.
 			deps.Log.Warn("failed to delete token from keychain", "provider", data.Provider, "error", err)
 		}
 		deps.Cache.Delete(data.Provider)
+		if deps.CurrentUserClearer != nil {
+			if err := deps.CurrentUserClearer.DeleteCurrentUser(ctx, data.Provider); err != nil {
+				logger.Warn("failed to clear current user", "provider", data.Provider, "error", err)
+			}
+		}
 		deps.SetProvider(nil, data.Provider)
 
 		checkResp, err := checkHandler(ctx, msg)

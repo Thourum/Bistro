@@ -41,6 +41,15 @@ func (s *CurrentUserStore) SetCurrentUser(ctx context.Context, providerName, log
 	return nil
 }
 
+// DeleteCurrentUser removes the stored current login for the given provider.
+func (s *CurrentUserStore) DeleteCurrentUser(ctx context.Context, providerName string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM current_user WHERE provider = ?`, providerName); err != nil {
+		return fmt.Errorf("delete current user %s: %w", providerName, err)
+	}
+	s.log.Debug("current user cleared", "provider", providerName)
+	return nil
+}
+
 // GetCurrentUser returns the stored login and true, or ("", false, nil) if not set.
 // A non-nil error indicates a DB failure distinct from the not-set case.
 func (s *CurrentUserStore) GetCurrentUser(ctx context.Context, providerName string) (string, bool, error) {

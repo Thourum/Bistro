@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	stdsync "sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -566,6 +568,132 @@ func TestReplayQueuedActions_ContextCancelledProviderError_IsTerminal(t *testing
 			t.Error("ambiguous-terminal row must not appear in GetPending — duplicate mutation risk")
 		}
 	}
+}
+
+func TestReplayQueuedActions_ProcessingPostCommentReconcilesRemoteSuccess(t *testing.T) {
+	db := openTestDB(t)
+	q := store.NewActionQueue(db.DB)
+	ctx := context.Background()
+
+	const actionID = "pr-comment-crash-reconcile"
+	const prID = "github:owner/repo:11"
+	const body = "already posted while Bistro crashed"
+	if err := q.Enqueue(ctx, &store.QueuedAction{
+		ID:         actionID,
+		ActionType: string(actions.PostCommentCommand),
+		PRID:       prID,
+		Payload:    body,
+	}); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	queued, err := q.GetByID(ctx, actionID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if err := q.MarkProcessing(ctx, actionID); err != nil {
+		t.Fatalf("MarkProcessing: %v", err)
+	}
+
+	prov := mock.NewMockProvider().WithComments([]*provider.Comment{{
+		PRID:      prID,
+		Author:    "mock-user",
+		Body:      body,
+		CreatedAt: queued.CreatedAt.Add(time.Second),
+	}})
+	orch := NewOrchestrator(nil, prov, db, nil).WithActionQueue(q)
+
+	if err := orch.ReplayQueuedActions(ctx); err != nil {
+		t.Fatalf("ReplayQueuedActions: %v", err)
+	}
+	got, err := q.GetByID(ctx, actionID)
+	if err != nil {
+		t.Fatalf("GetByID after replay: %v", err)
+	}
+	if got.Status != "completed" {
+		t.Fatalf("status = %q, want completed", got.Status)
+	}
+	if len(prov.PostCommentCalls) != 0 {
+		t.Fatalf("PostComment was called %d times; remote reconciliation should avoid duplicate mutation", len(prov.PostCommentCalls))
+	}
+}
+
+func TestReplayQueuedActions_ConcurrentOrchestratorsDoNotDuplicatePostComment(t *testing.T) {
+	db := openTestDB(t)
+	q := store.NewActionQueue(db.DB)
+	ctx := context.Background()
+
+	const actionID = "pr-comment-concurrent-replay"
+	if err := q.Enqueue(ctx, &store.QueuedAction{
+		ID:         actionID,
+		ActionType: string(actions.PostCommentCommand),
+		PRID:       "github:owner/repo:12",
+		Payload:    "only once",
+	}); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	prov := &blockingPostCommentProvider{
+		MockProvider: mock.NewMockProvider(),
+		entered:      make(chan struct{}),
+		release:      make(chan struct{}),
+	}
+	orch1 := NewOrchestrator(nil, prov, db, nil).WithActionQueue(q)
+	orch2 := NewOrchestrator(nil, prov, db, nil).WithActionQueue(q)
+
+	firstErr := make(chan error, 1)
+	go func() { firstErr <- orch1.ReplayQueuedActions(ctx) }()
+
+	select {
+	case <-prov.entered:
+	case <-time.After(time.Second):
+		t.Fatal("first replay did not reach provider")
+	}
+
+	secondErr := make(chan error, 1)
+	go func() { secondErr <- orch2.ReplayQueuedActions(ctx) }()
+
+	time.Sleep(25 * time.Millisecond)
+	close(prov.release)
+
+	if err := <-firstErr; err != nil {
+		t.Fatalf("first ReplayQueuedActions: %v", err)
+	}
+	if err := <-secondErr; err != nil {
+		t.Fatalf("second ReplayQueuedActions: %v", err)
+	}
+	if got := prov.calls.Load(); got != 1 {
+		t.Fatalf("PostComment calls = %d, want 1", got)
+	}
+	queued, err := q.GetByID(ctx, actionID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if queued.Status != "completed" {
+		t.Fatalf("status = %q, want completed", queued.Status)
+	}
+}
+
+func TestReplayTimestampMatchesAllowsLocalClockSkew(t *testing.T) {
+	queuedAt := time.Date(2026, 6, 29, 23, 0, 0, 0, time.UTC)
+	remoteCreatedAt := queuedAt.Add(-5 * time.Minute)
+	if !replayTimestampMatches(remoteCreatedAt, queuedAt) {
+		t.Fatal("remote success within clock-skew tolerance should reconcile")
+	}
+}
+
+type blockingPostCommentProvider struct {
+	*mock.MockProvider
+	entered chan struct{}
+	release chan struct{}
+	once    stdsync.Once
+	calls   atomic.Int32
+}
+
+func (p *blockingPostCommentProvider) PostComment(_ context.Context, _ string, _ int, _ string) error {
+	p.calls.Add(1)
+	p.once.Do(func() { close(p.entered) })
+	<-p.release
+	return nil
 }
 
 // ── Blocker 2: line-level post_comment rejected before queueing ──────────

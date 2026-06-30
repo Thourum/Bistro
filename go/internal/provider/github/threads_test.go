@@ -16,19 +16,27 @@ func TestNormalizeReviewComment_Fields(t *testing.T) {
 	reviewID := int64(99)
 	pos := 5
 	origPos := 5
+	origLine := 9
+	startLine := 8
+	origStartLine := 7
 	ghc := &ghlib.PullRequestComment{
 		ID:                  &id,
 		CommitID:            ghlib.Ptr("sha-head"),
 		OriginalCommitID:    ghlib.Ptr("sha-orig"),
 		Side:                ghlib.Ptr("RIGHT"),
+		StartSide:           ghlib.Ptr("LEFT"),
 		Position:            &pos,
 		OriginalPosition:    &origPos,
+		OriginalLine:        &origLine,
+		StartLine:           &startLine,
+		OriginalStartLine:   &origStartLine,
 		InReplyTo:           &replyTo,
 		PullRequestReviewID: &reviewID,
 		User:                &ghlib.User{Login: ghlib.Ptr("alice")},
 		Body:                ghlib.Ptr("looks good"),
 		Path:                ghlib.Ptr("main.go"),
 		Line:                ghlib.Ptr(10),
+		SubjectType:         ghlib.Ptr("LINE"),
 		CreatedAt:           &ghlib.Timestamp{Time: now},
 		UpdatedAt:           &ghlib.Timestamp{Time: now},
 	}
@@ -53,6 +61,24 @@ func TestNormalizeReviewComment_Fields(t *testing.T) {
 	}
 	if c.Position == nil || *c.Position != 5 {
 		t.Errorf("Position: got %v", c.Position)
+	}
+	if c.OriginalPosition == nil || *c.OriginalPosition != 5 {
+		t.Errorf("OriginalPosition: got %v", c.OriginalPosition)
+	}
+	if c.OriginalLine == nil || *c.OriginalLine != 9 {
+		t.Errorf("OriginalLine: got %v", c.OriginalLine)
+	}
+	if c.StartLine == nil || *c.StartLine != 8 {
+		t.Errorf("StartLine: got %v", c.StartLine)
+	}
+	if c.OriginalStartLine == nil || *c.OriginalStartLine != 7 {
+		t.Errorf("OriginalStartLine: got %v", c.OriginalStartLine)
+	}
+	if c.StartSide != "LEFT" {
+		t.Errorf("StartSide: got %q", c.StartSide)
+	}
+	if c.SubjectType != "LINE" {
+		t.Errorf("SubjectType: got %q", c.SubjectType)
 	}
 	if c.InReplyTo != "github-review-comment-41" {
 		t.Errorf("InReplyTo: got %q", c.InReplyTo)
@@ -123,8 +149,6 @@ func TestNormalizeReviewComment_DiffHunkEmpty(t *testing.T) {
 		t.Errorf("DiffHunk should be empty when not set, got %q", c.DiffHunk)
 	}
 }
-
-
 
 func TestGetReviewThreads_GracefulDegradation(t *testing.T) {
 	t.Run("graphql_fail_returns_rest_threads_no_error", func(t *testing.T) {

@@ -331,6 +331,8 @@ func TestWriteReviewThreads_PersistsThreadAndComments(t *testing.T) {
 		BaseBranch: "main", HeadBranch: "f", BaseSHA: "b", HeadSHA: "h",
 	})
 
+	pos := 7
+	origPos := 11
 	threads := []*provider.ReviewThread{{
 		ID: "thread-1", PRID: "github:o/r:1",
 		FilePath: "main.go", Line: 10,
@@ -338,7 +340,10 @@ func TestWriteReviewThreads_PersistsThreadAndComments(t *testing.T) {
 		Comments: []*provider.Comment{
 			{ID: "github-review-comment-1", PRID: "github:o/r:1",
 				Author: "alice", Body: "nit", Kind: "review",
-				CommitSHA: "abc", Side: "RIGHT",
+				FilePath: "main.go", LineNo: 10,
+				CommitSHA: "abc", OriginalSHA: "orig-abc", Side: "RIGHT",
+				Position: &pos, OriginalPosition: &origPos,
+				InReplyTo: "github-review-comment-0", DiffHunk: "@@ -1 +1 @@",
 				CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		},
 	}}
@@ -362,13 +367,26 @@ func TestWriteReviewThreads_PersistsThreadAndComments(t *testing.T) {
 		t.Errorf("resolved: got %d want 1", resolved)
 	}
 
-	// Comment row with kind='review'.
-	var kind string
-	if err := db.QueryRow(`SELECT kind FROM comments WHERE id='github-review-comment-1'`).Scan(&kind); err != nil {
+	// Comment row with inline review-comment fields intact.
+	var kind, filePath, commitSHA, originalSHA, side, inReplyTo, threadID, diffHunk string
+	var lineNo, position, originalPosition int
+	if err := db.QueryRow(`
+		SELECT kind, file_path, line_number, commit_sha, original_sha, side,
+		       position, original_position, in_reply_to, thread_id, diff_hunk
+		FROM comments WHERE id='github-review-comment-1'`).Scan(
+		&kind, &filePath, &lineNo, &commitSHA, &originalSHA, &side,
+		&position, &originalPosition, &inReplyTo, &threadID, &diffHunk,
+	); err != nil {
 		t.Fatalf("comment missing: %v", err)
 	}
 	if kind != "review" {
 		t.Errorf("comment kind: got %q want 'review'", kind)
+	}
+	if filePath != "main.go" || lineNo != 10 || commitSHA != "abc" || originalSHA != "orig-abc" || side != "RIGHT" ||
+		position != pos || originalPosition != origPos || inReplyTo != "github-review-comment-0" ||
+		threadID != "thread-1" || diffHunk != "@@ -1 +1 @@" {
+		t.Errorf("inline fields not persisted: file=%q line=%d commit=%q original=%q side=%q position=%d original_position=%d in_reply_to=%q thread_id=%q diff_hunk=%q",
+			filePath, lineNo, commitSHA, originalSHA, side, position, originalPosition, inReplyTo, threadID, diffHunk)
 	}
 }
 
@@ -1185,6 +1203,45 @@ func TestWriteComment_OutdatedComment_PreservesPatchsetNumber(t *testing.T) {
 	db.QueryRow(`SELECT patchset_number FROM comments WHERE id='outdated-c1'`).Scan(&psNum) //nolint:errcheck
 	if psNum == nil || *psNum != 1 {
 		t.Errorf("outdated comment patchset_number: got %v want 1 (must not be overwritten with current patchset)", psNum)
+	}
+}
+
+func TestWriteComment_ReviewPositionFields(t *testing.T) {
+	db := newSyncTestDB(t)
+	w := NewWriter(nil, db)
+
+	pr := makePR("github:o/r:61", 61, "head-61", "base-61")
+	pos := 3
+	origPos := 4
+	origLine := 40
+	startLine := 38
+	origStartLine := 37
+	if err := w.WriteSyncResults([]*PRFetchResult{{
+		PR: pr,
+		Comments: []*provider.Comment{{
+			ID: "review-position-c1", PRID: pr.ID, Author: "alice", Body: "range nit",
+			Kind: "review", CommitSHA: "head-61", OriginalSHA: "orig-61", Side: "RIGHT",
+			StartSide: "LEFT", Position: &pos, OriginalPosition: &origPos,
+			OriginalLine: &origLine, StartLine: &startLine, OriginalStartLine: &origStartLine,
+			SubjectType: "LINE", FilePath: "main.go", LineNo: 41,
+			CreatedAt: mustTime(), UpdatedAt: mustTime(),
+		}},
+	}}); err != nil {
+		t.Fatalf("WriteSyncResults: %v", err)
+	}
+
+	var gotOriginalLine, gotStartLine, gotOriginalStartLine *int
+	var gotStartSide, gotSubjectType *string
+	if err := db.QueryRow(`SELECT original_line, start_line, original_start_line, start_side, subject_type FROM comments WHERE id='review-position-c1'`).Scan(
+		&gotOriginalLine, &gotStartLine, &gotOriginalStartLine, &gotStartSide, &gotSubjectType,
+	); err != nil {
+		t.Fatalf("query review positioning fields: %v", err)
+	}
+	if gotOriginalLine == nil || *gotOriginalLine != 40 || gotStartLine == nil || *gotStartLine != 38 || gotOriginalStartLine == nil || *gotOriginalStartLine != 37 {
+		t.Fatalf("line positioning fields = original:%v start:%v original_start:%v", gotOriginalLine, gotStartLine, gotOriginalStartLine)
+	}
+	if gotStartSide == nil || *gotStartSide != "LEFT" || gotSubjectType == nil || *gotSubjectType != "LINE" {
+		t.Fatalf("side/subject fields = start_side:%v subject_type:%v", gotStartSide, gotSubjectType)
 	}
 }
 

@@ -161,8 +161,9 @@ func TestMigrationRunnerRecordsVersions(t *testing.T) {
 
 // TestRateLimitStateProviderKeyMigration verifies that migration 011 correctly
 // rebuilds rate_limit_state so that:
-//   (a) two different provider ids coexist as distinct rows without overwriting each other, and
-//   (b) the pre-existing 'github' row's data survives the migration intact.
+//
+//	(a) two different provider ids coexist as distinct rows without overwriting each other, and
+//	(b) the pre-existing 'github' row's data survives the migration intact.
 func TestRateLimitStateProviderKeyMigration(t *testing.T) {
 	db, err := OpenDB(":memory:")
 	if err != nil {
@@ -322,14 +323,14 @@ func TestMigration014AddsLastReviewedAndFilesViewed(t *testing.T) {
 	db := newTestDB(t)
 
 	lastReviewedCols := tableColumns(t, db, "last_reviewed_sha")
-	for _, want := range []string{"pr_id", "login", "sha", "updated_at"} {
+	for _, want := range []string{"pr_id", "account_provider", "account_login", "login", "sha", "updated_at"} {
 		if !lastReviewedCols[want] {
 			t.Errorf("last_reviewed_sha missing column %q", want)
 		}
 	}
 
 	filesViewedCols := tableColumns(t, db, "files_viewed")
-	for _, want := range []string{"pr_id", "file_path", "login", "content_hash", "viewed_at"} {
+	for _, want := range []string{"pr_id", "file_path", "account_provider", "account_login", "login", "content_hash", "viewed_at"} {
 		if !filesViewedCols[want] {
 			t.Errorf("files_viewed missing column %q", want)
 		}
@@ -464,5 +465,29 @@ func TestMigration020_AddsDiffHunkColumn(t *testing.T) {
 	}
 	if hunk == nil || *hunk != "@@ -1,3 +1,4 @@" {
 		t.Errorf("diff_hunk after update: got %v want '@@ -1,3 +1,4 @@'", hunk)
+	}
+}
+
+func TestMigration023_AddsReviewCommentPositionFields(t *testing.T) {
+	db := newTestDB(t)
+
+	cols := tableColumns(t, db, "comments")
+	for _, want := range []string{"original_line", "start_line", "original_start_line", "start_side", "subject_type"} {
+		if !cols[want] {
+			t.Errorf("comments missing review-comment position column %q", want)
+		}
+	}
+
+	// Existing issue comments remain readable and get NULL review positioning fields.
+	mustInsertPR(t, db, "p023")
+	mustExec(t, db, `INSERT INTO comments (id, pr_id, author, body, created_at, updated_at)
+		VALUES ('c023','p023','alice','hello','2026-01-01','2026-01-01')`)
+	var originalLine *int
+	var subjectType *string
+	if err := db.QueryRow(`SELECT original_line, subject_type FROM comments WHERE id='c023'`).Scan(&originalLine, &subjectType); err != nil {
+		t.Fatalf("query migration 023 columns: %v", err)
+	}
+	if originalLine != nil || subjectType != nil {
+		t.Fatalf("new review positioning columns default = (%v, %v), want NULLs", originalLine, subjectType)
 	}
 }

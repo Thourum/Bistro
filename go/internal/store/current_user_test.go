@@ -51,4 +51,22 @@ func TestCurrentUserStore_SetAndGet(t *testing.T) {
 	if u != "bob" {
 		t.Errorf("github should still be 'bob', got %q", u)
 	}
+
+	if err := s.DeleteCurrentUser(ctx, "github"); err != nil {
+		t.Fatalf("DeleteCurrentUser github: %v", err)
+	}
+	u, ok, err = s.GetCurrentUser(ctx, "github")
+	if err != nil {
+		t.Fatalf("after delete: unexpected error: %v", err)
+	}
+	if ok || u != "" {
+		t.Errorf("after delete: got (%q, %v) want ('', false)", u, ok)
+	}
+	u, ok, err = s.GetCurrentUser(ctx, "gitlab")
+	if err != nil {
+		t.Fatalf("gitlab after github delete: unexpected error: %v", err)
+	}
+	if !ok || u != "carol" {
+		t.Errorf("gitlab should remain carol after github delete, got (%q, %v)", u, ok)
+	}
 }

@@ -29,9 +29,11 @@ func NormalizeReviewComment(prID string, ghc *ghlib.PullRequestComment) *provide
 		CommitSHA:   ghc.GetCommitID(),
 		OriginalSHA: ghc.GetOriginalCommitID(),
 		Side:        ghc.GetSide(),
+		StartSide:   ghc.GetStartSide(),
 		FilePath:    ghc.GetPath(),
 		LineNo:      ghc.GetLine(),
 		DiffHunk:    ghc.GetDiffHunk(),
+		SubjectType: ghc.GetSubjectType(),
 		CreatedAt:   ghc.GetCreatedAt().Time,
 		UpdatedAt:   ghc.GetUpdatedAt().Time,
 	}
@@ -42,6 +44,15 @@ func NormalizeReviewComment(prID string, ghc *ghlib.PullRequestComment) *provide
 	}
 	if op := ghc.GetOriginalPosition(); op != 0 {
 		c.OriginalPosition = &op
+	}
+	if ol := ghc.GetOriginalLine(); ol != 0 {
+		c.OriginalLine = &ol
+	}
+	if sl := ghc.GetStartLine(); sl != 0 {
+		c.StartLine = &sl
+	}
+	if osl := ghc.GetOriginalStartLine(); osl != 0 {
+		c.OriginalStartLine = &osl
 	}
 
 	// InReplyTo: build the canonical ID from the numeric parent ID.

@@ -156,6 +156,30 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 		return
 	}
 
+	if orch.SupportsInboxDiscovery() {
+		result, err := orch.DiscoverAndSyncInbox(orchCtx)
+		if err != nil {
+			a.log.Error("syncWatchedRepos: inbox discovery failed", "err", err)
+			if orchCtx.Err() == nil {
+				a.broadcastSyncError("github:inbox", err)
+			}
+			return
+		} else if result != nil && result.PRCount > 0 {
+			a.log.Info("syncWatchedRepos: inbox discovery hydrated",
+				"prs", result.PRCount,
+				"updated", result.UpdatedPRs,
+				"comments", result.CommentCount,
+			)
+		}
+		if orchCtx.Err() == nil {
+			a.wsServer.Broadcast(map[string]interface{}{
+				"type": "SYNC_COMPLETE",
+				"data": map[string]interface{}{"scope": "inbox"},
+			})
+		}
+		return
+	}
+
 	// Read the full repo list and close the result set BEFORE syncing.
 	// Keeping rows open across orch.Sync deadlocks the connection pool:
 	// the open result set holds a connection while the sync's write

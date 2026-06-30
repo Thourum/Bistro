@@ -45,6 +45,18 @@ type Orchestrator struct {
 	liveness context.Context
 }
 
+const (
+	inboxCursorLag                = 2 * time.Minute
+	replayReconciliationClockSkew = 10 * time.Minute
+)
+
+// SupportsInboxDiscovery reports whether the provider can discover relevant PRs
+// from provider-native inbox/search state without scanning every watched repo.
+func (o *Orchestrator) SupportsInboxDiscovery() bool {
+	_, ok := o.provider.(provider.InboxDiscoveryProvider)
+	return ok
+}
+
 // NewOrchestrator creates a new sync orchestrator. If log is nil, slog.Default()
 // is used — downstream code can rely on o.log being non-nil.
 func NewOrchestrator(
@@ -465,15 +477,43 @@ func (o *Orchestrator) ApplyAction(ctx context.Context, req *actions.ActionReque
 			payload = string(encoded)
 		}
 
+		accountLogin := ""
+		queueID := queuedActionID(req)
+		if o.reviewLogin != nil {
+			login, ok, err := o.reviewLogin.GetCurrentUser(ctx, "github")
+			if err != nil {
+				return &actions.ActionResult{
+					PRID:      req.PRID,
+					Action:    req.Action,
+					Success:   false,
+					Error:     fmt.Sprintf("rate limited: could not resolve current GitHub account for queueing: %v", err),
+					Timestamp: time.Now(),
+				}
+			}
+			if !ok || login == "" {
+				return &actions.ActionResult{
+					PRID:      req.PRID,
+					Action:    req.Action,
+					Success:   false,
+					Error:     "rate limited: no current GitHub account, action not queued",
+					Timestamp: time.Now(),
+				}
+			}
+			accountLogin = login
+			queueID = accountScopedQueuedActionID(login, queueID)
+		}
+
 		queuedAction := &store.QueuedAction{
 			// Include Body in the ID so that multiple thread actions on the same
 			// PR (e.g. resolve thread-A and resolve thread-B) get distinct rows
 			// rather than overwriting each other. For actions without a body
 			// (e.g. approve) the ID remains pr_id+action, preserving idempotence.
-			ID:         queuedActionID(req),
-			ActionType: string(req.Action),
-			PRID:       req.PRID,
-			Payload:    payload,
+			ID:              queueID,
+			ActionType:      string(req.Action),
+			PRID:            req.PRID,
+			Payload:         payload,
+			AccountProvider: "github",
+			AccountLogin:    accountLogin,
 		}
 		if o.queue != nil {
 			if err := o.queue.Enqueue(ctx, queuedAction); err != nil {
@@ -671,6 +711,115 @@ func queuedActionID(req *actions.ActionRequest) string {
 	}
 }
 
+func accountScopedQueuedActionID(accountLogin, actionID string) string {
+	h := sha256.Sum256([]byte(accountLogin))
+	return "github-" + hex.EncodeToString(h[:8]) + "-" + actionID
+}
+
+func replayNeedsRemoteReconciliation(action actions.ActionCommand) bool {
+	switch action {
+	case actions.ApproveCommand, actions.RequestChangesCommand, actions.PostCommentCommand, actions.ReplyCommentCommand:
+		return true
+	}
+	return false
+}
+
+func replayActionIsNonIdempotent(action actions.ActionCommand) bool {
+	switch action {
+	case actions.ApproveCommand, actions.RequestChangesCommand, actions.PostCommentCommand, actions.ReplyCommentCommand:
+		return true
+	}
+	return false
+}
+
+func replayTimestampMatches(remote time.Time, queuedAt time.Time) bool {
+	return !remote.IsZero() && !remote.Before(queuedAt.Add(-replayReconciliationClockSkew))
+}
+
+func (o *Orchestrator) reconcileQueuedActionSuccess(ctx context.Context, action *store.QueuedAction, req *actions.ActionRequest) (bool, error) {
+	if o.provider == nil {
+		return false, nil
+	}
+
+	switch req.Action {
+	case actions.ApproveCommand, actions.RequestChangesCommand:
+		username, err := o.provider.GetUsername(ctx)
+		if err != nil {
+			return false, err
+		}
+		reviews, err := o.provider.ListReviews(ctx, req.PRID)
+		if err != nil {
+			return false, err
+		}
+		wantState := "approved"
+		if req.Action == actions.RequestChangesCommand {
+			wantState = "changes_requested"
+		}
+		for _, review := range reviews {
+			if review.Author == username && review.State == wantState && replayTimestampMatches(review.SubmittedAt, action.CreatedAt) {
+				return true, nil
+			}
+		}
+	case actions.PostCommentCommand:
+		username, err := o.provider.GetUsername(ctx)
+		if err != nil {
+			return false, err
+		}
+		comments, err := o.provider.GetComments(ctx, req.PRID)
+		if err != nil {
+			return false, err
+		}
+		for _, comment := range comments {
+			if comment.Author == username && comment.Body == req.Body && replayTimestampMatches(comment.CreatedAt, action.CreatedAt) {
+				return true, nil
+			}
+		}
+	case actions.ReplyCommentCommand:
+		threadProvider, ok := o.provider.(provider.ThreadProvider)
+		if !ok {
+			return false, fmt.Errorf("provider does not support review-thread reconciliation")
+		}
+		username, err := o.provider.GetUsername(ctx)
+		if err != nil {
+			return false, err
+		}
+		threads, err := threadProvider.GetReviewThreads(ctx, req.PRID)
+		if err != nil {
+			return false, err
+		}
+		for _, thread := range threads {
+			for _, comment := range thread.Comments {
+				if comment.Author != username || comment.Body != req.Body || !replayTimestampMatches(comment.CreatedAt, action.CreatedAt) {
+					continue
+				}
+				if req.InReplyTo != "" && comment.InReplyTo == req.InReplyTo {
+					return true, nil
+				}
+				if req.ThreadID != "" && thread.ID == req.ThreadID {
+					return true, nil
+				}
+			}
+		}
+	case actions.ResolveThreadCommand, actions.UnresolveThreadCommand:
+		threadProvider, ok := o.provider.(provider.ThreadProvider)
+		if !ok {
+			return false, nil
+		}
+		threads, err := threadProvider.GetReviewThreads(ctx, req.PRID)
+		if err != nil {
+			return false, err
+		}
+		wantResolved := req.Action == actions.ResolveThreadCommand
+		for _, thread := range threads {
+			if thread.ID == req.Body && thread.StateKnown && thread.Resolved == wantResolved {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
 // ReplayQueuedActions replays pending actions after a rate limit clears.
 func (o *Orchestrator) ReplayQueuedActions(ctx context.Context) error {
 	if o.queue == nil {
@@ -678,11 +827,39 @@ func (o *Orchestrator) ReplayQueuedActions(ctx context.Context) error {
 		return nil
 	}
 
+	// Replay claims local-only queue rows and may reset crash-orphaned processing
+	// rows. Serialize via the queue so separate orchestrator instances sharing
+	// the local DB cannot reset each other's in-flight non-idempotent mutations.
+	o.queue.LockReplay()
+	defer o.queue.UnlockReplay()
+
 	batchID := shortID()
 	log := logging.FromContext(ctx).With("replay_batch", batchID)
 	ctx = logging.WithLogger(ctx, log)
 
-	pending, err := o.queue.GetPending(ctx, 10)
+	if reset, err := o.queue.ResetProcessing(ctx); err != nil {
+		log.Error("failed to reset processing queue rows", "error", err)
+		return err
+	} else if reset > 0 {
+		log.Warn("reset crash-orphaned processing queue rows before replay", "count", reset)
+	}
+
+	var pending []*store.QueuedAction
+	var err error
+	if o.reviewLogin != nil {
+		login, ok, loginErr := o.reviewLogin.GetCurrentUser(ctx, "github")
+		if loginErr != nil {
+			log.Error("failed to resolve current account for queue replay", "error", loginErr)
+			return loginErr
+		}
+		if !ok || login == "" {
+			log.Info("skipping queue replay: no current GitHub account")
+			return nil
+		}
+		pending, err = o.queue.GetPendingForAccount(ctx, "github", login, 10)
+	} else {
+		pending, err = o.queue.GetPending(ctx, 10)
+	}
 	if err != nil {
 		log.Error("failed to load pending queue", "error", err)
 		return err
@@ -727,6 +904,31 @@ func (o *Orchestrator) ReplayQueuedActions(ctx context.Context) error {
 			if err := o.queue.MarkFailed(ctx, action.ID, preflightErr.Error, store.MaxRetryCount); err != nil {
 				log.Error("failed to mark action failed after preflight", "id", action.ID, "error", err)
 			}
+			continue
+		}
+
+		reconciled, reconcileErr := o.reconcileQueuedActionSuccess(ctx, action, req)
+		if reconcileErr != nil {
+			log.Warn("replay: remote reconciliation failed", "id", action.ID, "error", reconcileErr)
+			if replayActionIsNonIdempotent(req.Action) {
+				errMsg := fmt.Sprintf("remote reconciliation failed before non-idempotent replay: %v", reconcileErr)
+				if err := o.queue.MarkFailed(ctx, action.ID, errMsg, action.RetryCount+1); err != nil {
+					log.Error("failed to defer action after reconciliation error", "id", action.ID, "error", err)
+				}
+				continue
+			}
+		} else if reconciled {
+			log.Info("replay: queued action already present on GitHub, marking completed", "id", action.ID)
+			if err := o.queue.MarkCompleted(ctx, action.ID); err != nil {
+				log.Error("failed to mark reconciled action completed", "id", action.ID, "error", err)
+			}
+			continue
+		} else if replayNeedsRemoteReconciliation(req.Action) {
+			log.Debug("replay: no prior GitHub success found, executing queued action", "id", action.ID)
+		}
+
+		if err := o.queue.MarkProcessing(ctx, action.ID); err != nil {
+			log.Error("failed to mark queued action processing; skipping unsafe replay", "id", action.ID, "error", err)
 			continue
 		}
 
@@ -927,7 +1129,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 		phaseStart := time.Now()
 		o.emitter.Emit(events.NewProgressEvent("writing_database", 0, len(fetchedPRs)))
 
-		writer := NewWriter(o.log, o.store)
+		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter)
 		if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
 			errMsg := fmt.Sprintf("failed to write results: %v", err)
 			result.Errors = append(result.Errors, errMsg)
@@ -960,6 +1162,102 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 		result.Duration,
 	))
 
+	return result, nil
+}
+
+// DiscoverAndSyncInbox runs the local-first inbox discovery lane: GitHub search
+// finds lightweight `involves:USERNAME` PR pointers, then provider repo PR
+// endpoints hydrate canonical PR rows before SQLite is updated. The local-only
+// high-water cursor advances only after detail hydration and DB writes succeed.
+func (o *Orchestrator) DiscoverAndSyncInbox(ctx context.Context) (*SyncResult, error) {
+	discovery, ok := o.provider.(provider.InboxDiscoveryProvider)
+	if !ok {
+		return &SyncResult{}, nil
+	}
+	if o.store == nil {
+		return nil, fmt.Errorf("store not configured")
+	}
+
+	username, err := o.provider.GetUsername(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get username for inbox discovery: %w", err)
+	}
+	scope := "github:inbox:" + username + ":search:involves"
+	started := time.Now().UTC()
+
+	cursor, err := o.store.GetSyncCursor(ctx, scope)
+	if err != nil {
+		return nil, fmt.Errorf("load inbox cursor: %w", err)
+	}
+
+	var since *time.Time
+	etag := ""
+	if cursor != nil {
+		etag = cursor.ETag
+		if cursor.CursorValue != "" {
+			parsed, parseErr := store.ParseSyncCursorTime(cursor.CursorValue)
+			if parseErr != nil {
+				return nil, fmt.Errorf("parse inbox cursor %q: %w", cursor.CursorValue, parseErr)
+			}
+			lagged := parsed.Add(-inboxCursorLag)
+			since = &lagged
+		}
+	}
+
+	discovered, err := discovery.DiscoverInboxPRs(ctx, provider.InboxDiscoveryOptions{
+		Username: username,
+		Since:    since,
+		ETag:     etag,
+		Limit:    100,
+	})
+	if err != nil {
+		_ = o.store.MarkSyncCursorError(ctx, scope, err)
+		return nil, err
+	}
+	if discovered == nil {
+		discovered = &provider.InboxDiscoveryResult{}
+	}
+
+	result := &SyncResult{PRCount: len(discovered.PRs), Errors: make([]string, 0)}
+	fetchedPRs := make([]*PRFetchResult, 0, len(discovered.PRs))
+	if len(discovered.PRs) > 0 {
+		details, err := o.FetchPRDetails(ctx, discovered.PRs, true, true, true)
+		if err != nil {
+			_ = o.store.MarkSyncCursorError(ctx, scope, err)
+			return nil, err
+		}
+		fetchedPRs = details
+		for _, detail := range details {
+			if detail == nil {
+				continue
+			}
+			if detail.Error != nil {
+				result.Errors = append(result.Errors, detail.Error.Error())
+				continue
+			}
+			result.UpdatedPRs++
+			result.CommentCount += len(detail.Comments)
+		}
+
+		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter)
+		if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
+			_ = o.store.MarkSyncCursorError(ctx, scope, err)
+			return nil, err
+		}
+		if len(result.Errors) > 0 {
+			err := fmt.Errorf("inbox discovery had %d per-PR hydration errors", len(result.Errors))
+			_ = o.store.MarkSyncCursorError(ctx, scope, err)
+			return result, nil
+		}
+	}
+
+	highWater := discovered.HighWater
+	if highWater.IsZero() {
+		highWater = started
+	}
+	if err := o.store.SaveSyncCursorSuccess(ctx, scope, store.FormatSyncCursorTime(highWater), discovered.ETag); err != nil {
+		return nil, fmt.Errorf("save inbox cursor: %w", err)
+	}
 	return result, nil
 }
 

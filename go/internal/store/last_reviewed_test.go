@@ -141,3 +141,24 @@ func TestSetLastReviewedPatchset_Upsert(t *testing.T) {
 		t.Errorf("after upsert: got num=%d sha=%q", rec.PatchsetNum, rec.SHA)
 	}
 }
+
+func TestLastReviewedSHA_StoresExplicitAccountNamespace(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	mustInsertPR(t, db, "pr-account-lr")
+
+	if err := db.SetLastReviewedSHA(ctx, "pr-account-lr", "alice", "sha-alice"); err != nil {
+		t.Fatalf("set alice: %v", err)
+	}
+
+	var provider, accountLogin string
+	if err := db.QueryRowContext(ctx,
+		`SELECT account_provider, account_login FROM last_reviewed_sha WHERE pr_id = ? AND login = ?`,
+		"pr-account-lr", "alice",
+	).Scan(&provider, &accountLogin); err != nil {
+		t.Fatalf("query account namespace: %v", err)
+	}
+	if provider != "github" || accountLogin != "alice" {
+		t.Fatalf("account namespace = %s/%s, want github/alice", provider, accountLogin)
+	}
+}

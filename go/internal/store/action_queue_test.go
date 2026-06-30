@@ -361,3 +361,67 @@ func TestQueuePendingLimit(t *testing.T) {
 		t.Errorf("expected 2 results with limit=2, got %d", len(pending))
 	}
 }
+
+func TestQueueGetPendingForAccountIsolation(t *testing.T) {
+	db := openTestDBForQueue(t)
+	q := NewActionQueue(db.DB)
+	ctx := context.Background()
+
+	for _, action := range []*QueuedAction{
+		{ID: "alice-action", ActionType: "approve", PRID: "pr-1", Payload: "{}", AccountProvider: "github", AccountLogin: "alice"},
+		{ID: "bob-action", ActionType: "approve", PRID: "pr-1", Payload: "{}", AccountProvider: "github", AccountLogin: "bob"},
+		{ID: "legacy-unowned", ActionType: "approve", PRID: "pr-1", Payload: "{}", AccountProvider: "github"},
+	} {
+		if err := q.Enqueue(ctx, action); err != nil {
+			t.Fatalf("Enqueue %s: %v", action.ID, err)
+		}
+	}
+
+	pending, err := q.GetPendingForAccount(ctx, "github", "alice", 10)
+	if err != nil {
+		t.Fatalf("GetPendingForAccount: %v", err)
+	}
+	if len(pending) != 1 || pending[0].ID != "alice-action" {
+		t.Fatalf("alice pending = %+v, want only alice-action", pending)
+	}
+}
+
+func TestQueueProcessingLifecycle(t *testing.T) {
+	db := openTestDBForQueue(t)
+	q := NewActionQueue(db.DB)
+	ctx := context.Background()
+
+	const actionID = "processing-action"
+	if err := q.Enqueue(ctx, &QueuedAction{ID: actionID, ActionType: "post_comment", PRID: "pr-1", Payload: "body"}); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if err := q.MarkProcessing(ctx, actionID); err != nil {
+		t.Fatalf("MarkProcessing: %v", err)
+	}
+
+	pending, err := q.GetPending(ctx, 10)
+	if err != nil {
+		t.Fatalf("GetPending: %v", err)
+	}
+	for _, action := range pending {
+		if action.ID == actionID {
+			t.Fatal("processing action must be hidden from pending replay until startup reset")
+		}
+	}
+
+	reset, err := q.ResetProcessing(ctx)
+	if err != nil {
+		t.Fatalf("ResetProcessing: %v", err)
+	}
+	if reset != 1 {
+		t.Fatalf("ResetProcessing reset %d rows, want 1", reset)
+	}
+
+	got, err := q.GetByID(ctx, actionID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Status != "pending" {
+		t.Fatalf("status = %q, want pending", got.Status)
+	}
+}

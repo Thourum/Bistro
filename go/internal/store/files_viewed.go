@@ -18,12 +18,12 @@ type FileViewed struct {
 // the old hash so IsFileViewed correctly returns false for stale content.
 func (db *DB) MarkFileViewed(ctx context.Context, prID, filePath, login, contentHash string) error {
 	const q = `
-		INSERT INTO files_viewed (pr_id, file_path, login, content_hash, viewed_at)
-		VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-		ON CONFLICT(pr_id, file_path, login) DO UPDATE SET
+		INSERT INTO files_viewed (pr_id, file_path, account_provider, account_login, login, content_hash, viewed_at)
+		VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+		ON CONFLICT(pr_id, file_path, account_provider, account_login, login) DO UPDATE SET
 			content_hash = excluded.content_hash,
 			viewed_at    = excluded.viewed_at`
-	if _, err := db.ExecContext(ctx, q, prID, filePath, login, contentHash); err != nil {
+	if _, err := db.ExecContext(ctx, q, prID, filePath, localReviewAccountProvider, login, login, contentHash); err != nil {
 		return fmt.Errorf("mark file viewed (%s, %s, %s): %w", prID, filePath, login, err)
 	}
 	return nil
@@ -35,8 +35,9 @@ func (db *DB) MarkFileViewed(ctx context.Context, prID, filePath, login, content
 func (db *DB) IsFileViewed(ctx context.Context, prID, filePath, login, contentHash string) (bool, error) {
 	var stored string
 	err := db.QueryRowContext(ctx,
-		`SELECT content_hash FROM files_viewed WHERE pr_id = ? AND file_path = ? AND login = ?`,
-		prID, filePath, login,
+		`SELECT content_hash FROM files_viewed
+		 WHERE pr_id = ? AND file_path = ? AND account_provider = ? AND account_login = ? AND login = ?`,
+		prID, filePath, localReviewAccountProvider, login, login,
 	).Scan(&stored)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -52,9 +53,9 @@ func (db *DB) IsFileViewed(ctx context.Context, prID, filePath, login, contentHa
 func (db *DB) ListViewedFiles(ctx context.Context, prID, login string) ([]FileViewed, error) {
 	rows, err := db.QueryContext(ctx,
 		`SELECT file_path, content_hash FROM files_viewed
-		 WHERE pr_id = ? AND login = ?
+		 WHERE pr_id = ? AND account_provider = ? AND account_login = ? AND login = ?
 		 ORDER BY file_path`,
-		prID, login,
+		prID, localReviewAccountProvider, login, login,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list viewed files (%s, %s): %w", prID, login, err)

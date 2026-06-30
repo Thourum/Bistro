@@ -1,6 +1,9 @@
 package provider
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Provider abstracts operations for any Git service
 type Provider interface {
@@ -52,6 +55,29 @@ type PRFilters struct {
 // part of the core Provider interface so non-GitHub providers compile without it.
 type ThreadProvider interface {
 	GetReviewThreads(ctx context.Context, prID string) ([]*ReviewThread, error)
+}
+
+// InboxDiscoveryOptions scopes provider-native inbox discovery. Cursor and ETag
+// values are local-only sync metadata, not GitHub-synced PR state.
+type InboxDiscoveryOptions struct {
+	Username string
+	Since    *time.Time
+	ETag     string
+	Limit    int
+}
+
+// InboxDiscoveryResult contains fully-hydrated PRs discovered from lightweight
+// provider search pointers. HighWater is the newest provider updated_at seen.
+type InboxDiscoveryResult struct {
+	PRs       []*PR
+	HighWater time.Time
+	ETag      string
+}
+
+// InboxDiscoveryProvider is an optional capability for providers that can find
+// PRs relevant to the authenticated user's inbox without scanning every repo.
+type InboxDiscoveryProvider interface {
+	DiscoverInboxPRs(ctx context.Context, opts InboxDiscoveryOptions) (*InboxDiscoveryResult, error)
 }
 
 // ThreadResolver is an optional capability for providers that support

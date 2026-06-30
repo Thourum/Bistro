@@ -18,11 +18,11 @@ type commentsRequest struct {
 // Anchor fields (migrations 015, 018, 019) are populated for kind='review' comments.
 //
 // Freshness rules (both must hold for any anchor-derived fields to be returned):
-//   1. anchor_head_sha        == prs.head_sha              (anchor for current head)
-//   2. anchor_current_patchset_number == current_patchset  (anchor for current base+head patchset)
+//  1. anchor_head_sha        == prs.head_sha              (anchor for current head)
+//  2. anchor_current_patchset_number == current_patchset  (anchor for current base+head patchset)
 //
 // For original-position / historical comments, an additional source check:
-//   3. anchor_patchset_number == comments.patchset_number  (correct geometry was used)
+//  3. anchor_patchset_number == comments.patchset_number  (correct geometry was used)
 //
 // NULL anchor_current_patchset_number is always stale (pre-migration 019 data).
 type commentRow struct {
@@ -35,15 +35,20 @@ type commentRow struct {
 	Line      *int    `json:"line,omitempty"`
 	File      *string `json:"file,omitempty"`
 	// migration 012 fields
-	Kind             *string `json:"kind,omitempty"`
-	CommitSHA        *string `json:"commit_sha,omitempty"`
-	OriginalSHA      *string `json:"original_sha,omitempty"`
-	Side             *string `json:"side,omitempty"`
-	Position         *int    `json:"position,omitempty"`
-	OriginalPosition *int    `json:"original_position,omitempty"`
-	InReplyTo        *string `json:"in_reply_to,omitempty"`
-	ThreadID         *string `json:"thread_id,omitempty"`
-	PatchsetNumber   *int    `json:"patchset_number,omitempty"`
+	Kind              *string `json:"kind,omitempty"`
+	CommitSHA         *string `json:"commit_sha,omitempty"`
+	OriginalSHA       *string `json:"original_sha,omitempty"`
+	Side              *string `json:"side,omitempty"`
+	Position          *int    `json:"position,omitempty"`
+	OriginalPosition  *int    `json:"original_position,omitempty"`
+	OriginalLine      *int    `json:"original_line,omitempty"`
+	StartLine         *int    `json:"start_line,omitempty"`
+	OriginalStartLine *int    `json:"original_start_line,omitempty"`
+	StartSide         *string `json:"start_side,omitempty"`
+	SubjectType       *string `json:"subject_type,omitempty"`
+	InReplyTo         *string `json:"in_reply_to,omitempty"`
+	ThreadID          *string `json:"thread_id,omitempty"`
+	PatchsetNumber    *int    `json:"patchset_number,omitempty"`
 	// migration 020: diff hunk for review comments
 	DiffHunk *string `json:"diff_hunk,omitempty"`
 	// migration 015+018+019 anchor fields
@@ -81,6 +86,7 @@ func NewRequestCommentsHandler(db prLister, log *slog.Logger) ws.MessageHandler 
 			        c.kind, c.commit_sha, c.original_sha, c.side, c.position,
 			        c.original_position, c.in_reply_to, c.thread_id, c.patchset_number,
 			        c.diff_hunk,
+			        c.original_line, c.start_line, c.original_start_line, c.start_side, c.subject_type,
 			        c.anchored_line, c.anchor_head_sha, c.outdated, c.outdated_near_line,
 			        c.anchor_patchset_number,
 			        c.anchor_current_patchset_number,
@@ -113,7 +119,7 @@ func NewRequestCommentsHandler(db prLister, log *slog.Logger) ws.MessageHandler 
 		comments := []commentRow{}
 		for rows.Next() {
 			var c commentRow
-			var currentHeadSHA        *string
+			var currentHeadSHA *string
 			var currentPatchsetNumber *int
 			if err := rows.Scan(
 				&c.ID, &c.PRID, &c.Author, &c.Body,
@@ -122,6 +128,7 @@ func NewRequestCommentsHandler(db prLister, log *slog.Logger) ws.MessageHandler 
 				&c.Position, &c.OriginalPosition,
 				&c.InReplyTo, &c.ThreadID, &c.PatchsetNumber,
 				&c.DiffHunk,
+				&c.OriginalLine, &c.StartLine, &c.OriginalStartLine, &c.StartSide, &c.SubjectType,
 				&c.AnchoredLine, &c.AnchorHeadSHA, &c.Outdated, &c.OutdatedNearLine,
 				&c.AnchorPatchsetNumber,
 				&c.AnchorCurrentPatchsetNumber,
