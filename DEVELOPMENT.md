@@ -39,7 +39,7 @@ No server. Everything runs locally. SQLite is a cache, not a shared database.
 
 ## Prerequisites
 
-- Go 1.21+
+- Go 1.26.x, matching `go/go.mod`
 - Node 18+
 - pnpm (the workspace uses `nodeLinker: hoisted` — required by electron-forge)
 

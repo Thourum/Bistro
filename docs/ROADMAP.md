@@ -17,9 +17,11 @@
 > **🔍 Audit (2026-06-19).** A multi-agent audit of the built code + Phase 1/2 plans
 > ran; 49 findings confirmed against the codebase (10 false positives dropped). Full
 > record: `docs/ROADMAP-AUDIT-2026-06-19.md`. Inline `> ⚠️ Audit:` notes below mark
-> affected items. **Headlines:** Phase 2's two pillars are *infeasible as specified* —
-> patchset capture by polling misses intermediate force-pushes, and `git range-diff`
-> does not exist in go-git v5 (decision required before Phase 2). The comment layer
+> affected items. **Headlines:** Phase 2's original wording overpromised FOSS
+> completeness. BIS-31 resolved the changed-since-review strategy: FOSS records
+> **observed patchsets**, uses system `git range-diff` as a best-effort enhancement,
+> and clearly degrades to current file diff/unavailable states when local data is
+> insufficient. Complete push capture remains Team/server scope. The comment layer
 > can't feed Phase 2: only issue-level comments are fetched (not inline review
 > comments), and the schema stores no commit SHA / position / resolution state.
 > Resolve/unresolve is GitHub-GraphQL-only (the stack is REST). Two active bugs in
@@ -173,23 +175,28 @@ In addition to the events below, the following are already implemented (not orig
 
 ## Phase 2 — Patchset Semantics (the architectural unlock)
 
-This is where Bistro starts having features that GitHub structurally cannot match. Everything here falls out of the fact that we clone the repo locally with go-git.
+This is where Bistro starts having features that GitHub structurally cannot match, within an honest FOSS boundary: Bistro can reason over locally observed patchsets quickly, but it cannot claim server-grade capture of pushes it never observed.
 
-The architectural principle: **same patchset model for every provider**. Even where a provider exposes patchsets natively (GitLab), we use our own, computed from local git history. Mixing provider APIs and local computation produces inconsistent behaviour and divergent code paths.
+The architectural principle: **same patchset model for every provider**. Even where a provider exposes patchsets natively (GitLab), FOSS uses its own observed local model so behavior and storage stay consistent. Provider/webhook-enriched complete history belongs in `docs/STAGE-2-TEAM.md`.
+
+> ✅ **BIS-31 decision (2026-06-29).** FOSS changed-since-review is **best-effort and
+> honest**: record observed patchsets; record the reviewer's last reviewed observed
+> patchset; prefer system `git range-diff` when available and when required objects
+> are present locally; degrade to labeled current file diff or an unavailable reason
+> instead of implying complete force-push history. Full decision:
+> `docs/superpowers/specs/2026-06-29-foss-changed-since-review-strategy.md`.
 
 > ⚠️ **Audit (2026-06-19) — Phase 2 needs design decisions before any implementation.**
-> This phase as written contains two *infeasible-as-specified* items and rests on a
-> comment layer that can't yet feed it. Resolve these before scheduling work — a
-> Phase 2 re-brainstorm is recommended:
-> 1. **Patchset capture by polling is lossy** (2.1). Polling — whether the GitHub API
->    or a local go-git fetch — only sees state at fetch time. Two force-pushes inside
->    one sync window collapse to one; `pushed_at` has no reliable source. The
->    "numbered timeline of every push" promise can't be met by a local-first poller
->    (only a push webhook sees every push, which needs a server Bistro doesn't have).
-> 2. **`git range-diff` is not in go-git v5.17.2** (2.1, 2.2). Only `Tree.Patch`
->    (plain tree-to-tree) exists, and Bistro has zero `os/exec`. Pick one: hand-roll
->    range-diff (~500–1000 LOC) or shell out to system git (adds a `git ≥2.19`
->    runtime dep, dents the local-first claim).
+> This phase as originally written contained two *infeasible-as-specified* items and
+> rests on a comment layer that can't yet feed it. BIS-31 resolves the changed-since-
+> review/patchset scope by narrowing FOSS promises to observed patchsets and labeled
+> degraded modes; remaining comment-layer prerequisites still need implementation:
+> 1. **Patchset capture by polling is lossy** (2.1). FOSS records observed patchsets,
+>    not every push. `pushed_at` is the best available observed timestamp in FOSS;
+>    true push timestamps/complete before-after SHAs require the Team webhook server.
+> 2. **`git range-diff` is not in go-git v5.17.2** (2.1, 2.2). FOSS permits one
+>    bounded `os/exec` exception for system `git range-diff >= 2.19`, with graceful
+>    fallback. A pure-Go range-diff engine is deferred to Team/server scope.
 > 3. **The comment layer can't feed 2.3/2.4.** Only *issue-level* comments are fetched
 >    (`Issues.ListComments`), never inline review comments (`PullRequests.ListComments`),
 >    and the `comments` schema stores no `commit_sha`/`position`/`side`/`resolved`/
@@ -202,18 +209,18 @@ The architectural principle: **same patchset model for every provider**. Even wh
 
 ### 2.1 Patchset timeline
 
-**Why it matters.** The most-cited reason developers say they "miss" Gerrit is the patchset model — every push is a numbered patchset, comments are anchored to patchsets, and you can diff any pair. GitHub's "Changes since last review" button breaks under rebase ([daisy.wtf](https://daisy.wtf/writing/github-changes-since-last-review/), [community/3478](https://github.com/orgs/community/discussions/3478)).
+**Why it matters.** The most-cited reason developers say they "miss" Gerrit is the patchset model — pushes become reviewable snapshots, comments can be anchored to snapshots, and reviewers can compare iterations. GitHub's "Changes since last review" button breaks under rebase ([daisy.wtf](https://daisy.wtf/writing/github-changes-since-last-review/), [community/3478](https://github.com/orgs/community/discussions/3478)).
 
 **User story.**
 
-> As a reviewer of a PR that's been force-pushed three times, I want to see the history of pushes as a numbered timeline and diff any two patchsets against each other, so that I can audit what actually changed across iterations without losing my place.
+> As a reviewer of a PR that Bistro has observed across multiple force-pushes, I want to see those observed snapshots as a numbered timeline and diff safe pairs, so that I can audit what changed across iterations without losing my place.
 
 **Acceptance.**
 
-- Each push to a PR is recorded as a patchset with a sequential number, its head SHA, and its timestamp.
-- Patchsets persist even after rebase (we store them; the provider can lose them).
-- A timeline UI in the PR detail shows P1 / P2 / P3 with diff-pair selector.
-- Diffing arbitrary patchset pairs uses `git range-diff` semantics, not raw commit diff (so no-op rebases produce empty diffs).
+- Each distinct PR head SHA observed during sync is recorded as a patchset with a sequential number, head SHA, base SHA, and best-available observed timestamp.
+- Observed patchsets persist after later rebases/force-pushes if Bistro has already stored them; FOSS does not promise to recover intermediate heads it never observed.
+- A timeline UI in the PR detail shows P1 / P2 / P3 as **observed patchsets** with a diff-pair selector.
+- Diffing a pair prefers `git range-diff` semantics when system git and required local objects are available; otherwise it degrades to a labeled current file diff for the current pair or an unavailable reason for unsafe pairs.
 
 **Schema.**
 
@@ -226,7 +233,7 @@ CREATE TABLE patchsets (
   number INTEGER NOT NULL,
   head_sha TEXT NOT NULL,
   base_sha TEXT NOT NULL,
-  pushed_at TIMESTAMP NOT NULL,
+  pushed_at TIMESTAMP NOT NULL, -- FOSS: observed timestamp; Team/webhook mode: true push timestamp
   PRIMARY KEY (pr_id, number),
   FOREIGN KEY(pr_id) REFERENCES prs(id) ON DELETE CASCADE
 );
@@ -234,7 +241,7 @@ CREATE TABLE patchsets (
 -- comments table (which patchset a comment was made against) so 2.3 can detect "outdated".
 ```
 
-### 2.2 "Since I last reviewed" — survives rebase
+### 2.2 "Since I last reviewed" — local best-effort across rebase
 
 **Why it matters.** GitHub's button works only if commits aren't rebased. As AI agents increasingly force-push every iteration, this gets worse, not better.
 
@@ -244,18 +251,16 @@ CREATE TABLE patchsets (
 
 **Acceptance.**
 
-- A `last_reviewed_sha` per `(pr_id, user_id)` is recorded on every review submission.
-- "Since last review" toggle renders `git range-diff last_reviewed_sha..head_sha` against the prior base/head.
-- The toggle is available even when commits have been rebased away.
-- "Files viewed" state survives rebase if the file content hasn't actually changed.
+- A last-reviewed observed patchset identity per `(pr_id, reviewer_login)` is recorded on every review submission: patchset number, head SHA, and base SHA when available.
+- "Since last review" prefers `git range-diff` between the last reviewed observed patchset and the current observed patchset when system git and local objects make that safe.
+- When range-diff is unavailable, the UI shows a labeled degraded current file diff only for a safe current pair; otherwise it explains that pair-specific changed-since-review is unavailable.
+- "Files viewed" state survives rebase if the file content hash is unchanged.
 
-> ⚠️ **Audit (2026-06-19).** Three unscheduled prerequisites: (1) **No `user_id` exists**
-> anywhere in the schema — the authenticated login lives only in an in-memory JSON cache
-> (`cache/providers.go`), so on a cold cache it's unknown. Decide on a SQLite `current_user`/
-> `settings` table written at auth-success; key `last_reviewed_sha` on `login TEXT` (matches
-> GitHub's identity model). (2) **`files_viewed` has no schema home** — needs a table keyed on
-> `(pr_id, file_path, viewer_login, content_hash)` so "viewed" survives rebase; sequentially
-> depends on patchsets (2.1). (3) **`git range-diff` isn't available** (see phase banner).
+> ✅ **BIS-31 update (2026-06-29).** Use `reviewer_login`/current-user identity, not an
+> integer `user_id`. `last_reviewed_sha` should store the observed patchset identity
+> as well as the SHA. `files_viewed` remains keyed by file path + login + content hash.
+> System `git range-diff` is allowed only as the bounded best-effort path described
+> above; absence of range-diff is a degraded UI state, not a blocker.
 
 ### 2.3 Comment anchoring across rebase
 
@@ -621,7 +626,8 @@ A focused phase on quality, docs, distribution.
 - `docs/install.md`, `docs/keybindings.md`, `docs/classification.md`, `docs/expertise.md`, `docs/byok.md`.
 - A 90-second screencast on the landing page.
 - `docs/architecture.md` for contributors (the existing architecture writeup, condensed).
-- `CONTRIBUTING.md` and a clear scope statement: *what we will and won't merge.*
+- `CONTRIBUTING.md` with DCO sign-off instructions and a clear scope statement:
+  *what we will and won't merge.*
 
 ### 7.4 Telemetry
 
@@ -660,4 +666,6 @@ To keep the line clean, these are *not* in the FOSS scope:
 3. **Telemetry stance.** Final call on opt-in / opt-out / none-at-all.
 4. **Crash reporter.** Sentry? Self-hosted? None?
 5. **Auto-update server.** Self-hosted via static files, or a service?
-6. **License for the FOSS code.** AGPL? MIT? Apache 2? (Affects whether Team plan can build on it without a CLA — see Communication Plan.)
+6. ~~**License for the FOSS code.**~~ **Resolved (2026-06-30):** Bistro is
+   licensed under GPLv3-only with DCO sign-off for contributions. See
+   `LICENSE`, `DCO.txt`, and `CONTRIBUTING.md`.

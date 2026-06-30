@@ -1,0 +1,37 @@
+name: Feature request or workflow feedback
+description: Describe a Bistro review workflow that should work better.
+title: "feedback: "
+labels: [feedback]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Review workflow
+      description: Describe the real review task you want Bistro to make faster or clearer.
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider scope
+      options:
+        - GitHub
+        - GitLab or another provider
+        - Local-only behavior
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: local_first_fit
+    attributes:
+      label: Local-first fit
+      description: How should this work in a desktop app with no required Bistro server in the open-source review path?
+    validations:
+      required: false
+  - type: textarea
+    id: keyboard
+    attributes:
+      label: Keyboard or command-palette path
+      description: If relevant, name the shortcut, command, or inbox behavior you expect.
+    validations:
+      required: false

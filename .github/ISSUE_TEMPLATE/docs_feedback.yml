@@ -1,0 +1,31 @@
+name: Docs feedback
+description: Report confusing, stale, or missing Bistro documentation.
+title: "docs: "
+labels: [docs]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Page or section
+      placeholder: "README.md, DEVELOPMENT.md#configuration, docs/LOCAL-FIRST-PRIVACY.md"
+    validations:
+      required: true
+  - type: textarea
+    id: confusion
+    attributes:
+      label: What was confusing or stale?
+      placeholder: "The setup command says..., but the current repo..."
+    validations:
+      required: true
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What were you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording or missing detail
+    validations:
+      required: false

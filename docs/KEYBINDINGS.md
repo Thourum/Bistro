@@ -1,0 +1,91 @@
+# Bistro keybindings
+
+Bistro is designed for keyboard-first GitHub pull request review. The defaults
+below match `electron/src/renderer/utils/keybindings.ts`; if you remap keys in
+settings, the in-app help overlay and footer legend show your effective bindings.
+
+## Global
+
+| Key | Action |
+| --- | --- |
+| `?` | Open help |
+| `:` | Open command palette |
+| `Esc` | Back, close overlay, or cancel current action |
+| `Cmd+,` / `Ctrl+,` | Open settings |
+| `Cmd+/` / `Ctrl+/` | Search |
+| `Cmd+Q` / `Alt+F4` | Quit |
+
+## PR inbox
+
+| Key | Action |
+| --- | --- |
+| `j` / `k` | Move down / up |
+| `↑` / `↓` | Move up / down |
+| `g g` | Jump to top |
+| `G` | Jump to bottom |
+| `1`–`9` | Jump to visible PR row |
+| `Enter` | Open selected PR |
+| `/` | Search the inbox |
+| `f` | Open or close filters |
+| `Ctrl+d` / `Ctrl+u` | Move down / up five PRs |
+| `Space` | Preview selected PR |
+| `o` | Stage opening selected PR in browser |
+| `d` | Stage draft toggle |
+| `m` | Stage mute |
+| `s` | Stage star |
+
+### Filter overlay
+
+| Key | Action |
+| --- | --- |
+| `n` | Show Needs Action |
+| `o` | Show Open |
+| `d` | Show Draft |
+| `a` | Show All |
+| `f` / `Esc` | Close filters |
+
+## PR detail and diff
+
+| Key | Action |
+| --- | --- |
+| `n` / `p` | Next / previous file |
+| `Space` | Open diff from PR detail |
+| `h` / `j` / `k` / `l` | Scroll left / down / up / right in diff |
+| `←` / `↓` / `↑` / `→` | Scroll left / down / up / right in diff |
+| `Ctrl+d` / `Ctrl+u` | Page down / up in diff |
+| `0` / `$` | Jump to top / bottom of diff |
+| `Enter` | Reply to selected inline comment in diff |
+| `c` | Start a PR comment from detail |
+| `r` | Reply from detail |
+| `g u` | Open review threads |
+| `a a` | Approve with double-tap confirmation |
+| `R` | Request changes |
+| `s` | Toggle since-last-review diff mode |
+| `v` | Mark current diff file viewed |
+
+## Review threads overlay
+
+| Key | Action |
+| --- | --- |
+| `j` / `k` | Next / previous thread |
+| `r` | Resolve thread |
+| `u` | Unresolve thread |
+
+## Remapping keys
+
+Open settings with `Cmd+,` / `Ctrl+,` or run `:settings` from the command
+palette. Keybinding overrides are stored locally in `settings.json` as action ids
+mapped to key arrays:
+
+```json
+{
+  "keybindings": {
+    "list.down": ["x"],
+    "list.top": ["g", "g"],
+    "list.star": []
+  }
+}
+```
+
+An empty array disables a binding. Defaults and action ids live in
+`electron/src/renderer/utils/keybindings.ts`.

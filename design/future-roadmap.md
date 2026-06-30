@@ -307,9 +307,9 @@ User can analyze their own data, build custom reports.
 
 ### Open Source
 
-- **License:** MIT (permissive)
+- **License:** GPLv3-only
 - **Repository:** Public on GitHub
-- **Contributing:** Welcome (see CONTRIBUTION-GUIDE.md)
+- **Contributing:** Welcome with DCO sign-off (see `CONTRIBUTING.md`)
 
 ### Plugin Marketplace (Phase 3.2)
 

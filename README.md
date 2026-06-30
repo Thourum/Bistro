@@ -1,11 +1,11 @@
 # Bistro
 
-**The keyboard-first code review client for the AI-PR era.**
+**Keyboard-first, local-first GitHub pull request review.**
 
-Review pull requests at the speed of thought — no browser tabs, no mouse, no
-waiting. Bistro is a local-first desktop app that syncs your GitHub pull
-requests into a blazing-fast inbox, generates diffs on your machine, and puts
-every action one keystroke away.
+Bistro is a desktop app that syncs GitHub pull requests into a local inbox,
+generates diffs on your machine, and keeps common review actions on the
+keyboard. It is built for reviewers who need to move through many PRs without
+living in browser tabs.
 
 ![PR inbox](electron/stitch_terminal_authentic_prd/pr_inbox_minimal_light/screen.png)
 
@@ -17,14 +17,13 @@ designed for. Bistro is built for the reviewer drowning in that stream:
 
 - **Triage first.** Your inbox separates *Needs Action* from *Waiting on
   Author* and *FYI*, computed locally from who actually requested your review.
-- **Runs entirely on your machine.** A Go sync engine keeps a local SQLite
+- **Runs on your machine.** A Go sync engine keeps a local SQLite
   cache warm — the UI never waits on the network to render. Your code and
   tokens never touch anyone's server, because there isn't one.
 - **Keyboard everything.** `j`/`k` to move, `Enter` to open, `a a` to approve,
   `:` for the command palette, `?` for help. Every binding is remappable.
-- **Diffs without limits.** PR branches are cloned and diffed locally with
-  go-git, then rendered through a virtualized canvas — 100-file PRs scroll
-  like 5-file PRs.
+- **Local diffs.** PR branches are cloned and diffed locally with go-git, then
+  rendered through a virtualized canvas for large reviews.
 - **Works offline.** Approvals and comments queue locally when you're
   disconnected (or rate-limited) and replay automatically.
 
@@ -46,20 +45,44 @@ designed for. Bistro is built for the reviewer drowning in that stream:
 
 GitHub today; GitLab is next on the [roadmap](docs/ROADMAP.md).
 
-## Install
+## v0.1 install from source
 
-> Packaged installers (DMG / MSI / AppImage) land with v1.0. Until then,
-> Bistro runs from source:
+Packaged installers are not available in v0.1. Run Bistro from source until the
+release packaging work is complete.
+
+### Prerequisites
+
+- Go 1.26.x, matching `go/go.mod`
+- Node 18+
+- pnpm
+- A GitHub OAuth app from <https://github.com/settings/developers>
+
+### Setup
 
 ```bash
-git clone https://github.com/Itterno/Bistro.git && cd Bistro/electron
+git clone https://github.com/Itterno/Bistro.git
+cd Bistro/electron
 pnpm install
-pnpm build                                     # builds the Go sync engine
+cp .env.example .env.local
 ```
 
-You'll need Go 1.21+, Node 18+, and pnpm. Create a GitHub OAuth app
-(github.com/settings/developers) and put its credentials in
-`electron/.env.local` — see [DEVELOPMENT.md](DEVELOPMENT.md#configuration).
+Fill `electron/.env.local` with the GitHub OAuth client id and secret:
+
+```dotenv
+GITHUB_CLIENT_ID=your_client_id
+GITHUB_CLIENT_SECRET=your_client_secret
+WS_PORT=0
+GO_LOG_LEVEL=debug
+```
+
+Then build the Go sync engine:
+
+```bash
+pnpm build
+```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md#configuration) for every supported local
+environment variable.
 
 ## Run
 
@@ -71,6 +94,13 @@ The app spawns the sync engine automatically, signs you in via GitHub OAuth
 (your token lives in the OS keychain), and starts syncing the repos you watch.
 Press `?` anytime to see what your keyboard can do.
 
+## Keyboard shortcuts
+
+Bistro's default bindings are documented in [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
+Inside the app, press `?` for the context-aware help overlay or `:` for the
+command palette. Custom bindings are stored locally in `settings.json` and are
+reflected in the footer legend and help overlay.
+
 ## Settings
 
 Open settings with `⌘,` (or `:settings` from the command palette). Appearance,
@@ -80,9 +110,23 @@ key updates the footer legend and help overlay everywhere it appears.
 
 ## For developers
 
-Architecture, build instructions, debugging, and contribution notes live in
-[DEVELOPMENT.md](DEVELOPMENT.md). The feature plan and project status live in
-[docs/ROADMAP.md](docs/ROADMAP.md).
+Architecture, build instructions, and debugging notes live in
+[DEVELOPMENT.md](DEVELOPMENT.md). Contribution requirements, including DCO
+sign-off, live in [CONTRIBUTING.md](CONTRIBUTING.md), with contributor
+onboarding in [design/contribution-guide.md](design/contribution-guide.md). The
+feature plan and project status live in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Privacy and feedback
+
+Bistro is local-first, not cloud-hosted: the open-source app stores PR data in a
+local SQLite cache, stores GitHub tokens in the OS keychain, generates diffs on
+your machine, and talks directly to GitHub for sync and review actions. See
+[docs/LOCAL-FIRST-PRIVACY.md](docs/LOCAL-FIRST-PRIVACY.md) for the public privacy
+explainer.
+
+Launch feedback belongs in GitHub issues or discussions so it can be triaged into
+bugs, docs fixes, and roadmap requests. See [docs/FEEDBACK.md](docs/FEEDBACK.md)
+before sharing logs or private repository context.
 
 ## Developed by
 
@@ -90,5 +134,6 @@ Built by **Samuel Asvanyi** at **Itterno ApS**.
 
 ## License
 
-© 2026 Itterno ApS. The open-source license will be finalized before the
-public v1.0 release (see the [roadmap's open questions](docs/ROADMAP.md)).
+Bistro is licensed under the [GNU General Public License v3.0 only](LICENSE).
+
+© 2026 Itterno ApS.

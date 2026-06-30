@@ -9,6 +9,10 @@
 >
 > Grounded in the 2026-06-19 audit (`docs/ROADMAP-AUDIT-2026-06-19.md`) and a
 > code-anchor exploration verified against the tree on 2026-06-20.
+> Scope wording updated by BIS-31: FOSS exposes **observed patchsets** and best-effort
+> changed-since-review only. Complete push-history capture is Team/server scope; see
+> `docs/superpowers/specs/2026-06-29-foss-changed-since-review-strategy.md` and
+> `docs/STAGE-2-TEAM.md`.
 
 ## Goal
 
@@ -17,9 +21,10 @@ Expose patchset history to the reviewer:
 1. **Patchset timeline UI** — PR detail shows P1/P2/P3 tabs (observed patchsets
    from the foundation `patchsets` table) with a diff-pair selector. Labeled
    honestly: "snapshots observed since you started watching."
-2. **Since-last-review toggle** — renders the diff between `last_reviewed_sha`
-   and the current head via system `git range-diff`, with graceful fallback to
-   `go-git Tree.Patch` head-to-head when system git is absent or too old.
+2. **Since-last-review toggle** — renders the best available diff between the
+   last reviewed observed patchset and the current observed patchset via system
+   `git range-diff` when possible, with graceful degraded states when system git
+   or the required local objects are absent.
 3. **Files-viewed survives rebase** — `files_viewed` table keyed on
    `(pr_id, file_path, login, content_hash)` so a file marked viewed stays viewed
    when its content is unchanged across a force-push.

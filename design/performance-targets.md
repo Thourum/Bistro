@@ -8,6 +8,38 @@
 
 ## Latency Targets (User-Perceived)
 
+### v0.1 Large-Diff Budget (Baseline: 2026-06-29)
+
+Measured on Apple M3 Max, darwin/arm64, Node 24.13.0, Go 1.26.1. These are
+local-only budgets for cached or already-cloned PRs; network fetch and initial
+clone latency are excluded because Bistro must show cached work first and sync
+in the background.
+
+| Path | Fixture | Baseline | v0.1 budget | Regression line |
+|------|---------|----------|-------------|-----------------|
+| Go diff generation (`GenerateDiff`) | 1000 files × 10 changed lines | median ~80ms/op, worst sampled 183ms/op, ~47MB/op | p95 < 250ms, allocs < 64MB/op | p95 > 500ms |
+| Renderer diff parsing (`parseMultiFileDiff`) | 3000 files × 4 changed lines, 1.2MB / 39k lines | median 4.06ms, p95 5.62ms | p95 < 25ms | p95 > 50ms |
+| Renderer long-file parsing | 1 file × 10,000 changed lines, 656KB / 20k lines | median 1.34ms, p95 1.77ms | p95 < 10ms | p95 > 25ms |
+| Cached PR open to first visible diff | Cached SQLite diff + renderer parse | not end-to-end measured in this baseline | p95 < 300ms for 1000 files; p95 < 2s for 3000 files | p95 > 2s |
+
+Budget decisions:
+
+- **v0.1 release gate:** a 3000-file cached PR must open to first visible diff
+  in under 2s on the reference Mac profile, preserving the roadmap target.
+- **Parser budget:** parsing is not the current bottleneck; keep it below one
+  frame for common large PRs and below 25ms for 3000-file synthetic PRs.
+- **Generation budget:** local `go-git` diff generation for a 1000-file changed
+  PR should stay below 250ms p95 once the repo is cloned and both SHAs are
+  present. Above 500ms is a regression investigation trigger.
+- **Large-PR behavior:** if render-first-paint exceeds 2s for real 3000-file PRs,
+  ship a file-list-first fallback that mounts only the active file until the
+  full virtualized diff catches up.
+- **Memory note:** this baseline records Go benchmark allocations (~47MB/op for
+  the synthetic 1000-file diff) and fixture byte sizes for renderer parsing. It
+  does not yet record Electron heap or resident memory during an end-to-end
+  first-paint run; use the existing <1GB/10k-line roadmap memory gate until that
+  UI measurement exists.
+
 ### App Startup
 
 | Metric | Target | Acceptable | Unacceptable |
@@ -196,6 +228,18 @@ Decision: Cache with validation
 
 ## Benchmarking Methodology
 
+### Large-Diff Baseline
+
+```bash
+# Go local diff generation: 1000 files × 10 changed lines.
+cd go
+go test ./internal/git -run '^$' -bench BenchmarkGenerateDiffLarge -benchmem -count=5
+
+# Renderer parser baseline: synthetic fixtures using parseMultiFileDiff.
+cd electron
+pnpm bench:large-diff
+```
+
 ### Startup Time
 
 ```bash
@@ -322,4 +366,4 @@ A: Out of scope (Phase 1 is desktop only).
 
 ---
 
-**Last updated:** 2025-04-08
+**Last updated:** 2026-06-29
