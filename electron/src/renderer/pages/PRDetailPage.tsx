@@ -89,7 +89,12 @@ export function PRDetailPage() {
     }));
   }
 
-  const { dispatchApprove, dispatchPostComment, clearActionResult } =
+  const {
+    dispatchApprove,
+    dispatchRequestChanges,
+    dispatchPostComment,
+    clearActionResult,
+  } =
     useActionDispatch(pr?.id);
 
   // Reset patchset pair selection when the user navigates to a different PR.
@@ -222,10 +227,27 @@ export function PRDetailPage() {
 
         {confirmingAction === 'comment' && (
           <PRCommentComposer
+            title="Add PR comment"
+            ariaLabel="PR comment"
+            placeholder="Write a PR comment…"
+            submitLabel="Comment"
             onCancel={() => {
               appStore.setState((s) => ({ ...s, confirmingAction: null }));
             }}
             onSubmit={dispatchPostComment}
+          />
+        )}
+
+        {confirmingAction === 'request_changes' && (
+          <PRCommentComposer
+            title="Request changes"
+            ariaLabel="Request changes comment"
+            placeholder="Describe the changes needed before approval…"
+            submitLabel="Request changes"
+            onCancel={() => {
+              appStore.setState((s) => ({ ...s, confirmingAction: null }));
+            }}
+            onSubmit={dispatchRequestChanges}
           />
         )}
 
@@ -265,9 +287,17 @@ export function PRDetailPage() {
 }
 
 function PRCommentComposer({
+  title,
+  ariaLabel,
+  placeholder,
+  submitLabel,
   onCancel,
   onSubmit,
 }: {
+  title: string;
+  ariaLabel: string;
+  placeholder: string;
+  submitLabel: string;
   onCancel: () => void;
   onSubmit: (body: string) => void;
 }): React.ReactElement {
@@ -289,7 +319,7 @@ function PRCommentComposer({
     <section className="max-w-3xl border border-outline-variant/40 bg-surface-container-low p-5 space-y-3">
       <div className="flex items-center justify-between gap-4">
         <h2 className="font-mono text-[11px] font-bold tracking-[0.25em] uppercase">
-          Add PR comment
+          {title}
         </h2>
       </div>
       <Textarea
@@ -307,8 +337,8 @@ function PRCommentComposer({
           }
         }}
         rows={5}
-        placeholder="Write a PR comment…"
-        aria-label="PR comment"
+        placeholder={placeholder}
+        aria-label={ariaLabel}
       />
       <div className="flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onCancel}>
@@ -320,7 +350,7 @@ function PRCommentComposer({
           onClick={submit}
           disabled={trimmed.length === 0}
         >
-          Comment
+          {submitLabel}
           <ShortcutBadge hotkey="Mod+Enter" />
         </Button>
       </div>

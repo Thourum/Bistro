@@ -58,6 +58,7 @@ const ACTION_IDS = new Set([
   'detail.viewDiff',
   'detail.approve',
   'detail.comment',
+  'detail.requestChanges',
   'detail.reply',
   'global.escape',
   'filter.needsAction',

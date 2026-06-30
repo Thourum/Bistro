@@ -194,6 +194,15 @@ describe('useAppHotkeys', () => {
     expect(appStore.state.selectedPRIndex).toBe(0);
   });
 
+  it('opens request-changes composer on Shift+R in detail route', () => {
+    mockPathname.current = '/prs/some-pr';
+    renderWithOverlays();
+    act(() => {
+      fireKey('R', { code: 'KeyR', shiftKey: true });
+    });
+    expect(appStore.state.confirmingAction).toBe('request_changes');
+  });
+
   it('suppresses bindings while typing in an input', () => {
     renderWithOverlays();
     const input = document.createElement('input');

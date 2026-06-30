@@ -44,6 +44,11 @@ export interface FSReadPatchResponse {
 
 // ---- Go Command Channel ----
 
+// Review-thread resolve/unresolve actions intentionally do not use this legacy
+// IPC command surface. They go over the sync engine WebSocket as
+// SUBMIT_ACTION payloads (`resolve_thread` / `unresolve_thread`) so they share
+// the same offline queue, retry, and ACTION_RESULT semantics as other PR writes.
+
 export interface GoCommandRequest {
   type: 'approve_pr' | 'request_changes' | 'post_comment';
   pr_id: string;

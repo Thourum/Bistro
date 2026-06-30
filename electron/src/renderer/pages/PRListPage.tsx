@@ -6,7 +6,7 @@ import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
-import { countTriageLanes } from '../utils/triage';
+import { countTriageLanes, prBrowserUrl } from '../utils/triage';
 
 const FILTER_TITLES: Record<UIState['filterState'], string> = {
   needs_action: 'Needs Your Action',
@@ -64,6 +64,7 @@ export function PRListPage({
     appStore.setState((s) => ({
       ...s,
       visiblePRIds: prs.map((p) => p.id),
+      visiblePRBrowserUrls: prs.map((p) => prBrowserUrl(p) ?? ''),
     }));
   }, [prs]);
 

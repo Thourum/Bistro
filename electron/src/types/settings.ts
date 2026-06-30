@@ -38,6 +38,14 @@ export interface PRListSettings {
   view: 'flat' | 'grouped';
 }
 
+export interface PrivacySettings {
+  /**
+   * Explicit opt-in for v0.1 usage telemetry. Defaults false and must stay
+   * disabled unless the user turns it on in Settings → Privacy.
+   */
+  telemetryEnabled: boolean;
+}
+
 /**
  * Overrides for keyboard bindings.
  *
@@ -59,6 +67,7 @@ export interface AppSettings {
   appearance: AppearanceSettings;
   sync: SyncSettings;
   prList: PRListSettings;
+  privacy: PrivacySettings;
   keybindings: KeybindingOverrides;
 }
 
@@ -81,6 +90,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   prList: {
     view: 'flat',
+  },
+  privacy: {
+    telemetryEnabled: false,
   },
   keybindings: {},
 };

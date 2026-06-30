@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { PR } from '../../src/renderer/types';
-import { classifyPR, countTriageLanes } from '../../src/renderer/utils/triage';
+import {
+  classifyPR,
+  countTriageLanes,
+  prBrowserUrl,
+} from '../../src/renderer/utils/triage';
 
 function buildPR(overrides: Partial<PR> = {}): PR {
   return {
@@ -98,5 +102,17 @@ describe('countTriageLanes', () => {
       waitingAuthor: 0,
       fyi: 0,
     });
+  });
+});
+
+describe('prBrowserUrl', () => {
+  it('builds GitHub PR browser URLs from local PR metadata', () => {
+    expect(
+      prBrowserUrl(buildPR({ owner: 'paperclip', repo: 'bistro', number: 33 })),
+    ).toBe('https://github.com/paperclip/bistro/pull/33');
+  });
+
+  it('returns null for unsupported providers', () => {
+    expect(prBrowserUrl(buildPR({ provider: 'gitlab' }))).toBeNull();
   });
 });

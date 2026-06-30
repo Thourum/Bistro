@@ -7,7 +7,14 @@ import { DEFAULT_SETTINGS } from '../types/settings';
 import { killGoProcess, spawnGoProcess } from './go-spawn';
 import { setupIPC } from './ipc';
 import { SettingsService } from './settings';
+import { resolveTelemetryEndpoint, TelemetryService } from './telemetry';
+import {
+  captureSentryException,
+  configureSentryConsent,
+  isSentryEnabled,
+} from './sentry';
 import type { AppConfig } from './types';
+import { startAutoUpdates, stopAutoUpdates } from './updater';
 import { WebSocketClient } from './websocket-client';
 import { createWindow } from './window';
 
@@ -139,6 +146,7 @@ log.info(`Mode: ${isDev ? 'development' : 'production'}`);
 
 let wsClient: WebSocketClient | null = null;
 let settingsService: SettingsService | null = null;
+let telemetryService: TelemetryService | null = null;
 let runtimeConfig: AppConfig | null = null;
 
 ipcMain.handle('app:quit', () => {
@@ -147,10 +155,23 @@ ipcMain.handle('app:quit', () => {
 });
 
 app.on('ready', async () => {
+  startAutoUpdates(log);
+
   // Load settings first so we can pass sync config to the Go process.
   settingsService = new SettingsService(log);
   await settingsService.load();
   log.info(`Settings loaded from ${settingsService.path}`);
+  configureSentryConsent(settingsService.snapshot.privacy.telemetryEnabled);
+  log.info(`Sentry crash reporting: ${isSentryEnabled() ? 'enabled' : 'disabled'}`);
+  telemetryService = new TelemetryService({
+    enabled: settingsService.snapshot.privacy.telemetryEnabled,
+    storageDir: join(app.getPath('userData'), 'telemetry'),
+    endpoint: resolveTelemetryEndpoint(process.env.BISTRO_TELEMETRY_ENDPOINT),
+    appVersion: app.getVersion(),
+    platform: process.platform,
+    logger: log,
+  });
+  void telemetryService.trackAppStarted();
 
   const appConfig = buildConfig(settingsService.snapshot.sync);
 
@@ -167,6 +188,10 @@ app.on('ready', async () => {
       logger: log,
       onCrash: (code, signal) => {
         log.error(`Go process crashed: code=${code}, signal=${signal}`);
+        captureSentryException(new Error('Go sync engine crashed'), {
+          tags: { component: 'go-sync-engine' },
+          extra: { code, signal },
+        });
         const { BrowserWindow } = require('electron');
         (BrowserWindow.getAllWindows() as Electron.BrowserWindow[]).forEach(
           (win) => {
@@ -202,11 +227,19 @@ app.on('ready', async () => {
     wsClient.connect();
 
     // 3. Setup IPC handlers (DB should exist now that Go has started)
-    setupIPC(appConfig.goProcess.dbPath, log, wsClient, settingsService);
+    setupIPC(
+      appConfig.goProcess.dbPath,
+      log,
+      wsClient,
+      settingsService,
+      telemetryService,
+    );
 
     // 4a. Forward runtime sync-settings changes to Go engine over WebSocket.
     settingsService.addChangeListener((s) => {
       sendSyncSettingsToGo(s.sync);
+      telemetryService?.setEnabled(s.privacy.telemetryEnabled);
+      configureSentryConsent(s.privacy.telemetryEnabled);
     });
 
     // 3b. Register open-external IPC handler (HTTPS-only URL validation)
@@ -229,6 +262,9 @@ app.on('ready', async () => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.error(`Failed to start app: ${message}`);
+    captureSentryException(new Error('Electron main startup failed'), {
+      tags: { component: 'electron-main' },
+    });
 
     // Still create window so user sees error state
     try {
@@ -242,6 +278,7 @@ app.on('ready', async () => {
 
 app.on('before-quit', () => {
   log.info('App shutting down');
+  stopAutoUpdates();
   wsClient?.stop();
   settingsService?.stop();
   killGoProcess();

@@ -10,7 +10,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router';
 import * as matchers from '@testing-library/jest-dom/matchers';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FooterSlotProvider } from '../../src/renderer/components/FooterSlot';
 import { OverlayProvider } from '../../src/renderer/overlays/OverlayContext';
@@ -42,10 +42,12 @@ vi.mock('../../src/renderer/hooks/useWebSocketPRList', () => ({
   useWebSocketPRList: () => ({ data: [mockPR], isLoading: false, error: null }),
 }));
 
+const mockSend = vi.hoisted(() => vi.fn());
+
 vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
   useWebSocket: () => ({
     request: vi.fn().mockResolvedValue({}),
-    send: vi.fn(),
+    send: mockSend,
   }),
 }));
 
@@ -84,6 +86,17 @@ const mockStore = {
   subscribe: vi.fn(() => () => {}),
   setState: vi.fn(),
 };
+
+function resetMockStoreState(): void {
+  mockStore.state = {
+    selectedPRIndex: 0,
+    filterState: 'open' as const,
+    mode: 'detail' as const,
+    confirmingAction: null,
+    pendingAction: null,
+    actionResult: null,
+  };
+}
 
 /**
  * Render PRDetailPage inside a minimal router with /prs/$prId route so
@@ -144,6 +157,9 @@ function renderWithPRRoute(prId: string) {
 
 describe('PRDetailPage', () => {
   beforeEach(() => {
+    mockSend.mockClear();
+    mockStore.setState.mockClear();
+    resetMockStoreState();
     vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue(
       mockStore as unknown as typeof storeModule.appStore,
     );
@@ -167,5 +183,37 @@ describe('PRDetailPage', () => {
     renderWithPRRoute('unknown-id-99');
     expect(await screen.findByTestId('pr-not-found')).toBeInTheDocument();
     expect(await screen.findByText(/PR not found/i)).toBeInTheDocument();
+  });
+
+  it('shows a focused request-changes composer and submits with Mod+Enter', async () => {
+    mockStore.state.confirmingAction = 'request_changes';
+
+    renderWithPRRoute('github-1');
+
+    const textarea = await screen.findByRole('textbox', {
+      name: /request changes comment/i,
+    });
+    expect(textarea).toHaveFocus();
+
+    fireEvent.change(textarea, { target: { value: 'Please add tests.' } });
+    fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true });
+
+    expect(mockSend).toHaveBeenCalledWith('REQUEST_CHANGES', {
+      pr_id: 'github-1',
+      comment: 'Please add tests.',
+    });
+  });
+
+  it('cancels the request-changes composer with Escape', async () => {
+    mockStore.state.confirmingAction = 'request_changes';
+
+    renderWithPRRoute('github-1');
+
+    const textarea = await screen.findByRole('textbox', {
+      name: /request changes comment/i,
+    });
+    fireEvent.keyDown(textarea, { key: 'Escape' });
+
+    expect(mockStore.setState).toHaveBeenCalledWith(expect.any(Function));
   });
 });

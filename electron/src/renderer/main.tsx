@@ -1,6 +1,9 @@
+// Sentry must initialize before app modules can throw during import/evaluation.
+import './sentry';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 import '@fontsource-variable/geist/index.css';
 import '@fontsource-variable/geist-mono/index.css';
@@ -24,6 +27,8 @@ import './styles/globals.css';
 // biome-ignore lint/style/noNonNullAssertion: React entry point, element is guaranteed to exist
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

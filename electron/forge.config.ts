@@ -2,14 +2,29 @@ import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { VitePlugin } from '@electron-forge/plugin-vite';
+import { PublisherGithub } from '@electron-forge/publisher-github';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 
 const config: ForgeConfig = {
   packagerConfig: {
+    appBundleId: 'app.bistro.review',
+    executableName: 'Bistro',
+    name: 'Bistro',
     asar: true,
   },
   rebuildConfig: {},
   makers: [new MakerZIP({}, ['darwin', 'linux', 'win32']), new MakerDMG({})],
+  publishers: [
+    new PublisherGithub({
+      repository: {
+        owner: 'Itterno',
+        name: 'Bistro',
+      },
+      draft: true,
+      prerelease: false,
+      generateReleaseNotes: true,
+    }),
+  ],
   plugins: [
     new AutoUnpackNativesPlugin({}),
     new VitePlugin({

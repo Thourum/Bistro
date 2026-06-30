@@ -142,6 +142,7 @@ describe('DEFAULT_KEYBINDINGS', () => {
   it('defines gg and aa as sequences', () => {
     expect(byId('list.top').keys).toEqual(['g', 'g']);
     expect(byId('detail.approve').keys).toEqual(['a', 'a']);
+    expect(byId('detail.requestChanges').keys).toBe('Shift+R');
     expect(isSequenceBinding(byId('list.top'))).toBe(true);
     expect(isSequenceBinding(byId('list.down'))).toBe(false);
   });
@@ -290,6 +291,29 @@ describe('binding actions', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
+  it('o opens the PR at the cursor position in the browser', () => {
+    const openExternal = vi.fn().mockResolvedValue({ ok: true });
+    Object.defineProperty(window, 'electron', {
+      configurable: true,
+      value: { openExternal },
+    });
+    const store = makeStore({
+      selectedPRIndex: 1,
+      visiblePRIds: ['pr-1', 'pr-2'],
+      visiblePRBrowserUrls: [
+        'https://github.com/acme/api/pull/1',
+        'https://github.com/acme/api/pull/2',
+      ],
+    });
+
+    byId('list.openBrowser').action(makeCtx(store));
+
+    expect(openExternal).toHaveBeenCalledWith(
+      'https://github.com/acme/api/pull/2',
+    );
+    expect(store.state.confirmingAction).toBeNull();
+  });
+
   it('/ opens search overlay', () => {
     const openSearch = vi.fn();
     byId('list.search').action(makeCtx({}, 'list', { openSearch }));
@@ -314,6 +338,12 @@ describe('binding actions', () => {
     expect(store.state.confirmingAction).toBe('approve');
     byId('detail.approve').action(makeCtx(store, 'detail'));
     expect(store.state.confirmingAction).toBe('approve_confirmed');
+  });
+
+  it('Shift+R opens the request-changes composer on detail', () => {
+    const store = makeStore({});
+    byId('detail.requestChanges').action(makeCtx(store, 'detail'));
+    expect(store.state.confirmingAction).toBe('request_changes');
   });
 
   it('Space in detail opens the diff view (navigates to /prs/$prId/diff)', async () => {

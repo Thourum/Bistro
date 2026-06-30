@@ -10,6 +10,7 @@ import type {
 } from '../types/ipc';
 import type { AppSettings } from '../types/settings';
 import type { SettingsService } from './settings';
+import type { TelemetryService } from './telemetry';
 import type { WebSocketClient } from './websocket-client';
 
 const ACTION_TYPE_MAP: Record<string, string> = {
@@ -24,6 +25,7 @@ export function setupIPC(
   logger: Logger,
   wsClient: WebSocketClient,
   settings: SettingsService,
+  telemetry?: TelemetryService,
 ): void {
   logger.info(`IPC setup (db path: ${path})`);
 
@@ -37,6 +39,8 @@ export function setupIPC(
     async (_event, patch: Partial<AppSettings>) => {
       try {
         const next = await settings.set(patch);
+        telemetry?.setEnabled(next.privacy.telemetryEnabled);
+        trackSettingsPatch(telemetry, patch, next);
         return { ok: next };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -49,6 +53,7 @@ export function setupIPC(
   ipcMain.handle('settings:reset', async () => {
     try {
       const next = await settings.reset();
+      telemetry?.setEnabled(next.privacy.telemetryEnabled);
       return { ok: next };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -85,9 +90,11 @@ export function setupIPC(
           logger.warn(
             `fs:read-patch: rejected path outside cache: ${resolved}`,
           );
+          void telemetry?.track('fs_patch_read', { allowed: false });
           return { err: 'Access denied: path outside allowed directory' };
         }
         const content = await readFile(resolved, 'utf-8');
+        void telemetry?.track('fs_patch_read', { allowed: true });
         return { ok: content };
       } catch (error) {
         const message =
@@ -102,6 +109,10 @@ export function setupIPC(
   ipcMain.handle('go:command', async (_event, request: GoCommandRequest) => {
     try {
       if (!wsClient.isConnected()) {
+        void telemetry?.track('review_action_requested', {
+          action: ACTION_TYPE_MAP[request.type] ?? 'unknown',
+          online: false,
+        });
         return { err: 'WebSocket not connected — action queued for retry' };
       }
 
@@ -111,6 +122,10 @@ export function setupIPC(
       }
 
       logger.info(`Forwarding go:command: ${action} for PR ${request.pr_id}`);
+      void telemetry?.track('review_action_requested', {
+        action,
+        online: true,
+      });
 
       wsClient.send({
         type: 'ACTION_REQUEST',
@@ -133,10 +148,18 @@ export function setupIPC(
   ipcMain.handle('sync:action', async (_event, request: SyncActionRequest) => {
     try {
       if (!wsClient.isConnected()) {
+        void telemetry?.track('review_action_requested', {
+          action: ACTION_TYPE_MAP[request.type] ?? request.type,
+          online: false,
+        });
         return { err: 'WebSocket not connected' };
       }
 
       const syncAction = ACTION_TYPE_MAP[request.type] ?? request.type;
+      void telemetry?.track('review_action_requested', {
+        action: syncAction,
+        online: true,
+      });
 
       wsClient.send({
         type: 'ACTION_REQUEST',
@@ -156,4 +179,29 @@ export function setupIPC(
   });
 
   logger.info('IPC handlers registered');
+}
+
+function trackSettingsPatch(
+  telemetry: TelemetryService | undefined,
+  patch: Partial<AppSettings>,
+  next: AppSettings,
+): void {
+  if (patch.appearance !== undefined) {
+    void telemetry?.track('settings_updated', { section: 'appearance' });
+  }
+  if (patch.keybindings !== undefined) {
+    void telemetry?.track('settings_updated', { section: 'keyboard' });
+  }
+  if (patch.prList !== undefined) {
+    void telemetry?.track('settings_updated', { section: 'prList' });
+  }
+  if (patch.sync !== undefined) {
+    void telemetry?.track('settings_updated', { section: 'sync' });
+  }
+  if (patch.privacy !== undefined) {
+    void telemetry?.track('settings_updated', {
+      section: 'privacy',
+      telemetryEnabled: next.privacy.telemetryEnabled,
+    });
+  }
 }

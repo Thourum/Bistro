@@ -8,6 +8,11 @@ export interface TriageCounts {
   fyi: number;
 }
 
+export function prBrowserUrl(pr: PR): string | null {
+  if (pr.provider !== 'github') return null;
+  return `https://github.com/${pr.owner}/${pr.repo}/pull/${pr.number}`;
+}
+
 /**
  * Classifies a PR relative to the current user (roadmap 1.6):
  * - my review is requested (and the provider clears that flag once I review)

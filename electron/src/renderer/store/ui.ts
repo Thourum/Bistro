@@ -56,11 +56,12 @@ export interface UIState {
   reposLoading: boolean;
   repoFilter: string | null;
   /**
-   * Stable id list of the currently visible PRs — kept in sync by PRListPage.
-   * Used by keybinding actions (list.open, list.bottom) to navigate by id
-   * without needing a hook context.
+   * Stable id list and browser URLs for the currently visible PRs — kept in
+   * sync by PRListPage. Used by keybinding actions (list.open,
+   * list.openBrowser, list.bottom) without needing a hook context.
    */
   visiblePRIds: string[];
+  visiblePRBrowserUrls: string[];
   /**
    * Canonical file keys for the diff currently loaded in DiffPage.
    * Set by DiffPage via onFilesResolved when PierreDiffView parses the diff.
@@ -119,6 +120,7 @@ export const initialUIState: UIState = {
   reposLoading: false,
   repoFilter: null,
   visiblePRIds: [],
+  visiblePRBrowserUrls: [],
   diffFileKeys: [],
   selectedPatchsetPair: null,
   threadsRevision: 0,

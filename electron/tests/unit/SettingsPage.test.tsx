@@ -32,6 +32,9 @@ describe('SettingsPage', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Sync$/i })).toBeInTheDocument();
     expect(
+      screen.getByRole('button', { name: /Privacy/i }),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole('button', { name: /Advanced/i }),
     ).toBeInTheDocument();
   });
@@ -51,5 +54,13 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
     await userEvent.click(screen.getByRole('button', { name: /Advanced/i }));
     expect(screen.getAllByText(/Advanced/i).length).toBeGreaterThan(0);
+  });
+
+  it('renders usage telemetry off by default', () => {
+    render(<SettingsPage />);
+    expect(screen.getByText('Usage Telemetry')).toBeInTheDocument();
+    expect(
+      screen.getByRole('switch', { name: /Usage Telemetry/i }),
+    ).not.toBeChecked();
   });
 });

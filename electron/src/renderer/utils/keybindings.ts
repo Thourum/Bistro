@@ -193,6 +193,22 @@ function closeInlineDiffReply(ctx: KeyActionContext): boolean {
   return true;
 }
 
+function selectedVisibleIndex(ctx: KeyActionContext): number {
+  const { selectedPRIndex, visiblePRIds } = ctx.store.state;
+  return Math.min(
+    Math.max(0, selectedPRIndex),
+    Math.max(0, visiblePRIds.length - 1),
+  );
+}
+
+function openUrlInBrowser(url: string): void {
+  if (window.electron?.openExternal !== undefined) {
+    void window.electron.openExternal(url);
+    return;
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 const globalBindings: KeyBinding[] = [
   {
     actionId: 'global.help',
@@ -419,12 +435,7 @@ const listBindings: KeyBinding[] = [
     activation: { routes: ['list'] },
     action: (ctx) => {
       // Navigate by stable PR id after clamping the cursor to the visible list.
-      const { selectedPRIndex, visiblePRIds } = ctx.store.state;
-      const clampedIdx = Math.min(
-        Math.max(0, selectedPRIndex),
-        Math.max(0, visiblePRIds.length - 1),
-      );
-      const prId = visiblePRIds[clampedIdx];
+      const prId = ctx.store.state.visiblePRIds[selectedVisibleIndex(ctx)];
       if (prId !== undefined) {
         void router.navigate({ to: '/prs/$prId', params: { prId } });
       }
@@ -478,7 +489,11 @@ const listBindings: KeyBinding[] = [
     description: 'Open (in Browser)',
     activation: { routes: ['list'] },
     action: (ctx) => {
-      ctx.store.setState((s) => ({ ...s, confirmingAction: 'open-browser' }));
+      const url =
+        ctx.store.state.visiblePRBrowserUrls[selectedVisibleIndex(ctx)];
+      if (url !== undefined && url !== '') {
+        openUrlInBrowser(url);
+      }
     },
   },
   {
@@ -629,6 +644,18 @@ const detailBindings: KeyBinding[] = [
     activation: { routes: ['detail'] },
     action: (ctx) => {
       ctx.store.setState((s) => ({ ...s, confirmingAction: 'comment' }));
+    },
+  },
+  {
+    actionId: 'detail.requestChanges',
+    keys: 'Shift+R',
+    description: 'Request changes',
+    activation: { routes: ['detail'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({
+        ...s,
+        confirmingAction: 'request_changes',
+      }));
     },
   },
   {

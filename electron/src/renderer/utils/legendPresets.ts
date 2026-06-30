@@ -24,6 +24,7 @@ export const FOOTER_LEGEND_PRESETS_BY_ROUTE: Record<RouteBase, string[]> = {
     'detail.prevFile',
     'detail.approve',
     'detail.comment',
+    'detail.requestChanges',
     'global.escape',
   ],
   diff: [

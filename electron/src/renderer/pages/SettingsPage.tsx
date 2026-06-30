@@ -28,6 +28,7 @@ type SettingsSection =
   | 'keyboard'
   | 'connections'
   | 'sync'
+  | 'privacy'
   | 'advanced';
 
 const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
@@ -35,6 +36,7 @@ const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
   { id: 'keyboard', label: 'Keyboard' },
   { id: 'connections', label: 'Connections' },
   { id: 'sync', label: 'Sync' },
+  { id: 'privacy', label: 'Privacy' },
   { id: 'advanced', label: 'Advanced' },
 ];
 
@@ -62,6 +64,7 @@ export function SettingsPage() {
             <KeyboardSection />
             <ConnectionsSection />
             <SyncSection />
+            <PrivacySection />
             <AdvancedSection />
           </div>
         </div>
@@ -555,6 +558,32 @@ function SyncSection() {
           on={sync.notifications}
           onChange={(on) =>
             updateSettings({ sync: { ...sync, notifications: on } })
+          }
+          inline
+        />
+      </div>
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Privacy
+// ---------------------------------------------------------------------------
+
+function PrivacySection() {
+  const privacy = useStore(settingsStore, (s) => s.privacy);
+
+  return (
+    <Section id="privacy" title="Privacy">
+      <div className="divide-y divide-outline-variant/10 border-y border-outline-variant/10">
+        <RowToggle
+          title="Usage Telemetry"
+          description="Opt in to anonymous product events. No repo names, usernames, file paths, PR text, code, diffs, comments, or tokens are sent."
+          on={privacy.telemetryEnabled}
+          onChange={(on) =>
+            updateSettings({
+              privacy: { ...privacy, telemetryEnabled: on },
+            })
           }
           inline
         />

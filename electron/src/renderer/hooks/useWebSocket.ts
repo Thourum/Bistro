@@ -242,6 +242,28 @@ function handleThreadStateChanged(_data: ThreadStateChangedData): void {
   }
 }
 
+function handlePRMetadataChanged(_data: unknown): void {
+  try {
+    appStore.setState((s) => ({
+      ...s,
+      prListRevision: s.prListRevision + 1,
+    }));
+  } catch {
+    // Store not available (test environment)
+  }
+}
+
+function handleCIStatusChanged(_data: unknown): void {
+  try {
+    appStore.setState((s) => ({
+      ...s,
+      prListRevision: s.prListRevision + 1,
+    }));
+  } catch {
+    // Store not available (test environment)
+  }
+}
+
 function onMessage(event: MessageEvent<string>): void {
   let message: WSMessage;
   try {
@@ -309,6 +331,12 @@ function onMessage(event: MessageEvent<string>): void {
     case 'THREAD_RESOLVED':
     case 'THREAD_REOPENED':
       handleThreadStateChanged(message.data as ThreadStateChangedData);
+      break;
+    case 'PR_METADATA_CHANGED':
+      handlePRMetadataChanged(message.data);
+      break;
+    case 'CI_STATUS_CHANGED':
+      handleCIStatusChanged(message.data);
       break;
     case 'AUTH_REDIRECT': {
       const payload = message.data as { provider: string; url: string };
