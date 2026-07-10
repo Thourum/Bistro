@@ -69,6 +69,40 @@ func TestDiffStore_SaveAndGet(t *testing.T) {
 	}
 }
 
+func TestDiffStore_SaveAndGet_MetadataRoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	seedPR(t, db, "pr-meta")
+	ds := NewDiffStore(db.DB)
+
+	want := DiffFile{
+		FilePath:    "new-name.go",
+		Status:      "renamed",
+		OldPath:     "old-name.go",
+		IsBinary:    true,
+		IsTruncated: true,
+		PatchBytes:  1234,
+		HunkCount:   2,
+		Patch:       "patch",
+		Additions:   3,
+		Deletions:   4,
+		DiffStatus:  "ok",
+	}
+	if err := ds.SaveDiffs("pr-meta", []DiffFile{want}); err != nil {
+		t.Fatalf("SaveDiffs: %v", err)
+	}
+
+	got, err := ds.GetDiffs("pr-meta")
+	if err != nil {
+		t.Fatalf("GetDiffs: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d diffs, want 1", len(got))
+	}
+	if got[0] != want {
+		t.Fatalf("metadata roundtrip mismatch\ngot:  %+v\nwant: %+v", got[0], want)
+	}
+}
+
 func TestDiffStore_GetDiffs_Empty(t *testing.T) {
 	db := setupTestDB(t)
 	store := NewDiffStore(db.DB)
@@ -245,6 +279,48 @@ func TestDiffStore_SaveDiffs_RenameFile(t *testing.T) {
 	got, _ := ds.GetDiffs("pr-rename")
 	if len(got) != 1 || got[0].FilePath != "new_name.go" {
 		t.Errorf("after rename: got %v", got)
+	}
+}
+
+func TestDiffStore_DiffStatus_Roundtrip(t *testing.T) {
+	db := setupTestDB(t)
+	seedPR(t, db, "pr-status")
+	store := NewDiffStore(db.DB)
+
+	diffs := []DiffFile{
+		{FilePath: "ok.go", Patch: "+ok", Additions: 1, Deletions: 0, DiffStatus: "ok"},
+		{FilePath: "big.go", Patch: "", Additions: 0, Deletions: 0, DiffStatus: "truncated"},
+		{FilePath: "overflow.go", Patch: "", Additions: 0, Deletions: 0, DiffStatus: "too_large"},
+	}
+	if err := store.SaveDiffs("pr-status", diffs); err != nil {
+		t.Fatalf("SaveDiffs: %v", err)
+	}
+
+	got, err := store.GetDiffs("pr-status")
+	if err != nil {
+		t.Fatalf("GetDiffs: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 diffs, got %d", len(got))
+	}
+	byPath := map[string]DiffFile{}
+	for _, d := range got {
+		byPath[d.FilePath] = d
+	}
+	cases := []struct{ path, want string }{
+		{"ok.go", "ok"},
+		{"big.go", "truncated"},
+		{"overflow.go", "too_large"},
+	}
+	for _, c := range cases {
+		d, ok := byPath[c.path]
+		if !ok {
+			t.Errorf("missing %s", c.path)
+			continue
+		}
+		if d.DiffStatus != c.want {
+			t.Errorf("%s: expected DiffStatus %q, got %q", c.path, c.want, d.DiffStatus)
+		}
 	}
 }
 

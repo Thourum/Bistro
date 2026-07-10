@@ -8,10 +8,17 @@ import (
 
 // DiffFile represents a single file's diff entry for storage.
 type DiffFile struct {
-	FilePath  string
-	Patch     string
-	Additions int
-	Deletions int
+	FilePath    string
+	Status      string
+	OldPath     string
+	IsBinary    bool
+	IsTruncated bool
+	PatchBytes  int
+	HunkCount   int
+	Patch       string
+	Additions   int
+	Deletions   int
+	DiffStatus  string // "ok", "truncated", "too_large"; empty string treated as "ok"
 }
 
 // DiffStore provides persistence for per-file PR diffs in the pr_diffs table.
@@ -45,8 +52,11 @@ func (s *DiffStore) SaveDiffs(prID string, diffs []DiffFile) error {
 	}
 
 	const query = `
-		INSERT INTO pr_diffs (pr_id, file_path, patch, additions, deletions)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO pr_diffs (
+			pr_id, file_path, status, old_path, is_binary, is_truncated,
+			patch_bytes, hunk_count, patch, additions, deletions, diff_status
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	stmt, err := tx.Prepare(query)
@@ -56,7 +66,10 @@ func (s *DiffStore) SaveDiffs(prID string, diffs []DiffFile) error {
 	defer stmt.Close()
 
 	for _, d := range diffs {
-		if _, err := stmt.Exec(prID, d.FilePath, d.Patch, d.Additions, d.Deletions); err != nil {
+		if _, err := stmt.Exec(
+			prID, d.FilePath, diffStatus(d.Status), nullableString(d.OldPath), boolToInt(d.IsBinary), boolToInt(d.IsTruncated),
+			d.PatchBytes, d.HunkCount, d.Patch, d.Additions, d.Deletions, storedDiffStatus(d.DiffStatus),
+		); err != nil {
 			return fmt.Errorf("insert diff for %s/%s: %w", prID, d.FilePath, err)
 		}
 	}
@@ -68,7 +81,8 @@ func (s *DiffStore) SaveDiffs(prID string, diffs []DiffFile) error {
 // Returns an empty slice (not an error) when no diffs exist.
 func (s *DiffStore) GetDiffs(prID string) ([]DiffFile, error) {
 	const query = `
-		SELECT file_path, patch, additions, deletions
+		SELECT file_path, status, COALESCE(old_path, ''), is_binary, is_truncated,
+		       patch_bytes, hunk_count, patch, additions, deletions, diff_status
 		FROM pr_diffs
 		WHERE pr_id = ?
 		ORDER BY file_path
@@ -83,9 +97,15 @@ func (s *DiffStore) GetDiffs(prID string) ([]DiffFile, error) {
 	diffs := make([]DiffFile, 0)
 	for rows.Next() {
 		var d DiffFile
-		if err := rows.Scan(&d.FilePath, &d.Patch, &d.Additions, &d.Deletions); err != nil {
+		var isBinary, isTruncated int
+		if err := rows.Scan(
+			&d.FilePath, &d.Status, &d.OldPath, &isBinary, &isTruncated,
+			&d.PatchBytes, &d.HunkCount, &d.Patch, &d.Additions, &d.Deletions, &d.DiffStatus,
+		); err != nil {
 			return nil, fmt.Errorf("scan diff row: %w", err)
 		}
+		d.IsBinary = isBinary != 0
+		d.IsTruncated = isTruncated != 0
 		diffs = append(diffs, d)
 	}
 
@@ -111,7 +131,11 @@ func (s *DiffStore) GetUnifiedDiff(prID string) (string, error) {
 	var b strings.Builder
 	for _, d := range diffs {
 		// Emit a git diff header so consumers can identify file boundaries.
-		fmt.Fprintf(&b, "diff --git a/%s b/%s\n", d.FilePath, d.FilePath)
+		oldPath := d.FilePath
+		if d.OldPath != "" {
+			oldPath = d.OldPath
+		}
+		fmt.Fprintf(&b, "diff --git a/%s b/%s\n", oldPath, d.FilePath)
 		b.WriteString(d.Patch)
 		// Ensure each file patch ends with a newline before the next header.
 		if len(d.Patch) > 0 && d.Patch[len(d.Patch)-1] != '\n' {
@@ -120,4 +144,32 @@ func (s *DiffStore) GetUnifiedDiff(prID string) (string, error) {
 	}
 
 	return b.String(), nil
+}
+
+func diffStatus(status string) string {
+	if status == "" {
+		return "modified"
+	}
+	return status
+}
+
+func storedDiffStatus(status string) string {
+	if status == "" {
+		return "ok"
+	}
+	return status
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func nullableString(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
 }

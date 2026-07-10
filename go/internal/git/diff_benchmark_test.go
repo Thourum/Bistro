@@ -19,13 +19,17 @@ func BenchmarkGenerateDiffLarge(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		result, err := client.GenerateDiff(repoPath, baseSHA, headSHA)
+		result, err := client.GenerateDiff(repoPath, baseSHA, headSHA, DiffOptions{})
 		if err != nil {
 			b.Fatalf("GenerateDiff: %v", err)
 		}
 		if len(result.Files) != 1000 {
 			b.Fatalf("GenerateDiff files=%d, want 1000", len(result.Files))
 		}
+		b.ReportMetric(float64(result.Profile.FileCount), "files/op")
+		b.ReportMetric(float64(result.Profile.PatchBytes), "patch-bytes/op")
+		b.ReportMetric(float64(result.Profile.BuildPatch.Microseconds()), "build-patch-us/op")
+		b.ReportMetric(float64(result.Profile.RenderFilePatches.Microseconds()), "render-patches-us/op")
 	}
 }
 

@@ -253,7 +253,7 @@ func (o *Orchestrator) FetchPRDetails(
 					// "repository does not exist" on the next diff.
 
 					diffStart := time.Now()
-					diffResult, err := o.git.GenerateDiff(cloneResult.LocalPath, prCopy.BaseSHA, prCopy.HeadSHA)
+					diffResult, err := o.git.GenerateDiff(cloneResult.LocalPath, prCopy.BaseSHA, prCopy.HeadSHA, git.DefaultDiffOptions())
 					diffDur := time.Since(diffStart).Milliseconds()
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("diff: %v", err))
@@ -266,6 +266,14 @@ func (o *Orchestrator) FetchPRDetails(
 						logSubstep(prLog, "pr diff generated", diffDur,
 							"bytes", diffResult.Size,
 							"files", len(diffResult.Files),
+							"binary_files", diffResult.Profile.BinaryFileCount,
+							"duration_ms", diffDur,
+							"profile_total_ms", diffResult.Profile.TotalDuration.Milliseconds(),
+							"profile_open_repo_ms", diffResult.Profile.OpenRepository.Milliseconds(),
+							"profile_load_commits_ms", diffResult.Profile.LoadCommits.Milliseconds(),
+							"profile_load_trees_ms", diffResult.Profile.LoadTrees.Milliseconds(),
+							"profile_build_patch_ms", diffResult.Profile.BuildPatch.Milliseconds(),
+							"profile_render_patches_ms", diffResult.Profile.RenderFilePatches.Milliseconds(),
 						)
 
 						// Build DiffFiles to be persisted atomically with the PR row
@@ -275,10 +283,17 @@ func (o *Orchestrator) FetchPRDetails(
 						diffFiles := make([]store.DiffFile, 0, len(diffResult.Files))
 						for _, f := range diffResult.Files {
 							diffFiles = append(diffFiles, store.DiffFile{
-								FilePath:  f.Path,
-								Patch:     f.Patch,
-								Additions: f.AddedLines,
-								Deletions: f.RemovedLines,
+								FilePath:    f.Path,
+								Status:      f.Status,
+								DiffStatus:  f.DiffStatus,
+								OldPath:     f.OldPath,
+								IsBinary:    f.Binary,
+								IsTruncated: f.Truncated,
+								PatchBytes:  f.PatchBytes,
+								HunkCount:   f.HunkCount,
+								Patch:       f.Patch,
+								Additions:   f.AddedLines,
+								Deletions:   f.RemovedLines,
 							})
 						}
 						result.DiffFiles = diffFiles

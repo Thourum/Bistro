@@ -690,18 +690,39 @@ func (w *Writer) writeDiffs(ctx context.Context, tx *sql.Tx, prID string, diffs 
 	if len(diffs) == 0 {
 		return nil // cleared stale rows; zero-file diff is a valid empty state
 	}
-	const q = `INSERT INTO pr_diffs (pr_id, file_path, patch, additions, deletions) VALUES (?, ?, ?, ?, ?)`
+	const q = `
+		INSERT INTO pr_diffs (
+			pr_id, file_path, status, old_path, is_binary, is_truncated,
+			patch_bytes, hunk_count, patch, additions, deletions, diff_status
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	stmt, err := tx.PrepareContext(ctx, q)
 	if err != nil {
 		return fmt.Errorf("prepare pr_diffs insert for %s: %w", prID, err)
 	}
 	defer stmt.Close()
 	for _, d := range diffs {
-		if _, err := stmt.ExecContext(ctx, prID, d.FilePath, d.Patch, d.Additions, d.Deletions); err != nil {
+		if _, err := stmt.ExecContext(
+			ctx, prID, d.FilePath, diffStatus(d.Status), nullableString(d.OldPath), boolToInt(d.IsBinary), boolToInt(d.IsTruncated),
+			d.PatchBytes, d.HunkCount, d.Patch, d.Additions, d.Deletions, storedDiffStatus(d.DiffStatus),
+		); err != nil {
 			return fmt.Errorf("insert pr_diff %s/%s: %w", prID, d.FilePath, err)
 		}
 	}
 	return nil
+}
+
+func diffStatus(status string) string {
+	if status == "" {
+		return "modified"
+	}
+	return status
+}
+
+func storedDiffStatus(status string) string {
+	if status == "" {
+		return "ok"
+	}
+	return status
 }
 
 // writeAnchorUpdates persists AnchorResolver results for review comments.
