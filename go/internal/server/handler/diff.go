@@ -40,6 +40,13 @@ type DiffHandlerDeps struct {
 // viewed is true only when the current user has seen this exact patch.
 type diffFileDetail struct {
 	Path        string `json:"path"`
+	Status      string `json:"status"`
+	OldPath     string `json:"old_path,omitempty"`
+	IsBinary    bool   `json:"is_binary"`
+	IsTruncated bool   `json:"is_truncated"`
+	DiffStatus  string `json:"diff_status"`
+	PatchBytes  int    `json:"patch_bytes"`
+	HunkCount   int    `json:"hunk_count"`
 	Additions   int    `json:"additions"`
 	Deletions   int    `json:"deletions"`
 	ContentHash string `json:"content_hash"`
@@ -153,6 +160,13 @@ func newRequestDiffHandler(deps DiffHandlerDeps) ws.MessageHandler {
 
 				files = append(files, diffFileDetail{
 					Path:        f.FilePath,
+					Status:      f.Status,
+					OldPath:     f.OldPath,
+					IsBinary:    f.IsBinary,
+					IsTruncated: f.IsTruncated,
+					DiffStatus:  f.DiffStatus,
+					PatchBytes:  f.PatchBytes,
+					HunkCount:   f.HunkCount,
 					Additions:   f.Additions,
 					Deletions:   f.Deletions,
 					ContentHash: hash,

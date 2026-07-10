@@ -73,6 +73,13 @@ export interface File {
  */
 export interface DiffFile {
   path: string;
+  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'binary';
+  old_path?: string;
+  is_binary: boolean;
+  is_truncated: boolean;
+  diff_status: 'ok' | 'truncated' | 'too_large';
+  patch_bytes: number;
+  hunk_count: number;
   additions: number;
   deletions: number;
   content_hash: string;

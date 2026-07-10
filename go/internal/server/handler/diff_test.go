@@ -115,6 +115,45 @@ func TestRequestDiffHandler_IncludesFileStats(t *testing.T) {
 	}
 }
 
+func TestRequestDiffHandler_IncludesFileMetadata(t *testing.T) {
+	stub := &stubDiffReader{
+		diffs: map[string]string{"pr-meta": "diff --git a/old.go b/new.go\n"},
+		files: map[string][]store.DiffFile{
+			"pr-meta": {{
+				FilePath:    "new.go",
+				Status:      "renamed",
+				OldPath:     "old.go",
+				IsBinary:    true,
+				IsTruncated: true,
+				DiffStatus:  "truncated",
+				PatchBytes:  42,
+				HunkCount:   0,
+				Patch:       "binary patch",
+				Additions:   1,
+				Deletions:   2,
+			}},
+		},
+	}
+	handler := NewRequestDiffHandler(stub, nil)
+
+	resp, err := handler(context.Background(), makeMsg(t, "req-meta", "pr-meta"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data := resp.(map[string]interface{})["data"].(map[string]interface{})
+	files := data["files"].([]diffFileDetail)
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1", len(files))
+	}
+	got := files[0]
+	if got.Status != "renamed" || got.OldPath != "old.go" || !got.IsBinary || !got.IsTruncated || got.DiffStatus != "truncated" || got.PatchBytes != 42 || got.HunkCount != 0 {
+		t.Fatalf("metadata not exposed: %+v", got)
+	}
+	if got.ContentHash == "" || got.Viewed {
+		t.Fatalf("content_hash/viewed not preserved: %+v", got)
+	}
+}
+
 func TestRequestDiffHandler_NotFound(t *testing.T) {
 	stub := &stubDiffReader{diffs: map[string]string{}}
 	handler := NewRequestDiffHandler(stub, nil)

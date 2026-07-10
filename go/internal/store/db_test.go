@@ -393,6 +393,16 @@ func TestMigration016_UpgradesOldPatchsetsHeadOnlyIdentity(t *testing.T) {
 	}
 	mustExec(t, db, `CREATE TABLE prs (id TEXT PRIMARY KEY)`)
 	mustExec(t, db, `INSERT INTO prs (id) VALUES ('p-old')`)
+	mustExec(t, db, `CREATE TABLE pr_diffs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		pr_id TEXT NOT NULL,
+		file_path TEXT NOT NULL,
+		patch TEXT NOT NULL,
+		additions INTEGER NOT NULL DEFAULT 0,
+		deletions INTEGER NOT NULL DEFAULT 0,
+		UNIQUE(pr_id, file_path),
+		FOREIGN KEY(pr_id) REFERENCES prs(id) ON DELETE CASCADE
+	)`)
 	mustExec(t, db, `CREATE TABLE comments (
 		id TEXT PRIMARY KEY,
 		pr_id TEXT NOT NULL,

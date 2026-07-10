@@ -203,8 +203,8 @@ func TestGenerateDiffBinaryFileProfilesWithoutFailure(t *testing.T) {
 	if !result.Files[0].Binary {
 		t.Fatalf("expected binary metadata on diff file: %+v", result.Files[0])
 	}
-	if result.Files[0].PatchBytes != len(result.Files[0].Patch) {
-		t.Fatalf("patch byte metadata mismatch: %+v", result.Files[0])
+	if result.Files[0].PatchBytes == 0 || result.Files[0].Patch != "" {
+		t.Fatalf("binary patch should retain original patch byte metadata without storing patch content: %+v", result.Files[0])
 	}
 	if result.Files[0].Status != "binary" {
 		t.Fatalf("binary file status=%q, want binary", result.Files[0].Status)
