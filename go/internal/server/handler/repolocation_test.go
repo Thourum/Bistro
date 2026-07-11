@@ -74,9 +74,21 @@ type fakeRepoLocationCacheDeleter struct {
 }
 
 func (d *fakeRepoLocationCacheDeleter) DeleteCacheDir(path string) error {
+	// Callers pass raw row paths or canonicalized stat paths depending on the
+	// handler; canonicalize before matching so the injected failure fires
+	// regardless of platform tempdir symlinks (macOS /var vs /private/var).
+	canonical := path
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		canonical = resolved
+	}
 	d.mu.Lock()
 	d.deleted = append(d.deleted, path)
-	err := d.failed[path]
+	err := d.failed[canonical]
+	if err != nil {
+		// Fail once: the test models a transient failure (prune fails, the
+		// row is preserved, a later clear-all succeeds and removes it).
+		delete(d.failed, canonical)
+	}
 	d.mu.Unlock()
 	if err != nil {
 		return err
