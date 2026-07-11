@@ -25,6 +25,8 @@ const (
 	operationValidateDevFolder  = "validate_dev_folder"
 	operationScanDevFolder      = "scan_dev_folder"
 	operationAddRepoByURL       = "add_repo_by_url"
+	operationPruneCache         = "prune_cache"
+	operationClearCache         = "clear_cache"
 	operationDeleteCacheRepo    = "delete_cache_repo"
 	operationRecoverRepoPath    = "recover_repo_path"
 	operationRecoverRepoToCache = "recover_repo_to_cache"
@@ -325,12 +327,8 @@ func NewPruneCacheHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
 			payload = cacheMutationPayload(true, removed, failed, 0)
 			return nil
 		}
-		if deps.Locks != nil {
-			if err := deps.Locks.WithMaintenance(operation); err != nil {
-				return nil, err
-			}
-		} else if err := operation(); err != nil {
-			return nil, err
+		if err := runCacheMaintenance(deps.Locks, operation); err != nil {
+			return locationResponse(msg, locationError("", operationPruneCache, "cache_maintenance_failed", err.Error())), nil
 		}
 		return locationResponse(msg, payload), nil
 	}
@@ -347,12 +345,8 @@ func NewClearCacheHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
 			payload = cacheMutationPayload(true, removed, failed, orphansRemoved)
 			return nil
 		}
-		if deps.Locks != nil {
-			if err := deps.Locks.WithMaintenance(operation); err != nil {
-				return nil, err
-			}
-		} else if err := operation(); err != nil {
-			return nil, err
+		if err := runCacheMaintenance(deps.Locks, operation); err != nil {
+			return locationResponse(msg, locationError("", operationClearCache, "cache_maintenance_failed", err.Error())), nil
 		}
 		return locationResponse(msg, payload), nil
 	}
@@ -408,11 +402,11 @@ func NewRecoverRepoPathHandler(locations *store.RepoLocationStore, log *slog.Log
 		}
 		canonical, err := filepath.EvalSymlinks(data.Path)
 		if err != nil {
-			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, "path_missing", err.Error())), nil
+			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, recoverPathErrorCode(err), err.Error())), nil
 		}
 		matches, err := repoPathRemoteMatches(canonical, git.Identity{Provider: location.Provider, Owner: location.Owner, Repo: location.Repo})
 		if err != nil {
-			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, "path_missing", err.Error())), nil
+			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, recoverPathErrorCode(err), err.Error())), nil
 		}
 		if !matches {
 			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, "remote_mismatch", "path remote does not match repo")), nil
@@ -513,6 +507,13 @@ func repoLocationLogger(ctx context.Context, log *slog.Logger, msg ws.InboundMes
 	return logger
 }
 
+func runCacheMaintenance(locks *git.RepoLocks, operation func() error) error {
+	if locks != nil {
+		return locks.WithMaintenance(operation)
+	}
+	return operation()
+}
+
 func triggerSync(syncTrigger chan<- string, logger *slog.Logger) {
 	if syncTrigger == nil {
 		return
@@ -606,6 +607,13 @@ func destinationRootErrorCode(err error) string {
 		return "invalid_path"
 	}
 	return "destination_conflict"
+}
+
+func recoverPathErrorCode(err error) string {
+	if os.IsPermission(err) || errors.Is(err, os.ErrPermission) {
+		return "permission_denied"
+	}
+	return "path_missing"
 }
 
 func registeredLocal(ctx context.Context, locations *store.RepoLocationStore, repoID string) (bool, *LocationErrorPayload, error) {

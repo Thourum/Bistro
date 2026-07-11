@@ -481,6 +481,70 @@ func TestRepoLocationCacheMutationHandlersHandleMissingDeleteDependency(t *testi
 	assertSourcePath(t, db.DB, "github:acme/api", "cache", cachePath)
 }
 
+func TestRepoLocationCacheMutationHandlersReturnEnvelopeForOperationFailures(t *testing.T) {
+	tests := []struct {
+		name      string
+		msgType   string
+		operation string
+		handler   func(CacheMaintenanceDeps) ws.MessageHandler
+		deps      func(*store.RepoLocationStore) CacheMaintenanceDeps
+	}{
+		{
+			name:      "prune cache store failure",
+			msgType:   "PRUNE_CACHE",
+			operation: "prune_cache",
+			handler:   NewPruneCacheHandler,
+			deps: func(locations *store.RepoLocationStore) CacheMaintenanceDeps {
+				return CacheMaintenanceDeps{Store: locations, Locks: bistrogit.NewRepoLocks(), DeleteCacheDir: func(string) error { return nil }, Log: testRepoLocationLogger()}
+			},
+		},
+		{
+			name:      "clear cache store failure",
+			msgType:   "CLEAR_CACHE",
+			operation: "clear_cache",
+			handler:   NewClearCacheHandler,
+			deps: func(locations *store.RepoLocationStore) CacheMaintenanceDeps {
+				return CacheMaintenanceDeps{Store: locations, Locks: bistrogit.NewRepoLocks(), DeleteCacheDir: func(string) error { return nil }, Log: testRepoLocationLogger()}
+			},
+		},
+		{
+			name:      "clear cache orphan sweep failure",
+			msgType:   "CLEAR_CACHE",
+			operation: "clear_cache",
+			handler:   NewClearCacheHandler,
+			deps: func(locations *store.RepoLocationStore) CacheMaintenanceDeps {
+				return CacheMaintenanceDeps{
+					Store:          locations,
+					Locks:          bistrogit.NewRepoLocks(),
+					DeleteCacheDir: func(string) error { return nil },
+					SweepOrphans:   (&fakeRepoLocationSweeper{err: errors.New("sweep failed")}).SweepOrphans,
+					Log:            testRepoLocationLogger(),
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			db := newRepoLocationMigratedDB(t)
+			locations := store.NewRepoLocationStore(db.DB)
+			if strings.Contains(tt.name, "store failure") {
+				if err := db.Close(); err != nil {
+					t.Fatalf("close db: %v", err)
+				}
+			}
+			handler := tt.handler(tt.deps(locations))
+
+			// Act
+			resp := callRepoLocationHandler(t, handler, tt.msgType, map[string]any{})
+
+			// Assert
+			assertLocationEnvelope(t, responseData(t, resp), "", tt.operation, "cache_maintenance_failed")
+		})
+	}
+}
+
 func TestRepoLocationRemoveRepoPreflightAndRemoveRepo(t *testing.T) {
 	// Arrange
 	db := newRepoLocationMigratedDB(t)
@@ -722,6 +786,20 @@ func TestRepoLocationRecoverRepoPathAndToCache(t *testing.T) {
 	// Act + Assert: missing path envelope
 	missingResp := callRepoLocationHandler(t, recoverPath, "RECOVER_REPO_PATH", map[string]any{"repo_id": "github:acme/api", "path": filepath.Join(root, "does-not-exist")})
 	assertLocationEnvelope(t, responseData(t, missingResp), "github:acme/api", "recover_repo_path", "path_missing")
+
+	// Act + Assert: permission denied path envelope
+	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
+		permissionPath := filepath.Join(root, "dev", "acme", "permission-denied")
+		if err := createRepo(permissionPath, "origin", "https://github.com/acme/api.git"); err != nil {
+			t.Fatalf("create permission repo: %v", err)
+		}
+		mustChmod(t, permissionPath, 0)
+		if _, err := os.Open(permissionPath); !os.IsPermission(err) {
+			t.Skipf("chmod 000 did not produce permission denial: %v", err)
+		}
+		permissionResp := callRepoLocationHandler(t, recoverPath, "RECOVER_REPO_PATH", map[string]any{"repo_id": "github:acme/api", "path": permissionPath})
+		assertLocationEnvelope(t, responseData(t, permissionResp), "github:acme/api", "recover_repo_path", "permission_denied")
+	}
 
 	// Act + Assert: existing file path envelope
 	existingFilePath := filepath.Join(root, "not-a-directory")
