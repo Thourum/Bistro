@@ -212,7 +212,12 @@ func ensureContainedPath(root, child string) error {
 }
 
 func prepareCacheCloneDir(repoURL string) (string, error) {
-	return prepareCacheCloneDirWithMode(repoURL, true)
+	repoDir, cleanup, err := stageCacheCloneDir(repoURL)
+	if err != nil {
+		return "", err
+	}
+	cleanup(true)
+	return repoDir, nil
 }
 
 func prepareTargetedCloneDir(repoURL string) (string, error) {
@@ -233,21 +238,52 @@ func prepareCacheCloneDirWithMode(repoURL string, shouldReplace bool) (string, e
 	if !shouldReplace {
 		return repoDir, nil
 	}
+	repoDir, cleanup, err := createFreshCacheCloneDir(repoDir)
+	if err != nil {
+		return "", err
+	}
+	cleanup(true)
+	return repoDir, nil
+}
+
+func stageCacheCloneDir(repoURL string) (string, func(bool), error) {
+	repoDir, err := repoCacheDir(repoURL)
+	if err != nil {
+		return "", nil, err
+	}
+	if os.Getenv("BISTRO_REPO_DIR") != "" {
+		return makeTemporaryCloneDir(repoDir)
+	}
+	if _, err := ParseRemoteURL(repoURL); err != nil {
+		return makeTemporaryCloneDir(repoDir)
+	}
 	return createFreshCacheCloneDir(repoDir)
 }
 
-func createFreshCacheCloneDir(repoDir string) (string, error) {
+func makeTemporaryCloneDir(parentDir string) (string, func(bool), error) {
+	tmpDir, err := os.MkdirTemp(parentDir, "repo-*")
+	if err != nil {
+		return "", nil, err
+	}
+	return tmpDir, func(success bool) {
+		if !success {
+			_ = os.RemoveAll(tmpDir)
+		}
+	}, nil
+}
+
+func createFreshCacheCloneDir(repoDir string) (string, func(bool), error) {
 	parentDir := filepath.Dir(repoDir)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if err := rejectSymlink(parentDir); err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	stagingDir, err := os.MkdirTemp(parentDir, filepath.Base(repoDir)+"-staging-*")
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	shouldRemoveStaging := true
 	defer func() {
@@ -256,34 +292,36 @@ func createFreshCacheCloneDir(repoDir string) (string, error) {
 		}
 	}()
 	if err := ensureNonSymlinkDir(stagingDir); err != nil {
-		return "", err
+		return "", nil, err
 	}
 
-	backupDir, restore, err := moveExistingCacheDirAside(repoDir)
+	backupDir, shouldRestore, err := moveExistingCacheDirAside(repoDir)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	shouldRestore := restore
-	defer func() {
+	cleanup := func(success bool) {
+		if success {
+			if backupDir != "" {
+				_ = os.RemoveAll(backupDir)
+			}
+			return
+		}
+		_ = os.RemoveAll(repoDir)
 		if shouldRestore && backupDir != "" {
-			_ = os.RemoveAll(repoDir)
 			_ = os.Rename(backupDir, repoDir)
 		}
-	}()
+	}
 
 	if err := os.Rename(stagingDir, repoDir); err != nil {
-		return "", err
+		cleanup(false)
+		return "", nil, err
 	}
 	shouldRemoveStaging = false
 	if err := ensureNonSymlinkDir(repoDir); err != nil {
-		shouldRestore = true
-		return "", err
+		cleanup(false)
+		return "", nil, err
 	}
-	shouldRestore = false
-	if backupDir != "" {
-		_ = os.RemoveAll(backupDir)
-	}
-	return repoDir, nil
+	return repoDir, cleanup, nil
 }
 
 func moveExistingCacheDirAside(repoDir string) (string, bool, error) {
@@ -477,11 +515,15 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 	log.Debug("git clone start")
 	overallStart := time.Now()
 
-	tmpDir, err := prepareCacheCloneDir(repoURL)
+	tmpDir, cleanupCloneDir, err := stageCacheCloneDir(repoURL)
 	if err != nil {
 		log.Error("failed to prepare clone dir", "error", err)
 		return nil, fmt.Errorf("failed to prepare clone directory: %w", err)
 	}
+	cloneSucceeded := false
+	defer func() {
+		cleanupCloneDir(cloneSucceeded)
+	}()
 
 	cloneOpts := &gitlib.CloneOptions{
 		URL:  repoURL,
@@ -496,7 +538,6 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 	repo, err := gitlib.PlainCloneContext(ctx, tmpDir, true, cloneOpts)
 	cloneDur := time.Since(cloneStart).Milliseconds()
 	if err != nil {
-		os.RemoveAll(tmpDir)
 		log.Error("git clone failed",
 			"duration_ms", cloneDur,
 			"error", err,
@@ -516,7 +557,6 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 
 	fetchStart := time.Now()
 	if err := repo.FetchContext(ctx, fetchOpts); err != nil && err != gitlib.NoErrAlreadyUpToDate {
-		os.RemoveAll(tmpDir)
 		log.Error("git fetch refs failed",
 			"duration_ms", time.Since(fetchStart).Milliseconds(),
 			"error", err,
@@ -527,12 +567,10 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 
 	// Verify both commits are present — fail fast before writing to cache
 	if _, err := repo.CommitObject(plumbing.NewHash(baseSHA)); err != nil {
-		os.RemoveAll(tmpDir)
 		log.Warn("base commit missing after fetch", "error", err)
 		return nil, fmt.Errorf("base commit %s not found after fetch: %w", baseSHA, err)
 	}
 	if _, err := repo.CommitObject(plumbing.NewHash(headSHA)); err != nil {
-		os.RemoveAll(tmpDir)
 		log.Warn("head commit missing after fetch", "error", err)
 		return nil, fmt.Errorf("head commit %s not found after fetch: %w", headSHA, err)
 	}
@@ -551,6 +589,7 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 		FetchedAt: time.Now(),
 	})
 	c.recordCacheCloned(repoURL, tmpDir)
+	cloneSucceeded = true
 
 	log.Debug("git clone complete",
 		"total_duration_ms", time.Since(overallStart).Milliseconds(),

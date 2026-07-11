@@ -444,22 +444,7 @@ func TestCloneLocalCacheCloneRecordsCachePathAndHit(t *testing.T) {
 func TestCloneLocalTargetedFailureDoesNotRemoveExistingCacheClone(t *testing.T) {
 	// Arrange
 	const url = "https://github.com/acme/api.git"
-	cacheRoot := t.TempDir()
-	t.Setenv("BISTRO_REPO_DIR", "")
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CACHE_HOME", cacheRoot)
-	userCacheDir, err := os.UserCacheDir()
-	if err != nil {
-		t.Fatalf("UserCacheDir: %v", err)
-	}
-	cacheDir := filepath.Join(userCacheDir, "bistro", "repos", "acme", "api")
-	markerPath := filepath.Join(cacheDir, "keep.txt")
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		t.Fatalf("MkdirAll cacheDir: %v", err)
-	}
-	if err := os.WriteFile(markerPath, []byte("existing cache"), 0644); err != nil {
-		t.Fatalf("WriteFile marker: %v", err)
-	}
+	markerPath := writeExistingCacheMarker(t, url)
 	client := NewClient(NewCache())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -471,8 +456,53 @@ func TestCloneLocalTargetedFailureDoesNotRemoveExistingCacheClone(t *testing.T) 
 	if ok {
 		t.Fatal("expected targeted clone failure")
 	}
-	if _, err := os.Stat(markerPath); err != nil {
-		t.Fatalf("expected targeted failure to preserve existing cache marker: %v", err)
+	assertFileExists(t, markerPath, "targeted failure should preserve existing cache marker")
+}
+
+func TestCloneLocalBroadFailureDoesNotRemoveExistingCacheClone(t *testing.T) {
+	// Arrange
+	const url = "https://github.com/acme/api.git"
+	markerPath := writeExistingCacheMarker(t, url)
+	client := NewClient(NewCache())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Act
+	result, err := client.Clone(ctx, url, "base", "head")
+
+	// Assert
+	if result != nil {
+		t.Fatalf("expected nil result, got %#v", result)
+	}
+	if err == nil {
+		t.Fatal("expected broad clone failure")
+	}
+	assertFileExists(t, markerPath, "broad clone failure should preserve existing cache marker")
+}
+
+func writeExistingCacheMarker(t *testing.T, repoURL string) string {
+	t.Helper()
+	t.Setenv("BISTRO_REPO_DIR", "")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cacheDir, err := repoCacheDir(repoURL)
+	if err != nil {
+		t.Fatalf("repoCacheDir: %v", err)
+	}
+	markerPath := filepath.Join(cacheDir, "keep.txt")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatalf("MkdirAll cacheDir: %v", err)
+	}
+	if err := os.WriteFile(markerPath, []byte("existing cache"), 0644); err != nil {
+		t.Fatalf("WriteFile marker: %v", err)
+	}
+	return markerPath
+}
+
+func assertFileExists(t *testing.T, path, context string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected %s: %v", context, err)
 	}
 }
 
