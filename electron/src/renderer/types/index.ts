@@ -224,4 +224,8 @@ export interface RepoInfo {
   owner: string;
   repo: string;
   watched: boolean;
+  source?: 'local' | 'cache' | null;
+  location_status?: string | null;
+  location_error_code?: string | null;
+  location_error?: string | null;
 }

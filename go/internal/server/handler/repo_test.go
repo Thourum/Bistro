@@ -27,7 +27,13 @@ func setupRepoTestDB(t *testing.T) *sql.DB {
 		owner      TEXT NOT NULL,
 		repo       TEXT NOT NULL,
 		watched    INTEGER NOT NULL DEFAULT 0,
-		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+		local_path TEXT,
+		source TEXT,
+		last_used_at DATETIME,
+		location_status TEXT,
+		location_error_code TEXT,
+		location_error TEXT
 	)`)
 	if err != nil {
 		t.Fatalf("create repos table: %v", err)
@@ -93,6 +99,59 @@ func TestRequestRepoListHandler_ReturnsRepos(t *testing.T) {
 	}
 	if len(repos) != 2 {
 		t.Errorf("expected 2 repos, got %d", len(repos))
+	}
+	for _, repo := range repos {
+		if repo.Source != nil || repo.LocationStatus != nil || repo.LocationErrorCode != nil || repo.LocationError != nil {
+			t.Fatalf("expected empty location fields for provider-only repo, got %+v", repo)
+		}
+	}
+}
+
+func TestRequestRepoListHandler_ReturnsRepoLocationFields(t *testing.T) {
+	db := setupRepoTestDB(t)
+	defer db.Close()
+
+	_, err := db.Exec(
+		`INSERT INTO repos (id, provider, owner, repo, watched, source, location_status, location_error_code, location_error)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"github:acme/api", "github", "acme", "api", 1, "local", "missing", "path_missing", "folder not found",
+	)
+	if err != nil {
+		t.Fatalf("insert repo: %v", err)
+	}
+
+	prov := mock.NewMockProvider().WithRepos([]*provider.Repo{
+		{Owner: "acme", Name: "api", FullName: "acme/api", Private: false},
+	})
+
+	handler := NewRequestRepoListHandler(func() provider.Provider { return prov }, db, testRepoLogger())
+
+	resp, err := handler(context.Background(), ws.InboundMessage{ID: "req-location", Type: "REQUEST_REPO_LIST"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	m := resp.(map[string]interface{})
+	data := m["data"].(map[string]interface{})
+	repos, ok := data["repos"].([]repoRow)
+	if !ok {
+		t.Fatalf("expected []repoRow, got %T", data["repos"])
+	}
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(repos))
+	}
+	got := repos[0]
+	if got.Source == nil || *got.Source != "local" {
+		t.Fatalf("expected source local, got %+v", got.Source)
+	}
+	if got.LocationStatus == nil || *got.LocationStatus != "missing" {
+		t.Fatalf("expected location_status missing, got %+v", got.LocationStatus)
+	}
+	if got.LocationErrorCode == nil || *got.LocationErrorCode != "path_missing" {
+		t.Fatalf("expected location_error_code path_missing, got %+v", got.LocationErrorCode)
+	}
+	if got.LocationError == nil || *got.LocationError != "folder not found" {
+		t.Fatalf("expected location_error folder not found, got %+v", got.LocationError)
 	}
 }
 

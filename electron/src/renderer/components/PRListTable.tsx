@@ -1,10 +1,12 @@
 import { useNavigate } from '@tanstack/react-router';
 import type React from 'react';
+import { useState } from 'react';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import { toggleRepoGroup } from '../store/ui';
-import type { PR } from '../types';
+import type { PR, RepoInfo } from '../types';
+import { RepoRecoveryDialog } from './RepoRecoveryDialog';
 
 export type PRRepoGroup = readonly [repoKey: string, prs: PR[]];
 
@@ -100,14 +102,19 @@ interface PRRowProps {
   pr: PR;
   globalIndex: number;
   selectedIndex: number;
+  degradedRepo: RepoInfo | null;
+  onRecover: (repo: RepoInfo) => void;
 }
 
 function PRRow({
   pr,
   globalIndex,
   selectedIndex,
+  degradedRepo,
+  onRecover,
 }: PRRowProps): React.ReactElement {
   const isSelected = selectedIndex === globalIndex;
+  const isDegraded = degradedRepo !== null;
   const navigate = useNavigate();
   const open = (): void => {
     // Navigate by stable pr.id — globalIndex is cursor only.
@@ -118,38 +125,57 @@ function PRRow({
     }));
   };
   return (
-    <button
-      type="button"
-      onClick={open}
-      className={[
-        'grid grid-cols-[24px_60px_1fr_120px_100px] items-center gap-4 py-3 px-4 w-full text-left',
-        'cursor-crosshair transition-colors border-l-2',
-        isSelected
-          ? 'bg-surface-container-low border-primary'
-          : 'border-transparent hover:bg-surface-container-low hover:border-primary',
-      ].join(' ')}
-    >
-      <span
-        className={`w-3 h-3 inline-block ${ciColor(pr)}`}
-        title={ciTitle(pr)}
-        role="img"
-        aria-label={ciTitle(pr)}
-      />
-      <div className="font-mono text-[11px] text-outline">#{pr.number}</div>
-      <div className="font-medium text-[14px] text-on-surface truncate">
-        {pr.title}
-      </div>
-      <div className="font-mono text-[11px] text-outline-variant text-right truncate">
-        @{pr.author}
-      </div>
-      <div
-        className={`font-mono text-[11px] text-right ${
-          isSelected ? 'text-primary' : 'text-outline-variant'
-        }`}
+    <div className={isDegraded ? 'opacity-60' : undefined}>
+      <button
+        type="button"
+        onClick={open}
+        aria-label={
+          isDegraded ? `Open recovery for ${pr.owner}/${pr.repo}` : undefined
+        }
+        className={[
+          'grid grid-cols-[24px_60px_1fr_120px_100px] items-center gap-4 py-3 px-4 w-full text-left',
+          'cursor-crosshair transition-colors border-l-2',
+          isSelected
+            ? 'bg-surface-container-low border-primary'
+            : 'border-transparent hover:bg-surface-container-low hover:border-primary',
+        ].join(' ')}
       >
-        {relativeTime(pr.updated_at)}
-      </div>
-    </button>
+        <span
+          className={`w-3 h-3 inline-block ${ciColor(pr)}`}
+          title={ciTitle(pr)}
+          role="img"
+          aria-label={ciTitle(pr)}
+        />
+        <div className="font-mono text-[11px] text-outline">#{pr.number}</div>
+        <div className="font-medium text-[14px] text-on-surface truncate">
+          {pr.title}
+        </div>
+        <div className="font-mono text-[11px] text-outline-variant text-right truncate">
+          @{pr.author}
+        </div>
+        <div
+          className={`font-mono text-[11px] text-right ${
+            isSelected ? 'text-primary' : 'text-outline-variant'
+          }`}
+        >
+          {relativeTime(pr.updated_at)}
+        </div>
+      </button>
+      {isDegraded && (
+        <div className="flex items-center justify-between gap-4 px-4 pb-3 text-xs text-error">
+          <span>
+            {degradedRepo.location_error ?? 'Repository location unavailable.'}
+          </span>
+          <button
+            type="button"
+            onClick={() => onRecover(degradedRepo)}
+            className="font-mono underline"
+          >
+            Recover {pr.owner}/{pr.repo}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -161,6 +187,8 @@ interface PRGroupProps {
   startIndex: number;
   selectedIndex: number;
   accent: boolean;
+  degradedRepo: RepoInfo | null;
+  onRecover: (repo: RepoInfo) => void;
 }
 
 function PRGroup({
@@ -170,6 +198,8 @@ function PRGroup({
   startIndex,
   selectedIndex,
   accent,
+  degradedRepo,
+  onRecover,
 }: PRGroupProps): React.ReactElement {
   // A collapsed group is a single cursor row; highlight its header.
   const headerSelected = collapsed && selectedIndex === startIndex;
@@ -217,6 +247,8 @@ function PRGroup({
               pr={pr}
               globalIndex={startIndex + i}
               selectedIndex={selectedIndex}
+              degradedRepo={degradedRepo}
+              onRecover={onRecover}
             />
           ))}
       </div>
@@ -244,6 +276,7 @@ export function PRListTable({
     (state: UIState) => state.collapsedRepoKeys,
   );
   const repos = useStore(appStore, (state: UIState) => state.repos);
+  const [recoveryRepo, setRecoveryRepo] = useState<RepoInfo | null>(null);
 
   if (isLoading) {
     return (
@@ -282,27 +315,48 @@ export function PRListTable({
   }
 
   const groups = groupPRsByRepo(visiblePRs);
+  const repoByKey = new Map(
+    repos.map((repo) => [`${repo.owner}/${repo.repo}`, repo]),
+  );
   let cursor = 0;
 
   return (
-    <div className="space-y-0">
-      {groups.map(([repoKey, repoPRs], idx) => {
-        const collapsed = collapsedRepoKeys.includes(repoKey);
-        const start = cursor;
-        // Collapsed group = one header cursor row; expanded = one row per PR.
-        cursor += collapsed ? 1 : repoPRs.length;
-        return (
-          <PRGroup
-            key={repoKey}
-            repoKey={repoKey}
-            prs={repoPRs}
-            collapsed={collapsed}
-            startIndex={start}
-            selectedIndex={selectedIndex}
-            accent={idx === 0}
-          />
-        );
-      })}
-    </div>
+    <>
+      <div className="space-y-0">
+        {groups.map(([repoKey, repoPRs], idx) => {
+          const collapsed = collapsedRepoKeys.includes(repoKey);
+          const repo = repoByKey.get(repoKey) ?? null;
+          const degradedRepo =
+            repo !== null &&
+            repo.location_status !== null &&
+            repo.location_status !== undefined &&
+            repo.location_status !== 'ok'
+              ? repo
+              : null;
+          const start = cursor;
+          // Collapsed group = one header cursor row; expanded = one row per PR.
+          cursor += collapsed ? 1 : repoPRs.length;
+          return (
+            <PRGroup
+              key={repoKey}
+              repoKey={repoKey}
+              prs={repoPRs}
+              collapsed={collapsed}
+              startIndex={start}
+              selectedIndex={selectedIndex}
+              accent={idx === 0}
+              degradedRepo={degradedRepo}
+              onRecover={setRecoveryRepo}
+            />
+          );
+        })}
+      </div>
+      {recoveryRepo !== null && (
+        <RepoRecoveryDialog
+          repo={recoveryRepo}
+          onClose={() => setRecoveryRepo(null)}
+        />
+      )}
+    </>
   );
 }
