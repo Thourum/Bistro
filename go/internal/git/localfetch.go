@@ -61,9 +61,6 @@ func (c *Client) FetchIntoLocal(ctx context.Context, localPath string, id Identi
 		RefSpecs:   localFetchRefSpecs(id, opts),
 		Tags:       gitlib.NoTags,
 	}
-	if opts != nil && (opts.PRNumber > 0 || opts.BaseBranch != "") {
-		fetchOpts.Depth = targetedDepth(opts)
-	}
 
 	if err := repo.FetchContext(ctx, fetchOpts); err != nil && err != gitlib.NoErrAlreadyUpToDate {
 		return fmt.Errorf("failed to fetch refs into local repo: %w", err)

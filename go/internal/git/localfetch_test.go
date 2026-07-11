@@ -191,6 +191,37 @@ func TestFetchIntoLocal_TargetedRefspecsOnly(t *testing.T) {
 	}
 }
 
+func TestFetchIntoLocal_TargetedFetchDoesNotWriteShallowMetadata(t *testing.T) {
+	// Arrange
+	fixture := newLocalFetchFixture(t)
+	const prNumber = 123
+	for i := 0; i < defaultTargetedFetchDepth+5; i++ {
+		fixture.commitUpstream(t, fmt.Sprintf("history-%02d.txt", i), fmt.Sprintf("history %d\n", i), fmt.Sprintf("history %d", i))
+	}
+	headSHA := fixture.commitUpstream(t, "feature.txt", "feature\n", "feature")
+	fixture.setUpstreamPRRef(t, prNumber, headSHA)
+	shallowPath := filepath.Join(fixture.userPath, ".git", "shallow")
+	if _, err := os.Stat(shallowPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected fixture to start without shallow metadata, stat err=%v", err)
+	}
+
+	client := NewClient(NewCache())
+
+	// Act
+	err := client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), &CloneOptions{
+		PRNumber:   prNumber,
+		BaseBranch: fixture.baseBranch,
+	})
+
+	// Assert
+	if err != nil {
+		t.Fatalf("FetchIntoLocal: %v", err)
+	}
+	if _, err := os.Stat(shallowPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("local fetch wrote shallow metadata at %s, stat err=%v", shallowPath, err)
+	}
+}
+
 type localFetchFixture struct {
 	upstreamPath string
 	userPath     string
