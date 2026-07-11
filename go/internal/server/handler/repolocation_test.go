@@ -723,6 +723,14 @@ func TestRepoLocationRecoverRepoPathAndToCache(t *testing.T) {
 	missingResp := callRepoLocationHandler(t, recoverPath, "RECOVER_REPO_PATH", map[string]any{"repo_id": "github:acme/api", "path": filepath.Join(root, "does-not-exist")})
 	assertLocationEnvelope(t, responseData(t, missingResp), "github:acme/api", "recover_repo_path", "path_missing")
 
+	// Act + Assert: existing file path envelope
+	existingFilePath := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(existingFilePath, []byte("not a git repo directory"), 0o600); err != nil {
+		t.Fatalf("write existing file path fixture: %v", err)
+	}
+	fileResp := callRepoLocationHandler(t, recoverPath, "RECOVER_REPO_PATH", map[string]any{"repo_id": "github:acme/api", "path": existingFilePath})
+	assertLocationEnvelope(t, responseData(t, fileResp), "github:acme/api", "recover_repo_path", "path_missing")
+
 	// Arrange degraded again for cache recovery
 	if err := store.MarkDegraded(context.Background(), "github:acme/api", "missing", "path_missing", "folder not found"); err != nil {
 		t.Fatalf("mark degraded: %v", err)

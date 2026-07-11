@@ -410,7 +410,11 @@ func NewRecoverRepoPathHandler(locations *store.RepoLocationStore, log *slog.Log
 		if err != nil {
 			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, "path_missing", err.Error())), nil
 		}
-		if !repoPathMatches(canonical, git.Identity{Provider: location.Provider, Owner: location.Owner, Repo: location.Repo}) {
+		matches, err := repoPathRemoteMatches(canonical, git.Identity{Provider: location.Provider, Owner: location.Owner, Repo: location.Repo})
+		if err != nil {
+			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, "path_missing", err.Error())), nil
+		}
+		if !matches {
 			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, "remote_mismatch", "path remote does not match repo")), nil
 		}
 		if err := locations.UpsertLocal(ctx, location.Provider, location.Owner, location.Repo, canonical); err != nil {
@@ -570,23 +574,28 @@ func canReadDir(path string) (bool, error) {
 }
 
 func repoPathMatches(path string, identity git.Identity) bool {
+	matches, err := repoPathRemoteMatches(path, identity)
+	return err == nil && matches
+}
+
+func repoPathRemoteMatches(path string, identity git.Identity) (bool, error) {
 	repo, err := gogit.PlainOpen(path)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("open git repo %q: %w", path, err)
 	}
 	remotes, err := repo.Remotes()
 	if err != nil {
-		return false
+		return false, fmt.Errorf("read remotes for %q: %w", path, err)
 	}
 	for _, remote := range remotes {
 		for _, rawURL := range remote.Config().URLs {
 			remoteID, err := git.ParseRemoteURL(rawURL)
 			if err == nil && remoteID.ID() == identity.ID() {
-				return true
+				return true, nil
 			}
 		}
 	}
-	return false
+	return false, nil
 }
 
 func destinationRootErrorCode(err error) string {
