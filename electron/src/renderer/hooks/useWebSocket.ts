@@ -3,7 +3,11 @@ import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { RepoInfo } from '../types';
-import type { LocationError, ScanDevFolderResult } from '../types/repoLocation';
+import type {
+  LegacyScanDevFolderResult,
+  LocationError,
+  ScanDevFolderResult,
+} from '../types/repoLocation';
 import { formatErrorMessage } from '../utils/error';
 import { createLogger } from '../utils/logger';
 
@@ -333,7 +337,9 @@ function isScannedRepository(data: unknown): boolean {
   );
 }
 
-function isScanDevFolderResult(data: unknown): data is ScanDevFolderData {
+function isLegacyScanDevFolderResult(
+  data: unknown,
+): data is LegacyScanDevFolderResult {
   if (!isRecord(data)) {
     return false;
   }
@@ -347,21 +353,45 @@ function isScanDevFolderResult(data: unknown): data is ScanDevFolderData {
   );
 }
 
+function isScanDevFolderResult(data: unknown): data is ScanDevFolderData {
+  if (isLegacyScanDevFolderResult(data)) {
+    return true;
+  }
+
+  if (!isRecord(data)) {
+    return false;
+  }
+
+  return (
+    data.ok === true &&
+    typeof data.discovered === 'number' &&
+    typeof data.healthy === 'number' &&
+    typeof data.degraded === 'number' &&
+    typeof data.skipped === 'number' &&
+    typeof data.partial === 'boolean'
+  );
+}
+
 function handleScanDevFolderResult(data: unknown): ScanDevFolderData | null {
   if (!isScanDevFolderResult(data)) {
     log.warn({ data }, 'invalid SCAN_DEV_FOLDER_RESULT payload');
     return null;
   }
 
-  if (data.errors.length === 0) {
-    return data;
+  const payload = data;
+  if (!isLegacyScanDevFolderResult(payload)) {
+    return payload;
+  }
+
+  if (payload.errors.length === 0) {
+    return payload;
   }
 
   log.warn(
-    { path: data.path, errors: data.errors.length },
+    { path: payload.path, errors: payload.errors.length },
     'dev-folder scan completed with location errors',
   );
-  return data;
+  return payload;
 }
 
 function handleLocationError(data: unknown): void {
@@ -588,6 +618,7 @@ function onMessage(event: MessageEvent<string>): void {
     case 'FILE_VIEWED_ACK':
     case 'REVIEW_THREADS_READY':
     case 'ACTION_RESULT':
+    case 'VALIDATE_DEV_FOLDER_RESULT':
     case 'PR_LIST_READY': {
       const handler = messageHandlers.get(message.id);
       if (handler) {

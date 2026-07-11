@@ -26,8 +26,21 @@ export interface ScannedRepository {
   source: 'local';
 }
 
-export interface ScanDevFolderResult {
+export interface LegacyScanDevFolderResult {
   path: string;
   repositories: ScannedRepository[];
   errors: LocationError[];
 }
+
+export interface ScanDevFolderSummaryResult {
+  ok: true;
+  discovered: number;
+  healthy: number;
+  degraded: number;
+  skipped: number;
+  partial: boolean;
+}
+
+export type ScanDevFolderResult =
+  | LegacyScanDevFolderResult
+  | ScanDevFolderSummaryResult;

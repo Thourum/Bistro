@@ -158,6 +158,37 @@ describe('useWebSocket dev-folder startup scan', () => {
     unmount();
   });
 
+  it('resolves VALIDATE_DEV_FOLDER requests when matching validation result arrives', async () => {
+    const { result, unmount } = renderHook(() => useWebSocket());
+    const ws = openMountedWebSocket();
+
+    const request = result.current.request('VALIDATE_DEV_FOLDER', {
+      path: '/Users/sam/dev',
+    });
+
+    await vi.waitFor(() => {
+      expect(sentMessagesOfType(ws, 'VALIDATE_DEV_FOLDER')).toHaveLength(1);
+    });
+
+    const validateRequest = sentMessagesOfType(ws, 'VALIDATE_DEV_FOLDER')[0];
+    emitMessage(ws, {
+      id: validateRequest?.id,
+      type: 'VALIDATE_DEV_FOLDER_RESULT',
+      data: {
+        ok: true,
+        canonical_path: '/private/var/dev',
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    await expect(request).resolves.toEqual({
+      ok: true,
+      canonical_path: '/private/var/dev',
+    });
+
+    unmount();
+  });
+
   it('resolves SCAN_DEV_FOLDER requests when matching scan result arrives', async () => {
     const { result, unmount } = renderHook(() => useWebSocket());
     const ws = openMountedWebSocket();
@@ -176,17 +207,23 @@ describe('useWebSocket dev-folder startup scan', () => {
       id: scanRequest?.id,
       type: 'SCAN_DEV_FOLDER_RESULT',
       data: {
-        path: '/Users/sam/dev',
-        repositories: [],
-        errors: [],
+        ok: true,
+        discovered: 0,
+        healthy: 0,
+        degraded: 0,
+        skipped: 0,
+        partial: false,
       },
       timestamp: new Date().toISOString(),
     });
 
     await expect(request).resolves.toEqual({
-      path: '/Users/sam/dev',
-      repositories: [],
-      errors: [],
+      ok: true,
+      discovered: 0,
+      healthy: 0,
+      degraded: 0,
+      skipped: 0,
+      partial: false,
     });
 
     unmount();
