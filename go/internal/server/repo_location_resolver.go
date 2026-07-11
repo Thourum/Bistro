@@ -1,0 +1,92 @@
+package server
+
+import (
+	"context"
+	"log/slog"
+
+	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/store"
+)
+
+type repoLocationResolver struct {
+	locations *store.RepoLocationStore
+	log       *slog.Logger
+}
+
+func newRepoLocationResolver(locations *store.RepoLocationStore, log *slog.Logger) *repoLocationResolver {
+	return &repoLocationResolver{locations: locations, log: log}
+}
+
+func (r *repoLocationResolver) LocalPath(repoURL string) (string, bool) {
+	if r == nil || r.locations == nil {
+		return "", false
+	}
+	identity, err := git.ParseRemoteURL(repoURL)
+	if err != nil {
+		r.logDebug("repo location resolver ignored invalid url", "repo_url", repoURL, "error", err)
+		return "", false
+	}
+	location, err := r.locations.Get(context.Background(), identity.ID())
+	if err != nil {
+		r.logWarn("repo location resolver get local failed", "repo_id", identity.ID(), "error", err)
+		return "", false
+	}
+	if location == nil || location.Source != "local" || location.LocalPath == "" {
+		return "", false
+	}
+	return location.LocalPath, true
+}
+
+func (r *repoLocationResolver) OnLocalDegraded(repoURL, status, code, msg string) {
+	if r == nil || r.locations == nil {
+		return
+	}
+	identity, err := git.ParseRemoteURL(repoURL)
+	if err != nil {
+		r.logWarn("repo location resolver ignored degraded invalid url", "repo_url", repoURL, "error", err)
+		return
+	}
+	if err := r.locations.MarkDegraded(context.Background(), identity.ID(), status, code, msg); err != nil {
+		r.logWarn("repo location resolver mark degraded failed", "repo_id", identity.ID(), "error", err)
+	}
+}
+
+func (r *repoLocationResolver) OnUsed(repoURL string) {
+	if r == nil || r.locations == nil {
+		return
+	}
+	identity, err := git.ParseRemoteURL(repoURL)
+	if err != nil {
+		r.logDebug("repo location resolver ignored used invalid url", "repo_url", repoURL, "error", err)
+		return
+	}
+	if err := r.locations.Touch(context.Background(), identity.ID()); err != nil {
+		r.logWarn("repo location resolver touch failed", "repo_id", identity.ID(), "error", err)
+	}
+}
+
+func (r *repoLocationResolver) OnCacheCloned(repoURL, path string) {
+	if r == nil || r.locations == nil {
+		return
+	}
+	identity, err := git.ParseRemoteURL(repoURL)
+	if err != nil {
+		r.logDebug("repo location resolver ignored cache clone invalid url", "repo_url", repoURL, "error", err)
+		return
+	}
+	if err := r.locations.SetCache(context.Background(), identity.ID(), path); err != nil {
+		r.logWarn("repo location resolver set cache failed", "repo_id", identity.ID(), "error", err)
+	}
+}
+
+func (r *repoLocationResolver) logDebug(msg string, args ...any) {
+	if r != nil && r.log != nil {
+		r.log.Debug(msg, args...)
+	}
+}
+
+func (r *repoLocationResolver) logWarn(msg string, args ...any) {
+	if r != nil && r.log != nil {
+		r.log.Warn(msg, args...)
+	}
+}

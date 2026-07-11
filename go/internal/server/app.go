@@ -156,6 +156,13 @@ func (a *App) SetGitClient(gitClient *git.Client) {
 	}
 }
 
+func (a *App) configureRepoLocationStore(repoLocationStore *store.RepoLocationStore) {
+	if a.gitClient == nil {
+		return
+	}
+	a.gitClient.SetLocalResolver(newRepoLocationResolver(repoLocationStore, a.log))
+}
+
 // SetReplayOnStart configures whether Run() should replay the offline action
 // queue after the production orchestrator is attached (DB open, queue wired).
 // This replaces pre-Run calls to ReplayQueuedActions which are always no-ops
@@ -423,6 +430,7 @@ func (a *App) Run(ctx context.Context) error {
 		handler.NewSubmitActionHandler(a.currentApplier, a.log))
 
 	repoLocationStore := store.NewRepoLocationStore(a.db.DB)
+	a.configureRepoLocationStore(repoLocationStore)
 	deleteCacheDir := func(path string) error {
 		return git.DeleteCacheDir(path)
 	}
