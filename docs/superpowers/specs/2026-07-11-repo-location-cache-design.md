@@ -71,6 +71,7 @@ Repo identity and uniqueness:
 
 - The existing `repos.id` primary key (`provider:owner/repo`) is the identity. Providers enforce owner/repo uniqueness, so no new constraint is needed.
 - Scan and add-by-URL both upsert by this identity: if a row exists, update its location columns; never create a duplicate row. `prs.repo_id` continues to point at the same row.
+- If multiple local paths match the same identity (e.g. two checkouts of the same repo), a healthy existing `local_path` is preserved; otherwise the lexicographically first canonical path wins. Alternate matches are ignored in v1.
 - If the same owner/repo exists on two providers, they are distinct identities (different `provider:` prefix) and that is accepted as-is.
 
 ## Remote identity normalization
@@ -89,6 +90,7 @@ Rules:
 - Lowercase provider/host and identity keys for matching.
 - Trim trailing `.git`.
 - Reject URLs without exactly owner and repo path parts.
+- Owner and repo must be path-safe GitHub identifiers (alphanumerics, `-`, `_`, `.`); reject `.`/`..`, path separators, and percent-encoded traversal. Canonicalize the derived clone destination and refuse it if it resolves outside the intended root (dev folder or cache root).
 - Prefer `origin` during scans. If `origin` is absent, use the first supported GitHub remote.
 - For validation against an expected repo, accept any remote that matches the expected identity.
 - Store/display canonical `provider:owner/repo`; display may use provider API casing later.
@@ -196,7 +198,7 @@ When a local repo is missing, renamed, removed, inaccessible, or remote-mismatch
 - UI grays out affected repo/PR entries.
 - Sync, fetch, and diff operations show a clear message such as: `Repo owner/name could not sync: folder not found`.
 - The repo detail/recovery UI offers:
-  1. **Choose new path** — user selects a repo folder; Bistro validates the `.git` remote matches before updating `local_path`.
+  1. **Choose new path** — user selects a repo folder; Bistro canonicalizes it (resolving symlinks, same as scan paths) and validates the `.git` remote matches before storing the canonical path in `local_path`.
   2. **Move to Bistro cache** — after a warning, Bistro clones/fetches into the cache, sets `source='cache'`, and clears the location error only once the cache fetch succeeds. Queued actions stay linked to the repo/PRs throughout.
   3. **Remove repo and PR history** — after strong confirmation, delete repo registration and associated data in one transaction.
 
@@ -209,7 +211,7 @@ Destructive remove contract:
 - Explicitly delete `patchsets`, `last_reviewed_sha`, and `files_viewed` rows for affected PRs if they are not covered by existing FKs.
 - If `source='cache'`, delete the managed cache folder only when its canonical path is under the cache root and matches the expected Bistro-owned directory. Never delete `source='local'` dev-folder repos.
 - Delete the `repos` row last.
-- Roll back DB changes on any DB error. Filesystem deletion failures are reported and leave the repo row degraded instead of pretending cleanup succeeded.
+- Ordering: commit the DB transaction first, then delete the cache folder. A DB error rolls back everything and deletes nothing from disk. A filesystem deletion failure after commit leaves an orphan cache folder, which is logged and later removable by "Clear all cached repos" orphan cleanup — the DB deletion is not undone.
 
 The confirmation copy must say that PR review history is lost.
 
@@ -237,7 +239,7 @@ The managed cache root is `os.UserCacheDir()/bistro/repos`. Cache clones are lai
 
 Cache prune, clear-all, and per-repo trash actions:
 
-1. Acquire the same per-repo operation lock used by sync/fetch/diff.
+1. Acquire the same per-repo operation lock used by sync/fetch/diff. Clear-all instead acquires a single global cache-maintenance lock that excludes all per-repo cache operations (and covers orphan folders, which have no repo row to lock); per-repo locks are acquired in sorted identity order where multiple are needed.
 2. Re-read the repo row after the lock is acquired.
 3. Canonicalize/evaluate the target path immediately before deletion.
 4. Refuse deletion if the path is a symlink, resolves outside the managed cache root, or does not match a Bistro-owned expected directory name.
@@ -282,8 +284,11 @@ Go tests:
 - Failed prune leaves DB rows unchanged and logs the detailed error.
 - Destructive remove deletes repo-linked PR/review/action metadata transactionally after confirmation, deletes only managed cache folders for cache repos, never deletes local repos, and rolls back DB changes on DB failure.
 
+- Structured errors carry the expected envelope (identity, operation, machine code, message) for representative scan/fetch/prune failures.
+
 Electron tests:
 
+- UI degraded/recovery states are driven by machine error codes, not message text.
 - Onboarding stores the configured dev folder and can skip it.
 - Settings validates before persisting a changed dev folder.
 - On engine ready, Electron sends the configured dev folder scan request.
