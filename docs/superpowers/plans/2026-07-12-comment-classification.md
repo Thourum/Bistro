@@ -705,7 +705,21 @@ func BenchmarkClassify50(b *testing.B) { /* 50 corpus comments per iteration */ 
 - Modify: `go/cmd/bistro-sync/main.go`, `go/internal/server/app.go`
 - Test: `go/internal/classify/` already covers behavior; add one `app_test.go` case only if App construction is already test-covered (follow the existing pattern — don't invent an App test harness for this).
 
-- [ ] **Step 1: Add flag** in main.go: `rulesDir := flag.String("rules-dir", "", "Rule files directory (default: <UserConfigDir>/bistro/rules)")`; empty → `os.UserConfigDir()` + `/bistro/rules` (note: config dir, not the `os.UserCacheDir()` used for repos at `app.go:183` — rules are user-editable config).
+- [ ] **Step 1: Add flag** in main.go: `rulesDir := flag.String("rules-dir", "", "Rule files directory (default: <UserConfigDir>/bistro/rules)")`. Resolve the default in main.go before App construction:
+
+```go
+dir := *rulesDir
+if dir == "" {
+	cfg, err := os.UserConfigDir()
+	if err != nil {
+		log.Warn("no user config dir; classification uses embedded built-ins only", "err", err)
+	} else {
+		dir = filepath.Join(cfg, "bistro", "rules")
+	}
+}
+```
+
+Pass the resolved `dir` into App the same way `--db-path` flows today (follow that flag's plumbing). Note: config dir, not the `os.UserCacheDir()` used for repos at `app.go:183` — rules are user-editable config. An empty `dir` (no config dir available) skips seeding and goes straight to the `Builtins()` fallback in Step 2.
 - [ ] **Step 2: Startup sequence** (in App construction, near where the orchestrator/writer are built):
 
 ```go
@@ -895,6 +909,8 @@ Add to `AppSettings` + `DEFAULT_SETTINGS`. **Keep `SETTINGS_SCHEMA_VERSION = 1`*
 
 ```sql
 -- 028_add_dedup_and_llm_cache.sql
+-- No extra indexes by design: cache lookups hit the body_hash PRIMARY KEY,
+-- and dedup_group_id is only read on rows already narrowed by pr_id.
 ALTER TABLE comments ADD COLUMN dedup_group_id TEXT;
 
 CREATE TABLE llm_classification_cache (
@@ -980,6 +996,7 @@ Cases: two bots, same file, lines 10 & 12, near-identical bodies → same group 
   - Client failure on one comment → others proceed; failed comment keeps deterministic result.
   - Context cancellation → clean stop, no goroutine leak (`-race` + a drain assertion).
   - Batch completion → `COMMENTS_READY` re-fires for the PR; `BYOK_USAGE {session_tokens, est_cost}` emitted.
+  - **Re-fire contract:** `COMMENTS_READY` is today a *response* to `REQUEST_COMMENTS` carrying the full `commentRow` list. The tier's re-fire must be a server-initiated *push* with the identical payload shape (`{type: "COMMENTS_READY", pr_id, comments: [...]}`), built by the same query the handler uses — extract that query into a shared function rather than duplicating it. The renderer's existing `COMMENTS_READY` case in `useWebSocket.ts` then updates the query cache with no renderer change needed; Task 22 verifies this rather than inventing a new event.
 - [ ] **Step 4: Implement `tier.go`.** `Tier.KickPR(ctx, prID)` spawns one goroutine per PR; per-PR ctx derived from app shutdown ctx. Usage accumulates in the tier (atomic), cost = tokens × a per-model table (rough constants, clearly labeled estimates). Writes go through single-row `UPDATE comments SET severity=?, category=?, classification_source=? WHERE id=?` + cache upsert — Go owns writes; no long tx.
 - [ ] **Step 5: Run `go test -race ./internal/classify/...` → PASS. Commit** — `feat(classify/llm): BYOK clients and bounded async classification tier`
 
@@ -992,6 +1009,7 @@ Cases: two bots, same file, lines 10 & 12, near-identical bodies → same group 
 - [ ] **Step 1: Failing tests:**
   - Writer with tier + LLM mode: after `tx.Commit()` (post-commit events block at `:262-303`), `KickPR` called once per synced PR; `rules` mode → never called.
   - RefreshIfStale in LLM mode kicks the tier for the opened PR (spec "identical code path as post-sync").
+  - Async UI refresh: after a tier batch completes, the pushed `COMMENTS_READY` (payload contract in Task 21) reaches the renderer and the comment list re-renders with upgraded severities — assert the `useWebSocket` handler processes a pushed (non-request-response) `COMMENTS_READY` correctly; if it assumes request/response pairing, fix that here.
   - SettingsPage: mode radio shows exactly 3 options (Rules engine / Rules + AI fallback / AI for everything) — `server` never renders; AI mode selected → provider dropdown, model field, key input (masked, presence-only, submitted via `SET_BYOK_KEY`, never stored in settings JSON), session token/cost line updating from `BYOK_USAGE`; `BYOK_AUTH_FAILED` badges the key field.
 - [ ] **Step 2: Implement.** Key input flow with neverthrow `ResultAsync` on the WS round-trip; input cleared after successful ack.
 - [ ] **Step 3: Full verify** — both suites green.
@@ -1001,10 +1019,10 @@ Cases: two bots, same file, lines 10 & 12, near-identical bodies → same group 
 ### Task 23: Docs + final acceptance sweep
 
 **Files:**
-- Create: `docs/classification.md` (or under `website/src/pages/docs/` — check where user-facing docs live per CLAUDE.md and follow it)
+- Create: user-facing doc under `website/src/pages/docs/` (CLAUDE.md: that's where user-facing docs live — match the existing page format there)
 - Modify: `docs/ROADMAP.md` (tick Phase 3 boxes), `CLAUDE.md` only if commands/conventions changed (they didn't — skip unless something did)
 
-- [ ] **Step 1: Write `classification.md`** — user-facing: how classification works, rules dir location + YAML schema by example, override mechanics (alphabetical, last wins, delete-to-disable), heuristics list (this + `zz-fallback.yml` = the documented heuristic library the roadmap asks for), keystroke table, BYOK setup + privacy note (key in OS keychain; only opt-in LLM calls leave the machine).
+- [ ] **Step 1: Write the classification docs page** — user-facing: how classification works, rules dir location + YAML schema by example, override mechanics (alphabetical, last wins, delete-to-disable), heuristics list (this + `zz-fallback.yml` = the documented heuristic library the roadmap asks for), keystroke table, BYOK setup + privacy note (key in OS keychain; only opt-in LLM calls leave the machine).
 - [ ] **Step 2: Walk all 8 acceptance criteria** from the spec, each verified by a named test or a manual step performed now. Fix anything that fails before ticking.
 - [ ] **Step 3: Update ROADMAP** Phase 3 checkboxes (3.7 already marked deferred).
 - [ ] **Step 4: Full verify both suites one last time. Commit** — `docs: classification user guide + roadmap Phase 3 completion`
