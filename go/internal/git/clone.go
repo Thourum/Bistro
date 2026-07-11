@@ -2,9 +2,11 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	gitlib "github.com/go-git/go-git/v5"
@@ -15,23 +17,50 @@ import (
 	"github.com/itterno/bistro/internal/logging"
 )
 
+// LocalRepoResolver reports a registered local checkout for a repo URL.
+// Implemented by an adapter over store.RepoLocationStore in package server.
+type LocalRepoResolver interface {
+	// LocalPath returns (path, true) only for source='local' rows.
+	LocalPath(repoURL string) (string, bool)
+	// OnLocalDegraded records a broken local repo (missing path / mismatch).
+	OnLocalDegraded(repoURL, status, code, msg string)
+	// OnUsed bumps last_used_at.
+	OnUsed(repoURL string)
+	// OnCacheCloned records a cache clone: source='cache', local_path=path,
+	// last_used_at=now (wraps RepoLocationStore.SetCache). Called after every
+	// successful cache clone AND on cache-hit reuse (idempotent upsert).
+	OnCacheCloned(repoURL, path string)
+}
+
 // Client handles git operations
 type Client struct {
 	cache *Cache
 	// tokenSource supplies the auth token for clone/fetch (e.g. from the OS
 	// keychain). Queried per operation so token rotation is picked up.
-	tokenSource func() string
+	tokenSource   func() string
+	localResolver LocalRepoResolver
+	locks         *RepoLocks
 }
 
 // NewClient creates a new git client with cache
 func NewClient(cache *Cache) *Client {
-	return &Client{cache: cache}
+	return &Client{cache: cache, locks: NewRepoLocks()}
 }
 
 // SetTokenSource configures where clone/fetch auth tokens come from.
 // Must be called before the client is shared across goroutines.
 func (c *Client) SetTokenSource(fn func() string) {
 	c.tokenSource = fn
+}
+
+// SetLocalResolver configures local repo resolution. Nil disables local lookup.
+func (c *Client) SetLocalResolver(r LocalRepoResolver) {
+	c.localResolver = r
+}
+
+// SetLocks configures repo-level operation locks.
+func (c *Client) SetLocks(l *RepoLocks) {
+	c.locks = l
 }
 
 // auth returns HTTP basic auth from the configured token source, falling
@@ -98,6 +127,62 @@ func (c *Client) CloneForPR(ctx context.Context, repoURL, baseSHA, headSHA strin
 	return c.cloneWithOptions(ctx, repoURL, baseSHA, headSHA, opts)
 }
 
+func repoCacheDir(repoURL string) (string, error) {
+	root, err := CacheRoot()
+	if err != nil {
+		return "", err
+	}
+	if os.Getenv("BISTRO_REPO_DIR") != "" {
+		return root, nil
+	}
+	identity, err := ParseRemoteURL(repoURL)
+	if err != nil {
+		return root, nil
+	}
+	dir := filepath.Join(root, identity.Owner, identity.Repo)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+func (c *Client) recordCacheCloned(repoURL, path string) {
+	if c.localResolver != nil {
+		c.localResolver.OnCacheCloned(repoURL, path)
+	}
+}
+
+func (c *Client) resolveLocal(ctx context.Context, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, error, bool) {
+	if os.Getenv("BISTRO_REPO_DIR") != "" || c.localResolver == nil {
+		return nil, nil, false
+	}
+	localPath, ok := c.localResolver.LocalPath(repoURL)
+	if !ok {
+		return nil, nil, false
+	}
+	identity, err := ParseRemoteURL(repoURL)
+	if err != nil {
+		locationErr := &LocationError{RepoID: repoURL, Operation: "fetch", Code: "invalid_url", Message: err.Error()}
+		return nil, locationErr, true
+	}
+	if !localRepoExists(localPath) {
+		msg := fmt.Sprintf("folder not found: %s", localPath)
+		c.localResolver.OnLocalDegraded(repoURL, "missing", "path_missing", msg)
+		return nil, &LocationError{RepoID: identity.ID(), Operation: "fetch", Code: "path_missing", Message: msg}, true
+	}
+	if err := c.FetchIntoLocal(ctx, localPath, identity, baseSHA, headSHA, opts); err != nil {
+		var fetchErr *LocalFetchError
+		if errors.As(err, &fetchErr) && fetchErr.Code == remoteMismatchCode {
+			msg := err.Error()
+			c.localResolver.OnLocalDegraded(repoURL, "mismatch", remoteMismatchCode, msg)
+			return nil, &LocationError{RepoID: identity.ID(), Operation: "fetch", Code: remoteMismatchCode, Message: msg}, true
+		}
+		return nil, err, true
+	}
+	c.localResolver.OnUsed(repoURL)
+	return &CloneResult{LocalPath: localPath, BaseSHA: baseSHA, HeadSHA: headSHA}, nil, true
+}
+
 func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, error) {
 	log := logging.FromContext(ctx).With(
 		"repo_url", repoURL,
@@ -112,6 +197,26 @@ func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA
 	}
 	if headSHA == "" {
 		return nil, fmt.Errorf("headSHA cannot be empty")
+	}
+
+	var result *CloneResult
+	operation := func() error {
+		var err error
+		result, err = c.cloneWithOptionsLocked(ctx, log, repoURL, baseSHA, headSHA, opts)
+		return err
+	}
+	if c.locks == nil {
+		return result, operation()
+	}
+	if err := c.locks.WithRepo(repoURL, operation); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, error) {
+	if result, err, ok := c.resolveLocal(ctx, repoURL, baseSHA, headSHA, opts); ok {
+		return result, err
 	}
 
 	// Check composite cache — keyed on both SHAs to avoid stale hits after force-pushes.
@@ -140,6 +245,7 @@ func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA
 					c.cache.Clear(repoURL, baseSHA, headSHA)
 				} else {
 					log.Debug("git clone cache hit (required SHAs verified)", "local_path", cached.LocalPath)
+					c.recordCacheCloned(repoURL, cached.LocalPath)
 					return &CloneResult{
 						LocalPath: cached.LocalPath,
 						BaseSHA:   cached.BaseSHA,
@@ -148,6 +254,7 @@ func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA
 				}
 			} else {
 				log.Debug("git clone cache hit", "local_path", cached.LocalPath)
+				c.recordCacheCloned(repoURL, cached.LocalPath)
 				return &CloneResult{
 					LocalPath: cached.LocalPath,
 					BaseSHA:   cached.BaseSHA,
@@ -173,7 +280,7 @@ func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA
 	log.Debug("git clone start")
 	overallStart := time.Now()
 
-	repoDir, err := getRepoDir()
+	repoDir, err := repoCacheDir(repoURL)
 	if err != nil {
 		log.Error("failed to get repo dir", "error", err)
 		return nil, fmt.Errorf("failed to get repo dir: %w", err)
@@ -252,6 +359,7 @@ func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA
 		HeadSHA:   headSHA,
 		FetchedAt: time.Now(),
 	})
+	c.recordCacheCloned(repoURL, tmpDir)
 
 	log.Debug("git clone complete",
 		"total_duration_ms", time.Since(overallStart).Milliseconds(),
@@ -270,7 +378,7 @@ func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA
 func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, bool) {
 	start := time.Now()
 
-	repoDir, err := getRepoDir()
+	repoDir, err := repoCacheDir(repoURL)
 	if err != nil {
 		log.Warn("targeted fetch fallback: cannot get repo dir", "error", err)
 		return nil, false
@@ -350,6 +458,7 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 		HeadSHA:   headSHA,
 		FetchedAt: time.Now(),
 	})
+	c.recordCacheCloned(repoURL, tmpDir)
 
 	log.Debug("targeted shallow fetch complete",
 		"pr_number", opts.PRNumber,

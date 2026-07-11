@@ -21,6 +21,21 @@ type Identity struct {
 	Repo     string
 }
 
+// LocationError is a structured repo-location operation error.
+type LocationError struct {
+	RepoID    string
+	Operation string
+	Code      string
+	Message   string
+}
+
+func (e *LocationError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.Message
+}
+
 // ID returns the canonical lowercased repo identity.
 func (i Identity) ID() string {
 	return strings.ToLower(fmt.Sprintf("%s:%s/%s", i.Provider, i.Owner, i.Repo))
