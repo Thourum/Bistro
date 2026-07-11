@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/itterno/bistro/internal/logging"
 )
 
 type fakeLocalResolver struct {
@@ -240,6 +242,34 @@ func TestCloneLocalBistroRepoDirSkipsResolver(t *testing.T) {
 	if resolver.localPathCalls != 0 {
 		t.Fatalf("expected resolver not consulted, got %d calls", resolver.localPathCalls)
 	}
+	if len(resolver.cacheClonedCalls) != 0 {
+		t.Fatalf("expected env override to skip cache-cloned callback, got %#v", resolver.cacheClonedCalls)
+	}
+}
+
+func TestPrepareTargetedCloneDirUsesOwnerRepoLayout(t *testing.T) {
+	// Arrange
+	home := t.TempDir()
+	cacheRoot := filepath.Join(home, "cache")
+	t.Setenv("BISTRO_REPO_DIR", "")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", cacheRoot)
+
+	// Act
+	clonePath, err := prepareTargetedCloneDir(localFetchRemoteURL)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("prepareTargetedCloneDir: %v", err)
+	}
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatalf("UserCacheDir: %v", err)
+	}
+	expectedPath := filepath.Join(cacheDir, "bistro", "repos", "acme", "api")
+	if clonePath != expectedPath {
+		t.Fatalf("expected targeted cache path %q, got %q", expectedPath, clonePath)
+	}
 }
 
 func TestCloneLocalCacheCloneRecordsCachePathAndHit(t *testing.T) {
@@ -281,6 +311,41 @@ func TestCloneLocalCacheCloneRecordsCachePathAndHit(t *testing.T) {
 	}
 }
 
+func TestCloneLocalTargetedFailureDoesNotRemoveExistingCacheClone(t *testing.T) {
+	// Arrange
+	const url = "https://github.com/acme/api.git"
+	cacheRoot := t.TempDir()
+	t.Setenv("BISTRO_REPO_DIR", "")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", cacheRoot)
+	userCacheDir, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatalf("UserCacheDir: %v", err)
+	}
+	cacheDir := filepath.Join(userCacheDir, "bistro", "repos", "acme", "api")
+	markerPath := filepath.Join(cacheDir, "keep.txt")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatalf("MkdirAll cacheDir: %v", err)
+	}
+	if err := os.WriteFile(markerPath, []byte("existing cache"), 0644); err != nil {
+		t.Fatalf("WriteFile marker: %v", err)
+	}
+	client := NewClient(NewCache())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Act
+	_, ok := client.targetedClone(ctx, logging.FromContext(context.Background()), url, "base", "head", &CloneOptions{PRNumber: 17})
+
+	// Assert
+	if ok {
+		t.Fatal("expected targeted clone failure")
+	}
+	if _, err := os.Stat(markerPath); err != nil {
+		t.Fatalf("expected targeted failure to preserve existing cache marker: %v", err)
+	}
+}
+
 func assertCacheRootUntouched(t *testing.T, cacheRoot string) {
 	t.Helper()
 	entries, err := os.ReadDir(cacheRoot)
@@ -295,8 +360,10 @@ func assertCacheRootUntouched(t *testing.T, cacheRoot string) {
 func TestPrepareCacheCloneDirUsesOwnerRepoLayout(t *testing.T) {
 	// Arrange
 	home := t.TempDir()
+	cacheRoot := filepath.Join(home, "cache")
 	t.Setenv("BISTRO_REPO_DIR", "")
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", cacheRoot)
 
 	// Act
 	clonePath, err := prepareCacheCloneDir(localFetchRemoteURL)

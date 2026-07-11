@@ -147,6 +147,14 @@ func repoCacheDir(repoURL string) (string, error) {
 }
 
 func prepareCacheCloneDir(repoURL string) (string, error) {
+	return prepareCacheCloneDirWithMode(repoURL, true)
+}
+
+func prepareTargetedCloneDir(repoURL string) (string, error) {
+	return prepareCacheCloneDirWithMode(repoURL, false)
+}
+
+func prepareCacheCloneDirWithMode(repoURL string, shouldReplace bool) (string, error) {
 	repoDir, err := repoCacheDir(repoURL)
 	if err != nil {
 		return "", err
@@ -157,8 +165,10 @@ func prepareCacheCloneDir(repoURL string) (string, error) {
 	if _, err := ParseRemoteURL(repoURL); err != nil {
 		return os.MkdirTemp(repoDir, "repo-*")
 	}
-	if err := os.RemoveAll(repoDir); err != nil {
-		return "", err
+	if shouldReplace {
+		if err := os.RemoveAll(repoDir); err != nil {
+			return "", err
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(repoDir), 0755); err != nil {
 		return "", err
@@ -166,10 +176,51 @@ func prepareCacheCloneDir(repoURL string) (string, error) {
 	return repoDir, nil
 }
 
-func (c *Client) recordCacheCloned(repoURL, path string) {
-	if c.localResolver != nil {
-		c.localResolver.OnCacheCloned(repoURL, path)
+func stageTargetedCloneDir(repoURL, repoDir string) (func(bool), error) {
+	removeOnFailure := func(success bool) {
+		if !success {
+			_ = os.RemoveAll(repoDir)
+		}
 	}
+	if os.Getenv("BISTRO_REPO_DIR") != "" {
+		return removeOnFailure, nil
+	}
+	if _, err := ParseRemoteURL(repoURL); err != nil {
+		return removeOnFailure, nil
+	}
+	if _, err := os.Stat(repoDir); err != nil {
+		if os.IsNotExist(err) {
+			return removeOnFailure, nil
+		}
+		return nil, err
+	}
+
+	backupDir, err := os.MkdirTemp(filepath.Dir(repoDir), filepath.Base(repoDir)+"-backup-*")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.RemoveAll(backupDir); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(repoDir, backupDir); err != nil {
+		return nil, err
+	}
+
+	return func(success bool) {
+		if success {
+			_ = os.RemoveAll(backupDir)
+			return
+		}
+		_ = os.RemoveAll(repoDir)
+		_ = os.Rename(backupDir, repoDir)
+	}, nil
+}
+
+func (c *Client) recordCacheCloned(repoURL, path string) {
+	if os.Getenv("BISTRO_REPO_DIR") != "" || c.localResolver == nil {
+		return
+	}
+	c.localResolver.OnCacheCloned(repoURL, path)
 }
 
 func (c *Client) resolveLocal(ctx context.Context, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, error, bool) {
@@ -392,9 +443,14 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, bool) {
 	start := time.Now()
 
-	tmpDir, err := prepareCacheCloneDir(repoURL)
+	tmpDir, err := prepareTargetedCloneDir(repoURL)
 	if err != nil {
 		log.Warn("targeted fetch fallback: cannot prepare clone dir", "error", err)
+		return nil, false
+	}
+	cleanup, err := stageTargetedCloneDir(repoURL, tmpDir)
+	if err != nil {
+		log.Warn("targeted fetch fallback: cannot stage clone dir", "error", err)
 		return nil, false
 	}
 
@@ -404,7 +460,7 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 	// avoid on the targeted path.
 	repo, err := gitlib.PlainInit(tmpDir, true)
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		cleanup(false)
 		log.Warn("targeted fetch fallback: plain init failed", "error", err)
 		return nil, false
 	}
@@ -412,14 +468,14 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 		Name: "origin",
 		URLs: []string{repoURL},
 	}); err != nil {
-		os.RemoveAll(tmpDir)
+		cleanup(false)
 		log.Warn("targeted fetch fallback: create remote failed", "error", err)
 		return nil, false
 	}
 
 	refSpecs := targetedRefSpecs(opts)
 	if len(refSpecs) == 0 {
-		os.RemoveAll(tmpDir)
+		cleanup(false)
 		return nil, false
 	}
 
@@ -433,7 +489,7 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 	}
 
 	if err := repo.FetchContext(ctx, fetchOpts); err != nil && err != gitlib.NoErrAlreadyUpToDate {
-		os.RemoveAll(tmpDir)
+		cleanup(false)
 		log.Debug("targeted fetch fallback: fetch failed",
 			"pr_number", opts.PRNumber,
 			"base_branch", opts.BaseBranch,
@@ -453,11 +509,13 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 	// comment commit; when any required commit is missing we fall back to the
 	// broad clone rather than cache an incomplete repo.
 	if missing := verifyRequiredCommits(repo, baseSHA, headSHA, opts); missing != "" {
-		os.RemoveAll(tmpDir)
+		cleanup(false)
 		log.Debug("targeted fetch fallback: required commit missing in shallow fetch",
 			"missing_sha", truncateSHAForLog(missing), "depth", depth)
 		return nil, false
 	}
+
+	cleanup(true)
 
 	c.cache.Set(repoURL, baseSHA, headSHA, &RepoEntry{
 		URL:       repoURL,
