@@ -55,27 +55,34 @@ function openMountedWebSocket(): MockWebSocket {
   return ws;
 }
 
-function emitAuthCheckResult(ws: MockWebSocket): void {
+function emitMessage(ws: MockWebSocket, message: unknown): void {
   act(() => {
     ws.onmessage?.(
       new MessageEvent('message', {
-        data: JSON.stringify({
-          id: 'auth-check-result-1',
-          type: 'AUTH_CHECK_RESULT',
-          data: { authenticated: true, providers: [] },
-          timestamp: new Date().toISOString(),
-        }),
+        data: JSON.stringify(message),
       }),
     );
+  });
+}
+
+function emitAuthCheckResult(ws: MockWebSocket): void {
+  emitMessage(ws, {
+    id: 'auth-check-result-1',
+    type: 'AUTH_CHECK_RESULT',
+    data: { authenticated: true, providers: [] },
+    timestamp: new Date().toISOString(),
   });
 }
 
 function sentMessagesOfType<TData>(
   ws: MockWebSocket,
   type: string,
-): Array<{ type: string; data: TData }> {
+): Array<{ id: string; type: string; data: TData }> {
   return ws.sentMessages
-    .map((message) => JSON.parse(message) as { type: string; data: TData })
+    .map(
+      (message) =>
+        JSON.parse(message) as { id: string; type: string; data: TData },
+    )
     .filter((message) => message.type === type);
 }
 
@@ -147,6 +154,72 @@ describe('useWebSocket dev-folder startup scan', () => {
     const scanMessages = sentMessagesOfType(ws, 'SCAN_DEV_FOLDER');
 
     expect(scanMessages).toHaveLength(0);
+
+    unmount();
+  });
+
+  it('resolves SCAN_DEV_FOLDER requests when matching scan result arrives', async () => {
+    const { result, unmount } = renderHook(() => useWebSocket());
+    const ws = openMountedWebSocket();
+
+    const request = result.current.request('SCAN_DEV_FOLDER', {
+      path: '/Users/sam/dev',
+      reason: 'manual',
+    });
+
+    await vi.waitFor(() => {
+      expect(sentMessagesOfType(ws, 'SCAN_DEV_FOLDER')).toHaveLength(1);
+    });
+
+    const scanRequest = sentMessagesOfType(ws, 'SCAN_DEV_FOLDER')[0];
+    emitMessage(ws, {
+      id: scanRequest?.id,
+      type: 'SCAN_DEV_FOLDER_RESULT',
+      data: {
+        path: '/Users/sam/dev',
+        repositories: [],
+        errors: [],
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    await expect(request).resolves.toEqual({
+      path: '/Users/sam/dev',
+      repositories: [],
+      errors: [],
+    });
+
+    unmount();
+  });
+
+  it('ignores malformed SCAN_DEV_FOLDER_RESULT payloads without throwing', () => {
+    const { unmount } = renderHook(() => useWebSocket());
+    const ws = openMountedWebSocket();
+
+    expect(() => {
+      emitMessage(ws, {
+        id: 'scan-result-1',
+        type: 'SCAN_DEV_FOLDER_RESULT',
+        data: { path: '/Users/sam/dev' },
+        timestamp: new Date().toISOString(),
+      });
+    }).not.toThrow();
+
+    unmount();
+  });
+
+  it('ignores malformed LOCATION_ERROR payloads without throwing', () => {
+    const { unmount } = renderHook(() => useWebSocket());
+    const ws = openMountedWebSocket();
+
+    expect(() => {
+      emitMessage(ws, {
+        id: 'location-error-1',
+        type: 'LOCATION_ERROR',
+        data: { repo_id: 'github:acme/api', operation: 'fetch' },
+        timestamp: new Date().toISOString(),
+      });
+    }).not.toThrow();
 
     unmount();
   });

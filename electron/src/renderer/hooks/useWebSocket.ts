@@ -80,6 +80,30 @@ interface ScanDevFolderRequest {
 type LocationErrorData = LocationError;
 type ScanDevFolderData = ScanDevFolderResult;
 
+const LOCATION_ERROR_CODES = [
+  'path_missing',
+  'remote_mismatch',
+  'permission_denied',
+  'invalid_url',
+  'invalid_path',
+  'destination_required',
+  'destination_conflict',
+  'clone_failed',
+  'auth_failed',
+  'cancelled',
+  'delete_failed',
+  'scan_partial',
+] as const;
+
+const LOCATION_ERROR_OPERATIONS = [
+  'scan',
+  'fetch',
+  'diff',
+  'clone',
+  'prune',
+  'recover',
+] as const;
+
 const DEFAULT_WS_PORT = 8080;
 
 /**
@@ -275,18 +299,77 @@ function handleCIStatusChanged(_data: unknown): void {
   }
 }
 
-function handleScanDevFolderResult(data: ScanDevFolderData): void {
+function isRecord(data: unknown): data is Record<string, unknown> {
+  return typeof data === 'object' && data !== null;
+}
+
+function isLocationError(data: unknown): data is LocationErrorData {
+  if (!isRecord(data)) {
+    return false;
+  }
+
+  return (
+    typeof data.repo_id === 'string' &&
+    LOCATION_ERROR_OPERATIONS.includes(
+      data.operation as (typeof LOCATION_ERROR_OPERATIONS)[number],
+    ) &&
+    LOCATION_ERROR_CODES.includes(
+      data.code as (typeof LOCATION_ERROR_CODES)[number],
+    ) &&
+    typeof data.message === 'string'
+  );
+}
+
+function isScannedRepository(data: unknown): boolean {
+  if (!isRecord(data)) {
+    return false;
+  }
+
+  return (
+    typeof data.repo_id === 'string' &&
+    typeof data.path === 'string' &&
+    typeof data.remote_url === 'string' &&
+    data.source === 'local'
+  );
+}
+
+function isScanDevFolderResult(data: unknown): data is ScanDevFolderData {
+  if (!isRecord(data)) {
+    return false;
+  }
+
+  return (
+    typeof data.path === 'string' &&
+    Array.isArray(data.repositories) &&
+    data.repositories.every(isScannedRepository) &&
+    Array.isArray(data.errors) &&
+    data.errors.every(isLocationError)
+  );
+}
+
+function handleScanDevFolderResult(data: unknown): ScanDevFolderData | null {
+  if (!isScanDevFolderResult(data)) {
+    log.warn({ data }, 'invalid SCAN_DEV_FOLDER_RESULT payload');
+    return null;
+  }
+
   if (data.errors.length === 0) {
-    return;
+    return data;
   }
 
   log.warn(
     { path: data.path, errors: data.errors.length },
     'dev-folder scan completed with location errors',
   );
+  return data;
 }
 
-function handleLocationError(data: LocationErrorData): void {
+function handleLocationError(data: unknown): void {
+  if (!isLocationError(data)) {
+    log.warn({ data }, 'invalid LOCATION_ERROR payload');
+    return;
+  }
+
   log.warn(
     { repoId: data.repo_id, operation: data.operation, code: data.code },
     data.message,
@@ -367,11 +450,20 @@ function onMessage(event: MessageEvent<string>): void {
     case 'CI_STATUS_CHANGED':
       handleCIStatusChanged(message.data);
       break;
-    case 'SCAN_DEV_FOLDER_RESULT':
-      handleScanDevFolderResult(message.data as ScanDevFolderData);
+    case 'SCAN_DEV_FOLDER_RESULT': {
+      const payload = handleScanDevFolderResult(message.data);
+      if (payload === null) {
+        break;
+      }
+      const scanHandler = messageHandlers.get(message.id);
+      if (scanHandler) {
+        scanHandler(payload);
+        messageHandlers.delete(message.id);
+      }
       break;
+    }
     case 'LOCATION_ERROR':
-      handleLocationError(message.data as LocationErrorData);
+      handleLocationError(message.data);
       break;
     case 'AUTH_REDIRECT': {
       const payload = message.data as { provider: string; url: string };
