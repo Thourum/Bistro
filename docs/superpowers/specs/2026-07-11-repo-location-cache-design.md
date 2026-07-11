@@ -22,7 +22,8 @@ The feature also supports adding a repository by URL, choosing whether to clone 
 Two independent locations; never conflate them:
 
 - **Dev folder** — the user's own working/projects folder (e.g. `~/dev`), chosen at onboarding or in Settings, persisted as `repositories.devFolderPath`. Repos here are `source='local'`: user-owned, read-only for Bistro (objects/refs fetches only), never deleted or pruned by Bistro.
-- **Cache dir** — Bistro's managed storage at `os.UserCacheDir()/bistro/repos` (macOS `~/Library/Caches`, Linux XDG, Windows `LOCALAPPDATA`; `BISTRO_REPO_DIR` env remains a developer override). Repos here are `source='cache'`: Bistro-managed and prunable. The cache settings UI operates only on this location.
+- **Cache dir** — Bistro's managed storage at `os.UserCacheDir()/bistro/repos` (macOS `~/Library/Caches`, Linux XDG, Windows `LOCALAPPDATA`). Repos here are `source='cache'`: Bistro-managed and prunable. The cache settings UI operates only on this location.
+- **`BISTRO_REPO_DIR`** — development/testing env var. When set, it overrides both locations: it replaces the cache root and takes precedence over `repositories.devFolderPath`, so all repo storage resolves to it. Never set in production.
 
 ## Existing context
 
@@ -131,7 +132,7 @@ When the Go engine needs repository objects for a PR:
 5. If no local repo is configured for the repo, use today's managed cache clone path.
 6. Cache clones update the repo row with `source='cache'`, `local_path=<cache path>`, and `last_used_at=now`.
 
-The cache root is always `os.UserCacheDir()/bistro/repos`; the existing `BISTRO_REPO_DIR` env var remains only as a development/testing override, not something the product or user sets.
+The cache root is always `os.UserCacheDir()/bistro/repos`. The `BISTRO_REPO_DIR` env var is a development/testing override that wins over everything — when set, it replaces the cache root and takes precedence over the configured `repositories.devFolderPath` (local-repo resolution is bypassed and all storage resolves to the env dir).
 
 ## Onboarding and startup scan
 
