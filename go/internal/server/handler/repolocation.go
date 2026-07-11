@@ -83,8 +83,6 @@ type cacheRepoStatPayload struct {
 	SizeBytes  int64      `json:"size_bytes"`
 	LastUsedAt *time.Time `json:"last_used_at"`
 	Stale      bool       `json:"stale"`
-	Skipped    bool       `json:"skipped,omitempty"`
-	Error      string     `json:"error,omitempty"`
 }
 
 type removeCounts struct {
@@ -187,10 +185,8 @@ func NewAddRepoByURLHandler(deps AddRepoByURLDeps) ws.MessageHandler {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, cloneErrorCode(ctxErr), ctxErr.Error())), nil
 		}
-		if found, locationErr, err := registeredLocal(ctx, deps.Store, repoID); err != nil {
+		if found, err := registeredLocal(ctx, deps.Store, repoID); err != nil {
 			return nil, err
-		} else if locationErr != nil {
-			return locationResponse(msg, *locationErr), nil
 		} else if found {
 			return locationResponse(msg, repoSourcePayload(repoID, "local")), nil
 		}
@@ -302,7 +298,7 @@ func NewGetCacheStatsHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
 			} else {
 				active += stat.SizeBytes
 			}
-			repos = append(repos, cacheRepoStatPayload{RepoID: stat.RepoID, SizeBytes: stat.SizeBytes, LastUsedAt: stat.LastUsedAt, Stale: stat.Stale, Skipped: stat.Skipped, Error: stat.Error})
+			repos = append(repos, cacheRepoStatPayload{RepoID: stat.RepoID, SizeBytes: stat.SizeBytes, LastUsedAt: stat.LastUsedAt, Stale: stat.Stale})
 		}
 		return locationResponse(msg, struct {
 			OK          bool                   `json:"ok"`
@@ -470,7 +466,7 @@ func NewRecoverRepoToCacheHandler(deps RecoverRepoToCacheDeps) ws.MessageHandler
 		}
 		if !repoPathMatches(destination, identity) {
 			cleanupBistroCreated(destination, createdByBistro)
-			return locationResponse(msg, locationError(repoID, operationRecoverRepoToCache, "clone_failed", "cloned repository remote does not match repo")), nil
+			return locationResponse(msg, locationError(repoID, operationRecoverRepoToCache, "remote_mismatch", "cloned repository remote does not match repo")), nil
 		}
 		if err := deps.Store.SetCache(ctx, repoID, destination); err != nil {
 			return nil, err
@@ -599,27 +595,12 @@ func destinationRootErrorCode(err error) string {
 	return "destination_conflict"
 }
 
-func registeredLocal(ctx context.Context, locations *store.RepoLocationStore, repoID string) (bool, *LocationErrorPayload, error) {
+func registeredLocal(ctx context.Context, locations *store.RepoLocationStore, repoID string) (bool, error) {
 	location, err := locations.Get(ctx, repoID)
 	if err != nil {
-		return false, nil, fmt.Errorf("get repo location %s: %w", repoID, err)
+		return false, fmt.Errorf("get repo location %s: %w", repoID, err)
 	}
-	if location == nil || location.Source != "local" {
-		return false, nil, nil
-	}
-	if location.LocationStatus == "ok" {
-		return true, nil, nil
-	}
-	code := location.LocationErrorCode
-	if code == "" {
-		code = "path_missing"
-	}
-	message := location.LocationError
-	if message == "" {
-		message = fmt.Sprintf("local repository is degraded: %s", location.LocationStatus)
-	}
-	payload := locationError(repoID, operationAddRepoByURL, code, message)
-	return false, &payload, nil
+	return location != nil && location.Source == "local" && location.LocationStatus == "ok", nil
 }
 
 func targetedDevFolder(ctx context.Context, locations *store.RepoLocationStore, identity git.Identity, devFolder string) (bool, error) {

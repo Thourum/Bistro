@@ -235,7 +235,7 @@ func stageTargetedCloneDir(repoURL, repoDir string) (func(bool), error) {
 }
 
 func (c *Client) recordCacheCloned(repoURL, path string) {
-	if os.Getenv("BISTRO_REPO_DIR") != "" || c.localResolver == nil {
+	if c.localResolver == nil {
 		return
 	}
 	c.localResolver.OnCacheCloned(repoURL, path)
