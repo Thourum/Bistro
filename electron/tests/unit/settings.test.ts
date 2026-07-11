@@ -1,8 +1,9 @@
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from 'electron-log';
+import { describe, expect, it, vi } from 'vitest';
+
 const electronMock = vi.hoisted(() => ({
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
   app: { getPath: vi.fn(() => '') },
