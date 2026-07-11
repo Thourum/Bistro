@@ -620,6 +620,10 @@ function onMessage(event: MessageEvent<string>): void {
     case 'ACTION_RESULT':
     case 'VALIDATE_DEV_FOLDER_RESULT':
     case 'ADD_REPO_BY_URL_RESULT':
+    case 'GET_CACHE_STATS_RESULT':
+    case 'PRUNE_CACHE_RESULT':
+    case 'CLEAR_CACHE_RESULT':
+    case 'DELETE_CACHE_REPO_RESULT':
     case 'PR_LIST_READY': {
       const handler = messageHandlers.get(message.id);
       if (handler) {
