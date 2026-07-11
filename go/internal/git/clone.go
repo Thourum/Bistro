@@ -110,16 +110,20 @@ type CloneOptions struct {
 	RequiredSHAs []string
 }
 
-// CloneRepoToPath clones repoURL into destination without checking out a worktree.
+// CloneRepoToPath clones repoURL into destination. Bare clones are used for
+// Bistro-managed cache storage; non-bare clones are used for user-owned dev
+// folder destinations so the user gets a normal checkout.
 // It is used by repo-location handlers that already resolved the exact cache/dev
 // folder path and need the same auth/locking behavior as the production git client.
-func (c *Client) CloneRepoToPath(ctx context.Context, repoURL, destination string) error {
+func (c *Client) CloneRepoToPath(ctx context.Context, repoURL, destination string, bare bool) error {
 	operation := func() error {
 		cloneOpts := &gitlib.CloneOptions{URL: repoURL, Auth: c.auth(), Tags: gitlib.NoTags}
-		if _, err := gitlib.PlainCloneContext(ctx, destination, true, cloneOpts); err != nil {
+		if _, err := gitlib.PlainCloneContext(ctx, destination, bare, cloneOpts); err != nil {
 			return fmt.Errorf("clone repository %s: %w", repoURL, err)
 		}
-		c.recordCacheCloned(repoURL, destination)
+		if bare {
+			c.recordCacheCloned(repoURL, destination)
+		}
 		return nil
 	}
 	if c.locks == nil {

@@ -34,11 +34,12 @@ type fakeRepoLocationCloner struct {
 type fakeRepoLocationCloneCall struct {
 	RepoURL     string
 	Destination string
+	Bare        bool
 }
 
-func (c *fakeRepoLocationCloner) CloneRepo(ctx context.Context, repoURL, destination string) error {
+func (c *fakeRepoLocationCloner) CloneRepo(ctx context.Context, repoURL, destination string, bare bool) error {
 	c.mu.Lock()
-	c.calls = append(c.calls, fakeRepoLocationCloneCall{RepoURL: repoURL, Destination: destination})
+	c.calls = append(c.calls, fakeRepoLocationCloneCall{RepoURL: repoURL, Destination: destination, Bare: bare})
 	err := c.err
 	remoteURL := c.overrideRemoteURL
 	c.mu.Unlock()
@@ -54,6 +55,12 @@ func (c *fakeRepoLocationCloner) CloneRepo(ctx context.Context, repoURL, destina
 		remoteURL = repoURL
 	}
 	return createRepo(destination, "origin", remoteURL)
+}
+
+func (c *fakeRepoLocationCloner) Calls() []fakeRepoLocationCloneCall {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]fakeRepoLocationCloneCall{}, c.calls...)
 }
 
 type fakeRepoLocationCacheDeleter struct {
@@ -80,6 +87,10 @@ type fakeRepoLocationSweeper struct {
 
 func (s *fakeRepoLocationSweeper) SweepOrphans(known map[string]bool) ([]string, error) {
 	return append([]string{}, s.removed...), s.err
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 func TestRepoLocationValidateDevFolderReturnsCanonicalPathAndEnvelope(t *testing.T) {
@@ -210,6 +221,7 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 		wantContextCancel bool
 		wantStoredSource  string
 		wantStoredPath    string
+		wantCloneBare     *bool
 	}{
 		{
 			name: "found local via targeted dev folder check",
@@ -297,8 +309,9 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 			arrange: func(t *testing.T, db *store.DB, root string, cloner *fakeRepoLocationCloner) {
 				cloner.err = errors.New("authentication required")
 			},
-			wantOK:   false,
-			wantCode: "auth_failed",
+			wantOK:        false,
+			wantCode:      "auth_failed",
+			wantCloneBare: boolPtr(true),
 		},
 		{
 			name: "unsupported destination is conflict",
@@ -356,6 +369,7 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 			wantOK:           false,
 			wantCode:         "clone_failed",
 			wantPartialClean: filepath.Join("dev", "acme", "api"),
+			wantCloneBare:    boolPtr(false),
 		},
 		{
 			name: "post clone remote mismatch cleans partial dir",

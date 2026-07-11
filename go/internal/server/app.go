@@ -267,8 +267,8 @@ func (a *App) githubToken() string {
 	return token
 }
 
-func (a *App) cloneRepoLocationRepo(ctx context.Context, repoURL, destination string) error {
-	return a.gitClient.CloneRepoToPath(ctx, repoURL, destination)
+func (a *App) cloneRepoLocationRepo(ctx context.Context, repoURL, destination string, bare bool) error {
+	return a.gitClient.CloneRepoToPath(ctx, repoURL, destination, bare)
 }
 
 // wsEventMsg is the envelope sent to WebSocket clients for orchestrator events.

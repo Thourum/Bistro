@@ -3,7 +3,10 @@ package git
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
+
+	gogit "github.com/go-git/go-git/v5"
 )
 
 func TestNewClient(t *testing.T) {
@@ -228,5 +231,45 @@ func TestFetchRefsInvalidPath(t *testing.T) {
 	err := client.FetchRefs(ctx, "/nonexistent/path/to/repo", "base", "head")
 	if err == nil {
 		t.Error("expected error for non-existent repo path")
+	}
+}
+
+func TestCloneRepoToPathNonBareCreatesOpenableWorktree(t *testing.T) {
+	tests := []struct {
+		name string
+		bare bool
+	}{
+		{name: "dev folder clone", bare: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			remoteDir := t.TempDir()
+			buildRemoteWithPRRef(t, remoteDir, 1)
+			destination := filepath.Join(t.TempDir(), "acme", "api")
+			client := NewClient(NewCache())
+
+			// Act
+			err := client.CloneRepoToPath(context.Background(), "file://"+remoteDir, destination, tt.bare)
+
+			// Assert
+			if err != nil {
+				t.Fatalf("CloneRepoToPath: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(destination, ".git")); err != nil {
+				t.Fatalf("expected working-tree .git directory, stat err=%v", err)
+			}
+			if _, err := os.Stat(filepath.Join(destination, "foo.go")); err != nil {
+				t.Fatalf("expected default branch checkout, stat err=%v", err)
+			}
+			repo, err := gogit.PlainOpen(destination)
+			if err != nil {
+				t.Fatalf("PlainOpen destination: %v", err)
+			}
+			if _, err := repo.Worktree(); err != nil {
+				t.Fatalf("expected non-bare repo with worktree: %v", err)
+			}
+		})
 	}
 }

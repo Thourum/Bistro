@@ -44,7 +44,7 @@ type LocationErrorPayload struct {
 type AddRepoByURLDeps struct {
 	DB          *sql.DB
 	Store       *store.RepoLocationStore
-	Clone       func(ctx context.Context, repoURL, destination string) error
+	Clone       func(ctx context.Context, repoURL, destination string, bare bool) error
 	CacheRoot   func() (string, error)
 	TokenSource func() string
 	Log         *slog.Logger
@@ -68,7 +68,7 @@ type CacheMaintenanceDeps struct {
 type RecoverRepoToCacheDeps struct {
 	DB          *sql.DB
 	Store       *store.RepoLocationStore
-	Clone       func(ctx context.Context, repoURL, destination string) error
+	Clone       func(ctx context.Context, repoURL, destination string, bare bool) error
 	CacheRoot   func() (string, error)
 	TokenSource func() string
 	Log         *slog.Logger
@@ -229,7 +229,7 @@ func NewAddRepoByURLHandler(deps AddRepoByURLDeps) ws.MessageHandler {
 		if err != nil {
 			return nil, err
 		}
-		if err := cloneRepo(ctx, deps.Clone, deps.TokenSource, data.URL, destinationPath); err != nil {
+		if err := cloneRepo(ctx, deps.Clone, deps.TokenSource, data.URL, destinationPath, source == "cache"); err != nil {
 			cleanupBistroCreated(destinationPath, createdByBistro)
 			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, cloneErrorCode(err), err.Error())), nil
 		}
@@ -463,7 +463,7 @@ func NewRecoverRepoToCacheHandler(deps RecoverRepoToCacheDeps) ws.MessageHandler
 			return nil, err
 		}
 		repoURL := fmt.Sprintf("https://github.com/%s/%s.git", identity.Owner, identity.Repo)
-		if err := cloneRepo(ctx, deps.Clone, deps.TokenSource, repoURL, destination); err != nil {
+		if err := cloneRepo(ctx, deps.Clone, deps.TokenSource, repoURL, destination, true); err != nil {
 			cleanupBistroCreated(destination, createdByBistro)
 			return locationResponse(msg, locationError(repoID, operationRecoverRepoToCache, cloneErrorCode(err), err.Error())), nil
 		}
@@ -740,11 +740,11 @@ func setRepoSource(ctx context.Context, db *sql.DB, locations *store.RepoLocatio
 	return locations.UpsertLocal(ctx, identity.Provider, identity.Owner, identity.Repo, path)
 }
 
-func cloneRepo(ctx context.Context, clone func(context.Context, string, string) error, _ func() string, repoURL, destination string) error {
+func cloneRepo(ctx context.Context, clone func(context.Context, string, string, bool) error, _ func() string, repoURL, destination string, bare bool) error {
 	if clone == nil {
 		return errors.New("clone dependency is not configured")
 	}
-	return clone(ctx, repoURL, destination)
+	return clone(ctx, repoURL, destination, bare)
 }
 
 func cloneErrorCode(err error) string {

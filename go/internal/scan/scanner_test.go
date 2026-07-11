@@ -7,9 +7,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	bistrogit "github.com/itterno/bistro/internal/git"
 )
 
 func TestScanFindsDepthOneAndTwoAndIgnoresDepthThree(t *testing.T) {
@@ -246,6 +249,49 @@ func TestScanMarksPartialWhenInvalidCandidatesExceedLimit(t *testing.T) {
 	}
 }
 
+func TestScanFindsNonBareCloneCreatedForDevFolderDestination(t *testing.T) {
+	tests := []struct {
+		name string
+		bare bool
+	}{
+		{name: "dev folder clone", bare: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			remoteDir := t.TempDir()
+			createCloneableRepo(t, remoteDir, "origin", "https://github.com/acme/api.git")
+			devFolder := t.TempDir()
+			destination := filepath.Join(devFolder, "acme", "api")
+			client := bistrogit.NewClient(bistrogit.NewCache())
+
+			// Act
+			cloneErr := client.CloneRepoToPath(context.Background(), "file://"+remoteDir, destination, tt.bare)
+			if cloneErr == nil {
+				clonedRepo, openErr := gogit.PlainOpen(destination)
+				if openErr != nil {
+					t.Fatalf("PlainOpen cloned repo: %v", openErr)
+				}
+				if deleteErr := clonedRepo.DeleteRemote("origin"); deleteErr != nil {
+					t.Fatalf("DeleteRemote origin: %v", deleteErr)
+				}
+				createRemote(t, clonedRepo, "origin", "https://github.com/acme/api.git")
+			}
+			result, scanErr := Scan(context.Background(), devFolder)
+
+			// Assert
+			if cloneErr != nil {
+				t.Fatalf("CloneRepoToPath: %v", cloneErr)
+			}
+			if scanErr != nil {
+				t.Fatalf("Scan: %v", scanErr)
+			}
+			assertFoundIDs(t, result, []string{"github:acme/api"})
+		})
+	}
+}
+
 func TestScanSkipsBareReposAndGitPointerFiles(t *testing.T) {
 	// Arrange
 	devFolder := t.TempDir()
@@ -278,6 +324,27 @@ func TestScanSkipsBareReposAndGitPointerFiles(t *testing.T) {
 func createRepo(t *testing.T, path string, remoteName string, remoteURL string) string {
 	t.Helper()
 	repo := createRepoWithoutRemote(t, path)
+	createRemote(t, repo, remoteName, remoteURL)
+	return path
+}
+
+func createCloneableRepo(t *testing.T, path string, remoteName string, remoteURL string) string {
+	t.Helper()
+	repo := createRepoWithoutRemote(t, path)
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "README.md"), []byte("# test repo\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile README: %v", err)
+	}
+	if _, err := worktree.Add("README.md"); err != nil {
+		t.Fatalf("Add README: %v", err)
+	}
+	_, err = worktree.Commit("initial commit", &gogit.CommitOptions{Author: &object.Signature{Name: "test", Email: "test@example.com", When: time.Now()}})
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
 	createRemote(t, repo, remoteName, remoteURL)
 	return path
 }
