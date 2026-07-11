@@ -63,6 +63,15 @@ export interface UIState {
   visiblePRIds: string[];
   visiblePRBrowserUrls: string[];
   /**
+   * Repo key (`owner/repo`) for each visible row — parallel to visiblePRIds.
+   * A collapsed repo group occupies a single header row whose visiblePRIds
+   * entry is '' (no PR to open). Used by the Space keybinding to toggle the
+   * group under the cursor.
+   */
+  visiblePRRepoKeys: string[];
+  /** Repo keys (`owner/repo`) whose PR-list group is currently collapsed. */
+  collapsedRepoKeys: string[];
+  /**
    * Canonical file keys for the diff currently loaded in DiffPage.
    * Set by DiffPage via onFilesResolved when PierreDiffView parses the diff.
    * Used by n/p keybindings (detail.nextFile / detail.prevFile) in diff mode
@@ -121,6 +130,8 @@ export const initialUIState: UIState = {
   repoFilter: null,
   visiblePRIds: [],
   visiblePRBrowserUrls: [],
+  visiblePRRepoKeys: [],
+  collapsedRepoKeys: [],
   diffFileKeys: [],
   selectedPatchsetPair: null,
   threadsRevision: 0,
@@ -131,4 +142,24 @@ export const initialUIState: UIState = {
 
 export function createUIStore(): Store<UIState> {
   return new Store<UIState>(initialUIState);
+}
+
+/**
+ * Toggle a PR-list repo group's collapsed state and move the cursor to the
+ * group's first row (the header row when collapsing, the first PR when
+ * expanding). Pure — shared by the Space keybinding and the header's onClick.
+ */
+export function toggleRepoGroup(state: UIState, repoKey: string): UIState {
+  const isCollapsed = state.collapsedRepoKeys.includes(repoKey);
+  const collapsedRepoKeys = isCollapsed
+    ? state.collapsedRepoKeys.filter((k) => k !== repoKey)
+    : [...state.collapsedRepoKeys, repoKey];
+  // The group's first row keeps the same index before and after the toggle:
+  // rows above it belong to earlier groups and are untouched.
+  const headerIndex = state.visiblePRRepoKeys.indexOf(repoKey);
+  return {
+    ...state,
+    collapsedRepoKeys,
+    selectedPRIndex: headerIndex >= 0 ? headerIndex : state.selectedPRIndex,
+  };
 }

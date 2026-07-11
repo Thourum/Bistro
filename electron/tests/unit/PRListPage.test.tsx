@@ -40,6 +40,7 @@ const mockStore = {
     repos: [{ owner: 'acme', repo: 'widgets', watched: true }],
     connectedProviders: [],
     visiblePRIds: [],
+    collapsedRepoKeys: [] as string[],
   },
   subscribe: vi.fn(() => () => {}),
   setState: vi.fn(),
@@ -95,9 +96,7 @@ describe('PRListPage', () => {
   it('accepts routeSearch prop and uses route-authoritative values', () => {
     render(
       <FooterSlotProvider>
-        <PRListPage
-          routeSearch={{ filter: 'draft', sort: 'created', q: '' }}
-        />
+        <PRListPage routeSearch={{ filter: 'draft', sort: 'created', q: '' }} />
       </FooterSlotProvider>,
     );
     expect(screen.getByText('Draft Pull Requests')).toBeInTheDocument();

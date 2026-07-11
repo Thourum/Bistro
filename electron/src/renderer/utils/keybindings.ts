@@ -7,6 +7,7 @@ import type {
 import { authAction, PROVIDERS } from '../providers';
 import { router } from '../router';
 import type { UIState } from '../store/ui';
+import { toggleRepoGroup } from '../store/ui';
 
 // RouteBase: the "base" route derived from the current pathname.
 // Includes 'login' and 'onboarding' so their bindings can be properly gated
@@ -201,6 +202,17 @@ function selectedVisibleIndex(ctx: KeyActionContext): number {
   );
 }
 
+/**
+ * Move the list cursor by `delta`, clamped to the visible rows so the cursor
+ * can never point past the last rendered row (which left the list with no
+ * highlighted row). With an empty/unsynced list only the lower bound applies.
+ */
+function movedPRIndex(s: UIState, delta: number): number {
+  const next = Math.max(0, s.selectedPRIndex + delta);
+  const len = s.visiblePRIds.length;
+  return len > 0 ? Math.min(next, len - 1) : next;
+}
+
 function openUrlInBrowser(url: string): void {
   if (window.electron?.openExternal !== undefined) {
     void window.electron.openExternal(url);
@@ -363,7 +375,7 @@ const listBindings: KeyBinding[] = [
     action: (ctx) => {
       ctx.store.setState((s) => ({
         ...s,
-        selectedPRIndex: s.selectedPRIndex + 1,
+        selectedPRIndex: movedPRIndex(s, 1),
       }));
     },
   },
@@ -388,7 +400,7 @@ const listBindings: KeyBinding[] = [
     action: (ctx) => {
       ctx.store.setState((s) => ({
         ...s,
-        selectedPRIndex: s.selectedPRIndex + 1,
+        selectedPRIndex: movedPRIndex(s, 1),
       }));
     },
   },
@@ -435,10 +447,18 @@ const listBindings: KeyBinding[] = [
     activation: { routes: ['list'] },
     action: (ctx) => {
       // Navigate by stable PR id after clamping the cursor to the visible list.
-      const prId = ctx.store.state.visiblePRIds[selectedVisibleIndex(ctx)];
-      if (prId !== undefined) {
-        void router.navigate({ to: '/prs/$prId', params: { prId } });
+      const idx = selectedVisibleIndex(ctx);
+      const prId = ctx.store.state.visiblePRIds[idx];
+      if (prId === undefined) return;
+      if (prId === '') {
+        // Collapsed group header row — Enter expands it.
+        const repoKey = ctx.store.state.visiblePRRepoKeys[idx];
+        if (repoKey !== undefined) {
+          ctx.store.setState((s) => toggleRepoGroup(s, repoKey));
+        }
+        return;
       }
+      void router.navigate({ to: '/prs/$prId', params: { prId } });
     },
   },
   {
@@ -467,7 +487,7 @@ const listBindings: KeyBinding[] = [
     action: (ctx) => {
       ctx.store.setState((s) => ({
         ...s,
-        selectedPRIndex: s.selectedPRIndex + 5,
+        selectedPRIndex: movedPRIndex(s, 5),
       }));
     },
   },
@@ -497,12 +517,16 @@ const listBindings: KeyBinding[] = [
     },
   },
   {
-    actionId: 'list.preview',
+    actionId: 'list.toggleGroup',
     keys: 'Space',
-    description: 'Preview',
+    description: 'Toggle group',
     activation: { routes: ['list'] },
     action: (ctx) => {
-      ctx.store.setState((s) => ({ ...s, confirmingAction: 'preview' }));
+      const repoKey =
+        ctx.store.state.visiblePRRepoKeys[selectedVisibleIndex(ctx)];
+      if (repoKey !== undefined) {
+        ctx.store.setState((s) => toggleRepoGroup(s, repoKey));
+      }
     },
   },
   {

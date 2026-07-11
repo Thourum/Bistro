@@ -1,6 +1,6 @@
 import React from 'react';
 import { FooterCenterSlot } from '../components/FooterSlot';
-import { PRListTable } from '../components/PRListTable';
+import { PRListTable, visiblePRListRows } from '../components/PRListTable';
 import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
@@ -56,17 +56,28 @@ export function PRListPage({
     q,
   });
 
-  // Sync visible PR ids to store so keybinding actions (list.open, list.bottom)
-  // can navigate by id without a React hook context.
+  const collapsedRepoKeys = useStore(
+    appStore,
+    (s: UIState) => s.collapsedRepoKeys,
+  );
+
+  // Sync visible cursor rows to store so keybinding actions (list.open,
+  // list.bottom, list.toggleGroup) can act without a React hook context.
+  // A collapsed repo group contributes one header row (empty id/url) so the
+  // cursor and rendered rows stay index-aligned.
   // useLayoutEffect ensures ids are committed BEFORE any synchronous user input
   // (e.g. filter-then-immediate-Enter) reads the list.
   React.useLayoutEffect(() => {
+    const rows = visiblePRListRows(prs, collapsedRepoKeys);
     appStore.setState((s) => ({
       ...s,
-      visiblePRIds: prs.map((p) => p.id),
-      visiblePRBrowserUrls: prs.map((p) => prBrowserUrl(p) ?? ''),
+      visiblePRIds: rows.map((r) => r.pr?.id ?? ''),
+      visiblePRBrowserUrls: rows.map((r) =>
+        r.pr ? (prBrowserUrl(r.pr) ?? '') : '',
+      ),
+      visiblePRRepoKeys: rows.map((r) => r.repoKey),
     }));
-  }, [prs]);
+  }, [prs, collapsedRepoKeys]);
 
   // Counters always reflect the full open lane, independent of the filter.
   const { data: openPRs = [] } = useWebSocketPRList('open');

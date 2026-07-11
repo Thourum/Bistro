@@ -51,7 +51,7 @@ const NAVIGATION_IDS = new Set([
 const ACTION_IDS = new Set([
   'list.open',
   'list.openBrowser',
-  'list.preview',
+  'list.toggleGroup',
   'list.draft',
   'list.mute',
   'list.star',

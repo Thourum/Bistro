@@ -2,16 +2,52 @@ import { useNavigate } from '@tanstack/react-router';
 import type React from 'react';
 import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
-import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
+import { toggleRepoGroup } from '../store/ui';
 import type { PR } from '../types';
+
+export type PRRepoGroup = readonly [repoKey: string, prs: PR[]];
+
+export function groupPRsByRepo(prs: PR[]): PRRepoGroup[] {
+  const groups = new Map<string, PR[]>();
+  for (const pr of prs) {
+    const key = `${pr.owner}/${pr.repo}`;
+    const existing = groups.get(key);
+    if (existing) existing.push(pr);
+    else groups.set(key, [pr]);
+  }
+  return Array.from(groups.entries());
+}
+
+/**
+ * One cursor row in the grouped PR list. An expanded group contributes one
+ * row per PR; a collapsed group contributes a single header row (pr: null).
+ * This is the single source of truth for keyboard navigation — j/k walk
+ * these rows, and `visiblePRIds` / `visiblePRRepoKeys` are projections of it.
+ */
+export interface PRListRow {
+  pr: PR | null;
+  repoKey: string;
+}
+
+export function visiblePRListRows(
+  prs: PR[],
+  collapsedRepoKeys: readonly string[],
+): PRListRow[] {
+  return groupPRsByRepo(prs).flatMap(([repoKey, repoPRs]): PRListRow[] =>
+    collapsedRepoKeys.includes(repoKey)
+      ? [{ pr: null, repoKey }]
+      : repoPRs.map((pr) => ({ pr, repoKey })),
+  );
+}
 
 /**
  * Minimalist PR inbox matching `pr_inbox_minimal_light/code.html`.
  *
  * - Flat rows on a 5-col grid `[24px_60px_1fr_120px_100px]`
- * - Optional repo grouping via `<details>/<summary>` when
- *   `settings.prList.view === 'grouped'`
+ * - Repo grouping via `<details>/<summary>`; open state is controlled by
+ *   `collapsedRepoKeys` in the app store so Space (keybinding) and mouse
+ *   clicks share one toggle path.
  * - CI status dots (green / red / yellow / neutral)
  *
  * `prs`, `isLoading`, `error` are provided by the parent (PRListPage),
@@ -118,26 +154,42 @@ function PRRow({
 }
 
 interface PRGroupProps {
-  title: string;
+  repoKey: string;
   prs: PR[];
+  collapsed: boolean;
+  /** Cursor index of this group's first row (header row when collapsed). */
   startIndex: number;
   selectedIndex: number;
   accent: boolean;
 }
 
 function PRGroup({
-  title,
+  repoKey,
   prs,
+  collapsed,
   startIndex,
   selectedIndex,
   accent,
 }: PRGroupProps): React.ReactElement {
+  // A collapsed group is a single cursor row; highlight its header.
+  const headerSelected = collapsed && selectedIndex === startIndex;
+  const toggle = (e: React.MouseEvent): void => {
+    // The store owns open/collapsed state — block the native <details> toggle
+    // so mouse clicks and the Space keybinding share one code path.
+    e.preventDefault();
+    appStore.setState((s) => toggleRepoGroup(s, repoKey));
+  };
   return (
-    <details
-      className={accent ? 'group' : 'group mt-8'}
-      open={accent ? true : prs.length > 0}
-    >
-      <summary className="list-none cursor-pointer flex items-center justify-between py-4 group-open:bg-surface-container-low px-2 -mx-2 transition-colors">
+    <details className={accent ? 'group' : 'group mt-8'} open={!collapsed}>
+      <summary
+        onClick={toggle}
+        className={[
+          'list-none cursor-pointer flex items-center justify-between py-4 px-2 -mx-2 transition-colors border-l-2',
+          headerSelected
+            ? 'bg-surface-container-low border-primary'
+            : 'border-transparent group-open:bg-surface-container-low',
+        ].join(' ')}
+      >
         <div className="flex items-center gap-4">
           <span
             className={`text-[10px] font-mono px-1.5 py-0.5 border ${
@@ -148,21 +200,25 @@ function PRGroup({
           >
             GROUP
           </span>
-          <span className="font-bold text-sm tracking-tight">{title}</span>
+          <span className="font-bold text-sm tracking-tight">{repoKey}</span>
+          <span className="font-mono text-[10px] text-outline">
+            {prs.length} {prs.length === 1 ? 'PR' : 'PRS'}
+          </span>
         </div>
         <span className="font-mono text-[10px] text-outline">
           TOGGLE [SPACE]
         </span>
       </summary>
       <div className="mt-2">
-        {prs.map((pr, i) => (
-          <PRRow
-            key={pr.id}
-            pr={pr}
-            globalIndex={startIndex + i}
-            selectedIndex={selectedIndex}
-          />
-        ))}
+        {!collapsed &&
+          prs.map((pr, i) => (
+            <PRRow
+              key={pr.id}
+              pr={pr}
+              globalIndex={startIndex + i}
+              selectedIndex={selectedIndex}
+            />
+          ))}
       </div>
     </details>
   );
@@ -183,7 +239,10 @@ export function PRListTable({
     appStore,
     (state: UIState) => state.selectedPRIndex,
   );
-  const prListView = useStore(settingsStore, (s) => s.prList.view);
+  const collapsedRepoKeys = useStore(
+    appStore,
+    (state: UIState) => state.collapsedRepoKeys,
+  );
   const repos = useStore(appStore, (state: UIState) => state.repos);
 
   if (isLoading) {
@@ -222,45 +281,28 @@ export function PRListTable({
     );
   }
 
-  if (prListView === 'grouped') {
-    const groups = new Map<string, PR[]>();
-    for (const pr of visiblePRs) {
-      const key = `${pr.owner}/${pr.repo}`;
-      const existing = groups.get(key);
-      if (existing) existing.push(pr);
-      else groups.set(key, [pr]);
-    }
-    let cursor = 0;
-    return (
-      <div className="space-y-0">
-        {Array.from(groups.entries()).map(([repoKey, repoPRs], idx) => {
-          const start = cursor;
-          cursor += repoPRs.length;
-          return (
-            <PRGroup
-              key={repoKey}
-              title={repoKey}
-              prs={repoPRs}
-              startIndex={start}
-              selectedIndex={selectedIndex}
-              accent={idx === 0}
-            />
-          );
-        })}
-      </div>
-    );
-  }
+  const groups = groupPRsByRepo(visiblePRs);
+  let cursor = 0;
 
   return (
     <div className="space-y-0">
-      {visiblePRs.map((pr, idx) => (
-        <PRRow
-          key={pr.id}
-          pr={pr}
-          globalIndex={idx}
-          selectedIndex={selectedIndex}
-        />
-      ))}
+      {groups.map(([repoKey, repoPRs], idx) => {
+        const collapsed = collapsedRepoKeys.includes(repoKey);
+        const start = cursor;
+        // Collapsed group = one header cursor row; expanded = one row per PR.
+        cursor += collapsed ? 1 : repoPRs.length;
+        return (
+          <PRGroup
+            key={repoKey}
+            repoKey={repoKey}
+            prs={repoPRs}
+            collapsed={collapsed}
+            startIndex={start}
+            selectedIndex={selectedIndex}
+            accent={idx === 0}
+          />
+        );
+      })}
     </div>
   );
 }

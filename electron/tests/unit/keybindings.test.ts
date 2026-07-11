@@ -127,7 +127,7 @@ describe('DEFAULT_KEYBINDINGS', () => {
       'list.search': '/',
       'list.filter': 'f',
       'list.openBrowser': 'o',
-      'list.preview': 'Space',
+      'list.toggleGroup': 'Space',
       'list.draft': 'd',
       'list.mute': 'm',
       'list.star': 's',
@@ -251,6 +251,61 @@ describe('binding actions', () => {
     const store = makeStore({ selectedPRIndex: 2 });
     byId('list.down').action(makeCtx(store));
     expect(store.state.selectedPRIndex).toBe(3);
+  });
+
+  it('j clamps at the last visible row', () => {
+    const store = makeStore({
+      selectedPRIndex: 2,
+      visiblePRIds: ['a', 'b', 'c'],
+    });
+    byId('list.down').action(makeCtx(store));
+    expect(store.state.selectedPRIndex).toBe(2);
+  });
+
+  it('Control+D clamps at the last visible row', () => {
+    const store = makeStore({
+      selectedPRIndex: 1,
+      visiblePRIds: ['a', 'b', 'c'],
+    });
+    byId('list.pageDown').action(makeCtx(store));
+    expect(store.state.selectedPRIndex).toBe(2);
+  });
+
+  it('Space toggles the repo group under the cursor', () => {
+    const store = makeStore({
+      selectedPRIndex: 1,
+      visiblePRIds: ['pr-1', 'pr-2', 'pr-3'],
+      visiblePRRepoKeys: ['acme/widgets', 'acme/widgets', 'acme/api'],
+    });
+    byId('list.toggleGroup').action(makeCtx(store));
+    expect(store.state.collapsedRepoKeys).toEqual(['acme/widgets']);
+    // Cursor moves to the group's first row (the header once collapsed).
+    expect(store.state.selectedPRIndex).toBe(0);
+  });
+
+  it('Space expands a collapsed group and keeps the cursor on its first row', () => {
+    const store = makeStore({
+      selectedPRIndex: 0,
+      collapsedRepoKeys: ['acme/widgets'],
+      visiblePRIds: ['', 'pr-3'],
+      visiblePRRepoKeys: ['acme/widgets', 'acme/api'],
+    });
+    byId('list.toggleGroup').action(makeCtx(store));
+    expect(store.state.collapsedRepoKeys).toEqual([]);
+    expect(store.state.selectedPRIndex).toBe(0);
+  });
+
+  it('Enter on a collapsed group header expands it instead of navigating', () => {
+    mockNavigate.mockClear();
+    const store = makeStore({
+      selectedPRIndex: 0,
+      collapsedRepoKeys: ['acme/widgets'],
+      visiblePRIds: ['', 'pr-3'],
+      visiblePRRepoKeys: ['acme/widgets', 'acme/api'],
+    });
+    byId('list.open').action(makeCtx(store));
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(store.state.collapsedRepoKeys).toEqual([]);
   });
 
   it('k moves to the previous PR and clamps at 0', () => {

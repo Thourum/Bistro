@@ -3,31 +3,39 @@
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PRListTable } from '../../src/renderer/components/PRListTable';
+import {
+  PRListTable,
+  visiblePRListRows,
+} from '../../src/renderer/components/PRListTable';
 import * as storeModule from '../../src/renderer/store';
-import { settingsStore } from '../../src/renderer/store/settings';
 import type { PR } from '../../src/renderer/types';
 
 expect.extend(matchers);
 
 const mockPR: PR = {
   id: 'github-1',
-  provider_id: 'github:default',
+  provider: 'github',
   owner: 'acme',
   repo: 'widgets',
   number: 42,
   title: 'Fix auth bug',
+  body: '',
   author: 'alice',
   state: 'open' as const,
-  review_status: 'pending',
   created_at: '2025-04-08T10:00:00Z',
   updated_at: '2025-04-08T14:00:00Z',
+  merged_at: null,
   base_branch: 'main',
   head_branch: 'fix/auth',
-  additions: 10,
-  deletions: 2,
-  changed_files: 3,
-  body: '',
+  base_sha: 'base-sha',
+  head_sha: 'head-sha',
+  comment_count: 0,
+  ci_status: null,
+  draft: 0,
+  review_status: 'pending',
+  approved_by: null,
+  changes_requested_by: null,
+  requested_reviewers: [],
 };
 
 const mockStore = {
@@ -38,6 +46,7 @@ const mockStore = {
     filterState: 'open' as const,
     sortBy: 'updated' as const,
     searchQuery: '',
+    collapsedRepoKeys: [] as string[],
   },
   subscribe: vi.fn(() => () => {}),
 };
@@ -47,12 +56,6 @@ describe('PRListTable', () => {
     vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue(
       mockStore as unknown as typeof storeModule.appStore,
     );
-
-    // Ensure flat view.
-    settingsStore.setState((s) => ({
-      ...s,
-      prList: { ...s.prList, view: 'flat' },
-    }));
   });
 
   afterEach(() => {
@@ -75,6 +78,68 @@ describe('PRListTable', () => {
     render(<PRListTable prs={[mockPR]} isLoading={false} error={null} />);
     const btn = screen.getByRole('button', { name: /Fix auth bug/ });
     expect(btn).toBeInTheDocument();
+  });
+
+  it('groups PR rows by repository', () => {
+    const otherPR = {
+      ...mockPR,
+      id: 'github-2',
+      repo: 'api',
+      number: 43,
+      title: 'Add endpoint',
+    };
+    const laterWidgetPR = {
+      ...mockPR,
+      id: 'github-3',
+      number: 44,
+      title: 'Fix widget tests',
+    };
+
+    render(
+      <PRListTable
+        prs={[mockPR, otherPR, laterWidgetPR]}
+        isLoading={false}
+        error={null}
+      />,
+    );
+
+    expect(screen.getByText('acme/widgets')).toBeInTheDocument();
+    expect(screen.getByText('2 PRS')).toBeInTheDocument();
+    expect(screen.getByText('acme/api')).toBeInTheDocument();
+    expect(screen.getByText('1 PR')).toBeInTheDocument();
+  });
+
+  it('exposes the rendered repo-grouped order for keyboard navigation', () => {
+    const otherPR = { ...mockPR, id: 'github-2', repo: 'api' };
+    const laterWidgetPR = { ...mockPR, id: 'github-3', number: 44 };
+
+    expect(
+      visiblePRListRows([mockPR, otherPR, laterWidgetPR], []).map(
+        (r) => r.pr?.id,
+      ),
+    ).toEqual(['github-1', 'github-3', 'github-2']);
+  });
+
+  it('collapses a repo group to a single header row', () => {
+    const otherPR = { ...mockPR, id: 'github-2', repo: 'api' };
+    const laterWidgetPR = { ...mockPR, id: 'github-3', number: 44 };
+
+    const rows = visiblePRListRows(
+      [mockPR, otherPR, laterWidgetPR],
+      ['acme/widgets'],
+    );
+    expect(rows).toEqual([
+      { pr: null, repoKey: 'acme/widgets' },
+      { pr: otherPR, repoKey: 'acme/api' },
+    ]);
+  });
+
+  it('hides PR rows of a collapsed group', () => {
+    mockStore.state.collapsedRepoKeys = ['acme/widgets'];
+    render(<PRListTable prs={[mockPR]} isLoading={false} error={null} />);
+    expect(screen.queryByText('Fix auth bug')).not.toBeInTheDocument();
+    expect(screen.getByText('acme/widgets')).toBeInTheDocument();
+    mockStore.state.collapsedRepoKeys = [];
   });
 
   it('shows loading state', () => {
