@@ -1124,6 +1124,12 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 	}
 
 	// Phase 3: Write to SQLite (batched transactions)
+	// improve: Phase 2→3 is a full barrier — no PR row is written until every
+	// PR's details have been fetched, so one slow PR (bounded by
+	// perPRFetchTimeout) delays visibility of all the fast ones. If first-paint
+	// latency on large watch lists ever matters, stream results: write each
+	// PRFetchResult as its worker finishes (writer batches of 1..N), keeping
+	// the single-writer discipline but dropping the barrier.
 	if len(fetchedPRs) > 0 {
 		log.Debug("phase write-db start", "pr_count", len(fetchedPRs))
 		phaseStart := time.Now()
