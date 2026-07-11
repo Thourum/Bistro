@@ -56,16 +56,17 @@ func TestCloneEmptyHeadSHA(t *testing.T) {
 }
 
 func TestCloneWithCachedRepo(t *testing.T) {
+	remoteDir := t.TempDir()
+	_, baseSHA, headSHA := buildRemoteWithPRRef(t, remoteDir, 1)
 	cache := NewCache()
 
-	// Cache hits are only honored when the path still exists on disk, so the
-	// cached entry must point at a real directory (mirrors a live clone).
-	cachedDir := t.TempDir()
+	// Cache hits are only honored when the path still exists on disk and contains
+	// the requested commits, so point at a real repo that has both SHAs.
 	entry := &RepoEntry{
-		URL:       "https://github.com/org/repo",
-		LocalPath: cachedDir,
-		BaseSHA:   "base123",
-		HeadSHA:   "head456",
+		URL:       "file://" + remoteDir,
+		LocalPath: remoteDir,
+		BaseSHA:   baseSHA,
+		HeadSHA:   headSHA,
 	}
 	cache.Set(entry.URL, entry.BaseSHA, entry.HeadSHA, entry)
 
@@ -77,8 +78,8 @@ func TestCloneWithCachedRepo(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.LocalPath != cachedDir {
-		t.Errorf("expected cached path %s, got %s", cachedDir, result.LocalPath)
+	if result.LocalPath != remoteDir {
+		t.Errorf("expected cached path %s, got %s", remoteDir, result.LocalPath)
 	}
 }
 
@@ -137,14 +138,15 @@ func TestLocalRepoExists(t *testing.T) {
 }
 
 func TestCloneCachesResult(t *testing.T) {
+	remoteDir := t.TempDir()
+	_, baseSHA, headSHA := buildRemoteWithPRRef(t, remoteDir, 2)
 	cache := NewCache()
 
-	cachedDir := t.TempDir()
 	entry := &RepoEntry{
-		URL:       "https://github.com/org/cached-repo",
-		LocalPath: cachedDir,
-		BaseSHA:   "abc",
-		HeadSHA:   "def",
+		URL:       "file://" + remoteDir,
+		LocalPath: remoteDir,
+		BaseSHA:   baseSHA,
+		HeadSHA:   headSHA,
 	}
 	cache.Set(entry.URL, entry.BaseSHA, entry.HeadSHA, entry)
 
@@ -156,11 +158,11 @@ func TestCloneCachesResult(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.BaseSHA != "abc" {
-		t.Errorf("expected BaseSHA abc, got %s", result.BaseSHA)
+	if result.BaseSHA != baseSHA {
+		t.Errorf("expected BaseSHA %s, got %s", baseSHA, result.BaseSHA)
 	}
-	if result.HeadSHA != "def" {
-		t.Errorf("expected HeadSHA def, got %s", result.HeadSHA)
+	if result.HeadSHA != headSHA {
+		t.Errorf("expected HeadSHA %s, got %s", headSHA, result.HeadSHA)
 	}
 }
 

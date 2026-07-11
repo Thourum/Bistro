@@ -218,6 +218,40 @@ func TestCloneLocalRemoteMismatchRecordsRemoteMismatchStatus(t *testing.T) {
 	assertCacheRootUntouched(t, cacheRoot)
 }
 
+func TestCloneUsesNormalizedIdentityForRepoLockKey(t *testing.T) {
+	// Arrange
+	t.Setenv("BISTRO_REPO_DIR", "")
+	const httpsURL = "https://github.com/Acme/API.git"
+	const sshURL = "git@github.com:acme/api.git"
+
+	// Act
+	httpsKey := repoLockKey(httpsURL)
+	sshKey := repoLockKey(sshURL)
+
+	// Assert
+	if httpsKey != sshKey {
+		t.Fatalf("expected equivalent remotes to share lock key, got %q and %q", httpsKey, sshKey)
+	}
+	if httpsKey != "github:acme/api" {
+		t.Fatalf("expected normalized identity lock key, got %q", httpsKey)
+	}
+}
+
+func TestCloneUsesRawRepoURLForLockKeyWithBistroRepoDir(t *testing.T) {
+	// Arrange
+	overrideDir := t.TempDir()
+	t.Setenv("BISTRO_REPO_DIR", overrideDir)
+	const repoURL = "git@github.com:acme/api.git"
+
+	// Act
+	lockKey := repoLockKey(repoURL)
+
+	// Assert
+	if lockKey != repoURL {
+		t.Fatalf("expected env override to use raw repo URL lock key, got %q", lockKey)
+	}
+}
+
 func TestCloneLocalBistroRepoDirSkipsResolver(t *testing.T) {
 	// Arrange
 	fixture := newLocalFetchFixture(t)

@@ -279,10 +279,21 @@ func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA
 	if c.locks == nil {
 		return result, operation()
 	}
-	if err := c.locks.WithRepo(repoURL, operation); err != nil {
+	if err := c.locks.WithRepo(repoLockKey(repoURL), operation); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+func repoLockKey(repoURL string) string {
+	if os.Getenv("BISTRO_REPO_DIR") != "" {
+		return repoURL
+	}
+	identity, err := ParseRemoteURL(repoURL)
+	if err != nil {
+		return repoURL
+	}
+	return identity.ID()
 }
 
 func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, error) {
@@ -297,45 +308,12 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 	// go-git's misleading "repository does not exist" on the next diff. If the dir is
 	// gone, drop the stale entry and fall through to a fresh clone.
 	if cached, ok := c.cache.Get(repoURL, baseSHA, headSHA); ok {
-		if localRepoExists(cached.LocalPath) {
-			// A cache hit is keyed only on base+head SHA, so it can predate a
-			// caller that now also needs RequiredSHAs (e.g. anchor-resolution
-			// commit SHAs). Returning such a hit blindly would let anchoring
-			// silently degrade on a clone — typically a prior targeted shallow
-			// fetch — that lacks those commits. Verify them before trusting it;
-			// if any are missing, drop the entry and re-clone so the broad path
-			// can fetch full history.
-			if opts != nil && len(opts.RequiredSHAs) > 0 {
-				if missing, err := firstMissingCommit(cached.LocalPath, opts.RequiredSHAs); err != nil {
-					log.Warn("git clone cache hit unverifiable; re-cloning",
-						"local_path", cached.LocalPath, "error", err)
-					c.cache.Clear(repoURL, baseSHA, headSHA)
-				} else if missing != "" {
-					log.Debug("git clone cache hit missing a required commit; re-cloning",
-						"local_path", cached.LocalPath, "missing_sha", truncateSHAForLog(missing))
-					c.cache.Clear(repoURL, baseSHA, headSHA)
-				} else {
-					log.Debug("git clone cache hit (required SHAs verified)", "local_path", cached.LocalPath)
-					c.recordCacheCloned(repoURL, cached.LocalPath)
-					return &CloneResult{
-						LocalPath: cached.LocalPath,
-						BaseSHA:   cached.BaseSHA,
-						HeadSHA:   cached.HeadSHA,
-					}, nil
-				}
-			} else {
-				log.Debug("git clone cache hit", "local_path", cached.LocalPath)
-				c.recordCacheCloned(repoURL, cached.LocalPath)
-				return &CloneResult{
-					LocalPath: cached.LocalPath,
-					BaseSHA:   cached.BaseSHA,
-					HeadSHA:   cached.HeadSHA,
-				}, nil
-			}
-		} else {
-			log.Warn("git clone cache entry points at a missing directory; re-cloning",
-				"local_path", cached.LocalPath)
-			c.cache.Clear(repoURL, baseSHA, headSHA)
+		if c.validateCacheHit(log, repoURL, baseSHA, headSHA, cached, opts) {
+			return &CloneResult{
+				LocalPath: cached.LocalPath,
+				BaseSHA:   cached.BaseSHA,
+				HeadSHA:   cached.HeadSHA,
+			}, nil
 		}
 	}
 
@@ -431,6 +409,50 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 		"local_path", tmpDir,
 	)
 	return result, nil
+}
+
+func (c *Client) validateCacheHit(
+	log *slog.Logger,
+	repoURL string,
+	baseSHA string,
+	headSHA string,
+	cached *RepoEntry,
+	opts *CloneOptions,
+) bool {
+	if !localRepoExists(cached.LocalPath) {
+		log.Warn("git clone cache entry points at a missing directory; re-cloning",
+			"local_path", cached.LocalPath)
+		c.cache.Clear(repoURL, baseSHA, headSHA)
+		return false
+	}
+
+	required := cacheHitRequiredSHAs(baseSHA, headSHA, opts)
+	missing, err := firstMissingCommit(cached.LocalPath, required)
+	if err != nil {
+		log.Warn("git clone cache hit unverifiable; re-cloning",
+			"local_path", cached.LocalPath, "error", err)
+		c.cache.Clear(repoURL, baseSHA, headSHA)
+		return false
+	}
+	if missing != "" {
+		log.Debug("git clone cache hit missing a required commit; re-cloning",
+			"local_path", cached.LocalPath, "missing_sha", truncateSHAForLog(missing))
+		c.cache.Clear(repoURL, baseSHA, headSHA)
+		return false
+	}
+
+	log.Debug("git clone cache hit (commits verified)", "local_path", cached.LocalPath)
+	c.recordCacheCloned(repoURL, cached.LocalPath)
+	return true
+}
+
+func cacheHitRequiredSHAs(baseSHA, headSHA string, opts *CloneOptions) []string {
+	required := make([]string, 0, 2)
+	required = append(required, baseSHA, headSHA)
+	if opts != nil {
+		required = append(required, opts.RequiredSHAs...)
+	}
+	return required
 }
 
 // targetedClone attempts a bare init + remote + shallow fetch of only the PR
