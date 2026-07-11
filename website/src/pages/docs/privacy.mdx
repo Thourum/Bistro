@@ -1,12 +1,19 @@
-# Local-first privacy notes for v0.1
+---
+title: Local-first privacy
+description: What stays on your machine, what talks to GitHub, and how Bistro handles tokens and telemetry.
+---
+
+# Local-first privacy
 
 Bistro is a local-first desktop app for GitHub pull request review. In v0.1, the
 open-source review path has no required Bistro-operated server: the Go sync
 engine talks to GitHub, stores review data on your machine, generates diffs
 locally, and serves the Electron UI over localhost.
 
+:::note
 This is a product explainer, not a formal security audit. The detailed internal
-source document is [`design/security-model.md`](../design/security-model.md).
+source document is `design/security-model.md` in the repository.
+:::
 
 ## What stays local
 
@@ -35,8 +42,8 @@ source document is [`design/security-model.md`](../design/security-model.md).
   Builds started with `BISTRO_ENABLE_AUTO_UPDATES=1` can check GitHub releases via
   Electron's public update service; `BISTRO_DISABLE_AUTO_UPDATES=1` disables this
   path even when packaged.
-- **Optional telemetry (BIS-41):** usage telemetry is disabled until you enable
-  Settings → Privacy → Usage Telemetry. When enabled, Bistro stores an anonymous
+- **Optional telemetry:** usage telemetry is disabled until you enable
+  **Settings → Privacy → Usage Telemetry**. When enabled, Bistro stores an anonymous
   install ID plus allowlisted product events under Electron `userData/telemetry/`
   and can POST them to `BISTRO_TELEMETRY_ENDPOINT` when that endpoint is
   configured. The allowlist is limited to `app_started`, `settings_updated`,
@@ -48,9 +55,11 @@ source document is [`design/security-model.md`](../design/security-model.md).
 - **Optional user-configured providers:** if future builds let you configure other
   services, those integrations should be documented where they are added.
 
+:::info
 Bistro's privacy claim is not that data never leaves your computer. The claim is
 that the open-source review path does not require a Bistro-hosted server between
 you and GitHub.
+:::
 
 ## Tokens and credentials
 
@@ -94,7 +103,7 @@ When reporting a bug, include the Bistro version or commit SHA, operating system
 and a redacted log excerpt around the failure. Do not include private repository
 contents unless you intentionally choose to share them.
 
-For report templates and the feedback path, see [`docs/FEEDBACK.md`](FEEDBACK.md).
+For report templates and the feedback path, see [Feedback](/docs/feedback).
 
 ## Current limits
 

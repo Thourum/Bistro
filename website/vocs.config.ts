@@ -15,6 +15,18 @@ export default defineConfig({
         text: 'Welcome',
         link: '/docs',
       },
+      {
+        text: 'Keybindings',
+        link: '/docs/keybindings',
+      },
+      {
+        text: 'Local-first privacy',
+        link: '/docs/privacy',
+      },
+      {
+        text: 'Feedback',
+        link: '/docs/feedback',
+      },
     ],
   },
   topNav: [{ text: 'Docs', link: '/docs', match: '/docs' }],

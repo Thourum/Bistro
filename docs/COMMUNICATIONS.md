@@ -70,8 +70,8 @@ triage, open, navigate, comment, approve, and request changes.
 - `design/keyboard-bindings.md` — user-facing source for keyboard reference
   content until a generated website page exists.
 - `design/security-model.md` — source material for public privacy/security copy.
-- `docs/FEEDBACK.md` — public launch feedback path and triage expectations.
-- `docs/LOCAL-FIRST-PRIVACY.md` — public local-first privacy explainer.
+- `website/src/pages/docs/feedback.mdx` — public launch feedback path and triage expectations.
+- `website/src/pages/docs/privacy.mdx` — public local-first privacy explainer.
 
 ### Near-term documentation work
 
@@ -84,11 +84,11 @@ triage, open, navigate, comment, approve, and request changes.
 3. **Public status page.** Add a compact "what works now" section or page before
    launch so early users know which workflows are ready, which require source
    setup, and which are roadmap items.
-4. **Feedback loop docs.** `docs/FEEDBACK.md` and the GitHub issue templates now
+4. **Feedback loop docs.** `website/src/pages/docs/feedback.mdx` and the GitHub issue templates now
    give users a launch feedback path for bugs, usability issues, docs fixes, and
    feature requests, with prompts for OS, app version/commit, provider, logs, and
    reproduction steps.
-5. **Security/privacy explainer.** `docs/LOCAL-FIRST-PRIVACY.md` condenses the
+5. **Security/privacy explainer.** `website/src/pages/docs/privacy.mdx` condenses the
    security model into public docs: GitHub OAuth, OS keychain storage, local
    SQLite cache, local git/diff work, and optional provider calls only when
    configured.
@@ -135,7 +135,7 @@ triage, open, navigate, comment, approve, and request changes.
   source-run requirements, and known rough edges.
 - Capture fresh screenshots from the current app state.
 - Prepare issue templates for bugs, docs fixes, and feedback.
-- Keep `docs/FEEDBACK.md` and the issue templates aligned with the launch support
+- Keep `website/src/pages/docs/feedback.mdx` and the issue templates aligned with the launch support
   capacity and current run mode.
 - Publish a contributor path: setup, architecture, first issue, verification
   commands, and review expectations.
@@ -182,9 +182,9 @@ triage, open, navigate, comment, approve, and request changes.
   keep them current when commands, runtime versions, or repo structure change.
 - Website implementation has not started yet; `website/PLAN.md` is the current
   grounded content plan.
-- Public docs now include a concise feedback/reporting path in `docs/FEEDBACK.md`.
+- Public docs now include a concise feedback/reporting path in `website/src/pages/docs/feedback.mdx`.
 - Public docs now include a short privacy/security explainer in
-  `docs/LOCAL-FIRST-PRIVACY.md`, derived from the detailed security model.
+  `website/src/pages/docs/privacy.mdx`, derived from the detailed security model.
 - Keyboard reference content exists; the website plan now names
   `design/keyboard-bindings.md` as the source of truth until a generated page
   exists.

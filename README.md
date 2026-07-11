@@ -96,7 +96,8 @@ Press `?` anytime to see what your keyboard can do.
 
 ## Keyboard shortcuts
 
-Bistro's default bindings are documented in [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
+Bistro's default bindings are documented on the docs site
+([website/src/pages/docs/keybindings.mdx](website/src/pages/docs/keybindings.mdx)).
 Inside the app, press `?` for the context-aware help overlay or `:` for the
 command palette. Custom bindings are stored locally in `settings.json` and are
 reflected in the footer legend and help overlay.
@@ -120,12 +121,13 @@ feature plan and project status live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 Bistro is local-first, not cloud-hosted: the open-source app stores PR data in a
 local SQLite cache, stores GitHub tokens in the OS keychain, generates diffs on
-your machine, and talks directly to GitHub for sync and review actions. See
-[docs/LOCAL-FIRST-PRIVACY.md](docs/LOCAL-FIRST-PRIVACY.md) for the public privacy
-explainer.
+your machine, and talks directly to GitHub for sync and review actions. See the
+privacy explainer on the docs site
+([website/src/pages/docs/privacy.mdx](website/src/pages/docs/privacy.mdx)).
 
 Launch feedback belongs in GitHub issues or discussions so it can be triaged into
-bugs, docs fixes, and roadmap requests. See [docs/FEEDBACK.md](docs/FEEDBACK.md)
+bugs, docs fixes, and roadmap requests. See the feedback guide
+([website/src/pages/docs/feedback.mdx](website/src/pages/docs/feedback.mdx))
 before sharing logs or private repository context.
 
 ## Developed by

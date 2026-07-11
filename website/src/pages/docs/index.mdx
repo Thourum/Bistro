@@ -1,5 +1,34 @@
+---
+title: Bistro Docs
+description: Documentation for Bistro, a keyboard-first, local-first GitHub PR review app.
+---
+
 # Bistro Docs
 
-Welcome to the Bistro documentation site.
+Bistro is a **keyboard-first, local-first** GitHub pull request review app for
+desktop. Review PRs at the speed of thought — no browser, no mouse.
 
-Bistro is a keyboard-first, local-first GitHub pull request review app for desktop.
+Everything runs on your machine: a Go sync engine talks to GitHub, caches PR
+data in local SQLite, and generates diffs locally; the Electron UI renders your
+review inbox over localhost.
+
+## Guides
+
+- **[Keybindings](/docs/keybindings)** — every default shortcut, plus how to
+  remap or disable them.
+- **[Local-first privacy](/docs/privacy)** — what stays on your machine, what
+  talks to GitHub, and how tokens and telemetry are handled.
+- **[Feedback](/docs/feedback)** — how to file bug reports, performance reports,
+  and feature requests that maintainers can act on.
+
+## Quick start
+
+Bistro is source-run first while release packaging is pending:
+
+```bash
+git clone https://github.com/Itterno/Bistro.git
+cd Bistro/electron && pnpm install && pnpm start
+```
+
+See the [repository README](https://github.com/Itterno/Bistro) for OAuth setup
+and configuration details.
