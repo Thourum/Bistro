@@ -131,7 +131,7 @@ When the Go engine needs repository objects for a PR:
 5. If no local repo is configured for the repo, use today's managed cache clone path.
 6. Cache clones update the repo row with `source='cache'`, `local_path=<cache path>`, and `last_used_at=now`.
 
-The existing `BISTRO_REPO_DIR` behavior remains the cache-root override.
+The cache root is always `os.UserCacheDir()/bistro/repos`; the existing `BISTRO_REPO_DIR` env var remains only as a development/testing override, not something the product or user sets.
 
 ## Onboarding and startup scan
 
@@ -230,7 +230,7 @@ The card shows:
   - last used;
   - remove action, e.g. a trash icon, for deleting one cached repo from disk.
 
-The managed cache root is the existing default: `BISTRO_REPO_DIR` when set, otherwise `os.UserCacheDir()/bistro/repos`. Cache clones are laid out as `<cache-root>/<owner>/<repo>` (existing clones at legacy flat paths are still recognized by their registered `local_path`).
+The managed cache root is `os.UserCacheDir()/bistro/repos`. Cache clones are laid out as `<cache-root>/<owner>/<repo>` (existing clones at legacy flat paths are still recognized by their registered `local_path`). `BISTRO_REPO_DIR` is a development/testing override only, not a product-level cache location.
 
 "Clear all cached repos" means all Bistro-owned directories under the canonical managed cache root, including registered cache repos and safe orphan cache folders that match Bistro's expected owner/repo directory scheme. It does not delete anything outside the cache root and does not delete dev-folder repos.
 
