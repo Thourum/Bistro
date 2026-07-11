@@ -276,12 +276,8 @@ func TestCloneLocalBistroRepoDirSkipsResolver(t *testing.T) {
 	if resolver.localPathCalls != 0 {
 		t.Fatalf("expected resolver not consulted, got %d calls", resolver.localPathCalls)
 	}
-	if len(resolver.cacheClonedCalls) != 1 {
-		t.Fatalf("expected env override cache clone callback, got %#v", resolver.cacheClonedCalls)
-	}
-	cacheCloned := resolver.cacheClonedCalls[0]
-	if cacheCloned.repoURL != "file://"+fixture.upstreamPath || cacheCloned.path != result.LocalPath {
-		t.Fatalf("unexpected cache-cloned callback: %#v", cacheCloned)
+	if len(resolver.cacheClonedCalls) != 0 {
+		t.Fatalf("expected env override to skip cache clone callbacks, got %#v", resolver.cacheClonedCalls)
 	}
 }
 
