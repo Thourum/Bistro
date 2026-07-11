@@ -160,10 +160,9 @@ func generateDiffFromRepo(repo *gitlib.Repository, baseSHA, headSHA string) (*Di
 			result.Profile.TooLargeFiles++
 		}
 
-		added, removed := 0, 0
-		if patchToStore != "" {
-			added, removed = countLines(patchToStore)
-		}
+		// Count from the full patch so truncated/binary files still report
+		// accurate line stats even though patchToStore is cleared.
+		added, removed := countLines(patchStr)
 
 		diffFile := &DiffFile{
 			Path:         path,

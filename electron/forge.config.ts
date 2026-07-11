@@ -10,10 +10,14 @@ const config: ForgeConfig = {
     appBundleId: 'app.bistro.review',
     executableName: 'Bistro',
     name: 'Bistro',
+    icon: ['assets/icon.icns', 'assets/icon.icon'],
     asar: true,
   },
   rebuildConfig: {},
-  makers: [new MakerZIP({}, ['darwin', 'linux', 'win32']), new MakerDMG({})],
+  makers: [
+    new MakerZIP({}, ['darwin', 'linux', 'win32']),
+    new MakerDMG({ icon: 'assets/icon.icns' }),
+  ],
   publishers: [
     new PublisherGithub({
       repository: {

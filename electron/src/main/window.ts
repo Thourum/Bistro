@@ -10,9 +10,16 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 let mainWindow: BrowserWindow | null = null;
 
 export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
+  const iconPath = join(app.getAppPath(), 'assets/icon.png');
+
+  if (process.platform === 'darwin') {
+    app.dock?.setIcon(iconPath);
+  }
+
   mainWindow = new BrowserWindow({
     width: config.windowWidth,
     height: config.windowHeight,
+    icon: iconPath,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     trafficLightPosition: { x: 14, y: 10 },
     titleBarOverlay: {

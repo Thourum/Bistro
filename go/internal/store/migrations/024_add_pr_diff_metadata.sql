@@ -21,3 +21,7 @@ ALTER TABLE pr_diffs ADD COLUMN patch_bytes INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE pr_diffs ADD COLUMN hunk_count INTEGER NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS idx_pr_diffs_pr_id ON pr_diffs(pr_id);
+
+-- Backfill stats for rows written before these columns existed.
+-- hunk_count 0 is treated as "unknown" for pre-migration rows.
+UPDATE pr_diffs SET patch_bytes = length(patch) WHERE patch_bytes = 0 AND length(patch) > 0;
