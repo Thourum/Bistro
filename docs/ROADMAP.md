@@ -488,7 +488,13 @@ Used when a comment doesn't match a vendor-specific rule (humans, unknown bots, 
 - Each source is expandable individually.
 - The most severe rating in the group becomes the group's severity.
 
-### 3.7 PR spam / slop detection
+### 3.7 PR spam / slop detection — **deferred to Team plan (2026-07-12)**
+
+> **Deferred (2026-07-12).** Two of the five signals need data FOSS doesn't
+> sync: commit messages (no commits table) and contributor account age (author
+> account created-date isn't fetched). Rather than adding sync surface for a
+> single feature, slop scoring moves to the Team plan where it can be computed
+> server-side with complete data. The acceptance below is kept for that scope.
 
 **Why it matters.** OSS maintainers in 2025 reported being overwhelmed by AI-generated PRs that look plausible but are slop. curl shut down its bug bounty for this reason.
 
@@ -752,8 +758,9 @@ Everything left between here and FOSS v1.0, in rough dependency order. Done work
 - [ ] Wire a local repo path into the range-diff handler so 2.1/2.2 stop always degrading
 
 **Phase 3 — classification (not started, the wedge)**
-- [ ] 3.1 schema + 3.2 bot identification + 3.3 rules engine + 3.4 heuristics (spec/plan in git history)
-- [ ] 3.5 bulk ops, 3.6 dedup, 3.7 slop score, 3.8 BYOK
+- [ ] 3.1 schema + 3.2 bot identification + 3.3 rules engine + 3.4 heuristics
+- [ ] 3.5 bulk ops, 3.6 dedup, 3.8 BYOK (3.7 slop score deferred to Team plan, 2026-07-12)
+- Spec for all of the above: `docs/superpowers/specs/2026-07-12-comment-classification-design.md`
 
 **Phase 4 — expertise (not started, now unblocked by migration 022)**
 - [ ] 4.1 scoring engine + `file_expertise` table
