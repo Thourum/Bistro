@@ -10,7 +10,7 @@ import type { PR, RepoInfo } from '../types';
 import { PRListTable } from './PRListTable';
 
 const navigateMock = vi.fn();
-const requestMock = vi.fn();
+const requestMock = vi.fn(() => Promise.resolve({ repos: [] }));
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
@@ -65,10 +65,22 @@ describe('PRListTable degraded repositories', () => {
   beforeEach(() => {
     navigateMock.mockReset();
     requestMock.mockReset();
+    requestMock.mockResolvedValue({ repos: [] });
     appStore.setState(() => ({
       ...initialUIState,
       repos: [degradedRepo],
     }));
+  });
+
+  it('requests repos so direct PR list loads can render degraded repo rows', () => {
+    appStore.setState((state) => ({
+      ...state,
+      repos: [],
+    }));
+
+    render(<PRListTable prs={[pr]} isLoading={false} error={null} />);
+
+    expect(requestMock).toHaveBeenCalledWith('REQUEST_REPO_LIST', {});
   });
 
   it('grays out degraded repo rows and opens recovery actions', async () => {
@@ -79,7 +91,7 @@ describe('PRListTable degraded repositories', () => {
       screen.getByText('folder not found: /Users/sam/dev/api'),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /open recovery for acme\/api/i })
+      screen.getByRole('button', { name: /open PR #42 in acme\/api/i })
         .parentElement,
     ).toHaveClass('opacity-60');
 
@@ -93,5 +105,26 @@ describe('PRListTable degraded repositories', () => {
     expect(
       screen.getByText(/Repo acme\/api could not sync/i),
     ).toBeInTheDocument();
+  });
+
+  it('keeps the degraded row button navigation label aligned with its action', async () => {
+    const user = userEvent.setup();
+    render(<PRListTable prs={[pr]} isLoading={false} error={null} />);
+
+    expect(
+      screen.queryByRole('button', { name: /open recovery for acme\/api/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: /open PR #42 in acme\/api/i }),
+    );
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: '/prs/$prId',
+      params: { prId: 'pr-1' },
+    });
+    expect(
+      screen.queryByRole('dialog', { name: /recover repository/i }),
+    ).not.toBeInTheDocument();
   });
 });

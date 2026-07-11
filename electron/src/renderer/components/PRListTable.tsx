@@ -1,7 +1,9 @@
 import { useNavigate } from '@tanstack/react-router';
+import { ResultAsync } from 'neverthrow';
 import type React from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../hooks/useStore';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import { toggleRepoGroup } from '../store/ui';
@@ -129,9 +131,7 @@ function PRRow({
       <button
         type="button"
         onClick={open}
-        aria-label={
-          isDegraded ? `Open recovery for ${pr.owner}/${pr.repo}` : undefined
-        }
+        aria-label={`Open PR #${pr.number} in ${pr.owner}/${pr.repo}`}
         className={[
           'grid grid-cols-[24px_60px_1fr_120px_100px] items-center gap-4 py-3 px-4 w-full text-left',
           'cursor-crosshair transition-colors border-l-2',
@@ -276,7 +276,27 @@ export function PRListTable({
     (state: UIState) => state.collapsedRepoKeys,
   );
   const repos = useStore(appStore, (state: UIState) => state.repos);
+  const { request } = useWebSocket();
   const [recoveryRepo, setRecoveryRepo] = useState<RepoInfo | null>(null);
+
+  useEffect(() => {
+    appStore.setState((state) => ({
+      ...state,
+      reposLoading: true,
+    }));
+    void ResultAsync.fromPromise(
+      request('REQUEST_REPO_LIST', {}),
+      () => null,
+    ).match(
+      () => undefined,
+      () => {
+        appStore.setState((state) => ({
+          ...state,
+          reposLoading: false,
+        }));
+      },
+    );
+  }, [request]);
 
   if (isLoading) {
     return (
