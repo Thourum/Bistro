@@ -9,25 +9,42 @@
 > 2. *`:open in browser`* upgraded to `partial` — the `o` keybinding (`list.openBrowser`) and `openExternal` IPC exist; only the palette command is missing.
 > 3. *Schema multi-tenancy (6.3)* is largely already done — `prs` carries a `provider` column with `UNIQUE(provider, owner, repo, number)`, `repos.id` is `"provider:owner/repo"`, comment IDs are opaque TEXT.
 
-> **Progress update (2026-06-12).** See `docs/UPDATE-2026-06-12.md` for the full
-> session log. Newly done: WS port handshake, migration-race fix, `:sync`.
+> **Progress update (2026-06-12).** See `docs/UPDATE-2026-06-12.md` (removed
+> 2026-07-11; in git history) for the full session log. Newly done: WS port handshake, migration-race fix, `:sync`.
 > Honestly partial: 1.6 triage (data layer complete, UI placement gaps remain)
 > and the `pr_diffs` pipeline (existed on paper, only now actually enabled).
 
 > **🔍 Audit (2026-06-19).** A multi-agent audit of the built code + Phase 1/2 plans
 > ran; 49 findings confirmed against the codebase (10 false positives dropped). Full
-> record: `docs/ROADMAP-AUDIT-2026-06-19.md`. Inline `> ⚠️ Audit:` notes below mark
+> record: `docs/ROADMAP-AUDIT-2026-06-19.md` (removed 2026-07-11; in git history). Inline `> ⚠️ Audit:` notes below mark
 > affected items. **Headlines:** Phase 2's original wording overpromised FOSS
 > completeness. BIS-31 resolved the changed-since-review strategy: FOSS records
 > **observed patchsets**, uses system `git range-diff` as a best-effort enhancement,
 > and clearly degrades to current file diff/unavailable states when local data is
-> insufficient. Complete push capture remains Team/server scope. The comment layer
+> insufficient. Complete push capture remains Team/server scope. (The audit record
+> and BIS-31 spec were removed from `docs/` on 2026-07-11 — recover from git history.) The comment layer
 > can't feed Phase 2: only issue-level comments are fetched (not inline review
 > comments), and the schema stores no commit SHA / position / resolution state.
 > Resolve/unresolve is GitHub-GraphQL-only (the stack is REST). Two active bugs in
 > shipped code were found and fixed this session (action-queue dedup, rate-limit
 > provider key). Several Phase 2/4 features need an unscheduled prerequisite: a
 > SQLite-resident current-user identity.
+
+> **🔍 Status audit (2026-07-11).** A 5-agent verification of every phase against the
+> codebase (migrations now at 025, commits through 2026-07-11). **Headlines:** Phase 2
+> is substantially **built and shipped** — patchset timeline (2.1), since-last-review
+> (2.2), files-viewed surviving rebase via content hash, the comment-anchoring backend
+> (2.3), the unresolved-threads view with GraphQL resolve/unresolve and merge-readiness
+> (2.4), comment replies, and a SQLite current-user identity (migration 022) all landed.
+> Diff size budgets landed (BIS-25, migrations 024/025). Markdown + Mermaid rendering
+> of PR bodies/comments and a Bistro design-system primitives pass shipped
+> (2026-06-24/25) — neither was on the roadmap. Opt-in usage telemetry + Sentry crash
+> capture are wired behind a consent setting. Phases 3 (classification) and 4
+> (expertise) remain **not started** — zero code hits. Notable partials: range-diff
+> always degrades today (the WS handler has no repo path at query time), and posting a
+> *new* line-level comment is still rejected even though thread replies work. Dev
+> plans/specs/audit docs were removed from `docs/` in this cleanup (git history keeps
+> them). A consolidated v1.0 checklist is at the end of this document.
 
 ## How to read this document
 
@@ -74,7 +91,7 @@ This is the existing architecture. Most of it ships in pre-v1 builds. Listed her
 | OAuth scope honesty | partial | Current spec says "minimal scopes, no write." That's incompatible with approve / comment / request-changes. Update to "scope per feature" model — see Phase 1 |
 | `@pierre/diffs` license review | not started | Verify the license terms before v1.0 ships publicly (currently `@pierre/diffs@^1.1.15`) |
 | Initial-launch SQLite migration race | done | The ready signal is only emitted after migrations complete and the WS listener is up; Electron blocks on it |
-| `pr_diffs` table size budget | not started | Add a config setting for max cache size and a vacuum strategy |
+| `pr_diffs` table size budget | done (2026-07-11) | BIS-25: diff budgets enforced, partial manifest persisted with per-file metadata + diff_status (migrations 024/025, `git/diff.go`, `sync/fetcher.go`) |
 | `repos` watched-flag UI exposure | partial | Already in schema; surface a per-repo "last sync time / error / rate-limit remaining" indicator |
 
 ---
@@ -117,13 +134,13 @@ Approve (with `a a` confirmation), request changes, post line/thread comments, e
 | Sub-feature | Status | Notes |
 |---|---|---|
 | Approve / request changes / PR-level comment | done | |
-| **Line-level / inline review comment** | not started | ⚠️ Audit: previously folded into "comment" above and assumed done. It is **not** — `provider/github/reviews.go` returns `"line-level review comments not yet supported"` when `line > 0`, and `PostComment(ctx, prID, line, body)` has no `path`/`commitSHA`/`side` params. The Provider interface must gain a `PostReviewComment(...)` before inline posting (and Phase 2.3 anchoring) can round-trip |
+| **Line-level / inline review comment** | partial (2026-07-11) | Inline threads render, and **replies to existing threads post end-to-end** (`CreateCommentInReplyTo`, reply UI in diff view). Posting a *new* line-level comment is still rejected when `line > 0` — provider lacks `path`/`commitSHA`/`side` posting |
 | `a a` double-tap confirmation | done | `keyboard.ts` |
 | Exponential backoff retry | done | `actions/executor.go` |
 | Offline action queue with replay | done | ⚠️ Audit (FIXED 2026-06-19): re-enqueuing the same `(PR, action)` hit a `PRIMARY KEY` collision and silently dropped the retry. `Enqueue` now uses `ON CONFLICT(id) DO UPDATE … status='pending', retry_count=0` |
-| **Resolve / unresolve conversation** | not started | ⚠️ Audit: requires **GraphQL** (`resolveReviewThread`/`unresolveReviewThread`). GitHub's REST API has no endpoint and go-github v84 has no method; the entire provider stack is REST-only. Needs a thin GraphQL client (e.g. `shurcooL/githubv4`) or a separate capability interface — not addable through go-github. Blocks 1.5 resolved/reopened events and all of 2.4 |
+| **Resolve / unresolve conversation** | done (2026-07-11) | GraphQL client landed (`provider/github/graphql.go` — `resolveReviewThread`/`unresolveReviewThread`), wired through action handlers and `useThreadActions` + `UnresolvedThreadsView` |
 | **Reviewer-request write-back** | not started | Required for Phase 4 expertise routing to be useful. ⚠️ Audit: wider blast radius than implied — needs a new `Provider.RequestReviewers` method (breaks the mock + all interface assertions), a new `ActionCommand`, handler, and WS message. go-github v84 *does* expose `PullRequests.RequestReviewers`, so the GitHub impl is feasible |
-| **Idempotency keys on retried actions** | partial | ⚠️ Audit: the *acute* dup-enqueue bug is fixed (see offline-queue row). The proposed `hash(action_type, target_id, content_hash)` stable-ID scheme remains a future enhancement for true content-level idempotency |
+| **Idempotency keys on retried actions** | done (2026-07-11) | Stable action IDs in `store/action_queue.go`; replay path in the orchestrator dedupes on them |
 
 ### 1.4 Sync engine
 
@@ -150,9 +167,9 @@ In addition to the events below, the following are already implemented (not orig
 | `PR_APPROVED`, `COMMENT_POSTED` | done | |
 | `AUTH_TOKEN_EXPIRED`, `RATE_LIMITED` | done | |
 | `DIFF_READY`, `COMMENTS_READY` | done | |
-| **PR description / labels / assignees / reviewers changed** | not started | Currently invisible to the UI; feels off in a real-time tool. ⚠️ Audit: structurally blocked — `writer.go` does a blind upsert with no before/after compare, and the `Writer` has no reference to the `EventEmitter` (constructed fresh per cycle without it). Needs: inject the emitter into `Writer`, `SELECT` old tracked fields before the upsert, diff, then emit |
-| **CI status changed** | partial | Status is fetched, but no event; UI must wait for sync cycle. ⚠️ Audit: same blocker as the row above — no before/after diff in the writer path, no emitter in `Writer` |
-| **Conversation resolved/reopened** | not started | Goes with 1.3 resolve write-back. ⚠️ Audit: depends on the GraphQL resolve/unresolve capability (see 1.3) — unbuildable until that lands |
+| **PR description / labels / assignees / reviewers changed** | partial (2026-07-11) | Writer now diffs before/after and emits `PR_METADATA_CHANGED` — but only for state/title/draft. Description, labels, assignees, reviewers still uncovered |
+| **CI status changed** | done (2026-07-11) | `CI_STATUS_CHANGED` emitted from the writer path, consumed in `useWebSocket.ts` |
+| **Conversation resolved/reopened** | partial (2026-07-11) | Events fire when *this client* resolves/unresolves (local actions); remote resolutions by others are only picked up on the next sync, with no event |
 
 ### 1.6 "Needs my action" vs "FYI" classification
 
@@ -173,7 +190,19 @@ In addition to the events below, the following are already implemented (not orig
 
 ---
 
-## Phase 2 — Patchset Semantics (the architectural unlock)
+## Phase 2 — Patchset Semantics (the architectural unlock) — **status: largely done (2026-07-11)**
+
+> ✅ **Built (verified 2026-07-11):** patchsets table + observed-snapshot capture +
+> timeline UI with diff-pair selector (2.1); last-reviewed identity recorded on review
+> submission + `s` since-last-review view (2.2); `files_viewed` keyed by patch
+> content hash — survives rebase (2.2); inline review comments fetched, anchor columns
+> (migrations 015–020, 023), re-anchoring backend (2.3); unresolved-threads `gu`
+> overlay with Open/Resolved/Outdated lifecycle, GraphQL resolve/unresolve, and a
+> merge-readiness badge (2.4); comment replies; current-user identity + per-account
+> namespacing (migration 022). **Remaining gaps:** the range-diff WS handler never
+> gets a repo path, so range-diff *always* degrades today; comment-level
+> outdated-near-line display isn't wired as a distinct UI state (thread-level
+> lifecycle is).
 
 This is where Bistro starts having features that GitHub structurally cannot match, within an honest FOSS boundary: Bistro can reason over locally observed patchsets quickly, but it cannot claim server-grade capture of pushes it never observed.
 
@@ -184,7 +213,8 @@ The architectural principle: **same patchset model for every provider**. Even wh
 > patchset; prefer system `git range-diff` when available and when required objects
 > are present locally; degrade to labeled current file diff or an unavailable reason
 > instead of implying complete force-push history. Full decision:
-> `docs/superpowers/specs/2026-06-29-foss-changed-since-review-strategy.md`.
+> `docs/superpowers/specs/2026-06-29-foss-changed-since-review-strategy.md`
+> (removed 2026-07-11; in git history).
 
 > ⚠️ **Audit (2026-06-19) — Phase 2 needs design decisions before any implementation.**
 > This phase as originally written contained two *infeasible-as-specified* items and
@@ -205,9 +235,16 @@ The architectural principle: **same patchset model for every provider**. Even wh
 > 4. **Prerequisite migrations nobody scheduled:** a SQLite-resident current-user
 >    identity (2.2 `user_id`, all of Phase 4), `files_viewed` state (2.2), a
 >    `patchset_number` column on `comments` (2.3). See the audit doc.
-> Full detail with `file:line` evidence: `docs/ROADMAP-AUDIT-2026-06-19.md`.
+> Full detail with `file:line` evidence: `docs/ROADMAP-AUDIT-2026-06-19.md`
+> (removed 2026-07-11; in git history).
 
-### 2.1 Patchset timeline
+### 2.1 Patchset timeline — done (2026-07-11); range-diff partial
+
+> Shipped: migrations 012/016, capture in `sync/writer.go`, `GET_PATCHSETS`,
+> `PatchsetTimeline.tsx` with diff-pair selection. System `git range-diff` wrapper
+> exists (`git/rangediff.go`) with graceful degradation, but the handler currently
+> has no local repo path at query time, so it always degrades — wiring the clone
+> path through is the remaining work.
 
 **Why it matters.** The most-cited reason developers say they "miss" Gerrit is the patchset model — pushes become reviewable snapshots, comments can be anchored to snapshots, and reviewers can compare iterations. GitHub's "Changes since last review" button breaks under rebase ([daisy.wtf](https://daisy.wtf/writing/github-changes-since-last-review/), [community/3478](https://github.com/orgs/community/discussions/3478)).
 
@@ -241,7 +278,12 @@ CREATE TABLE patchsets (
 -- comments table (which patchset a comment was made against) so 2.3 can detect "outdated".
 ```
 
-### 2.2 "Since I last reviewed" — local best-effort across rebase
+### 2.2 "Since I last reviewed" — done (2026-07-11)
+
+> Shipped: migrations 014/017/022, last-reviewed recorded on approve /
+> request-changes / top-level comment (replies deliberately excluded), `s` view in
+> the diff page with labeled degraded states, `v` mark-viewed keyed by patch
+> content hash (survives rebase).
 
 **Why it matters.** GitHub's button works only if commits aren't rebased. As AI agents increasingly force-push every iteration, this gets worse, not better.
 
@@ -262,7 +304,12 @@ CREATE TABLE patchsets (
 > System `git range-diff` is allowed only as the bounded best-effort path described
 > above; absence of range-diff is a degraded UI state, not a blocker.
 
-### 2.3 Comment anchoring across rebase
+### 2.3 Comment anchoring across rebase — mostly done (2026-07-11)
+
+> Shipped: inline review comments are fetched and stored with position fields
+> (migrations 015/018/019/020/023), re-anchoring runs in `git/anchor.go`, and the
+> diff view consumes thread lifecycle/line annotations. Remaining: a distinct
+> "outdated, shown at nearest surviving line" *comment-level* display.
 
 **Why it matters.** The "where did my comment go?" thread on github/community has been growing for 7 years.
 
@@ -280,7 +327,10 @@ CREATE TABLE patchsets (
 > columns before this is buildable. (Note: the *display-only re-anchoring* concept is sound —
 > a verifier confirmed 2.3 makes no false round-trip claim; the gap is purely the missing data.)
 
-### 2.4 Canonical "all unresolved threads" view
+### 2.4 Canonical "all unresolved threads" view — done (2026-07-11)
+
+> Shipped: `gu` overlay (`UnresolvedThreadsView.tsx`) with Open/Resolved/Outdated
+> lifecycle, GraphQL resolve/unresolve write-back, and `MergeReadinessBadge`.
 
 **Why it matters.** Free win from our SQLite cache — GitHub structurally cannot show every unresolved thread in one pane because of how their UI virtualises the timeline.
 
@@ -300,7 +350,13 @@ CREATE TABLE patchsets (
 
 ---
 
-## Phase 3 — AI Comment Classification (the wedge)
+## Phase 3 — AI Comment Classification (the wedge) — **status: not started (verified 2026-07-11)**
+
+> Verified 2026-07-11: zero code hits for any 3.x sub-feature (no classification
+> columns, no rules engine, no bot identification, no bulk ops, no dedup, no slop
+> score, no BYOK settings). The 3.1–3.4 spec/plan existed as docs
+> (`docs/superpowers/`, removed 2026-07-11 in the docs cleanup — recover from git
+> history if implementation starts).
 
 This is what makes Bistro the answer to the AI-PR era. Implemented as a rules engine + heuristics, with optional BYOK to push specific tasks to a user-supplied LLM.
 
@@ -309,8 +365,8 @@ This is what makes Bistro the answer to the AI-PR era. Implemented as a rules en
 > **Foundation slice designed & planned (2026-06-19).** Sub-features **3.1–3.4**
 > (schema, bot identification, rules engine, heuristics) have a brainstormed spec
 > and a task-by-task implementation plan:
-> - Spec: [`docs/superpowers/specs/2026-06-19-comment-classification-foundation-design.md`](superpowers/specs/2026-06-19-comment-classification-foundation-design.md)
-> - Plan: [`docs/superpowers/plans/2026-06-19-comment-classification-foundation.md`](superpowers/plans/2026-06-19-comment-classification-foundation.md)
+> - Spec: `docs/superpowers/specs/2026-06-19-comment-classification-foundation-design.md` (removed 2026-07-11; in git history)
+> - Plan: `docs/superpowers/plans/2026-06-19-comment-classification-foundation.md` (removed 2026-07-11; in git history)
 >
 > Status of these four: **planned, not yet built.** Decisions that diverge from the
 > original draft below (the draft is left intact for history; the spec is authoritative):
@@ -462,7 +518,11 @@ Used when a comment doesn't match a vendor-specific rule (humans, unknown bots, 
 
 ---
 
-## Phase 4 — Local Expertise Scoring (the killer feature, FOSS layer)
+## Phase 4 — Local Expertise Scoring (the killer feature, FOSS layer) — **status: not started (verified 2026-07-11)**
+
+> Verified 2026-07-11: no `file_expertise` table, no scoring code, no "Touches Your
+> Code" view, no `.bistro/expertise.yml` support. The current-user-identity
+> prerequisite is now in place (migration 022), so this phase is unblocked.
 
 The Layer 1 of expertise routing. Computes per-file expertise from local git history. Layer 2 (team-wide expertise graph, departed-employee handling, write-back to provider) is Team-only.
 
@@ -522,6 +582,14 @@ The Layer 1 of expertise routing. Computes per-file expertise from local git his
 
 By this point Bistro is feature-rich. Phase 5 makes it *fast to live in*.
 
+> **Shipped early, off-roadmap (2026-06-24/25, verified 2026-07-11):**
+> - **Markdown rendering** of PR descriptions and comments — sanitized
+>   ReactMarkdown/GFM (`Markdown.tsx`, `markdownComponents.tsx`) incl. fenced-code
+>   highlighting and **Mermaid diagrams** with strict security + size/concurrency
+>   bounds (`MermaidDiagram.tsx`).
+> - **Bistro design-system primitives** — restyled shadcn-style components under
+>   `components/ui/` plus an integrated draggable title bar (`AppTitleBar.tsx`).
+
 ### 5.1 Reviewer Inbox
 
 A unified, prioritised landing screen.
@@ -572,7 +640,7 @@ The first non-GitHub provider. Validates the abstraction.
 
 Before writing GitLab code, sweep the existing codebase for GitHub-specific assumptions that have leaked past the provider interface. This is the highest-leverage week of engineering in the entire FOSS roadmap — refactor cost scales with the number of providers, and we want to do it once, while the count is one.
 
-Known leaks as of the 2026-06-10 audit: `go/internal/auth/callback.go`, `go/internal/server/handler/{auth,diff,repo}.go` reference GitHub directly; ~~`rate_limit_state.id` defaults to `'github'`~~ (FIXED 2026-06-19, migration 011 — see 6.3). ⚠️ Audit (2026-06-19) added one more: the diff fetcher hardcodes `https://github.com/%s/%s.git` (`go/internal/sync/fetcher.go:149`) regardless of `pr.Provider` — move clone-URL construction into the provider layer.
+Known leaks as of the 2026-06-10 audit: `go/internal/auth/callback.go`, `go/internal/server/handler/{auth,diff,repo}.go` reference GitHub directly; ~~`rate_limit_state.id` defaults to `'github'`~~ (FIXED 2026-06-19, migration 011 — see 6.3). ⚠️ Audit (2026-06-19) added one more: the diff fetcher hardcodes `https://github.com/%s/%s.git` (`go/internal/sync/fetcher.go:149`) regardless of `pr.Provider` — move clone-URL construction into the provider layer. **Re-verified 2026-07-11: still leaking** — clone URL still hardcoded (`fetcher.go:184`), plus new leaks accrued since: account-provider constants and inbox discovery in `sync/orchestrator.go`, provider-prefixed keys in `store/last_reviewed.go`, OAuth scope assumptions in `auth/callback.go`.
 
 **Audit checklist.**
 
@@ -614,11 +682,11 @@ A focused phase on quality, docs, distribution.
 
 ### 7.2 Distribution
 
-- macOS DMG (signed + notarised).
-- Windows MSI (signed).
-- Linux AppImage and `.deb`.
-- Auto-update via the standard Electron updater.
-- Homebrew cask formula.
+- macOS DMG (signed + notarised). *(2026-07-11: ZIP + DMG makers + GitHub publisher exist in `forge.config.ts`; signing/notarization config missing)*
+- Windows MSI (signed). *(not started)*
+- Linux AppImage and `.deb`. *(not started)*
+- Auto-update via the standard Electron updater. *(code exists in `main/updater.ts` via `update-electron-app`, env-gated / disabled by default)*
+- Homebrew cask formula. *(not started)*
 
 ### 7.3 Documentation
 
@@ -629,11 +697,11 @@ A focused phase on quality, docs, distribution.
 - `CONTRIBUTING.md` with DCO sign-off instructions and a clear scope statement:
   *what we will and won't merge.*
 
-### 7.4 Telemetry
+### 7.4 Telemetry — largely done (2026-07-11)
 
-- Off by default. Opt-in only.
-- If on: anonymised crash reports + feature-usage counts (no PR content, no repo names, no usernames).
-- Settings page surfaces exactly what's sent.
+- Off by default. Opt-in only. ✅ (consent-gated in `main/telemetry.ts` + Settings)
+- If on: anonymised crash reports + feature-usage counts (no PR content, no repo names, no usernames). ✅ (usage telemetry + Sentry crash capture in `main/sentry.ts`, both behind the same consent path)
+- Settings page surfaces exactly what's sent. partial — a "Usage Telemetry" toggle exists; no separate crash-reporting setting or detailed what-is-sent surface.
 
 ---
 
@@ -663,9 +731,49 @@ To keep the line clean, these are *not* in the FOSS scope:
    dependency. Built-ins seed to `~/.config/bistro/rules/` on first launch and are
    presence-gated-updated on upgrade; user files are never touched. See the Phase 3
    foundation spec/plan.
-3. **Telemetry stance.** Final call on opt-in / opt-out / none-at-all.
-4. **Crash reporter.** Sentry? Self-hosted? None?
+3. ~~**Telemetry stance.**~~ **Resolved in code (2026-07-11):** opt-in only, consent-gated usage telemetry shipped (`electron/src/main/telemetry.ts`); formalize the stance in user docs before release.
+4. ~~**Crash reporter.**~~ **Resolved in code (2026-07-11):** Sentry, behind the same opt-in consent path (`electron/src/main/sentry.ts`).
 5. **Auto-update server.** Self-hosted via static files, or a service?
 6. ~~**License for the FOSS code.**~~ **Resolved (2026-06-30):** Bistro is
    licensed under GPLv3-only with DCO sign-off for contributions. See
    `LICENSE`, `DCO.txt`, and `CONTRIBUTING.md`.
+
+---
+
+## v1.0 checklist (as of 2026-07-11)
+
+Everything left between here and FOSS v1.0, in rough dependency order. Done work is omitted — see the phase sections above.
+
+**Blockers (release-gating)**
+- [ ] `@pierre/diffs` license review (open question #1 — the last unresolved one besides infra)
+- [ ] macOS signing + notarization; decide auto-update hosting (open question #5)
+- [ ] Windows MSI, Linux AppImage/`.deb`, Homebrew cask (7.2)
+- [ ] Post *new* line-level review comments (`PostReviewComment` with path/commitSHA/side) — replies already work (1.3)
+- [ ] Wire a local repo path into the range-diff handler so 2.1/2.2 stop always degrading
+
+**Phase 3 — classification (not started, the wedge)**
+- [ ] 3.1 schema + 3.2 bot identification + 3.3 rules engine + 3.4 heuristics (spec/plan in git history)
+- [ ] 3.5 bulk ops, 3.6 dedup, 3.7 slop score, 3.8 BYOK
+
+**Phase 4 — expertise (not started, now unblocked by migration 022)**
+- [ ] 4.1 scoring engine + `file_expertise` table
+- [ ] 4.2 "Touches Your Code" view, 4.3 `.bistro/expertise.yml`
+
+**Polish (partial)**
+- [ ] Default view → "Needs Action"; triage counters into a sidebar; drop or implement the mentions rule (1.6)
+- [ ] Six-lane inbox with `g1`–`g6` (5.1)
+- [ ] Side-by-side toggle, word-level diff, whitespace/generated-file collapse, image diff (5.2)
+- [ ] `:open in browser` palette command (keybinding exists); `:open in editor` (5.3)
+- [ ] First-run tour, did-you-know tooltips (5.4)
+- [ ] Comment-level "outdated near line N" display (2.3 remainder)
+- [ ] PR_METADATA_CHANGED for description/labels/assignees/reviewers; event for *remotely* resolved threads (1.5)
+- [ ] Per-open-PR fast sync (1.4); per-repo last-sync/error/rate-limit indicator (Phase 0)
+
+**Phase 6 — GitLab**
+- [ ] 6.1 provider-boundary sweep (clone URL, orchestrator constants, `last_reviewed` keys, auth callback)
+- [ ] 6.2 GitLab provider; 6.3 remaining multi-tenancy checks
+
+**Phase 7 — release prep**
+- [ ] Quality gates: perf/memory budgets, crash-free-session tracking (7.1)
+- [ ] `docs/install.md`, `docs/classification.md`, `docs/expertise.md`, `docs/byok.md`, `docs/architecture.md`; README value-prop pass; screencast (7.3)
+- [ ] Document telemetry stance in user docs; itemized "what is sent" in Settings (7.4)
