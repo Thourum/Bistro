@@ -25,9 +25,10 @@ import (
 )
 
 type fakeRepoLocationCloner struct {
-	mu    sync.Mutex
-	calls []fakeRepoLocationCloneCall
-	err   error
+	mu                sync.Mutex
+	calls             []fakeRepoLocationCloneCall
+	err               error
+	overrideRemoteURL string
 }
 
 type fakeRepoLocationCloneCall struct {
@@ -39,6 +40,7 @@ func (c *fakeRepoLocationCloner) CloneRepo(ctx context.Context, repoURL, destina
 	c.mu.Lock()
 	c.calls = append(c.calls, fakeRepoLocationCloneCall{RepoURL: repoURL, Destination: destination})
 	err := c.err
+	remoteURL := c.overrideRemoteURL
 	c.mu.Unlock()
 	if err != nil {
 		_ = os.MkdirAll(destination, 0o700)
@@ -48,7 +50,10 @@ func (c *fakeRepoLocationCloner) CloneRepo(ctx context.Context, repoURL, destina
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return createRepo(destination, "origin", repoURL)
+	if remoteURL == "" {
+		remoteURL = repoURL
+	}
+	return createRepo(destination, "origin", remoteURL)
 }
 
 type fakeRepoLocationCacheDeleter struct {
@@ -114,6 +119,18 @@ func TestRepoLocationValidateDevFolderReturnsCanonicalPathAndEnvelope(t *testing
 			assertLocationEnvelope(t, data, "", "validate_dev_folder", tt.wantCode)
 		})
 	}
+}
+
+func TestRepoLocationScanDevFolderReturnsInvalidPathEnvelope(t *testing.T) {
+	// Arrange
+	handler := NewScanDevFolderHandler(store.NewRepoLocationStore(newRepoLocationMigratedDB(t).DB), nil, testRepoLocationLogger())
+	missing := filepath.Join(t.TempDir(), "missing")
+
+	// Act
+	resp := callRepoLocationHandler(t, handler, "SCAN_DEV_FOLDER", map[string]any{"path": missing, "reason": "test"})
+
+	// Assert
+	assertLocationEnvelope(t, responseData(t, resp), "", "scan_dev_folder", "invalid_path")
 }
 
 func TestRepoLocationScanDevFolderReconcilesHealthAndTriggersSync(t *testing.T) {
@@ -192,6 +209,7 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 		wantPreservePath  string
 		wantContextCancel bool
 		wantStoredSource  string
+		wantStoredPath    string
 	}{
 		{
 			name: "found local via targeted dev folder check",
@@ -238,6 +256,23 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 			},
 			wantOK:     true,
 			wantSource: "local",
+		},
+		{
+			name: "degraded registered local returns structured error and preserves row",
+			payload: func(root string) map[string]any {
+				return map[string]any{"url": "https://github.com/acme/api.git", "destination": "cache", "dev_folder_path": nil}
+			},
+			arrange: func(t *testing.T, db *store.DB, root string, cloner *fakeRepoLocationCloner) {
+				localPath := filepath.Join(root, "dev", "acme", "api")
+				insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "local", localPath, nil)
+				if err := store.NewRepoLocationStore(db.DB).MarkDegraded(context.Background(), "github:acme/api", "missing", "path_missing", "folder not found"); err != nil {
+					t.Fatalf("mark degraded local: %v", err)
+				}
+			},
+			wantOK:           false,
+			wantCode:         "path_missing",
+			wantStoredSource: "local",
+			wantStoredPath:   filepath.Join("dev", "acme", "api"),
 		},
 		{
 			name: "cache existing match returns cache",
@@ -323,6 +358,19 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 			wantPartialClean: filepath.Join("dev", "acme", "api"),
 		},
 		{
+			name: "post clone remote mismatch cleans partial dir",
+			payload: func(root string) map[string]any {
+				return map[string]any{"url": "https://github.com/acme/api.git", "destination": "dev_folder", "dev_folder_path": filepath.Join(root, "dev")}
+			},
+			arrange: func(t *testing.T, db *store.DB, root string, cloner *fakeRepoLocationCloner) {
+				mustMkdirAll(filepath.Join(root, "dev"))
+				cloner.overrideRemoteURL = "https://github.com/acme/other.git"
+			},
+			wantOK:           false,
+			wantCode:         "remote_mismatch",
+			wantPartialClean: filepath.Join("dev", "acme", "api"),
+		},
+		{
 			name: "cancelled context",
 			payload: func(root string) map[string]any {
 				return map[string]any{"url": "https://github.com/acme/api.git", "destination": "dev_folder", "dev_folder_path": filepath.Join(root, "dev")}
@@ -376,7 +424,11 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 					t.Fatalf("unexpected success payload %#v", data)
 				}
 				if tt.wantStoredSource != "" {
-					assertSourcePath(t, db.DB, "github:acme/api", tt.wantStoredSource, filepath.Join(root, "cache", "acme", "api"))
+					storedPath := filepath.Join(root, "cache", "acme", "api")
+					if tt.wantStoredPath != "" {
+						storedPath = filepath.Join(root, tt.wantStoredPath)
+					}
+					assertSourcePath(t, db.DB, "github:acme/api", tt.wantStoredSource, storedPath)
 				}
 				return
 			}
@@ -385,6 +437,13 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 				wantRepoID = ""
 			}
 			assertLocationEnvelope(t, data, wantRepoID, "add_repo_by_url", tt.wantCode)
+			if tt.wantStoredSource != "" {
+				storedPath := filepath.Join(root, "cache", "acme", "api")
+				if tt.wantStoredPath != "" {
+					storedPath = filepath.Join(root, tt.wantStoredPath)
+				}
+				assertSourcePath(t, db.DB, "github:acme/api", tt.wantStoredSource, storedPath)
+			}
 			if tt.wantPartialClean != "" {
 				if _, err := os.Stat(filepath.Join(root, tt.wantPartialClean)); !os.IsNotExist(err) {
 					t.Fatalf("expected partial dir cleanup, stat err=%v", err)
@@ -486,6 +545,7 @@ func TestRepoLocationRemoveRepoRollsBackOnDeleteFailure(t *testing.T) {
 func TestRepoLocationCacheMaintenance(t *testing.T) {
 	// Arrange
 	root := t.TempDir()
+	t.Setenv("BISTRO_REPO_DIR", filepath.Join(root, "cache"))
 	db := newRepoLocationMigratedDB(t)
 	localPath := filepath.Join(root, "local", "acme", "api")
 	freshPath := filepath.Join(root, "cache", "acme", "fresh")
@@ -493,9 +553,14 @@ func TestRepoLocationCacheMaintenance(t *testing.T) {
 	nullPath := filepath.Join(root, "cache", "acme", "null-used")
 	failedPath := filepath.Join(root, "cache", "acme", "failed")
 	deletePath := filepath.Join(root, "cache", "acme", "delete-one")
-	for _, path := range []string{localPath, freshPath, stalePath, nullPath, failedPath, deletePath} {
+	unsafeTarget := filepath.Join(t.TempDir(), "unsafe-target")
+	unsafePath := filepath.Join(root, "cache", "acme", "unsafe")
+	for _, path := range []string{localPath, freshPath, stalePath, nullPath, failedPath, deletePath, unsafeTarget} {
 		mustMkdirAll(path)
 		mustWriteFile(filepath.Join(path, "payload"), "bytes")
+	}
+	if err := os.Symlink(unsafeTarget, unsafePath); err != nil {
+		t.Fatalf("create unsafe cache symlink: %v", err)
 	}
 	fresh := time.Now().Add(-29 * 24 * time.Hour)
 	stale := time.Now().Add(-31 * 24 * time.Hour)
@@ -505,6 +570,7 @@ func TestRepoLocationCacheMaintenance(t *testing.T) {
 	insertRepoWithLocation(t, db, "github:acme/null-used", "github", "acme", "null-used", "cache", nullPath, nil)
 	insertRepoWithLocation(t, db, "github:acme/failed", "github", "acme", "failed", "cache", failedPath, &stale)
 	insertRepoWithLocation(t, db, "github:acme/delete-one", "github", "acme", "delete-one", "cache", deletePath, &fresh)
+	insertRepoWithLocation(t, db, "github:acme/unsafe", "github", "acme", "unsafe", "cache", unsafePath, &fresh)
 	deleteErr := errors.New("delete failed")
 	originalFailedPath := failedPath
 	canonicalFailedPath, err := filepath.EvalSymlinks(failedPath)
@@ -536,8 +602,10 @@ func TestRepoLocationCacheMaintenance(t *testing.T) {
 		"github:acme/null-used":  true,
 		"github:acme/failed":     true,
 		"github:acme/delete-one": true,
+		"github:acme/unsafe":     true,
 		"github:acme/api":        false,
 	})
+	assertStatsRepoSkipped(t, statsData["repos"].([]any), "github:acme/unsafe")
 
 	// Act: prune
 	pruneResp := callRepoLocationHandler(t, NewPruneCacheHandler(deps), "PRUNE_CACHE", map[string]any{})
@@ -595,7 +663,7 @@ func TestRepoLocationCacheMaintenance(t *testing.T) {
 	if clearData["ok"] != true || clearData["orphans_removed"].(float64) != 1 {
 		t.Fatalf("unexpected clear cache payload %#v", clearData)
 	}
-	assertStringSet(t, clearData["removed"].([]any), []string{"github:acme/fresh", "github:acme/failed"})
+	assertStringSet(t, clearData["removed"].([]any), []string{"github:acme/fresh", "github:acme/failed", "github:acme/unsafe"})
 }
 
 func TestRepoLocationRecoverRepoPathAndToCache(t *testing.T) {
@@ -629,6 +697,16 @@ func TestRepoLocationRecoverRepoPathAndToCache(t *testing.T) {
 		},
 		Log: testRepoLocationLogger(),
 	})
+
+	// Act + Assert: post-clone validation mismatch maps to clone_failed and preserves degraded state.
+	cloner.overrideRemoteURL = "https://github.com/acme/other.git"
+	cacheMismatchResp := callRepoLocationHandler(t, recoverCache, "RECOVER_REPO_TO_CACHE", map[string]any{"repo_id": "github:acme/api"})
+	assertLocationEnvelope(t, responseData(t, cacheMismatchResp), "github:acme/api", "recover_repo_to_cache", "clone_failed")
+	assertLocationStatus(t, store, "github:acme/api", "missing", "path_missing")
+	if _, err := os.Stat(filepath.Join(root, "cache", "acme", "api")); !os.IsNotExist(err) {
+		t.Fatalf("expected mismatched clone cleanup, stat err=%v", err)
+	}
+	cloner.overrideRemoteURL = ""
 
 	// Act + Assert: mismatch envelope
 	mismatchResp := callRepoLocationHandler(t, recoverPath, "RECOVER_REPO_PATH", map[string]any{"repo_id": "github:acme/api", "path": badPath})
@@ -830,6 +908,21 @@ func assertStatsRepoPresence(t *testing.T, repos []any, expected map[string]bool
 			t.Fatalf("expected presence %v for %s, got repos %#v", wantPresent, repoID, actual)
 		}
 	}
+}
+
+func assertStatsRepoSkipped(t *testing.T, repos []any, repoID string) {
+	t.Helper()
+	for _, item := range repos {
+		repo := item.(map[string]any)
+		if repo["repo_id"] != repoID {
+			continue
+		}
+		if repo["skipped"] != true || repo["error"] == "" || repo["size_bytes"] != float64(0) {
+			t.Fatalf("expected skipped stats for %s, got %#v", repoID, repo)
+		}
+		return
+	}
+	t.Fatalf("expected skipped stats repo %s in %#v", repoID, repos)
 }
 
 func assertStringSet(t *testing.T, got []any, want []string) {
