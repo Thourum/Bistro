@@ -106,6 +106,35 @@ func TestFetchIntoLocal_RemoteMismatch(t *testing.T) {
 	}
 }
 
+func TestFetchIntoLocal_FetchesFromMatchingRemote(t *testing.T) {
+	// Arrange
+	fixture := newLocalFetchFixture(t)
+	headSHA := fixture.commitUpstream(t, "feature.txt", "feature\n", "feature")
+
+	wrongRemotePath := filepath.Join(t.TempDir(), "wrong-remote")
+	wrongRepo, err := gitlib.PlainInit(wrongRemotePath, false)
+	if err != nil {
+		t.Fatalf("PlainInit wrong remote: %v", err)
+	}
+	commitFile(t, wrongRepo, wrongRemotePath, "README.md", "wrong\n", "wrong")
+
+	fixture.replaceOriginURLs(t, "file://"+wrongRemotePath, "https://github.com/other/repo.git")
+	fixture.addRemote(t, "upstream", "file://"+fixture.upstreamPath, localFetchRemoteURL)
+	client := NewClient(NewCache())
+
+	// Act
+	err = client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), nil)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("FetchIntoLocal: %v", err)
+	}
+	userRepo := fixture.openUserRepo(t)
+	if _, err := userRepo.CommitObject(headSHA); err != nil {
+		t.Fatalf("expected fetched commit from matching remote to resolve locally: %v", err)
+	}
+}
+
 func TestFetchIntoLocal_SkipsWhenPresent(t *testing.T) {
 	// Arrange
 	fixture := newLocalFetchFixture(t)
@@ -233,6 +262,18 @@ func (f localFetchFixture) replaceOriginURLs(t *testing.T, urls ...string) {
 	_, err := repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: urls})
 	if err != nil {
 		t.Fatalf("CreateRemote origin: %v", err)
+	}
+}
+
+func (f localFetchFixture) addRemote(t *testing.T, name string, urls ...string) {
+	t.Helper()
+	repo := f.openUserRepo(t)
+	if err := repo.DeleteRemote(name); err != nil && err != gitlib.ErrRemoteNotFound {
+		t.Fatalf("DeleteRemote %s: %v", name, err)
+	}
+	_, err := repo.CreateRemote(&config.RemoteConfig{Name: name, URLs: urls})
+	if err != nil {
+		t.Fatalf("CreateRemote %s: %v", name, err)
 	}
 }
 

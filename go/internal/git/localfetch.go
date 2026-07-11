@@ -46,7 +46,8 @@ func (c *Client) FetchIntoLocal(ctx context.Context, localPath string, id Identi
 		return fmt.Errorf("failed to open repository at %s: %w", localPath, err)
 	}
 
-	if err := validateLocalRepoRemote(repo, id); err != nil {
+	remoteName, err := matchingLocalRepoRemote(repo, id)
+	if err != nil {
 		return err
 	}
 
@@ -55,9 +56,10 @@ func (c *Client) FetchIntoLocal(ctx context.Context, localPath string, id Identi
 	}
 
 	fetchOpts := &gitlib.FetchOptions{
-		Auth:     c.auth(),
-		RefSpecs: localFetchRefSpecs(id, opts),
-		Tags:     gitlib.NoTags,
+		RemoteName: remoteName,
+		Auth:       c.auth(),
+		RefSpecs:   localFetchRefSpecs(id, opts),
+		Tags:       gitlib.NoTags,
 	}
 	if opts != nil && (opts.PRNumber > 0 || opts.BaseBranch != "") {
 		fetchOpts.Depth = targetedDepth(opts)
@@ -74,10 +76,10 @@ func (c *Client) FetchIntoLocal(ctx context.Context, localPath string, id Identi
 	return nil
 }
 
-func validateLocalRepoRemote(repo *gitlib.Repository, id Identity) error {
+func matchingLocalRepoRemote(repo *gitlib.Repository, id Identity) (string, error) {
 	remotes, err := repo.Remotes()
 	if err != nil {
-		return fmt.Errorf("failed to list remotes: %w", err)
+		return "", fmt.Errorf("failed to list remotes: %w", err)
 	}
 	for _, remote := range remotes {
 		for _, remoteURL := range remote.Config().URLs {
@@ -86,11 +88,11 @@ func validateLocalRepoRemote(repo *gitlib.Repository, id Identity) error {
 				continue
 			}
 			if remoteID.ID() == id.ID() {
-				return nil
+				return remote.Config().Name, nil
 			}
 		}
 	}
-	return &LocalFetchError{Code: remoteMismatchCode, Err: fmt.Errorf("no remote matches %s", id.ID())}
+	return "", &LocalFetchError{Code: remoteMismatchCode, Err: fmt.Errorf("no remote matches %s", id.ID())}
 }
 
 func localFetchRefSpecs(id Identity, opts *CloneOptions) []config.RefSpec {
