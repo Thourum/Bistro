@@ -110,6 +110,7 @@ let singletonWs: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
 let refCount = 0;
+let hasSentStartupDevFolderScan = false;
 const messageHandlers = new Map<string, (data: unknown) => void>();
 
 function handleSyncComplete(data: SyncCompleteData): void {
@@ -425,6 +426,9 @@ function onMessage(event: MessageEvent<string>): void {
       } catch {
         /* test env */
       }
+      if (singletonWs?.readyState === WebSocket.OPEN) {
+        sendStartupDevFolderScan(singletonWs);
+      }
       break;
     }
     case 'AUTH_DISCONNECT_RESULT': {
@@ -562,9 +566,11 @@ function onMessage(event: MessageEvent<string>): void {
 
 function sendStartupDevFolderScan(ws: WebSocket): void {
   const path = settingsStore.state.repositories.devFolderPath;
-  if (path === null) {
+  if (hasSentStartupDevFolderScan || !path) {
     return;
   }
+
+  hasSentStartupDevFolderScan = true;
 
   const data: ScanDevFolderRequest = { path, reason: 'startup' };
   const scanMsg: WSMessage = {
@@ -617,7 +623,6 @@ function connect(): void {
     };
     log.info({ id: checkMsg.id }, 'sending AUTH_CHECK');
     ws.send(JSON.stringify(checkMsg));
-    sendStartupDevFolderScan(ws);
   };
 
   ws.onmessage = onMessage;
@@ -695,6 +700,7 @@ function disconnect(): void {
   singletonWs?.close();
   singletonWs = null;
   reconnectAttempt = 0;
+  hasSentStartupDevFolderScan = false;
 }
 
 function sendMessage(type: string, data: unknown): string | undefined {

@@ -149,7 +149,7 @@ describe('WebSocket dev-folder startup scan', () => {
     settingsStore.setState(() => DEFAULT_SETTINGS);
   });
 
-  it('sends exactly one SCAN_DEV_FOLDER message when devFolderPath is configured', async () => {
+  it('sends exactly one SCAN_DEV_FOLDER message after auth check result when devFolderPath is configured', async () => {
     settingsStore.setState((settings) => ({
       ...settings,
       repositories: {
@@ -162,6 +162,24 @@ describe('WebSocket dev-folder startup scan', () => {
     const { unmount } = renderHook(() => useWebSocket());
     const ws = MockWebSocket.instances[0];
     act(() => ws.open());
+
+    const scanMessagesBeforeAuthCheck = ws.sentMessages
+      .map((message) => JSON.parse(message) as { type: string; data: unknown })
+      .filter((message) => message.type === 'SCAN_DEV_FOLDER');
+    expect(scanMessagesBeforeAuthCheck).toHaveLength(0);
+
+    act(() => {
+      ws.onmessage?.(
+        new MessageEvent('message', {
+          data: JSON.stringify({
+            id: 'auth-check-result-1',
+            type: 'AUTH_CHECK_RESULT',
+            data: { authenticated: true, providers: [] },
+            timestamp: new Date().toISOString(),
+          }),
+        }),
+      );
+    });
 
     const scanMessages = ws.sentMessages
       .map((message) => JSON.parse(message) as { type: string; data: unknown })
@@ -181,6 +199,18 @@ describe('WebSocket dev-folder startup scan', () => {
     const { unmount } = renderHook(() => useWebSocket());
     const ws = MockWebSocket.instances[0];
     act(() => ws.open());
+    act(() => {
+      ws.onmessage?.(
+        new MessageEvent('message', {
+          data: JSON.stringify({
+            id: 'auth-check-result-1',
+            type: 'AUTH_CHECK_RESULT',
+            data: { authenticated: true, providers: [] },
+            timestamp: new Date().toISOString(),
+          }),
+        }),
+      );
+    });
 
     const scanMessages = ws.sentMessages
       .map((message) => JSON.parse(message) as { type: string })

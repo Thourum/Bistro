@@ -55,6 +55,21 @@ function openMountedWebSocket(): MockWebSocket {
   return ws;
 }
 
+function emitAuthCheckResult(ws: MockWebSocket): void {
+  act(() => {
+    ws.onmessage?.(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          id: 'auth-check-result-1',
+          type: 'AUTH_CHECK_RESULT',
+          data: { authenticated: true, providers: [] },
+          timestamp: new Date().toISOString(),
+        }),
+      }),
+    );
+  });
+}
+
 function sentMessagesOfType<TData>(
   ws: MockWebSocket,
   type: string,
@@ -76,7 +91,7 @@ describe('useWebSocket dev-folder startup scan', () => {
     settingsStore.setState(() => DEFAULT_SETTINGS);
   });
 
-  it('sends exactly one SCAN_DEV_FOLDER message on connection open when devFolderPath is set', () => {
+  it('sends exactly one SCAN_DEV_FOLDER message on auth check result when devFolderPath is set', () => {
     settingsStore.setState((settings) => ({
       ...settings,
       repositories: {
@@ -87,6 +102,10 @@ describe('useWebSocket dev-folder startup scan', () => {
 
     const { unmount } = renderHook(() => useWebSocket());
     const ws = openMountedWebSocket();
+
+    expect(sentMessagesOfType(ws, 'SCAN_DEV_FOLDER')).toHaveLength(0);
+
+    emitAuthCheckResult(ws);
 
     const scanMessages = sentMessagesOfType<{
       path: string;
@@ -102,9 +121,30 @@ describe('useWebSocket dev-folder startup scan', () => {
     unmount();
   });
 
-  it('does not send SCAN_DEV_FOLDER on connection open when devFolderPath is null', () => {
+  it('does not send SCAN_DEV_FOLDER on auth check result when devFolderPath is null', () => {
     const { unmount } = renderHook(() => useWebSocket());
     const ws = openMountedWebSocket();
+    emitAuthCheckResult(ws);
+
+    const scanMessages = sentMessagesOfType(ws, 'SCAN_DEV_FOLDER');
+
+    expect(scanMessages).toHaveLength(0);
+
+    unmount();
+  });
+
+  it('does not send SCAN_DEV_FOLDER on auth check result when devFolderPath is empty', () => {
+    settingsStore.setState((settings) => ({
+      ...settings,
+      repositories: {
+        ...settings.repositories,
+        devFolderPath: '',
+      },
+    }));
+
+    const { unmount } = renderHook(() => useWebSocket());
+    const ws = openMountedWebSocket();
+    emitAuthCheckResult(ws);
 
     const scanMessages = sentMessagesOfType(ws, 'SCAN_DEV_FOLDER');
 
