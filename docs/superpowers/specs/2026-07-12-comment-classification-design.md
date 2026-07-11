@@ -129,7 +129,7 @@ via the LLM kick above.
 
 ## Data model
 
-### Migration 026 — classification columns + state (foundation)
+### Migration 026 — classification columns + state (3.1)
 
 ```sql
 ALTER TABLE comments ADD COLUMN author_type TEXT;            -- 'human'|'bot'|'unknown'
@@ -185,7 +185,7 @@ CREATE TABLE llm_classification_cache (
 `dedup_group_id` = hash of the sorted member comment IDs → idempotent across
 re-syncs.
 
-### Rules YAML schema
+### Rules YAML schema (3.3)
 
 ```yaml
 name: CodeRabbit
@@ -229,7 +229,43 @@ Per classifier: `name`; optional `author` / `path` / `body_pattern`
 
 No confidence score in v1 (deferred until real conflicts are observed).
 
-### Bot identification
+### Heuristics — `zz-fallback.yml` starter content (3.4)
+
+Heuristics are not a separate code path: they are ordinary weighted
+classifiers in one built-in file that loads last. Starter set (tuned against
+the corpus before v1.0; the file is the documentation the roadmap asks for,
+alongside `docs/classification.md`):
+
+```yaml
+name: Heuristics
+classifiers:
+  - name: nit_words
+    body_pattern: '(?i)(nit:|nitpick|consider|you could|minor\b|stylistic|preference|personal taste|would be cleaner)'
+    severity: nit
+    weight: 0.4
+  - name: security_words
+    body_pattern: '(?i)(sql injection|xss|credential|secret|password|auth bypass|race condition|memory leak)'
+    severity: critical
+    category: security
+    weight: 0.7
+  - name: security_paths
+    path: "{**/auth/**,**/security/**,**/payments/**}"
+    body_pattern: '(?i)(vulnerab|inject|leak|bypass)'
+    severity: critical
+    category: security
+    weight: 0.8
+  - name: docs_style
+    path: "{**/*.md,**/*.rst}"
+    severity: suggestion
+    category: docs
+    weight: 0.3
+```
+
+Weighted results tally per severity, max wins; any direct vendor-rule match
+outranks all of these. Category from the winning weighted classifier is
+carried along when present.
+
+### Bot identification (3.2)
 
 - `author_type`: author matches any rule file's `match.author` → `bot` with
   that file's `vendor`; else login ends in `[bot]` (or matches the engine's
