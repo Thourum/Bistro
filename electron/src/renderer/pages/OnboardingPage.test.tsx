@@ -93,7 +93,8 @@ describe('OnboardingPage dev-folder step', () => {
   it('persists the canonical dev-folder path and shows the scan tally after validation succeeds', async () => {
     const user = userEvent.setup();
     vi.mocked(window.electron.pickFolder).mockResolvedValue('/Users/sam/dev');
-    sendMock
+    sendMock.mockReturnValue('req-validation-only');
+    requestMock
       .mockResolvedValueOnce({ ok: true, canonical_path: '/private/var/dev' })
       .mockResolvedValueOnce({
         ok: true,
@@ -109,7 +110,7 @@ describe('OnboardingPage dev-folder step', () => {
     await user.click(screen.getByRole('button', { name: /choose folder/i }));
 
     await waitFor(() => {
-      expect(sendMock).toHaveBeenNthCalledWith(1, 'VALIDATE_DEV_FOLDER', {
+      expect(requestMock).toHaveBeenNthCalledWith(1, 'VALIDATE_DEV_FOLDER', {
         path: '/Users/sam/dev',
       });
     });
@@ -118,11 +119,11 @@ describe('OnboardingPage dev-folder step', () => {
         repositories: { devFolderPath: '/private/var/dev' },
       });
     });
-    expect(sendMock).toHaveBeenNthCalledWith(2, 'SCAN_DEV_FOLDER', {
+    expect(requestMock).toHaveBeenNthCalledWith(2, 'SCAN_DEV_FOLDER', {
       path: '/private/var/dev',
       reason: 'settings-change',
     });
-    expect(requestMock).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
     expect(settingsStore.state.repositories.devFolderPath).toBe(
       '/private/var/dev',
     );
@@ -132,7 +133,8 @@ describe('OnboardingPage dev-folder step', () => {
   it('shows a validation error and persists nothing when validation fails', async () => {
     const user = userEvent.setup();
     vi.mocked(window.electron.pickFolder).mockResolvedValue('/Users/sam');
-    sendMock.mockResolvedValueOnce({
+    sendMock.mockReturnValue('req-validation-only');
+    requestMock.mockResolvedValueOnce({
       ok: false,
       repo_id: '',
       operation: 'validate',
@@ -147,10 +149,10 @@ describe('OnboardingPage dev-folder step', () => {
     expect(
       await screen.findByText('Choose a projects folder'),
     ).toBeInTheDocument();
-    expect(sendMock).toHaveBeenCalledWith('VALIDATE_DEV_FOLDER', {
+    expect(requestMock).toHaveBeenCalledWith('VALIDATE_DEV_FOLDER', {
       path: '/Users/sam',
     });
-    expect(requestMock).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
     expect(settingsStore.state.repositories.devFolderPath).toBeNull();
     expect(window.electron.settings.set).not.toHaveBeenCalled();
   });
