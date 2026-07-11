@@ -155,11 +155,12 @@ On app startup, Go scans the configured dev folder in the background:
   - path missing: mark `missing`;
   - remote no longer matches: mark `remote_mismatch`;
   - permissions fail: mark `permission_denied`.
-- Healthy discovered repos are included in normal PR syncing because choosing the dev folder is explicit consent.
+- Healthy discovered repos are included in normal PR syncing because choosing the dev folder is explicit consent (the onboarding/Settings copy states this outcome). Bulk registration is deliberate — the goal is an instantly useful PR list after onboarding with zero per-repo clicks; unwanted repos are removed per-repo afterwards, which is the rarer action.
+- The depth limit (children + one nested level) matches the common `~/dev/repo` and `~/dev/org/repo` layouts while keeping startup scans cheap; deeper nesting is rare enough to accept as a miss.
 
 No watcher is used. If a user adds or moves repos while Bistro is open, the next startup scan reconciles the state. Settings may include a "Scan now" troubleshooting action, but it is not the primary flow.
 
-Changing the dev folder needs no special reconciliation: local repo rows whose paths no longer exist are marked `missing` by the normal health checks, gray out in the UI, and the user recovers them via the standard broken-repo recovery actions (new path, move to cache, or remove).
+The dev folder is a discovery scope, not an ownership boundary: once a repo is registered as `source='local'`, its registration is per-repo and stays valid wherever the path lives. Changing the dev folder therefore needs no special reconciliation — repos in the old folder keep working as long as their paths exist (intended: they are still the user's real checkouts), and rows whose paths no longer exist are marked `missing` by the normal health checks, gray out in the UI, and recover via the standard broken-repo actions (new path, move to cache, or remove).
 
 ## Command-bar add repository
 
@@ -169,7 +170,7 @@ Flow:
 
 1. User pastes a GitHub repository URL.
 2. Go normalizes the URL into provider/owner/repo.
-3. Before cloning, Bistro checks scan results and performs a targeted dev-folder check for `<dev-folder>/<owner>/<repo>` plus any known scan matches. This avoids duplicating an existing repo after a partial or stale startup scan. Repos nested deeper than the scan depth may be missed and re-cloned to the dev-folder root; this is accepted v1 behavior.
+3. Before cloning, Bistro checks scan results and performs a targeted dev-folder check for `<dev-folder>/<owner>/<repo>` plus any known scan matches. This reduces (does not eliminate) duplicate clones after a partial or stale startup scan: a repo added mid-session at a non-standard location, or nested deeper than the scan depth, may still be missed and re-cloned; this is accepted v1 behavior.
 4. If found, register or update the repo as `source='local'`.
 5. If not found, prompt for destination:
    - **Clone into dev folder** — default when a dev folder is configured.
@@ -246,7 +247,7 @@ Cache prune, clear-all, and per-repo trash actions:
 5. Delete only managed cache folders where `source='cache'` and `local_path` is inside the managed cache root, plus safe orphan cache folders for clear-all.
 6. Never follow symlinks during removal.
 7. Preserve repo registrations, PRs, comments, reviews, patchsets, and queued actions for cache prune/clear/trash.
-8. After successful deletion of a registered cache repo, clear `local_path`, clear cache-related location state, and set `source=NULL` so the repo can be re-cached when needed.
+8. After successful deletion of a registered cache repo, clear `local_path`, clear cache-related location state, and set `source=NULL` so the repo can be re-cached when needed. Rationale: cache deletion frees disk, it does not unsubscribe — the user still watches the repo and its PR history stays; the next diff request simply re-clones. Stopping PR sync entirely is what "Remove repo" is for.
 
 If deletion fails, Bistro leaves the DB row unchanged, shows a generic UI error, and logs detailed context including repo identity, path, and OS error.
 

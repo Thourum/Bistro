@@ -570,7 +570,7 @@ export interface LocationError {
 - Modify: `electron/src/renderer/pages/OnboardingPage.tsx`
 - Test: `electron/src/renderer/pages/OnboardingPage.test.tsx`
 
-Behavior: before the existing finish footer, add a card: "Use your existing projects folder" with two actions — **Choose folder** (calls `window.electron.pickFolder()`, then `send('VALIDATE_DEV_FOLDER')`; on ok persists via `updateSettings({repositories:{devFolderPath}})` and sends `SCAN_DEV_FOLDER` with reason `settings-change`; shows discovered count) and **Skip** (Space/finish keeps working unchanged, devFolderPath stays null). Disclosure line per spec: Bistro will fetch PR objects into these repos under `refs/bistro/*` and never touches branches or files.
+Behavior: before the existing finish footer, add a card: "Use your existing projects folder" with two actions — **Choose folder** (calls `window.electron.pickFolder()`, then `send('VALIDATE_DEV_FOLDER')`; on ok persists via `updateSettings({repositories:{devFolderPath}})` and sends `SCAN_DEV_FOLDER` with reason `settings-change`; shows discovered count) and **Skip** (Space/finish keeps working unchanged, devFolderPath stays null). Disclosure copy per spec must state BOTH consequences: (a) every GitHub repo found in this folder is registered and starts syncing PRs, and (b) Bistro fetches PR objects into these repos only under `refs/bistro/*` and never touches branches, tags, or files. Unwanted repos can be removed afterwards via the repo recovery/remove flow.
 
 - [ ] **Step 1: Failing tests** (Vitest + Testing Library, mock `window.electron.pickFolder` and `useWebSocket().send`): skip leaves setting null and completes; choose-folder happy path persists canonical path from VALIDATE response and fires scan; validation error shows message and persists nothing.
 - [ ] **Step 2: Run** `cd electron && pnpm test -- OnboardingPage` — FAIL.
@@ -588,9 +588,9 @@ Behavior: before the existing finish footer, add a card: "Use your existing proj
 - Modify: `electron/src/renderer/components/CommandPalette.tsx` (add to `COMMANDS`, id `add-repo-by-url`, opens the dialog via `OverlayContext`)
 - Modify: `electron/src/renderer/overlays/OverlayContext.tsx` (new overlay id)
 
-Dialog flow: paste URL → `send('ADD_REPO_BY_URL', {url, destination: null, dev_folder_path: settingsStore.state.repositories.devFolderPath})` (always include the setting — Go needs it for the targeted dev-folder check) → on `destination_required`, show two options — **Dev folder** (default-focused when configured) / **Bistro cache** (default when not) → resend with destination (same `dev_folder_path`) → success toast + close; `destination_conflict`/`invalid_url`/`auth_failed` render by machine code.
+Dialog flow: paste URL → `send('ADD_REPO_BY_URL', {url, destination: null, dev_folder_path: settingsStore.state.repositories.devFolderPath})` (always include the setting — Go needs it for the targeted dev-folder check) → on `destination_required`, show the destination step: with a dev folder configured, two options — **Dev folder** (default-focused) / **Bistro cache**; with none configured, only **Bistro cache** is offered (plus a hint that a dev folder can be set in Settings → Repositories) → resend with destination (same `dev_folder_path`) → success toast + close; `destination_conflict`/`invalid_url`/`auth_failed` render by machine code.
 
-- [ ] **Step 1: Failing tests**: renders input; found-local response closes with toast; destination prompt defaults per devFolderPath presence; error codes map to distinct messages (assert on code-driven strings, not server text).
+- [ ] **Step 1: Failing tests**: renders input; found-local response closes with toast; destination prompt shows both options with dev folder configured (dev folder focused) and only Bistro cache without one; error codes map to distinct messages (assert on code-driven strings, not server text).
 - [ ] **Step 2: Run** `cd electron && pnpm test -- AddRepoDialog` — FAIL.
 - [ ] **Step 3: Implement** dialog + palette command + overlay wiring.
 - [ ] **Step 4: Run** — PASS. Also `pnpm test -- CommandPalette`.
