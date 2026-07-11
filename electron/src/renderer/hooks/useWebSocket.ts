@@ -619,6 +619,7 @@ function onMessage(event: MessageEvent<string>): void {
     case 'REVIEW_THREADS_READY':
     case 'ACTION_RESULT':
     case 'VALIDATE_DEV_FOLDER_RESULT':
+    case 'ADD_REPO_BY_URL_RESULT':
     case 'PR_LIST_READY': {
       const handler = messageHandlers.get(message.id);
       if (handler) {

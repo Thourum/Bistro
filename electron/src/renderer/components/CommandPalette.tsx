@@ -52,6 +52,12 @@ const COMMANDS: readonly CommandItem[] = [
     description: 'Discover and watch repositories',
     icon: 'source_environment',
   },
+  {
+    id: 'add-repo-by-url',
+    name: 'Add repository by URL',
+    description: 'Clone or link a repository from a Git URL',
+    icon: 'add_link',
+  },
   { id: 'focus-list', name: 'Focus PR list', icon: 'list_alt' },
   { id: 'focus-detail', name: 'Focus PR detail', icon: 'article' },
   { id: 'about', name: 'About BISTRO', icon: 'info' },
@@ -79,7 +85,7 @@ const COMMANDS: readonly CommandItem[] = [
  * Escape closes.
  */
 export function CommandPalette(): React.ReactElement | null {
-  const { activeOverlay, closeOverlay, openHelp, openRepoPicker } =
+  const { activeOverlay, closeOverlay, openHelp, openRepoPicker, openAddRepo } =
     useOverlays();
   const isOpen = activeOverlay === 'command';
   const [query, setQuery] = useState('');
@@ -182,6 +188,10 @@ export function CommandPalette(): React.ReactElement | null {
         return;
       case 'repo-picker':
         openRepoPicker();
+        setQuery('');
+        return;
+      case 'add-repo-by-url':
+        openAddRepo();
         setQuery('');
         return;
       case 'sync':

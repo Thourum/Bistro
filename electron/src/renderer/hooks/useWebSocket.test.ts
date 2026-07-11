@@ -229,6 +229,39 @@ describe('useWebSocket dev-folder startup scan', () => {
     unmount();
   });
 
+  it('resolves ADD_REPO_BY_URL requests when matching add-repo result arrives', async () => {
+    const { result, unmount } = renderHook(() => useWebSocket());
+    const ws = openMountedWebSocket();
+
+    const request = result.current.request('ADD_REPO_BY_URL', {
+      url: 'https://github.com/acme/api.git',
+      destination: null,
+      dev_folder_path: '/Users/sam/dev',
+    });
+
+    await vi.waitFor(() => {
+      expect(sentMessagesOfType(ws, 'ADD_REPO_BY_URL')).toHaveLength(1);
+    });
+
+    const addRepoRequest = sentMessagesOfType(ws, 'ADD_REPO_BY_URL')[0];
+    emitMessage(ws, {
+      id: addRepoRequest?.id,
+      type: 'ADD_REPO_BY_URL_RESULT',
+      data: {
+        ok: true,
+        source: 'local',
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    await expect(request).resolves.toEqual({
+      ok: true,
+      source: 'local',
+    });
+
+    unmount();
+  });
+
   it('ignores malformed SCAN_DEV_FOLDER_RESULT payloads without throwing', () => {
     const { unmount } = renderHook(() => useWebSocket());
     const ws = openMountedWebSocket();
