@@ -124,6 +124,9 @@ func NewScanDevFolderHandler(locations *store.RepoLocationStore, syncTrigger cha
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return nil, fmt.Errorf("invalid SCAN_DEV_FOLDER payload: %w", err)
 		}
+		if isBistroRepoDirOverrideSet() {
+			return locationResponse(msg, scanDevFolderPayload(true, 0, 0, 0, 0, false)), nil
+		}
 		canonicalPath, err := scan.ValidateDevFolder(data.Path)
 		if err != nil {
 			return locationResponse(msg, locationError("", operationScanDevFolder, "invalid_path", err.Error())), nil
@@ -158,14 +161,7 @@ func NewScanDevFolderHandler(locations *store.RepoLocationStore, syncTrigger cha
 			degraded++
 		}
 		triggerSync(syncTrigger, logger)
-		return locationResponse(msg, struct {
-			OK         bool `json:"ok"`
-			Discovered int  `json:"discovered"`
-			Healthy    int  `json:"healthy"`
-			Degraded   int  `json:"degraded"`
-			Skipped    int  `json:"skipped"`
-			Partial    bool `json:"partial"`
-		}{OK: true, Discovered: len(result.Found), Healthy: healthy, Degraded: degraded, Skipped: result.Skipped, Partial: result.Partial}), nil
+		return locationResponse(msg, scanDevFolderPayload(true, len(result.Found), healthy, degraded, result.Skipped, result.Partial)), nil
 	}
 }
 
@@ -187,24 +183,31 @@ func NewAddRepoByURLHandler(deps AddRepoByURLDeps) ws.MessageHandler {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, cloneErrorCode(ctxErr), ctxErr.Error())), nil
 		}
-		if found, locationErr, err := registeredLocal(ctx, deps.Store, repoID); err != nil {
-			return nil, err
-		} else if locationErr != nil {
-			return locationResponse(msg, *locationErr), nil
-		} else if found {
-			return locationResponse(msg, repoSourcePayload(repoID, "local")), nil
+		isRepoDirOverrideSet := isBistroRepoDirOverrideSet()
+		if !isRepoDirOverrideSet {
+			if found, locationErr, err := registeredLocal(ctx, deps.Store, repoID); err != nil {
+				return nil, err
+			} else if locationErr != nil {
+				return locationResponse(msg, *locationErr), nil
+			} else if found {
+				return locationResponse(msg, repoSourcePayload(repoID, "local")), nil
+			}
 		}
-		if data.DevFolderPath != nil && *data.DevFolderPath != "" {
+		if !isRepoDirOverrideSet && data.DevFolderPath != nil && *data.DevFolderPath != "" {
 			if found, err := targetedDevFolder(ctx, deps.Store, identity, *data.DevFolderPath); err != nil {
 				return nil, err
 			} else if found {
 				return locationResponse(msg, repoSourcePayload(repoID, "local")), nil
 			}
 		}
-		if data.Destination == nil || *data.Destination == "" {
-			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, "destination_required", "destination is required")), nil
+		destination := "cache"
+		if !isRepoDirOverrideSet {
+			if data.Destination == nil || *data.Destination == "" {
+				return locationResponse(msg, locationError(repoID, operationAddRepoByURL, "destination_required", "destination is required")), nil
+			}
+			destination = *data.Destination
 		}
-		rootPath, source, err := destinationRoot(identity, *data.Destination, valueOrEmpty(data.DevFolderPath), deps.CacheRoot)
+		rootPath, source, err := destinationRoot(identity, destination, valueOrEmpty(data.DevFolderPath), deps.CacheRoot)
 		if err != nil {
 			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, destinationRootErrorCode(err), err.Error())), nil
 		}
@@ -230,12 +233,18 @@ func NewAddRepoByURLHandler(deps AddRepoByURLDeps) ws.MessageHandler {
 			return nil, err
 		}
 		if err := cloneRepo(ctx, deps.Clone, deps.TokenSource, data.URL, destinationPath, source == "cache"); err != nil {
-			cleanupBistroCreated(destinationPath, createdByBistro)
-			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, cloneErrorCode(err), err.Error())), nil
+			message := err.Error()
+			if cleanupErr := cleanupBistroCreated(destinationPath, createdByBistro, source, rootPath); cleanupErr != nil {
+				message = fmt.Sprintf("%s; %s", message, cleanupErr.Error())
+			}
+			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, cloneErrorCode(err), message)), nil
 		}
 		if !repoPathMatches(destinationPath, identity) {
-			cleanupBistroCreated(destinationPath, createdByBistro)
-			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, "remote_mismatch", "cloned repository remote does not match requested URL")), nil
+			message := "cloned repository remote does not match requested URL"
+			if cleanupErr := cleanupBistroCreated(destinationPath, createdByBistro, source, rootPath); cleanupErr != nil {
+				message = fmt.Sprintf("%s; %s", message, cleanupErr.Error())
+			}
+			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, "remote_mismatch", message)), nil
 		}
 		if err := setRepoSource(ctx, deps.DB, deps.Store, identity, destinationPath, source); err != nil {
 			return nil, err
@@ -367,13 +376,23 @@ func NewDeleteCacheRepoHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
 			return locationResponse(msg, locationError(repoID, operationDeleteCacheRepo, "delete_failed", "repo is not a cache repo")), nil
 		}
 		operation := func() error {
-			if err := requireDeleteCacheDir(deps.DeleteCacheDir)(location.LocalPath); err != nil {
+			lockedLocation, err := deps.Store.Get(ctx, repoID)
+			if err != nil {
+				return err
+			}
+			if lockedLocation == nil || lockedLocation.Source != "cache" || lockedLocation.LocalPath == "" {
+				return errors.New("repo is no longer a cache repo")
+			}
+			if err := validateCacheRepoPathInsideRoot(lockedLocation.LocalPath); err != nil {
+				return err
+			}
+			if err := requireDeleteCacheDir(deps.DeleteCacheDir)(lockedLocation.LocalPath); err != nil {
 				return err
 			}
 			return deps.Store.ClearCacheLocation(ctx, repoID)
 		}
 		if deps.Locks != nil {
-			if err := deps.Locks.WithMaintenance(operation); err != nil {
+			if err := deps.Locks.WithRepo(repoID, operation); err != nil {
 				return locationResponse(msg, locationError(repoID, operationDeleteCacheRepo, "delete_failed", err.Error())), nil
 			}
 		} else if err := operation(); err != nil {
@@ -464,12 +483,18 @@ func NewRecoverRepoToCacheHandler(deps RecoverRepoToCacheDeps) ws.MessageHandler
 		}
 		repoURL := fmt.Sprintf("https://github.com/%s/%s.git", identity.Owner, identity.Repo)
 		if err := cloneRepo(ctx, deps.Clone, deps.TokenSource, repoURL, destination, true); err != nil {
-			cleanupBistroCreated(destination, createdByBistro)
-			return locationResponse(msg, locationError(repoID, operationRecoverRepoToCache, cloneErrorCode(err), err.Error())), nil
+			message := err.Error()
+			if cleanupErr := cleanupBistroCreated(destination, createdByBistro, "cache", root); cleanupErr != nil {
+				message = fmt.Sprintf("%s; %s", message, cleanupErr.Error())
+			}
+			return locationResponse(msg, locationError(repoID, operationRecoverRepoToCache, cloneErrorCode(err), message)), nil
 		}
 		if !repoPathMatches(destination, identity) {
-			cleanupBistroCreated(destination, createdByBistro)
-			return locationResponse(msg, locationError(repoID, operationRecoverRepoToCache, "clone_failed", "cloned repository remote does not match repo")), nil
+			message := "cloned repository remote does not match repo"
+			if cleanupErr := cleanupBistroCreated(destination, createdByBistro, "cache", root); cleanupErr != nil {
+				message = fmt.Sprintf("%s; %s", message, cleanupErr.Error())
+			}
+			return locationResponse(msg, locationError(repoID, operationRecoverRepoToCache, "clone_failed", message)), nil
 		}
 		if err := deps.Store.SetCache(ctx, repoID, destination); err != nil {
 			return nil, err
@@ -486,6 +511,24 @@ func locationResponse(msg ws.InboundMessage, data any) map[string]any {
 
 func locationError(repoID, operation, code, message string) LocationErrorPayload {
 	return LocationErrorPayload{OK: false, RepoID: repoID, Operation: operation, Code: code, Message: message}
+}
+
+func scanDevFolderPayload(ok bool, discovered, healthy, degraded, skipped int, partial bool) struct {
+	OK         bool `json:"ok"`
+	Discovered int  `json:"discovered"`
+	Healthy    int  `json:"healthy"`
+	Degraded   int  `json:"degraded"`
+	Skipped    int  `json:"skipped"`
+	Partial    bool `json:"partial"`
+} {
+	return struct {
+		OK         bool `json:"ok"`
+		Discovered int  `json:"discovered"`
+		Healthy    int  `json:"healthy"`
+		Degraded   int  `json:"degraded"`
+		Skipped    int  `json:"skipped"`
+		Partial    bool `json:"partial"`
+	}{OK: ok, Discovered: discovered, Healthy: healthy, Degraded: degraded, Skipped: skipped, Partial: partial}
 }
 
 func repoSourcePayload(repoID, source string) struct {
@@ -513,6 +556,10 @@ func runCacheMaintenance(locks *git.RepoLocks, operation func() error) error {
 		return locks.WithMaintenance(operation)
 	}
 	return operation()
+}
+
+func isBistroRepoDirOverrideSet() bool {
+	return os.Getenv("BISTRO_REPO_DIR") != ""
 }
 
 func triggerSync(syncTrigger chan<- string, logger *slog.Logger) {
@@ -724,10 +771,57 @@ func prepareCloneDestination(path string) (bool, error) {
 	return false, nil
 }
 
-func cleanupBistroCreated(path string, createdByBistro bool) {
-	if createdByBistro {
-		_ = os.RemoveAll(path)
+func cleanupBistroCreated(path string, createdByBistro bool, source, root string) error {
+	if !createdByBistro {
+		return nil
 	}
+	if source == "local" && !hasOnlyGitCloneFiles(path) {
+		return fmt.Errorf("partial clone contains non-Bistro files; manual cleanup required: %s", path)
+	}
+	if source == "cache" && !isPathInside(root, path) {
+		return fmt.Errorf("partial cache clone is outside cache root; manual cleanup required: %s", path)
+	}
+	return os.RemoveAll(path)
+}
+
+func validateCacheRepoPathInsideRoot(path string) error {
+	root, err := git.CacheRoot()
+	if err != nil {
+		return fmt.Errorf("get cache root: %w", err)
+	}
+	if !isPathInside(root, path) {
+		return fmt.Errorf("cache path %q is outside cache root", path)
+	}
+	return nil
+}
+
+func isPathInside(root, path string) bool {
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return false
+	}
+	canonicalPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(filepath.Clean(canonicalRoot), filepath.Clean(canonicalPath))
+	if err != nil {
+		return false
+	}
+	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+}
+
+func hasOnlyGitCloneFiles(path string) bool {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.Name() != ".git" {
+			return false
+		}
+	}
+	return true
 }
 
 func setRepoSource(ctx context.Context, db *sql.DB, locations *store.RepoLocationStore, identity git.Identity, path, source string) error {
