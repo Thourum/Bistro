@@ -624,6 +624,10 @@ function onMessage(event: MessageEvent<string>): void {
     case 'PRUNE_CACHE_RESULT':
     case 'CLEAR_CACHE_RESULT':
     case 'DELETE_CACHE_REPO_RESULT':
+    case 'RECOVER_REPO_PATH_RESULT':
+    case 'RECOVER_REPO_TO_CACHE_RESULT':
+    case 'REMOVE_REPO_PREFLIGHT_RESULT':
+    case 'REMOVE_REPO_RESULT':
     case 'PR_LIST_READY': {
       const handler = messageHandlers.get(message.id);
       if (handler) {

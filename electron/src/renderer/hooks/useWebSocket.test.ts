@@ -262,6 +262,63 @@ describe('useWebSocket dev-folder startup scan', () => {
     unmount();
   });
 
+  it.each([
+    {
+      requestType: 'RECOVER_REPO_PATH',
+      resultType: 'RECOVER_REPO_PATH_RESULT',
+      payload: { repo_id: 'github:acme/api', path: '/Users/sam/dev/api' },
+      response: {
+        ok: false,
+        code: 'remote_mismatch',
+        message: 'origin changed',
+      },
+    },
+    {
+      requestType: 'RECOVER_REPO_TO_CACHE',
+      resultType: 'RECOVER_REPO_TO_CACHE_RESULT',
+      payload: { repo_id: 'github:acme/api' },
+      response: { ok: true },
+    },
+    {
+      requestType: 'REMOVE_REPO_PREFLIGHT',
+      resultType: 'REMOVE_REPO_PREFLIGHT_RESULT',
+      payload: { repo_id: 'github:acme/api' },
+      response: { ok: true, pull_requests: 2, comments: 3 },
+    },
+    {
+      requestType: 'REMOVE_REPO',
+      resultType: 'REMOVE_REPO_RESULT',
+      payload: { repo_id: 'github:acme/api' },
+      response: { ok: true },
+    },
+  ])('resolves $requestType requests when matching $resultType arrives', async ({
+    requestType,
+    resultType,
+    payload,
+    response,
+  }) => {
+    const { result, unmount } = renderHook(() => useWebSocket());
+    const ws = openMountedWebSocket();
+
+    const request = result.current.request(requestType, payload);
+
+    await vi.waitFor(() => {
+      expect(sentMessagesOfType(ws, requestType)).toHaveLength(1);
+    });
+
+    const sentRequest = sentMessagesOfType(ws, requestType)[0];
+    emitMessage(ws, {
+      id: sentRequest?.id,
+      type: resultType,
+      data: response,
+      timestamp: new Date().toISOString(),
+    });
+
+    await expect(request).resolves.toEqual(response);
+
+    unmount();
+  });
+
   it('ignores malformed SCAN_DEV_FOLDER_RESULT payloads without throwing', () => {
     const { unmount } = renderHook(() => useWebSocket());
     const ws = openMountedWebSocket();
