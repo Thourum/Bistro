@@ -1,7 +1,9 @@
 import { useCallback, useEffect } from 'react';
 import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
+import { settingsStore } from '../store/settings';
 import type { RepoInfo } from '../types';
+import type { LocationError, ScanDevFolderResult } from '../types/repoLocation';
 import { formatErrorMessage } from '../utils/error';
 import { createLogger } from '../utils/logger';
 
@@ -69,6 +71,14 @@ interface ThreadStateChangedData {
   pr_id: string;
   thread_id: string;
 }
+
+interface ScanDevFolderRequest {
+  path: string;
+  reason: 'startup';
+}
+
+type LocationErrorData = LocationError;
+type ScanDevFolderData = ScanDevFolderResult;
 
 const DEFAULT_WS_PORT = 8080;
 
@@ -264,6 +274,24 @@ function handleCIStatusChanged(_data: unknown): void {
   }
 }
 
+function handleScanDevFolderResult(data: ScanDevFolderData): void {
+  if (data.errors.length === 0) {
+    return;
+  }
+
+  log.warn(
+    { path: data.path, errors: data.errors.length },
+    'dev-folder scan completed with location errors',
+  );
+}
+
+function handleLocationError(data: LocationErrorData): void {
+  log.warn(
+    { repoId: data.repo_id, operation: data.operation, code: data.code },
+    data.message,
+  );
+}
+
 function onMessage(event: MessageEvent<string>): void {
   let message: WSMessage;
   try {
@@ -337,6 +365,12 @@ function onMessage(event: MessageEvent<string>): void {
       break;
     case 'CI_STATUS_CHANGED':
       handleCIStatusChanged(message.data);
+      break;
+    case 'SCAN_DEV_FOLDER_RESULT':
+      handleScanDevFolderResult(message.data as ScanDevFolderData);
+      break;
+    case 'LOCATION_ERROR':
+      handleLocationError(message.data as LocationErrorData);
       break;
     case 'AUTH_REDIRECT': {
       const payload = message.data as { provider: string; url: string };
@@ -526,6 +560,23 @@ function onMessage(event: MessageEvent<string>): void {
   }
 }
 
+function sendStartupDevFolderScan(ws: WebSocket): void {
+  const path = settingsStore.state.repositories.devFolderPath;
+  if (path === null) {
+    return;
+  }
+
+  const data: ScanDevFolderRequest = { path, reason: 'startup' };
+  const scanMsg: WSMessage = {
+    id: `req-${Date.now()}-${Math.random()}`,
+    type: 'SCAN_DEV_FOLDER',
+    data,
+    timestamp: new Date().toISOString(),
+  };
+  log.info({ id: scanMsg.id }, 'sending SCAN_DEV_FOLDER');
+  ws.send(JSON.stringify(scanMsg));
+}
+
 function connect(): void {
   if (singletonWs && singletonWs.readyState <= WebSocket.OPEN) {
     return;
@@ -566,6 +617,7 @@ function connect(): void {
     };
     log.info({ id: checkMsg.id }, 'sending AUTH_CHECK');
     ws.send(JSON.stringify(checkMsg));
+    sendStartupDevFolderScan(ws);
   };
 
   ws.onmessage = onMessage;
