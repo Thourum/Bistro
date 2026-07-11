@@ -1,5 +1,5 @@
 import { useHotkey } from '@tanstack/react-hotkeys';
-import { err, ok, ResultAsync } from 'neverthrow';
+import { err, ok, type Result, ResultAsync } from 'neverthrow';
 import React from 'react';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -20,6 +20,11 @@ interface ScanDevFolderResult {
   discovered: number;
 }
 
+interface SendMessageResult {
+  id?: string;
+  payload: unknown;
+}
+
 function validationErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -27,32 +32,83 @@ function validationErrorMessage(error: unknown): string {
   return 'Unable to validate that folder.';
 }
 
-function parseValidateDevFolderResult(data: unknown): ValidateDevFolderResult {
+function sendResultErrorMessage(result: unknown, fallback: string): string {
+  if (
+    typeof result === 'object' &&
+    result !== null &&
+    typeof (result as { error?: unknown }).error === 'string'
+  ) {
+    return (result as { error: string }).error;
+  }
+  return fallback;
+}
+
+function sendAndCapture(
+  send: (type: string, data: unknown) => string | undefined,
+  type: string,
+  data: unknown,
+): SendMessageResult {
+  const payload = send(type, data);
+
+  if (typeof payload === 'undefined') {
+    throw new Error(`Unable to send ${type}.`);
+  }
+
+  if (typeof payload === 'string') {
+    return { id: payload, payload: undefined };
+  }
+
+  return { payload };
+}
+
+function parseValidateDevFolderResult(
+  data: unknown,
+): Result<ValidateDevFolderResult, string> {
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    (data as { ok?: unknown }).ok === false
+  ) {
+    return err(sendResultErrorMessage(data, 'Unable to validate that folder.'));
+  }
+
   if (
     typeof data === 'object' &&
     data !== null &&
     (data as { ok?: unknown }).ok === true &&
     typeof (data as { canonical_path?: unknown }).canonical_path === 'string'
   ) {
-    return {
+    return ok({
       canonicalPath: (data as { canonical_path: string }).canonical_path,
-    };
+    });
   }
-  throw new Error('Dev folder validation returned an invalid response.');
+  return err('Dev folder validation returned an invalid response.');
 }
 
-function parseScanDevFolderResult(data: unknown): ScanDevFolderResult {
+function parseScanDevFolderResult(
+  data: unknown,
+): Result<ScanDevFolderResult, string> {
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    Array.isArray((data as { repositories?: unknown }).repositories)
+  ) {
+    return ok({
+      discovered: (data as { repositories: unknown[] }).repositories.length,
+    });
+  }
+
   if (
     typeof data === 'object' &&
     data !== null &&
     (data as { ok?: unknown }).ok === true &&
     typeof (data as { discovered?: unknown }).discovered === 'number'
   ) {
-    return {
+    return ok({
       discovered: (data as { discovered: number }).discovered,
-    };
+    });
   }
-  throw new Error('Dev folder scan returned an invalid response.');
+  return err('Dev folder scan returned an invalid response.');
 }
 
 export function OnboardingPage(): React.ReactElement {
@@ -60,7 +116,7 @@ export function OnboardingPage(): React.ReactElement {
     appStore,
     (s: UIState) => s.confirmingAction,
   );
-  const { request } = useWebSocket();
+  const { send } = useWebSocket();
   const [devFolderError, setDevFolderError] = React.useState<string | null>(
     null,
   );
@@ -91,14 +147,12 @@ export function OnboardingPage(): React.ReactElement {
         }
         return ok(path);
       })
-      .andThen((path) =>
-        ResultAsync.fromPromise(
-          request('VALIDATE_DEV_FOLDER', { path }).then(
-            parseValidateDevFolderResult,
-          ),
-          validationErrorMessage,
-        ),
-      )
+      .andThen((path) => {
+        const validationResult = sendAndCapture(send, 'VALIDATE_DEV_FOLDER', {
+          path,
+        });
+        return parseValidateDevFolderResult(validationResult.payload);
+      })
       .andThen((result) =>
         ResultAsync.fromPromise(
           updateSettings({
@@ -107,15 +161,13 @@ export function OnboardingPage(): React.ReactElement {
           validationErrorMessage,
         ),
       )
-      .andThen((result) =>
-        ResultAsync.fromPromise(
-          request('SCAN_DEV_FOLDER', {
-            path: result.canonicalPath,
-            reason: 'settings-change',
-          }).then(parseScanDevFolderResult),
-          validationErrorMessage,
-        ),
-      )
+      .andThen((result) => {
+        const scanResult = sendAndCapture(send, 'SCAN_DEV_FOLDER', {
+          path: result.canonicalPath,
+          reason: 'settings-change',
+        });
+        return parseScanDevFolderResult(scanResult.payload);
+      })
       .match(
         (result) => {
           setDiscoveredCount(result.discovered);
@@ -126,7 +178,7 @@ export function OnboardingPage(): React.ReactElement {
           }
         },
       );
-  }, [request]);
+  }, [send]);
 
   React.useEffect(() => {
     if (confirmingAction === 'onboarding_finish') {

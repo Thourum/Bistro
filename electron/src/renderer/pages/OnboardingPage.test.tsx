@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../types/settings';
@@ -92,35 +92,44 @@ describe('OnboardingPage dev-folder step', () => {
   it('persists the canonical dev-folder path and shows the scan tally after validation succeeds', async () => {
     const user = userEvent.setup();
     vi.mocked(window.electron.pickFolder).mockResolvedValue('/Users/sam/dev');
-    requestMock
-      .mockResolvedValueOnce({
-        ok: true,
-        canonical_path: '/private/var/dev',
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        discovered: 2,
-        healthy: 1,
-        degraded: 1,
-        skipped: 0,
-        partial: false,
+    sendMock
+      .mockReturnValueOnce({ ok: true, canonical_path: '/private/var/dev' })
+      .mockReturnValueOnce({
+        path: '/private/var/dev',
+        repositories: [
+          {
+            repo_id: 'github:acme/api',
+            path: '/private/var/dev/api',
+            remote_url: 'https://github.com/acme/api.git',
+            source: 'local',
+          },
+          {
+            repo_id: 'github:acme/web',
+            path: '/private/var/dev/web',
+            remote_url: 'https://github.com/acme/web.git',
+            source: 'local',
+          },
+        ],
+        errors: [],
       });
 
     render(<OnboardingPage />);
 
     await user.click(screen.getByRole('button', { name: /choose folder/i }));
 
-    expect(requestMock).toHaveBeenNthCalledWith(1, 'VALIDATE_DEV_FOLDER', {
-      path: '/Users/sam/dev',
+    await waitFor(() => {
+      expect(sendMock).toHaveBeenNthCalledWith(1, 'VALIDATE_DEV_FOLDER', {
+        path: '/Users/sam/dev',
+      });
     });
     expect(window.electron.settings.set).toHaveBeenCalledWith({
       repositories: { devFolderPath: '/private/var/dev' },
     });
-    expect(requestMock).toHaveBeenNthCalledWith(2, 'SCAN_DEV_FOLDER', {
+    expect(sendMock).toHaveBeenNthCalledWith(2, 'SCAN_DEV_FOLDER', {
       path: '/private/var/dev',
       reason: 'settings-change',
     });
-    expect(sendMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
     expect(settingsStore.state.repositories.devFolderPath).toBe(
       '/private/var/dev',
     );
@@ -130,15 +139,21 @@ describe('OnboardingPage dev-folder step', () => {
   it('shows a validation error and persists nothing when validation fails', async () => {
     const user = userEvent.setup();
     vi.mocked(window.electron.pickFolder).mockResolvedValue('/Users/sam');
-    requestMock.mockRejectedValueOnce(new Error('Choose a projects folder'));
+    sendMock.mockReturnValueOnce({
+      ok: false,
+      error: 'Choose a projects folder',
+    });
 
     render(<OnboardingPage />);
 
     await user.click(screen.getByRole('button', { name: /choose folder/i }));
 
     expect(screen.getByText('Choose a projects folder')).toBeInTheDocument();
+    expect(sendMock).toHaveBeenCalledWith('VALIDATE_DEV_FOLDER', {
+      path: '/Users/sam',
+    });
     expect(settingsStore.state.repositories.devFolderPath).toBeNull();
     expect(window.electron.settings.set).not.toHaveBeenCalled();
-    expect(sendMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
   });
 });
