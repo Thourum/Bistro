@@ -95,6 +95,28 @@ function parseScanDevFolderResult(
   return err('Dev folder scan returned an invalid response.');
 }
 
+function persistDevFolderPath(
+  result: ValidateDevFolderResult,
+): ResultAsync<ValidateDevFolderResult, string> {
+  return ResultAsync.fromPromise(
+    window.electron.settings.set({
+      repositories: { devFolderPath: result.canonicalPath },
+    }),
+    validationErrorMessage,
+  ).andThen((settingsResult) => {
+    if ('err' in settingsResult) {
+      return err(
+        settingsResult.err.trim() === ''
+          ? 'Unable to write settings.'
+          : settingsResult.err,
+      );
+    }
+
+    settingsStore.setState(() => settingsResult.ok);
+    return ok(result);
+  });
+}
+
 export function OnboardingPage(): React.ReactElement {
   const confirmingAction = useStore(
     appStore,
@@ -137,14 +159,7 @@ export function OnboardingPage(): React.ReactElement {
           validationErrorMessage,
         ).andThen(parseValidateDevFolderResult),
       )
-      .andThen((result) =>
-        ResultAsync.fromPromise(
-          updateSettings({
-            repositories: { devFolderPath: result.canonicalPath },
-          }).then(() => result),
-          validationErrorMessage,
-        ),
-      )
+      .andThen(persistDevFolderPath)
       .andThen((result) =>
         ResultAsync.fromPromise(
           request('SCAN_DEV_FOLDER', {

@@ -156,4 +156,36 @@ describe('OnboardingPage dev-folder step', () => {
     expect(settingsStore.state.repositories.devFolderPath).toBeNull();
     expect(window.electron.settings.set).not.toHaveBeenCalled();
   });
+
+  it('shows a settings error and does not scan when persisting the dev-folder path fails', async () => {
+    const user = userEvent.setup();
+    vi.mocked(window.electron.pickFolder).mockResolvedValue('/Users/sam/dev');
+    vi.mocked(window.electron.settings.set).mockResolvedValue({
+      err: 'Unable to write settings',
+    });
+    requestMock.mockResolvedValueOnce({
+      ok: true,
+      canonical_path: '/private/var/dev',
+    });
+
+    render(<OnboardingPage />);
+
+    await user.click(screen.getByRole('button', { name: /choose folder/i }));
+
+    expect(
+      await screen.findByText('Unable to write settings'),
+    ).toBeInTheDocument();
+    expect(window.electron.settings.set).toHaveBeenCalledWith({
+      repositories: { devFolderPath: '/private/var/dev' },
+    });
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    expect(requestMock).toHaveBeenCalledWith('VALIDATE_DEV_FOLDER', {
+      path: '/Users/sam/dev',
+    });
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(settingsStore.state.repositories.devFolderPath).toBeNull();
+    expect(
+      screen.queryByText(/repositories discovered/i),
+    ).not.toBeInTheDocument();
+  });
 });
