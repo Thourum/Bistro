@@ -115,13 +115,17 @@ renderer requests comments
   → handler RefreshIfStale(prID):
       for each comment whose stored fingerprint != loader.Fingerprint():
         re-run deterministic tier; UPDATE comment + state row
+      if mode ∈ {rules+llm, llm-all}: kick the same async LLM tier for this
+        PR (identical code path as post-sync; cache makes repeats cheap)
   → return comments
 ```
 
 Coarse fingerprint: sha256 over rule-dir file names+contents **plus the
 classification mode string**. Any rule edit or mode change invalidates lazily
 on next PR open. No fsnotify, no watcher, no timer — cold until the user
-looks. Mode changes are not retroactive across the whole DB.
+looks. Mode changes are not retroactive across the whole DB; switching to an
+LLM mode upgrades a PR's comments the next time that PR is opened (or synced),
+via the LLM kick above.
 
 ## Data model
 
@@ -132,7 +136,7 @@ ALTER TABLE comments ADD COLUMN author_type TEXT;            -- 'human'|'bot'|'u
 ALTER TABLE comments ADD COLUMN bot_vendor TEXT;             -- 'coderabbit'|'greptile'|…
 ALTER TABLE comments ADD COLUMN severity TEXT;               -- 'critical'|'warning'|'suggestion'|'nit'|'info'
 ALTER TABLE comments ADD COLUMN category TEXT;               -- 'security'|'correctness'|'performance'|'style'|'readability'|'docs'
-ALTER TABLE comments ADD COLUMN classification_source TEXT;  -- 'rule:<file>:<name>'|'byok:<provider>'|'unclassified'
+ALTER TABLE comments ADD COLUMN classification_source TEXT;  -- 'rule:<file>:<name>'|'byok:<provider>:<model>'|'unclassified'
 
 CREATE TABLE comment_classification_state (
   comment_id  TEXT PRIMARY KEY,
@@ -252,10 +256,18 @@ No confidence score in v1 (deferred until real conflicts are observed).
 Per-PR post-pass in the writer, after all comments are classified, before
 commit:
 
-- Candidate pairs: same `file_path`, line numbers within ±3.
-- Similarity: trigram Jaccard over normalized bodies, threshold > 0.7.
-- Matching comments share a `dedup_group_id`; group severity = max of members.
-- Pure Go, no dependencies; idempotent across re-syncs.
+- **Participants:** comments with `author_type = 'bot'` and a non-NULL
+  `file_path`. Display line = `COALESCE(anchored_line, line_number)`;
+  comments with no line at all don't participate. Human comments never group.
+- **Candidate pairs:** same `file_path`, display lines within ±3.
+- **Similarity:** trigram Jaccard over normalized bodies (lowercased,
+  whitespace-collapsed, markdown/code fences stripped), threshold > 0.7.
+- **Grouping:** matching pairs form an undirected graph; each connected
+  component of size ≥ 2 becomes a group with
+  `dedup_group_id = sha256(sorted member comment IDs)` — so re-running dedup
+  on the same comments is idempotent.
+- Group severity = max of members (severity rank as defined in Renderer).
+- Pure Go, no dependencies.
 
 ### Classification mode (3.8)
 
@@ -276,24 +288,54 @@ never echoed back to the renderer. Mode/provider changes apply live via a
 settings-changed WS message — no restart.
 
 Cache: `body_hash` lookup before any call — the same comment text is never
-classified twice, across PRs and sessions. Token usage is accumulated per
-session and pushed via a `BYOK_USAGE` event for the Settings counter
-("This session: 14,230 tokens, est. $0.18").
+classified twice, across PRs and sessions. Cache hits apply regardless of the
+currently configured provider/model (the answer is the point, not who gave
+it); `classification_source` is written as `byok:<provider>:<model>` from the
+**cache row**, so provenance always reflects the model that actually judged
+the text. Token usage is accumulated per session and pushed via a
+`BYOK_USAGE` event for the Settings counter ("This session: 14,230 tokens,
+est. $0.18").
+
+### Settings & wire contract
+
+Non-secret settings persist in the existing Electron settings store under
+`settings.classification = { mode, dismissalScope, provider, model,
+endpoint }`. Electron pushes them to Go via a new
+`SET_CLASSIFICATION_SETTINGS` WS message — once on engine connection
+(bootstrap) and on every change; Go acks with
+`CLASSIFICATION_SETTINGS_UPDATED`. The API key never enters settings JSON:
+`SET_BYOK_KEY { provider, key }` / `DELETE_BYOK_KEY { provider }` store and
+remove it via `internal/keychain` (`bistro.byok.<provider>`), and the key is
+never echoed back to the renderer (Settings shows presence only). Go emits
+`BYOK_AUTH_FAILED` on auth errors and `BYOK_USAGE` after each LLM batch.
 
 ## Dismissals (3.5)
 
 **Dismissal scope setting** (per account): `local` (default) or
 `local+provider`.
 
-- `local`: insert the `comment_dismissals` row. Nothing leaves the machine.
-- `local+provider`: same row, **plus** — if the comment belongs to a
-  resolvable inline review thread — enqueue the existing `ResolveThread`
-  action through the offline action queue (retry/offline for free). Issue
-  comments and unresolvable threads silently stay local-only.
-- Undo (`u`): delete the local row(s); if a dismissal resolved a thread,
-  enqueue the matching `UnresolveThread`. Bulk operations record their
-  affected-comment-ID set in a session-scoped undo stack, so one `u` reverses
-  the whole batch. The stack does not survive app restart; the dismissals do.
+Go owns all SQLite writes, so dismissal is a WS command pair, not a renderer
+write:
+
+- `DISMISS_COMMENTS { pr_id, comment_ids[] }` → Go resolves the current
+  account (existing `current_user` table), inserts the `comment_dismissals`
+  rows in one tx, and returns `DISMISS_RESULT { batch_id, dismissed_ids[],
+  resolved_thread_ids[] }`. When scope is `local+provider`, Go additionally
+  enqueues one `ResolveThread` action per **resolvable thread whose stored
+  state is known and unresolved** (`review_threads.state_known=1, resolved=0`)
+  among the dismissed comments' threads; those thread IDs are what
+  `resolved_thread_ids` reports. Issue comments and unresolvable/already-
+  resolved threads silently stay local-only.
+- `UNDISMISS_COMMENTS { comment_ids[], unresolve_thread_ids[] }` → deletes the
+  rows and enqueues `UnresolveThread` for exactly the listed threads.
+- After either command, the existing `COMMENTS_READY` event re-fires for the
+  PR; provider write-back rides the offline action queue (retry for free).
+
+Undo (`u`): the renderer keeps a session-scoped stack of `DISMISS_RESULT`
+payloads; one `u` sends `UNDISMISS_COMMENTS` with the top entry's
+`dismissed_ids` + `resolved_thread_ids` — so only threads this batch actually
+resolved get unresolved, never threads that were already resolved beforehand.
+The stack does not survive app restart; the dismissals (SQLite rows) do.
 
 ## Renderer surface
 
