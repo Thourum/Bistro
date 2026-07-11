@@ -7,7 +7,7 @@
 >
 > This document parks Stage-2 work surfaced during Stage-1 design so it isn't lost.
 > Items here are **explicitly out of FOSS v1 scope**. Created 2026-06-20 during the
-> Phase 2 re-scope (see `docs/ROADMAP-AUDIT-2026-06-19.md` for why these were deferred).
+> Phase 2 re-scope (see `docs/ROADMAP-AUDIT-2026-06-19.md` — removed 2026-07-11, in git history — for why these were deferred).
 
 ---
 
