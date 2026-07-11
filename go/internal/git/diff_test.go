@@ -29,7 +29,7 @@ func TestGenerateDiffOnBareClone(t *testing.T) {
 	}
 
 	client := NewClient(NewCache())
-	result, err := client.GenerateDiff(bareDir, baseSHA, headSHA)
+	result, err := client.GenerateDiff(bareDir, baseSHA, headSHA, DefaultDiffOptions())
 	if err != nil {
 		t.Fatalf("GenerateDiff on bare clone: %v", err)
 	}

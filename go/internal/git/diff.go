@@ -32,26 +32,21 @@ func filePatchToString(fp fdiff.FilePatch) (string, error) {
 	return buf.String(), nil
 }
 
-
 // GenerateDiff creates per-file diffs between two commits in the on-disk
 // repository at localPath. Retained as the stable, disk-backed API; it opens
 // the repo and delegates to generateDiffFromRepo so the patch-conversion logic
 // is shared with the in-memory path.
 func (c *Client) GenerateDiff(localPath, baseSHA, headSHA string, opts DiffOptions) (*DiffResult, error) {
-	totalStart := time.Now()
-
 	if localPath == "" || baseSHA == "" || headSHA == "" {
 		return nil, fmt.Errorf("localPath, baseSHA, and headSHA cannot be empty")
 	}
 
-	openStart := time.Now()
 	repo, err := gitlib.PlainOpen(localPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open repository: %w", err)
 	}
-	openDuration := time.Since(openStart)
 
-	return generateDiffFromRepo(repo, baseSHA, headSHA)
+	return generateDiffFromRepo(repo, baseSHA, headSHA, opts)
 }
 
 // generateDiffFromRepo computes per-file diffs between baseSHA and headSHA using
@@ -59,7 +54,9 @@ func (c *Client) GenerateDiff(localPath, baseSHA, headSHA string, opts DiffOptio
 // repo (PlainOpen) and an in-memory repo (memory.Storage), since both expose the
 // same object store. This is the shared core behind GenerateDiff (disk) and the
 // in-memory PR-specific diff prototype.
-func generateDiffFromRepo(repo *gitlib.Repository, baseSHA, headSHA string) (*DiffResult, error) {
+func generateDiffFromRepo(repo *gitlib.Repository, baseSHA, headSHA string, opts DiffOptions) (*DiffResult, error) {
+	totalStart := time.Now()
+
 	if repo == nil {
 		return nil, fmt.Errorf("repository cannot be nil")
 	}
@@ -105,10 +102,9 @@ func generateDiffFromRepo(repo *gitlib.Repository, baseSHA, headSHA string) (*Di
 		Files: make([]*DiffFile, 0),
 		Size:  0,
 		Profile: DiffProfile{
-			OpenRepository: openDuration,
-			LoadCommits:    commitDuration,
-			LoadTrees:      treeDuration,
-			BuildPatch:     patchDuration,
+			LoadCommits: commitDuration,
+			LoadTrees:   treeDuration,
+			BuildPatch:  patchDuration,
 		},
 	}
 

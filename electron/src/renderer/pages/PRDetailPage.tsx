@@ -94,8 +94,7 @@ export function PRDetailPage() {
     dispatchRequestChanges,
     dispatchPostComment,
     clearActionResult,
-  } =
-    useActionDispatch(pr?.id);
+  } = useActionDispatch(pr?.id);
 
   // Reset patchset pair selection when the user navigates to a different PR.
   useEffect(() => {

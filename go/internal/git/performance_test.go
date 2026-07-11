@@ -132,7 +132,7 @@ func BenchmarkGenerateDiffT3CodeWarmClone(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		result, err := client.GenerateDiff(cloneResult.LocalPath, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA)
+		result, err := client.GenerateDiff(cloneResult.LocalPath, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA, DefaultDiffOptions())
 		if err != nil {
 			b.Fatalf("GenerateDiff: %v", err)
 		}
@@ -152,7 +152,7 @@ func BenchmarkCloneAndGenerateDiffT3Code(b *testing.B) {
 		if err != nil {
 			b.Fatalf("Clone: %v", err)
 		}
-		result, err := client.GenerateDiff(cloneResult.LocalPath, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA)
+		result, err := client.GenerateDiff(cloneResult.LocalPath, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA, DefaultDiffOptions())
 		if err != nil {
 			b.Fatalf("GenerateDiff: %v", err)
 		}
@@ -200,7 +200,7 @@ func BenchmarkCloneForPRTargetedAndGenerateDiffT3Code(b *testing.B) {
 			b.Fatalf("CloneForPR targeted: %v", err)
 		}
 		assertBenchmarkPRRefMatchesHead(b, result.LocalPath, fixture.HeadSHA)
-		diff, err := client.GenerateDiff(result.LocalPath, fixture.BaseSHA, fixture.HeadSHA)
+		diff, err := client.GenerateDiff(result.LocalPath, fixture.BaseSHA, fixture.HeadSHA, DefaultDiffOptions())
 		if err != nil {
 			b.Fatalf("GenerateDiff: %v", err)
 		}

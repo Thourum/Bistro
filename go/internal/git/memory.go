@@ -117,7 +117,7 @@ func (c *Client) GenerateDiffForPRInMemory(ctx context.Context, repoURL, baseSHA
 		return nil, err
 	}
 
-	result, err := generateDiffFromRepo(repo, baseSHA, headSHA)
+	result, err := generateDiffFromRepo(repo, baseSHA, headSHA, DefaultDiffOptions())
 	if err != nil {
 		return nil, fmt.Errorf("in-memory diff generation failed: %w", err)
 	}

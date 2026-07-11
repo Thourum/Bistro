@@ -67,9 +67,7 @@ export function useThreadActions(prId: string | undefined) {
         .catch((error: unknown) => {
           clearPending(threadId);
           const message =
-            error instanceof Error
-              ? error.message
-              : `Thread ${label} failed`;
+            error instanceof Error ? error.message : `Thread ${label} failed`;
           const queued = message.includes('action queued for later replay');
           addToast({
             type: queued ? 'warning' : 'error',

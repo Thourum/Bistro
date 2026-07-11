@@ -6,13 +6,13 @@ import type { SyncSettings } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import { killGoProcess, spawnGoProcess } from './go-spawn';
 import { setupIPC } from './ipc';
-import { SettingsService } from './settings';
-import { resolveTelemetryEndpoint, TelemetryService } from './telemetry';
 import {
   captureSentryException,
   configureSentryConsent,
   isSentryEnabled,
 } from './sentry';
+import { SettingsService } from './settings';
+import { resolveTelemetryEndpoint, TelemetryService } from './telemetry';
 import type { AppConfig } from './types';
 import { startAutoUpdates, stopAutoUpdates } from './updater';
 import { WebSocketClient } from './websocket-client';
@@ -162,7 +162,9 @@ app.on('ready', async () => {
   await settingsService.load();
   log.info(`Settings loaded from ${settingsService.path}`);
   configureSentryConsent(settingsService.snapshot.privacy.telemetryEnabled);
-  log.info(`Sentry crash reporting: ${isSentryEnabled() ? 'enabled' : 'disabled'}`);
+  log.info(
+    `Sentry crash reporting: ${isSentryEnabled() ? 'enabled' : 'disabled'}`,
+  );
   telemetryService = new TelemetryService({
     enabled: settingsService.snapshot.privacy.telemetryEnabled,
     storageDir: join(app.getPath('userData'), 'telemetry'),

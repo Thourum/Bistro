@@ -33,7 +33,8 @@ func TestGenerateDiffForPRInMemory_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlainOpen: %v", err)
 	}
-	diskDiff, err := generateDiffFromRepo(repo, baseSHA, headSHA)
+
+	diskDiff, err := generateDiffFromRepo(repo, baseSHA, headSHA, DefaultDiffOptions())
 	if err != nil {
 		t.Fatalf("generateDiffFromRepo (disk): %v", err)
 	}
