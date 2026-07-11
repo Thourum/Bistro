@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS } from '../../types/settings';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import { initialUIState } from '../store/ui';
+import { DEFAULT_KEYBINDINGS, isActive } from '../utils/keybindings';
 import { AddRepoDialog } from './AddRepoDialog';
 import ToastContainer from './ToastContainer';
 
@@ -219,5 +220,46 @@ describe('AddRepoDialog', () => {
       screen.getByRole('button', { name: /add repository/i }),
     ).toBeEnabled();
     expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it('documents that Escape can close the add repository overlay through global.escape', () => {
+    const escapeBinding = DEFAULT_KEYBINDINGS.find(
+      (binding) => binding.actionId === 'global.escape',
+    );
+    const closeOverlay = vi.fn();
+
+    if (escapeBinding === undefined) {
+      throw new Error('global.escape binding is missing');
+    }
+
+    expect(
+      isActive(escapeBinding, {
+        routeBase: 'list',
+        activeOverlay: 'addRepo',
+      }),
+    ).toBe(true);
+
+    escapeBinding.action({
+      store: appStore,
+      routeBase: 'list',
+      activeOverlay: 'addRepo',
+      overlays: {
+        activeOverlay: 'addRepo',
+        helpSourceRoute: 'list',
+        openCommand: vi.fn(),
+        openHelp: vi.fn(),
+        openSearch: vi.fn(),
+        openFilter: vi.fn(),
+        toggleFilter: vi.fn(),
+        openRepoPicker: vi.fn(),
+        openAddRepo: vi.fn(),
+        openThreads: vi.fn(),
+        closeOverlay,
+        closeSearch: vi.fn(),
+      },
+      location: { pathname: '/prs' },
+    });
+
+    expect(closeOverlay).toHaveBeenCalledTimes(1);
   });
 });
