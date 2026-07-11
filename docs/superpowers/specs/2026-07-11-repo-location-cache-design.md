@@ -17,6 +17,13 @@ The feature also supports adding a repository by URL, choosing whether to clone 
 - No deletion of local/dev-folder repositories from cache actions.
 - No GitHub Enterprise or non-GitHub provider support in v1 unless existing provider support is already present.
 
+## Terminology
+
+Two independent locations; never conflate them:
+
+- **Dev folder** — the user's own working/projects folder (e.g. `~/dev`), chosen at onboarding or in Settings, persisted as `repositories.devFolderPath`. Repos here are `source='local'`: user-owned, read-only for Bistro (objects/refs fetches only), never deleted or pruned by Bistro.
+- **Cache dir** — Bistro's managed storage at `os.UserCacheDir()/bistro/repos` (macOS `~/Library/Caches`, Linux XDG, Windows `LOCALAPPDATA`; `BISTRO_REPO_DIR` env remains a developer override). Repos here are `source='cache'`: Bistro-managed and prunable. The cache settings UI operates only on this location.
+
 ## Existing context
 
 - Go owns SQLite writes.
