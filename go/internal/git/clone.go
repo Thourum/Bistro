@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	gitlib "github.com/go-git/go-git/v5"
@@ -157,11 +158,57 @@ func repoCacheDir(repoURL string) (string, error) {
 	if err != nil {
 		return root, nil
 	}
-	dir := filepath.Join(root, identity.Owner, identity.Repo)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	return safeRepoCacheDir(root, identity)
+}
+
+func safeRepoCacheDir(root string, identity Identity) (string, error) {
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve cache root %s: %w", root, err)
+	}
+	ownerDir := filepath.Join(canonicalRoot, identity.Owner)
+	if err := rejectSymlink(ownerDir); err != nil {
 		return "", err
 	}
-	return dir, nil
+	if err := os.MkdirAll(ownerDir, 0755); err != nil {
+		return "", err
+	}
+	if err := rejectSymlink(ownerDir); err != nil {
+		return "", err
+	}
+	repoDir := filepath.Join(ownerDir, identity.Repo)
+	if err := rejectSymlink(repoDir); err != nil {
+		return "", err
+	}
+	if err := ensureContainedPath(canonicalRoot, repoDir); err != nil {
+		return "", err
+	}
+	return repoDir, nil
+}
+
+func rejectSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("inspect cache path %s: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("cache path %s is a symlink", path)
+	}
+	return nil
+}
+
+func ensureContainedPath(root, child string) error {
+	relative, err := filepath.Rel(root, child)
+	if err != nil {
+		return fmt.Errorf("compare cache path %s to root %s: %w", child, root, err)
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) || filepath.IsAbs(relative) {
+		return fmt.Errorf("cache path %s escapes cache root %s", child, root)
+	}
+	return nil
 }
 
 func prepareCacheCloneDir(repoURL string) (string, error) {
@@ -183,15 +230,98 @@ func prepareCacheCloneDirWithMode(repoURL string, shouldReplace bool) (string, e
 	if _, err := ParseRemoteURL(repoURL); err != nil {
 		return os.MkdirTemp(repoDir, "repo-*")
 	}
-	if shouldReplace {
-		if err := os.RemoveAll(repoDir); err != nil {
-			return "", err
-		}
+	if !shouldReplace {
+		return repoDir, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(repoDir), 0755); err != nil {
+	return createFreshCacheCloneDir(repoDir)
+}
+
+func createFreshCacheCloneDir(repoDir string) (string, error) {
+	parentDir := filepath.Dir(repoDir)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
 		return "", err
 	}
+	if err := rejectSymlink(parentDir); err != nil {
+		return "", err
+	}
+
+	stagingDir, err := os.MkdirTemp(parentDir, filepath.Base(repoDir)+"-staging-*")
+	if err != nil {
+		return "", err
+	}
+	shouldRemoveStaging := true
+	defer func() {
+		if shouldRemoveStaging {
+			_ = os.RemoveAll(stagingDir)
+		}
+	}()
+	if err := ensureNonSymlinkDir(stagingDir); err != nil {
+		return "", err
+	}
+
+	backupDir, restore, err := moveExistingCacheDirAside(repoDir)
+	if err != nil {
+		return "", err
+	}
+	shouldRestore := restore
+	defer func() {
+		if shouldRestore && backupDir != "" {
+			_ = os.RemoveAll(repoDir)
+			_ = os.Rename(backupDir, repoDir)
+		}
+	}()
+
+	if err := os.Rename(stagingDir, repoDir); err != nil {
+		return "", err
+	}
+	shouldRemoveStaging = false
+	if err := ensureNonSymlinkDir(repoDir); err != nil {
+		shouldRestore = true
+		return "", err
+	}
+	shouldRestore = false
+	if backupDir != "" {
+		_ = os.RemoveAll(backupDir)
+	}
 	return repoDir, nil
+}
+
+func moveExistingCacheDirAside(repoDir string) (string, bool, error) {
+	info, err := os.Lstat(repoDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", false, fmt.Errorf("cache path %s is a symlink", repoDir)
+	}
+	backupDir, err := os.MkdirTemp(filepath.Dir(repoDir), filepath.Base(repoDir)+"-backup-*")
+	if err != nil {
+		return "", false, err
+	}
+	if err := os.RemoveAll(backupDir); err != nil {
+		return "", false, err
+	}
+	if err := os.Rename(repoDir, backupDir); err != nil {
+		return "", false, err
+	}
+	return backupDir, true, nil
+}
+
+func ensureNonSymlinkDir(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("cache path %s is a symlink", path)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("cache path %s is not a directory", path)
+	}
+	return nil
 }
 
 func stageTargetedCloneDir(repoURL, repoDir string) (func(bool), error) {
