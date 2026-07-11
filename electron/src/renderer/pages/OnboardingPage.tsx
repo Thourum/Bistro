@@ -1,6 +1,8 @@
 import { useHotkey } from '@tanstack/react-hotkeys';
+import { err, ok, ResultAsync } from 'neverthrow';
 import React from 'react';
 import { useStore } from '../hooks/useStore';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -10,10 +12,60 @@ import type { UIState } from '../store/ui';
  * `stitch_terminal_authentic_prd/onboarding/code.html` (body main + footer).
  * Global `AppFooter` renders below this component in `App.tsx`.
  */
+interface ValidateDevFolderResult {
+  canonicalPath: string;
+}
+
+interface ScanDevFolderResult {
+  discovered: number;
+}
+
+function validationErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Unable to validate that folder.';
+}
+
+function parseValidateDevFolderResult(data: unknown): ValidateDevFolderResult {
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    (data as { ok?: unknown }).ok === true &&
+    typeof (data as { canonical_path?: unknown }).canonical_path === 'string'
+  ) {
+    return {
+      canonicalPath: (data as { canonical_path: string }).canonical_path,
+    };
+  }
+  throw new Error('Dev folder validation returned an invalid response.');
+}
+
+function parseScanDevFolderResult(data: unknown): ScanDevFolderResult {
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    (data as { ok?: unknown }).ok === true &&
+    typeof (data as { discovered?: unknown }).discovered === 'number'
+  ) {
+    return {
+      discovered: (data as { discovered: number }).discovered,
+    };
+  }
+  throw new Error('Dev folder scan returned an invalid response.');
+}
+
 export function OnboardingPage(): React.ReactElement {
   const confirmingAction = useStore(
     appStore,
     (s: UIState) => s.confirmingAction,
+  );
+  const { request } = useWebSocket();
+  const [devFolderError, setDevFolderError] = React.useState<string | null>(
+    null,
+  );
+  const [discoveredCount, setDiscoveredCount] = React.useState<number | null>(
+    null,
   );
 
   const finish = React.useCallback(() => {
@@ -24,6 +76,57 @@ export function OnboardingPage(): React.ReactElement {
       },
     });
   }, []);
+
+  const chooseDevFolder = React.useCallback(() => {
+    setDevFolderError(null);
+    setDiscoveredCount(null);
+
+    ResultAsync.fromPromise(
+      window.electron.pickFolder(),
+      validationErrorMessage,
+    )
+      .andThen((path) => {
+        if (path === null) {
+          return err('Folder selection cancelled.');
+        }
+        return ok(path);
+      })
+      .andThen((path) =>
+        ResultAsync.fromPromise(
+          request('VALIDATE_DEV_FOLDER', { path }).then(
+            parseValidateDevFolderResult,
+          ),
+          validationErrorMessage,
+        ),
+      )
+      .andThen((result) =>
+        ResultAsync.fromPromise(
+          updateSettings({
+            repositories: { devFolderPath: result.canonicalPath },
+          }).then(() => result),
+          validationErrorMessage,
+        ),
+      )
+      .andThen((result) =>
+        ResultAsync.fromPromise(
+          request('SCAN_DEV_FOLDER', {
+            path: result.canonicalPath,
+            reason: 'settings-change',
+          }).then(parseScanDevFolderResult),
+          validationErrorMessage,
+        ),
+      )
+      .match(
+        (result) => {
+          setDiscoveredCount(result.discovered);
+        },
+        (message) => {
+          if (message !== 'Folder selection cancelled.') {
+            setDevFolderError(message);
+          }
+        },
+      );
+  }, [request]);
 
   React.useEffect(() => {
     if (confirmingAction === 'onboarding_finish') {
@@ -143,6 +246,55 @@ export function OnboardingPage(): React.ReactElement {
                   c
                 </kbd>
               </div>
+            </div>
+          </div>
+
+          <div className="mt-12 bg-surface-container-lowest border border-outline-variant/30 p-8">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="material-symbols-outlined text-primary">
+                folder_open
+              </span>
+              <span className="mono-text text-xs font-bold uppercase tracking-widest">
+                Use your existing projects folder
+              </span>
+            </div>
+            <p className="text-sm text-on-surface-variant leading-relaxed mb-3">
+              Bistro registers every GitHub repo found in this folder and starts
+              syncing PRs for healthy discoveries.
+            </p>
+            <p className="mono-text text-[10px] text-outline uppercase tracking-tight leading-normal mb-6">
+              Bistro fetches PR objects into these repos only under
+              refs/bistro/* and never touches branches, tags, or files. Unwanted
+              repos can be removed afterwards via the repo recovery/remove flow.
+            </p>
+            {devFolderError !== null ? (
+              <p className="text-sm text-error font-medium mb-4" role="alert">
+                {devFolderError}
+              </p>
+            ) : null}
+            {discoveredCount !== null ? (
+              <p className="text-sm text-primary font-medium mb-4">
+                {discoveredCount}{' '}
+                {discoveredCount === 1
+                  ? 'repository discovered'
+                  : 'repositories discovered'}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={chooseDevFolder}
+                className="mono-text px-4 py-2 bg-primary text-on-primary font-bold text-xs uppercase tracking-widest hover:opacity-90 transition-opacity"
+              >
+                Choose folder
+              </button>
+              <button
+                type="button"
+                onClick={finish}
+                className="mono-text px-4 py-2 border border-outline-variant text-outline font-bold text-xs uppercase tracking-widest hover:bg-surface-container transition-colors"
+              >
+                Skip
+              </button>
             </div>
           </div>
 
