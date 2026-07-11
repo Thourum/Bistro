@@ -100,7 +100,7 @@ export function OnboardingPage(): React.ReactElement {
     appStore,
     (s: UIState) => s.confirmingAction,
   );
-  const { request } = useWebSocket();
+  const { send } = useWebSocket();
   const [devFolderError, setDevFolderError] = React.useState<string | null>(
     null,
   );
@@ -133,7 +133,7 @@ export function OnboardingPage(): React.ReactElement {
       })
       .andThen((path) =>
         ResultAsync.fromPromise(
-          request('VALIDATE_DEV_FOLDER', { path }),
+          Promise.resolve(send('VALIDATE_DEV_FOLDER', { path })),
           validationErrorMessage,
         ).andThen(parseValidateDevFolderResult),
       )
@@ -147,10 +147,12 @@ export function OnboardingPage(): React.ReactElement {
       )
       .andThen((result) =>
         ResultAsync.fromPromise(
-          request('SCAN_DEV_FOLDER', {
-            path: result.canonicalPath,
-            reason: 'settings-change',
-          }),
+          Promise.resolve(
+            send('SCAN_DEV_FOLDER', {
+              path: result.canonicalPath,
+              reason: 'settings-change',
+            }),
+          ),
           validationErrorMessage,
         ).andThen(parseScanDevFolderResult),
       )
@@ -164,7 +166,7 @@ export function OnboardingPage(): React.ReactElement {
           }
         },
       );
-  }, [request]);
+  }, [send]);
 
   React.useEffect(() => {
     if (confirmingAction === 'onboarding_finish') {
