@@ -5,21 +5,53 @@ import { app, BrowserWindow, shell } from 'electron';
 import type { Logger } from 'electron-log';
 import { merge } from 'ts-deepmerge';
 import {
+  type AppearanceSettings,
   type AppSettings,
   DEFAULT_SETTINGS,
+  type KeybindingOverrides,
+  type PRListSettings,
+  type PrivacySettings,
+  type RepositoriesSettings,
   SETTINGS_SCHEMA_VERSION,
+  type SyncSettings,
 } from '../types/settings';
 
 /** Match prior behaviour: nested objects merge; arrays are replaced wholesale. */
-function mergeSettings(base: AppSettings, patch: unknown): AppSettings {
+function mergeKnownFields<T extends object>(base: T, patch: unknown): T {
   if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) {
     return base;
   }
-  return merge.withOptions(
+  const patchRecord = patch as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(base).map(([key, baseValue]) => {
+      const patchValue = patchRecord[key];
+      return [key, patchValue === undefined ? baseValue : patchValue];
+    }),
+  ) as T;
+}
+
+function mergeSettings(base: AppSettings, patch: unknown): AppSettings {
+  const knownPatch = mergeKnownFields(base, patch);
+  const merged = merge.withOptions(
     { mergeArrays: false, allowUndefinedOverrides: false },
     base,
-    patch as Record<string, unknown>,
+    knownPatch,
   ) as unknown as AppSettings;
+  return {
+    $schema: merged.$schema,
+    appearance: mergeKnownFields<AppearanceSettings>(
+      base.appearance,
+      merged.appearance,
+    ),
+    sync: mergeKnownFields<SyncSettings>(base.sync, merged.sync),
+    prList: mergeKnownFields<PRListSettings>(base.prList, merged.prList),
+    privacy: mergeKnownFields<PrivacySettings>(base.privacy, merged.privacy),
+    repositories: mergeKnownFields<RepositoriesSettings>(
+      base.repositories,
+      merged.repositories,
+    ),
+    keybindings: merged.keybindings as KeybindingOverrides,
+  };
 }
 
 /**
