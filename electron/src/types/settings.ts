@@ -46,6 +46,10 @@ export interface PrivacySettings {
   telemetryEnabled: boolean;
 }
 
+export interface RepositoriesSettings {
+  devFolderPath: string | null;
+}
+
 /**
  * Overrides for keyboard bindings.
  *
@@ -68,6 +72,7 @@ export interface AppSettings {
   sync: SyncSettings;
   prList: PRListSettings;
   privacy: PrivacySettings;
+  repositories: RepositoriesSettings;
   keybindings: KeybindingOverrides;
 }
 
@@ -93,6 +98,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   privacy: {
     telemetryEnabled: false,
+  },
+  repositories: {
+    devFolderPath: null,
   },
   keybindings: {},
 };

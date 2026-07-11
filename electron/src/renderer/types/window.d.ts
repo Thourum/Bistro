@@ -40,6 +40,7 @@ declare global {
       ) => () => void;
       openExternal: (url: string) => Promise<{ ok: true } | { err: string }>;
       quitApp: () => Promise<{ ok: true }>;
+      pickFolder: () => Promise<string | null>;
       settings: {
         get: () => Promise<{ ok: AppSettings } | IPCError>;
         set: (
