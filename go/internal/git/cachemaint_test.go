@@ -45,6 +45,52 @@ func TestCacheStatsSumsNestedFilesAndMarksStaleRepos(t *testing.T) {
 	assertCacheStat(t, stats[2], "github:acme/never", neverUsedRepo, 21, true)
 }
 
+func TestCacheStatsSkipsUnsafeRowsWithoutSizingTargets(t *testing.T) {
+	// Arrange
+	cacheRoot := t.TempDir()
+	t.Setenv("BISTRO_REPO_DIR", cacheRoot)
+
+	validRepo := filepath.Join(cacheRoot, "acme", "api")
+	symlinkTarget := filepath.Join(t.TempDir(), "outside-target")
+	symlinkRepo := filepath.Join(cacheRoot, "acme", "linked")
+	outsideRepo := filepath.Join(t.TempDir(), "acme", "tampered")
+	writeTestFile(t, filepath.Join(validRepo, "objects", "pack"), []byte("valid"))
+	writeTestFile(t, filepath.Join(symlinkTarget, "objects", "pack"), []byte("must-not-count"))
+	writeTestFile(t, filepath.Join(outsideRepo, "objects", "pack"), []byte("must-not-count"))
+	if err := os.Symlink(symlinkTarget, symlinkRepo); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	repos := []CacheEntryInput{
+		{RepoID: "github:acme/api", Path: validRepo},
+		{RepoID: "github:acme/linked", Path: symlinkRepo},
+		{RepoID: "github:acme/tampered", Path: outsideRepo},
+	}
+
+	// Act
+	stats, err := CacheStats(repos)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("CacheStats() error = %v", err)
+	}
+	if len(stats) != 3 {
+		t.Fatalf("CacheStats() returned %d stats, want 3", len(stats))
+	}
+	assertCacheStat(t, stats[0], "github:acme/api", validRepo, 5, true)
+	for _, stat := range stats[1:] {
+		if !stat.Skipped {
+			t.Fatalf("CacheStats() stat for %s Skipped = false, want true", stat.RepoID)
+		}
+		if stat.SizeBytes != 0 {
+			t.Fatalf("CacheStats() stat for %s SizeBytes = %d, want 0", stat.RepoID, stat.SizeBytes)
+		}
+		if stat.Error == "" {
+			t.Fatalf("CacheStats() stat for %s Error = empty, want safety error", stat.RepoID)
+		}
+	}
+}
+
 func TestCacheDeleteDirSafetyChecks(t *testing.T) {
 	tests := []struct {
 		name        string

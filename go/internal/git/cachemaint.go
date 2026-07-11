@@ -16,6 +16,8 @@ type CacheRepoStat struct {
 	SizeBytes  int64
 	LastUsedAt *time.Time
 	Stale      bool
+	Skipped    bool
+	Error      string
 }
 
 type CacheEntryInput struct {
@@ -27,25 +29,35 @@ type CacheEntryInput struct {
 const StaleAfter = 30 * 24 * time.Hour
 
 func CacheStats(repos []CacheEntryInput) ([]CacheRepoStat, error) {
+	root, err := canonicalCacheRoot()
+	if err != nil {
+		return nil, err
+	}
+
 	stats := make([]CacheRepoStat, 0, len(repos))
 	for _, repo := range repos {
-		canonicalPath, err := canonicalExistingPath(repo.Path)
-		if err != nil {
-			return nil, fmt.Errorf("canonicalize cache path %q: %w", repo.Path, err)
+		stat := CacheRepoStat{
+			RepoID:     repo.RepoID,
+			Path:       filepath.Clean(repo.Path),
+			LastUsedAt: repo.LastUsedAt,
+			Stale:      isStale(repo.LastUsedAt),
 		}
+
+		canonicalPath, err := safeCacheDirPath(root, repo.Path)
+		if err != nil {
+			stats = append(stats, skippedCacheStat(stat, err))
+			continue
+		}
+		stat.Path = canonicalPath
 
 		sizeBytes, err := dirSize(canonicalPath)
 		if err != nil {
-			return nil, fmt.Errorf("size cache repo %s at %q: %w", repo.RepoID, canonicalPath, err)
+			stats = append(stats, skippedCacheStat(stat, fmt.Errorf("size cache repo %s at %q: %w", repo.RepoID, canonicalPath, err)))
+			continue
 		}
 
-		stats = append(stats, CacheRepoStat{
-			RepoID:     repo.RepoID,
-			Path:       canonicalPath,
-			SizeBytes:  sizeBytes,
-			LastUsedAt: repo.LastUsedAt,
-			Stale:      isStale(repo.LastUsedAt),
-		})
+		stat.SizeBytes = sizeBytes
+		stats = append(stats, stat)
 	}
 
 	return stats, nil
@@ -124,6 +136,18 @@ func SweepOrphans(known map[string]bool) ([]string, error) {
 	}
 
 	return removed, errors.Join(skipped...)
+}
+
+func skippedCacheStat(stat CacheRepoStat, err error) CacheRepoStat {
+	return CacheRepoStat{
+		RepoID:     stat.RepoID,
+		Path:       stat.Path,
+		SizeBytes:  0,
+		LastUsedAt: stat.LastUsedAt,
+		Stale:      stat.Stale,
+		Skipped:    true,
+		Error:      err.Error(),
+	}
 }
 
 func dirSize(path string) (int64, error) {
