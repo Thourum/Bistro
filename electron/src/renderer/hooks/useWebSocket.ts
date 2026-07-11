@@ -426,9 +426,6 @@ function onMessage(event: MessageEvent<string>): void {
       } catch {
         /* test env */
       }
-      if (singletonWs?.readyState === WebSocket.OPEN) {
-        sendStartupDevFolderScan(singletonWs);
-      }
       break;
     }
     case 'AUTH_DISCONNECT_RESULT': {
@@ -623,6 +620,7 @@ function connect(): void {
     };
     log.info({ id: checkMsg.id }, 'sending AUTH_CHECK');
     ws.send(JSON.stringify(checkMsg));
+    sendStartupDevFolderScan(ws);
   };
 
   ws.onmessage = onMessage;

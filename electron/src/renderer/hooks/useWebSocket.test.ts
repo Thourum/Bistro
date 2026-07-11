@@ -91,7 +91,7 @@ describe('useWebSocket dev-folder startup scan', () => {
     settingsStore.setState(() => DEFAULT_SETTINGS);
   });
 
-  it('sends exactly one SCAN_DEV_FOLDER message on auth check result when devFolderPath is set', () => {
+  it('sends exactly one SCAN_DEV_FOLDER message on connection open when devFolderPath is set', () => {
     settingsStore.setState((settings) => ({
       ...settings,
       repositories: {
@@ -102,10 +102,6 @@ describe('useWebSocket dev-folder startup scan', () => {
 
     const { unmount } = renderHook(() => useWebSocket());
     const ws = openMountedWebSocket();
-
-    expect(sentMessagesOfType(ws, 'SCAN_DEV_FOLDER')).toHaveLength(0);
-
-    emitAuthCheckResult(ws);
 
     const scanMessages = sentMessagesOfType<{
       path: string;
@@ -118,13 +114,16 @@ describe('useWebSocket dev-folder startup scan', () => {
       reason: 'startup',
     });
 
+    emitAuthCheckResult(ws);
+
+    expect(sentMessagesOfType(ws, 'SCAN_DEV_FOLDER')).toHaveLength(1);
+
     unmount();
   });
 
-  it('does not send SCAN_DEV_FOLDER on auth check result when devFolderPath is null', () => {
+  it('does not send SCAN_DEV_FOLDER on connection open when devFolderPath is null', () => {
     const { unmount } = renderHook(() => useWebSocket());
     const ws = openMountedWebSocket();
-    emitAuthCheckResult(ws);
 
     const scanMessages = sentMessagesOfType(ws, 'SCAN_DEV_FOLDER');
 
@@ -133,7 +132,7 @@ describe('useWebSocket dev-folder startup scan', () => {
     unmount();
   });
 
-  it('does not send SCAN_DEV_FOLDER on auth check result when devFolderPath is empty', () => {
+  it('does not send SCAN_DEV_FOLDER on connection open when devFolderPath is empty', () => {
     settingsStore.setState((settings) => ({
       ...settings,
       repositories: {
@@ -144,7 +143,6 @@ describe('useWebSocket dev-folder startup scan', () => {
 
     const { unmount } = renderHook(() => useWebSocket());
     const ws = openMountedWebSocket();
-    emitAuthCheckResult(ws);
 
     const scanMessages = sentMessagesOfType(ws, 'SCAN_DEV_FOLDER');
 
