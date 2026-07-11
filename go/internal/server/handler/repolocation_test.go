@@ -540,7 +540,7 @@ func TestRepoLocationCacheMutationHandlersReturnEnvelopeForOperationFailures(t *
 			resp := callRepoLocationHandler(t, handler, tt.msgType, map[string]any{})
 
 			// Assert
-			assertLocationEnvelope(t, responseData(t, resp), "", tt.operation, "cache_maintenance_failed")
+			assertLocationEnvelope(t, responseData(t, resp), "", tt.operation, "delete_failed")
 		})
 	}
 }
@@ -666,10 +666,10 @@ func TestRepoLocationCacheMaintenance(t *testing.T) {
 		"github:acme/null-used":  true,
 		"github:acme/failed":     true,
 		"github:acme/delete-one": true,
-		"github:acme/unsafe":     true,
+		"github:acme/unsafe":     false,
 		"github:acme/api":        false,
 	})
-	assertStatsRepoSkipped(t, statsData["repos"].([]any), "github:acme/unsafe")
+	assertStatsRepoShape(t, statsData["repos"].([]any))
 
 	// Act: prune
 	pruneResp := callRepoLocationHandler(t, NewPruneCacheHandler(deps), "PRUNE_CACHE", map[string]any{})
@@ -996,19 +996,32 @@ func assertStatsRepoPresence(t *testing.T, repos []any, expected map[string]bool
 	}
 }
 
-func assertStatsRepoSkipped(t *testing.T, repos []any, repoID string) {
+func assertStatsRepoShape(t *testing.T, repos []any) {
 	t.Helper()
 	for _, item := range repos {
 		repo := item.(map[string]any)
-		if repo["repo_id"] != repoID {
-			continue
+		if _, ok := repo["repo_id"].(string); !ok {
+			t.Fatalf("expected repo_id string in stats repo %#v", repo)
 		}
-		if repo["skipped"] != true || repo["error"] == "" || repo["size_bytes"] != float64(0) {
-			t.Fatalf("expected skipped stats for %s, got %#v", repoID, repo)
+		if _, ok := repo["size_bytes"].(float64); !ok {
+			t.Fatalf("expected size_bytes number in stats repo %#v", repo)
 		}
-		return
+		if _, ok := repo["last_used_at"]; !ok {
+			t.Fatalf("expected last_used_at in stats repo %#v", repo)
+		}
+		if _, ok := repo["stale"].(bool); !ok {
+			t.Fatalf("expected stale bool in stats repo %#v", repo)
+		}
+		if _, ok := repo["skipped"]; ok {
+			t.Fatalf("stats repo must not include skipped field: %#v", repo)
+		}
+		if _, ok := repo["error"]; ok {
+			t.Fatalf("stats repo must not include error field: %#v", repo)
+		}
+		if len(repo) != 4 {
+			t.Fatalf("expected exactly declared stats fields, got %#v", repo)
+		}
 	}
-	t.Fatalf("expected skipped stats repo %s in %#v", repoID, repos)
 }
 
 func assertStringSet(t *testing.T, got []any, want []string) {

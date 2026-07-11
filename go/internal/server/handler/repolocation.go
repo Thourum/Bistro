@@ -85,8 +85,6 @@ type cacheRepoStatPayload struct {
 	SizeBytes  int64      `json:"size_bytes"`
 	LastUsedAt *time.Time `json:"last_used_at"`
 	Stale      bool       `json:"stale"`
-	Skipped    bool       `json:"skipped,omitempty"`
-	Error      string     `json:"error,omitempty"`
 }
 
 type removeCounts struct {
@@ -298,13 +296,16 @@ func NewGetCacheStatsHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
 		repos := make([]cacheRepoStatPayload, 0, len(stats))
 		var total, active, stale int64
 		for _, stat := range stats {
+			if stat.Skipped {
+				continue
+			}
 			total += stat.SizeBytes
 			if stat.Stale {
 				stale += stat.SizeBytes
 			} else {
 				active += stat.SizeBytes
 			}
-			repos = append(repos, cacheRepoStatPayload{RepoID: stat.RepoID, SizeBytes: stat.SizeBytes, LastUsedAt: stat.LastUsedAt, Stale: stat.Stale, Skipped: stat.Skipped, Error: stat.Error})
+			repos = append(repos, cacheRepoStatPayload{RepoID: stat.RepoID, SizeBytes: stat.SizeBytes, LastUsedAt: stat.LastUsedAt, Stale: stat.Stale})
 		}
 		return locationResponse(msg, struct {
 			OK          bool                   `json:"ok"`
@@ -328,7 +329,7 @@ func NewPruneCacheHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
 			return nil
 		}
 		if err := runCacheMaintenance(deps.Locks, operation); err != nil {
-			return locationResponse(msg, locationError("", operationPruneCache, "cache_maintenance_failed", err.Error())), nil
+			return locationResponse(msg, locationError("", operationPruneCache, "delete_failed", err.Error())), nil
 		}
 		return locationResponse(msg, payload), nil
 	}
@@ -346,7 +347,7 @@ func NewClearCacheHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
 			return nil
 		}
 		if err := runCacheMaintenance(deps.Locks, operation); err != nil {
-			return locationResponse(msg, locationError("", operationClearCache, "cache_maintenance_failed", err.Error())), nil
+			return locationResponse(msg, locationError("", operationClearCache, "delete_failed", err.Error())), nil
 		}
 		return locationResponse(msg, payload), nil
 	}
