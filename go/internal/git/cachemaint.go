@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -50,7 +51,7 @@ func CacheStats(repos []CacheEntryInput) ([]CacheRepoStat, error) {
 	return stats, nil
 }
 
-func DeleteCacheDir(path string) error {
+func DeleteCacheDir(path string, registeredLegacyPaths ...map[string]bool) error {
 	root, err := canonicalCacheRoot()
 	if err != nil {
 		return err
@@ -59,6 +60,9 @@ func DeleteCacheDir(path string) error {
 	canonicalPath, err := safeCacheDirPath(root, path)
 	if err != nil {
 		return err
+	}
+	if !isDepthTwoCachePath(root, canonicalPath) && !isRegisteredLegacyPath(registeredLegacyPaths, canonicalPath) {
+		return fmt.Errorf("cache path %q is not an owner/repo cache dir or registered legacy cache dir", canonicalPath)
 	}
 
 	if err := os.RemoveAll(canonicalPath); err != nil {
@@ -79,25 +83,33 @@ func SweepOrphans(known map[string]bool) ([]string, error) {
 	}
 
 	removed := make([]string, 0)
+	skipped := make([]error, 0)
 	for _, ownerEntry := range entries {
+		ownerPath := filepath.Join(root, ownerEntry.Name())
 		if !ownerEntry.IsDir() || ownerEntry.Type()&os.ModeSymlink != 0 {
+			skipped = append(skipped, fmt.Errorf("skip cache owner entry %q: not a directory", ownerPath))
 			continue
 		}
 
-		ownerPath := filepath.Join(root, ownerEntry.Name())
 		repoEntries, err := os.ReadDir(ownerPath)
 		if err != nil {
 			return nil, fmt.Errorf("read cache owner dir %q: %w", ownerPath, err)
 		}
 
 		for _, repoEntry := range repoEntries {
+			repoPath := filepath.Join(ownerPath, repoEntry.Name())
 			if !repoEntry.IsDir() || repoEntry.Type()&os.ModeSymlink != 0 {
+				skipped = append(skipped, fmt.Errorf("skip cache repo entry %q: not a directory", repoPath))
 				continue
 			}
 
-			repoPath := filepath.Join(ownerPath, repoEntry.Name())
 			canonicalRepoPath, err := safeCacheDirPath(root, repoPath)
 			if err != nil {
+				skipped = append(skipped, fmt.Errorf("skip cache repo entry %q: %w", repoPath, err))
+				continue
+			}
+			if !isDepthTwoCachePath(root, canonicalRepoPath) {
+				skipped = append(skipped, fmt.Errorf("skip cache repo entry %q: not an owner/repo cache dir", repoPath))
 				continue
 			}
 			if known[canonicalRepoPath] {
@@ -111,7 +123,7 @@ func SweepOrphans(known map[string]bool) ([]string, error) {
 		}
 	}
 
-	return removed, nil
+	return removed, errors.Join(skipped...)
 }
 
 func dirSize(path string) (int64, error) {
@@ -181,10 +193,16 @@ func safeCacheDirPath(root, path string) (string, error) {
 	if !isPathInside(root, canonicalPath) {
 		return "", fmt.Errorf("cache path %q is outside cache root %q", canonicalPath, root)
 	}
-	if !isDepthTwoCachePath(root, canonicalPath) {
-		return "", fmt.Errorf("cache path %q is not an owner/repo cache dir", canonicalPath)
-	}
 	return canonicalPath, nil
+}
+
+func isRegisteredLegacyPath(registeredLegacyPaths []map[string]bool, path string) bool {
+	for _, registered := range registeredLegacyPaths {
+		if registered[path] {
+			return true
+		}
+	}
+	return false
 }
 
 func isDepthTwoCachePath(root, path string) bool {

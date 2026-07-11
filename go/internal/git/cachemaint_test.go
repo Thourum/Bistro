@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -48,6 +49,7 @@ func TestCacheDeleteDirSafetyChecks(t *testing.T) {
 	tests := []struct {
 		name        string
 		path        func(t *testing.T, cacheRoot string) string
+		known       func(t *testing.T, path string) map[string]bool
 		wantDeleted bool
 	}{
 		{
@@ -93,6 +95,18 @@ func TestCacheDeleteDirSafetyChecks(t *testing.T) {
 			},
 			wantDeleted: true,
 		},
+		{
+			name: "deletes registered legacy path",
+			path: func(t *testing.T, cacheRoot string) string {
+				legacyDir := filepath.Join(cacheRoot, "repo-legacy")
+				writeTestFile(t, filepath.Join(legacyDir, "objects", "pack"), []byte("pack"))
+				return legacyDir
+			},
+			known: func(t *testing.T, path string) map[string]bool {
+				return map[string]bool{canonicalTestPath(t, path): true}
+			},
+			wantDeleted: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -103,7 +117,13 @@ func TestCacheDeleteDirSafetyChecks(t *testing.T) {
 			path := tt.path(t, cacheRoot)
 
 			// Act
-			err := DeleteCacheDir(path)
+			known := map[string]bool{}
+			if tt.known != nil {
+				known = tt.known(t, path)
+			}
+
+			// Act
+			err := DeleteCacheDir(path, known)
 
 			// Assert
 			if tt.wantDeleted {
@@ -125,7 +145,7 @@ func TestCacheDeleteDirSafetyChecks(t *testing.T) {
 	}
 }
 
-func TestCacheSweepOrphansRemovesUnknownKeepsKnownAndSkipsSymlink(t *testing.T) {
+func TestCacheSweepOrphansRemovesUnknownKeepsKnownAndReportsSkippedEntries(t *testing.T) {
 	// Arrange
 	cacheRoot := t.TempDir()
 	t.Setenv("BISTRO_REPO_DIR", cacheRoot)
@@ -133,8 +153,12 @@ func TestCacheSweepOrphansRemovesUnknownKeepsKnownAndSkipsSymlink(t *testing.T) 
 	unknownRepo := filepath.Join(cacheRoot, "acme", "old")
 	symlinkTarget := filepath.Join(t.TempDir(), "target")
 	symlinkRepo := filepath.Join(cacheRoot, "acme", "linked")
+	fileRepo := filepath.Join(cacheRoot, "acme", "file")
+	ownerFile := filepath.Join(cacheRoot, "owner-file")
 	writeTestFile(t, filepath.Join(knownRepo, "objects", "pack"), []byte("known"))
 	writeTestFile(t, filepath.Join(unknownRepo, "objects", "pack"), []byte("unknown"))
+	writeTestFile(t, fileRepo, []byte("not a dir"))
+	writeTestFile(t, ownerFile, []byte("not a dir"))
 	mustMkdirAll(t, symlinkTarget)
 	if err := os.Symlink(symlinkTarget, symlinkRepo); err != nil {
 		t.Fatalf("create symlink: %v", err)
@@ -146,12 +170,17 @@ func TestCacheSweepOrphansRemovesUnknownKeepsKnownAndSkipsSymlink(t *testing.T) 
 	removed, err := SweepOrphans(known)
 
 	// Assert
-	if err != nil {
-		t.Fatalf("SweepOrphans() error = %v", err)
+	if err == nil {
+		t.Fatal("SweepOrphans() error = nil, want skipped entry report")
 	}
 	sort.Strings(removed)
 	if len(removed) != 1 || removed[0] != unknownCanonicalPath {
 		t.Fatalf("SweepOrphans() removed = %#v, want only %q", removed, unknownCanonicalPath)
+	}
+	for _, want := range []string{symlinkRepo, fileRepo, ownerFile} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("SweepOrphans() error = %q, want skipped path %q", err.Error(), want)
+		}
 	}
 	if _, err := os.Lstat(knownRepo); err != nil {
 		t.Fatalf("known repo was removed: %v", err)
