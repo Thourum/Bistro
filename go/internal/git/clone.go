@@ -146,6 +146,26 @@ func repoCacheDir(repoURL string) (string, error) {
 	return dir, nil
 }
 
+func prepareCacheCloneDir(repoURL string) (string, error) {
+	repoDir, err := repoCacheDir(repoURL)
+	if err != nil {
+		return "", err
+	}
+	if os.Getenv("BISTRO_REPO_DIR") != "" {
+		return os.MkdirTemp(repoDir, "repo-*")
+	}
+	if _, err := ParseRemoteURL(repoURL); err != nil {
+		return os.MkdirTemp(repoDir, "repo-*")
+	}
+	if err := os.RemoveAll(repoDir); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(repoDir), 0755); err != nil {
+		return "", err
+	}
+	return repoDir, nil
+}
+
 func (c *Client) recordCacheCloned(repoURL, path string) {
 	if c.localResolver != nil {
 		c.localResolver.OnCacheCloned(repoURL, path)
@@ -174,7 +194,7 @@ func (c *Client) resolveLocal(ctx context.Context, repoURL, baseSHA, headSHA str
 		var fetchErr *LocalFetchError
 		if errors.As(err, &fetchErr) && fetchErr.Code == remoteMismatchCode {
 			msg := err.Error()
-			c.localResolver.OnLocalDegraded(repoURL, "mismatch", remoteMismatchCode, msg)
+			c.localResolver.OnLocalDegraded(repoURL, remoteMismatchCode, remoteMismatchCode, msg)
 			return nil, &LocationError{RepoID: identity.ID(), Operation: "fetch", Code: remoteMismatchCode, Message: msg}, true
 		}
 		return nil, err, true
@@ -280,16 +300,10 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 	log.Debug("git clone start")
 	overallStart := time.Now()
 
-	repoDir, err := repoCacheDir(repoURL)
+	tmpDir, err := prepareCacheCloneDir(repoURL)
 	if err != nil {
-		log.Error("failed to get repo dir", "error", err)
-		return nil, fmt.Errorf("failed to get repo dir: %w", err)
-	}
-
-	tmpDir, err := os.MkdirTemp(repoDir, "repo-*")
-	if err != nil {
-		log.Error("failed to create temp dir", "repo_dir", repoDir, "error", err)
-		return nil, fmt.Errorf("failed to create temp directory: %w", err)
+		log.Error("failed to prepare clone dir", "error", err)
+		return nil, fmt.Errorf("failed to prepare clone directory: %w", err)
 	}
 
 	cloneOpts := &gitlib.CloneOptions{
@@ -378,15 +392,9 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, bool) {
 	start := time.Now()
 
-	repoDir, err := repoCacheDir(repoURL)
+	tmpDir, err := prepareCacheCloneDir(repoURL)
 	if err != nil {
-		log.Warn("targeted fetch fallback: cannot get repo dir", "error", err)
-		return nil, false
-	}
-
-	tmpDir, err := os.MkdirTemp(repoDir, "repo-*")
-	if err != nil {
-		log.Warn("targeted fetch fallback: cannot create temp dir", "error", err)
+		log.Warn("targeted fetch fallback: cannot prepare clone dir", "error", err)
 		return nil, false
 	}
 

@@ -180,6 +180,42 @@ func TestCloneLocalBrokenRegistrationDoesNotFallBackToWarmCache(t *testing.T) {
 	}
 }
 
+func TestCloneLocalRemoteMismatchRecordsRemoteMismatchStatus(t *testing.T) {
+	// Arrange
+	fixture := newLocalFetchFixture(t)
+	fixture.replaceOriginURLs(t, "file://"+fixture.upstreamPath, "https://github.com/other/repo.git")
+	headSHA := fixture.commitUpstream(t, "feature.txt", "feature\n", "feature")
+	cacheRoot := t.TempDir()
+	t.Setenv("BISTRO_REPO_DIR", "")
+	t.Setenv("XDG_CACHE_HOME", cacheRoot)
+	resolver := &fakeLocalResolver{path: fixture.userPath, hasPath: true}
+	client := NewClient(NewCache())
+	client.SetLocalResolver(resolver)
+
+	// Act
+	result, err := client.Clone(context.Background(), localFetchRemoteURL, fixture.baseSHA.String(), headSHA.String())
+
+	// Assert
+	if result != nil {
+		t.Fatalf("expected nil result, got %#v", result)
+	}
+	var locationErr *LocationError
+	if !errors.As(err, &locationErr) {
+		t.Fatalf("expected LocationError, got %T: %v", err, err)
+	}
+	if locationErr.Code != "remote_mismatch" {
+		t.Fatalf("expected remote_mismatch code, got %q", locationErr.Code)
+	}
+	if len(resolver.degradedCalls) != 1 {
+		t.Fatalf("expected one degraded callback, got %#v", resolver.degradedCalls)
+	}
+	degraded := resolver.degradedCalls[0]
+	if degraded.repoURL != localFetchRemoteURL || degraded.status != "remote_mismatch" || degraded.code != "remote_mismatch" {
+		t.Fatalf("unexpected degraded callback: %#v", degraded)
+	}
+	assertCacheRootUntouched(t, cacheRoot)
+}
+
 func TestCloneLocalBistroRepoDirSkipsResolver(t *testing.T) {
 	// Arrange
 	fixture := newLocalFetchFixture(t)
@@ -253,5 +289,31 @@ func assertCacheRootUntouched(t *testing.T, cacheRoot string) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("expected cache root untouched, found %d entries", len(entries))
+	}
+}
+
+func TestPrepareCacheCloneDirUsesOwnerRepoLayout(t *testing.T) {
+	// Arrange
+	home := t.TempDir()
+	t.Setenv("BISTRO_REPO_DIR", "")
+	t.Setenv("HOME", home)
+
+	// Act
+	clonePath, err := prepareCacheCloneDir(localFetchRemoteURL)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("prepareCacheCloneDir: %v", err)
+	}
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatalf("UserCacheDir: %v", err)
+	}
+	expectedPath := filepath.Join(cacheDir, "bistro", "repos", "acme", "api")
+	if clonePath != expectedPath {
+		t.Fatalf("expected cache clone path %q, got %q", expectedPath, clonePath)
+	}
+	if len(filepath.Base(clonePath)) >= 5 && filepath.Base(clonePath)[:5] == "repo-" {
+		t.Fatalf("expected owner/repo path, got temp child path %q", clonePath)
 	}
 }
