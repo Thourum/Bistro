@@ -1,6 +1,6 @@
 nodeLinker: hoisted
 allowBuilds:
-  '@sentry/node-native-stacktrace': set this to true or false
+  '@sentry/node-native-stacktrace': true
   fs-xattr: true
   macos-alias: true
 
