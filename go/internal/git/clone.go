@@ -109,6 +109,24 @@ type CloneOptions struct {
 	RequiredSHAs []string
 }
 
+// CloneRepoToPath clones repoURL into destination without checking out a worktree.
+// It is used by repo-location handlers that already resolved the exact cache/dev
+// folder path and need the same auth/locking behavior as the production git client.
+func (c *Client) CloneRepoToPath(ctx context.Context, repoURL, destination string) error {
+	operation := func() error {
+		cloneOpts := &gitlib.CloneOptions{URL: repoURL, Auth: c.auth(), Tags: gitlib.NoTags}
+		if _, err := gitlib.PlainCloneContext(ctx, destination, true, cloneOpts); err != nil {
+			return fmt.Errorf("clone repository %s: %w", repoURL, err)
+		}
+		c.recordCacheCloned(repoURL, destination)
+		return nil
+	}
+	if c.locks == nil {
+		return operation()
+	}
+	return c.locks.WithRepo(repoLockKey(repoURL), operation)
+}
+
 // Clone fetches both baseSHA and headSHA into a local clone using the broad
 // fetch strategy (all heads + all PR refs). It is retained for callers that
 // have no PR-specific hints and for backward compatibility with existing tests.
