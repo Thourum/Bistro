@@ -44,15 +44,23 @@ go/
 │   ├── events/                         # Shared event types & broadcaster
 │   │   └── events.go                   #   Event, EventEmitter, NewProgressEvent, NewCompleteEvent, NewErrorEvent
 │   │
-│   ├── git/                            # Git clone, diff generation, repo caching
+│   ├── git/                            # Git clone, diff generation, repo caching, repo identity
 │   │   ├── types.go                    #   RepoEntry, CloneResult, DiffFile, DiffResult
 │   │   ├── clone.go                    #   Client.Clone (go-git based)
 │   │   ├── diff.go                     #   Client.GenerateDiff (unified diff from two SHAs)
 │   │   ├── cache.go                    #   In-memory repo cache with TTL
-│   │   ├── paths.go                    #   Temp directory management
+│   │   ├── cachemaint.go               #   Cache stats, orphan sweep, targeted cache deletion
+│   │   ├── identity.go                 #   ParseRemoteURL and SafeRepoID for stable repo identities
+│   │   ├── localfetch.go               #   Fetch PR refs into user-owned local clones
+│   │   ├── locks.go                    #   Per-repo operation locks for clone/fetch/cache maintenance
+│   │   ├── paths.go                    #   Cache directory management
 │   │   ├── clone_test.go
 │   │   ├── diff_test.go
 │   │   ├── cache_test.go
+│   │   ├── cachemaint_test.go
+│   │   ├── identity_test.go
+│   │   ├── localfetch_test.go
+│   │   ├── locks_test.go
 │   │   ├── paths_test.go
 │   │   ├── git_test.go
 │   │   └── data/                       #   Test fixtures (patches, repos)
@@ -93,22 +101,40 @@ go/
 │   │       ├── provider_mock.go
 │   │       └── provider_mock_test.go
 │   │
+│   ├── scan/                           # Developer-folder scanning for local Git repos
+│   │   ├── scanner.go                  #   ValidateDevFolder, Scan, repo identity extraction
+│   │   └── scanner_test.go
+│   │
 │   ├── server/                         # App orchestrator + WebSocket handlers
-│   │   ├── app.go                      #   App struct, Run(), auth handlers, sync loop — THE GOD FILE
-│   │   ├── diff_handler.go             #   REQUEST_DIFF → DIFF_READY handler
-│   │   ├── pr_list_handler.go          #   REQUEST_PR_LIST → PR_LIST_READY handler
-│   │   ├── repo_handler.go             #   REQUEST_REPO_LIST + TOGGLE_WATCH_REPO handlers
-│   │   ├── diff_handler_test.go
-│   │   ├── repo_handler_test.go
-│   │   └── sync_loop_test.go
+│   │   ├── app.go                      #   App struct, Run(), dependency wiring, handler registration
+│   │   ├── ready.go                    #   Engine readiness event payload
+│   │   ├── repo_location_resolver.go   #   Chooses local clone vs Bistro cache for repo operations
+│   │   ├── syncloop.go                 #   Periodic sync loop and watched-repo sync
+│   │   └── handler/                    #   Domain WebSocket handlers
+│   │       ├── auth.go                 #     AUTH_START, AUTH_CHECK, AUTH_DISCONNECT
+│   │       ├── comments.go             #     Comment CRUD / thread operations
+│   │       ├── diff.go                 #     REQUEST_DIFF → DIFF_READY handler
+│   │       ├── patchsets.go            #     Patchset metadata handlers
+│   │       ├── pr.go                   #     REQUEST_PR_LIST → PR_LIST_READY handler
+│   │       ├── rangediff.go            #     Range-diff handlers
+│   │       ├── repo.go                 #     REQUEST_REPO_LIST + TOGGLE_WATCH_REPO handlers
+│   │       ├── repolocation.go         #     Repo-location scan/add/remove/recover/cache-maintenance handlers
+│   │       ├── sync.go                 #     Manual sync handlers
+│   │       └── threads.go              #     Review-thread handlers
 │   │
 │   ├── store/                          # SQLite database layer
 │   │   ├── db.go                       #   DB wrapper (OpenDB, pragmas: FK, WAL)
-│   │   ├── diff_store.go              #   DiffStore: SaveDiffs, GetDiffs, GetUnifiedDiff
-│   │   ├── migration_runner.go        #   Embedded SQL migrations, version tracking
-│   │   ├── migrations/                #   Numbered .sql migration files
-│   │   ├── db_test.go
-│   │   └── diff_store_test.go
+│   │   ├── action_queue.go             #   Offline write-action queue persistence
+│   │   ├── current_user.go             #   Current authenticated user persistence
+│   │   ├── diff_store.go               #   DiffStore: SaveDiffs, GetDiffs, GetUnifiedDiff
+│   │   ├── files_viewed.go             #   Viewed-file state
+│   │   ├── last_reviewed.go            #   Last-reviewed commit/patchset state
+│   │   ├── patchsets.go                #   Patchset persistence
+│   │   ├── repo_location.go            #   RepoLocationStore: repo source/local/cache columns
+│   │   ├── review_thread_store.go      #   Review-thread persistence
+│   │   ├── sync_cursor.go              #   Sync cursor persistence
+│   │   ├── migration_runner.go         #   Embedded SQL migrations, version tracking
+│   │   └── migrations/                 #   Numbered .sql migration files, including repo-location columns
 │   │
 │   ├── sync/                           # Sync engine: orchestration, concurrency, DB writes, queueing
 │   │   ├── types.go                    #   SyncRequest, SyncResult, SyncProgress
@@ -184,17 +210,10 @@ go/
 ### `cmd/bistro-sync` -- Entrypoint
 Parses CLI flags, configures logging, checks the OS keychain for an existing token, and calls `server.App.Run()`.
 
-### `internal/server` -- Application Core (Problem Area)
-`app.go` is a 547-line god file that owns:
-- App struct with all dependencies
-- Constructor (`New`, `NewWithLogger`)
-- Three auth WebSocket handlers (`handleAuthStart`, `handleAuthCheck`, `handleAuthDisconnect`)
-- The full OAuth code flow goroutine (`runAuthCodeFlow`)
-- Provider/username resolution (`fetchUsername`)
-- Sync loop (`runSyncLoop`, `syncWatchedRepos`, `syncSingleRepo`)
-- Lifecycle management (`Run`, `SetProvider`, `SetGitClient`, etc.)
+### `internal/server` -- Application Core
+`app.go` owns the application dependency graph, lifecycle, WebSocket server setup, and handler registration. Background sync logic lives in `syncloop.go`; readiness payloads live in `ready.go`; repo path resolution lives in `repo_location_resolver.go`.
 
-The remaining files (`diff_handler.go`, `pr_list_handler.go`, `repo_handler.go`) are well-structured handler factories that return `ws.MessageHandler` closures.
+The `handler/` subpackage contains focused `ws.MessageHandler` factories grouped by domain: auth, comments, diff, patchsets, PR list, range-diff, repos, repo-location management, sync, and review threads. Repo-location handlers cover dev-folder validation/scanning, add-by-URL, removal preflight/removal, local-path recovery, cache recovery, cache stats, prune, clear, and targeted cache deletion.
 
 ### `internal/ws` -- WebSocket Transport
 Clean, focused package. `Server` manages connections and lifecycle; `Dispatcher` routes JSON messages to registered `MessageHandler` functions. No business logic.
@@ -230,10 +249,13 @@ Handles approve/request-changes/post-comment actions through a `Handler` interfa
 Simple pub/sub `EventEmitter` with buffered channels. Used by both sync and actions packages.
 
 ### `internal/store` -- Database Layer
-SQLite via `mattn/go-sqlite3`. `DB` is a thin wrapper applying pragmas (FK, WAL). `DiffStore` manages per-file PR diffs. `MigrationRunner` applies embedded `.sql` migrations.
+SQLite via `mattn/go-sqlite3`. `DB` is a thin wrapper applying pragmas (FK, WAL). Store types own persistence for diffs, review threads, patchsets, viewed files, current user, sync cursors, queued write actions, and repo locations. `RepoLocationStore` manages the repo-location columns added by migration 026 (`repo_source`, `local_path`, `local_path_verified_at`, `cache_path`) so the engine can prefer user-owned clones while retaining Bistro cache fallback. `MigrationRunner` applies embedded `.sql` migrations.
 
 ### `internal/git` -- Git Operations
-Uses `go-git` for cloning repos and generating unified diffs between two SHAs. Includes an in-memory cache with TTL for cloned repos.
+Uses `go-git` for cloning repos and generating unified diffs between two SHAs. Includes an in-memory cache with TTL for cloned repos, remote identity normalization (`ParseRemoteURL`, `SafeRepoID`), per-repo operation locks, local-clone PR ref fetching, and cache-maintenance helpers for stats, orphan sweeping, and safe deletion under the cache root.
+
+### `internal/scan` -- Developer Folder Scanner
+Validates developer-folder inputs and scans immediate child repositories. It rejects unsafe/system folders, skips symlinks, extracts parseable Git remotes, and returns stable repo identities for matching local clones to provider repositories.
 
 ### `internal/keychain` -- Token Storage
 Wraps `go-keyring` for OS-level credential storage. `TokenManager` provides a per-provider high-level API.
