@@ -460,8 +460,9 @@ function RecentComments({ comments }: { comments: Comment[] }) {
       sortBySeverity(comments.filter((comment) => comment.dismissed !== true)),
     [comments],
   );
-  const dismissedCount = useMemo(
-    () => comments.filter((comment) => comment.dismissed === true).length,
+  const dismissedComments = useMemo(
+    () =>
+      sortBySeverity(comments.filter((comment) => comment.dismissed === true)),
     [comments],
   );
   const unresolved = activeComments.length; // TODO: real resolution tracking
@@ -526,11 +527,45 @@ function RecentComments({ comments }: { comments: Comment[] }) {
           );
         })}
       </div>
-      <section className="border-t border-outline-variant/30 pt-4">
-        <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-outline">
-          Dismissed ({dismissedCount})
-        </h3>
-      </section>
+      {dismissedComments.length > 0 && (
+        <section className="border-t border-outline-variant/30 pt-4 space-y-2">
+          <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-outline">
+            Dismissed ({dismissedComments.length})
+          </h3>
+          {dismissedComments.map((c) => {
+            const isExpanded = expandedByCommentId[c.id] === true;
+            return (
+              <div
+                key={c.id}
+                className="border-l-2 border-outline-variant/20 bg-surface-container-lowest/50 px-6 py-2 opacity-60"
+              >
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-4 border-0 p-0 text-left"
+                  aria-expanded={isExpanded}
+                  onClick={() => toggleExpanded(c.id)}
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono text-[10px] text-outline">
+                      {isExpanded ? '▼' : '▶'}
+                    </span>
+                    <span className="font-mono text-[10px] font-bold text-on-surface uppercase tracking-widest">
+                      @{c.author}
+                    </span>
+                    <span className="font-mono text-[9px] uppercase tracking-widest text-outline">
+                      {c.severity ?? 'unclassified'}
+                    </span>
+                  </span>
+                  <span className="font-mono text-[10px] text-outline shrink-0">
+                    {relativeTime(c.created_at)}
+                  </span>
+                </button>
+                {isExpanded && <Markdown body={c.body} compact />}
+              </div>
+            );
+          })}
+        </section>
+      )}
     </section>
   );
 }

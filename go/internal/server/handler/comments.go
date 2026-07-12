@@ -69,6 +69,8 @@ type commentRow struct {
 	Severity             *string `json:"severity,omitempty"`
 	Category             *string `json:"category,omitempty"`
 	ClassificationSource *string `json:"classification_source,omitempty"`
+	// migration 027: per-account dismissal (Phase 3.5). Omitted when false.
+	Dismissed bool `json:"dismissed,omitempty"`
 }
 
 // commentsStore is what the comments handler needs from the DB: reads for
@@ -186,6 +188,7 @@ func NewRequestCommentsHandlerWithClassifier(db commentsStore, log *slog.Logger,
 			        c.anchor_patchset_number,
 			        c.anchor_current_patchset_number,
 			        c.author_type, c.bot_vendor, c.severity, c.category, c.classification_source,
+			        (d.comment_id IS NOT NULL) AS dismissed,
 			        p.head_sha  AS current_head_sha,
 			        ps.number   AS current_patchset_number
 			 FROM comments c
@@ -194,6 +197,9 @@ func NewRequestCommentsHandlerWithClassifier(db commentsStore, log *slog.Logger,
 			        ON ps.pr_id    = c.pr_id
 			       AND ps.head_sha = p.head_sha
 			       AND ps.base_sha = p.base_sha
+			 LEFT JOIN comment_dismissals d
+			        ON d.comment_id = c.id
+			       AND (d.account_provider, d.account_login) IN (SELECT provider, login FROM current_user)
 			 WHERE c.pr_id = ?
 			 ORDER BY c.created_at ASC`,
 			req.PRID,
@@ -229,6 +235,7 @@ func NewRequestCommentsHandlerWithClassifier(db commentsStore, log *slog.Logger,
 				&c.AnchorPatchsetNumber,
 				&c.AnchorCurrentPatchsetNumber,
 				&c.AuthorType, &c.BotVendor, &c.Severity, &c.Category, &c.ClassificationSource,
+				&c.Dismissed,
 				&currentHeadSHA,
 				&currentPatchsetNumber,
 			); err != nil {
