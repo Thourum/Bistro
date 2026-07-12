@@ -65,10 +65,23 @@ func setupCommentsTestDB(t *testing.T) *sql.DB {
 		start_line INTEGER,
 		original_start_line INTEGER,
 		start_side TEXT,
-		subject_type TEXT
+		subject_type TEXT,
+		author_type TEXT,
+		bot_vendor TEXT,
+		severity TEXT,
+		category TEXT,
+		classification_source TEXT
 	)`)
 	if err != nil {
 		t.Fatalf("create comments table: %v", err)
+	}
+	// migration 026 side-table used by the lazy re-classification pass.
+	_, err = db.Exec(`CREATE TABLE comment_classification_state (
+		comment_id  TEXT PRIMARY KEY,
+		fingerprint TEXT NOT NULL
+	)`)
+	if err != nil {
+		t.Fatalf("create comment_classification_state table: %v", err)
 	}
 	return db
 }
