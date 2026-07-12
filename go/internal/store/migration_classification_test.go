@@ -2,6 +2,29 @@ package store
 
 import "testing"
 
+func TestMigration026CommentClassification(t *testing.T) {
+	db := openTestDBForQueue(t) // reuse the existing test helper that runs all migrations
+
+	// New columns exist on comments.
+	for _, col := range []string{"author_type", "bot_vendor", "severity", "category", "classification_source"} {
+		var count int
+		err := db.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info('comments') WHERE name = ?`, col,
+		).Scan(&count)
+		if err != nil || count != 1 {
+			t.Errorf("comments.%s missing (err=%v count=%d)", col, err, count)
+		}
+	}
+
+	// State side-table exists with the right shape.
+	var n int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('comment_classification_state') WHERE name IN ('comment_id','fingerprint')`,
+	).Scan(&n); err != nil || n != 2 {
+		t.Errorf("comment_classification_state shape wrong (err=%v n=%d)", err, n)
+	}
+}
+
 func TestMigration027CommentDismissals(t *testing.T) {
 	db := openTestDBForQueue(t) // reuse the existing test helper that runs all migrations
 
