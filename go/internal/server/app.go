@@ -427,6 +427,16 @@ func (a *App) Run(ctx context.Context) error {
 	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandler(a.db.DB, a.log))
 	a.wsServer.RegisterHandler("REQUEST_COMMENTS",
 		handler.NewRequestCommentsHandlerWithClassifier(a.db.DB, a.log, a.classifier))
+	dismissDeps := handler.DismissDeps{
+		DB:          a.db.DB,
+		Dismissals:  store.NewDismissals(a.db.DB),
+		CurrentUser: currentUserStore,
+		GetApplier:  a.currentApplier,
+		Scope:       func() string { return "local" }, // live value lands with SET_CLASSIFICATION_SETTINGS
+		Log:         a.log,
+	}
+	a.wsServer.RegisterHandler("DISMISS_COMMENTS", handler.NewDismissCommentsHandler(dismissDeps))
+	a.wsServer.RegisterHandler("UNDISMISS_COMMENTS", handler.NewUndismissCommentsHandler(dismissDeps))
 	a.wsServer.RegisterHandler("REQUEST_REPO_LIST",
 		handler.NewRequestRepoListHandler(a.getProvider, a.db.DB, a.log))
 	a.wsServer.RegisterHandler("TOGGLE_WATCH_REPO",
