@@ -72,8 +72,10 @@ function mergeSettings(base: AppSettings, patch: unknown): AppSettings {
 /**
  * Normalise arbitrary JSON read from disk into a valid AppSettings.
  * Missing fields are filled from defaults; unknown fields are discarded.
+ * Exported for tests: new settings sections must merge in for old files
+ * without a schema bump.
  */
-function normalise(raw: unknown): AppSettings {
+export function normalise(raw: unknown): AppSettings {
   const merged = mergeSettings(DEFAULT_SETTINGS, raw);
   return {
     ...merged,

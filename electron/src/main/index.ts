@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, ipcMain, shell } from 'electron';
 import log from 'electron-log';
-import type { SyncSettings } from '../types/settings';
+import type { ClassificationSettings, SyncSettings } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import { killGoProcess, spawnGoProcess } from './go-spawn';
 import { setupIPC } from './ipc';
@@ -59,6 +59,27 @@ function syncSettingsPayload(sync: SyncSettings): {
   return {
     auto_sync: normalised.autoSync,
     sync_interval_secs: normalised.syncInterval,
+  };
+}
+
+/**
+ * Wire payload for SET_CLASSIFICATION_SETTINGS (Phase 3 spec contract).
+ * Never includes any API key — BYOK keys travel only via SET_BYOK_KEY into
+ * the OS keychain, never through settings.
+ */
+function classificationSettingsPayload(c: ClassificationSettings): {
+  mode: string;
+  dismissal_scope: string;
+  provider: string;
+  model: string;
+  endpoint: string;
+} {
+  return {
+    mode: c.mode,
+    dismissal_scope: c.dismissalScope,
+    provider: c.provider,
+    model: c.model,
+    endpoint: c.endpoint,
   };
 }
 
@@ -223,8 +244,20 @@ app.on('ready', async () => {
         data: syncSettingsPayload(sync),
       });
     };
+    const sendClassificationSettingsToGo = (c: ClassificationSettings) => {
+      if (!wsClient?.isConnected()) return;
+      wsClient.send({
+        type: 'SET_CLASSIFICATION_SETTINGS',
+        data: classificationSettingsPayload(c),
+      });
+    };
     wsClient.on('connected', () => {
+      // Bootstrap-on-connect: Go starts with defaults; push live settings
+      // on every (re)connect per the Phase 3 wire contract.
       sendSyncSettingsToGo(activeSettingsService.snapshot.sync);
+      sendClassificationSettingsToGo(
+        activeSettingsService.snapshot.classification,
+      );
     });
     wsClient.connect();
 
@@ -240,6 +273,7 @@ app.on('ready', async () => {
     // 4a. Forward runtime sync-settings changes to Go engine over WebSocket.
     settingsService.addChangeListener((s) => {
       sendSyncSettingsToGo(s.sync);
+      sendClassificationSettingsToGo(s.classification);
       telemetryService?.setEnabled(s.privacy.telemetryEnabled);
       configureSentryConsent(s.privacy.telemetryEnabled);
     });
