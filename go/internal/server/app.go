@@ -67,9 +67,13 @@ type App struct {
 	// anchorResolver is set in Run() and shared across all orchestrators.
 	anchorResolver *git.AnchorResolver
 	// classifier is the Phase 3 comment-classification engine provider,
-	// shared by the sync writer and the comments handler. The mode getter
-	// returns "rules" until SET_CLASSIFICATION_SETTINGS supplies a live value.
+	// shared by the sync writer and the comments handler. Its mode getter
+	// reads classificationState, so a mode change lazily invalidates the
+	// rule fingerprint on the next Current() call.
 	classifier *classify.EngineProvider
+	// classificationState holds the live classification settings pushed via
+	// SET_CLASSIFICATION_SETTINGS (mode, dismissal scope, provider, model).
+	classificationState *handler.ClassificationState
 }
 
 // SetReadyWriter overrides where the machine-readable ready signal is written.
@@ -206,19 +210,20 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 	// access it before the first connect don't panic on a nil context.
 	provCtx, provCtxCancel := context.WithCancel(context.Background())
 	return &App{
-		log:           logger,
-		wsServer:      ws.NewServerWithLogger(logger),
-		wsPort:        wsPort,
-		dbPath:        dbPath,
-		providerCache: cache.NewProviderCache(cachePath),
-		tokenManager:  keychain.NewTokenManager(),
-		repoLocks:     git.NewRepoLocks(),
-		syncTrigger:   make(chan string, 8),
-		syncSettings:  make(chan syncSettingsMsg, 4),
-		syncInterval:  5 * time.Minute,
-		autoSync:      true,
-		provCtx:       provCtx,
-		provCtxCancel: provCtxCancel,
+		log:                 logger,
+		wsServer:            ws.NewServerWithLogger(logger),
+		wsPort:              wsPort,
+		dbPath:              dbPath,
+		providerCache:       cache.NewProviderCache(cachePath),
+		tokenManager:        keychain.NewTokenManager(),
+		repoLocks:           git.NewRepoLocks(),
+		syncTrigger:         make(chan string, 8),
+		syncSettings:        make(chan syncSettingsMsg, 4),
+		syncInterval:        5 * time.Minute,
+		autoSync:            true,
+		provCtx:             provCtx,
+		provCtxCancel:       provCtxCancel,
+		classificationState: handler.NewClassificationState(),
 	}
 }
 
@@ -226,8 +231,8 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 // built-ins (presence-gated) and constructs the engine provider shared by the
 // sync writer and the comments handler. An empty dir skips seeding entirely;
 // classification then runs on the embedded built-ins. Call before Run.
-// The mode getter returns "rules" until SET_CLASSIFICATION_SETTINGS supplies
-// a live source (Phase 3 increment 4).
+// The mode getter reads the live classification state, so a mode change from
+// SET_CLASSIFICATION_SETTINGS invalidates fingerprints lazily.
 func (a *App) SetRulesDir(dir string) {
 	if dir != "" {
 		if err := classify.SeedAndUpdate(dir); err != nil {
@@ -235,7 +240,7 @@ func (a *App) SetRulesDir(dir string) {
 				"dir", dir, "err", err)
 		}
 	}
-	a.classifier = classify.NewEngineProvider(dir, func() string { return "rules" }, a.log)
+	a.classifier = classify.NewEngineProvider(dir, a.classificationState.Mode, a.log)
 }
 
 // SetSyncInterval configures the interval between automatic sync cycles.
@@ -432,11 +437,17 @@ func (a *App) Run(ctx context.Context) error {
 		Dismissals:  store.NewDismissals(a.db.DB),
 		CurrentUser: currentUserStore,
 		GetApplier:  a.currentApplier,
-		Scope:       func() string { return "local" }, // live value lands with SET_CLASSIFICATION_SETTINGS
+		Scope:       a.classificationState.DismissalScope,
 		Log:         a.log,
 	}
 	a.wsServer.RegisterHandler("DISMISS_COMMENTS", handler.NewDismissCommentsHandler(dismissDeps))
 	a.wsServer.RegisterHandler("UNDISMISS_COMMENTS", handler.NewUndismissCommentsHandler(dismissDeps))
+	a.wsServer.RegisterHandler("SET_CLASSIFICATION_SETTINGS",
+		handler.NewSetClassificationSettingsHandler(a.classificationState, a.log))
+	a.wsServer.RegisterHandler("SET_BYOK_KEY",
+		handler.NewSetByokKeyHandler(a.tokenManager, nil, a.log))
+	a.wsServer.RegisterHandler("DELETE_BYOK_KEY",
+		handler.NewDeleteByokKeyHandler(a.tokenManager, nil, a.log))
 	a.wsServer.RegisterHandler("REQUEST_REPO_LIST",
 		handler.NewRequestRepoListHandler(a.getProvider, a.db.DB, a.log))
 	a.wsServer.RegisterHandler("TOGGLE_WATCH_REPO",
