@@ -12,6 +12,7 @@ import { Button } from '../components/ui/button';
 import { ShortcutBadge } from '../components/ui/shortcut-badge';
 import { Textarea } from '../components/ui/textarea';
 import { useActionDispatch } from '../hooks/useActionDispatch';
+import { useDismissals } from '../hooks/useDismissals';
 import { usePatchsets } from '../hooks/usePatchsets';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -21,6 +22,7 @@ import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { CICheck, Comment, Patchset, PR } from '../types';
 import {
+  filterBySeverity,
   groupVisibleFindings,
   isAutoCollapsed,
   sortBySeverity,
@@ -136,6 +138,9 @@ export function PRDetailPage() {
         log.warn({ err }, 'failed to fetch comments');
       });
   }, [pr, request, commentsRevision]);
+
+  // d n / d b / u bulk-dismiss keystrokes act on the loaded comment list.
+  useDismissals(pr?.id, comments);
 
   useEffect(() => {
     if (pr === undefined) return;
@@ -459,10 +464,28 @@ function RecentComments({ comments }: { comments: Comment[] }) {
   const [expandedByCommentId, setExpandedByCommentId] = useState<
     Record<string, boolean>
   >({});
+  const commentMinSeverity = useStore(
+    appStore,
+    (s: UIState) => s.commentMinSeverity,
+  );
+  const commentHumanOnly = useStore(
+    appStore,
+    (s: UIState) => s.commentHumanOnly,
+  );
   const activeComments = useMemo(
     () =>
-      sortBySeverity(comments.filter((comment) => comment.dismissed !== true)),
-    [comments],
+      sortBySeverity(
+        filterBySeverity(
+          comments.filter((comment) => comment.dismissed !== true),
+          {
+            ...(commentMinSeverity !== null
+              ? { minSeverity: commentMinSeverity }
+              : {}),
+            humanOnly: commentHumanOnly,
+          },
+        ),
+      ),
+    [comments, commentMinSeverity, commentHumanOnly],
   );
   // Dedup groups are a VIEW over visible comments: grouping runs AFTER the
   // dismissed filter so members recompute and fully-hidden groups disappear.

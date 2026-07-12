@@ -645,6 +645,87 @@ const detailBindings: KeyBinding[] = [
       ctx.overlays.openThreads();
     },
   },
+  // ── Phase 3.5 bulk dismiss + classification filters ────────────────────
+  // Conflict notes: single-key `d`/`f` exist only on the list route and the
+  // filter overlay; `u` exists only in the threads overlay — the detail
+  // route is free for these. Dispatched as DOM events (emitThreadsEvent
+  // pattern) so useDismissals can act on the loaded comment list.
+  {
+    actionId: 'detail.dismissNits',
+    keys: ['d', 'n'],
+    description: 'Dismiss nits + info',
+    activation: { routes: ['detail'] },
+    action: (_ctx) => emitThreadsEvent('bistro:comments:dismiss-nits'),
+  },
+  {
+    actionId: 'detail.dismissBots',
+    keys: ['d', 'b'],
+    description: 'Dismiss bot comments',
+    activation: { routes: ['detail'] },
+    action: (_ctx) => emitThreadsEvent('bistro:comments:dismiss-bots'),
+  },
+  {
+    actionId: 'detail.undoDismiss',
+    keys: 'u',
+    description: 'Undo last dismissal',
+    activation: { routes: ['detail'] },
+    action: (_ctx) => emitThreadsEvent('bistro:comments:undo-dismiss'),
+  },
+  {
+    actionId: 'detail.filterCritical',
+    keys: ['f', 'c'],
+    description: 'Filter ≥ critical',
+    activation: { routes: ['detail'] },
+    action: (ctx) =>
+      ctx.store.setState((s) => ({ ...s, commentMinSeverity: 'critical' })),
+  },
+  {
+    actionId: 'detail.filterWarning',
+    keys: ['f', 'w'],
+    description: 'Filter ≥ warning',
+    activation: { routes: ['detail'] },
+    action: (ctx) =>
+      ctx.store.setState((s) => ({ ...s, commentMinSeverity: 'warning' })),
+  },
+  {
+    actionId: 'detail.filterSuggestion',
+    keys: ['f', 's'],
+    description: 'Filter ≥ suggestion',
+    activation: { routes: ['detail'] },
+    action: (ctx) =>
+      ctx.store.setState((s) => ({ ...s, commentMinSeverity: 'suggestion' })),
+  },
+  {
+    actionId: 'detail.filterNit',
+    keys: ['f', 'n'],
+    description: 'Filter ≥ nit',
+    activation: { routes: ['detail'] },
+    action: (ctx) =>
+      ctx.store.setState((s) => ({ ...s, commentMinSeverity: 'nit' })),
+  },
+  {
+    actionId: 'detail.filterHuman',
+    keys: ['f', 'h'],
+    description: 'Human comments only',
+    activation: { routes: ['detail'] },
+    action: (ctx) =>
+      ctx.store.setState((s) => ({
+        ...s,
+        commentHumanOnly: !s.commentHumanOnly,
+      })),
+  },
+  {
+    actionId: 'detail.filterClear',
+    keys: ['f', 'f'],
+    description: 'Clear comment filters',
+    activation: { routes: ['detail'] },
+    action: (ctx) =>
+      ctx.store.setState((s) => ({
+        ...s,
+        commentMinSeverity: null,
+        commentHumanOnly: false,
+      })),
+  },
   {
     actionId: 'detail.approve',
     keys: ['a', 'a'],

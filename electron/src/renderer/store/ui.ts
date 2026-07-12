@@ -99,6 +99,21 @@ export interface UIState {
   activeInlineCommentThreadId: string | null;
   /** Inline diff-comment thread currently showing the reply composer, if any. */
   replyingInlineCommentThreadId: string | null;
+  /**
+   * Comment classification filter (Phase 3.5 `f` keystrokes): minimum
+   * severity (`f c/w/s/n`) and human-only (`f h`). Cleared by `f f`.
+   */
+  commentMinSeverity: 'critical' | 'warning' | 'suggestion' | 'nit' | null;
+  commentHumanOnly: boolean;
+  /**
+   * Session undo stack of dismiss batches (Phase 3.5 `u`). Does not survive
+   * restart by design — the SQLite dismissal rows do.
+   */
+  dismissBatches: Array<{
+    batch_id: string;
+    dismissed_ids: string[];
+    resolved_thread_ids: string[];
+  }>;
 }
 
 export const initialUIState: UIState = {
@@ -138,6 +153,9 @@ export const initialUIState: UIState = {
   inlineCommentThreadIds: [],
   activeInlineCommentThreadId: null,
   replyingInlineCommentThreadId: null,
+  commentMinSeverity: null,
+  commentHumanOnly: false,
+  dismissBatches: [],
 };
 
 export function createUIStore(): Store<UIState> {
