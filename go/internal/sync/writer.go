@@ -257,6 +257,15 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 			w.writeReviewThreads(ctx, tx, result.Threads, currentPatchsetNum, eng)
 		}
 
+		// ── Best-effort: multi-bot dedup post-pass (3.6) — after this PR's
+		// comments are written, same tx. Only runs when classification is on.
+		if eng != nil {
+			if err := w.dedupPRComments(ctx, tx, prID); err != nil {
+				log.Warn("dedup post-pass failed (comments remain ungrouped)",
+					"pr_id", prID, "error", err)
+			}
+		}
+
 		// ── Release savepoint — commit this PR's work into the outer tx ───
 		if _, spErr := tx.ExecContext(ctx, "RELEASE SAVEPOINT "+savepoint); spErr != nil {
 			// Very rare. The work is already in the outer tx; log and continue.
@@ -553,6 +562,55 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 		}
 	}
 
+	return nil
+}
+
+// dedupPRComments runs the trigram-Jaccard dedup post-pass over one PR's
+// comments and persists group membership: dedup_group_id is set for members
+// and cleared for former members no longer grouped — idempotent across
+// re-syncs (group id = sha256 of sorted member ids).
+func (w *Writer) dedupPRComments(ctx context.Context, tx *sql.Tx, prID string) error {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id, COALESCE(author_type, ''), file_path, anchored_line, line_number, body
+		 FROM comments WHERE pr_id = ?`, prID)
+	if err != nil {
+		return fmt.Errorf("dedup select: %w", err)
+	}
+	var inputs []classify.DedupInput
+	for rows.Next() {
+		var in classify.DedupInput
+		var lineNumber *int
+		if err := rows.Scan(&in.ID, &in.AuthorType, &in.FilePath, &in.AnchoredLine, &lineNumber, &in.Body); err != nil {
+			rows.Close()
+			return fmt.Errorf("dedup scan: %w", err)
+		}
+		// line_number 0 means "no line" in provider terms; treat as absent.
+		if lineNumber != nil && *lineNumber > 0 {
+			in.LineNumber = lineNumber
+		}
+		inputs = append(inputs, in)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("dedup iterate: %w", err)
+	}
+
+	groups := classify.Dedup(inputs)
+	for _, in := range inputs {
+		groupID, ok := groups[in.ID]
+		if ok {
+			_, err = tx.ExecContext(ctx,
+				`UPDATE comments SET dedup_group_id = ? WHERE id = ? AND (dedup_group_id IS NULL OR dedup_group_id != ?)`,
+				groupID, in.ID, groupID)
+		} else {
+			_, err = tx.ExecContext(ctx,
+				`UPDATE comments SET dedup_group_id = NULL WHERE id = ? AND dedup_group_id IS NOT NULL`,
+				in.ID)
+		}
+		if err != nil {
+			return fmt.Errorf("dedup update %s: %w", in.ID, err)
+		}
+	}
 	return nil
 }
 

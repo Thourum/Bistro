@@ -20,7 +20,11 @@ import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { CICheck, Comment, Patchset, PR } from '../types';
-import { isAutoCollapsed, sortBySeverity } from '../utils/classification';
+import {
+  groupVisibleFindings,
+  isAutoCollapsed,
+  sortBySeverity,
+} from '../utils/classification';
 import { createLogger } from '../utils/logger';
 
 // Route API for reading the stable $prId param; detail never resolves by list index.
@@ -460,6 +464,12 @@ function RecentComments({ comments }: { comments: Comment[] }) {
       sortBySeverity(comments.filter((comment) => comment.dismissed !== true)),
     [comments],
   );
+  // Dedup groups are a VIEW over visible comments: grouping runs AFTER the
+  // dismissed filter so members recompute and fully-hidden groups disappear.
+  const findings = useMemo(
+    () => groupVisibleFindings(activeComments),
+    [activeComments],
+  );
   const dismissedComments = useMemo(
     () =>
       sortBySeverity(comments.filter((comment) => comment.dismissed === true)),
@@ -485,16 +495,22 @@ function RecentComments({ comments }: { comments: Comment[] }) {
         </span>
       </div>
       <div className="space-y-3">
-        {activeComments.map((c) => {
-          const isExpandable = isAutoCollapsed(c);
+        {findings.map((finding) => {
+          const c = finding.anchor;
+          const isMerged = finding.members.length > 1;
+          const isExpandable = isMerged || isAutoCollapsed(c);
           const isExpanded = expandedByCommentId[c.id] === true;
           const isCollapsed = isExpandable && !isExpanded;
-          const severityLabel = c.severity ?? 'unclassified';
+          const severity = isMerged ? finding.severity : c.severity;
+          const severityLabel = severity ?? 'unclassified';
+          const vendorLabel = finding.vendors
+            .map((vendor) => vendor.charAt(0).toUpperCase() + vendor.slice(1))
+            .join(' + ');
 
           return (
             <div
               key={c.id}
-              data-severity={c.severity ?? 'none'}
+              data-severity={severity ?? 'none'}
               className="cursor-crosshair border-l-2 border-outline-variant/30 bg-surface-container-lowest p-6 transition-colors duration-150 data-[severity=critical]:border-l-error data-[severity=warning]:border-l-tertiary data-[severity=suggestion]:border-l-primary data-[severity=nit]:border-l-secondary data-[severity=info]:border-l-outline hover:border-primary hover:bg-surface-container-low flex flex-col space-y-3"
             >
               <button
@@ -512,7 +528,9 @@ function RecentComments({ comments }: { comments: Comment[] }) {
                     </span>
                   )}
                   <span className="font-mono text-[10px] font-bold text-on-surface uppercase tracking-widest">
-                    @{c.author}
+                    {isMerged
+                      ? `Flagged by ${vendorLabel} (${finding.members.length} sources)`
+                      : `@${c.author}`}
                   </span>
                   <span className="font-mono text-[9px] uppercase tracking-widest text-outline">
                     {severityLabel}
@@ -522,7 +540,24 @@ function RecentComments({ comments }: { comments: Comment[] }) {
                   {relativeTime(c.created_at)}
                 </span>
               </button>
-              {!isCollapsed && <Markdown body={c.body} compact />}
+              {!isCollapsed &&
+                (isMerged ? (
+                  <div className="space-y-3">
+                    {finding.members.map((member) => (
+                      <div
+                        key={member.id}
+                        className="border-l border-outline-variant/30 pl-4"
+                      >
+                        <span className="font-mono text-[9px] uppercase tracking-widest text-outline">
+                          @{member.author}
+                        </span>
+                        <Markdown body={member.body} compact />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Markdown body={c.body} compact />
+                ))}
             </div>
           );
         })}

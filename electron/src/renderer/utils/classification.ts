@@ -133,3 +133,74 @@ export function filterBySeverity(
     return severityRank(comment.severity) >= minimumRank;
   });
 }
+
+/**
+ * One renderable unit after dedup grouping: either a single comment or a
+ * merged multi-bot finding. A group is a VIEW, never a dismissal unit — it is
+ * built from the comments that survived dismiss/filter, so members recompute
+ * and a fully-hidden group disappears (spec 3.6).
+ */
+export interface MergedFinding {
+  /** Anchor member (first visible, in input order). */
+  anchor: Comment;
+  /** All visible members, anchor first. Length 1 = plain comment. */
+  members: Comment[];
+  /** Max severity among visible members; undefined when none classified. */
+  severity: CommentSeverity | undefined;
+  /** Distinct vendor labels of visible members, e.g. ["coderabbit","greptile"]. */
+  vendors: string[];
+}
+
+/**
+ * Group VISIBLE comments by dedup_group_id, preserving input order.
+ * Call AFTER dismiss/filter have been applied.
+ */
+export function groupVisibleFindings(
+  comments: readonly Comment[],
+): MergedFinding[] {
+  const byGroup = new Map<string, Comment[]>();
+  for (const comment of comments) {
+    if (!comment.dedup_group_id) continue;
+    byGroup.set(comment.dedup_group_id, [
+      ...(byGroup.get(comment.dedup_group_id) ?? []),
+      comment,
+    ]);
+  }
+
+  const emitted = new Set<string>();
+  const findings: MergedFinding[] = [];
+  for (const comment of comments) {
+    const groupId = comment.dedup_group_id;
+    const members =
+      groupId && (byGroup.get(groupId)?.length ?? 0) >= 2
+        ? (byGroup.get(groupId) as Comment[])
+        : [comment];
+
+    if (groupId && members.length >= 2) {
+      if (emitted.has(groupId)) continue;
+      emitted.add(groupId);
+    }
+
+    const severity = members.reduce<CommentSeverity | undefined>(
+      (max, member) =>
+        severityRank(member.severity) > severityRank(max)
+          ? member.severity
+          : max,
+      undefined,
+    );
+    const vendors = [
+      ...new Set(
+        members
+          .map((member) => member.bot_vendor)
+          .filter((vendor): vendor is string => Boolean(vendor)),
+      ),
+    ];
+    findings.push({
+      anchor: members[0] as Comment,
+      members,
+      severity,
+      vendors,
+    });
+  }
+  return findings;
+}

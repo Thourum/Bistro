@@ -3,6 +3,7 @@ import type { Comment } from '../../src/renderer/types';
 import {
   aggregateCounts,
   filterBySeverity,
+  groupVisibleFindings,
   humanizeSource,
   isAutoCollapsed,
   SEVERITY_RANK,
@@ -263,5 +264,70 @@ describe('filterBySeverity', () => {
 
     // Assert
     expect(filtered.map((comment) => comment.id)).toEqual(['human-warning']);
+  });
+});
+
+describe('groupVisibleFindings', () => {
+  it('merges same-group comments into one finding anchored at the first visible member', () => {
+    // Arrange
+    const comments = [
+      buildComment({
+        id: 'rabbit',
+        author_type: 'bot',
+        bot_vendor: 'coderabbit',
+        severity: 'warning',
+        dedup_group_id: 'g1',
+      }),
+      buildComment({ id: 'human', author_type: 'human' }),
+      buildComment({
+        id: 'greptile',
+        author_type: 'bot',
+        bot_vendor: 'greptile',
+        severity: 'critical',
+        dedup_group_id: 'g1',
+      }),
+    ];
+
+    // Act
+    const findings = groupVisibleFindings(comments);
+
+    // Assert
+    expect(findings).toHaveLength(2);
+    const merged = findings[0];
+    expect(merged?.anchor.id).toBe('rabbit');
+    expect(merged?.members.map((m) => m.id)).toEqual(['rabbit', 'greptile']);
+    expect(merged?.severity).toBe('critical'); // max of visible members
+    expect(merged?.vendors).toEqual(['coderabbit', 'greptile']);
+    expect(findings[1]?.members.map((m) => m.id)).toEqual(['human']);
+  });
+
+  it('renders a group member alone when the other member is filtered out', () => {
+    // Arrange: only one member of g1 is visible (the other was dismissed).
+    const visible = [
+      buildComment({
+        id: 'greptile',
+        author_type: 'bot',
+        bot_vendor: 'greptile',
+        severity: 'nit',
+        dedup_group_id: 'g1',
+      }),
+    ];
+
+    // Act
+    const findings = groupVisibleFindings(visible);
+
+    // Assert: severity recomputes from the remaining member; single source.
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.members).toHaveLength(1);
+    expect(findings[0]?.severity).toBe('nit');
+    expect(findings[0]?.vendors).toEqual(['greptile']);
+  });
+
+  it('disappears entirely when no group members are visible', () => {
+    // Act
+    const findings = groupVisibleFindings([]);
+
+    // Assert
+    expect(findings).toEqual([]);
   });
 });

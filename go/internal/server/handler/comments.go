@@ -71,6 +71,8 @@ type commentRow struct {
 	ClassificationSource *string `json:"classification_source,omitempty"`
 	// migration 027: per-account dismissal (Phase 3.5). Omitted when false.
 	Dismissed bool `json:"dismissed,omitempty"`
+	// migration 028: multi-bot dedup group (Phase 3.6). NULL when ungrouped.
+	DedupGroupID *string `json:"dedup_group_id,omitempty"`
 }
 
 // commentsStore is what the comments handler needs from the DB: reads for
@@ -188,6 +190,7 @@ func NewRequestCommentsHandlerWithClassifier(db commentsStore, log *slog.Logger,
 			        c.anchor_patchset_number,
 			        c.anchor_current_patchset_number,
 			        c.author_type, c.bot_vendor, c.severity, c.category, c.classification_source,
+			        c.dedup_group_id,
 			        (d.comment_id IS NOT NULL) AS dismissed,
 			        p.head_sha  AS current_head_sha,
 			        ps.number   AS current_patchset_number
@@ -235,6 +238,7 @@ func NewRequestCommentsHandlerWithClassifier(db commentsStore, log *slog.Logger,
 				&c.AnchorPatchsetNumber,
 				&c.AnchorCurrentPatchsetNumber,
 				&c.AuthorType, &c.BotVendor, &c.Severity, &c.Category, &c.ClassificationSource,
+				&c.DedupGroupID,
 				&c.Dismissed,
 				&currentHeadSHA,
 				&currentPatchsetNumber,

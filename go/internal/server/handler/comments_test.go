@@ -70,7 +70,8 @@ func setupCommentsTestDB(t *testing.T) *sql.DB {
 		bot_vendor TEXT,
 		severity TEXT,
 		category TEXT,
-		classification_source TEXT
+		classification_source TEXT,
+		dedup_group_id TEXT
 	)`)
 	if err != nil {
 		t.Fatalf("create comments table: %v", err)
