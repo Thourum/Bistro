@@ -1,0 +1,9 @@
+name: Greptile
+vendor: greptile
+match:
+  author: ["greptile-apps[bot]"]
+
+classifiers:
+  - name: greptile_confidence
+    body_pattern: '(?i)\b(logic|bug|error|incorrect)\b'
+    severity: warning
