@@ -176,3 +176,31 @@ func TestRefreshPicksUpRuleEditWithoutRestart(t *testing.T) {
 		t.Errorf("served row stale after edit: %+v", comments)
 	}
 }
+
+func TestRequestCommentsKicksLLMTier(t *testing.T) {
+	db := setupCommentsTestDB(t)
+	defer db.Close()
+	insertTestComment(t, db, "c1", "pr-1", "alice", "hi", nil, nil)
+	var kicked []string
+	h := NewRequestCommentsHandlerWithLLMKick(db, testRepoLogger(), nil, func(prID string) {
+		kicked = append(kicked, prID)
+	})
+
+	requestComments(t, h, "pr-1")
+
+	if len(kicked) != 1 || kicked[0] != "pr-1" {
+		t.Errorf("kick = %v, want [pr-1]", kicked)
+	}
+}
+
+func TestRequestCommentsNilKickIsFine(t *testing.T) {
+	db := setupCommentsTestDB(t)
+	defer db.Close()
+	insertTestComment(t, db, "c1", "pr-1", "alice", "hi", nil, nil)
+
+	comments := requestComments(t, NewRequestCommentsHandler(db, testRepoLogger()), "pr-1")
+
+	if len(comments) != 1 {
+		t.Errorf("got %d comments, want 1", len(comments))
+	}
+}

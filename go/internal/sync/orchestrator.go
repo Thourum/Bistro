@@ -47,6 +47,9 @@ type Orchestrator struct {
 	// classifier is optional; when set, writers classify each comment in the
 	// write path (Phase 3 deterministic tier).
 	classifier *classify.EngineProvider
+	// postCommit is optional; when set, writers invoke it after each committed
+	// batch with the written PR ids (Phase 3.8 LLM tier kick).
+	postCommit func(prIDs []string)
 }
 
 const (
@@ -133,6 +136,13 @@ func (o *Orchestrator) WithLiveness(ctx context.Context) *Orchestrator {
 // by this orchestrator classify comments in the write path (Phase 3).
 func (o *Orchestrator) WithClassifier(p *classify.EngineProvider) *Orchestrator {
 	o.classifier = p
+	return o
+}
+
+// WithPostCommit attaches a hook writers invoke after each committed batch
+// with the written PR ids (Phase 3.8 async LLM tier kick).
+func (o *Orchestrator) WithPostCommit(fn func(prIDs []string)) *Orchestrator {
+	o.postCommit = fn
 	return o
 }
 
@@ -1146,7 +1156,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 		phaseStart := time.Now()
 		o.emitter.Emit(events.NewProgressEvent("writing_database", 0, len(fetchedPRs)))
 
-		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier)
+		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithPostCommit(o.postCommit)
 		if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
 			errMsg := fmt.Sprintf("failed to write results: %v", err)
 			result.Errors = append(result.Errors, errMsg)
@@ -1256,7 +1266,7 @@ func (o *Orchestrator) DiscoverAndSyncInbox(ctx context.Context) (*SyncResult, e
 			result.CommentCount += len(detail.Comments)
 		}
 
-		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier)
+		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithPostCommit(o.postCommit)
 		if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
 			_ = o.store.MarkSyncCursorError(ctx, scope, err)
 			return nil, err

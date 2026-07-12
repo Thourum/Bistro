@@ -24,6 +24,10 @@ type Writer struct {
 	db         *store.DB
 	emitter    *events.EventEmitter
 	classifier *classify.EngineProvider
+	// postCommit runs after a successful tx.Commit() with the ids of the PRs
+	// written in the batch — the hook the async LLM tier kicks from (never
+	// inside the tx; sync never waits on the network).
+	postCommit func(prIDs []string)
 }
 
 // NewWriter creates a new database writer. If log is nil, slog.Default() is
@@ -51,6 +55,13 @@ func (w *Writer) WithEmitter(e *events.EventEmitter) *Writer {
 // (columns stay NULL), preserving pre-Phase-3 behavior.
 func (w *Writer) WithClassifier(p *classify.EngineProvider) *Writer {
 	w.classifier = p
+	return w
+}
+
+// WithPostCommit registers a hook invoked after a successful commit with the
+// written PR ids. Used to kick the async BYOK LLM tier (Phase 3.8).
+func (w *Writer) WithPostCommit(fn func(prIDs []string)) *Writer {
+	w.postCommit = fn
 	return w
 }
 
@@ -140,6 +151,7 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 	const savepoint = "sp_pr"
 
 	var pendingEvents []*events.Event
+	var writtenPRIDs []string
 
 	for _, result := range results {
 		if result == nil {
@@ -318,6 +330,7 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 		}
 
 		prCount++
+		writtenPRIDs = append(writtenPRIDs, prID)
 		log.Debug("pr written",
 			"pr_id", prID,
 			"pr_number", result.PR.Number,
@@ -338,6 +351,12 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 	// Emit queued change events now that the transaction has committed.
 	for _, ev := range pendingEvents {
 		w.emitter.Emit(ev)
+	}
+
+	// Post-commit hook (LLM tier kick) — after commit only; a failed commit
+	// returns above and never reaches here.
+	if w.postCommit != nil && len(writtenPRIDs) > 0 {
+		w.postCommit(writtenPRIDs)
 	}
 
 	totalDur := time.Since(overallStart).Milliseconds()

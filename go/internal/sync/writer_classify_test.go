@@ -157,3 +157,34 @@ func TestWriterReclassifiesOnResync(t *testing.T) {
 		t.Errorf("fingerprint not updated on re-sync")
 	}
 }
+
+func TestWriterPostCommitHookFiresWithWrittenPRIDs(t *testing.T) {
+	db := openTestDB(t)
+	var got []string
+	w := NewWriter(nil, db).WithPostCommit(func(prIDs []string) { got = append(got, prIDs...) })
+
+	err := w.WriteSyncResults(classifyTestResult(
+		&provider.Comment{ID: "c-1", Author: "alice", Body: "hi"},
+	))
+	if err != nil {
+		t.Fatalf("WriteSyncResults: %v", err)
+	}
+
+	if len(got) != 1 || got[0] != "github:org/repo:1" {
+		t.Errorf("postCommit got %v, want [github:org/repo:1]", got)
+	}
+}
+
+func TestWriterPostCommitHookSkippedOnEmptyBatch(t *testing.T) {
+	db := openTestDB(t)
+	called := false
+	w := NewWriter(nil, db).WithPostCommit(func([]string) { called = true })
+
+	if err := w.WriteSyncResults(nil); err != nil {
+		t.Fatalf("WriteSyncResults: %v", err)
+	}
+
+	if called {
+		t.Errorf("postCommit must not fire when nothing was written")
+	}
+}

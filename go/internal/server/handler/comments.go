@@ -157,6 +157,14 @@ func nullIfEmpty(s string) interface{} {
 // differs from the provider's current engine are re-classified before
 // serving. Nil provider = no refresh.
 func NewRequestCommentsHandlerWithClassifier(db commentsStore, log *slog.Logger, provider *classify.EngineProvider) ws.MessageHandler {
+	return NewRequestCommentsHandlerWithLLMKick(db, log, provider, nil)
+}
+
+// NewRequestCommentsHandlerWithLLMKick additionally kicks the async BYOK LLM
+// tier for the opened PR (identical code path as post-sync; the cache makes
+// repeats cheap). kick is invoked after the deterministic refresh, before
+// serving — the tier itself no-ops in non-LLM modes. Nil kick = no tier.
+func NewRequestCommentsHandlerWithLLMKick(db commentsStore, log *slog.Logger, provider *classify.EngineProvider, kick func(prID string)) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		logger := logging.FromContext(ctx)
 		if log != nil {
@@ -177,6 +185,10 @@ func NewRequestCommentsHandlerWithClassifier(db commentsStore, log *slog.Logger,
 		// on PR open, before the SELECT below serves the rows.
 		if provider != nil {
 			refreshIfStale(db, provider, req.PRID, logger)
+		}
+		// Async LLM refinement for this PR (no-op outside LLM modes).
+		if kick != nil {
+			kick(req.PRID)
 		}
 
 		rows, err := db.Query(
