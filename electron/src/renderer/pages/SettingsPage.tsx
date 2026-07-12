@@ -873,6 +873,7 @@ function ClassificationSection() {
   const { request } = useWebSocket();
   const [keyInput, setKeyInput] = useState('');
   const [keySaved, setKeySaved] = useState(false);
+  const [keySaving, setKeySaving] = useState(false);
 
   const setScope = (scope: DismissalScope): void => {
     void updateSettings({
@@ -890,7 +891,8 @@ function ClassificationSection() {
     classification.mode === 'rules+llm' || classification.mode === 'llm-all';
 
   const saveKey = (): void => {
-    if (keyInput.length === 0) return;
+    if (keyInput.length === 0 || keySaving) return;
+    setKeySaving(true);
     // The key travels ONLY through SET_BYOK_KEY into the OS keychain —
     // never into settings JSON or any renderer store.
     void fromPromise(
@@ -901,12 +903,24 @@ function ClassificationSection() {
       (err) => err,
     ).match(
       () => {
+        setKeySaving(false);
         setKeyInput('');
         setKeySaved(true);
         appStore.setState((s) => ({ ...s, byokAuthFailed: false }));
+        addToast({
+          type: 'success',
+          message: `API key saved to the OS keychain (${classification.provider})`,
+          dismissible: true,
+        });
       },
-      () => {
+      (err) => {
         // Key kept in the input so the user can retry.
+        setKeySaving(false);
+        addToast({
+          type: 'error',
+          message: `Saving key failed: ${err instanceof Error ? err.message : 'sync engine unreachable'}`,
+          dismissible: true,
+        });
       },
     );
   };
@@ -1077,12 +1091,11 @@ function ClassificationSection() {
                 />
               </label>
               <Button
-                variant="secondary"
                 onClick={saveKey}
-                disabled={keyInput.length === 0}
+                disabled={keyInput.length === 0 || keySaving}
                 className="px-5 py-2"
               >
-                Save key
+                {keySaving ? 'Saving…' : 'Save key'}
               </Button>
             </div>
             <p className="font-mono text-[10px] text-outline">

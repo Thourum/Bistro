@@ -675,6 +675,10 @@ function onMessage(event: MessageEvent<string>): void {
     case 'RECOVER_REPO_TO_CACHE_RESULT':
     case 'REMOVE_REPO_PREFLIGHT_RESULT':
     case 'REMOVE_REPO_RESULT':
+    case 'CLASSIFICATION_SETTINGS_UPDATED':
+    case 'BYOK_KEY_UPDATED':
+    case 'DISMISS_RESULT':
+    case 'UNDISMISS_RESULT':
     case 'PR_LIST_READY': {
       const handler = messageHandlers.get(message.id);
       if (handler) {
