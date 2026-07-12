@@ -199,7 +199,13 @@ func (t *Tier) runBatch(ctx context.Context, prID string, mode string) {
 }
 
 func (t *Tier) selectComments(ctx context.Context, prID string, mode string) ([]commentForClassification, error) {
-	query := `SELECT id, body FROM comments WHERE pr_id = ? ORDER BY id`
+	// llm-all still excludes comments the LLM already judged (byok: source):
+	// re-sending them buys nothing (the cache would answer anyway) and, worse,
+	// re-emitting COMMENTS_READY for a no-op batch loops forever with the
+	// renderer's refetch-on-push. Switching models affects new text only, by
+	// spec. An empty selection returns early and emits nothing.
+	query := `SELECT id, body FROM comments WHERE pr_id = ?
+		AND (classification_source IS NULL OR classification_source NOT LIKE 'byok:%') ORDER BY id`
 	args := []interface{}{prID}
 	if mode == "rules+llm" {
 		query = `SELECT id, body FROM comments WHERE pr_id = ? AND classification_source = 'unclassified' ORDER BY id`
