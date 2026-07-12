@@ -14,8 +14,10 @@
 
 ## Goal
 
-Classify every PR comment by author type, bot vendor, severity, and category —
-deterministically, inspectably, explainably. The user can always see *why* a
+Classify every PR comment by author type and bot vendor, and — where a rule,
+heuristic, or LLM matches — by severity and category; deterministically,
+inspectably, explainably. `unclassified` is an honest outcome, not a failure:
+author type is guaranteed, severity is best-effort. The user can always see *why* a
 comment was tagged: the matching rule file, the classifier name, or the LLM
 that judged it. Then make classification actionable: bulk-dismiss the noise,
 merge duplicate bot findings, and optionally refine with a user-supplied LLM.
@@ -225,6 +227,10 @@ Per classifier: `name`; optional `author` / `path` / `body_pattern`
 4. Weighted classifiers: tally weight per severity; max-weight severity wins.
 5. A direct match outranks any weighted result.
 6. `classification_source` records the winner: `rule:<file>:<classifier>`.
+   For a weighted win this names the last contributing classifier of the
+   winning severity — a v1 simplification (the full tally is reproducible
+   from the rules, and no real conflicts have been observed yet; revisit
+   alongside confidence scores if they appear).
 7. No match → `severity = NULL`, `classification_source = 'unclassified'`.
 
 No confidence score in v1 (deferred until real conflicts are observed).
@@ -283,7 +289,10 @@ carried along when present.
   present, respect deletions (a deleted `coderabbit.yml` stays deleted), never
   touch user-created files.
 - Users drop their own YAML in the same dir; alphabetical load order is the
-  override mechanism.
+  override mechanism. Consequence users must know (documented in the user
+  guide): **edits to a built-in file are not upgrade-durable** — the next app
+  upgrade overwrites a present built-in. Customize in your own later-sorting
+  file (`coderabbit.custom.yml`); delete a built-in to disable it.
 - No runtime fetch, no hot-reload daemon; staleness is handled by the
   fingerprint on PR open.
 
@@ -325,8 +334,11 @@ settings-changed WS message — no restart.
 
 Cache: `body_hash` lookup before any call — the same comment text is never
 classified twice, across PRs and sessions. Cache hits apply regardless of the
-currently configured provider/model (the answer is the point, not who gave
-it); `classification_source` is written as `byok:<provider>:<model>` from the
+currently configured provider/model — a deliberate cost/latency tradeoff:
+severity taxonomy is coarse enough that model disagreement is rare, and
+re-billing the user's key to re-judge identical text buys nothing. Switching
+models affects new text only; a cache-clear escape hatch is deferred until
+someone actually wants it; `classification_source` is written as `byok:<provider>:<model>` from the
 **cache row**, so provenance always reflects the model that actually judged
 the text. Token usage is accumulated per session and pushed via a
 `BYOK_USAGE` event for the Settings counter ("This session: 14,230 tokens,
@@ -369,9 +381,13 @@ write:
 
 Undo (`u`): the renderer keeps a session-scoped stack of `DISMISS_RESULT`
 payloads; one `u` sends `UNDISMISS_COMMENTS` with the top entry's
-`dismissed_ids` + `resolved_thread_ids` — so only threads this batch actually
-resolved get unresolved, never threads that were already resolved beforehand.
-The stack does not survive app restart; the dismissals (SQLite rows) do.
+`dismissed_ids` + `resolved_thread_ids` — so only threads this batch enqueued
+a resolve for get an unresolve, never threads that were already resolved
+beforehand. `resolved_thread_ids` means "resolve enqueued", not "resolved on
+GitHub": if the user undoes before the queue replays (e.g. offline), the
+unresolve action simply lands after the resolve in the same FIFO queue and the
+thread ends unresolved — eventual consistency via ordering, no cancellation
+logic. The stack does not survive app restart; the dismissals (SQLite rows) do.
 
 ## Renderer surface
 
@@ -403,6 +419,12 @@ endpoint.
 - A dedup group renders once, as a merged finding anchored at its first
   member: "Flagged by CodeRabbit + Greptile (2 sources)", each source
   expandable inside. Other members do not render separately.
+- Dedup groups vs dismiss/filter: the group renders from its **visible**
+  members. A member dismissed or filtered out drops from the merged finding
+  (source list and severity recompute from the rest); when no members remain
+  visible the group disappears (dismissed members appear individually in the
+  Dismissed section). `d n`/`d b` operate on underlying comments, ignoring
+  grouping — a group is a view, never a dismissal unit.
 - "Why" tooltip on the severity badge: humanized `classification_source` —
   "Rule: coderabbit.yml / emoji_severity" or "AI: anthropic (claude-haiku-4-5)".
 
@@ -412,6 +434,12 @@ endpoint.
 |---|---|
 | `d n` | Dismiss all nits (+info) in this PR |
 | `d b` | Dismiss all comments from one bot (vendor picker if >1 present) |
+
+No confirmation dialog on bulk dismiss — deliberately: dismissal is cheap to
+reverse (`u` undoes the whole batch, including enqueued resolves via queue
+ordering), and a keyboard-first app treats confirm prompts as friction. The
+status line reports what happened ("Dismissed 12 · 3 resolved on GitHub")
+instead of asking beforehand.
 | `f c` / `f w` / `f s` / `f n` | Filter comments to ≥ critical / warning / suggestion / nit |
 | `f h` | Human comments only |
 | `f f` | Clear comment filters |
@@ -468,7 +496,11 @@ Table-driven, `go test -race`, per repo standard:
   file untouched, upgrade overwrites present built-in).
 - **Corpus**: `testdata/` fixture set (~50 real bot/human comments from
   public OSS PRs) asserting the ≥70% heuristic-accuracy bar — regressions
-  fail CI.
+  fail CI. 70% is a floor for generic fallback heuristics judging arbitrary
+  text, not the product bar: vendor rules are near-deterministic on their own
+  bots' formats, and the failure mode is benign (unclassified/mis-ranked
+  comments still render; nothing is auto-dismissed — `d n` is always an
+  explicit, undoable user action).
 - **Writer integration**: synced comments come out classified; dedup groups
   form and are idempotent; engine error → comment persists unclassified.
 - **LLM tier** (mock provider): cache hit skips the call; fan-out bounded;
