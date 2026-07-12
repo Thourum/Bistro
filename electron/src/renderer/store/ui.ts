@@ -114,6 +114,11 @@ export interface UIState {
     dismissed_ids: string[];
     resolved_thread_ids: string[];
   }>;
+  /** BYOK session usage (Phase 3.8), fed by pushed BYOK_USAGE events. */
+  byokSessionTokens: number;
+  byokEstCost: number;
+  /** Set by BYOK_AUTH_FAILED; cleared on a successful SET_BYOK_KEY ack. */
+  byokAuthFailed: boolean;
 }
 
 export const initialUIState: UIState = {
@@ -156,6 +161,9 @@ export const initialUIState: UIState = {
   commentMinSeverity: null,
   commentHumanOnly: false,
   dismissBatches: [],
+  byokSessionTokens: 0,
+  byokEstCost: 0,
+  byokAuthFailed: false,
 };
 
 export function createUIStore(): Store<UIState> {
