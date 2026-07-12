@@ -10,6 +10,7 @@ import (
 
 	"log/slog"
 
+	"github.com/itterno/bistro/internal/classify"
 	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/logging"
@@ -19,9 +20,10 @@ import (
 
 // Writer handles database writes for sync results.
 type Writer struct {
-	log     *slog.Logger
-	db      *store.DB
-	emitter *events.EventEmitter
+	log        *slog.Logger
+	db         *store.DB
+	emitter    *events.EventEmitter
+	classifier *classify.EngineProvider
 }
 
 // NewWriter creates a new database writer. If log is nil, slog.Default() is
@@ -40,6 +42,15 @@ func NewWriter(log *slog.Logger, db *store.DB) *Writer {
 // status changes are broadcast after the sync transaction commits.
 func (w *Writer) WithEmitter(e *events.EventEmitter) *Writer {
 	w.emitter = e
+	return w
+}
+
+// WithClassifier wires the classification engine provider into the writer.
+// Each WriteSyncResultsContext batch resolves Current() once so every comment
+// in one sync sees one consistent engine. Nil provider = no classification
+// (columns stay NULL), preserving pre-Phase-3 behavior.
+func (w *Writer) WithClassifier(p *classify.EngineProvider) *Writer {
+	w.classifier = p
 	return w
 }
 
@@ -103,6 +114,13 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 	}
 
 	overallStart := time.Now()
+
+	// Resolve one consistent classification engine for the whole batch.
+	// Nil when no classifier is wired — classification columns stay NULL.
+	var eng *classify.Engine
+	if w.classifier != nil {
+		eng = w.classifier.Current()
+	}
 
 	tx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -222,7 +240,7 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 				commentPatchsetNum = currentPatchsetNum
 			}
 			commentStart := time.Now()
-			if err := w.writeComment(ctx, tx, prID, comment, commentPatchsetNum); err != nil {
+			if err := w.writeComment(ctx, tx, prID, comment, commentPatchsetNum, eng); err != nil {
 				log.Error("failed to write comment",
 					"comment_id", comment.ID,
 					"pr_id", prID,
@@ -236,7 +254,7 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 
 		// ── Best-effort: review threads (per-item skip, no savepoint rollback)
 		if len(result.Threads) > 0 {
-			w.writeReviewThreads(ctx, tx, result.Threads, currentPatchsetNum)
+			w.writeReviewThreads(ctx, tx, result.Threads, currentPatchsetNum, eng)
 		}
 
 		// ── Release savepoint — commit this PR's work into the outer tx ───
@@ -428,7 +446,7 @@ func (w *Writer) writePRRow(ctx context.Context, tx *sql.Tx, pr *provider.PR) er
 // writeComment inserts or updates a comment in the database using an upsert.
 // patchsetNum is the current patchset number for the PR (0 = unknown); it is
 // stamped on kind='review' comments so anchoring can determine stale cache.
-func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comment *provider.Comment, patchsetNum int) error {
+func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comment *provider.Comment, patchsetNum int, eng *classify.Engine) error {
 	if comment.ID == "" {
 		return fmt.Errorf("comment ID cannot be empty")
 	}
@@ -447,13 +465,27 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 		patchsetNumVal = patchsetNum
 	}
 
+	// Classification (Phase 3): deterministic tier, in-tx. Nil engine (no
+	// classifier wired) leaves the columns untouched on upsert via COALESCE
+	// against empty excluded values — we pass NULLs and keep existing values.
+	var authorType, botVendor, severity, category, source interface{}
+	if eng != nil {
+		c := eng.Classify(comment.Author, comment.Body, comment.FilePath)
+		authorType = c.AuthorType
+		botVendor = nullableString(c.BotVendor)
+		severity = nullableString(c.Severity)
+		category = nullableString(c.Category)
+		source = c.Source
+	}
+
 	const query = `
 		INSERT INTO comments (
 			id, pr_id, author, body, created_at, updated_at, line_number, file_path,
 			kind, commit_sha, original_sha, side, position, original_position, in_reply_to, thread_id,
 			patchset_number, diff_hunk,
-			original_line, start_line, original_start_line, start_side, subject_type
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			original_line, start_line, original_start_line, start_side, subject_type,
+			author_type, bot_vendor, severity, category, classification_source
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			body              = excluded.body,
 			updated_at        = excluded.updated_at,
@@ -469,7 +501,12 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 			start_line        = excluded.start_line,
 			original_start_line = excluded.original_start_line,
 			start_side        = excluded.start_side,
-			subject_type      = excluded.subject_type
+			subject_type      = excluded.subject_type,
+			author_type       = COALESCE(excluded.author_type, comments.author_type),
+			bot_vendor        = CASE WHEN excluded.author_type IS NULL THEN comments.bot_vendor ELSE excluded.bot_vendor END,
+			severity          = CASE WHEN excluded.author_type IS NULL THEN comments.severity ELSE excluded.severity END,
+			category          = CASE WHEN excluded.author_type IS NULL THEN comments.category ELSE excluded.category END,
+			classification_source = COALESCE(excluded.classification_source, comments.classification_source)
 	`
 
 	_, err := tx.ExecContext(ctx, query,
@@ -496,9 +533,24 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 		comment.OriginalStartLine,
 		nullableString(comment.StartSide),
 		nullableString(comment.SubjectType),
+		authorType,
+		botVendor,
+		severity,
+		category,
+		source,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write comment %s: %w", comment.ID, err)
+	}
+
+	if eng != nil {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO comment_classification_state (comment_id, fingerprint) VALUES (?, ?)
+			 ON CONFLICT(comment_id) DO UPDATE SET fingerprint = excluded.fingerprint`,
+			comment.ID, eng.Fingerprint(),
+		); err != nil {
+			return fmt.Errorf("failed to write classification state for %s: %w", comment.ID, err)
+		}
 	}
 
 	return nil
@@ -509,7 +561,7 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 // review comments: stamp only for kind='review' with current Position > 0;
 // outdated comments (Position == nil) preserve existing patchset_number via COALESCE.
 // Per-item errors are logged and skipped — they never abort the parent tx.
-func (w *Writer) writeReviewThreads(ctx context.Context, tx *sql.Tx, threads []*provider.ReviewThread, currentPatchsetNum int) {
+func (w *Writer) writeReviewThreads(ctx context.Context, tx *sql.Tx, threads []*provider.ReviewThread, currentPatchsetNum int, eng *classify.Engine) {
 	for _, thread := range threads {
 		if thread.ID == "" {
 			w.log.Warn("skipping review thread with empty ID")
@@ -553,7 +605,7 @@ func (w *Writer) writeReviewThreads(ctx context.Context, tx *sql.Tx, threads []*
 			if c.Kind == "review" && c.Position != nil && *c.Position > 0 {
 				commentPatchsetNum = currentPatchsetNum
 			}
-			if err := w.writeComment(ctx, tx, c.PRID, c, commentPatchsetNum); err != nil {
+			if err := w.writeComment(ctx, tx, c.PRID, c, commentPatchsetNum, eng); err != nil {
 				w.log.Error("write review comment failed",
 					"comment_id", c.ID, "thread_id", thread.ID, "error", err)
 				// continue: per-item skip, do not abort
