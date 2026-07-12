@@ -30,6 +30,15 @@ export interface PR {
 /**
  * Comment model — matches Go `comments` table.
  */
+export type CommentAuthorType = 'human' | 'bot' | 'unknown';
+
+export type CommentSeverity =
+  | 'critical'
+  | 'warning'
+  | 'suggestion'
+  | 'nit'
+  | 'info';
+
 export interface Comment {
   id: string;
   pr_id: string;
@@ -40,6 +49,14 @@ export interface Comment {
   line?: number;
   file?: string;
   is_reply_to?: string;
+  // Classification (Phase 3, migration 026) — absent on unclassified/legacy rows.
+  author_type?: CommentAuthorType;
+  bot_vendor?: string;
+  severity?: CommentSeverity;
+  category?: string;
+  classification_source?: string;
+  dismissed?: boolean;
+  dedup_group_id?: string;
   /**
    * Review-thread this comment belongs to, when it is a thread reply. Already
    * present in the `COMMENTS_READY` payload (comments.thread_id FK); the

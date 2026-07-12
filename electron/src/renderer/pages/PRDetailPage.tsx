@@ -1,5 +1,5 @@
 import { Link, useParams } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ActionFeedback from '../components/ActionFeedback';
 import { FooterCenterSlot } from '../components/FooterSlot';
 import { Markdown } from '../components/Markdown';
@@ -20,6 +20,7 @@ import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { CICheck, Comment, Patchset, PR } from '../types';
+import { isAutoCollapsed, sortBySeverity } from '../utils/classification';
 import { createLogger } from '../utils/logger';
 
 // Route API for reading the stable $prId param; detail never resolves by list index.
@@ -451,7 +452,27 @@ function Description({ pr }: { pr: PR }) {
 }
 
 function RecentComments({ comments }: { comments: Comment[] }) {
-  const unresolved = comments.length; // TODO: real resolution tracking
+  const [expandedByCommentId, setExpandedByCommentId] = useState<
+    Record<string, boolean>
+  >({});
+  const activeComments = useMemo(
+    () =>
+      sortBySeverity(comments.filter((comment) => comment.dismissed !== true)),
+    [comments],
+  );
+  const dismissedCount = useMemo(
+    () => comments.filter((comment) => comment.dismissed === true).length,
+    [comments],
+  );
+  const unresolved = activeComments.length; // TODO: real resolution tracking
+
+  const toggleExpanded = (commentId: string): void => {
+    setExpandedByCommentId((current) => ({
+      ...current,
+      [commentId]: current[commentId] !== true,
+    }));
+  };
+
   return (
     <section className="space-y-6">
       <div className="flex items-center justify-between">
@@ -463,23 +484,52 @@ function RecentComments({ comments }: { comments: Comment[] }) {
         </span>
       </div>
       <div className="space-y-3">
-        {comments.slice(0, 5).map((c) => (
-          <div
-            key={c.id}
-            className="cursor-crosshair border-l-2 border-transparent bg-surface-container-lowest p-6 transition-colors duration-150 hover:border-primary hover:bg-surface-container-low flex flex-col space-y-3"
-          >
-            <div className="flex justify-between items-center">
-              <span className="font-mono text-[10px] font-bold text-on-surface uppercase tracking-widest">
-                @{c.author}
-              </span>
-              <span className="font-mono text-[10px] text-outline">
-                {relativeTime(c.created_at)}
-              </span>
+        {activeComments.map((c) => {
+          const isExpandable = isAutoCollapsed(c);
+          const isExpanded = expandedByCommentId[c.id] === true;
+          const isCollapsed = isExpandable && !isExpanded;
+          const severityLabel = c.severity ?? 'unclassified';
+
+          return (
+            <div
+              key={c.id}
+              className="cursor-crosshair border-l-2 border-transparent bg-surface-container-lowest p-6 transition-colors duration-150 hover:border-primary hover:bg-surface-container-low flex flex-col space-y-3"
+            >
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-4 border-0 p-0 text-left"
+                aria-expanded={!isCollapsed}
+                onClick={() => {
+                  if (isExpandable) toggleExpanded(c.id);
+                }}
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  {isExpandable && (
+                    <span className="font-mono text-[10px] text-outline">
+                      {isCollapsed ? '▶' : '▼'}
+                    </span>
+                  )}
+                  <span className="font-mono text-[10px] font-bold text-on-surface uppercase tracking-widest">
+                    @{c.author}
+                  </span>
+                  <span className="font-mono text-[9px] uppercase tracking-widest text-outline">
+                    {severityLabel}
+                  </span>
+                </span>
+                <span className="font-mono text-[10px] text-outline shrink-0">
+                  {relativeTime(c.created_at)}
+                </span>
+              </button>
+              {!isCollapsed && <Markdown body={c.body} compact />}
             </div>
-            <Markdown body={c.body} compact />
-          </div>
-        ))}
+          );
+        })}
       </div>
+      <section className="border-t border-outline-variant/30 pt-4">
+        <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-outline">
+          Dismissed ({dismissedCount})
+        </h3>
+      </section>
     </section>
   );
 }

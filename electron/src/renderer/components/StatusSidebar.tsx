@@ -1,4 +1,6 @@
-import type { CICheck, PR } from '../types';
+import { useMemo } from 'react';
+import type { CICheck, Comment, PR } from '../types';
+import { aggregateCounts } from '../utils/classification';
 import ExternalLink from './ExternalLink';
 import { type StatusKind, StatusSquare } from './StatusSquare';
 
@@ -29,9 +31,26 @@ const CI_LABELS: Record<string, string> = {
 interface StatusSidebarProps {
   pr: PR;
   ciChecks: CICheck[];
+  comments?: Comment[];
 }
 
-export default function StatusSidebar({ pr, ciChecks }: StatusSidebarProps) {
+export default function StatusSidebar({
+  pr,
+  ciChecks,
+  comments = [],
+}: StatusSidebarProps) {
+  const counts = useMemo(() => aggregateCounts(comments), [comments]);
+  const severitySummary = [
+    `Human ${counts.human}`,
+    `Critical ${counts.bySeverity.critical}`,
+    `Warning ${counts.bySeverity.warning}`,
+    `Nit ${counts.bySeverity.nit}`,
+  ].join(' · ');
+  const vendorSummary = [
+    `CodeRabbit ${counts.byVendor.coderabbit ?? 0}`,
+    `Greptile ${counts.byVendor.greptile ?? 0}`,
+    `Other ${counts.byVendor.other ?? 0}`,
+  ].join(' · ');
   const reviewStatus = pr.review_status ?? 'pending';
   const reviewKind = REVIEW_STATUS[reviewStatus] ?? 'neutral';
   const reviewLabel = REVIEW_LABELS[reviewStatus] ?? reviewStatus;
@@ -105,6 +124,17 @@ export default function StatusSidebar({ pr, ciChecks }: StatusSidebarProps) {
             ))}
           </ul>
         )}
+      </section>
+
+      {/* Comment Classification */}
+      <section>
+        <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-outline mb-2">
+          Comments
+        </h3>
+        <div className="space-y-1 font-mono text-[11px] text-outline">
+          <p>{severitySummary}</p>
+          <p>{vendorSummary}</p>
+        </div>
       </section>
     </div>
   );

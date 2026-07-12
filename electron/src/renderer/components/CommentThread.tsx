@@ -1,7 +1,9 @@
 import type React from 'react';
 import { useState } from 'react';
-import type { Comment } from '../types';
+import type { Comment, CommentSeverity } from '../types';
+import { humanizeSource } from '../utils/classification';
 import { Markdown } from './Markdown';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 
@@ -11,6 +13,38 @@ interface CommentThreadProps {
   onEdit?: (commentId: string, body: string) => void;
   onDelete?: (commentId: string) => void;
   currentUser?: string;
+}
+
+const COMMENT_SEVERITY_STRIPE_CLASSES: Record<
+  CommentSeverity | 'none',
+  string
+> = {
+  critical: 'border-l-error',
+  warning: 'border-l-tertiary',
+  suggestion: 'border-l-primary',
+  nit: 'border-l-secondary',
+  info: 'border-l-outline',
+  none: 'border-l-outline-variant/30',
+};
+
+function formatClassificationLabel(value: string | undefined): string {
+  if (value === undefined || value.trim().length === 0) return 'unclassified';
+  return value;
+}
+
+function classificationMetadata(comment: Comment): React.ReactElement {
+  const severityLabel = formatClassificationLabel(comment.severity);
+  const vendorLabel = formatClassificationLabel(comment.bot_vendor);
+  const whyTooltip = humanizeSource(comment.classification_source);
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Badge variant="outline" title={whyTooltip} aria-label={whyTooltip}>
+        {severityLabel}
+      </Badge>
+      <Badge variant="neutral">{vendorLabel}</Badge>
+    </div>
+  );
 }
 
 export function CommentThread({
@@ -48,17 +82,17 @@ export function CommentThread({
 
   return (
     <div className="ml-4 border-l-2 border-primary/40 bg-surface-container-low">
-      <div
-        className="flex cursor-crosshair select-none items-center gap-2 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-outline transition-colors duration-150 hover:text-on-surface"
+      <button
+        type="button"
+        className="flex w-full cursor-crosshair select-none items-center gap-2 border-0 px-3 py-1.5 text-left font-mono text-[10px] uppercase tracking-widest text-outline transition-colors duration-150 hover:text-on-surface"
         onClick={() => setIsCollapsed((prev) => !prev)}
-        role="button"
         aria-expanded={!isCollapsed}
       >
         <span>{isCollapsed ? '▶' : '▼'}</span>
         <span>
           {comments.length} {comments.length === 1 ? 'comment' : 'comments'}
         </span>
-      </div>
+      </button>
 
       {!isCollapsed && (
         <div>
@@ -66,20 +100,23 @@ export function CommentThread({
             const isAuthor =
               currentUser != null && currentUser === comment.author;
             const isEditing = editingId === comment.id;
+            const severity = comment.severity ?? 'none';
 
             return (
               <div
                 key={comment.id}
-                className="border-t border-outline-variant/30 px-3 py-2.5 text-sm"
+                data-severity={severity}
+                className={`border-t border-l-2 border-t-outline-variant/30 px-3 py-2.5 text-sm ${COMMENT_SEVERITY_STRIPE_CLASSES[severity]}`}
               >
-                <div className="mb-1.5 flex items-center justify-between">
-                  <div className="flex items-baseline gap-2">
+                <div className="mb-1.5 flex items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface">
                       @{comment.author}
                     </span>
                     <span className="font-mono text-[10px] text-outline">
                       {new Date(comment.created_at).toLocaleDateString()}
                     </span>
+                    {classificationMetadata(comment)}
                   </div>
                   {isAuthor && !isEditing && (
                     <div className="flex items-center gap-1">
