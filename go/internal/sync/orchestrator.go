@@ -14,6 +14,7 @@ import (
 	"log/slog"
 
 	"github.com/itterno/bistro/internal/actions"
+	"github.com/itterno/bistro/internal/classify"
 	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/logging"
@@ -43,6 +44,9 @@ type Orchestrator struct {
 	// replaced or disconnected). ApplyAction checks it before executing so
 	// stale orchestrators self-reject even if captured before disconnect.
 	liveness context.Context
+	// classifier is optional; when set, writers classify each comment in the
+	// write path (Phase 3 deterministic tier).
+	classifier *classify.EngineProvider
 }
 
 const (
@@ -122,6 +126,13 @@ func (o *Orchestrator) WithActionQueue(q *store.ActionQueue) *Orchestrator {
 // disconnect will have its action rejected rather than executed with old credentials.
 func (o *Orchestrator) WithLiveness(ctx context.Context) *Orchestrator {
 	o.liveness = ctx
+	return o
+}
+
+// WithClassifier attaches the classification engine provider; writers built
+// by this orchestrator classify comments in the write path (Phase 3).
+func (o *Orchestrator) WithClassifier(p *classify.EngineProvider) *Orchestrator {
+	o.classifier = p
 	return o
 }
 
@@ -1135,7 +1146,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 		phaseStart := time.Now()
 		o.emitter.Emit(events.NewProgressEvent("writing_database", 0, len(fetchedPRs)))
 
-		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter)
+		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier)
 		if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
 			errMsg := fmt.Sprintf("failed to write results: %v", err)
 			result.Errors = append(result.Errors, errMsg)
@@ -1245,7 +1256,7 @@ func (o *Orchestrator) DiscoverAndSyncInbox(ctx context.Context) (*SyncResult, e
 			result.CommentCount += len(detail.Comments)
 		}
 
-		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter)
+		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier)
 		if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
 			_ = o.store.MarkSyncCursorError(ctx, scope, err)
 			return nil, err

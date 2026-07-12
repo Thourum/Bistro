@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/cache"
+	"github.com/itterno/bistro/internal/classify"
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/keychain"
 	"github.com/itterno/bistro/internal/provider"
@@ -65,6 +66,10 @@ type App struct {
 	currentUserStore *store.CurrentUserStore
 	// anchorResolver is set in Run() and shared across all orchestrators.
 	anchorResolver *git.AnchorResolver
+	// classifier is the Phase 3 comment-classification engine provider,
+	// shared by the sync writer and the comments handler. The mode getter
+	// returns "rules" until SET_CLASSIFICATION_SETTINGS supplies a live value.
+	classifier *classify.EngineProvider
 }
 
 // SetReadyWriter overrides where the machine-readable ready signal is written.
@@ -118,7 +123,8 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 		WithReviewTracking(a.currentUserStore, a.db).
 		WithAnchorResolver(a.anchorResolver).
 		WithActionQueue(store.NewActionQueue(a.db.DB)).
-		WithLiveness(a.provCtx)
+		WithLiveness(a.provCtx).
+		WithClassifier(a.classifier)
 	a.prov = prov
 	a.activeProviderName = name
 	a.startEventBridge(a.provCtx)
@@ -214,6 +220,22 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 		provCtx:       provCtx,
 		provCtxCancel: provCtxCancel,
 	}
+}
+
+// SetRulesDir seeds the classification rules directory with the embedded
+// built-ins (presence-gated) and constructs the engine provider shared by the
+// sync writer and the comments handler. An empty dir skips seeding entirely;
+// classification then runs on the embedded built-ins. Call before Run.
+// The mode getter returns "rules" until SET_CLASSIFICATION_SETTINGS supplies
+// a live source (Phase 3 increment 4).
+func (a *App) SetRulesDir(dir string) {
+	if dir != "" {
+		if err := classify.SeedAndUpdate(dir); err != nil {
+			a.log.Warn("rules dir unusable, classification falls back to embedded built-ins",
+				"dir", dir, "err", err)
+		}
+	}
+	a.classifier = classify.NewEngineProvider(dir, func() string { return "rules" }, a.log)
 }
 
 // SetSyncInterval configures the interval between automatic sync cycles.
@@ -403,7 +425,8 @@ func (a *App) Run(ctx context.Context) error {
 		Log:         a.log,
 	}))
 	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandler(a.db.DB, a.log))
-	a.wsServer.RegisterHandler("REQUEST_COMMENTS", handler.NewRequestCommentsHandler(a.db.DB, a.log))
+	a.wsServer.RegisterHandler("REQUEST_COMMENTS",
+		handler.NewRequestCommentsHandlerWithClassifier(a.db.DB, a.log, a.classifier))
 	a.wsServer.RegisterHandler("REQUEST_REPO_LIST",
 		handler.NewRequestRepoListHandler(a.getProvider, a.db.DB, a.log))
 	a.wsServer.RegisterHandler("TOGGLE_WATCH_REPO",

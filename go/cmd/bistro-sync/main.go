@@ -27,6 +27,8 @@ func main() {
 	autoSync := flag.Bool("auto-sync", true, "Enable automatic periodic sync (manual FORCE_SYNC is unaffected)")
 	exitOnStdinClose := flag.Bool("exit-on-stdin-close", false,
 		"Exit when stdin closes (set by the Electron shell so the engine dies with its parent)")
+	rulesDir := flag.String("rules-dir", "",
+		"Classification rule files directory (default: <UserConfigDir>/bistro/rules)")
 	flag.Parse()
 
 	if *syncInterval <= 0 {
@@ -80,6 +82,19 @@ func main() {
 	app := server.NewWithLogger(*wsPort, *dbPath, log)
 	app.SetSyncInterval(*syncInterval)
 	app.SetAutoSync(*autoSync)
+
+	// Classification rules live in user CONFIG (user-editable YAML), not the
+	// cache dir used for repo clones. No config dir → empty dir → embedded
+	// built-ins only.
+	resolvedRulesDir := *rulesDir
+	if resolvedRulesDir == "" {
+		if cfg, err := os.UserConfigDir(); err != nil {
+			log.Warn("no user config dir; classification uses embedded built-ins only", "err", err)
+		} else {
+			resolvedRulesDir = filepath.Join(cfg, "bistro", "rules")
+		}
+	}
+	app.SetRulesDir(resolvedRulesDir)
 
 	// Read GitHub OAuth credentials from environment.
 	clientID := os.Getenv("GITHUB_CLIENT_ID")
