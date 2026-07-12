@@ -5,7 +5,7 @@ import { FooterCenterSlot } from '../components/FooterSlot';
 import { Markdown } from '../components/Markdown';
 import { MergeReadinessBadge } from '../components/MergeReadinessBadge';
 import { PatchsetTimeline } from '../components/PatchsetTimeline';
-import { type StatusKind, StatusSquare } from '../components/StatusSquare';
+import StatusSidebar from '../components/StatusSidebar';
 import { UnresolvedThreadsView } from '../components/UnresolvedThreadsView';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -277,7 +277,7 @@ export function PRDetailPage() {
         </footer>
       </article>
 
-      <StatusRail pr={pr} ciChecks={ciChecks} />
+      <StatusSidebar pr={pr} ciChecks={ciChecks} comments={comments} />
 
       {activeOverlay === 'threads' && (
         <UnresolvedThreadsView prId={pr.id} comments={comments} />
@@ -493,7 +493,8 @@ function RecentComments({ comments }: { comments: Comment[] }) {
           return (
             <div
               key={c.id}
-              className="cursor-crosshair border-l-2 border-transparent bg-surface-container-lowest p-6 transition-colors duration-150 hover:border-primary hover:bg-surface-container-low flex flex-col space-y-3"
+              data-severity={c.severity ?? 'none'}
+              className="cursor-crosshair border-l-2 border-outline-variant/30 bg-surface-container-lowest p-6 transition-colors duration-150 data-[severity=critical]:border-l-error data-[severity=warning]:border-l-tertiary data-[severity=suggestion]:border-l-primary data-[severity=nit]:border-l-secondary data-[severity=info]:border-l-outline hover:border-primary hover:bg-surface-container-low flex flex-col space-y-3"
             >
               <button
                 type="button"
@@ -562,70 +563,5 @@ function FileList({
         ))}
       </div>
     </section>
-  );
-}
-
-interface StatusRailProps {
-  pr: PR;
-  ciChecks: CICheck[];
-}
-
-function StatusRail({ pr, ciChecks }: StatusRailProps) {
-  const ciPending = ciChecks.some((c) => c.state === 'pending');
-  const ciFailed = ciChecks.some((c) => c.state === 'failure');
-  const ciKind: StatusKind = ciFailed
-    ? 'failure'
-    : ciPending
-      ? 'running'
-      : ciChecks.length > 0
-        ? 'success'
-        : 'neutral';
-  const ciLabel = ciFailed
-    ? 'Checks Failed'
-    : ciPending
-      ? 'Checks Running'
-      : ciChecks.length > 0
-        ? 'Checks Passing'
-        : 'No CI';
-  const reviewKind: StatusKind =
-    pr.review_status === 'approved'
-      ? 'success'
-      : pr.review_status === 'changes_requested'
-        ? 'failure'
-        : 'neutral';
-  const reviewLabel =
-    pr.review_status === 'approved'
-      ? 'Approved'
-      : pr.review_status === 'changes_requested'
-        ? 'Changes Requested'
-        : 'Awaiting Review';
-
-  return (
-    <aside className="w-[10%] min-w-[96px] bg-surface-container-low flex flex-col border-l border-outline-variant/10">
-      <div className="flex-1 flex flex-col items-center justify-center space-y-16 py-12">
-        <div className="flex flex-col items-center space-y-3">
-          <StatusSquare status={ciKind} size="w-5 h-5" label={ciLabel} />
-          <span
-            className={`font-mono text-[9px] font-bold tracking-widest uppercase text-center px-2 ${
-              ciFailed ? 'text-error' : 'text-on-surface'
-            }`}
-          >
-            {ciLabel}
-          </span>
-        </div>
-
-        <div className="flex flex-col items-center space-y-3">
-          <StatusSquare
-            status={reviewKind}
-            size="w-5 h-5"
-            label={reviewLabel}
-          />
-          <span className="font-mono text-[9px] font-bold tracking-widest text-outline uppercase text-center px-2">
-            {reviewLabel}
-          </span>
-        </div>
-      </div>
-      <div className="h-24" />
-    </aside>
   );
 }

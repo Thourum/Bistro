@@ -5,6 +5,7 @@ import {
   filterBySeverity,
   humanizeSource,
   isAutoCollapsed,
+  SEVERITY_RANK,
   sortBySeverity,
 } from '../../src/renderer/utils/classification';
 
@@ -19,6 +20,19 @@ function buildComment(overrides: Partial<Comment> = {}): Comment {
     ...overrides,
   };
 }
+
+describe('classification severity rank', () => {
+  it('mirrors the Go severity ordering with higher numbers for more severe comments', () => {
+    // Arrange / Act / Assert
+    expect(SEVERITY_RANK).toEqual({
+      critical: 5,
+      warning: 4,
+      suggestion: 3,
+      nit: 2,
+      info: 1,
+    });
+  });
+});
 
 describe('sortBySeverity', () => {
   it('sorts comments by severity with unclassified comments last', () => {

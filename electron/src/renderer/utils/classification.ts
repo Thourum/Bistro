@@ -1,14 +1,14 @@
 import type { Comment, CommentSeverity } from '../types';
 
 export const SEVERITY_RANK: Record<CommentSeverity, number> = {
-  critical: 0,
-  warning: 1,
-  suggestion: 2,
-  nit: 3,
-  info: 4,
+  critical: 5,
+  warning: 4,
+  suggestion: 3,
+  nit: 2,
+  info: 1,
 };
 
-const UNCLASSIFIED_RANK = 5;
+const UNCLASSIFIED_RANK = 0;
 const AUTO_COLLAPSED_SEVERITIES = new Set<CommentSeverity>(['nit', 'info']);
 const KNOWN_BOT_VENDORS = new Set(['coderabbit', 'greptile']);
 
@@ -55,8 +55,8 @@ function incrementCount(
 export function sortBySeverity(comments: readonly Comment[]): Comment[] {
   return [...comments].sort((firstComment, secondComment) => {
     const rankDifference =
-      severityRank(firstComment.severity) -
-      severityRank(secondComment.severity);
+      severityRank(secondComment.severity) -
+      severityRank(firstComment.severity);
     if (rankDifference !== 0) return rankDifference;
 
     return firstComment.created_at.localeCompare(secondComment.created_at);
@@ -130,6 +130,6 @@ export function filterBySeverity(
 
   return comments.filter((comment) => {
     if (options.humanOnly && comment.author_type !== 'human') return false;
-    return severityRank(comment.severity) <= minimumRank;
+    return severityRank(comment.severity) >= minimumRank;
   });
 }
