@@ -106,6 +106,9 @@ interface AddRepoDialogProps {
   onClose: () => void;
 }
 
+const FOCUSABLE_SELECTOR =
+  'button:not(:disabled), input:not(:disabled), [href], select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
 export function AddRepoDialog({
   onClose,
 }: AddRepoDialogProps): React.ReactElement {
@@ -117,8 +120,27 @@ export function AddRepoDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const devFolderButtonRef = useRef<HTMLButtonElement>(null);
   const cacheButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Ignore in-flight WebSocket responses once the dialog is closed/unmounted,
+  // so a stale callback cannot toast or close a newly opened overlay.
+  const isClosedRef = useRef(false);
   const devFolderPath = settingsStore.state.repositories.devFolderPath;
   const hasDevFolder = devFolderPath !== null && devFolderPath.trim() !== '';
+
+  const close = (): void => {
+    isClosedRef.current = true;
+    onClose();
+  };
+
+  useEffect(() => {
+    const opener = document.activeElement;
+    return () => {
+      isClosedRef.current = true;
+      if (opener instanceof HTMLElement) {
+        opener.focus();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (step === 'url') {
@@ -136,6 +158,34 @@ export function AddRepoDialog({
     return () => window.clearTimeout(timeoutId);
   }, [hasDevFolder, step]);
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      close();
+      return;
+    }
+    if (event.key !== 'Tab' || dialogRef.current === null) {
+      return;
+    }
+    const focusable = Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+    );
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (first === undefined || last === undefined) {
+      event.preventDefault();
+      return;
+    }
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || active === dialogRef.current)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   const handleResponse = (response: AddRepoResponse): void => {
     if (response.ok) {
       addToast({
@@ -143,7 +193,7 @@ export function AddRepoDialog({
         message: 'Repository added',
         dismissible: true,
       });
-      onClose();
+      close();
       return;
     }
 
@@ -179,10 +229,12 @@ export function AddRepoDialog({
       .andThen(parseAddRepoResponse)
       .match(
         (response) => {
+          if (isClosedRef.current) return;
           setIsSubmitting(false);
           handleResponse(response);
         },
         (message) => {
+          if (isClosedRef.current) return;
           setIsSubmitting(false);
           setErrorMessage(message);
         },
@@ -196,10 +248,14 @@ export function AddRepoDialog({
       aria-label="Add repository by URL"
       className="fixed inset-0 z-40 bg-transparent backdrop-blur-[20px] flex items-start justify-center pt-[153px]"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) close();
       }}
+      onKeyDown={handleKeyDown}
     >
-      <div className="w-full max-w-xl mx-4 bg-surface-container-lowest border border-primary shadow-[0_10px_30px_rgba(25,28,29,0.04)] p-4">
+      <div
+        ref={dialogRef}
+        className="w-full max-w-xl mx-4 bg-surface-container-lowest border border-primary shadow-[0_10px_30px_rgba(25,28,29,0.04)] p-4"
+      >
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h2 className="text-lg font-semibold text-on-surface">
@@ -211,7 +267,7 @@ export function AddRepoDialog({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={close}
             className="font-mono text-xs text-outline hover:text-on-surface"
           >
             ESC
@@ -244,7 +300,7 @@ export function AddRepoDialog({
             <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={close}
                 className="px-3 py-2 text-sm text-on-surface-variant hover:text-on-surface"
               >
                 Cancel

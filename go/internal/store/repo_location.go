@@ -87,9 +87,16 @@ func (s *RepoLocationStore) SetCache(ctx context.Context, repoID, path string) e
 	return nil
 }
 
-// Touch sets last_used_at=now.
+// Touch sets last_used_at=now. Called only after a successful use, so it also
+// clears any stale degraded state left from a previous failure.
 func (s *RepoLocationStore) Touch(ctx context.Context, repoID string) error {
-	if _, err := s.db.ExecContext(ctx, `UPDATE repos SET last_used_at = ? WHERE id = ?`, time.Now().UTC(), repoID); err != nil {
+	const query = `
+		UPDATE repos
+		SET last_used_at = ?, location_status = 'ok',
+			location_error_code = NULL, location_error = NULL
+		WHERE id = ?
+	`
+	if _, err := s.db.ExecContext(ctx, query, time.Now().UTC(), repoID); err != nil {
 		return fmt.Errorf("touch repo location %s: %w", repoID, err)
 	}
 	return nil

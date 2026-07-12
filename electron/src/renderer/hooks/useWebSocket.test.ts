@@ -283,7 +283,10 @@ describe('useWebSocket dev-folder startup scan', () => {
       requestType: 'REMOVE_REPO_PREFLIGHT',
       resultType: 'REMOVE_REPO_PREFLIGHT_RESULT',
       payload: { repo_id: 'github:acme/api' },
-      response: { ok: true, pull_requests: 2, comments: 3 },
+      response: {
+        ok: true,
+        counts: { prs: 2, comments: 3, threads: 0, patchsets: 0, actions: 0 },
+      },
     },
     {
       requestType: 'REMOVE_REPO',

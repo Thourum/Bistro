@@ -1,4 +1,5 @@
 import { Store } from '@tanstack/store';
+import { err, ok, okAsync, ResultAsync } from 'neverthrow';
 import {
   type AppSettings,
   DEFAULT_SETTINGS,
@@ -150,21 +151,29 @@ export async function initSettings(): Promise<void> {
 
 /**
  * Apply a patch: round-trips through main when in Electron, else writes
- * to localStorage. Returns once the store has the new state.
+ * to localStorage. Resolves once the store has the new state; an IPC
+ * failure surfaces as an err so callers can gate follow-up work on it.
  */
-export async function updateSettings(
+export function updateSettings(
   patch: Partial<AppSettings>,
-): Promise<void> {
+): ResultAsync<void, string> {
   if (hasElectron()) {
-    const res = await window.electron.settings.set(patch);
-    if ('ok' in res) {
-      settingsStore.setState(() => res.ok);
-    }
-    return;
+    return ResultAsync.fromPromise(window.electron.settings.set(patch), (e) =>
+      e instanceof Error && e.message.trim() !== ''
+        ? e.message
+        : 'Unable to write settings.',
+    ).andThen((res) => {
+      if ('ok' in res) {
+        settingsStore.setState(() => res.ok);
+        return ok(undefined);
+      }
+      return err(res.err.trim() === '' ? 'Unable to write settings.' : res.err);
+    });
   }
   const next = deepMerge(settingsStore.state, patch);
   settingsStore.setState(() => next);
   persistLocal(next);
+  return okAsync(undefined);
 }
 
 export async function resetSettings(): Promise<void> {

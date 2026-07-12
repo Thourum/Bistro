@@ -111,4 +111,32 @@ describe('SettingsService', () => {
     expect(settings).not.toHaveProperty('unknownTopLevel');
     expect(settings.repositories).not.toHaveProperty('unknownRepositoryField');
   });
+
+  it('rejects a non-string devFolderPath from malformed JSON on disk', async () => {
+    const settingsPath = await createSettingsPath();
+    await writeSettingsFile(settingsPath, {
+      ...DEFAULT_SETTINGS,
+      repositories: { devFolderPath: 42 },
+    });
+    const service = new SettingsService(createTestLogger(), settingsPath);
+
+    const settings = await service.load();
+    service.stop();
+
+    expect(settings.repositories.devFolderPath).toBeNull();
+  });
+
+  it('rejects a non-string devFolderPath patch and keeps the current value', async () => {
+    const settingsPath = await createSettingsPath();
+    const service = new SettingsService(createTestLogger(), settingsPath);
+    await service.load();
+    await service.set({ repositories: { devFolderPath: '/Users/alice/dev' } });
+
+    const settings = await service.set({
+      repositories: { devFolderPath: { nested: true } },
+    } as unknown as Partial<typeof DEFAULT_SETTINGS>);
+    service.stop();
+
+    expect(settings.repositories.devFolderPath).toBe('/Users/alice/dev');
+  });
 });

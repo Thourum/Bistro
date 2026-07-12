@@ -105,7 +105,8 @@ func SweepOrphans(known map[string]bool) ([]string, error) {
 
 		repoEntries, err := os.ReadDir(ownerPath)
 		if err != nil {
-			return nil, fmt.Errorf("read cache owner dir %q: %w", ownerPath, err)
+			skipped = append(skipped, fmt.Errorf("skip cache owner dir %q: %w", ownerPath, err))
+			continue
 		}
 
 		for _, repoEntry := range repoEntries {

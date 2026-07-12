@@ -444,12 +444,11 @@ func (a *App) Run(ctx context.Context) error {
 	a.wsServer.RegisterHandler("VALIDATE_DEV_FOLDER", handler.NewValidateDevFolderHandler(a.log))
 	a.wsServer.RegisterHandler("SCAN_DEV_FOLDER", handler.NewScanDevFolderHandler(repoLocationStore, a.syncTrigger, a.log))
 	a.wsServer.RegisterHandler("ADD_REPO_BY_URL", handler.NewAddRepoByURLHandler(handler.AddRepoByURLDeps{
-		DB:          a.db.DB,
-		Store:       repoLocationStore,
-		Clone:       a.cloneRepoLocationRepo,
-		CacheRoot:   git.CacheRoot,
-		TokenSource: a.githubToken,
-		Log:         a.log,
+		DB:        a.db.DB,
+		Store:     repoLocationStore,
+		Clone:     a.cloneRepoLocationRepo,
+		CacheRoot: git.CacheRoot,
+		Log:       a.log,
 	}))
 	a.wsServer.RegisterHandler("REMOVE_REPO_PREFLIGHT", handler.NewRemoveRepoPreflightHandler(a.db.DB, a.log))
 	a.wsServer.RegisterHandler("GET_CACHE_STATS", handler.NewGetCacheStatsHandler(cacheDeps))
@@ -458,16 +457,16 @@ func (a *App) Run(ctx context.Context) error {
 	a.wsServer.RegisterHandler("DELETE_CACHE_REPO", handler.NewDeleteCacheRepoHandler(cacheDeps))
 	a.wsServer.RegisterHandler("RECOVER_REPO_PATH", handler.NewRecoverRepoPathHandler(repoLocationStore, a.log))
 	a.wsServer.RegisterHandler("RECOVER_REPO_TO_CACHE", handler.NewRecoverRepoToCacheHandler(handler.RecoverRepoToCacheDeps{
-		DB:          a.db.DB,
-		Store:       repoLocationStore,
-		Clone:       a.cloneRepoLocationRepo,
-		CacheRoot:   git.CacheRoot,
-		TokenSource: a.githubToken,
-		Log:         a.log,
+		DB:        a.db.DB,
+		Store:     repoLocationStore,
+		Clone:     a.cloneRepoLocationRepo,
+		CacheRoot: git.CacheRoot,
+		Log:       a.log,
 	}))
 	a.wsServer.RegisterHandler("REMOVE_REPO", handler.NewRemoveRepoHandler(handler.RemoveRepoDeps{
 		DB:             a.db.DB,
 		Store:          repoLocationStore,
+		Locks:          a.repoLocks,
 		DeleteCacheDir: deleteCacheDir,
 		Log:            a.log,
 	}))

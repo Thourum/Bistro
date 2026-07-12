@@ -55,6 +55,8 @@ go/
 │   │   ├── locks.go                    #   Per-repo operation locks for clone/fetch/cache maintenance
 │   │   ├── paths.go                    #   Cache directory management
 │   │   ├── clone_test.go
+│   │   ├── clone_local_test.go
+│   │   ├── clone_targeted_test.go
 │   │   ├── diff_test.go
 │   │   ├── cache_test.go
 │   │   ├── cachemaint_test.go

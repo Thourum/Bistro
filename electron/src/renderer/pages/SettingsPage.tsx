@@ -719,15 +719,14 @@ function RepositoriesSection() {
             return parseValidateDevFolderResponse(response);
           })
           .andThen((response: ValidateDevFolderResponse) =>
-            ResultAsync.fromPromise(
-              updateSettings({
-                repositories: {
-                  ...repositories,
-                  devFolderPath: response.canonical_path,
-                },
-              }),
-              () => 'Dev folder could not be changed.',
-            ).map(() => response.canonical_path),
+            updateSettings({
+              repositories: {
+                ...repositories,
+                devFolderPath: response.canonical_path,
+              },
+            })
+              .mapErr(() => 'Dev folder could not be changed.')
+              .map(() => response.canonical_path),
           )
           .andThen(scanDevFolder)
           .map(() => null);
@@ -743,21 +742,26 @@ function RepositoriesSection() {
   };
 
   const handleClear = (): void => {
-    ResultAsync.fromPromise(
-      updateSettings({
-        repositories: { ...repositories, devFolderPath: null },
-      }),
-      () => 'Dev folder could not be cleared.',
-    ).match(
-      () => {
-        setScanResult(null);
-        setErrorMessage(null);
-      },
-      (message) => {
-        setErrorMessage(message);
-        addToast({ type: 'error', message, dismissible: true });
-      },
-    );
+    if (isChanging) {
+      return;
+    }
+    setIsChanging(true);
+    updateSettings({
+      repositories: { ...repositories, devFolderPath: null },
+    })
+      .mapErr(() => 'Dev folder could not be cleared.')
+      .match(
+        () => {
+          setScanResult(null);
+          setErrorMessage(null);
+          setIsChanging(false);
+        },
+        (message) => {
+          setErrorMessage(message);
+          addToast({ type: 'error', message, dismissible: true });
+          setIsChanging(false);
+        },
+      );
   };
 
   return (
@@ -784,7 +788,7 @@ function RepositoriesSection() {
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={currentPath === null}
+                disabled={currentPath === null || isChanging}
                 onClick={handleClear}
               >
                 Clear

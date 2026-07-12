@@ -773,6 +773,9 @@ function connect(): void {
   ws.onclose = () => {
     log.info('disconnected');
     singletonWs = null;
+    // Each new connection should re-run the startup dev-folder scan;
+    // disconnect() resets this too, but dropped sockets reconnect directly.
+    hasSentStartupDevFolderScan = false;
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
     try {
       appStore.setState((s) => ({

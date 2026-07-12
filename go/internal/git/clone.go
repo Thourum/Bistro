@@ -228,15 +228,23 @@ func prepareTargetedCloneDir(repoURL string) (string, error) {
 	return prepareCacheCloneDirWithMode(repoURL, false)
 }
 
+// needsFreshTempDir reports whether a clone must go into a throwaway temp dir
+// instead of the canonical cache dir: either the BISTRO_REPO_DIR override is
+// active, or the URL cannot be parsed into a stable identity.
+func needsFreshTempDir(repoURL string) bool {
+	if os.Getenv("BISTRO_REPO_DIR") != "" {
+		return true
+	}
+	_, err := ParseRemoteURL(repoURL)
+	return err != nil
+}
+
 func prepareCacheCloneDirWithMode(repoURL string, shouldReplace bool) (string, error) {
 	repoDir, err := repoCacheDir(repoURL)
 	if err != nil {
 		return "", err
 	}
-	if os.Getenv("BISTRO_REPO_DIR") != "" {
-		return os.MkdirTemp(repoDir, "repo-*")
-	}
-	if _, err := ParseRemoteURL(repoURL); err != nil {
+	if needsFreshTempDir(repoURL) {
 		return os.MkdirTemp(repoDir, "repo-*")
 	}
 	if !shouldReplace {
@@ -255,10 +263,7 @@ func stageCacheCloneDir(repoURL string) (string, func(bool), error) {
 	if err != nil {
 		return "", nil, err
 	}
-	if os.Getenv("BISTRO_REPO_DIR") != "" {
-		return makeTemporaryCloneDir(repoDir)
-	}
-	if _, err := ParseRemoteURL(repoURL); err != nil {
+	if needsFreshTempDir(repoURL) {
 		return makeTemporaryCloneDir(repoDir)
 	}
 	return createFreshCacheCloneDir(repoDir)
@@ -372,10 +377,7 @@ func stageTargetedCloneDir(repoURL, repoDir string) (func(bool), error) {
 			_ = os.RemoveAll(repoDir)
 		}
 	}
-	if os.Getenv("BISTRO_REPO_DIR") != "" {
-		return removeOnFailure, nil
-	}
-	if _, err := ParseRemoteURL(repoURL); err != nil {
+	if needsFreshTempDir(repoURL) {
 		return removeOnFailure, nil
 	}
 	if _, err := os.Stat(repoDir); err != nil {
@@ -432,13 +434,24 @@ func (c *Client) resolveLocal(ctx context.Context, repoURL, baseSHA, headSHA str
 		return nil, &LocationError{RepoID: identity.ID(), Operation: "fetch", Code: "path_missing", Message: msg}, true
 	}
 	if err := c.FetchIntoLocal(ctx, localPath, identity, baseSHA, headSHA, opts); err != nil {
+		msg := err.Error()
 		var fetchErr *LocalFetchError
 		if errors.As(err, &fetchErr) && fetchErr.Code == remoteMismatchCode {
-			msg := err.Error()
 			c.localResolver.OnLocalDegraded(repoURL, remoteMismatchCode, remoteMismatchCode, msg)
 			return nil, &LocationError{RepoID: identity.ID(), Operation: "fetch", Code: remoteMismatchCode, Message: msg}, true
 		}
-		return nil, err, true
+		if errors.Is(err, os.ErrPermission) {
+			c.localResolver.OnLocalDegraded(repoURL, "permission_denied", "permission_denied", msg)
+			return nil, &LocationError{RepoID: identity.ID(), Operation: "fetch", Code: "permission_denied", Message: msg}, true
+		}
+		// Context cancellation stays bare so callers can still detect it
+		// with errors.Is; LocationError does not unwrap.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err, true
+		}
+		// Transient failures (network, missing commits) are surfaced as a
+		// structured LocationError without marking the repo degraded.
+		return nil, &LocationError{RepoID: identity.ID(), Operation: "fetch", Code: "clone_failed", Message: msg}, true
 	}
 	c.localResolver.OnUsed(repoURL)
 	return &CloneResult{LocalPath: localPath, BaseSHA: baseSHA, HeadSHA: headSHA}, nil, true
@@ -467,7 +480,8 @@ func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA
 		return err
 	}
 	if c.locks == nil {
-		return result, operation()
+		err := operation()
+		return result, err
 	}
 	if err := c.locks.WithRepo(repoLockKey(repoURL), operation); err != nil {
 		return nil, err

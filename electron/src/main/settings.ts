@@ -30,6 +30,18 @@ function mergeKnownFields<T extends object>(base: T, patch: unknown): T {
   ) as T;
 }
 
+/** devFolderPath must be string | null; anything else keeps the base value. */
+function normaliseRepositories(
+  base: RepositoriesSettings,
+  merged: RepositoriesSettings,
+): RepositoriesSettings {
+  const { devFolderPath } = merged;
+  if (typeof devFolderPath === 'string' || devFolderPath === null) {
+    return merged;
+  }
+  return { ...merged, devFolderPath: base.devFolderPath };
+}
+
 function mergeSettings(base: AppSettings, patch: unknown): AppSettings {
   const knownPatch = mergeKnownFields(base, patch);
   const merged = merge.withOptions(
@@ -46,9 +58,12 @@ function mergeSettings(base: AppSettings, patch: unknown): AppSettings {
     sync: mergeKnownFields<SyncSettings>(base.sync, merged.sync),
     prList: mergeKnownFields<PRListSettings>(base.prList, merged.prList),
     privacy: mergeKnownFields<PrivacySettings>(base.privacy, merged.privacy),
-    repositories: mergeKnownFields<RepositoriesSettings>(
+    repositories: normaliseRepositories(
       base.repositories,
-      merged.repositories,
+      mergeKnownFields<RepositoriesSettings>(
+        base.repositories,
+        merged.repositories,
+      ),
     ),
     keybindings: merged.keybindings as KeybindingOverrides,
   };

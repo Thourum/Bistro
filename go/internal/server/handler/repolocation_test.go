@@ -264,15 +264,14 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 		name              string
 		payload           func(root string) map[string]any
 		arrange           func(t *testing.T, db *store.DB, root string, cloner *fakeRepoLocationCloner)
-		wantOK            bool
-		wantCode          string
-		wantSource        string
-		wantPartialClean  string
-		wantPreservePath  string
-		wantContextCancel bool
-		wantStoredSource  string
-		wantStoredPath    string
-		wantCloneBare     *bool
+		wantOK           bool
+		wantCode         string
+		wantSource       string
+		wantPartialClean string
+		wantPreservePath string
+		wantStoredSource string
+		wantStoredPath   string
+		wantCloneBare    *bool
 	}{
 		{
 			name: "found local via targeted dev folder check",
@@ -487,11 +486,6 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 				Log: testRepoLocationLogger(),
 			})
 			ctx := context.Background()
-			if tt.wantContextCancel {
-				cancelCtx, cancel := context.WithCancel(ctx)
-				cancel()
-				ctx = cancelCtx
-			}
 
 			// Act
 			resp := callRepoLocationHandlerWithContext(t, ctx, handler, "ADD_REPO_BY_URL", tt.payload(root))
@@ -500,6 +494,12 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 			// Assert
 			if data["ok"].(bool) != tt.wantOK {
 				t.Fatalf("expected ok=%v, got %#v", tt.wantOK, data)
+			}
+			if tt.wantCloneBare != nil {
+				calls := cloner.Calls()
+				if len(calls) == 0 || calls[len(calls)-1].Bare != *tt.wantCloneBare {
+					t.Fatalf("expected clone bare=%v, got calls=%#v", *tt.wantCloneBare, calls)
+				}
 			}
 			if tt.wantOK {
 				if data["repo_id"] != "github:acme/api" || data["source"] != tt.wantSource {
@@ -623,21 +623,6 @@ func TestRepoLocationCacheMutationHandlersReturnEnvelopeForOperationFailures(t *
 				return CacheMaintenanceDeps{Store: locations, Locks: bistrogit.NewRepoLocks(), DeleteCacheDir: func(string) error { return nil }, Log: testRepoLocationLogger()}
 			},
 		},
-		{
-			name:      "clear cache orphan sweep failure",
-			msgType:   "CLEAR_CACHE",
-			operation: "clear_cache",
-			handler:   NewClearCacheHandler,
-			deps: func(locations *store.RepoLocationStore) CacheMaintenanceDeps {
-				return CacheMaintenanceDeps{
-					Store:          locations,
-					Locks:          bistrogit.NewRepoLocks(),
-					DeleteCacheDir: func(string) error { return nil },
-					SweepOrphans:   (&fakeRepoLocationSweeper{err: errors.New("sweep failed")}).SweepOrphans,
-					Log:            testRepoLocationLogger(),
-				}
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -658,6 +643,43 @@ func TestRepoLocationCacheMutationHandlersReturnEnvelopeForOperationFailures(t *
 			// Assert
 			assertLocationEnvelope(t, responseData(t, resp), "", tt.operation, "delete_failed")
 		})
+	}
+}
+
+func TestRepoLocationClearCacheOrphanSweepFailureKeepsPartialResults(t *testing.T) {
+	// Arrange
+	db := newRepoLocationMigratedDB(t)
+	locations := store.NewRepoLocationStore(db.DB)
+	cachePath := filepath.Join(t.TempDir(), "acme", "api")
+	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "cache", cachePath, nil)
+	deps := CacheMaintenanceDeps{
+		Store:          locations,
+		Locks:          bistrogit.NewRepoLocks(),
+		DeleteCacheDir: func(string) error { return nil },
+		SweepOrphans:   (&fakeRepoLocationSweeper{err: errors.New("sweep failed")}).SweepOrphans,
+		Log:            testRepoLocationLogger(),
+	}
+
+	// Act
+	resp := callRepoLocationHandler(t, NewClearCacheHandler(deps), "CLEAR_CACHE", map[string]any{})
+	data := responseData(t, resp)
+
+	// Assert: cache-row deletions that already succeeded are reported, and
+	// the sweep failure surfaces as a failed entry instead of a bare error.
+	if data["ok"].(bool) != true {
+		t.Fatalf("expected ok=true partial result, got %#v", data)
+	}
+	removed := data["removed"].([]any)
+	if len(removed) != 1 || removed[0] != "github:acme/api" {
+		t.Fatalf("expected removed repo preserved, got %#v", data)
+	}
+	failed := data["failed"].([]any)
+	if len(failed) != 1 {
+		t.Fatalf("expected one failed entry for the sweep, got %#v", data)
+	}
+	failure := failed[0].(map[string]any)
+	if failure["code"] != "delete_failed" || !strings.Contains(failure["message"].(string), "sweep failed") {
+		t.Fatalf("unexpected sweep failure entry %#v", failure)
 	}
 }
 

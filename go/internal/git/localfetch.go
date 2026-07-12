@@ -30,6 +30,8 @@ func (e *LocalFetchError) Unwrap() error {
 // FetchIntoLocal fetches the required commits into a user-owned local repo,
 // writing ONLY refs/bistro/<safeID>/. Never checks out; tag following
 // disabled. Validates first that some remote of the repo matches identity.
+// Note: opts.Depth is intentionally ignored — local fetches are never shallow,
+// so no .git/shallow metadata is ever written into a user-owned repo.
 func (c *Client) FetchIntoLocal(ctx context.Context, localPath string, id Identity, baseSHA, headSHA string, opts *CloneOptions) error {
 	if localPath == "" {
 		return fmt.Errorf("local path cannot be empty")

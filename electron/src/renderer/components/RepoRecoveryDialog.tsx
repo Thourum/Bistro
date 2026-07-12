@@ -49,17 +49,21 @@ function isLocationErrorCode(code: unknown): code is LocationErrorCode {
   );
 }
 
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
 function parseCounts(data: unknown): RemoveCounts | null {
   if (!isRecord(data)) {
     return null;
   }
 
   if (
-    typeof data.prs === 'number' &&
-    typeof data.comments === 'number' &&
-    typeof data.threads === 'number' &&
-    typeof data.patchsets === 'number' &&
-    typeof data.actions === 'number'
+    isCount(data.prs) &&
+    isCount(data.comments) &&
+    isCount(data.threads) &&
+    isCount(data.patchsets) &&
+    isCount(data.actions)
   ) {
     return {
       prs: data.prs,
@@ -230,15 +234,11 @@ export function RepoRecoveryDialog({
           handleResponse(response);
           return;
         }
-        setRemoveCounts(
-          response.counts ?? {
-            prs: 0,
-            comments: 0,
-            threads: 0,
-            patchsets: 0,
-            actions: 0,
-          },
-        );
+        if (response.counts === undefined) {
+          setErrorMessage('Recovery action returned an invalid response.');
+          return;
+        }
+        setRemoveCounts(response.counts);
         setMode('removeConfirm');
       },
       (message) => {

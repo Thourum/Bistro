@@ -42,17 +42,17 @@ type LocationErrorPayload struct {
 }
 
 type AddRepoByURLDeps struct {
-	DB          *sql.DB
-	Store       *store.RepoLocationStore
-	Clone       func(ctx context.Context, repoURL, destination string, bare bool) error
-	CacheRoot   func() (string, error)
-	TokenSource func() string
-	Log         *slog.Logger
+	DB        *sql.DB
+	Store     *store.RepoLocationStore
+	Clone     func(ctx context.Context, repoURL, destination string, bare bool) error
+	CacheRoot func() (string, error)
+	Log       *slog.Logger
 }
 
 type RemoveRepoDeps struct {
 	DB             *sql.DB
 	Store          *store.RepoLocationStore
+	Locks          *git.RepoLocks
 	DeleteCacheDir func(path string) error
 	Log            *slog.Logger
 }
@@ -66,12 +66,11 @@ type CacheMaintenanceDeps struct {
 }
 
 type RecoverRepoToCacheDeps struct {
-	DB          *sql.DB
-	Store       *store.RepoLocationStore
-	Clone       func(ctx context.Context, repoURL, destination string, bare bool) error
-	CacheRoot   func() (string, error)
-	TokenSource func() string
-	Log         *slog.Logger
+	DB        *sql.DB
+	Store     *store.RepoLocationStore
+	Clone     func(ctx context.Context, repoURL, destination string, bare bool) error
+	CacheRoot func() (string, error)
+	Log       *slog.Logger
 }
 
 type cacheFailurePayload struct {
@@ -232,7 +231,7 @@ func NewAddRepoByURLHandler(deps AddRepoByURLDeps) ws.MessageHandler {
 		if err != nil {
 			return nil, err
 		}
-		if err := cloneRepo(ctx, deps.Clone, deps.TokenSource, data.URL, destinationPath, source == "cache"); err != nil {
+		if err := cloneRepo(ctx, deps.Clone, data.URL, destinationPath, source == "cache"); err != nil {
 			message := err.Error()
 			if cleanupErr := cleanupBistroCreated(destinationPath, createdByBistro, source, rootPath); cleanupErr != nil {
 				message = fmt.Sprintf("%s; %s", message, cleanupErr.Error())
@@ -276,18 +275,33 @@ func NewRemoveRepoHandler(deps RemoveRepoDeps) ws.MessageHandler {
 		if err != nil {
 			return nil, err
 		}
-		location, err := deps.Store.Get(ctx, repoID)
-		if err != nil {
-			return nil, err
-		}
-		counts, err := removeRepoTx(ctx, deps.DB, repoID)
-		if err != nil {
-			return nil, err
-		}
-		if location != nil && location.Source == "cache" && location.LocalPath != "" && deps.DeleteCacheDir != nil {
-			if err := deps.DeleteCacheDir(location.LocalPath); err != nil && deps.Log != nil {
-				deps.Log.Warn("delete cache dir after remove repo failed", "repo_id", repoID, "error", err)
+		// Read location, delete rows, and delete the cache dir under the repo
+		// lock so a concurrent clone/recovery cannot race us into deleting a
+		// stale path.
+		var counts removeCounts
+		operation := func() error {
+			location, err := deps.Store.Get(ctx, repoID)
+			if err != nil {
+				return err
 			}
+			counts, err = removeRepoTx(ctx, deps.DB, repoID)
+			if err != nil {
+				return err
+			}
+			if location != nil && location.Source == "cache" && location.LocalPath != "" && deps.DeleteCacheDir != nil {
+				if err := deps.DeleteCacheDir(location.LocalPath); err != nil && deps.Log != nil {
+					deps.Log.Warn("delete cache dir after remove repo failed", "repo_id", repoID, "error", err)
+				}
+			}
+			return nil
+		}
+		if deps.Locks != nil {
+			err = deps.Locks.WithRepo(repoID, operation)
+		} else {
+			err = operation()
+		}
+		if err != nil {
+			return nil, err
 		}
 		return locationResponse(msg, struct {
 			OK      bool         `json:"ok"`
@@ -482,7 +496,7 @@ func NewRecoverRepoToCacheHandler(deps RecoverRepoToCacheDeps) ws.MessageHandler
 			return nil, err
 		}
 		repoURL := fmt.Sprintf("https://github.com/%s/%s.git", identity.Owner, identity.Repo)
-		if err := cloneRepo(ctx, deps.Clone, deps.TokenSource, repoURL, destination, true); err != nil {
+		if err := cloneRepo(ctx, deps.Clone, repoURL, destination, true); err != nil {
 			message := err.Error()
 			if cleanupErr := cleanupBistroCreated(destination, createdByBistro, "cache", root); cleanupErr != nil {
 				message = fmt.Sprintf("%s; %s", message, cleanupErr.Error())
@@ -834,7 +848,9 @@ func setRepoSource(ctx context.Context, db *sql.DB, locations *store.RepoLocatio
 	return locations.UpsertLocal(ctx, identity.Provider, identity.Owner, identity.Repo, path)
 }
 
-func cloneRepo(ctx context.Context, clone func(context.Context, string, string, bool) error, _ func() string, repoURL, destination string, bare bool) error {
+// cloneRepo delegates to the injected clone dependency; auth comes from the
+// shared git client's token source configured in app.go.
+func cloneRepo(ctx context.Context, clone func(context.Context, string, string, bool) error, repoURL, destination string, bare bool) error {
 	if clone == nil {
 		return errors.New("clone dependency is not configured")
 	}
@@ -1021,11 +1037,13 @@ func clearCache(ctx context.Context, locations *store.RepoLocationStore, deleteC
 	}
 	orphansRemoved := 0
 	if sweepOrphans != nil {
+		// A sweep failure must not discard the cache-row deletions that already
+		// succeeded above; report it as a failure entry instead of an error.
 		orphans, err := sweepOrphans(known)
-		if err != nil {
-			return nil, nil, 0, err
-		}
 		orphansRemoved = len(orphans)
+		if err != nil {
+			failed = append(failed, cacheFailurePayload{Code: "delete_failed", Message: fmt.Sprintf("sweep orphans: %s", err)})
+		}
 	}
 	return removed, failed, orphansRemoved, nil
 }

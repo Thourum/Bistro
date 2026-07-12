@@ -12,9 +12,10 @@ func TestRepoLocksSameRepoSerializes(t *testing.T) {
 	locks := NewRepoLocks()
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
+	secondAttempted := make(chan struct{})
+	secondEntered := make(chan struct{})
 	var activeCount int32
 	var maxActiveCount int32
-	var secondCompletedBeforeRelease int32
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -37,25 +38,33 @@ func TestRepoLocksSameRepoSerializes(t *testing.T) {
 	<-firstStarted
 	go func() {
 		defer wg.Done()
+		close(secondAttempted)
 		err := locks.WithRepo("github:acme/api", func() error {
 			currentActive := atomic.AddInt32(&activeCount, 1)
 			updateMaxInt32(&maxActiveCount, currentActive)
+			close(secondEntered)
 			atomic.AddInt32(&activeCount, -1)
 			return nil
 		})
 		if err != nil {
 			t.Errorf("WithRepo returned error: %v", err)
 		}
-		if atomic.LoadInt32(&activeCount) > 0 {
-			atomic.StoreInt32(&secondCompletedBeforeRelease, 1)
-		}
 	}()
 
-	time.Sleep(25 * time.Millisecond)
-	if atomic.LoadInt32(&secondCompletedBeforeRelease) != 0 {
-		t.Fatal("second repo operation completed before the first operation released the lock")
+	<-secondAttempted
+	select {
+	case <-secondEntered:
+		t.Fatal("second same-repo operation entered before the first operation released the lock")
+	case <-time.After(25 * time.Millisecond):
+		// expected: second operation stays blocked while first holds the lock
 	}
 	close(releaseFirst)
+	select {
+	case <-secondEntered:
+		// expected
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("second same-repo operation did not enter after the first released the lock")
+	}
 	wg.Wait()
 
 	// Assert
@@ -133,8 +142,10 @@ func TestRepoLocksMaintenanceWaitsForInFlightRepo(t *testing.T) {
 	}()
 
 	<-repoStarted
+	maintenanceAttempted := make(chan struct{})
 	go func() {
 		defer wg.Done()
+		close(maintenanceAttempted)
 		err := locks.WithMaintenance(func() error {
 			close(maintenanceEntered)
 			return nil
@@ -144,6 +155,7 @@ func TestRepoLocksMaintenanceWaitsForInFlightRepo(t *testing.T) {
 		}
 	}()
 
+	<-maintenanceAttempted
 	select {
 	case <-maintenanceEntered:
 		t.Fatal("maintenance started before in-flight repo operation finished")
