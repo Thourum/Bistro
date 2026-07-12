@@ -3,13 +3,16 @@ module github.com/itterno/bistro
 go 1.26.1
 
 require (
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/go-git/go-git/v5 v5.17.2
 	github.com/gofrs/flock v0.13.0
 	github.com/google/go-github/v84 v84.0.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/mattn/go-sqlite3 v1.14.41
+	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/oauth2 v0.36.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -29,7 +32,6 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/pjbgf/sha1cd v0.3.2 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
-	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed // indirect
 	github.com/shurcooL/graphql v0.0.0-20240915155400-7ee5256398cf // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
