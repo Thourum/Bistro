@@ -20,6 +20,10 @@ export default defineConfig({
         link: '/docs/keybindings',
       },
       {
+        text: 'Comment classification',
+        link: '/docs/comment-classification',
+      },
+      {
         text: 'Local-first privacy',
         link: '/docs/privacy',
       },

@@ -350,7 +350,7 @@ CREATE TABLE patchsets (
 
 ---
 
-## Phase 3 — AI Comment Classification (the wedge) — **status: not started (verified 2026-07-11)**
+## Phase 3 — AI Comment Classification (the wedge) — **status: implemented 2026-07-12 (3.7 deferred to Team plan)**
 
 > Verified 2026-07-11: zero code hits for any 3.x sub-feature (no classification
 > columns, no rules engine, no bot identification, no bulk ops, no dedup, no slop
@@ -757,10 +757,11 @@ Everything left between here and FOSS v1.0, in rough dependency order. Done work
 - [ ] Post *new* line-level review comments (`PostReviewComment` with path/commitSHA/side) — replies already work (1.3)
 - [ ] Wire a local repo path into the range-diff handler so 2.1/2.2 stop always degrading
 
-**Phase 3 — classification (not started, the wedge)**
-- [ ] 3.1 schema + 3.2 bot identification + 3.3 rules engine + 3.4 heuristics
-- [ ] 3.5 bulk ops, 3.6 dedup, 3.8 BYOK (3.7 slop score deferred to Team plan, 2026-07-12)
+**Phase 3 — classification (implemented 2026-07-12, the wedge)**
+- [x] 3.1 schema + 3.2 bot identification + 3.3 rules engine + 3.4 heuristics
+- [x] 3.5 bulk ops, 3.6 dedup, 3.8 BYOK (3.7 slop score deferred to Team plan, 2026-07-12)
 - Spec for all of the above: `docs/superpowers/specs/2026-07-12-comment-classification-design.md`
+- User guide: `website/src/pages/docs/comment-classification.mdx`
 
 **Phase 4 — expertise (not started, now unblocked by migration 022)**
 - [ ] 4.1 scoring engine + `file_expertise` table

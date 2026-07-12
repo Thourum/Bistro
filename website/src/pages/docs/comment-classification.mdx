@@ -1,0 +1,135 @@
+---
+title: Comment Classification
+description: How Bistro classifies PR comments by severity, dedupes bot findings, and lets you bulk-dismiss the noise.
+---
+
+# Comment Classification
+
+Bistro classifies every synced PR comment **locally**: who wrote it (human or
+bot, and which bot), how severe it is (`critical` → `warning` → `suggestion` →
+`nit` → `info`), and what it's about (security, correctness, performance,
+style, readability, docs). The PR overview sorts most-severe-first, nits and
+info collapse to one line, and the sidebar counts everything at a glance.
+
+Classification is always explainable: hover the severity badge and the
+tooltip names exactly what fired — `Rule: coderabbit.yml / emoji_severity` or
+`AI: anthropic (claude-haiku-4-5)`. A comment nothing matched stays
+*unclassified*; that's an honest outcome, not an error.
+
+:::note
+Everything runs on your machine. The only network calls classification ever
+makes are your own opt-in AI calls (see [BYOK AI](#byok-ai-optional)).
+:::
+
+## Rule files
+
+Rules live as YAML files in your config directory:
+
+- macOS: `~/Library/Application Support/bistro/rules/`
+- Linux: `~/.config/bistro/rules/`
+- Or pass `--rules-dir` to `bistro-sync`.
+
+Files load **alphabetically, and the last match wins** — that's the whole
+override mechanism. A vendor file by example:
+
+```yaml
+name: CodeRabbit
+vendor: coderabbit
+match:
+  author: ["coderabbitai[bot]", "coderabbit-ai[bot]"]
+
+classifiers:
+  - name: emoji_severity
+    body_pattern: '^(?P<emoji>🔒|⚠️|🛠️|💡)'
+    severity_map: { "🔒": critical, "⚠️": warning, "🛠️": suggestion, "💡": nit }
+
+  - name: nitpick_section
+    body_pattern: '<details>.*?Nitpick'
+    severity: nit
+```
+
+Each classifier has a `name`, optional `author` / `path` (glob) /
+`body_pattern` (regex) conditions that AND together, and an outcome: a direct
+`severity` (+ optional `category`), or a `severity_map` keyed on a named
+capture group. Adding a `weight` turns it into a heuristic — weighted matches
+tally per severity and the highest total wins, but any direct vendor-rule
+match always outranks heuristics.
+
+### Customizing safely
+
+- **Add your own file** that sorts after the built-in, e.g.
+  `coderabbit.custom.yml` — its matching classifiers override the built-in's.
+- **Delete a built-in** to disable that vendor permanently; upgrades respect
+  the deletion.
+- **Don't edit built-in files in place** — an app upgrade overwrites any
+  built-in that is still present. Your own files are never touched.
+
+Rule edits apply the next time you open a PR. No restart, no reload command.
+
+### Built-in heuristics
+
+`zz-fallback.yml` (loads last, applies to every author) ships these weighted
+classifiers:
+
+| Heuristic | Signal | Result | Weight |
+| --- | --- | --- | --- |
+| `nit_words` | "nit:", "consider", "minor", "personal taste"… | nit | 0.4 |
+| `security_words` | "sql injection", "xss", "credential", "race condition"… | critical / security | 0.7 |
+| `security_paths` | vulnerability language in `auth/`, `security/`, `payments/` paths | critical / security | 0.8 |
+| `docs_style` | comments on `*.md` / `*.rst` files | suggestion / docs | 0.3 |
+
+## Bulk dismiss & filters
+
+On the PR overview:
+
+| Keys | Action |
+| --- | --- |
+| `d n` | Dismiss all nits + info |
+| `d b` | Dismiss all bot comments |
+| `u` | Undo the last dismissal batch |
+| `f c` / `f w` / `f s` / `f n` | Show only ≥ critical / warning / suggestion / nit |
+| `f h` | Human comments only |
+| `f f` | Clear comment filters |
+
+There is no confirmation prompt — dismissal is cheap to reverse (`u` restores
+the entire batch) and the status line reports what happened
+("Dismissed 12 · 3 resolved on GitHub"). Dismissals are per-account and
+survive restarts; the undo stack is per-session.
+
+By default dismissals are **local only**. Flip *Settings → Comment
+Classification → Dismissal scope* to "Also resolve on GitHub" and dismissing
+inline comments also resolves their review threads via the offline-safe
+action queue.
+
+## Duplicate bot findings
+
+When two bots flag the same thing — same file, same few lines, near-identical
+text — Bistro merges them into one finding: *"Flagged by CodeRabbit +
+Greptile (2 sources)"*, expandable per source. The merged finding takes the
+highest severity of its members. Dismissing one member simply drops it from
+the group; nothing is ever auto-dismissed.
+
+## BYOK AI (optional)
+
+For comments the rules can't judge, you can bring your own LLM key.
+*Settings → Comment Classification* offers three modes:
+
+- **Rules engine** (default) — fully offline.
+- **Rules + AI fallback** — your LLM classifies only what the rules left
+  unclassified.
+- **AI for everything** — every comment goes to your LLM; the rules result
+  shows until the answer lands, then upgrades in place.
+
+Providers: Anthropic, OpenAI, OpenRouter, Ollama (local), or any
+OpenAI-compatible endpoint. Sync never waits on the AI — refinements arrive
+asynchronously seconds later.
+
+**Privacy:**
+
+- Your API key is stored in the **OS keychain only** — never in settings
+  files, never in the local database, never shown back in the UI.
+- Identical comment text is never classified twice: results are cached
+  locally, across PRs and sessions, so switching models only affects new text.
+- A session counter in Settings shows tokens used and estimated cost.
+- If the provider rejects your key or rate-limits you, Bistro silently keeps
+  the rules-based result — AI is enrichment, never a gate.
