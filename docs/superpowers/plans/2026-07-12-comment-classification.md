@@ -32,6 +32,8 @@ go/internal/classify/
   seed_test.go
   engine.go         Classify(author, body, path) → Classification
   engine_test.go
+  provider.go       EngineProvider — reload-on-demand engine (lazy rule reload)
+  provider_test.go
   dedup.go          per-PR dedup post-pass (increment 3)
   dedup_test.go
   corpus_test.go    ≥70% heuristic accuracy over testdata corpus
@@ -672,8 +674,9 @@ func BenchmarkClassify50(b *testing.B) { /* 50 corpus comments per iteration */ 
   - `TestWriterEngineErrorPersistsUnclassified`: not applicable — `Classify` can't error; instead assert a no-match comment persists `classification_source='unclassified'`.
 
 - [ ] **Step 3: Implement.**
-  - Add `engine *classify.Engine` to `Writer` + option method `WithClassifier(e *classify.Engine) *Writer` (mirrors existing `WithEmitter`).
-  - In `writeComment`: when `w.engine != nil`, call `w.engine.Classify(comment.Author, comment.Body, commentPath(comment))` and extend the INSERT/UPDATE column list with the five columns (NULLs via the existing `nullableString` helper for empty severity/category/vendor).
+  - First create `classify.EngineProvider` in `go/internal/classify/provider.go` (+ `provider_test.go`): the reload-on-demand wrapper specced in Task 8 Step 3 — `NewEngineProvider(dir string, mode func() string, log *slog.Logger)`, `Current() *Engine` reloading `LoadDir` when the fingerprint changed, `Builtins()` fallback. Test: `Current()` reflects an on-disk YAML edit on the next call; concurrent `Current()` calls race-clean.
+  - Add `classifier *classify.EngineProvider` to `Writer` + option method `WithClassifier(p *classify.EngineProvider) *Writer` (mirrors existing `WithEmitter`). At the top of `WriteSyncResultsContext`, resolve once: `eng := w.classifier.Current()` — one consistent engine per batch.
+  - In `writeComment` (pass `eng` down): when non-nil, call `eng.Classify(comment.Author, comment.Body, commentPath(comment))` and extend the INSERT/UPDATE column list with the five columns (NULLs via the existing `nullableString` helper for empty severity/category/vendor).
   - After the comment INSERT, upsert the fingerprint: `INSERT INTO comment_classification_state (comment_id, fingerprint) VALUES (?, ?) ON CONFLICT(comment_id) DO UPDATE SET fingerprint = excluded.fingerprint`.
   - Comments stay inside the existing per-PR flow (they're outside the savepoint-guarded critical writes — keep it that way).
 
@@ -691,10 +694,22 @@ func BenchmarkClassify50(b *testing.B) { /* 50 corpus comments per iteration */ 
 
 - [ ] **Step 2: Failing tests:**
   - `TestCommentsReadyIncludesClassification`: seeded classified comment → response rows carry `author_type`, `bot_vendor`, `severity`, `category`, `classification_source`, `dismissed` (JSON omitempty pointers, matching the existing `commentRow` style).
-  - `TestRefreshIfStaleReclassifies`: seed a comment with fingerprint `"old"` while the injected engine has fingerprint `"new"` → after REQUEST_COMMENTS, the row is re-classified and the state row updated.
+  - `TestRefreshIfStaleReclassifies`: seed a comment with fingerprint `"old"`, point the handler's provider at a rules dir whose fresh load fingerprints `"new"` → after REQUEST_COMMENTS, the row is re-classified and the state row updated.
   - `TestRefreshIfStaleNoopWhenCurrent`: matching fingerprints → comment row untouched (assert unchanged `classification_source`).
+  - `TestRefreshPicksUpRuleEditWithoutRestart`: build provider over a `t.TempDir()` rules dir, serve once, **edit a YAML file on disk**, serve again → new fingerprint, comment re-classified with the edited rule's source. This is the spec's core "reload acceptance" behavior — the engine must NOT be a startup-frozen snapshot.
 
-- [ ] **Step 3: Implement.** Handler construction gains the engine (nil = skip refresh, current behavior). Before the SELECT: `UPDATE`-loop over `SELECT c.id, c.author, c.body, c.file_path FROM comments c LEFT JOIN comment_classification_state s ON s.comment_id=c.id WHERE c.pr_id=? AND (s.fingerprint IS NULL OR s.fingerprint != ?)` — re-run `Classify`, UPDATE the comment + upsert state. Single small tx; Go owns writes so this lives Go-side, never renderer-side. Wire the engine through `app.go` where the handler is registered.
+- [ ] **Step 3: Implement.** The handler does not receive a fixed `*classify.Engine`; it receives the **EngineProvider** created in Task 7:
+
+```go
+// EngineProvider (classify/provider.go, from Task 7) returns a current engine,
+// reloading the rules dir when its contents changed. Current() re-runs
+// LoadDir(dir, mode) — a handful of small YAML files, microseconds — on each
+// call; the spec's lazy model ("cold until the user looks"), no fsnotify.
+// Safe for concurrent use.
+func (p *EngineProvider) Current() *Engine  // reload; reuse cached when fingerprint unchanged
+```
+
+`Current()` falls back to the cached engine (or `Builtins()`) when the dir read fails. RefreshIfStale then: `eng := provider.Current()`, and before the SELECT runs an `UPDATE`-loop over `SELECT c.id, c.author, c.body, c.file_path FROM comments c LEFT JOIN comment_classification_state s ON s.comment_id=c.id WHERE c.pr_id=? AND (s.fingerprint IS NULL OR s.fingerprint != ?)` with `eng.Fingerprint()` — re-run `Classify`, UPDATE the comment + upsert state. Single small tx; Go owns writes so this lives Go-side, never renderer-side. Nil provider = skip refresh (keeps existing handler tests green). Wire through `app.go` where the handler is registered.
 
 - [ ] **Step 4: Run handler tests → PASS.**
 - [ ] **Step 5: Commit** — `feat(server): lazy re-classification on PR open via fingerprint staleness`
@@ -726,17 +741,14 @@ Pass the resolved `dir` into App the same way `--db-path` flows today (follow th
 if err := classify.SeedAndUpdate(rulesDir); err != nil {
 	log.Warn("rules dir unusable, using embedded built-ins", "err", err)
 }
-loaded, errs := classify.LoadDir(rulesDir, mode) // mode from classification settings; "rules" until SET_CLASSIFICATION_SETTINGS arrives
-for _, e := range errs { log.Warn("rule file skipped", "err", e) }
-if len(loaded.Files) == 0 {
-	if files, berr := classify.Builtins(); berr == nil {
-		loaded = &classify.Loaded{Files: files, Fingerprint: "builtin:" + mode}
-	}
-}
-engine := classify.NewEngine(loaded)
+provider := classify.NewEngineProvider(rulesDir, modeGetter, log)
+// modeGetter returns the live classification mode — "rules" until
+// SET_CLASSIFICATION_SETTINGS arrives (Task 20 swaps in the real source).
 ```
 
-Inject into writer (`WithClassifier`) and comments handler. The engine reference must be swappable when mode changes (Task 21) — hold it behind a small `atomic.Pointer[classify.Engine]` or a mutex-guarded getter on App, and pass the getter, not the raw pointer.
+`NewEngineProvider` is the reload-on-demand provider Task 8 consumes: `Current()` re-runs `LoadDir(dir, mode())`, reuses the cached engine when the fingerprint is unchanged, logs skipped rule files, and falls back to `Builtins()` (fingerprint `"builtin:"+mode`) when the dir yields nothing. Because the mode string participates in the fingerprint, a mode change automatically invalidates — no separate swap mechanism needed.
+
+Inject the provider into the writer (`WithClassifier(provider)` — writer calls `Current()` once per `WriteSyncResultsContext` batch, so every comment in one sync sees one consistent engine) and into the comments handler (Task 8). Note for Task 7: define `WithClassifier` to take the provider, resolving `Current()` at batch start.
 
 - [ ] **Step 3: Full verify** — `cd go && go vet ./... && go test -race ./...` → all green. Launch `go run cmd/bistro-sync/main.go` once; confirm `~/.config/bistro/rules/` (macOS: `~/Library/Application Support/bistro/rules/`) is seeded with 3 files.
 - [ ] **Step 4: Commit** — `feat: wire classification engine into startup, sync, and comment serving`
@@ -829,7 +841,7 @@ CREATE TABLE comment_dismissals (
 - Create: `go/internal/server/handler/dismiss.go`, `go/internal/server/handler/dismiss_test.go`
 - Modify: `go/internal/server/app.go` (register handlers — same pattern as `RegisterHandler("REQUEST_COMMENTS", …)`)
 
-- [ ] **Step 1: Read** `handler/comments_test.go` for the handler-test harness, and `actions/executor.go:252-255` + `actions/handlers.go` for how `ResolveThreadCommand` actions are built/enqueued.
+- [ ] **Step 1: Read** `go/internal/server/handler/comments_test.go` for the handler-test harness, and `go/internal/actions/executor.go:252-255` + `go/internal/actions/handlers.go` for how `ResolveThreadCommand` actions are built/enqueued.
 
 - [ ] **Step 2: Failing tests:**
   - `TestDismissLocalOnly`: scope `local` → rows inserted, `DISMISS_RESULT{batch_id, dismissed_ids, resolved_thread_ids: []}`, nothing enqueued.
@@ -865,7 +877,7 @@ CREATE TABLE comment_dismissals (
 - [ ] **Step 2: Failing tests:**
   - `useDismissals`: `dismissNits(comments)` sends `DISMISS_COMMENTS` with all nit+info ids; `dismissBot(vendor)` filters by vendor; DISMISS_RESULT pushes onto a session stack; `undo()` pops and sends `UNDISMISS_COMMENTS{comment_ids: top.dismissed_ids, unresolve_thread_ids: top.resolved_thread_ids}`; empty stack → no-op. Immutable stack updates (spread, not push).
   - Keybindings: `['d','n']`, `['d','b']`, `['f','c']`, `['f','w']`, `['f','s']`, `['f','n']`, `['f','h']`, `['f','f']`, `u` registered on `detail` + `diff` routes with correct descriptions (sequence syntax per the `['g','u']` example at `:638`).
-- [ ] **Step 3: Implement.** WS send via the existing socket send path (`useActionDispatch.ts` style); neverthrow on the send result. `d b` with >1 vendor present opens a picker overlay (reuse the existing overlay/palette machinery — check `OverlayContext`); with exactly 1, dismisses directly. Filters set a store value consumed by PRDetailPage through `filterBySeverity`.
+- [ ] **Step 3: Implement.** WS send via the existing socket send path (`useActionDispatch.ts` style); neverthrow on the send result. `d b` with >1 vendor present opens a picker overlay (reuse the existing overlay/palette machinery — `electron/src/renderer/overlays/OverlayContext.tsx`); with exactly 1, dismisses directly. Filters set a store value consumed by PRDetailPage through `filterBySeverity`.
 - [ ] **Step 4: Verify: `pnpm type-check && pnpm lint && pnpm test` → green.**
 - [ ] **Step 5: Manual acceptance** — `d n` dismisses nits, `u` restores, dismissals survive app restart (SQLite), undo stack doesn't (session).
 - [ ] **Step 6: Commit** — `feat(renderer): bulk dismiss/filter keystrokes with undo stack`
