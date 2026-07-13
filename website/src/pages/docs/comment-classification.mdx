@@ -14,7 +14,7 @@ info collapse to one line, and the sidebar counts everything at a glance.
 Classification is always explainable: hover the severity badge and the
 tooltip names exactly what fired — `Rule: coderabbit.yml / emoji_severity` or
 `AI: anthropic (claude-haiku-4-5)`. A comment nothing matched stays
-*unclassified*; that's an honest outcome, not an error.
+_unclassified_; that's an honest outcome, not an error.
 
 :::note
 Everything runs on your machine. The only network calls classification ever
@@ -32,7 +32,7 @@ Rules live as YAML files in your config directory:
 Files load **alphabetically, and the last match wins** — that's the whole
 override mechanism. A vendor file by example:
 
-```yaml
+```yaml filename="coderabbit.yml"
 name: CodeRabbit
 vendor: coderabbit
 match:
@@ -40,11 +40,11 @@ match:
 
 classifiers:
   - name: emoji_severity
-    body_pattern: '^(?P<emoji>🔒|⚠️|🛠️|💡)'
+    body_pattern: "^(?P<emoji>🔒|⚠️|🛠️|💡)"
     severity_map: { "🔒": critical, "⚠️": warning, "🛠️": suggestion, "💡": nit }
 
   - name: nitpick_section
-    body_pattern: '<details>.*?Nitpick'
+    body_pattern: "<details>.*?Nitpick"
     severity: nit
 ```
 
@@ -71,48 +71,48 @@ Rule edits apply the next time you open a PR. No restart, no reload command.
 `zz-fallback.yml` (loads last, applies to every author) ships these weighted
 classifiers:
 
-| Heuristic | Signal | Result | Weight |
-| --- | --- | --- | --- |
-| `nit_words` | "nit:", "consider", "minor", "personal taste"… | nit | 0.4 |
-| `security_words` | "sql injection", "xss", "credential", "race condition"… | critical / security | 0.7 |
-| `security_paths` | vulnerability language in `auth/`, `security/`, `payments/` paths | critical / security | 0.8 |
-| `docs_style` | comments on `*.md` / `*.rst` files | suggestion / docs | 0.3 |
+| Heuristic        | Signal                                                            | Result              | Weight |
+| ---------------- | ----------------------------------------------------------------- | ------------------- | ------ |
+| `nit_words`      | "nit:", "consider", "minor", "personal taste"…                    | nit                 | 0.4    |
+| `security_words` | "sql injection", "xss", "credential", "race condition"…           | critical / security | 0.7    |
+| `security_paths` | vulnerability language in `auth/`, `security/`, `payments/` paths | critical / security | 0.8    |
+| `docs_style`     | comments on `*.md` / `*.rst` files                                | suggestion / docs   | 0.3    |
 
 ## Bulk dismiss & filters
 
 On the PR overview:
 
-| Keys | Action |
-| --- | --- |
-| `d n` | Dismiss all nits + info |
-| `d b` | Dismiss all bot comments |
-| `u` | Undo the last dismissal batch |
+| Keys                          | Action                                            |
+| ----------------------------- | ------------------------------------------------- |
+| `d n`                         | Dismiss all nits + info                           |
+| `d b`                         | Dismiss all bot comments                          |
+| `u`                           | Undo the last dismissal batch                     |
 | `f c` / `f w` / `f s` / `f n` | Show only ≥ critical / warning / suggestion / nit |
-| `f h` | Human comments only |
-| `f f` | Clear comment filters |
+| `f h`                         | Human comments only                               |
+| `f f`                         | Clear comment filters                             |
 
 There is no confirmation prompt — dismissal is cheap to reverse (`u` restores
 the entire batch) and the status line reports what happened
 ("Dismissed 12 · 3 resolved on GitHub"). Dismissals are per-account and
 survive restarts; the undo stack is per-session.
 
-By default dismissals are **local only**. Flip *Settings → Comment
-Classification → Dismissal scope* to "Also resolve on GitHub" and dismissing
+By default dismissals are **local only**. Flip _Settings → Comment
+Classification → Dismissal scope_ to "Also resolve on GitHub" and dismissing
 inline comments also resolves their review threads via the offline-safe
 action queue.
 
 ## Duplicate bot findings
 
 When two bots flag the same thing — same file, same few lines, near-identical
-text — Bistro merges them into one finding: *"Flagged by CodeRabbit +
-Greptile (2 sources)"*, expandable per source. The merged finding takes the
+text — Bistro merges them into one finding: _"Flagged by CodeRabbit +
+Greptile (2 sources)"_, expandable per source. The merged finding takes the
 highest severity of its members. Dismissing one member simply drops it from
 the group; nothing is ever auto-dismissed.
 
 ## BYOK AI (optional)
 
 For comments the rules can't judge, you can bring your own LLM key.
-*Settings → Comment Classification* offers three modes:
+_Settings → Comment Classification_ offers three modes:
 
 - **Rules engine** (default) — fully offline.
 - **Rules + AI fallback** — your LLM classifies only what the rules left
