@@ -1,25 +1,29 @@
 package llm
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	anthropic "github.com/anthropics/anthropic-sdk-go"
+	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
+	openai "github.com/openai/openai-go"
+	openaioption "github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/shared"
 )
 
 const (
 	maxCommentBodyChars      = 4000
 	clientTimeout            = 30 * time.Second
-	anthropicAPIVersion      = "2023-06-01"
 	openAIDefaultBaseURL     = "https://api.openai.com/v1"
 	openRouterDefaultBaseURL = "https://openrouter.ai/api/v1"
 	ollamaDefaultBaseURL     = "http://localhost:11434/v1"
 	anthropicDefaultBaseURL  = "https://api.anthropic.com/v1"
+	anthropicMaxTokens       = 64
 )
 
 var (
@@ -32,59 +36,13 @@ type ClassifierClient interface {
 }
 
 type OpenAICompatibleClient struct {
-	apiKey     string
-	baseURL    string
-	httpClient *http.Client
-	model      string
+	client openai.Client
+	model  string
 }
 
 type AnthropicClient struct {
-	apiKey     string
-	baseURL    string
-	httpClient *http.Client
-	model      string
-}
-
-type openAIChatRequest struct {
-	Model    string              `json:"model"`
-	Messages []openAIChatMessage `json:"messages"`
-}
-
-type openAIChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type openAIChatResponse struct {
-	Choices []struct {
-		Message openAIChatMessage `json:"message"`
-	} `json:"choices"`
-	Usage struct {
-		TotalTokens int `json:"total_tokens"`
-	} `json:"usage"`
-}
-
-type anthropicMessagesRequest struct {
-	Model     string                    `json:"model"`
-	MaxTokens int                       `json:"max_tokens"`
-	System    string                    `json:"system"`
-	Messages  []anthropicMessageRequest `json:"messages"`
-}
-
-type anthropicMessageRequest struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type anthropicMessagesResponse struct {
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-	Usage struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
+	client anthropic.Client
+	model  string
 }
 
 type classificationReply struct {
@@ -93,123 +51,74 @@ type classificationReply struct {
 }
 
 func NewOpenAICompatibleClient(provider string, model string, apiKey string, endpoint string) *OpenAICompatibleClient {
+	client := openai.NewClient(
+		openaioption.WithAPIKey(apiKey),
+		openaioption.WithBaseURL(resolveOpenAICompatibleBaseURL(provider, endpoint)),
+	)
+
 	return &OpenAICompatibleClient{
-		apiKey:     apiKey,
-		baseURL:    resolveOpenAICompatibleBaseURL(provider, endpoint),
-		httpClient: http.DefaultClient,
-		model:      model,
+		client: client,
+		model:  model,
 	}
 }
 
 func NewAnthropicClient(model string, apiKey string, endpoint string) *AnthropicClient {
-	baseURL := strings.TrimRight(endpoint, "/")
-	if baseURL == "" {
-		baseURL = anthropicDefaultBaseURL
-	}
+	client := anthropic.NewClient(
+		anthropicoption.WithAPIKey(apiKey),
+		anthropicoption.WithBaseURL(resolveAnthropicBaseURL(endpoint)),
+	)
 
 	return &AnthropicClient{
-		apiKey:     apiKey,
-		baseURL:    baseURL,
-		httpClient: http.DefaultClient,
-		model:      model,
+		client: client,
+		model:  model,
 	}
 }
 
 func (c *OpenAICompatibleClient) Classify(ctx context.Context, body string) (string, string, int, error) {
-	requestBody := openAIChatRequest{
-		Model: c.model,
-		Messages: []openAIChatMessage{
-			{Role: "system", Content: systemPrompt()},
-			{Role: "user", Content: truncateCommentBody(body)},
-		},
-	}
-
-	payload, err := json.Marshal(requestBody)
-	if err != nil {
-		return "", "", 0, fmt.Errorf("marshal OpenAI-compatible classification request: %w", err)
-	}
-
 	requestCtx, cancel := context.WithTimeout(ctx, clientTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
+	response, err := c.client.Chat.Completions.New(requestCtx, openai.ChatCompletionNewParams{
+		Model: shared.ChatModel(c.model),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(systemPrompt()),
+			openai.UserMessage(truncateCommentBody(body)),
+		},
+	})
 	if err != nil {
-		return "", "", 0, fmt.Errorf("build OpenAI-compatible classification request: %w", err)
+		return "", "", 0, mapOpenAIError(err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", "", 0, fmt.Errorf("send OpenAI-compatible classification request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if err := classifyHTTPStatus(resp.StatusCode); err != nil {
-		return "", "", 0, err
-	}
-
-	var responseBody openAIChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&responseBody); err != nil {
-		return "", "", 0, fmt.Errorf("decode OpenAI-compatible classification response: %w", err)
-	}
-	if len(responseBody.Choices) == 0 {
+	if len(response.Choices) == 0 {
 		return "", "", 0, errors.New("OpenAI-compatible classification response had no choices")
 	}
 
-	severity, category, err := parseClassificationReply(responseBody.Choices[0].Message.Content)
+	severity, category, err := parseClassificationReply(response.Choices[0].Message.Content)
 	if err != nil {
 		return "", "", 0, err
 	}
 
-	return severity, category, responseBody.Usage.TotalTokens, nil
+	return severity, category, int(response.Usage.TotalTokens), nil
 }
 
 func (c *AnthropicClient) Classify(ctx context.Context, body string) (string, string, int, error) {
-	requestBody := anthropicMessagesRequest{
-		Model:     c.model,
-		MaxTokens: 64,
-		System:    systemPrompt(),
-		Messages: []anthropicMessageRequest{
-			{Role: "user", Content: truncateCommentBody(body)},
-		},
-	}
-
-	payload, err := json.Marshal(requestBody)
-	if err != nil {
-		return "", "", 0, fmt.Errorf("marshal Anthropic classification request: %w", err)
-	}
-
 	requestCtx, cancel := context.WithTimeout(ctx, clientTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, c.baseURL+"/messages", bytes.NewReader(payload))
+	response, err := c.client.Messages.New(requestCtx, anthropic.MessageNewParams{
+		Model:     anthropic.Model(c.model),
+		MaxTokens: anthropicMaxTokens,
+		System: []anthropic.TextBlockParam{
+			{Text: systemPrompt()},
+		},
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(truncateCommentBody(body))),
+		},
+	})
 	if err != nil {
-		return "", "", 0, fmt.Errorf("build Anthropic classification request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("anthropic-version", anthropicAPIVersion)
-	if c.apiKey != "" {
-		req.Header.Set("x-api-key", c.apiKey)
+		return "", "", 0, mapAnthropicError(err)
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", "", 0, fmt.Errorf("send Anthropic classification request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if err := classifyHTTPStatus(resp.StatusCode); err != nil {
-		return "", "", 0, err
-	}
-
-	var responseBody anthropicMessagesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&responseBody); err != nil {
-		return "", "", 0, fmt.Errorf("decode Anthropic classification response: %w", err)
-	}
-	content, err := firstAnthropicText(responseBody)
+	content, err := firstAnthropicText(response.Content)
 	if err != nil {
 		return "", "", 0, err
 	}
@@ -219,7 +128,7 @@ func (c *AnthropicClient) Classify(ctx context.Context, body string) (string, st
 		return "", "", 0, err
 	}
 
-	return severity, category, responseBody.Usage.InputTokens + responseBody.Usage.OutputTokens, nil
+	return severity, category, int(response.Usage.InputTokens + response.Usage.OutputTokens), nil
 }
 
 func resolveOpenAICompatibleBaseURL(provider string, endpoint string) string {
@@ -242,17 +151,39 @@ func resolveOpenAICompatibleBaseURL(provider string, endpoint string) string {
 	}
 }
 
-func classifyHTTPStatus(statusCode int) error {
+func resolveAnthropicBaseURL(endpoint string) string {
+	baseURL := strings.TrimRight(endpoint, "/")
+	if baseURL == "" {
+		return anthropicDefaultBaseURL
+	}
+	return baseURL
+}
+
+func mapOpenAIError(err error) error {
+	var apiErr *openai.Error
+	if errors.As(err, &apiErr) {
+		return mapSDKStatusError("OpenAI-compatible", apiErr.StatusCode, err)
+	}
+	return fmt.Errorf("send OpenAI-compatible classification request: %w", err)
+}
+
+func mapAnthropicError(err error) error {
+	var apiErr *anthropic.Error
+	if errors.As(err, &apiErr) {
+		return mapSDKStatusError("Anthropic", apiErr.StatusCode, err)
+	}
+	return fmt.Errorf("send Anthropic classification request: %w", err)
+}
+
+func mapSDKStatusError(provider string, statusCode int, err error) error {
 	switch statusCode {
 	case http.StatusUnauthorized:
-		return ErrAuth
+		return fmt.Errorf("%w: %s classification request returned status %d", ErrAuth, provider, statusCode)
 	case http.StatusTooManyRequests:
-		return ErrRateLimited
+		return fmt.Errorf("%w: %s classification request returned status %d", ErrRateLimited, provider, statusCode)
+	default:
+		return fmt.Errorf("send %s classification request: %w", provider, err)
 	}
-	if statusCode < 200 || statusCode >= 300 {
-		return fmt.Errorf("llm classification request failed with status %d", statusCode)
-	}
-	return nil
 }
 
 func parseClassificationReply(raw string) (string, string, error) {
@@ -269,8 +200,8 @@ func parseClassificationReply(raw string) (string, string, error) {
 	return reply.Severity, reply.Category, nil
 }
 
-func firstAnthropicText(responseBody anthropicMessagesResponse) (string, error) {
-	for _, item := range responseBody.Content {
+func firstAnthropicText(content []anthropic.ContentBlockUnion) (string, error) {
+	for _, item := range content {
 		if item.Type == "text" && item.Text != "" {
 			return item.Text, nil
 		}
@@ -306,8 +237,4 @@ func isValidCategory(category string) bool {
 	default:
 		return false
 	}
-}
-
-func discardResponseBody(body io.ReadCloser) {
-	_, _ = io.Copy(io.Discard, body)
 }

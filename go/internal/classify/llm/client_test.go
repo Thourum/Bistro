@@ -10,12 +10,35 @@ import (
 	"testing"
 )
 
+type capturedChatCompletionRequest struct {
+	Model    string `json:"model"`
+	Messages []struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	} `json:"messages"`
+}
+
+type capturedAnthropicRequest struct {
+	Model     string `json:"model"`
+	MaxTokens int    `json:"max_tokens"`
+	System    []struct {
+		Text string `json:"text"`
+	} `json:"system"`
+	Messages []struct {
+		Role    string `json:"role"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	} `json:"messages"`
+}
+
 func TestOpenAICompatibleClientClassify(t *testing.T) {
 	t.Parallel()
 
 	var capturedPath string
 	var capturedAuth string
-	var capturedRequest openAIChatRequest
+	var capturedRequest capturedChatCompletionRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedPath = r.URL.Path
 		capturedAuth = r.Header.Get("Authorization")
@@ -65,7 +88,7 @@ func TestAnthropicClientClassify(t *testing.T) {
 	var capturedPath string
 	var capturedAPIKey string
 	var capturedVersion string
-	var capturedRequest anthropicMessagesRequest
+	var capturedRequest capturedAnthropicRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedPath = r.URL.Path
 		capturedAPIKey = r.Header.Get("x-api-key")
@@ -90,8 +113,8 @@ func TestAnthropicClientClassify(t *testing.T) {
 	if usageTokens != 18 {
 		t.Fatalf("usageTokens = %d, want 18", usageTokens)
 	}
-	if capturedPath != "/messages" {
-		t.Fatalf("path = %q, want /messages", capturedPath)
+	if capturedPath != "/v1/messages" {
+		t.Fatalf("path = %q, want /v1/messages", capturedPath)
 	}
 	if capturedAPIKey != "anthropic-key" {
 		t.Fatalf("x-api-key = %q", capturedAPIKey)
@@ -102,11 +125,14 @@ func TestAnthropicClientClassify(t *testing.T) {
 	if capturedRequest.Model != "claude-test" {
 		t.Fatalf("model = %q, want claude-test", capturedRequest.Model)
 	}
-	if !strings.Contains(capturedRequest.System, "security|correctness|performance|style|readability|docs") {
-		t.Fatalf("system prompt did not pin categories: %q", capturedRequest.System)
+	if len(capturedRequest.System) != 1 || !strings.Contains(capturedRequest.System[0].Text, "security|correctness|performance|style|readability|docs") {
+		t.Fatalf("system prompt did not pin categories: %#v", capturedRequest.System)
 	}
 	if len(capturedRequest.Messages) != 1 || capturedRequest.Messages[0].Role != "user" {
 		t.Fatalf("unexpected messages: %#v", capturedRequest.Messages)
+	}
+	if len(capturedRequest.Messages[0].Content) != 1 || capturedRequest.Messages[0].Content[0].Text != "please review auth" {
+		t.Fatalf("unexpected user content: %#v", capturedRequest.Messages[0].Content)
 	}
 }
 
