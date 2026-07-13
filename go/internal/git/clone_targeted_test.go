@@ -144,19 +144,20 @@ func TestCloneForPR_FallbackOnMissingBase(t *testing.T) {
 // behaves like Clone (e.g. honors the on-disk cache hit without any fetch).
 func TestCloneForPR_NilOptsDelegatesToClone(t *testing.T) {
 	cache := NewCache()
-	cachedDir := t.TempDir()
-	const url = "https://github.com/org/repo"
-	cache.Set(url, "b1", "h1", &RepoEntry{
-		URL: url, LocalPath: cachedDir, BaseSHA: "b1", HeadSHA: "h1",
+	remoteDir := t.TempDir()
+	_, baseSHA, headSHA := buildRemoteWithPRRef(t, remoteDir, 11)
+	url := "file://" + remoteDir
+	cache.Set(url, baseSHA, headSHA, &RepoEntry{
+		URL: url, LocalPath: remoteDir, BaseSHA: baseSHA, HeadSHA: headSHA,
 	})
 
 	client := NewClient(cache)
-	result, err := client.CloneForPR(context.Background(), url, "b1", "h1", nil)
+	result, err := client.CloneForPR(context.Background(), url, baseSHA, headSHA, nil)
 	if err != nil {
 		t.Fatalf("CloneForPR nil opts: %v", err)
 	}
-	if result.LocalPath != cachedDir {
-		t.Errorf("expected cached path %s, got %s", cachedDir, result.LocalPath)
+	if result.LocalPath != remoteDir {
+		t.Errorf("expected cached path %s, got %s", remoteDir, result.LocalPath)
 	}
 }
 
@@ -164,19 +165,20 @@ func TestCloneForPR_NilOptsDelegatesToClone(t *testing.T) {
 // and no base branch does not engage the targeted path (cache hit still works).
 func TestCloneForPR_EmptyOptsSkipsTargeted(t *testing.T) {
 	cache := NewCache()
-	cachedDir := t.TempDir()
-	const url = "https://github.com/org/repo2"
-	cache.Set(url, "b2", "h2", &RepoEntry{
-		URL: url, LocalPath: cachedDir, BaseSHA: "b2", HeadSHA: "h2",
+	remoteDir := t.TempDir()
+	_, baseSHA, headSHA := buildRemoteWithPRRef(t, remoteDir, 12)
+	url := "file://" + remoteDir
+	cache.Set(url, baseSHA, headSHA, &RepoEntry{
+		URL: url, LocalPath: remoteDir, BaseSHA: baseSHA, HeadSHA: headSHA,
 	})
 
 	client := NewClient(cache)
-	result, err := client.CloneForPR(context.Background(), url, "b2", "h2", &CloneOptions{})
+	result, err := client.CloneForPR(context.Background(), url, baseSHA, headSHA, &CloneOptions{})
 	if err != nil {
 		t.Fatalf("CloneForPR empty opts: %v", err)
 	}
-	if result.LocalPath != cachedDir {
-		t.Errorf("expected cached path %s, got %s", cachedDir, result.LocalPath)
+	if result.LocalPath != remoteDir {
+		t.Errorf("expected cached path %s, got %s", remoteDir, result.LocalPath)
 	}
 }
 
@@ -440,23 +442,44 @@ func TestCloneForPR_CacheHitMissingRequiredSHACleared(t *testing.T) {
 	}
 }
 
-// TestCloneForPR_CacheHitNoRequiredSHAs verifies the cache-hit fast path is
-// unchanged when no RequiredSHAs are supplied (returned without opening the repo).
+// TestCloneForPR_CacheHitNoRequiredSHAs verifies that a cache hit still opens
+// the repo and validates base/head commits even when no additional RequiredSHAs
+// are supplied. Stable owner/repo cache paths can be reused for different SHA
+// pairs, so an old entry must not be trusted solely because its directory exists.
 func TestCloneForPR_CacheHitNoRequiredSHAs(t *testing.T) {
+	remoteDir := t.TempDir()
+	const prNumber = 23
+	baseBranch, baseSHA, headSHA := buildRemoteWithPRRef(t, remoteDir, prNumber)
+	url := "file://" + remoteDir
+
+	staleDir := t.TempDir()
+	if _, err := gogit.PlainInit(staleDir, true); err != nil {
+		t.Fatalf("PlainInit stale: %v", err)
+	}
+	t.Setenv("BISTRO_REPO_DIR", t.TempDir())
+
 	cache := NewCache()
-	cachedDir := t.TempDir()
-	const url = "https://github.com/org/repo3"
-	cache.Set(url, "b9", "h9", &RepoEntry{
-		URL: url, LocalPath: cachedDir, BaseSHA: "b9", HeadSHA: "h9",
+	cache.Set(url, baseSHA, headSHA, &RepoEntry{
+		URL: url, LocalPath: staleDir, BaseSHA: baseSHA, HeadSHA: headSHA,
 	})
 	client := NewClient(cache)
 
-	result, err := client.CloneForPR(context.Background(), url, "b9", "h9",
-		&CloneOptions{PRNumber: 5, BaseBranch: "main"}) // no RequiredSHAs
+	result, err := client.CloneForPR(context.Background(), url, baseSHA, headSHA,
+		&CloneOptions{PRNumber: prNumber, BaseBranch: baseBranch}) // no RequiredSHAs
 	if err != nil {
-		t.Fatalf("CloneForPR: %v", err)
+		t.Fatalf("CloneForPR should re-clone successfully: %v", err)
 	}
-	if result.LocalPath != cachedDir {
-		t.Errorf("expected cached path %s, got %s", cachedDir, result.LocalPath)
+	if result.LocalPath == staleDir {
+		t.Fatalf("returned stale cached path %s despite missing base/head commits", staleDir)
+	}
+	repo, err := gogit.PlainOpen(result.LocalPath)
+	if err != nil {
+		t.Fatalf("PlainOpen re-clone: %v", err)
+	}
+	if _, err := repo.CommitObject(plumbing.NewHash(baseSHA)); err != nil {
+		t.Errorf("base commit missing after re-clone: %v", err)
+	}
+	if _, err := repo.CommitObject(plumbing.NewHash(headSHA)); err != nil {
+		t.Errorf("head commit missing after re-clone: %v", err)
 	}
 }

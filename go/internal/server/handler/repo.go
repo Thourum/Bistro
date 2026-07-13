@@ -14,11 +14,15 @@ import (
 )
 
 type repoRow struct {
-	ID       string `json:"id"`
-	Provider string `json:"provider"`
-	Owner    string `json:"owner"`
-	Repo     string `json:"repo"`
-	Watched  bool   `json:"watched"`
+	ID                string  `json:"id"`
+	Provider          string  `json:"provider"`
+	Owner             string  `json:"owner"`
+	Repo              string  `json:"repo"`
+	Watched           bool    `json:"watched"`
+	Source            *string `json:"source,omitempty"`
+	LocationStatus    *string `json:"location_status,omitempty"`
+	LocationErrorCode *string `json:"location_error_code,omitempty"`
+	LocationError     *string `json:"location_error,omitempty"`
 }
 
 // NewRequestRepoListHandler handles REQUEST_REPO_LIST messages.
@@ -91,7 +95,9 @@ func NewRequestRepoListHandler(
 		logger.Debug("repos upserted", "attempted", len(repos), "succeeded", upserts)
 
 		rows, err := db.QueryContext(reqCtx,
-			"SELECT id, provider, owner, repo, watched FROM repos ORDER BY watched DESC, owner ASC, repo ASC",
+			`SELECT id, provider, owner, repo, watched, source, location_status, location_error_code, location_error
+			 FROM repos
+			 ORDER BY watched DESC, owner ASC, repo ASC`,
 		)
 		if err != nil {
 			logger.Error("query repos failed", "err", err)
@@ -103,11 +109,29 @@ func NewRequestRepoListHandler(
 		for rows.Next() {
 			var r repoRow
 			var watched int
-			if scanErr := rows.Scan(&r.ID, &r.Provider, &r.Owner, &r.Repo, &watched); scanErr != nil {
+			var source sql.NullString
+			var locationStatus sql.NullString
+			var locationErrorCode sql.NullString
+			var locationError sql.NullString
+			if scanErr := rows.Scan(
+				&r.ID,
+				&r.Provider,
+				&r.Owner,
+				&r.Repo,
+				&watched,
+				&source,
+				&locationStatus,
+				&locationErrorCode,
+				&locationError,
+			); scanErr != nil {
 				logger.Error("scan repo row failed", "err", scanErr)
 				continue
 			}
 			r.Watched = watched == 1
+			r.Source = nullableStringPtr(source)
+			r.LocationStatus = nullableStringPtr(locationStatus)
+			r.LocationErrorCode = nullableStringPtr(locationErrorCode)
+			r.LocationError = nullableStringPtr(locationError)
 			result = append(result, r)
 		}
 		if err := rows.Err(); err != nil {
@@ -128,6 +152,13 @@ func NewRequestRepoListHandler(
 			},
 		}, nil
 	}
+}
+
+func nullableStringPtr(value sql.NullString) *string {
+	if !value.Valid {
+		return nil
+	}
+	return &value.String
 }
 
 // NewToggleWatchHandler handles TOGGLE_WATCH_REPO messages.

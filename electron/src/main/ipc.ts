@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { ipcMain } from 'electron';
+import { dialog, ipcMain } from 'electron';
 import type { Logger } from 'electron-log';
 import type {
   FSReadPatchRequest,
@@ -68,6 +68,14 @@ export function setupIPC(
 
   ipcMain.handle('settings:path', async () => {
     return { ok: settings.path };
+  });
+
+  // ---- dialog:* handlers ----
+  ipcMain.handle('dialog:pick-folder', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
   });
 
   // ---- fs:read-patch handler ----

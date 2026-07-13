@@ -134,6 +134,7 @@ const ALL_OVERLAYS: OverlayKind[] = [
   'search',
   'filter',
   'repoPicker',
+  'addRepo',
   'threads',
 ];
 

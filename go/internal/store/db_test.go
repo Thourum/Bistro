@@ -391,6 +391,14 @@ func TestMigration016_UpgradesOldPatchsetsHeadOnlyIdentity(t *testing.T) {
 	for version := 1; version <= 12; version++ {
 		mustExec(t, db, `INSERT INTO schema_migrations (version, description) VALUES (?, ?)`, version, "pre-applied")
 	}
+	mustExec(t, db, `CREATE TABLE repos (
+		id       TEXT PRIMARY KEY,
+		provider TEXT NOT NULL,
+		owner    TEXT NOT NULL,
+		repo     TEXT NOT NULL,
+		watched  INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+	)`)
 	mustExec(t, db, `CREATE TABLE prs (id TEXT PRIMARY KEY)`)
 	mustExec(t, db, `INSERT INTO prs (id) VALUES ('p-old')`)
 	mustExec(t, db, `CREATE TABLE pr_diffs (

@@ -1,7 +1,13 @@
 import { useCallback, useEffect } from 'react';
 import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
+import { settingsStore } from '../store/settings';
 import type { RepoInfo } from '../types';
+import type {
+  LegacyScanDevFolderResult,
+  LocationError,
+  ScanDevFolderResult,
+} from '../types/repoLocation';
 import { formatErrorMessage } from '../utils/error';
 import { createLogger } from '../utils/logger';
 
@@ -70,6 +76,38 @@ interface ThreadStateChangedData {
   thread_id: string;
 }
 
+interface ScanDevFolderRequest {
+  path: string;
+  reason: 'startup';
+}
+
+type LocationErrorData = LocationError;
+type ScanDevFolderData = ScanDevFolderResult;
+
+const LOCATION_ERROR_CODES = [
+  'path_missing',
+  'remote_mismatch',
+  'permission_denied',
+  'invalid_url',
+  'invalid_path',
+  'destination_required',
+  'destination_conflict',
+  'clone_failed',
+  'auth_failed',
+  'cancelled',
+  'delete_failed',
+  'scan_partial',
+] as const;
+
+const LOCATION_ERROR_OPERATIONS = [
+  'scan',
+  'fetch',
+  'diff',
+  'clone',
+  'prune',
+  'recover',
+] as const;
+
 const DEFAULT_WS_PORT = 8080;
 
 /**
@@ -100,6 +138,7 @@ let singletonWs: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
 let refCount = 0;
+let hasSentStartupDevFolderScan = false;
 const messageHandlers = new Map<string, (data: unknown) => void>();
 
 function handleSyncComplete(data: SyncCompleteData): void {
@@ -264,6 +303,109 @@ function handleCIStatusChanged(_data: unknown): void {
   }
 }
 
+function isRecord(data: unknown): data is Record<string, unknown> {
+  return typeof data === 'object' && data !== null;
+}
+
+function isLocationError(data: unknown): data is LocationErrorData {
+  if (!isRecord(data)) {
+    return false;
+  }
+
+  return (
+    typeof data.repo_id === 'string' &&
+    LOCATION_ERROR_OPERATIONS.includes(
+      data.operation as (typeof LOCATION_ERROR_OPERATIONS)[number],
+    ) &&
+    LOCATION_ERROR_CODES.includes(
+      data.code as (typeof LOCATION_ERROR_CODES)[number],
+    ) &&
+    typeof data.message === 'string'
+  );
+}
+
+function isScannedRepository(data: unknown): boolean {
+  if (!isRecord(data)) {
+    return false;
+  }
+
+  return (
+    typeof data.repo_id === 'string' &&
+    typeof data.path === 'string' &&
+    typeof data.remote_url === 'string' &&
+    data.source === 'local'
+  );
+}
+
+function isLegacyScanDevFolderResult(
+  data: unknown,
+): data is LegacyScanDevFolderResult {
+  if (!isRecord(data)) {
+    return false;
+  }
+
+  return (
+    typeof data.path === 'string' &&
+    Array.isArray(data.repositories) &&
+    data.repositories.every(isScannedRepository) &&
+    Array.isArray(data.errors) &&
+    data.errors.every(isLocationError)
+  );
+}
+
+function isScanDevFolderResult(data: unknown): data is ScanDevFolderData {
+  if (isLegacyScanDevFolderResult(data)) {
+    return true;
+  }
+
+  if (!isRecord(data)) {
+    return false;
+  }
+
+  return (
+    data.ok === true &&
+    typeof data.discovered === 'number' &&
+    typeof data.healthy === 'number' &&
+    typeof data.degraded === 'number' &&
+    typeof data.skipped === 'number' &&
+    typeof data.partial === 'boolean'
+  );
+}
+
+function handleScanDevFolderResult(data: unknown): ScanDevFolderData | null {
+  if (!isScanDevFolderResult(data)) {
+    log.warn({ data }, 'invalid SCAN_DEV_FOLDER_RESULT payload');
+    return null;
+  }
+
+  const payload = data;
+  if (!isLegacyScanDevFolderResult(payload)) {
+    return payload;
+  }
+
+  if (payload.errors.length === 0) {
+    return payload;
+  }
+
+  log.warn(
+    { path: payload.path, errors: payload.errors.length },
+    'dev-folder scan completed with location errors',
+  );
+  return payload;
+}
+
+function handleLocationError(data: unknown): void {
+  if (!isLocationError(data)) {
+    log.warn({ data }, 'invalid LOCATION_ERROR payload');
+    return;
+  }
+
+  log.warn(
+    { repoId: data.repo_id, operation: data.operation, code: data.code },
+    data.message,
+  );
+}
+
 function onMessage(event: MessageEvent<string>): void {
   let message: WSMessage;
   try {
@@ -337,6 +479,21 @@ function onMessage(event: MessageEvent<string>): void {
       break;
     case 'CI_STATUS_CHANGED':
       handleCIStatusChanged(message.data);
+      break;
+    case 'SCAN_DEV_FOLDER_RESULT': {
+      const payload = handleScanDevFolderResult(message.data);
+      if (payload === null) {
+        break;
+      }
+      const scanHandler = messageHandlers.get(message.id);
+      if (scanHandler) {
+        scanHandler(payload);
+        messageHandlers.delete(message.id);
+      }
+      break;
+    }
+    case 'LOCATION_ERROR':
+      handleLocationError(message.data);
       break;
     case 'AUTH_REDIRECT': {
       const payload = message.data as { provider: string; url: string };
@@ -461,6 +618,16 @@ function onMessage(event: MessageEvent<string>): void {
     case 'FILE_VIEWED_ACK':
     case 'REVIEW_THREADS_READY':
     case 'ACTION_RESULT':
+    case 'VALIDATE_DEV_FOLDER_RESULT':
+    case 'ADD_REPO_BY_URL_RESULT':
+    case 'GET_CACHE_STATS_RESULT':
+    case 'PRUNE_CACHE_RESULT':
+    case 'CLEAR_CACHE_RESULT':
+    case 'DELETE_CACHE_REPO_RESULT':
+    case 'RECOVER_REPO_PATH_RESULT':
+    case 'RECOVER_REPO_TO_CACHE_RESULT':
+    case 'REMOVE_REPO_PREFLIGHT_RESULT':
+    case 'REMOVE_REPO_RESULT':
     case 'PR_LIST_READY': {
       const handler = messageHandlers.get(message.id);
       if (handler) {
@@ -526,6 +693,25 @@ function onMessage(event: MessageEvent<string>): void {
   }
 }
 
+function sendStartupDevFolderScan(ws: WebSocket): void {
+  const path = settingsStore.state.repositories.devFolderPath;
+  if (hasSentStartupDevFolderScan || !path) {
+    return;
+  }
+
+  hasSentStartupDevFolderScan = true;
+
+  const data: ScanDevFolderRequest = { path, reason: 'startup' };
+  const scanMsg: WSMessage = {
+    id: `req-${Date.now()}-${Math.random()}`,
+    type: 'SCAN_DEV_FOLDER',
+    data,
+    timestamp: new Date().toISOString(),
+  };
+  log.info({ id: scanMsg.id }, 'sending SCAN_DEV_FOLDER');
+  ws.send(JSON.stringify(scanMsg));
+}
+
 function connect(): void {
   if (singletonWs && singletonWs.readyState <= WebSocket.OPEN) {
     return;
@@ -566,6 +752,7 @@ function connect(): void {
     };
     log.info({ id: checkMsg.id }, 'sending AUTH_CHECK');
     ws.send(JSON.stringify(checkMsg));
+    sendStartupDevFolderScan(ws);
   };
 
   ws.onmessage = onMessage;
@@ -586,6 +773,9 @@ function connect(): void {
   ws.onclose = () => {
     log.info('disconnected');
     singletonWs = null;
+    // Each new connection should re-run the startup dev-folder scan;
+    // disconnect() resets this too, but dropped sockets reconnect directly.
+    hasSentStartupDevFolderScan = false;
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
     try {
       appStore.setState((s) => ({
@@ -643,6 +833,7 @@ function disconnect(): void {
   singletonWs?.close();
   singletonWs = null;
   reconnectAttempt = 0;
+  hasSentStartupDevFolderScan = false;
 }
 
 function sendMessage(type: string, data: unknown): string | undefined {

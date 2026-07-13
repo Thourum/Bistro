@@ -3,7 +3,10 @@ package git
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
+
+	gogit "github.com/go-git/go-git/v5"
 )
 
 func TestNewClient(t *testing.T) {
@@ -56,16 +59,17 @@ func TestCloneEmptyHeadSHA(t *testing.T) {
 }
 
 func TestCloneWithCachedRepo(t *testing.T) {
+	remoteDir := t.TempDir()
+	_, baseSHA, headSHA := buildRemoteWithPRRef(t, remoteDir, 1)
 	cache := NewCache()
 
-	// Cache hits are only honored when the path still exists on disk, so the
-	// cached entry must point at a real directory (mirrors a live clone).
-	cachedDir := t.TempDir()
+	// Cache hits are only honored when the path still exists on disk and contains
+	// the requested commits, so point at a real repo that has both SHAs.
 	entry := &RepoEntry{
-		URL:       "https://github.com/org/repo",
-		LocalPath: cachedDir,
-		BaseSHA:   "base123",
-		HeadSHA:   "head456",
+		URL:       "file://" + remoteDir,
+		LocalPath: remoteDir,
+		BaseSHA:   baseSHA,
+		HeadSHA:   headSHA,
 	}
 	cache.Set(entry.URL, entry.BaseSHA, entry.HeadSHA, entry)
 
@@ -77,8 +81,8 @@ func TestCloneWithCachedRepo(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.LocalPath != cachedDir {
-		t.Errorf("expected cached path %s, got %s", cachedDir, result.LocalPath)
+	if result.LocalPath != remoteDir {
+		t.Errorf("expected cached path %s, got %s", remoteDir, result.LocalPath)
 	}
 }
 
@@ -137,14 +141,15 @@ func TestLocalRepoExists(t *testing.T) {
 }
 
 func TestCloneCachesResult(t *testing.T) {
+	remoteDir := t.TempDir()
+	_, baseSHA, headSHA := buildRemoteWithPRRef(t, remoteDir, 2)
 	cache := NewCache()
 
-	cachedDir := t.TempDir()
 	entry := &RepoEntry{
-		URL:       "https://github.com/org/cached-repo",
-		LocalPath: cachedDir,
-		BaseSHA:   "abc",
-		HeadSHA:   "def",
+		URL:       "file://" + remoteDir,
+		LocalPath: remoteDir,
+		BaseSHA:   baseSHA,
+		HeadSHA:   headSHA,
 	}
 	cache.Set(entry.URL, entry.BaseSHA, entry.HeadSHA, entry)
 
@@ -156,11 +161,11 @@ func TestCloneCachesResult(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.BaseSHA != "abc" {
-		t.Errorf("expected BaseSHA abc, got %s", result.BaseSHA)
+	if result.BaseSHA != baseSHA {
+		t.Errorf("expected BaseSHA %s, got %s", baseSHA, result.BaseSHA)
 	}
-	if result.HeadSHA != "def" {
-		t.Errorf("expected HeadSHA def, got %s", result.HeadSHA)
+	if result.HeadSHA != headSHA {
+		t.Errorf("expected HeadSHA %s, got %s", headSHA, result.HeadSHA)
 	}
 }
 
@@ -226,5 +231,45 @@ func TestFetchRefsInvalidPath(t *testing.T) {
 	err := client.FetchRefs(ctx, "/nonexistent/path/to/repo", "base", "head")
 	if err == nil {
 		t.Error("expected error for non-existent repo path")
+	}
+}
+
+func TestCloneRepoToPathNonBareCreatesOpenableWorktree(t *testing.T) {
+	tests := []struct {
+		name string
+		bare bool
+	}{
+		{name: "dev folder clone", bare: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			remoteDir := t.TempDir()
+			buildRemoteWithPRRef(t, remoteDir, 1)
+			destination := filepath.Join(t.TempDir(), "acme", "api")
+			client := NewClient(NewCache())
+
+			// Act
+			err := client.CloneRepoToPath(context.Background(), "file://"+remoteDir, destination, tt.bare)
+
+			// Assert
+			if err != nil {
+				t.Fatalf("CloneRepoToPath: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(destination, ".git")); err != nil {
+				t.Fatalf("expected working-tree .git directory, stat err=%v", err)
+			}
+			if _, err := os.Stat(filepath.Join(destination, "foo.go")); err != nil {
+				t.Fatalf("expected default branch checkout, stat err=%v", err)
+			}
+			repo, err := gogit.PlainOpen(destination)
+			if err != nil {
+				t.Fatalf("PlainOpen destination: %v", err)
+			}
+			if _, err := repo.Worktree(); err != nil {
+				t.Fatalf("expected non-bare repo with worktree: %v", err)
+			}
+		})
 	}
 }

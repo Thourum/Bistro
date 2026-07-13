@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 )
 
-// getRepoDir returns the absolute directory for cloned repos.
+// CacheRoot returns the absolute directory for cloned repos.
 // Priority: BISTRO_REPO_DIR env var > user cache dir / bistro/repos.
-func getRepoDir() (string, error) {
+func CacheRoot() (string, error) {
 	if envDir := os.Getenv("BISTRO_REPO_DIR"); envDir != "" {
 		if err := os.MkdirAll(envDir, 0755); err != nil {
 			return "", err
@@ -26,6 +26,11 @@ func getRepoDir() (string, error) {
 	}
 
 	return repoDir, nil
+}
+
+// getRepoDir returns the absolute directory for cloned repos.
+func getRepoDir() (string, error) {
+	return CacheRoot()
 }
 
 // getPatchDir returns the absolute directory for patch files.

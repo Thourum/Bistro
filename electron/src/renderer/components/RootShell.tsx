@@ -14,6 +14,7 @@ import { useStore } from '../hooks/useStore';
 import { OverlayProvider, useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
+import { AddRepoDialogOverlay } from './AddRepoDialogOverlay';
 import { AppTitleBar } from './AppTitleBar';
 import ToastContainer from './ToastContainer';
 
@@ -50,6 +51,7 @@ function RootShellInner(): React.ReactElement {
       <HotkeyRegistrar />
       <ConfirmingActionOverlayBridge />
       <AppTitleBar />
+      <AddRepoDialogOverlay />
       <div className="min-h-0 flex-1">
         <Outlet />
       </div>

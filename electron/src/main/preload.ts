@@ -118,6 +118,10 @@ contextBridge.exposeInMainWorld('electron', {
     return ipcRenderer.invoke('app:quit');
   },
 
+  pickFolder(): Promise<string | null> {
+    return ipcRenderer.invoke('dialog:pick-folder');
+  },
+
   /**
    * User settings persisted to `userData/settings.json`.
    */
@@ -168,6 +172,7 @@ declare global {
       ) => () => void;
       openExternal: (url: string) => Promise<{ ok: true } | { err: string }>;
       quitApp: () => Promise<{ ok: true }>;
+      pickFolder: () => Promise<string | null>;
       settings: {
         get: () => Promise<{ ok: AppSettings } | IPCError>;
         set: (

@@ -1,6 +1,8 @@
 import { useHotkey } from '@tanstack/react-hotkeys';
+import { err, ok, type Result, ResultAsync } from 'neverthrow';
 import React from 'react';
 import { useStore } from '../hooks/useStore';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -10,10 +12,122 @@ import type { UIState } from '../store/ui';
  * `stitch_terminal_authentic_prd/onboarding/code.html` (body main + footer).
  * Global `AppFooter` renders below this component in `App.tsx`.
  */
+interface ValidateDevFolderResult {
+  canonicalPath: string;
+}
+
+interface ScanDevFolderResult {
+  discovered: number;
+}
+
+function validationErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Unable to validate that folder.';
+}
+
+function sendResultErrorMessage(result: unknown, fallback: string): string {
+  if (typeof result !== 'object' || result === null) {
+    return fallback;
+  }
+
+  const error = (result as { error?: unknown }).error;
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  const message = (result as { message?: unknown }).message;
+  if (typeof message === 'string') {
+    return message;
+  }
+
+  return fallback;
+}
+
+function parseValidateDevFolderResult(
+  data: unknown,
+): Result<ValidateDevFolderResult, string> {
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    (data as { ok?: unknown }).ok === false
+  ) {
+    return err(sendResultErrorMessage(data, 'Unable to validate that folder.'));
+  }
+
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    (data as { ok?: unknown }).ok === true &&
+    typeof (data as { canonical_path?: unknown }).canonical_path === 'string'
+  ) {
+    return ok({
+      canonicalPath: (data as { canonical_path: string }).canonical_path,
+    });
+  }
+  return err('Dev folder validation returned an invalid response.');
+}
+
+function parseScanDevFolderResult(
+  data: unknown,
+): Result<ScanDevFolderResult, string> {
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    Array.isArray((data as { repositories?: unknown }).repositories)
+  ) {
+    return ok({
+      discovered: (data as { repositories: unknown[] }).repositories.length,
+    });
+  }
+
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    (data as { ok?: unknown }).ok === true &&
+    typeof (data as { discovered?: unknown }).discovered === 'number'
+  ) {
+    return ok({
+      discovered: (data as { discovered: number }).discovered,
+    });
+  }
+  return err('Dev folder scan returned an invalid response.');
+}
+
+function persistDevFolderPath(
+  result: ValidateDevFolderResult,
+): ResultAsync<ValidateDevFolderResult, string> {
+  return ResultAsync.fromPromise(
+    window.electron.settings.set({
+      repositories: { devFolderPath: result.canonicalPath },
+    }),
+    validationErrorMessage,
+  ).andThen((settingsResult) => {
+    if ('err' in settingsResult) {
+      return err(
+        settingsResult.err.trim() === ''
+          ? 'Unable to write settings.'
+          : settingsResult.err,
+      );
+    }
+
+    settingsStore.setState(() => settingsResult.ok);
+    return ok(result);
+  });
+}
+
 export function OnboardingPage(): React.ReactElement {
   const confirmingAction = useStore(
     appStore,
     (s: UIState) => s.confirmingAction,
+  );
+  const { request } = useWebSocket();
+  const [devFolderError, setDevFolderError] = React.useState<string | null>(
+    null,
+  );
+  const [discoveredCount, setDiscoveredCount] = React.useState<number | null>(
+    null,
   );
 
   const finish = React.useCallback(() => {
@@ -24,6 +138,48 @@ export function OnboardingPage(): React.ReactElement {
       },
     });
   }, []);
+
+  const chooseDevFolder = React.useCallback(() => {
+    setDevFolderError(null);
+    setDiscoveredCount(null);
+
+    ResultAsync.fromPromise(
+      window.electron.pickFolder(),
+      validationErrorMessage,
+    )
+      .andThen((path) => {
+        if (path === null) {
+          return err('Folder selection cancelled.');
+        }
+        return ok(path);
+      })
+      .andThen((path) =>
+        ResultAsync.fromPromise(
+          request('VALIDATE_DEV_FOLDER', { path }),
+          validationErrorMessage,
+        ).andThen(parseValidateDevFolderResult),
+      )
+      .andThen(persistDevFolderPath)
+      .andThen((result) =>
+        ResultAsync.fromPromise(
+          request('SCAN_DEV_FOLDER', {
+            path: result.canonicalPath,
+            reason: 'settings-change',
+          }),
+          validationErrorMessage,
+        ).andThen(parseScanDevFolderResult),
+      )
+      .match(
+        (result) => {
+          setDiscoveredCount(result.discovered);
+        },
+        (message) => {
+          if (message !== 'Folder selection cancelled.') {
+            setDevFolderError(message);
+          }
+        },
+      );
+  }, [request]);
 
   React.useEffect(() => {
     if (confirmingAction === 'onboarding_finish') {
@@ -143,6 +299,55 @@ export function OnboardingPage(): React.ReactElement {
                   c
                 </kbd>
               </div>
+            </div>
+          </div>
+
+          <div className="mt-12 bg-surface-container-lowest border border-outline-variant/30 p-8">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="material-symbols-outlined text-primary">
+                folder_open
+              </span>
+              <span className="mono-text text-xs font-bold uppercase tracking-widest">
+                Use your existing projects folder
+              </span>
+            </div>
+            <p className="text-sm text-on-surface-variant leading-relaxed mb-3">
+              Bistro registers every GitHub repo found in this folder and starts
+              syncing PRs for healthy discoveries.
+            </p>
+            <p className="mono-text text-[10px] text-outline uppercase tracking-tight leading-normal mb-6">
+              Bistro fetches PR objects into these repos only under
+              refs/bistro/* and never touches branches, tags, or files. Unwanted
+              repos can be removed afterwards via the repo recovery/remove flow.
+            </p>
+            {devFolderError !== null ? (
+              <p className="text-sm text-error font-medium mb-4" role="alert">
+                {devFolderError}
+              </p>
+            ) : null}
+            {discoveredCount !== null ? (
+              <p className="text-sm text-primary font-medium mb-4">
+                {discoveredCount}{' '}
+                {discoveredCount === 1
+                  ? 'repository discovered'
+                  : 'repositories discovered'}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={chooseDevFolder}
+                className="mono-text px-4 py-2 bg-primary text-on-primary font-bold text-xs uppercase tracking-widest hover:opacity-90 transition-opacity"
+              >
+                Choose folder
+              </button>
+              <button
+                type="button"
+                onClick={finish}
+                className="mono-text px-4 py-2 border border-outline-variant text-outline font-bold text-xs uppercase tracking-widest hover:bg-surface-container transition-colors"
+              >
+                Skip
+              </button>
             </div>
           </div>
 

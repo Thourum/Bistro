@@ -39,6 +39,7 @@ type App struct {
 	gitClient          *git.Client
 	githubClientID     string
 	githubClientSecret string
+	repoLocks          *git.RepoLocks
 	providerCache      *cache.ProviderCache
 	tokenManager       *keychain.TokenManager
 	syncTrigger        chan string
@@ -150,6 +151,16 @@ func (a *App) SetProvider(prov provider.Provider) {
 // Must be called before Run.
 func (a *App) SetGitClient(gitClient *git.Client) {
 	a.gitClient = gitClient
+	if gitClient != nil && a.repoLocks != nil {
+		gitClient.SetLocks(a.repoLocks)
+	}
+}
+
+func (a *App) configureRepoLocationStore(repoLocationStore *store.RepoLocationStore) {
+	if a.gitClient == nil {
+		return
+	}
+	a.gitClient.SetLocalResolver(newRepoLocationResolver(repoLocationStore, a.log))
 }
 
 // SetReplayOnStart configures whether Run() should replay the offline action
@@ -195,6 +206,7 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 		dbPath:        dbPath,
 		providerCache: cache.NewProviderCache(cachePath),
 		tokenManager:  keychain.NewTokenManager(),
+		repoLocks:     git.NewRepoLocks(),
 		syncTrigger:   make(chan string, 8),
 		syncSettings:  make(chan syncSettingsMsg, 4),
 		syncInterval:  5 * time.Minute,
@@ -245,6 +257,18 @@ func (a *App) SetGitHubClientID(clientID string) {
 // SetGitHubClientSecret sets the GitHub OAuth app client secret used by the auth code flow.
 func (a *App) SetGitHubClientSecret(secret string) {
 	a.githubClientSecret = secret
+}
+
+func (a *App) githubToken() string {
+	token, err := a.tokenManager.GetGitHubToken()
+	if err != nil {
+		return ""
+	}
+	return token
+}
+
+func (a *App) cloneRepoLocationRepo(ctx context.Context, repoURL, destination string, bare bool) error {
+	return a.gitClient.CloneRepoToPath(ctx, repoURL, destination, bare)
 }
 
 // wsEventMsg is the envelope sent to WebSocket clients for orchestrator events.
@@ -305,6 +329,15 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	a.log.Info("database initialized")
+
+	if a.repoLocks == nil {
+		a.repoLocks = git.NewRepoLocks()
+	}
+	if a.gitClient == nil {
+		a.gitClient = git.NewClient(git.NewCache())
+	}
+	a.gitClient.SetLocks(a.repoLocks)
+	a.gitClient.SetTokenSource(a.githubToken)
 
 	diffStore := store.NewDiffStore(a.db.DB)
 
@@ -395,6 +428,48 @@ func (a *App) Run(ctx context.Context) error {
 		handler.NewGetReviewThreadsHandler(a.db, a.log))
 	a.wsServer.RegisterHandler("SUBMIT_ACTION",
 		handler.NewSubmitActionHandler(a.currentApplier, a.log))
+
+	repoLocationStore := store.NewRepoLocationStore(a.db.DB)
+	a.configureRepoLocationStore(repoLocationStore)
+	deleteCacheDir := func(path string) error {
+		return git.DeleteCacheDir(path)
+	}
+	cacheDeps := handler.CacheMaintenanceDeps{
+		Store:          repoLocationStore,
+		Locks:          a.repoLocks,
+		DeleteCacheDir: deleteCacheDir,
+		SweepOrphans:   git.SweepOrphans,
+		Log:            a.log,
+	}
+	a.wsServer.RegisterHandler("VALIDATE_DEV_FOLDER", handler.NewValidateDevFolderHandler(a.log))
+	a.wsServer.RegisterHandler("SCAN_DEV_FOLDER", handler.NewScanDevFolderHandler(repoLocationStore, a.syncTrigger, a.log))
+	a.wsServer.RegisterHandler("ADD_REPO_BY_URL", handler.NewAddRepoByURLHandler(handler.AddRepoByURLDeps{
+		DB:        a.db.DB,
+		Store:     repoLocationStore,
+		Clone:     a.cloneRepoLocationRepo,
+		CacheRoot: git.CacheRoot,
+		Log:       a.log,
+	}))
+	a.wsServer.RegisterHandler("REMOVE_REPO_PREFLIGHT", handler.NewRemoveRepoPreflightHandler(a.db.DB, a.log))
+	a.wsServer.RegisterHandler("GET_CACHE_STATS", handler.NewGetCacheStatsHandler(cacheDeps))
+	a.wsServer.RegisterHandler("PRUNE_CACHE", handler.NewPruneCacheHandler(cacheDeps))
+	a.wsServer.RegisterHandler("CLEAR_CACHE", handler.NewClearCacheHandler(cacheDeps))
+	a.wsServer.RegisterHandler("DELETE_CACHE_REPO", handler.NewDeleteCacheRepoHandler(cacheDeps))
+	a.wsServer.RegisterHandler("RECOVER_REPO_PATH", handler.NewRecoverRepoPathHandler(repoLocationStore, a.log))
+	a.wsServer.RegisterHandler("RECOVER_REPO_TO_CACHE", handler.NewRecoverRepoToCacheHandler(handler.RecoverRepoToCacheDeps{
+		DB:        a.db.DB,
+		Store:     repoLocationStore,
+		Clone:     a.cloneRepoLocationRepo,
+		CacheRoot: git.CacheRoot,
+		Log:       a.log,
+	}))
+	a.wsServer.RegisterHandler("REMOVE_REPO", handler.NewRemoveRepoHandler(handler.RemoveRepoDeps{
+		DB:             a.db.DB,
+		Store:          repoLocationStore,
+		Locks:          a.repoLocks,
+		DeleteCacheDir: deleteCacheDir,
+		Log:            a.log,
+	}))
 
 	wsAddr := fmt.Sprintf(":%d", a.wsPort)
 	if err := a.wsServer.Start(wsAddr); err != nil {

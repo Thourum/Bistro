@@ -1,5 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+// @vitest-environment jsdom
+
+import { act, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appStore } from '../../src/renderer/store';
+import { settingsStore } from '../../src/renderer/store/settings';
+import { DEFAULT_SETTINGS } from '../../src/types/settings';
 
 describe('WebSocket reconnect backoff', () => {
   it('calculates exponential backoff delay', () => {
@@ -96,6 +101,112 @@ describe('WebSocket ACTION_COMPLETE handler', () => {
     }));
     expect(appStore.state).not.toBe(prev);
     expect(prev.pendingAction).not.toBeNull();
+  });
+});
+
+class MockWebSocket {
+  static instances: MockWebSocket[] = [];
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
+
+  readyState = MockWebSocket.CONNECTING;
+  onopen: (() => void) | null = null;
+  onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  onclose: (() => void) | null = null;
+  sentMessages: string[] = [];
+
+  constructor(readonly url: string) {
+    MockWebSocket.instances = [...MockWebSocket.instances, this];
+  }
+
+  send(message: string): void {
+    this.sentMessages = [...this.sentMessages, message];
+  }
+
+  close(): void {
+    this.readyState = MockWebSocket.CLOSED;
+    this.onclose?.();
+  }
+
+  open(): void {
+    this.readyState = MockWebSocket.OPEN;
+    this.onopen?.();
+  }
+}
+
+describe('WebSocket dev-folder startup scan', () => {
+  beforeEach(() => {
+    MockWebSocket.instances = [];
+    vi.stubGlobal('WebSocket', MockWebSocket);
+    settingsStore.setState(() => DEFAULT_SETTINGS);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    settingsStore.setState(() => DEFAULT_SETTINGS);
+  });
+
+  it('sends exactly one SCAN_DEV_FOLDER message on connection open when devFolderPath is configured', async () => {
+    settingsStore.setState((settings) => ({
+      ...settings,
+      repositories: {
+        ...settings.repositories,
+        devFolderPath: '/Users/sam/dev',
+      },
+    }));
+    const { useWebSocket } = await import('../../src/renderer/hooks/useWebSocket');
+
+    const { unmount } = renderHook(() => useWebSocket());
+    const ws = MockWebSocket.instances[0];
+    act(() => ws.open());
+
+    const scanMessages = ws.sentMessages
+      .map((message) => JSON.parse(message) as { type: string; data: unknown })
+      .filter((message) => message.type === 'SCAN_DEV_FOLDER');
+
+    expect(scanMessages).toHaveLength(1);
+    expect(scanMessages[0]?.data).toEqual({
+      path: '/Users/sam/dev',
+      reason: 'startup',
+    });
+
+    act(() => {
+      ws.onmessage?.(
+        new MessageEvent('message', {
+          data: JSON.stringify({
+            id: 'auth-check-result-1',
+            type: 'AUTH_CHECK_RESULT',
+            data: { authenticated: true, providers: [] },
+            timestamp: new Date().toISOString(),
+          }),
+        }),
+      );
+    });
+
+    const scanMessagesAfterAuthCheck = ws.sentMessages
+      .map((message) => JSON.parse(message) as { type: string })
+      .filter((message) => message.type === 'SCAN_DEV_FOLDER');
+
+    expect(scanMessagesAfterAuthCheck).toHaveLength(1);
+    unmount();
+  });
+
+  it('does not send SCAN_DEV_FOLDER on connection open when devFolderPath is null', async () => {
+    const { useWebSocket } = await import('../../src/renderer/hooks/useWebSocket');
+
+    const { unmount } = renderHook(() => useWebSocket());
+    const ws = MockWebSocket.instances[0];
+    act(() => ws.open());
+
+    const scanMessages = ws.sentMessages
+      .map((message) => JSON.parse(message) as { type: string })
+      .filter((message) => message.type === 'SCAN_DEV_FOLDER');
+
+    expect(scanMessages).toHaveLength(0);
+    unmount();
   });
 });
 

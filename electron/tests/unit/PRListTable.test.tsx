@@ -3,6 +3,14 @@
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
+  useWebSocket: () => ({
+    request: vi.fn(() => Promise.resolve({ repos: [] })),
+    send: vi.fn(),
+  }),
+}));
+
 import {
   PRListTable,
   visiblePRListRows,
@@ -43,11 +51,17 @@ const mockStore = {
     selectedPRIndex: 0,
     repoFilter: null,
     repos: [{ owner: 'acme', repo: 'widgets', watched: true }],
+    reposLoading: false,
     filterState: 'open' as const,
     sortBy: 'updated' as const,
     searchQuery: '',
     collapsedRepoKeys: [] as string[],
   },
+  setState: vi.fn((updater) => {
+    const nextState =
+      typeof updater === 'function' ? updater(mockStore.state) : updater;
+    mockStore.state = nextState;
+  }),
   subscribe: vi.fn(() => () => {}),
 };
 
@@ -76,7 +90,9 @@ describe('PRListTable', () => {
 
   it('renders the row as a button for keyboard access', () => {
     render(<PRListTable prs={[mockPR]} isLoading={false} error={null} />);
-    const btn = screen.getByRole('button', { name: /Fix auth bug/ });
+    const btn = screen.getByRole('button', {
+      name: /Open PR #42 in acme\/widgets/,
+    });
     expect(btn).toBeInTheDocument();
   });
 
