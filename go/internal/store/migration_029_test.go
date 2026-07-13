@@ -2,7 +2,7 @@ package store
 
 import "testing"
 
-func TestMigration028DedupAndLLMCache(t *testing.T) {
+func TestMigration029DedupAndLLMCache(t *testing.T) {
 	db := openTestDBForQueue(t) // reuse the existing test helper that runs all migrations
 
 	var dedupColumnCount int

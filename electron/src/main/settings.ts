@@ -7,6 +7,7 @@ import { merge } from 'ts-deepmerge';
 import {
   type AppearanceSettings,
   type AppSettings,
+  type ClassificationSettings,
   DEFAULT_SETTINGS,
   type KeybindingOverrides,
   type PRListSettings,
@@ -64,6 +65,10 @@ function mergeSettings(base: AppSettings, patch: unknown): AppSettings {
         base.repositories,
         merged.repositories,
       ),
+    ),
+    classification: mergeKnownFields<ClassificationSettings>(
+      base.classification,
+      merged.classification,
     ),
     keybindings: merged.keybindings as KeybindingOverrides,
   };

@@ -2,7 +2,7 @@ package store
 
 import "testing"
 
-func TestMigration026CommentClassification(t *testing.T) {
+func TestMigration027CommentClassification(t *testing.T) {
 	db := openTestDBForQueue(t) // reuse the existing test helper that runs all migrations
 
 	// New columns exist on comments.
@@ -25,7 +25,7 @@ func TestMigration026CommentClassification(t *testing.T) {
 	}
 }
 
-func TestMigration027CommentDismissals(t *testing.T) {
+func TestMigration028CommentDismissals(t *testing.T) {
 	db := openTestDBForQueue(t) // reuse the existing test helper that runs all migrations
 
 	t.Run("schema has per-account composite primary key", func(t *testing.T) {
