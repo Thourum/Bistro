@@ -1,4 +1,4 @@
--- 027_add_comment_dismissals.sql
+-- 028_add_comment_dismissals.sql
 -- Phase 3.5: local dismissals, namespaced per account (pattern of migration 022).
 CREATE TABLE comment_dismissals (
   comment_id       TEXT NOT NULL,

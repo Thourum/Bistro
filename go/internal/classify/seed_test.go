@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -132,5 +133,77 @@ func TestBuiltinsParseAndOrder(t *testing.T) {
 	// Alphabetical: coderabbit, greptile, zz-fallback (heuristics last).
 	if files[0].Vendor != "coderabbit" || files[1].Vendor != "greptile" || files[2].Name != "Heuristics" {
 		t.Errorf("unexpected builtin order/content: %s, %s, %s", files[0].FileName, files[1].FileName, files[2].FileName)
+	}
+}
+
+func TestSeedNewBuiltinArrivesOnUpgrade(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "rules")
+	if err := SeedAndUpdate(dir); err != nil {
+		t.Fatalf("initial seed: %v", err)
+	}
+	// Simulate a pre-upgrade install that never shipped greptile.yml: remove
+	// the file AND its manifest entry (as if the old binary's embed lacked it).
+	if err := os.Remove(filepath.Join(dir, "greptile.yml")); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	manifest := filepath.Join(dir, shippedManifestName)
+	if err := os.WriteFile(manifest, []byte("coderabbit.yml\nzz-fallback.yml\n"), 0o644); err != nil {
+		t.Fatalf("rewrite manifest: %v", err)
+	}
+
+	if err := SeedAndUpdate(dir); err != nil {
+		t.Fatalf("upgrade seed: %v", err)
+	}
+
+	// Never-shipped builtin arrives; and it is now recorded as shipped.
+	if _, err := os.Stat(filepath.Join(dir, "greptile.yml")); err != nil {
+		t.Errorf("new builtin not seeded on upgrade: %v", err)
+	}
+	data, _ := os.ReadFile(manifest)
+	if !strings.Contains(string(data), "greptile.yml") {
+		t.Errorf("manifest not updated: %q", data)
+	}
+}
+
+func TestSeedDeletionStillRespectedWithManifest(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "rules")
+	if err := SeedAndUpdate(dir); err != nil {
+		t.Fatalf("initial seed: %v", err)
+	}
+	deleted := filepath.Join(dir, "coderabbit.yml")
+	if err := os.Remove(deleted); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	if err := SeedAndUpdate(dir); err != nil {
+		t.Fatalf("re-seed: %v", err)
+	}
+
+	if _, err := os.Stat(deleted); !os.IsNotExist(err) {
+		t.Errorf("user-deleted builtin resurrected despite manifest")
+	}
+}
+
+func TestSeedPreManifestDirRespectsDeletions(t *testing.T) {
+	// Legacy install: rule files exist but no manifest. A deleted builtin
+	// must NOT be resurrected just because the manifest is missing.
+	dir := filepath.Join(t.TempDir(), "rules")
+	if err := SeedAndUpdate(dir); err != nil {
+		t.Fatalf("initial seed: %v", err)
+	}
+	if err := os.Remove(filepath.Join(dir, shippedManifestName)); err != nil {
+		t.Fatalf("remove manifest: %v", err)
+	}
+	deleted := filepath.Join(dir, "coderabbit.yml")
+	if err := os.Remove(deleted); err != nil {
+		t.Fatalf("remove builtin: %v", err)
+	}
+
+	if err := SeedAndUpdate(dir); err != nil {
+		t.Fatalf("re-seed: %v", err)
+	}
+
+	if _, err := os.Stat(deleted); !os.IsNotExist(err) {
+		t.Errorf("pre-manifest deletion resurrected")
 	}
 }

@@ -729,12 +729,20 @@ function ThreadAnnotationCard({
                   <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface">
                     @{c.author}
                   </span>
-                  <Badge variant="outline" title={sourceTooltip}>
-                    {formatClassificationLabel(c.severity)}
-                  </Badge>
-                  <Badge variant="neutral">
-                    {formatClassificationLabel(c.bot_vendor)}
-                  </Badge>
+                  {(c.severity || c.bot_vendor) && (
+                    <>
+                      <Badge
+                        variant="outline"
+                        title={sourceTooltip}
+                        aria-label={`${formatClassificationLabel(c.severity)}: ${sourceTooltip}`}
+                      >
+                        {formatClassificationLabel(c.severity)}
+                      </Badge>
+                      <Badge variant="neutral">
+                        {formatClassificationLabel(c.bot_vendor)}
+                      </Badge>
+                    </>
+                  )}
                 </div>
                 <Markdown body={c.body} compact />
               </li>

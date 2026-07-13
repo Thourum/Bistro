@@ -3,9 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
+
+	"github.com/zalando/go-keyring"
 
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/ws"
@@ -186,8 +189,12 @@ func NewDeleteByokKeyHandler(store ByokKeyStore, onKeyChanged func(), log *slog.
 			return nil, fmt.Errorf("DELETE_BYOK_KEY requires provider")
 		}
 
-		if err := store.Delete(byokKeyName(req.Provider)); err != nil {
-			logger.Warn("BYOK key delete failed", "provider", req.Provider, "err", err)
+		// A missing key is idempotent success; any other failure must surface —
+		// reporting present=false while credential material remains in the
+		// keychain would mislead the user. No key material in errors.
+		if err := store.Delete(byokKeyName(req.Provider)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			logger.Error("BYOK key delete failed", "provider", req.Provider, "err", err)
+			return nil, fmt.Errorf("failed to delete key for %s", req.Provider)
 		}
 		if onKeyChanged != nil {
 			onKeyChanged()

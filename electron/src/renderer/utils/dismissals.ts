@@ -36,7 +36,9 @@ export function selectBotIds(
       (comment) =>
         comment.dismissed !== true &&
         comment.author_type === 'bot' &&
-        (vendor === undefined || comment.bot_vendor === vendor),
+        // Missing bot_vendor folds into 'unknown' — the same normalization
+        // visibleBotVendors uses, so a picker offering 'unknown' matches.
+        (vendor === undefined || (comment.bot_vendor ?? 'unknown') === vendor),
     )
     .map((comment) => comment.id);
 }

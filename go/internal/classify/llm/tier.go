@@ -46,6 +46,11 @@ type Tier struct {
 	authDisabled  atomic.Bool
 	sessionTokens atomic.Int64
 	wg            sync.WaitGroup
+	// inflight coalesces concurrent KickPR calls per PR: overlapping syncs
+	// and PR-open kicks would otherwise reclassify the same rows and
+	// double-bill the user's key.
+	inflightMu sync.Mutex
+	inflight   map[string]bool
 }
 
 type commentForClassification struct {
@@ -86,6 +91,7 @@ func NewTier(config TierConfig) *Tier {
 		emit:          emit,
 		serveComments: config.ServeComments,
 		log:           logger,
+		inflight:      make(map[string]bool),
 	}
 }
 
@@ -101,11 +107,27 @@ func (t *Tier) KickPR(ctx context.Context, prID string) {
 		return
 	}
 
+	// Coalesce: one live batch per PR. A kick arriving mid-batch is dropped —
+	// the running batch already selects the current unclassified set, and the
+	// next natural kick (sync or PR open) picks up anything new.
+	t.inflightMu.Lock()
+	if t.inflight[prID] {
+		t.inflightMu.Unlock()
+		return
+	}
+	t.inflight[prID] = true
+	t.inflightMu.Unlock()
+
 	prCtx, cancel := context.WithCancel(ctx)
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
 		defer cancel()
+		defer func() {
+			t.inflightMu.Lock()
+			delete(t.inflight, prID)
+			t.inflightMu.Unlock()
+		}()
 		t.runBatch(prCtx, prID, mode)
 	}()
 }

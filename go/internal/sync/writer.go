@@ -269,15 +269,6 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 			w.writeReviewThreads(ctx, tx, result.Threads, currentPatchsetNum, eng)
 		}
 
-		// ── Best-effort: multi-bot dedup post-pass (3.6) — after this PR's
-		// comments are written, same tx. Only runs when classification is on.
-		if eng != nil {
-			if err := w.dedupPRComments(ctx, tx, prID); err != nil {
-				log.Warn("dedup post-pass failed (comments remain ungrouped)",
-					"pr_id", prID, "error", err)
-			}
-		}
-
 		// ── Release savepoint — commit this PR's work into the outer tx ───
 		if _, spErr := tx.ExecContext(ctx, "RELEASE SAVEPOINT "+savepoint); spErr != nil {
 			// Very rare. The work is already in the outer tx; log and continue.
@@ -296,6 +287,16 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 			w.writeAnchorUpdates(ctx, tx, result.AnchorUpdates, currentPatchsetNum)
 			log.Debug("anchor updates written",
 				"pr_id", prID, "count", len(result.AnchorUpdates))
+		}
+
+		// ── Best-effort: multi-bot dedup post-pass (3.6) — after anchor
+		// write-back so display lines use THIS cycle's anchored_line, not the
+		// previous sync's. Same tx; only runs when classification is on.
+		if eng != nil {
+			if err := w.dedupPRComments(ctx, tx, prID); err != nil {
+				log.Warn("dedup post-pass failed (comments remain ungrouped)",
+					"pr_id", prID, "error", err)
+			}
 		}
 
 		// ── Detect and queue change events (emitted after tx.Commit) ──────

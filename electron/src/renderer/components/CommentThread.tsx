@@ -32,14 +32,22 @@ function formatClassificationLabel(value: string | undefined): string {
   return value;
 }
 
-function classificationMetadata(comment: Comment): React.ReactElement {
+function classificationMetadata(comment: Comment): React.ReactElement | null {
+  // Unclassified comments render no badges — classification is surfaced
+  // only where it exists, not as noise on every human comment.
+  if (!comment.severity && !comment.bot_vendor) return null;
+
   const severityLabel = formatClassificationLabel(comment.severity);
   const vendorLabel = formatClassificationLabel(comment.bot_vendor);
   const whyTooltip = humanizeSource(comment.classification_source);
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <Badge variant="outline" title={whyTooltip} aria-label={whyTooltip}>
+      <Badge
+        variant="outline"
+        title={whyTooltip}
+        aria-label={`${severityLabel}: ${whyTooltip}`}
+      >
         {severityLabel}
       </Badge>
       <Badge variant="neutral">{vendorLabel}</Badge>

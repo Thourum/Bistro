@@ -25,10 +25,14 @@ func (f *fakeApplier) ApplyAction(_ context.Context, req *actions.ActionRequest)
 
 func setupDismissTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:?_foreign_keys=on")
+	// file::memory:?cache=shared + a single connection: a plain ":memory:"
+	// DSN gives every pooled connection its own empty database, which flakes
+	// as soon as database/sql opens a second connection.
+	db, err := sql.Open("sqlite3", "file:"+t.Name()+"?mode=memory&cache=shared&_foreign_keys=on")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
 	stmts := []string{
 		`CREATE TABLE comments (
@@ -55,6 +59,10 @@ func setupDismissTestDB(t *testing.T) *sql.DB {
 		if _, err := db.Exec(s); err != nil {
 			t.Fatalf("setup: %v", err)
 		}
+	}
+	// Dismissals require a signed-in account (per-account namespacing).
+	if _, err := db.Exec(`INSERT INTO current_user (provider, login) VALUES ('github','samdev')`); err != nil {
+		t.Fatalf("seed current_user: %v", err)
 	}
 	return db
 }
@@ -174,7 +182,7 @@ func TestUndismiss(t *testing.T) {
 	deps := dismissDeps(db, applier, "local+provider")
 	mustExec(t, db, `INSERT INTO comments (id, pr_id, thread_id) VALUES ('c1','pr-1','t1'), ('c2','pr-1','t2')`)
 	mustExec(t, db, `INSERT INTO review_threads (id, pr_id, state_known, resolved) VALUES ('t1','pr-1',1,0), ('t2','pr-1',1,0)`)
-	mustExec(t, db, `INSERT INTO comment_dismissals (comment_id, account_provider, account_login) VALUES ('c1','github',''), ('c2','github','')`)
+	mustExec(t, db, `INSERT INTO comment_dismissals (comment_id, account_provider, account_login) VALUES ('c1','github','samdev'), ('c2','github','samdev')`)
 
 	// Undo lists ONLY t1 — t2 must not be unresolved even though c2 is undismissed.
 	payload, _ := json.Marshal(map[string]interface{}{
@@ -202,7 +210,6 @@ func TestUndismiss(t *testing.T) {
 func TestDismissResolvesCurrentAccount(t *testing.T) {
 	db := setupDismissTestDB(t)
 	deps := dismissDeps(db, &fakeApplier{}, "local")
-	mustExec(t, db, `INSERT INTO current_user (provider, login) VALUES ('github','samdev')`)
 	mustExec(t, db, `INSERT INTO comments (id, pr_id) VALUES ('c1','pr-1')`)
 
 	callDismiss(t, deps, "pr-1", []string{"c1"})

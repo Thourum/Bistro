@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { normalise } from '../../src/main/settings';
 import {
+  type AppSettings,
   DEFAULT_SETTINGS,
   SETTINGS_SCHEMA_VERSION,
-  type AppSettings,
 } from '../../src/types/settings';
-import { normalise } from '../../src/main/settings';
 
 describe('settings normalisation', () => {
   it('defines default classification settings without bumping the schema', () => {
@@ -25,6 +25,7 @@ describe('settings normalisation', () => {
       sync: DEFAULT_SETTINGS.sync,
       prList: DEFAULT_SETTINGS.prList,
       privacy: DEFAULT_SETTINGS.privacy,
+      repositories: DEFAULT_SETTINGS.repositories,
       keybindings: DEFAULT_SETTINGS.keybindings,
     } satisfies Omit<AppSettings, 'classification'>;
 

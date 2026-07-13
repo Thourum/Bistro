@@ -45,16 +45,16 @@ type undismissRequest struct {
 }
 
 // currentAccount resolves the account dismissals are namespaced under.
-// Falls back to the migration-027 defaults (github/"") when no current_user
-// row exists — dismissals still work locally before first auth.
-func (d DismissDeps) currentAccount(ctx context.Context) (provider, login string) {
-	provider, login = "github", ""
+// Dismissals are per-account (spec 3.5); with no current_user row there is
+// no account to namespace under, and a fallback row would be invisible to
+// the serve-side join (which only matches current_user accounts) — so this
+// errors instead of writing rows that vanish after login.
+func (d DismissDeps) currentAccount(ctx context.Context) (provider, login string, err error) {
 	row := d.DB.QueryRowContext(ctx, `SELECT provider, login FROM current_user ORDER BY provider LIMIT 1`)
-	var p, l string
-	if err := row.Scan(&p, &l); err == nil {
-		provider, login = p, l
+	if scanErr := row.Scan(&provider, &login); scanErr != nil {
+		return "", "", fmt.Errorf("dismissals require a signed-in account: %w", scanErr)
 	}
-	return provider, login
+	return provider, login, nil
 }
 
 // resolvableThreadIDs returns the distinct thread ids among the given
@@ -147,7 +147,10 @@ func NewDismissCommentsHandler(deps DismissDeps) ws.MessageHandler {
 			return nil, fmt.Errorf("DISMISS_COMMENTS requires pr_id and comment_ids")
 		}
 
-		provider, login := deps.currentAccount(ctx)
+		provider, login, err := deps.currentAccount(ctx)
+		if err != nil {
+			return nil, err
+		}
 		if err := deps.Dismissals.Dismiss(ctx, req.CommentIDs, provider, login); err != nil {
 			return nil, fmt.Errorf("dismiss failed: %w", err)
 		}
@@ -202,7 +205,10 @@ func NewUndismissCommentsHandler(deps DismissDeps) ws.MessageHandler {
 			return nil, fmt.Errorf("UNDISMISS_COMMENTS requires comment_ids")
 		}
 
-		provider, login := deps.currentAccount(ctx)
+		provider, login, err := deps.currentAccount(ctx)
+		if err != nil {
+			return nil, err
+		}
 		if err := deps.Dismissals.Undismiss(ctx, req.CommentIDs, provider, login); err != nil {
 			return nil, fmt.Errorf("undismiss failed: %w", err)
 		}
