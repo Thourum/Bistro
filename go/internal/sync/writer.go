@@ -497,13 +497,12 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 	// Classification (Phase 3): deterministic tier, in-tx. Nil engine (no
 	// classifier wired) leaves the columns untouched on upsert via COALESCE
 	// against empty excluded values — we pass NULLs and keep existing values.
-	var authorType, botVendor, severity, category, source interface{}
+	var authorType, botVendor, severity, source interface{}
 	if eng != nil {
 		c := eng.Classify(comment.Author, comment.Body, comment.FilePath)
 		authorType = c.AuthorType
 		botVendor = nullableString(c.BotVendor)
 		severity = nullableString(c.Severity)
-		category = nullableString(c.Category)
 		source = c.Source
 	}
 
@@ -513,8 +512,8 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 			kind, commit_sha, original_sha, side, position, original_position, in_reply_to, thread_id,
 			patchset_number, diff_hunk,
 			original_line, start_line, original_start_line, start_side, subject_type,
-			author_type, bot_vendor, severity, category, classification_source
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			author_type, bot_vendor, severity, classification_source
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			body              = excluded.body,
 			updated_at        = excluded.updated_at,
@@ -534,7 +533,6 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 			author_type       = COALESCE(excluded.author_type, comments.author_type),
 			bot_vendor        = CASE WHEN excluded.author_type IS NULL THEN comments.bot_vendor ELSE excluded.bot_vendor END,
 			severity          = CASE WHEN excluded.author_type IS NULL THEN comments.severity ELSE excluded.severity END,
-			category          = CASE WHEN excluded.author_type IS NULL THEN comments.category ELSE excluded.category END,
 			classification_source = COALESCE(excluded.classification_source, comments.classification_source)
 	`
 
@@ -565,7 +563,6 @@ func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comm
 		authorType,
 		botVendor,
 		severity,
-		category,
 		source,
 	)
 	if err != nil {

@@ -6,10 +6,9 @@ description: How Bistro classifies PR comments by severity, dedupes bot findings
 # Comment Classification
 
 Bistro classifies every synced PR comment **locally**: who wrote it (human or
-bot, and which bot), how severe it is (`critical` → `warning` → `suggestion` →
-`nit` → `info`), and what it's about (security, correctness, performance,
-style, readability, docs). The PR overview sorts most-severe-first, nits and
-info collapse to one line, and the sidebar counts everything at a glance.
+bot, and which bot) and how severe it is (`critical` → `warning` →
+`suggestion` → `nit` → `info`). The PR overview sorts most-severe-first, nits
+and info collapse to one line, and the sidebar counts everything at a glance.
 
 Classification is always explainable: hover the severity badge and the
 tooltip names exactly what fired — `Rule: coderabbit.yml / emoji_severity` or
@@ -50,7 +49,7 @@ classifiers:
 
 Each classifier has a `name`, optional `author` / `path` (glob) /
 `body_pattern` (regex) conditions that AND together, and an outcome: a direct
-`severity` (+ optional `category`), or a `severity_map` keyed on a named
+`severity`, or a `severity_map` keyed on a named
 capture group. Adding a `weight` turns it into a heuristic — weighted matches
 tally per severity and the highest total wins, but any direct vendor-rule
 match always outranks heuristics.
@@ -73,10 +72,10 @@ classifiers:
 
 | Heuristic        | Signal                                                            | Result              | Weight |
 | ---------------- | ----------------------------------------------------------------- | ------------------- | ------ |
-| `nit_words`      | "nit:", "consider", "minor", "personal taste"…                    | nit                 | 0.4    |
-| `security_words` | "sql injection", "xss", "credential", "race condition"…           | critical / security | 0.7    |
-| `security_paths` | vulnerability language in `auth/`, `security/`, `payments/` paths | critical / security | 0.8    |
-| `docs_style`     | comments on `*.md` / `*.rst` files                                | suggestion / docs   | 0.3    |
+| `nit_words`      | "nit:", "consider", "minor", "personal taste"…                    | nit        | 0.4    |
+| `security_words` | "sql injection", "xss", "credential", "race condition"…           | critical   | 0.7    |
+| `security_paths` | vulnerability language in `auth/`, `security/`, `payments/` paths | critical   | 0.8    |
+| `docs_style`     | comments on `*.md` / `*.rst` files                                | suggestion | 0.3    |
 
 ## Bulk dismiss & filters
 

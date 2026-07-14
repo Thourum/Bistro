@@ -53,7 +53,6 @@ export interface Comment {
   author_type?: CommentAuthorType;
   bot_vendor?: string;
   severity?: CommentSeverity;
-  category?: string;
   classification_source?: string;
   dismissed?: boolean;
   dedup_group_id?: string;

@@ -6,7 +6,7 @@ func TestMigration027CommentClassification(t *testing.T) {
 	db := openTestDBForQueue(t) // reuse the existing test helper that runs all migrations
 
 	// New columns exist on comments.
-	for _, col := range []string{"author_type", "bot_vendor", "severity", "category", "classification_source"} {
+	for _, col := range []string{"author_type", "bot_vendor", "severity", "classification_source"} {
 		var count int
 		err := db.QueryRow(
 			`SELECT COUNT(*) FROM pragma_table_info('comments') WHERE name = ?`, col,

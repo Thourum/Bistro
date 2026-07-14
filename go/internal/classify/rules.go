@@ -17,14 +17,9 @@ var ValidSeverities = map[string]int{
 	"critical": 5, "warning": 4, "suggestion": 3, "nit": 2, "info": 1,
 }
 
-var ValidCategories = map[string]bool{
-	"security": true, "correctness": true, "performance": true,
-	"style": true, "readability": true, "docs": true,
-}
-
 // Classifier is one rule inside a RuleFile. Conditions (Author, Path,
 // BodyPattern) are AND-combined; the outcome is either a direct Severity
-// (+ optional Category) or a SeverityMap keyed on a named capture group.
+// or a SeverityMap keyed on a named capture group.
 // A non-zero Weight marks it as a heuristic (tallied, not last-match-wins).
 type Classifier struct {
 	Name        string            `yaml:"name"`
@@ -32,7 +27,6 @@ type Classifier struct {
 	Path        string            `yaml:"path"`
 	BodyPattern string            `yaml:"body_pattern"`
 	Severity    string            `yaml:"severity"`
-	Category    string            `yaml:"category"`
 	SeverityMap map[string]string `yaml:"severity_map"`
 	Weight      float64           `yaml:"weight"`
 
@@ -90,9 +84,6 @@ func Parse(data []byte, fileName string) (*RuleFile, error) {
 			if _, ok := ValidSeverities[v]; !ok {
 				return nil, fmt.Errorf("%s/%s: severity_map[%s]: invalid severity %q", fileName, c.Name, k, v)
 			}
-		}
-		if c.Category != "" && !ValidCategories[c.Category] {
-			return nil, fmt.Errorf("%s/%s: invalid category %q", fileName, c.Name, c.Category)
 		}
 	}
 	return &rf, nil

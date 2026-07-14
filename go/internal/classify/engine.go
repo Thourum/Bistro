@@ -11,7 +11,6 @@ type Classification struct {
 	AuthorType string // "human" | "bot" | "unknown"
 	BotVendor  string // "" for humans; "unknown" for unmatched bots
 	Severity   string // "" = unclassified
-	Category   string
 	Source     string // rule:<file>:<classifier> | unclassified
 }
 
@@ -55,7 +54,7 @@ func (e *Engine) Classify(author, body, path string) Classification {
 
 	var direct *Classification
 	weights := map[string]float64{}
-	weightMeta := map[string]Classification{}
+	weightSources := map[string]string{}
 
 	for _, ruleFile := range e.loaded.Files {
 		if len(ruleFile.Match.Author) > 0 && !contains(ruleFile.Match.Author, author) {
@@ -63,28 +62,23 @@ func (e *Engine) Classify(author, body, path string) Classification {
 		}
 		for index := range ruleFile.Classifiers {
 			classifier := &ruleFile.Classifiers[index]
-			severity, category, ok := evalClassifier(classifier, author, body, path)
+			severity, ok := evalClassifier(classifier, author, body, path)
 			if !ok {
 				continue
 			}
 
-			result := Classification{
-				Severity: severity,
-				Category: category,
-				Source:   "rule:" + ruleFile.FileName + ":" + classifier.Name,
-			}
+			source := "rule:" + ruleFile.FileName + ":" + classifier.Name
 			if classifier.Weight > 0 {
 				weights[severity] += classifier.Weight
-				weightMeta[severity] = result
+				weightSources[severity] = source
 				continue
 			}
-			direct = &result
+			direct = &Classification{Severity: severity, Source: source}
 		}
 	}
 
 	if direct != nil {
 		classification.Severity = direct.Severity
-		classification.Category = direct.Category
 		classification.Source = direct.Source
 		return classification
 	}
@@ -93,37 +87,31 @@ func (e *Engine) Classify(author, body, path string) Classification {
 	}
 
 	bestSeverity := maxWeightSeverity(weights)
-	meta := weightMeta[bestSeverity]
 	classification.Severity = bestSeverity
-	classification.Category = meta.Category
-	classification.Source = meta.Source
+	classification.Source = weightSources[bestSeverity]
 	return classification
 }
 
-func evalClassifier(classifier *Classifier, author, body, path string) (string, string, bool) {
+func evalClassifier(classifier *Classifier, author, body, path string) (string, bool) {
 	if classifier.Author != "" && classifier.Author != author {
-		return "", "", false
+		return "", false
 	}
 	if classifier.Path != "" {
 		if path == "" {
-			return "", "", false
+			return "", false
 		}
 		matched, err := doublestar.Match(classifier.Path, path)
 		if err != nil || !matched {
-			return "", "", false
+			return "", false
 		}
 	}
 	if classifier.bodyRe != nil && !classifier.bodyRe.MatchString(body) {
-		return "", "", false
+		return "", false
 	}
 	if len(classifier.SeverityMap) > 0 {
-		severity, ok := severityFromMap(classifier, body)
-		if !ok {
-			return "", "", false
-		}
-		return severity, classifier.Category, true
+		return severityFromMap(classifier, body)
 	}
-	return classifier.Severity, classifier.Category, true
+	return classifier.Severity, true
 }
 
 func severityFromMap(classifier *Classifier, body string) (string, bool) {

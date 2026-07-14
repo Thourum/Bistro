@@ -4,7 +4,6 @@
 ALTER TABLE comments ADD COLUMN author_type TEXT;
 ALTER TABLE comments ADD COLUMN bot_vendor TEXT;
 ALTER TABLE comments ADD COLUMN severity TEXT;
-ALTER TABLE comments ADD COLUMN category TEXT;
 ALTER TABLE comments ADD COLUMN classification_source TEXT;
 
 CREATE TABLE comment_classification_state (

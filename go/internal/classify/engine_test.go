@@ -30,7 +30,6 @@ classifiers:
   - name: weighted_category
     body_pattern: 'category tally'
     severity: warning
-    category: correctness
     weight: 0.5
   - name: direct_warning
     body_pattern: 'direct beats weighted'
@@ -42,7 +41,6 @@ classifiers:
   - name: weighted_critical
     body_pattern: '(nit tally|direct beats weighted)'
     severity: critical
-    category: security
     weight: 0.7
 `,
 		"p.yml": `
@@ -53,7 +51,6 @@ classifiers:
     path: '**/auth/**'
     body_pattern: 'secret'
     severity: critical
-    category: security
 `,
 		"z.yml": `
 name: Late
@@ -64,7 +61,6 @@ classifiers:
   - name: weighted_nit_last
     body_pattern: 'nit tally'
     severity: nit
-    category: style
     weight: 0.4
 `,
 		"zz-fallback.yml": `
@@ -140,7 +136,6 @@ classifiers:
 			want: Classification{
 				AuthorType: "human",
 				Severity:   "nit",
-				Category:   "style",
 				Source:     "rule:z.yml:weighted_nit_last",
 			},
 		},
@@ -155,13 +150,12 @@ classifiers:
 			},
 		},
 		{
-			name:   "weighted classifier carries category",
+			name:   "weighted classifier wins tally alone",
 			author: "octocat",
 			body:   "category tally",
 			want: Classification{
 				AuthorType: "human",
 				Severity:   "warning",
-				Category:   "correctness",
 				Source:     "rule:a.yml:weighted_category",
 			},
 		},
@@ -182,7 +176,6 @@ classifiers:
 			want: Classification{
 				AuthorType: "human",
 				Severity:   "critical",
-				Category:   "security",
 				Source:     "rule:p.yml:all_conditions",
 			},
 		},

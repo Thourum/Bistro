@@ -15,7 +15,6 @@ func TestMigration029DedupAndLLMCache(t *testing.T) {
 	columns := map[string]string{
 		"body_hash":  "TEXT",
 		"severity":   "TEXT",
-		"category":   "TEXT",
 		"provider":   "TEXT",
 		"model":      "TEXT",
 		"created_at": "TIMESTAMP",

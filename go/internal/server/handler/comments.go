@@ -67,7 +67,6 @@ type commentRow struct {
 	AuthorType           *string `json:"author_type,omitempty"`
 	BotVendor            *string `json:"bot_vendor,omitempty"`
 	Severity             *string `json:"severity,omitempty"`
-	Category             *string `json:"category,omitempty"`
 	ClassificationSource *string `json:"classification_source,omitempty"`
 	// migration 027: per-account dismissal (Phase 3.5). Omitted when false.
 	Dismissed bool `json:"dismissed,omitempty"`
@@ -125,9 +124,9 @@ func refreshIfStale(db commentsStore, provider *classify.EngineProvider, prID st
 	for _, s := range stale {
 		c := eng.Classify(s.author, s.body, s.path)
 		if _, err := db.Exec(
-			`UPDATE comments SET author_type = ?, bot_vendor = ?, severity = ?, category = ?, classification_source = ?
+			`UPDATE comments SET author_type = ?, bot_vendor = ?, severity = ?, classification_source = ?
 			 WHERE id = ?`,
-			c.AuthorType, nullIfEmpty(c.BotVendor), nullIfEmpty(c.Severity), nullIfEmpty(c.Category), c.Source, s.id,
+			c.AuthorType, nullIfEmpty(c.BotVendor), nullIfEmpty(c.Severity), c.Source, s.id,
 		); err != nil {
 			log.Warn("classification refresh update failed", "comment_id", s.id, "err", err)
 			continue
@@ -201,7 +200,7 @@ func NewRequestCommentsHandlerWithLLMKick(db commentsStore, log *slog.Logger, pr
 			        c.anchored_line, c.anchor_head_sha, c.outdated, c.outdated_near_line,
 			        c.anchor_patchset_number,
 			        c.anchor_current_patchset_number,
-			        c.author_type, c.bot_vendor, c.severity, c.category, c.classification_source,
+			        c.author_type, c.bot_vendor, c.severity, c.classification_source,
 			        c.dedup_group_id,
 			        (d.comment_id IS NOT NULL) AS dismissed,
 			        p.head_sha  AS current_head_sha,
@@ -249,7 +248,7 @@ func NewRequestCommentsHandlerWithLLMKick(db commentsStore, log *slog.Logger, pr
 				&c.AnchoredLine, &c.AnchorHeadSHA, &c.Outdated, &c.OutdatedNearLine,
 				&c.AnchorPatchsetNumber,
 				&c.AnchorCurrentPatchsetNumber,
-				&c.AuthorType, &c.BotVendor, &c.Severity, &c.Category, &c.ClassificationSource,
+				&c.AuthorType, &c.BotVendor, &c.Severity, &c.ClassificationSource,
 				&c.DedupGroupID,
 				&c.Dismissed,
 				&currentHeadSHA,

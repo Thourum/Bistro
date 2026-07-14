@@ -69,7 +69,6 @@ func setupCommentsTestDB(t *testing.T) *sql.DB {
 		author_type TEXT,
 		bot_vendor TEXT,
 		severity TEXT,
-		category TEXT,
 		classification_source TEXT,
 		dedup_group_id TEXT
 	)`)

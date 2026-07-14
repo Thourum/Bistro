@@ -41,7 +41,6 @@ classifiers:
   - name: docs_style
     path: "{**/*.md,**/*.rst}"
     severity: suggestion
-    category: docs
     weight: 0.3
 `,
 			check: func(t *testing.T, rf *RuleFile) {
