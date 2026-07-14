@@ -54,13 +54,12 @@ type Tier struct {
 }
 
 type commentForClassification struct {
-	ID   string
-	Body string
+	ID    string
+	Input CommentInput
 }
 
 type cachedClassification struct {
 	Severity string
-	Category string
 	Provider string
 	Model    string
 }
@@ -226,11 +225,13 @@ func (t *Tier) selectComments(ctx context.Context, prID string, mode string) ([]
 	// re-emitting COMMENTS_READY for a no-op batch loops forever with the
 	// renderer's refetch-on-push. Switching models affects new text only, by
 	// spec. An empty selection returns early and emits nothing.
-	query := `SELECT id, body FROM comments WHERE pr_id = ?
+	const selectColumns = `SELECT id, body, COALESCE(author, ''), COALESCE(file_path, ''),
+		COALESCE(line_number, 0), COALESCE(diff_hunk, '') FROM comments WHERE pr_id = ?`
+	query := selectColumns + `
 		AND (classification_source IS NULL OR classification_source NOT LIKE 'byok:%') ORDER BY id`
 	args := []interface{}{prID}
 	if mode == "rules+llm" {
-		query = `SELECT id, body FROM comments WHERE pr_id = ? AND classification_source = 'unclassified' ORDER BY id`
+		query = selectColumns + ` AND classification_source = 'unclassified' ORDER BY id`
 	}
 
 	rows, err := t.db.QueryContext(ctx, query, args...)
@@ -242,7 +243,8 @@ func (t *Tier) selectComments(ctx context.Context, prID string, mode string) ([]
 	var comments []commentForClassification
 	for rows.Next() {
 		var comment commentForClassification
-		if err := rows.Scan(&comment.ID, &comment.Body); err != nil {
+		if err := rows.Scan(&comment.ID, &comment.Input.Body, &comment.Input.Author,
+			&comment.Input.FilePath, &comment.Input.LineNumber, &comment.Input.DiffHunk); err != nil {
 			return nil, err
 		}
 		comments = append(comments, comment)
@@ -258,32 +260,32 @@ func (t *Tier) processComment(ctx context.Context, comment commentForClassificat
 		return 0, err
 	}
 
-	bodyHash := normalizedBodyHash(comment.Body)
+	bodyHash := classificationCacheKey(comment.Input)
 	cached, hit, err := t.lookupCache(ctx, bodyHash)
 	if err != nil {
 		t.log.Printf("llm cache lookup failed comment=%s: %v", comment.ID, err)
 	}
 	if hit {
-		return 0, t.updateComment(ctx, comment.ID, cached.Severity, cached.Category, classificationSource(cached.Provider, cached.Model))
+		return 0, t.updateComment(ctx, comment.ID, cached.Severity, classificationSource(cached.Provider, cached.Model))
 	}
 
 	settings := t.settings()
-	severity, category, usageTokens, err := t.client.Classify(ctx, comment.Body)
+	severity, usageTokens, err := t.client.Classify(ctx, comment.Input)
 	if err != nil {
 		return 0, err
 	}
-	if !isValidSeverity(severity) || !isValidCategory(category) {
-		return 0, fmt.Errorf("invalid llm classification %q/%q", severity, category)
+	if !isValidSeverity(severity) {
+		return 0, fmt.Errorf("invalid llm classification %q", severity)
 	}
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
 
 	source := classificationSource(settings.Provider, settings.Model)
-	if err := t.updateComment(ctx, comment.ID, severity, category, source); err != nil {
+	if err := t.updateComment(ctx, comment.ID, severity, source); err != nil {
 		return 0, err
 	}
-	if err := t.upsertCache(ctx, bodyHash, severity, category, settings.Provider, settings.Model); err != nil {
+	if err := t.upsertCache(ctx, bodyHash, severity, settings.Provider, settings.Model); err != nil {
 		t.log.Printf("llm cache upsert failed comment=%s: %v", comment.ID, err)
 	}
 	return usageTokens, nil
@@ -293,40 +295,38 @@ func (t *Tier) lookupCache(ctx context.Context, bodyHash string) (cachedClassifi
 	var cached cachedClassification
 	err := t.db.QueryRowContext(
 		ctx,
-		`SELECT severity, category, provider, model FROM llm_classification_cache WHERE body_hash = ?`,
+		`SELECT severity, provider, model FROM llm_classification_cache WHERE body_hash = ?`,
 		bodyHash,
-	).Scan(&cached.Severity, &cached.Category, &cached.Provider, &cached.Model)
+	).Scan(&cached.Severity, &cached.Provider, &cached.Model)
 	if errors.Is(err, sql.ErrNoRows) {
 		return cachedClassification{}, false, nil
 	}
 	if err != nil {
 		return cachedClassification{}, false, err
 	}
-	if !isValidSeverity(cached.Severity) || !isValidCategory(cached.Category) {
-		return cachedClassification{}, false, fmt.Errorf("invalid cached classification %q/%q", cached.Severity, cached.Category)
+	if !isValidSeverity(cached.Severity) {
+		return cachedClassification{}, false, fmt.Errorf("invalid cached classification %q", cached.Severity)
 	}
 	return cached, true, nil
 }
 
-func (t *Tier) updateComment(ctx context.Context, commentID string, severity string, category string, source string) error {
+func (t *Tier) updateComment(ctx context.Context, commentID string, severity string, source string) error {
 	_, err := t.db.ExecContext(
 		ctx,
-		`UPDATE comments SET severity = ?, category = ?, classification_source = ? WHERE id = ?`,
+		`UPDATE comments SET severity = ?, classification_source = ? WHERE id = ?`,
 		severity,
-		category,
 		source,
 		commentID,
 	)
 	return err
 }
 
-func (t *Tier) upsertCache(ctx context.Context, bodyHash string, severity string, category string, provider string, model string) error {
+func (t *Tier) upsertCache(ctx context.Context, bodyHash string, severity string, provider string, model string) error {
 	_, err := t.db.ExecContext(
 		ctx,
-		`INSERT OR REPLACE INTO llm_classification_cache (body_hash, severity, category, provider, model, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		`INSERT OR REPLACE INTO llm_classification_cache (body_hash, severity, provider, model, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
 		bodyHash,
 		severity,
-		category,
 		provider,
 		model,
 	)
@@ -354,9 +354,14 @@ func (t *Tier) emitUsage() {
 	})
 }
 
-func normalizedBodyHash(body string) string {
-	normalized := strings.Join(strings.Fields(strings.ToLower(body)), " ")
-	sum := sha256.Sum256([]byte(normalized))
+// classificationCacheKey hashes what the model actually judges: the
+// vendor-noise-stripped body plus the diff hunk. Stripping first means a
+// bot's per-comment hidden fingerprints (<!-- cr-comment:... -->) don't
+// defeat the cache; including the hunk means identical bodies on different
+// code are classified separately instead of reusing the first verdict.
+func classificationCacheKey(input CommentInput) string {
+	normalized := strings.Join(strings.Fields(strings.ToLower(stripVendorNoise(input.Body))), " ")
+	sum := sha256.Sum256([]byte(normalized + "\x00" + input.DiffHunk))
 	return hex.EncodeToString(sum[:])
 }
 

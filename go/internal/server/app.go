@@ -99,18 +99,18 @@ type liveByokClient struct {
 	tokens *keychain.TokenManager
 }
 
-func (c *liveByokClient) Classify(ctx context.Context, body string) (string, string, int, error) {
+func (c *liveByokClient) Classify(ctx context.Context, comment llm.CommentInput) (string, int, error) {
 	s := c.state.Snapshot()
 	key, err := c.tokens.Get("byok." + s.Provider)
 	if err != nil {
 		// Missing key behaves like an auth failure: tier disables until a
 		// key change calls ResetAuth.
-		return "", "", 0, fmt.Errorf("no BYOK key for %s: %w", s.Provider, llm.ErrAuth)
+		return "", 0, fmt.Errorf("no BYOK key for %s: %w", s.Provider, llm.ErrAuth)
 	}
 	if s.Provider == "anthropic" {
-		return llm.NewAnthropicClient(s.Model, key, s.Endpoint).Classify(ctx, body)
+		return llm.NewAnthropicClient(s.Model, key, s.Endpoint).Classify(ctx, comment)
 	}
-	return llm.NewOpenAICompatibleClient(s.Provider, s.Model, key, s.Endpoint).Classify(ctx, body)
+	return llm.NewOpenAICompatibleClient(s.Provider, s.Model, key, s.Endpoint).Classify(ctx, comment)
 }
 
 // SetReadyWriter overrides where the machine-readable ready signal is written.

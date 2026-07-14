@@ -14,11 +14,11 @@ import (
 )
 
 type mockClient struct {
-	classify func(ctx context.Context, body string) (string, string, int, error)
+	classify func(ctx context.Context, comment CommentInput) (string, int, error)
 }
 
-func (m mockClient) Classify(ctx context.Context, body string) (string, string, int, error) {
-	return m.classify(ctx, body)
+func (m mockClient) Classify(ctx context.Context, comment CommentInput) (string, int, error) {
+	return m.classify(ctx, comment)
 }
 
 type capturedEvent struct {
@@ -45,9 +45,9 @@ func TestTierModeSelection(t *testing.T) {
 			t.Parallel()
 
 			db := setupTierTestDB(t)
-			insertComment(t, db, "c1", "pr-1", "unclassified one", "info", "docs", "unclassified")
-			insertComment(t, db, "c2", "pr-1", "already classified", "nit", "style", "rule:coderabbit.yml:nit")
-			insertComment(t, db, "c3", "pr-2", "other pr", "info", "docs", "unclassified")
+			insertComment(t, db, "c1", "pr-1", "unclassified one", "info", "unclassified")
+			insertComment(t, db, "c2", "pr-1", "already classified", "nit", "rule:coderabbit.yml:nit")
+			insertComment(t, db, "c3", "pr-2", "other pr", "info", "unclassified")
 
 			var calls atomic.Int32
 			tier := NewTier(TierConfig{
@@ -73,8 +73,8 @@ func TestTierCacheHitSkipsClientAndUsesCacheProvenance(t *testing.T) {
 
 	db := setupTierTestDB(t)
 	body := "  Please Rename This   Variable  "
-	insertComment(t, db, "c1", "pr-1", body, "info", "docs", "unclassified")
-	insertCache(t, db, normalizedBodyHash(body), "nit", "readability", "anthropic", "claude-cache")
+	insertComment(t, db, "c1", "pr-1", body, "info", "unclassified")
+	insertCache(t, db, classificationCacheKey(CommentInput{Body: body}), "nit", "anthropic", "claude-cache")
 
 	var calls atomic.Int32
 	tier := NewTier(TierConfig{
@@ -91,9 +91,9 @@ func TestTierCacheHitSkipsClientAndUsesCacheProvenance(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatalf("client calls = %d, want 0", calls.Load())
 	}
-	severity, category, source := readCommentClassification(t, db, "c1")
-	if severity != "nit" || category != "readability" || source != "byok:anthropic:claude-cache" {
-		t.Fatalf("classification = %q/%q/%q, want nit/readability/byok:anthropic:claude-cache", severity, category, source)
+	severity, source := readCommentClassification(t, db, "c1")
+	if severity != "nit" || source != "byok:anthropic:claude-cache" {
+		t.Fatalf("classification = %q/%q, want nit/byok:anthropic:claude-cache", severity, source)
 	}
 }
 
@@ -102,7 +102,7 @@ func TestTierCacheMissCallsClientUpdatesCommentAndInsertsCache(t *testing.T) {
 
 	db := setupTierTestDB(t)
 	body := "This looks like SQL injection"
-	insertComment(t, db, "c1", "pr-1", body, "info", "docs", "unclassified")
+	insertComment(t, db, "c1", "pr-1", body, "info", "unclassified")
 
 	var calls atomic.Int32
 	tier := NewTier(TierConfig{
@@ -121,13 +121,13 @@ func TestTierCacheMissCallsClientUpdatesCommentAndInsertsCache(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("client calls = %d, want 1", calls.Load())
 	}
-	severity, category, source := readCommentClassification(t, db, "c1")
-	if severity != "warning" || category != "security" || source != "byok:openrouter:deepseek-test" {
-		t.Fatalf("classification = %q/%q/%q, want warning/security/byok:openrouter:deepseek-test", severity, category, source)
+	severity, source := readCommentClassification(t, db, "c1")
+	if severity != "warning" || source != "byok:openrouter:deepseek-test" {
+		t.Fatalf("classification = %q/%q, want warning/byok:openrouter:deepseek-test", severity, source)
 	}
-	cacheSeverity, cacheCategory, cacheProvider, cacheModel := readCache(t, db, normalizedBodyHash(body))
-	if cacheSeverity != "warning" || cacheCategory != "security" || cacheProvider != "openrouter" || cacheModel != "deepseek-test" {
-		t.Fatalf("cache = %q/%q/%q/%q, want warning/security/openrouter/deepseek-test", cacheSeverity, cacheCategory, cacheProvider, cacheModel)
+	cacheSeverity, cacheProvider, cacheModel := readCache(t, db, classificationCacheKey(CommentInput{Body: body}))
+	if cacheSeverity != "warning" || cacheProvider != "openrouter" || cacheModel != "deepseek-test" {
+		t.Fatalf("cache = %q/%q/%q, want warning/openrouter/deepseek-test", cacheSeverity, cacheProvider, cacheModel)
 	}
 }
 
@@ -136,7 +136,7 @@ func TestTierFanoutIsBounded(t *testing.T) {
 
 	db := setupTierTestDB(t)
 	for i := 0; i < 10; i++ {
-		insertComment(t, db, fmt.Sprintf("c%d", i), "pr-1", fmt.Sprintf("body %d", i), "info", "docs", "unclassified")
+		insertComment(t, db, fmt.Sprintf("c%d", i), "pr-1", fmt.Sprintf("body %d", i), "info", "unclassified")
 	}
 
 	var active atomic.Int32
@@ -144,7 +144,7 @@ func TestTierFanoutIsBounded(t *testing.T) {
 	var calls atomic.Int32
 	tier := NewTier(TierConfig{
 		DB: db,
-		Client: mockClient{classify: func(ctx context.Context, body string) (string, string, int, error) {
+		Client: mockClient{classify: func(ctx context.Context, comment CommentInput) (string, int, error) {
 			current := active.Add(1)
 			for {
 				maxSeen := maxActive.Load()
@@ -156,9 +156,9 @@ func TestTierFanoutIsBounded(t *testing.T) {
 			calls.Add(1)
 			select {
 			case <-ctx.Done():
-				return "", "", 0, ctx.Err()
+				return "", 0, ctx.Err()
 			case <-time.After(20 * time.Millisecond):
-				return "nit", "style", 1, nil
+				return "nit", 1, nil
 			}
 		}},
 		Mode:     func() string { return "rules+llm" },
@@ -181,17 +181,17 @@ func TestTierErrAuthDisablesAndEmitsOnceUntilReset(t *testing.T) {
 	t.Parallel()
 
 	db := setupTierTestDB(t)
-	insertComment(t, db, "c1", "pr-1", "body 1", "info", "docs", "unclassified")
-	insertComment(t, db, "c2", "pr-2", "body 2", "info", "docs", "unclassified")
-	insertComment(t, db, "c3", "pr-3", "body 3", "info", "docs", "unclassified")
+	insertComment(t, db, "c1", "pr-1", "body 1", "info", "unclassified")
+	insertComment(t, db, "c2", "pr-2", "body 2", "info", "unclassified")
+	insertComment(t, db, "c3", "pr-3", "body 3", "info", "unclassified")
 
 	var calls atomic.Int32
 	events, emit := captureEvents()
 	tier := NewTier(TierConfig{
 		DB: db,
-		Client: mockClient{classify: func(ctx context.Context, body string) (string, string, int, error) {
+		Client: mockClient{classify: func(ctx context.Context, comment CommentInput) (string, int, error) {
 			calls.Add(1)
-			return "", "", 0, ErrAuth
+			return "", 0, ErrAuth
 		}},
 		Mode:     func() string { return "rules+llm" },
 		Settings: staticSettings("openai", "gpt-test"),
@@ -226,12 +226,12 @@ func TestTierErrRateLimitedAbandonsSilently(t *testing.T) {
 	t.Parallel()
 
 	db := setupTierTestDB(t)
-	insertComment(t, db, "c1", "pr-1", "body", "info", "docs", "unclassified")
+	insertComment(t, db, "c1", "pr-1", "body", "info", "unclassified")
 	events, emit := captureEvents()
 	tier := NewTier(TierConfig{
 		DB: db,
-		Client: mockClient{classify: func(ctx context.Context, body string) (string, string, int, error) {
-			return "", "", 0, ErrRateLimited
+		Client: mockClient{classify: func(ctx context.Context, comment CommentInput) (string, int, error) {
+			return "", 0, ErrRateLimited
 		}},
 		Mode:     func() string { return "rules+llm" },
 		Settings: staticSettings("openai", "gpt-test"),
@@ -244,9 +244,9 @@ func TestTierErrRateLimitedAbandonsSilently(t *testing.T) {
 	if len(events()) != 0 {
 		t.Fatalf("events = %#v, want none", events())
 	}
-	severity, category, source := readCommentClassification(t, db, "c1")
-	if severity != "info" || category != "docs" || source != "unclassified" {
-		t.Fatalf("classification changed to %q/%q/%q after rate limit", severity, category, source)
+	severity, source := readCommentClassification(t, db, "c1")
+	if severity != "info" || source != "unclassified" {
+		t.Fatalf("classification changed to %q/%q after rate limit", severity, source)
 	}
 }
 
@@ -254,16 +254,16 @@ func TestTierSingleCommentFailureDoesNotBlockOthers(t *testing.T) {
 	t.Parallel()
 
 	db := setupTierTestDB(t)
-	insertComment(t, db, "c1", "pr-1", "fail me", "info", "docs", "unclassified")
-	insertComment(t, db, "c2", "pr-1", "classify me", "info", "docs", "unclassified")
+	insertComment(t, db, "c1", "pr-1", "fail me", "info", "unclassified")
+	insertComment(t, db, "c2", "pr-1", "classify me", "info", "unclassified")
 
 	tier := NewTier(TierConfig{
 		DB: db,
-		Client: mockClient{classify: func(ctx context.Context, body string) (string, string, int, error) {
-			if body == "fail me" {
-				return "", "", 0, errors.New("temporary failure")
+		Client: mockClient{classify: func(ctx context.Context, comment CommentInput) (string, int, error) {
+			if comment.Body == "fail me" {
+				return "", 0, errors.New("temporary failure")
 			}
-			return "suggestion", "performance", 9, nil
+			return "suggestion", 9, nil
 		}},
 		Mode:     func() string { return "rules+llm" },
 		Settings: staticSettings("openai", "gpt-test"),
@@ -273,13 +273,13 @@ func TestTierSingleCommentFailureDoesNotBlockOthers(t *testing.T) {
 	tier.KickPR(context.Background(), "pr-1")
 	tier.Wait()
 
-	severity, category, source := readCommentClassification(t, db, "c1")
-	if severity != "info" || category != "docs" || source != "unclassified" {
-		t.Fatalf("failed comment classification = %q/%q/%q, want deterministic result unchanged", severity, category, source)
+	severity, source := readCommentClassification(t, db, "c1")
+	if severity != "info" || source != "unclassified" {
+		t.Fatalf("failed comment classification = %q/%q, want deterministic result unchanged", severity, source)
 	}
-	severity, category, source = readCommentClassification(t, db, "c2")
-	if severity != "suggestion" || category != "performance" || source != "byok:openai:gpt-test" {
-		t.Fatalf("successful comment classification = %q/%q/%q", severity, category, source)
+	severity, source = readCommentClassification(t, db, "c2")
+	if severity != "suggestion" || source != "byok:openai:gpt-test" {
+		t.Fatalf("successful comment classification = %q/%q", severity, source)
 	}
 }
 
@@ -288,7 +288,7 @@ func TestTierCancellationDrainsCleanly(t *testing.T) {
 
 	db := setupTierTestDB(t)
 	for i := 0; i < 8; i++ {
-		insertComment(t, db, fmt.Sprintf("c%d", i), "pr-1", fmt.Sprintf("body %d", i), "info", "docs", "unclassified")
+		insertComment(t, db, fmt.Sprintf("c%d", i), "pr-1", fmt.Sprintf("body %d", i), "info", "unclassified")
 	}
 
 	started := make(chan struct{})
@@ -296,10 +296,10 @@ func TestTierCancellationDrainsCleanly(t *testing.T) {
 	var once sync.Once
 	tier := NewTier(TierConfig{
 		DB: db,
-		Client: mockClient{classify: func(ctx context.Context, body string) (string, string, int, error) {
+		Client: mockClient{classify: func(ctx context.Context, comment CommentInput) (string, int, error) {
 			once.Do(func() { close(started) })
 			<-ctx.Done()
-			return "", "", 0, ctx.Err()
+			return "", 0, ctx.Err()
 		}},
 		Mode:     func() string { return "rules+llm" },
 		Settings: staticSettings("openai", "gpt-test"),
@@ -326,12 +326,12 @@ func TestTierEmitsCommentsReadyAndUsageAfterBatch(t *testing.T) {
 	t.Parallel()
 
 	db := setupTierTestDB(t)
-	insertComment(t, db, "c1", "pr-1", "body", "info", "docs", "unclassified")
+	insertComment(t, db, "c1", "pr-1", "body", "info", "unclassified")
 	events, emit := captureEvents()
 	tier := NewTier(TierConfig{
 		DB: db,
-		Client: mockClient{classify: func(ctx context.Context, body string) (string, string, int, error) {
-			return "nit", "style", 123, nil
+		Client: mockClient{classify: func(ctx context.Context, comment CommentInput) (string, int, error) {
+			return "nit", 123, nil
 		}},
 		Mode:     func() string { return "rules+llm" },
 		Settings: staticSettings("openai", "gpt-test"),
@@ -385,15 +385,17 @@ func setupTierTestDB(t *testing.T) *sql.DB {
 		`CREATE TABLE comments (
 			id TEXT PRIMARY KEY,
 			pr_id TEXT NOT NULL,
+			author TEXT,
 			body TEXT NOT NULL,
+			line_number INTEGER,
+			file_path TEXT,
+			diff_hunk TEXT,
 			severity TEXT,
-			category TEXT,
 			classification_source TEXT
 		)`,
 		`CREATE TABLE llm_classification_cache (
 			body_hash TEXT PRIMARY KEY,
 			severity TEXT NOT NULL,
-			category TEXT NOT NULL,
 			provider TEXT NOT NULL,
 			model TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -408,49 +410,47 @@ func setupTierTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func insertComment(t *testing.T, db *sql.DB, id string, prID string, body string, severity string, category string, source string) {
+func insertComment(t *testing.T, db *sql.DB, id string, prID string, body string, severity string, source string) {
 	t.Helper()
-	_, err := db.Exec(`INSERT INTO comments (id, pr_id, body, severity, category, classification_source) VALUES (?, ?, ?, ?, ?, ?)`, id, prID, body, severity, category, source)
+	_, err := db.Exec(`INSERT INTO comments (id, pr_id, body, severity, classification_source) VALUES (?, ?, ?, ?, ?)`, id, prID, body, severity, source)
 	if err != nil {
 		t.Fatalf("insert comment: %v", err)
 	}
 }
 
-func insertCache(t *testing.T, db *sql.DB, hash string, severity string, category string, provider string, model string) {
+func insertCache(t *testing.T, db *sql.DB, hash string, severity string, provider string, model string) {
 	t.Helper()
-	_, err := db.Exec(`INSERT INTO llm_classification_cache (body_hash, severity, category, provider, model) VALUES (?, ?, ?, ?, ?)`, hash, severity, category, provider, model)
+	_, err := db.Exec(`INSERT INTO llm_classification_cache (body_hash, severity, provider, model) VALUES (?, ?, ?, ?)`, hash, severity, provider, model)
 	if err != nil {
 		t.Fatalf("insert cache: %v", err)
 	}
 }
 
-func readCommentClassification(t *testing.T, db *sql.DB, id string) (string, string, string) {
+func readCommentClassification(t *testing.T, db *sql.DB, id string) (string, string) {
 	t.Helper()
 	var severity string
-	var category string
 	var source string
-	if err := db.QueryRow(`SELECT severity, category, classification_source FROM comments WHERE id = ?`, id).Scan(&severity, &category, &source); err != nil {
+	if err := db.QueryRow(`SELECT severity, classification_source FROM comments WHERE id = ?`, id).Scan(&severity, &source); err != nil {
 		t.Fatalf("read comment classification: %v", err)
 	}
-	return severity, category, source
+	return severity, source
 }
 
-func readCache(t *testing.T, db *sql.DB, hash string) (string, string, string, string) {
+func readCache(t *testing.T, db *sql.DB, hash string) (string, string, string) {
 	t.Helper()
 	var severity string
-	var category string
 	var provider string
 	var model string
-	if err := db.QueryRow(`SELECT severity, category, provider, model FROM llm_classification_cache WHERE body_hash = ?`, hash).Scan(&severity, &category, &provider, &model); err != nil {
+	if err := db.QueryRow(`SELECT severity, provider, model FROM llm_classification_cache WHERE body_hash = ?`, hash).Scan(&severity, &provider, &model); err != nil {
 		t.Fatalf("read cache: %v", err)
 	}
-	return severity, category, provider, model
+	return severity, provider, model
 }
 
-func successfulClassify(calls *atomic.Int32) func(context.Context, string) (string, string, int, error) {
-	return func(ctx context.Context, body string) (string, string, int, error) {
+func successfulClassify(calls *atomic.Int32) func(context.Context, CommentInput) (string, int, error) {
+	return func(ctx context.Context, comment CommentInput) (string, int, error) {
 		calls.Add(1)
-		return "warning", "security", 11, nil
+		return "warning", 11, nil
 	}
 }
 
