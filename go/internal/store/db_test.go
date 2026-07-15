@@ -174,6 +174,54 @@ func TestMigrationsRerunAfterGooseVersionMetadataLoss(t *testing.T) {
 	}
 }
 
+func TestReconcilePreservesMigrationsNewerThanBaseline(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	runner := NewMigrationRunner(log, db.DB)
+
+	ctx := context.Background()
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("first Run() failed: %v", err)
+	}
+	mustExec(t, db, `DELETE FROM `+goose.DefaultTablename)
+
+	// Reconcile against a baseline older than the newest embedded migrations,
+	// simulating a binary whose embedded set is newer than what
+	// currentSchemaExists recognizes. Versions past the baseline must stay
+	// unmarked so goose still executes them.
+	const staleBaseline int64 = 25
+	if err := runner.reconcileGooseFromCurrentSchema(ctx, staleBaseline); err != nil {
+		t.Fatalf("reconcile with stale baseline failed: %v", err)
+	}
+
+	var newerMarked int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM `+goose.DefaultTablename+` WHERE version_id > ? AND is_applied = 1`,
+		staleBaseline,
+	).Scan(&newerMarked); err != nil {
+		t.Fatalf("query goose versions past baseline: %v", err)
+	}
+	if newerMarked != 0 {
+		t.Errorf("reconcile marked %d migrations newer than baseline %d as applied, want 0", newerMarked, staleBaseline)
+	}
+
+	var baselineMarked int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(DISTINCT version_id) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND version_id <= ? AND is_applied = 1`,
+		staleBaseline,
+	).Scan(&baselineMarked); err != nil {
+		t.Fatalf("query goose versions within baseline: %v", err)
+	}
+	if baselineMarked == 0 {
+		t.Error("reconcile marked no migrations within baseline as applied, want > 0")
+	}
+}
+
 func TestMigrationRunnerHasGooseMigrationFiles(t *testing.T) {
 	migrationFiles, err := fs.Glob(migrationsFS, "migrations/[0-9][0-9][0-9][0-9][0-9]_*.sql")
 	if err != nil {

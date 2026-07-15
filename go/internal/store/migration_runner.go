@@ -16,6 +16,13 @@ import (
 
 const migrationsDir = "migrations"
 
+// reconcileBaselineVersion is the highest migration version whose effects
+// currentSchemaExists verifies. Schema-signature reconciliation must never
+// mark versions past it as applied: a DB that lost its goose metadata may
+// predate newer migrations, and marking them applied would silently skip
+// them. Bump this only together with new checks in currentSchemaExists.
+const reconcileBaselineVersion int64 = 30
+
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
@@ -45,7 +52,7 @@ func (mr *MigrationRunner) Run(ctx context.Context) error {
 	if err := mr.seedGooseFromLegacyMigrations(ctx); err != nil {
 		return fmt.Errorf("seed goose migration versions: %w", err)
 	}
-	if err := mr.reconcileGooseFromCurrentSchema(ctx); err != nil {
+	if err := mr.reconcileGooseFromCurrentSchema(ctx, reconcileBaselineVersion); err != nil {
 		return fmt.Errorf("reconcile goose migration versions: %w", err)
 	}
 
@@ -113,7 +120,7 @@ func (mr *MigrationRunner) seedGooseFromLegacyMigrations(ctx context.Context) er
 	return nil
 }
 
-func (mr *MigrationRunner) reconcileGooseFromCurrentSchema(ctx context.Context) error {
+func (mr *MigrationRunner) reconcileGooseFromCurrentSchema(ctx context.Context, baselineVersion int64) error {
 	if err := mr.ensureGooseVersionTable(ctx); err != nil {
 		return err
 	}
@@ -127,6 +134,9 @@ func (mr *MigrationRunner) reconcileGooseFromCurrentSchema(ctx context.Context) 
 	}
 
 	for _, version := range schemaMigrationVersions() {
+		if version > baselineVersion {
+			continue
+		}
 		if err := mr.markGooseVersionApplied(ctx, version); err != nil {
 			return fmt.Errorf("mark existing schema migration %d applied: %w", version, err)
 		}
