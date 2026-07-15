@@ -6,17 +6,17 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 
 	gogit "github.com/go-git/go-git/v5"
-	fdiff "github.com/go-git/go-git/v5/plumbing/format/diff"
 	"github.com/go-git/go-git/v5/plumbing"
+	fdiff "github.com/go-git/go-git/v5/plumbing/format/diff"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	dmp "github.com/sergi/go-diff/diffmatchpatch"
 )
 
 const (
-	contextLines         = 3
+	contextLines          = 3
 	maxFileLinesForAnchor = 200_000
 )
 
@@ -43,9 +43,9 @@ type AnchorResult struct {
 
 // ResolveRequest carries all inputs needed to re-anchor one review comment.
 type ResolveRequest struct {
-	LocalPath   string // path to the local go-git repo
-	CommitSHA   string // commit where the comment was originally posted (PR head at that time)
-	HeadSHA     string // current PR head SHA to resolve against
+	LocalPath string // path to the local go-git repo
+	CommitSHA string // commit where the comment was originally posted (PR head at that time)
+	HeadSHA   string // current PR head SHA to resolve against
 	// DiffBaseSHA is the patchset base (PR declared base at time of comment).
 	// REQUIRED for correct geometry: GitHub positions are relative to
 	// DiffBaseSHA..CommitSHA, NOT to parent(CommitSHA)..CommitSHA.
@@ -56,8 +56,8 @@ type ResolveRequest struct {
 	Side        string // "LEFT" | "RIGHT"
 	Position    int    // GitHub unified-diff position (1-based sequential count)
 	CommentID   string
-	PatchsetNum int    // patchset number when comment was posted
-	CurrentNum  int    // current patchset number (used for same-patchset fast path)
+	PatchsetNum int // patchset number when comment was posted
+	CurrentNum  int // current patchset number (used for same-patchset fast path)
 }
 
 // AnchorResolver re-anchors GitHub inline review comments across rebases.
@@ -378,38 +378,29 @@ func positionFromRenderedDiff(diffText, side string, target int) (int, error) {
 // parseHunkHeader extracts oldStart and newStart from a unified diff hunk
 // header of the form "@@ -oldStart[,oldCount] +newStart[,newCount] @@ ...".
 func parseHunkHeader(header string) (oldStart, newStart int, err error) {
-	// Find the inner range: everything between the first "@@" and the second "@@".
-	rest := header[3:] // skip leading "@@ "
-	end := strings.Index(rest, " @@")
-	if end < 0 {
-		end = strings.Index(rest, "@@")
+	patches, err := dmp.New().PatchFromText(hunkHeaderOnly(header))
+	if err != nil {
+		return 0, 0, fmt.Errorf("malformed hunk header: %q: %w", header, err)
 	}
-	if end < 0 {
+	if len(patches) != 1 {
 		return 0, 0, fmt.Errorf("malformed hunk header: %q", header)
 	}
-	inner := strings.TrimSpace(rest[:end]) // e.g. "-47,6 +47,6"
-	parts := strings.Fields(inner)
-	if len(parts) < 2 {
-		return 0, 0, fmt.Errorf("malformed hunk range %q in %q", inner, header)
-	}
-	oldStart, err = parseHunkSide(parts[0])
-	if err != nil {
-		return 0, 0, err
-	}
-	newStart, err = parseHunkSide(parts[1])
-	return oldStart, newStart, err
+	patch := patches[0]
+	return dmpPatchStart(patch.Start1, patch.Length1), dmpPatchStart(patch.Start2, patch.Length2), nil
 }
 
-// parseHunkSide parses "-N[,count]" or "+N[,count]" → N.
-func parseHunkSide(s string) (int, error) {
-	if len(s) < 2 {
-		return 0, fmt.Errorf("too short: %q", s)
+func dmpPatchStart(start, length int) int {
+	if length == 0 {
+		return start
 	}
-	numStr := s[1:] // strip leading - or +
-	if comma := strings.IndexByte(numStr, ','); comma >= 0 {
-		numStr = numStr[:comma]
+	return start + 1
+}
+
+func hunkHeaderOnly(header string) string {
+	if end := strings.LastIndex(header, "@@"); end > 0 {
+		return header[:end+2] + "\n"
 	}
-	return strconv.Atoi(numStr)
+	return header + "\n"
 }
 
 // FileLineHash returns (lineContentHash, contextHash) for the 1-based lineNo
