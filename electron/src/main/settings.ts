@@ -1,9 +1,9 @@
 import { mkdir } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
+import type Conf from 'conf';
 import { app, BrowserWindow, shell } from 'electron';
 import type { Logger } from 'electron-log';
 import ElectronStore from 'electron-store';
-import type Conf from 'conf';
 import { fromPromise, fromThrowable } from 'neverthrow';
 import { merge } from 'ts-deepmerge';
 import {
@@ -111,10 +111,11 @@ export class SettingsService {
     private readonly logger: Logger,
     filePath?: string,
   ) {
-    const cwd = filePath === undefined ? app.getPath('userData') : dirname(filePath);
-    const name = filePath === undefined ? 'settings' : basenameWithoutJson(filePath);
+    const cwd =
+      filePath === undefined ? app.getPath('userData') : dirname(filePath);
+    const name =
+      filePath === undefined ? 'settings' : basenameWithoutJson(filePath);
     const storeOptions = {
-
       cwd,
       name,
       defaults: DEFAULT_SETTINGS,
@@ -124,16 +125,17 @@ export class SettingsService {
         },
       },
       clearInvalidConfig: true,
-      serialize: (value: AppSettings) => `${JSON.stringify(normalise(value), null, 2)}\n`,
+      serialize: (value: AppSettings) =>
+        `${JSON.stringify(normalise(value), null, 2)}\n`,
       deserialize: (value: string) => normalise(JSON.parse(value)),
       watch: true,
     };
-    this.store = new ElectronStore<AppSettings>(
-      {
-        ...storeOptions,
-        projectVersion: app.getVersion(),
-      } as unknown as ConstructorParameters<typeof ElectronStore<AppSettings>>[0],
-    );
+    this.store = new ElectronStore<AppSettings>({
+      ...storeOptions,
+      projectVersion: app.getVersion(),
+    } as unknown as ConstructorParameters<
+      typeof ElectronStore<AppSettings>
+    >[0]);
     this.writeNormalisedStore();
     this.unsubscribeFromStore = this.store.onDidAnyChange((next) => {
       if (this.isLoading || this.isWriting) return;
@@ -190,12 +192,9 @@ export class SettingsService {
     );
     if (mkdirError !== null) return { err: mkdirError };
 
-    const writeResult = fromThrowable(
-      () => {
-        this.writeStore(this.current);
-      },
-      errorMessage,
-    )();
+    const writeResult = fromThrowable(() => {
+      this.writeStore(this.current);
+    }, errorMessage)();
     if (writeResult.isErr()) return { err: writeResult.error };
 
     const openResult = await fromPromise(
