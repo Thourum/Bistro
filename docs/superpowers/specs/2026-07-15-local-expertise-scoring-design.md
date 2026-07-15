@@ -148,10 +148,11 @@ join key TEXT and index-backed rather than constraint-backed here.
 For each `(file, author)` in a repo at local HEAD:
 
 1. `surviving_ratio = surviving_lines / total_lines` (0 when file empty).
-2. `commit_score = min(1, Σ 0.5^(age_months/6))` over the author's substantial
-   commits (>5 changed lines in that commit for that file) in the last 12
-   months, normalized against a saturation constant `COMMITS_SATURATION = 4`
-   (4 fresh substantial commits ⇒ 1.0).
+2. `commit_score = min(1, (Σ 0.5^(age_months/6)) / COMMITS_SATURATION)` over
+   the author's substantial commits (>5 changed lines in that commit for that
+   file) in the last 12 months, with `COMMITS_SATURATION = 4`. Worked example:
+   4 substantial commits today ⇒ Σ = 4.0 ⇒ 4.0/4 = 1.0 (saturated); one
+   substantial commit 6 months ago ⇒ Σ = 0.5 ⇒ 0.5/4 = 0.125.
 3. `is_original ∈ {0,1}` from the first-commit pass.
 4. `score = 55·surviving_ratio + 30·commit_score + 15·is_original`.
 5. `dormant = 1` if the author has no commit (any file) in this repo in the

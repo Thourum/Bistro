@@ -536,11 +536,26 @@ Used when a comment doesn't match a vendor-specific rule (humans, unknown bots, 
 
 ---
 
-## Phase 4 — Local Expertise Scoring (the killer feature, FOSS layer) — **status: not started (verified 2026-07-11)**
+## Phase 4 — Local Expertise Scoring (the killer feature, FOSS layer) — **status: spec approved (2026-07-15)**
 
 > Verified 2026-07-11: no `file_expertise` table, no scoring code, no "Touches Your
-> Code" view, no `.bistro/expertise.yml` support. The current-user-identity
+> Code" view. The current-user-identity
 > prerequisite is now in place (migration 022), so this phase is unblocked.
+
+> ✅ **Spec (2026-07-15):** `docs/superpowers/specs/2026-07-15-local-expertise-scoring-design.md`
+> is authoritative; the draft below is left for history. Key deviations:
+> - **Signal 4 (prior reviewer) deferred to Team plan** — synced review data is
+>   sparse/biased locally; Team computes it server-side with complete data.
+> - **`.bistro/expertise.yml` removed permanently** (not deferred) — Team uses an
+>   AST + vector-store approach, so a repo-committed config file has no future.
+>   Excludes/thresholds live in SQLite settings; built-in defaults +
+>   `.gitattributes linguist-generated=true` cover the common case.
+> - **Opt-in per repo, local checkouts only** — expertise runs only on repos with
+>   `source='local'` that the user explicitly enables (`enable expertise` palette
+>   command, or a nudge after 10 reviewed PRs from the same local repo). Full-repo
+>   index on enable, then incremental updates for PR-touched files on sync.
+> - **System git via the bounded os/exec exception** (BIS-31 precedent);
+>   git absent → labeled unavailable state, no pure-Go fallback.
 
 The Layer 1 of expertise routing. Computes per-file expertise from local git history. Layer 2 (team-wide expertise graph, departed-employee handling, write-back to provider) is Team-only.
 
@@ -551,7 +566,7 @@ The Layer 1 of expertise routing. Computes per-file expertise from local git his
 1. **Surviving lines** (high weight, no decay). `git blame HEAD` aggregated by author. Who wrote the code that's still in the file today?
 2. **Substantial commits in last 12 months** (medium weight, recency-decayed with ~6mo half-life). "Substantial" = changed > 5 lines, not a typo fix.
 3. **Original authorship** (medium weight, slow decay). Who first created the file? `git log --follow --diff-filter=A`.
-4. **Prior reviewer of this file** (low-medium weight, recency-decayed). Who has reviewed PRs that touched this file?
+4. ~~**Prior reviewer of this file** (low-medium weight, recency-decayed). Who has reviewed PRs that touched this file?~~ **Deferred to Team plan (2026-07-15)** — see spec note above.
 
 **Recency cutoff.** Only include authors who have *any* commit or review in the watched repos within the last 90 days. This catches departed contributors at FOSS level (without org context). Authors who fail this cutoff are flagged `dormant` — still recorded, but excluded from default suggestions.
 
@@ -575,24 +590,18 @@ The Layer 1 of expertise routing. Computes per-file expertise from local git his
 - Each row shows which files are "yours" with the expertise score.
 - Default behaviour is *FYI in the local inbox only*. No external notifications. No write-back to provider. The user can promote one to a real reviewer-request manually.
 
-### 4.3 Configuration
+### 4.3 Configuration — **rewritten 2026-07-15 (no repo file)**
+
+> `.bistro/expertise.yml` and pinned owners are **removed permanently** — the
+> Team plan replaces them with AST + vector-store expertise. FOSS config is
+> SQLite-backed, edited in Settings.
 
 **Acceptance.**
 
-- `.bistro/expertise.yml` per repo, optional, committable to the repo:
-
-  ```yaml
-  exclude:
-    - "vendor/**"
-    - "**/*.pb.go"
-    - "dist/**"
-  pin:
-    - path: "auth/*"
-      owners: ["@alice", "@bob"]
-  ```
-
+- Built-in exclude defaults (`vendor/**`, `dist/**`, lockfiles, `**/*.pb.go`, `**/testdata/**`) plus per-repo user exclude globs in Settings.
 - Respects `.gitattributes linguist-generated=true`.
 - A global setting for "minimum surviving lines to count as expert" (default 50).
+- Manual alias emails ("also count these commits as me") in Settings.
 
 ---
 
@@ -779,9 +788,10 @@ Everything left between here and FOSS v1.0, in rough dependency order. Done work
   manual acceptance still pending — `local+provider` dismissal resolving a real
   GitHub thread, and the rule-edit-without-restart walkthrough on a live PR
 
-**Phase 4 — expertise (not started, now unblocked by migration 022)**
-- [ ] 4.1 scoring engine + `file_expertise` table
-- [ ] 4.2 "Touches Your Code" view, 4.3 `.bistro/expertise.yml`
+**Phase 4 — expertise (spec approved 2026-07-15, unblocked by migration 022)**
+- [ ] 4.1 scoring engine + `file_expertise` table (signals 1–3; signal 4 → Team)
+- [ ] 4.2 "Touches Your Code" view, 4.3 SQLite settings (expertise.yml dropped)
+- Spec: `docs/superpowers/specs/2026-07-15-local-expertise-scoring-design.md`
 
 **Polish (partial)**
 - [ ] Default view → "Needs Action"; triage counters into a sidebar; drop or implement the mentions rule (1.6)
