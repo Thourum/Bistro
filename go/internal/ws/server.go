@@ -20,7 +20,12 @@ type Server struct {
 	mu         sync.Mutex
 	stopChan   chan struct{}
 	httpServer *http.Server
-	conns      map[*websocket.Conn]struct{}
+	// conns maps each connection to its write mutex. gorilla/websocket
+	// allows only ONE concurrent writer per connection; the dispatch loop
+	// (responses) and Broadcast (async pushes: sync events, LLM tier) write
+	// from different goroutines, so every WriteMessage must hold the
+	// connection's mutex.
+	conns      map[*websocket.Conn]*sync.Mutex
 	dispatcher *Dispatcher
 }
 
@@ -43,7 +48,7 @@ func NewServer() *Server {
 			CheckOrigin: isLocalOrigin,
 		},
 		stopChan:   make(chan struct{}),
-		conns:      make(map[*websocket.Conn]struct{}),
+		conns:      make(map[*websocket.Conn]*sync.Mutex),
 		dispatcher: NewDispatcher(logger),
 	}
 }
@@ -55,7 +60,7 @@ func NewServerWithLogger(logger *slog.Logger) *Server {
 			CheckOrigin: isLocalOrigin,
 		},
 		stopChan:   make(chan struct{}),
-		conns:      make(map[*websocket.Conn]struct{}),
+		conns:      make(map[*websocket.Conn]*sync.Mutex),
 		dispatcher: NewDispatcher(logger),
 	}
 }
@@ -72,21 +77,36 @@ func (s *Server) Broadcast(msg interface{}) {
 		s.dispatcher.logger.Error("broadcast marshal failed", "error", err)
 		return
 	}
+	// Snapshot under s.mu, write under each connection's own write mutex —
+	// never hold s.mu across network writes, and never write a connection
+	// concurrently with its dispatch-loop response writer.
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	clientCount := len(s.conns)
+	type connWriter struct {
+		conn *websocket.Conn
+		wmu  *sync.Mutex
+	}
+	writers := make([]connWriter, 0, clientCount)
+	for conn, wmu := range s.conns {
+		writers = append(writers, connWriter{conn, wmu})
+	}
+	s.mu.Unlock()
+
 	s.dispatcher.logger.Debug("broadcast start",
 		"clients", clientCount,
 		"payload_bytes", len(data),
 		"payload", truncateForLog(data, 4096),
 	)
 	var writeErrs int
-	for conn := range s.conns {
-		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+	for _, w := range writers {
+		w.wmu.Lock()
+		err := w.conn.WriteMessage(websocket.TextMessage, data)
+		w.wmu.Unlock()
+		if err != nil {
 			writeErrs++
 			s.dispatcher.logger.Warn("broadcast write failed",
 				"error", err,
-				"remote_addr", conn.RemoteAddr().String(),
+				"remote_addr", w.conn.RemoteAddr().String(),
 			)
 		}
 	}
@@ -161,9 +181,12 @@ func (s *Server) Stop() error {
 	return nil
 }
 
-// registerConn adds conn to the tracked set. Must be called with s.mu held.
-func (s *Server) registerConn(conn *websocket.Conn) {
-	s.conns[conn] = struct{}{}
+// registerConn adds conn to the tracked set and returns its write mutex.
+// Must be called with s.mu held.
+func (s *Server) registerConn(conn *websocket.Conn) *sync.Mutex {
+	wmu := &sync.Mutex{}
+	s.conns[conn] = wmu
+	return wmu
 }
 
 // deregisterConn removes conn from the tracked set. Must be called with s.mu held.
@@ -190,7 +213,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	)
 
 	s.mu.Lock()
-	s.registerConn(conn)
+	wmu := s.registerConn(conn)
 	clientCount := len(s.conns)
 	s.mu.Unlock()
 	s.dispatcher.logger.Debug("ws client registered",
@@ -244,7 +267,10 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 					)
 					continue
 				}
-				if writeErr := conn.WriteMessage(websocket.TextMessage, responseBytes); writeErr != nil {
+				wmu.Lock()
+				writeErr := conn.WriteMessage(websocket.TextMessage, responseBytes)
+				wmu.Unlock()
+				if writeErr != nil {
 					s.dispatcher.logger.Warn("ws write failed",
 						"remote_addr", remoteAddr,
 						"error", writeErr,

@@ -14,6 +14,7 @@ import (
 	"log/slog"
 
 	"github.com/itterno/bistro/internal/actions"
+	"github.com/itterno/bistro/internal/classify"
 	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/logging"
@@ -43,6 +44,12 @@ type Orchestrator struct {
 	// replaced or disconnected). ApplyAction checks it before executing so
 	// stale orchestrators self-reject even if captured before disconnect.
 	liveness context.Context
+	// classifier is optional; when set, writers classify each comment in the
+	// write path (Phase 3 deterministic tier).
+	classifier *classify.EngineProvider
+	// postCommit is optional; when set, writers invoke it after each committed
+	// batch with the written PR ids (Phase 3.8 LLM tier kick).
+	postCommit func(prIDs []string)
 }
 
 const (
@@ -122,6 +129,20 @@ func (o *Orchestrator) WithActionQueue(q *store.ActionQueue) *Orchestrator {
 // disconnect will have its action rejected rather than executed with old credentials.
 func (o *Orchestrator) WithLiveness(ctx context.Context) *Orchestrator {
 	o.liveness = ctx
+	return o
+}
+
+// WithClassifier attaches the classification engine provider; writers built
+// by this orchestrator classify comments in the write path (Phase 3).
+func (o *Orchestrator) WithClassifier(p *classify.EngineProvider) *Orchestrator {
+	o.classifier = p
+	return o
+}
+
+// WithPostCommit attaches a hook writers invoke after each committed batch
+// with the written PR ids (Phase 3.8 async LLM tier kick).
+func (o *Orchestrator) WithPostCommit(fn func(prIDs []string)) *Orchestrator {
+	o.postCommit = fn
 	return o
 }
 
@@ -1124,12 +1145,18 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 	}
 
 	// Phase 3: Write to SQLite (batched transactions)
+	// improve: Phase 2→3 is a full barrier — no PR row is written until every
+	// PR's details have been fetched, so one slow PR (bounded by
+	// perPRFetchTimeout) delays visibility of all the fast ones. If first-paint
+	// latency on large watch lists ever matters, stream results: write each
+	// PRFetchResult as its worker finishes (writer batches of 1..N), keeping
+	// the single-writer discipline but dropping the barrier.
 	if len(fetchedPRs) > 0 {
 		log.Debug("phase write-db start", "pr_count", len(fetchedPRs))
 		phaseStart := time.Now()
 		o.emitter.Emit(events.NewProgressEvent("writing_database", 0, len(fetchedPRs)))
 
-		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter)
+		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithPostCommit(o.postCommit)
 		if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
 			errMsg := fmt.Sprintf("failed to write results: %v", err)
 			result.Errors = append(result.Errors, errMsg)
@@ -1239,7 +1266,7 @@ func (o *Orchestrator) DiscoverAndSyncInbox(ctx context.Context) (*SyncResult, e
 			result.CommentCount += len(detail.Comments)
 		}
 
-		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter)
+		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithPostCommit(o.postCommit)
 		if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
 			_ = o.store.MarkSyncCursorError(ctx, scope, err)
 			return nil, err

@@ -1,0 +1,170 @@
+# Classification corpus: ~50 realistic PR comments with human-judged ideal
+# severities. want_severity is the IDEAL label, not necessarily what the
+# engine produces — the accuracy gate (≥70%) measures how well the built-in
+# rules + heuristics judge arbitrary text. Deliberate misses are expected.
+# Empty want_severity means "should stay unclassified".
+
+# ── CodeRabbit (deterministic emoji format) ──
+- author: "coderabbitai[bot]"
+  body: "🔒 Potential SQL injection: user input is concatenated directly into the query string."
+  want_severity: critical
+- author: "coderabbitai[bot]"
+  body: "⚠️ Possible nil pointer dereference when the config file is missing."
+  want_severity: warning
+- author: "coderabbitai[bot]"
+  body: "🛠️ Refactor suggestion: extract the retry logic into a helper function."
+  want_severity: suggestion
+- author: "coderabbitai[bot]"
+  body: "💡 Minor: rename `tmp` to something more descriptive."
+  want_severity: nit
+- author: "coderabbitai[bot]"
+  body: "<details><summary>🧹 Nitpick comments (3)</summary>Multiple small style issues found in this file.</details>"
+  want_severity: nit
+- author: "coderabbitai[bot]"
+  body: "🔒 Hardcoded credential detected in the connection string."
+  want_severity: critical
+- author: "coderabbitai[bot]"
+  body: "⚠️ This loop can run unbounded if the channel is never closed."
+  want_severity: warning
+- author: "coderabbitai[bot]"
+  body: "🛠️ Consider using errgroup to bound the concurrency here."
+  want_severity: suggestion
+- author: "coderabbitai[bot]"
+  body: "💡 You could inline this variable."
+  want_severity: nit
+- author: "coderabbitai[bot]"
+  body: "⚠️ Race condition: the counter is written from two goroutines without synchronization."
+  want_severity: warning
+- author: "coderabbitai[bot]"
+  body: "💡 Stylistic preference: an early return would be cleaner here."
+  want_severity: nit
+- author: "coderabbitai[bot]"
+  body: "🛠️ Duplicated code with pkg/util; consider extracting a shared helper."
+  want_severity: suggestion
+- author: "coderabbitai[bot]"
+  body: "The change looks reasonable overall; summary of modifications below."
+  want_severity: ""
+- author: "coderabbitai[bot]"
+  body: "🔒 Auth bypass: the token check is skipped when the header is empty."
+  path: "go/internal/auth/middleware.go"
+  want_severity: critical
+- author: "coderabbitai[bot]"
+  body: "<details><summary>🧹 Nitpick comments (1)</summary>Prefer const over let for values that never change.</details>"
+  want_severity: nit
+- author: "coderabbitai[bot]"
+  body: "💡 Nitpick: you could use optional chaining here."
+  want_severity: nit
+- author: "coderabbitai[bot]"
+  body: "⚠️ The mutex is copied by value here; the lock is ineffective."
+  want_severity: warning
+- author: "coderabbitai[bot]"
+  body: "🛠️ Use strings.Builder instead of += concatenation in this loop."
+  want_severity: suggestion
+
+# ── Greptile ──
+- author: "greptile-apps[bot]"
+  body: "There is a logic error in the pagination: the cursor is never advanced."
+  want_severity: warning
+- author: "greptile-apps[bot]"
+  body: "This condition looks incorrect — it should be >= instead of >."
+  want_severity: warning
+- author: "greptile-apps[bot]"
+  body: "Potential bug: the error from Close() is ignored."
+  want_severity: warning
+- author: "greptile-apps[bot]"
+  body: "The new endpoint mirrors the existing pattern; nothing to flag."
+  want_severity: ""
+- author: "greptile-apps[bot]"
+  body: "style preference: use guard clauses to reduce the nesting depth"
+  want_severity: nit
+- author: "greptile-apps[bot]"
+  body: "The cache key omits the user ID — logic error causing cross-user data mixing."
+  want_severity: warning
+
+# ── Other bots (generic heuristics only) ──
+- author: "sonarqubecloud[bot]"
+  body: "Code smell: this function has a cognitive complexity of 25, consider splitting it."
+  want_severity: suggestion
+- author: "dependabot[bot]"
+  body: "Bumps lodash from 4.17.20 to 4.17.21."
+  want_severity: ""
+- author: "codecov[bot]"
+  body: "Coverage decreased by 2.1% — please add tests for the new branches."
+  want_severity: ""
+- author: "snyk-bot"
+  body: "Vulnerability found: prototype pollution via merge (CVE-2021-23337). Upgrade the dependency."
+  want_severity: critical
+
+# ── Humans ──
+- author: "samdev"
+  body: "LGTM, shipping it."
+  want_severity: ""
+- author: "reviewer2"
+  body: "Can you add a test covering the empty-list case?"
+  want_severity: ""
+- author: "alice"
+  body: "nit: trailing whitespace on line 42"
+  want_severity: nit
+- author: "bob"
+  body: "Consider using a sync.Pool here to reduce allocations."
+  want_severity: suggestion
+- author: "carol"
+  body: "This leaks the API secret into the logs — please redact it."
+  want_severity: critical
+- author: "dave"
+  body: "Why was the retry removed? This will fail on transient failures."
+  want_severity: ""
+- author: "erin"
+  body: "typo: 'recieve' → 'receive'"
+  path: "docs/guide.md"
+  want_severity: suggestion
+- author: "frank"
+  body: "minor style point: we usually put the error check on the next line"
+  want_severity: nit
+- author: "grace"
+  body: "This is vulnerable to XSS — the username is rendered unescaped."
+  want_severity: critical
+- author: "henry"
+  body: "personal taste, but I'd flatten this nesting"
+  path: "docs/style.md"
+  want_severity: nit
+- author: "iris"
+  body: "The migration is missing a rollback — blocking merge until it's added."
+  want_severity: warning
+- author: "jack"
+  body: "would be cleaner to use the existing helper in utils.go"
+  want_severity: nit
+- author: "kate"
+  body: "+1"
+  want_severity: ""
+- author: "leo"
+  body: "Password reset tokens never expire — that's an auth bypass waiting to happen."
+  want_severity: critical
+- author: "maya"
+  body: "Docs need updating for the new flag."
+  path: "README.md"
+  want_severity: suggestion
+- author: "nick"
+  body: "There's an off-by-one in the slice bounds — this panics on empty input."
+  want_severity: critical
+- author: "olivia"
+  body: "sql injection possible here via the order_by parameter"
+  want_severity: critical
+- author: "pete"
+  body: "nitpick: alphabetize the imports"
+  want_severity: nit
+- author: "quinn"
+  body: "The section on webhooks is outdated."
+  path: "docs/api.md"
+  want_severity: suggestion
+- author: "rachel"
+  body: "This bypasses the session check when remember-me is set."
+  path: "electron/src/auth/login.ts"
+  want_severity: critical
+- author: "sam"
+  body: "Should this constant live in config instead?"
+  want_severity: ""
+- author: "tina"
+  body: "Should this section move to the FAQ?"
+  path: "docs/faq.md"
+  want_severity: suggestion

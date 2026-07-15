@@ -99,6 +99,26 @@ export interface UIState {
   activeInlineCommentThreadId: string | null;
   /** Inline diff-comment thread currently showing the reply composer, if any. */
   replyingInlineCommentThreadId: string | null;
+  /**
+   * Comment classification filter (Phase 3.5 `f` keystrokes): minimum
+   * severity (`f c/w/s/n`) and human-only (`f h`). Cleared by `f f`.
+   */
+  commentMinSeverity: 'critical' | 'warning' | 'suggestion' | 'nit' | null;
+  commentHumanOnly: boolean;
+  /**
+   * Session undo stack of dismiss batches (Phase 3.5 `u`). Does not survive
+   * restart by design — the SQLite dismissal rows do.
+   */
+  dismissBatches: Array<{
+    batch_id: string;
+    dismissed_ids: string[];
+    resolved_thread_ids: string[];
+  }>;
+  /** BYOK session usage (Phase 3.8), fed by pushed BYOK_USAGE events. */
+  byokSessionTokens: number;
+  byokEstCost: number;
+  /** Set by BYOK_AUTH_FAILED; cleared on a successful SET_BYOK_KEY ack. */
+  byokAuthFailed: boolean;
 }
 
 export const initialUIState: UIState = {
@@ -138,6 +158,12 @@ export const initialUIState: UIState = {
   inlineCommentThreadIds: [],
   activeInlineCommentThreadId: null,
   replyingInlineCommentThreadId: null,
+  commentMinSeverity: null,
+  commentHumanOnly: false,
+  dismissBatches: [],
+  byokSessionTokens: 0,
+  byokEstCost: 0,
+  byokAuthFailed: false,
 };
 
 export function createUIStore(): Store<UIState> {

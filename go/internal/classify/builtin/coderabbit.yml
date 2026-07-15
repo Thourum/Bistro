@@ -1,0 +1,13 @@
+name: CodeRabbit
+vendor: coderabbit
+match:
+  author: ["coderabbitai[bot]", "coderabbit-ai[bot]"]
+
+classifiers:
+  - name: emoji_severity
+    body_pattern: '^(?P<emoji>🔒|⚠️|🛠️|💡)'
+    severity_map: { "🔒": critical, "⚠️": warning, "🛠️": suggestion, "💡": nit }
+
+  - name: nitpick_section
+    body_pattern: '<details>.*?Nitpick'
+    severity: nit

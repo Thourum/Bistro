@@ -1,0 +1,19 @@
+name: Heuristics
+classifiers:
+  - name: nit_words
+    body_pattern: '(?i)(nit:|nitpick|consider|you could|minor\b|stylistic|preference|personal taste|would be cleaner)'
+    severity: nit
+    weight: 0.4
+  - name: security_words
+    body_pattern: '(?i)(sql injection|xss|credential|secret|password|auth bypass|race condition|memory leak)'
+    severity: critical
+    weight: 0.7
+  - name: security_paths
+    path: "{**/auth/**,**/security/**,**/payments/**}"
+    body_pattern: '(?i)(vulnerab|inject|leak|bypass)'
+    severity: critical
+    weight: 0.8
+  - name: docs_style
+    path: "{**/*.md,**/*.rst}"
+    severity: suggestion
+    weight: 0.3

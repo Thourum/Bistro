@@ -1,17 +1,18 @@
 import { Link, useParams } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ActionFeedback from '../components/ActionFeedback';
 import { FooterCenterSlot } from '../components/FooterSlot';
 import { Markdown } from '../components/Markdown';
 import { MergeReadinessBadge } from '../components/MergeReadinessBadge';
 import { PatchsetTimeline } from '../components/PatchsetTimeline';
-import { type StatusKind, StatusSquare } from '../components/StatusSquare';
+import StatusSidebar from '../components/StatusSidebar';
 import { UnresolvedThreadsView } from '../components/UnresolvedThreadsView';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { ShortcutBadge } from '../components/ui/shortcut-badge';
 import { Textarea } from '../components/ui/textarea';
 import { useActionDispatch } from '../hooks/useActionDispatch';
+import { useDismissals } from '../hooks/useDismissals';
 import { usePatchsets } from '../hooks/usePatchsets';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -20,6 +21,12 @@ import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { CICheck, Comment, Patchset, PR } from '../types';
+import {
+  filterBySeverity,
+  groupVisibleFindings,
+  isAutoCollapsed,
+  sortBySeverity,
+} from '../utils/classification';
 import { createLogger } from '../utils/logger';
 
 // Route API for reading the stable $prId param; detail never resolves by list index.
@@ -131,6 +138,9 @@ export function PRDetailPage() {
         log.warn({ err }, 'failed to fetch comments');
       });
   }, [pr, request, commentsRevision]);
+
+  // d n / d b / u bulk-dismiss keystrokes act on the loaded comment list.
+  useDismissals(pr?.id, comments);
 
   useEffect(() => {
     if (pr === undefined) return;
@@ -276,7 +286,7 @@ export function PRDetailPage() {
         </footer>
       </article>
 
-      <StatusRail pr={pr} ciChecks={ciChecks} />
+      <StatusSidebar pr={pr} ciChecks={ciChecks} comments={comments} />
 
       {activeOverlay === 'threads' && (
         <UnresolvedThreadsView prId={pr.id} comments={comments} />
@@ -451,7 +461,52 @@ function Description({ pr }: { pr: PR }) {
 }
 
 function RecentComments({ comments }: { comments: Comment[] }) {
-  const unresolved = comments.length; // TODO: real resolution tracking
+  const [expandedByCommentId, setExpandedByCommentId] = useState<
+    Record<string, boolean>
+  >({});
+  const commentMinSeverity = useStore(
+    appStore,
+    (s: UIState) => s.commentMinSeverity,
+  );
+  const commentHumanOnly = useStore(
+    appStore,
+    (s: UIState) => s.commentHumanOnly,
+  );
+  const activeComments = useMemo(
+    () =>
+      sortBySeverity(
+        filterBySeverity(
+          comments.filter((comment) => comment.dismissed !== true),
+          {
+            ...(commentMinSeverity !== null
+              ? { minSeverity: commentMinSeverity }
+              : {}),
+            humanOnly: commentHumanOnly,
+          },
+        ),
+      ),
+    [comments, commentMinSeverity, commentHumanOnly],
+  );
+  // Dedup groups are a VIEW over visible comments: grouping runs AFTER the
+  // dismissed filter so members recompute and fully-hidden groups disappear.
+  const findings = useMemo(
+    () => groupVisibleFindings(activeComments),
+    [activeComments],
+  );
+  const dismissedComments = useMemo(
+    () =>
+      sortBySeverity(comments.filter((comment) => comment.dismissed === true)),
+    [comments],
+  );
+  const unresolved = activeComments.length; // TODO: real resolution tracking
+
+  const toggleExpanded = (commentId: string): void => {
+    setExpandedByCommentId((current) => ({
+      ...current,
+      [commentId]: current[commentId] !== true,
+    }));
+  };
+
   return (
     <section className="space-y-6">
       <div className="flex items-center justify-between">
@@ -463,23 +518,112 @@ function RecentComments({ comments }: { comments: Comment[] }) {
         </span>
       </div>
       <div className="space-y-3">
-        {comments.slice(0, 5).map((c) => (
-          <div
-            key={c.id}
-            className="cursor-crosshair border-l-2 border-transparent bg-surface-container-lowest p-6 transition-colors duration-150 hover:border-primary hover:bg-surface-container-low flex flex-col space-y-3"
-          >
-            <div className="flex justify-between items-center">
-              <span className="font-mono text-[10px] font-bold text-on-surface uppercase tracking-widest">
-                @{c.author}
-              </span>
-              <span className="font-mono text-[10px] text-outline">
-                {relativeTime(c.created_at)}
-              </span>
+        {findings.map((finding) => {
+          const c = finding.anchor;
+          const isMerged = finding.members.length > 1;
+          const isExpandable = isMerged || isAutoCollapsed(c);
+          const isExpanded = expandedByCommentId[c.id] === true;
+          const isCollapsed = isExpandable && !isExpanded;
+          const severity = isMerged ? finding.severity : c.severity;
+          const severityLabel = severity ?? 'unclassified';
+          const vendorLabel = finding.vendors
+            .map((vendor) => vendor.charAt(0).toUpperCase() + vendor.slice(1))
+            .join(' + ');
+
+          return (
+            <div
+              key={c.id}
+              data-severity={severity ?? 'none'}
+              className="cursor-crosshair border-l-2 border-outline-variant/30 bg-surface-container-lowest p-6 transition-colors duration-150 data-[severity=critical]:border-l-error data-[severity=warning]:border-l-tertiary data-[severity=suggestion]:border-l-primary data-[severity=nit]:border-l-secondary data-[severity=info]:border-l-outline hover:border-primary hover:bg-surface-container-low flex flex-col space-y-3"
+            >
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-4 border-0 p-0 text-left"
+                aria-expanded={!isCollapsed}
+                onClick={() => {
+                  if (isExpandable) toggleExpanded(c.id);
+                }}
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  {isExpandable && (
+                    <span className="font-mono text-[10px] text-outline">
+                      {isCollapsed ? '▶' : '▼'}
+                    </span>
+                  )}
+                  <span className="font-mono text-[10px] font-bold text-on-surface uppercase tracking-widest">
+                    {isMerged
+                      ? `Flagged by ${vendorLabel} (${finding.members.length} sources)`
+                      : `@${c.author}`}
+                  </span>
+                  <span className="font-mono text-[9px] uppercase tracking-widest text-outline">
+                    {severityLabel}
+                  </span>
+                </span>
+                <span className="font-mono text-[10px] text-outline shrink-0">
+                  {relativeTime(c.created_at)}
+                </span>
+              </button>
+              {!isCollapsed &&
+                (isMerged ? (
+                  <div className="space-y-3">
+                    {finding.members.map((member) => (
+                      <div
+                        key={member.id}
+                        className="border-l border-outline-variant/30 pl-4"
+                      >
+                        <span className="font-mono text-[9px] uppercase tracking-widest text-outline">
+                          @{member.author}
+                        </span>
+                        <Markdown body={member.body} compact />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Markdown body={c.body} compact />
+                ))}
             </div>
-            <Markdown body={c.body} compact />
-          </div>
-        ))}
+          );
+        })}
       </div>
+      {dismissedComments.length > 0 && (
+        <section className="border-t border-outline-variant/30 pt-4 space-y-2">
+          <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-outline">
+            Dismissed ({dismissedComments.length})
+          </h3>
+          {dismissedComments.map((c) => {
+            const isExpanded = expandedByCommentId[c.id] === true;
+            return (
+              <div
+                key={c.id}
+                className="border-l-2 border-outline-variant/20 bg-surface-container-lowest/50 px-6 py-2 opacity-60"
+              >
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-4 border-0 p-0 text-left"
+                  aria-expanded={isExpanded}
+                  onClick={() => toggleExpanded(c.id)}
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono text-[10px] text-outline">
+                      {isExpanded ? '▼' : '▶'}
+                    </span>
+                    <span className="font-mono text-[10px] font-bold text-on-surface uppercase tracking-widest">
+                      @{c.author}
+                    </span>
+                    <span className="font-mono text-[9px] uppercase tracking-widest text-outline">
+                      {c.severity ?? 'unclassified'}
+                    </span>
+                  </span>
+                  <span className="font-mono text-[10px] text-outline shrink-0">
+                    {relativeTime(c.created_at)}
+                  </span>
+                </button>
+                {isExpanded && <Markdown body={c.body} compact />}
+              </div>
+            );
+          })}
+        </section>
+      )}
     </section>
   );
 }
@@ -512,70 +656,5 @@ function FileList({
         ))}
       </div>
     </section>
-  );
-}
-
-interface StatusRailProps {
-  pr: PR;
-  ciChecks: CICheck[];
-}
-
-function StatusRail({ pr, ciChecks }: StatusRailProps) {
-  const ciPending = ciChecks.some((c) => c.state === 'pending');
-  const ciFailed = ciChecks.some((c) => c.state === 'failure');
-  const ciKind: StatusKind = ciFailed
-    ? 'failure'
-    : ciPending
-      ? 'running'
-      : ciChecks.length > 0
-        ? 'success'
-        : 'neutral';
-  const ciLabel = ciFailed
-    ? 'Checks Failed'
-    : ciPending
-      ? 'Checks Running'
-      : ciChecks.length > 0
-        ? 'Checks Passing'
-        : 'No CI';
-  const reviewKind: StatusKind =
-    pr.review_status === 'approved'
-      ? 'success'
-      : pr.review_status === 'changes_requested'
-        ? 'failure'
-        : 'neutral';
-  const reviewLabel =
-    pr.review_status === 'approved'
-      ? 'Approved'
-      : pr.review_status === 'changes_requested'
-        ? 'Changes Requested'
-        : 'Awaiting Review';
-
-  return (
-    <aside className="w-[10%] min-w-[96px] bg-surface-container-low flex flex-col border-l border-outline-variant/10">
-      <div className="flex-1 flex flex-col items-center justify-center space-y-16 py-12">
-        <div className="flex flex-col items-center space-y-3">
-          <StatusSquare status={ciKind} size="w-5 h-5" label={ciLabel} />
-          <span
-            className={`font-mono text-[9px] font-bold tracking-widest uppercase text-center px-2 ${
-              ciFailed ? 'text-error' : 'text-on-surface'
-            }`}
-          >
-            {ciLabel}
-          </span>
-        </div>
-
-        <div className="flex flex-col items-center space-y-3">
-          <StatusSquare
-            status={reviewKind}
-            size="w-5 h-5"
-            label={reviewLabel}
-          />
-          <span className="font-mono text-[9px] font-bold tracking-widest text-outline uppercase text-center px-2">
-            {reviewLabel}
-          </span>
-        </div>
-      </div>
-      <div className="h-24" />
-    </aside>
   );
 }

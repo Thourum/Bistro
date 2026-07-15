@@ -65,10 +65,38 @@ func setupCommentsTestDB(t *testing.T) *sql.DB {
 		start_line INTEGER,
 		original_start_line INTEGER,
 		start_side TEXT,
-		subject_type TEXT
+		subject_type TEXT,
+		author_type TEXT,
+		bot_vendor TEXT,
+		severity TEXT,
+		classification_source TEXT,
+		dedup_group_id TEXT
 	)`)
 	if err != nil {
 		t.Fatalf("create comments table: %v", err)
+	}
+	// migration 026 side-table used by the lazy re-classification pass.
+	_, err = db.Exec(`CREATE TABLE comment_classification_state (
+		comment_id  TEXT PRIMARY KEY,
+		fingerprint TEXT NOT NULL
+	)`)
+	if err != nil {
+		t.Fatalf("create comment_classification_state table: %v", err)
+	}
+	// migration 027 dismissals + migration 022 current_user, joined for the
+	// per-account dismissed flag.
+	_, err = db.Exec(`CREATE TABLE comment_dismissals (
+		comment_id       TEXT NOT NULL,
+		account_provider TEXT NOT NULL DEFAULT 'github',
+		account_login    TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (comment_id, account_provider, account_login)
+	)`)
+	if err != nil {
+		t.Fatalf("create comment_dismissals table: %v", err)
+	}
+	_, err = db.Exec(`CREATE TABLE current_user (provider TEXT PRIMARY KEY, login TEXT NOT NULL)`)
+	if err != nil {
+		t.Fatalf("create current_user table: %v", err)
 	}
 	return db
 }

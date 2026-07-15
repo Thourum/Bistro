@@ -1,8 +1,11 @@
 import { formatForDisplay } from '@tanstack/react-hotkeys';
-import { err, ok, type Result, ResultAsync } from 'neverthrow';
+import { err, fromPromise, ok, type Result, ResultAsync } from 'neverthrow';
 import { useCallback, useMemo, useState } from 'react';
 import {
+  type ClassificationMode,
+  type ClassificationSettings,
   CODE_FONT_CHOICES,
+  type DismissalScope,
   type FontChoice,
   fontChoiceId,
   UI_FONT_CHOICES,
@@ -33,6 +36,7 @@ type SettingsSection =
   | 'connections'
   | 'repositories'
   | 'sync'
+  | 'classification'
   | 'privacy'
   | 'advanced';
 
@@ -42,6 +46,7 @@ const SECTIONS: ReadonlyArray<{ id: SettingsSection; label: string }> = [
   { id: 'connections', label: 'Connections' },
   { id: 'repositories', label: 'Repositories' },
   { id: 'sync', label: 'Sync' },
+  { id: 'classification', label: 'Comment Classification' },
   { id: 'privacy', label: 'Privacy' },
   { id: 'advanced', label: 'Advanced' },
 ];
@@ -71,6 +76,7 @@ export function SettingsPage() {
             <ConnectionsSection />
             <RepositoriesSection />
             <SyncSection />
+            <ClassificationSection />
             <PrivacySection />
             <AdvancedSection />
           </div>
@@ -847,6 +853,322 @@ function SyncSection() {
           }
           inline
         />
+      </div>
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Comment Classification
+// ---------------------------------------------------------------------------
+
+function ClassificationSection() {
+  const classification = useStore(settingsStore, (s) => s.classification);
+  const byokSessionTokens = useStore(
+    appStore,
+    (s: UIState) => s.byokSessionTokens,
+  );
+  const byokEstCost = useStore(appStore, (s: UIState) => s.byokEstCost);
+  const byokAuthFailed = useStore(appStore, (s: UIState) => s.byokAuthFailed);
+  const { request } = useWebSocket();
+  const [keyInput, setKeyInput] = useState('');
+  const [keySaved, setKeySaved] = useState(false);
+  const [keySaving, setKeySaving] = useState(false);
+
+  const setScope = (scope: DismissalScope): void => {
+    void updateSettings({
+      classification: { ...classification, dismissalScope: scope },
+    });
+  };
+
+  const setMode = (mode: ClassificationMode): void => {
+    void updateSettings({
+      classification: { ...classification, mode },
+    });
+  };
+
+  const isAIMode =
+    classification.mode === 'rules+llm' || classification.mode === 'llm-all';
+
+  const saveKey = (): void => {
+    if (keyInput.length === 0 || keySaving) return;
+    setKeySaving(true);
+    // The key travels ONLY through SET_BYOK_KEY into the OS keychain —
+    // never into settings JSON or any renderer store.
+    void fromPromise(
+      request('SET_BYOK_KEY', {
+        provider: classification.provider,
+        key: keyInput,
+      }),
+      (err) => err,
+    ).match(
+      () => {
+        setKeySaving(false);
+        setKeyInput('');
+        setKeySaved(true);
+        appStore.setState((s) => ({ ...s, byokAuthFailed: false }));
+        addToast({
+          type: 'success',
+          message: `API key saved to the OS keychain (${classification.provider})`,
+          dismissible: true,
+        });
+      },
+      (err) => {
+        // Key kept in the input so the user can retry.
+        setKeySaving(false);
+        addToast({
+          type: 'error',
+          message: `Saving key failed: ${err instanceof Error ? err.message : 'sync engine unreachable'}`,
+          dismissible: true,
+        });
+      },
+    );
+  };
+
+  // 'server' exists in the type but is a hidden Team-plan stub — never rendered.
+  const MODE_OPTIONS = [
+    {
+      value: 'rules' as const,
+      label: 'Rules engine',
+      description: 'Deterministic YAML rules + heuristics. Fully offline.',
+    },
+    {
+      value: 'rules+llm' as const,
+      label: 'Rules + AI fallback',
+      description: 'Your LLM classifies only what the rules left unclassified.',
+    },
+    {
+      value: 'llm-all' as const,
+      label: 'AI for everything',
+      description:
+        'Every comment goes to your LLM; rules shown until it answers.',
+    },
+  ] satisfies ReadonlyArray<{
+    value: ClassificationMode;
+    label: string;
+    description: string;
+  }>;
+
+  return (
+    <Section id="classification" title="Comment Classification">
+      <div className="space-y-4">
+        <div>
+          <h3 className="text-sm font-bold text-on-surface">
+            Classification mode
+          </h3>
+          <p className="text-xs text-on-surface-variant mt-1">
+            AI modes call your own LLM provider with your own key. Everything
+            else stays on this machine.
+          </p>
+        </div>
+        <div
+          role="radiogroup"
+          aria-label="Classification mode"
+          className="divide-y divide-outline-variant/10 border-y border-outline-variant/10"
+        >
+          {MODE_OPTIONS.map((option) => {
+            const selected = classification.mode === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setMode(option.value)}
+                className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors ${
+                  selected
+                    ? 'bg-surface-container-low'
+                    : 'hover:bg-surface-container-low/50'
+                }`}
+              >
+                <span>
+                  <span className="block text-sm text-on-surface">
+                    {option.label}
+                  </span>
+                  <span className="block text-xs text-on-surface-variant">
+                    {option.description}
+                  </span>
+                </span>
+                <span
+                  className={`font-mono text-[10px] uppercase tracking-widest ${
+                    selected ? 'text-primary font-bold' : 'text-outline'
+                  }`}
+                >
+                  {selected ? '● Selected' : '○'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {isAIMode && (
+          <div className="space-y-3 border border-outline-variant/20 p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block" htmlFor="byok-provider">
+                <span className="block text-xs text-on-surface-variant mb-1">
+                  Provider
+                </span>
+                <select
+                  id="byok-provider"
+                  value={classification.provider}
+                  onChange={(e) =>
+                    void updateSettings({
+                      classification: {
+                        ...classification,
+                        provider: e.target
+                          .value as ClassificationSettings['provider'],
+                      },
+                    })
+                  }
+                  className="w-full bg-surface-container-lowest border border-outline-variant/40 px-3 py-2 text-sm text-on-surface"
+                >
+                  <option value="anthropic">Anthropic</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="ollama">Ollama</option>
+                  <option value="custom">Custom (OpenAI-compatible)</option>
+                </select>
+              </label>
+              <label className="block" htmlFor="byok-model">
+                <span className="block text-xs text-on-surface-variant mb-1">
+                  Model
+                </span>
+                <Input
+                  id="byok-model"
+                  value={classification.model}
+                  placeholder="e.g. claude-haiku-4-5"
+                  onChange={(e) =>
+                    void updateSettings({
+                      classification: {
+                        ...classification,
+                        model: e.target.value,
+                      },
+                    })
+                  }
+                />
+              </label>
+            </div>
+            {(classification.provider === 'custom' ||
+              classification.provider === 'ollama') && (
+              <label className="block" htmlFor="byok-endpoint">
+                <span className="block text-xs text-on-surface-variant mb-1">
+                  Endpoint
+                </span>
+                <Input
+                  id="byok-endpoint"
+                  value={classification.endpoint}
+                  placeholder="http://localhost:11434/v1"
+                  onChange={(e) =>
+                    void updateSettings({
+                      classification: {
+                        ...classification,
+                        endpoint: e.target.value,
+                      },
+                    })
+                  }
+                />
+              </label>
+            )}
+            <div className="flex items-end gap-3">
+              <label className="block flex-1" htmlFor="byok-key">
+                <span
+                  className={`block text-xs mb-1 ${
+                    byokAuthFailed ? 'text-error' : 'text-on-surface-variant'
+                  }`}
+                >
+                  API key{' '}
+                  {byokAuthFailed
+                    ? '— rejected by provider'
+                    : '(stored in the OS keychain, never in settings)'}
+                </span>
+                <Input
+                  id="byok-key"
+                  type="password"
+                  value={keyInput}
+                  placeholder={keySaved ? '••••••••  (key saved)' : 'sk-…'}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  className={byokAuthFailed ? 'border-error' : ''}
+                />
+              </label>
+              <Button
+                onClick={saveKey}
+                disabled={keyInput.length === 0 || keySaving}
+                className="px-5 py-2"
+              >
+                {keySaving ? 'Saving…' : 'Save key'}
+              </Button>
+            </div>
+            <p className="font-mono text-[10px] text-outline">
+              This session: {byokSessionTokens.toLocaleString()} tokens, est. $
+              {byokEstCost.toFixed(2)}
+            </p>
+          </div>
+        )}
+
+        <div>
+          <h3 className="text-sm font-bold text-on-surface">Dismissal scope</h3>
+          <p className="text-xs text-on-surface-variant mt-1">
+            Bulk-dismissing comments always hides them locally. Optionally also
+            resolve their review threads on GitHub via the action queue.
+          </p>
+        </div>
+        <div
+          role="radiogroup"
+          aria-label="Dismissal scope"
+          className="divide-y divide-outline-variant/10 border-y border-outline-variant/10"
+        >
+          {(
+            [
+              {
+                value: 'local' as const,
+                label: 'Local only',
+                description: 'Dismissals stay on this machine.',
+              },
+              {
+                value: 'local+provider' as const,
+                label: 'Also resolve on GitHub',
+                description:
+                  'Resolvable threads are resolved on GitHub when dismissed.',
+              },
+            ] satisfies ReadonlyArray<{
+              value: DismissalScope;
+              label: string;
+              description: string;
+            }>
+          ).map((option) => {
+            const selected = classification.dismissalScope === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setScope(option.value)}
+                className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors ${
+                  selected
+                    ? 'bg-surface-container-low'
+                    : 'hover:bg-surface-container-low/50'
+                }`}
+              >
+                <span>
+                  <span className="block text-sm text-on-surface">
+                    {option.label}
+                  </span>
+                  <span className="block text-xs text-on-surface-variant">
+                    {option.description}
+                  </span>
+                </span>
+                <span
+                  className={`font-mono text-[10px] uppercase tracking-widest ${
+                    selected ? 'text-primary font-bold' : 'text-outline'
+                  }`}
+                >
+                  {selected ? '● Selected' : '○'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </Section>
   );

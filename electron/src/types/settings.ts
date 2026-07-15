@@ -10,6 +10,22 @@
 export const SETTINGS_SCHEMA_VERSION = 1 as const;
 
 export type ThemeMode = 'light' | 'dark';
+export type ClassificationMode = 'rules' | 'rules+llm' | 'llm-all' | 'server';
+export type DismissalScope = 'local' | 'local+provider';
+export type ClassificationProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'openrouter'
+  | 'ollama'
+  | 'custom';
+
+export interface ClassificationSettings {
+  mode: ClassificationMode;
+  dismissalScope: DismissalScope;
+  provider: ClassificationProvider;
+  model: string;
+  endpoint: string;
+}
 
 export interface AppearanceSettings {
   theme: ThemeMode;
@@ -73,6 +89,7 @@ export interface AppSettings {
   prList: PRListSettings;
   privacy: PrivacySettings;
   repositories: RepositoriesSettings;
+  classification: ClassificationSettings;
   keybindings: KeybindingOverrides;
 }
 
@@ -101,6 +118,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   repositories: {
     devFolderPath: null,
+  },
+  classification: {
+    mode: 'rules',
+    dismissalScope: 'local',
+    provider: 'anthropic',
+    model: '',
+    endpoint: '',
   },
   keybindings: {},
 };

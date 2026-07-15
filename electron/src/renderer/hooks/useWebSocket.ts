@@ -611,8 +611,55 @@ function onMessage(event: MessageEvent<string>): void {
       });
       break;
     }
+    case 'COMMENTS_READY': {
+      const handler = messageHandlers.get(message.id);
+      if (handler) {
+        handler(message.data);
+        messageHandlers.delete(message.id);
+        break;
+      }
+      // Server-initiated push (async LLM tier upgraded classifications):
+      // no matching request id — bump commentsRevision so open views refetch.
+      try {
+        appStore.setState((s) => ({
+          ...s,
+          commentsRevision: s.commentsRevision + 1,
+        }));
+      } catch {
+        /* test env */
+      }
+      break;
+    }
+    case 'BYOK_USAGE': {
+      const payload = message.data as {
+        session_tokens?: number;
+        est_cost?: number;
+      };
+      try {
+        appStore.setState((s) => ({
+          ...s,
+          byokSessionTokens: payload.session_tokens ?? 0,
+          byokEstCost: payload.est_cost ?? 0,
+        }));
+      } catch {
+        /* test env */
+      }
+      break;
+    }
+    case 'BYOK_AUTH_FAILED': {
+      try {
+        appStore.setState((s) => ({ ...s, byokAuthFailed: true }));
+      } catch {
+        /* test env */
+      }
+      addToast({
+        type: 'error',
+        message: 'AI classification: API key rejected — check Settings',
+        dismissible: true,
+      });
+      break;
+    }
     case 'DIFF_READY':
-    case 'COMMENTS_READY':
     case 'PATCHSETS_READY':
     case 'RANGE_DIFF_READY':
     case 'FILE_VIEWED_ACK':
@@ -628,6 +675,10 @@ function onMessage(event: MessageEvent<string>): void {
     case 'RECOVER_REPO_TO_CACHE_RESULT':
     case 'REMOVE_REPO_PREFLIGHT_RESULT':
     case 'REMOVE_REPO_RESULT':
+    case 'CLASSIFICATION_SETTINGS_UPDATED':
+    case 'BYOK_KEY_UPDATED':
+    case 'DISMISS_RESULT':
+    case 'UNDISMISS_RESULT':
     case 'PR_LIST_READY': {
       const handler = messageHandlers.get(message.id);
       if (handler) {

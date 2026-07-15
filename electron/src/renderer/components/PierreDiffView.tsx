@@ -6,10 +6,12 @@ import { useStore } from '../hooks/useStore';
 import { appStore } from '../store';
 import {
   type Comment,
+  type CommentSeverity,
   type ReviewThread,
   type ThreadLifecycle,
   threadLifecycle,
 } from '../types';
+import { humanizeSource } from '../utils/classification';
 import {
   buildFileKeys,
   type DiffFileIdentity,
@@ -623,6 +625,23 @@ const LIFECYCLE_LABEL: Record<ThreadLifecycle, string> = {
   unknown: 'Unknown',
 };
 
+const COMMENT_SEVERITY_STRIPE_CLASSES: Record<
+  CommentSeverity | 'none',
+  string
+> = {
+  critical: 'border-l-error',
+  warning: 'border-l-tertiary',
+  suggestion: 'border-l-primary',
+  nit: 'border-l-secondary',
+  info: 'border-l-outline',
+  none: 'border-l-outline-variant/30',
+};
+
+function formatClassificationLabel(value: string | undefined): string {
+  if (value === undefined || value.trim().length === 0) return 'unclassified';
+  return value;
+}
+
 /**
  * Compact annotation card rendered inline in the diff canvas below a thread's
  * anchor line. Resolved and outdated threads are visually dimmed so the
@@ -696,14 +715,39 @@ function ThreadAnnotationCard({
       {/* Discussion */}
       {comments.length > 0 ? (
         <ol className="space-y-2 pl-2 border-l border-outline-variant/20">
-          {comments.map((c) => (
-            <li key={c.id} className="space-y-0.5 list-none">
-              <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface">
-                @{c.author}
-              </span>
-              <Markdown body={c.body} compact />
-            </li>
-          ))}
+          {comments.map((c) => {
+            const severity = c.severity ?? 'none';
+            const sourceTooltip = humanizeSource(c.classification_source);
+
+            return (
+              <li
+                key={c.id}
+                data-severity={severity}
+                className={`space-y-1 list-none border-l-2 pl-2 ${COMMENT_SEVERITY_STRIPE_CLASSES[severity]}`}
+              >
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface">
+                    @{c.author}
+                  </span>
+                  {(c.severity || c.bot_vendor) && (
+                    <>
+                      <Badge
+                        variant="outline"
+                        title={sourceTooltip}
+                        aria-label={`${formatClassificationLabel(c.severity)}: ${sourceTooltip}`}
+                      >
+                        {formatClassificationLabel(c.severity)}
+                      </Badge>
+                      <Badge variant="neutral">
+                        {formatClassificationLabel(c.bot_vendor)}
+                      </Badge>
+                    </>
+                  )}
+                </div>
+                <Markdown body={c.body} compact />
+              </li>
+            );
+          })}
         </ol>
       ) : (
         <p className="font-mono text-[10px] text-outline-variant pl-2">

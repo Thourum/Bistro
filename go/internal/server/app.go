@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/cache"
+	"github.com/itterno/bistro/internal/classify"
+	"github.com/itterno/bistro/internal/classify/llm"
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/keychain"
 	"github.com/itterno/bistro/internal/provider"
@@ -65,6 +67,50 @@ type App struct {
 	currentUserStore *store.CurrentUserStore
 	// anchorResolver is set in Run() and shared across all orchestrators.
 	anchorResolver *git.AnchorResolver
+	// classifier is the Phase 3 comment-classification engine provider,
+	// shared by the sync writer and the comments handler. Its mode getter
+	// reads classificationState, so a mode change lazily invalidates the
+	// rule fingerprint on the next Current() call.
+	classifier *classify.EngineProvider
+	// classificationState holds the live classification settings pushed via
+	// SET_CLASSIFICATION_SETTINGS (mode, dismissal scope, provider, model).
+	classificationState *handler.ClassificationState
+	// llmTier is the async BYOK classification tier (Phase 3.8); kicked
+	// post-sync-commit and on PR open, no-op outside LLM modes.
+	llmTier *llm.Tier
+	// llmKick kicks the tier for one PR; set in Run, read by orchestrator
+	// wiring (post-commit hook) and the comments handler (PR-open kick).
+	llmKick func(prID string)
+}
+
+// slogPrintf adapts *slog.Logger to the llm.Logger Printf interface.
+type slogPrintf struct{ log *slog.Logger }
+
+func (s slogPrintf) Printf(format string, v ...interface{}) {
+	s.log.Warn(fmt.Sprintf(format, v...))
+}
+
+// liveByokClient satisfies llm.ClassifierClient by constructing the right
+// provider client per call from the LIVE settings + keychain key — so a
+// provider/model/key change applies to the next call without restarts.
+// The key never leaves the call path.
+type liveByokClient struct {
+	state  *handler.ClassificationState
+	tokens *keychain.TokenManager
+}
+
+func (c *liveByokClient) Classify(ctx context.Context, comment llm.CommentInput) (string, int, error) {
+	s := c.state.Snapshot()
+	key, err := c.tokens.Get("byok." + s.Provider)
+	if err != nil {
+		// Missing key behaves like an auth failure: tier disables until a
+		// key change calls ResetAuth.
+		return "", 0, fmt.Errorf("no BYOK key for %s: %w", s.Provider, llm.ErrAuth)
+	}
+	if s.Provider == "anthropic" {
+		return llm.NewAnthropicClient(s.Model, key, s.Endpoint).Classify(ctx, comment)
+	}
+	return llm.NewOpenAICompatibleClient(s.Provider, s.Model, key, s.Endpoint).Classify(ctx, comment)
 }
 
 // SetReadyWriter overrides where the machine-readable ready signal is written.
@@ -118,7 +164,16 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 		WithReviewTracking(a.currentUserStore, a.db).
 		WithAnchorResolver(a.anchorResolver).
 		WithActionQueue(store.NewActionQueue(a.db.DB)).
-		WithLiveness(a.provCtx)
+		WithLiveness(a.provCtx).
+		WithClassifier(a.classifier).
+		WithPostCommit(func(prIDs []string) {
+			if a.llmKick == nil {
+				return
+			}
+			for _, prID := range prIDs {
+				a.llmKick(prID)
+			}
+		})
 	a.prov = prov
 	a.activeProviderName = name
 	a.startEventBridge(a.provCtx)
@@ -200,20 +255,37 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 	// access it before the first connect don't panic on a nil context.
 	provCtx, provCtxCancel := context.WithCancel(context.Background())
 	return &App{
-		log:           logger,
-		wsServer:      ws.NewServerWithLogger(logger),
-		wsPort:        wsPort,
-		dbPath:        dbPath,
-		providerCache: cache.NewProviderCache(cachePath),
-		tokenManager:  keychain.NewTokenManager(),
-		repoLocks:     git.NewRepoLocks(),
-		syncTrigger:   make(chan string, 8),
-		syncSettings:  make(chan syncSettingsMsg, 4),
-		syncInterval:  5 * time.Minute,
-		autoSync:      true,
-		provCtx:       provCtx,
-		provCtxCancel: provCtxCancel,
+		log:                 logger,
+		wsServer:            ws.NewServerWithLogger(logger),
+		wsPort:              wsPort,
+		dbPath:              dbPath,
+		providerCache:       cache.NewProviderCache(cachePath),
+		tokenManager:        keychain.NewTokenManager(),
+		repoLocks:           git.NewRepoLocks(),
+		syncTrigger:         make(chan string, 8),
+		syncSettings:        make(chan syncSettingsMsg, 4),
+		syncInterval:        5 * time.Minute,
+		autoSync:            true,
+		provCtx:             provCtx,
+		provCtxCancel:       provCtxCancel,
+		classificationState: handler.NewClassificationState(),
 	}
+}
+
+// SetRulesDir seeds the classification rules directory with the embedded
+// built-ins (presence-gated) and constructs the engine provider shared by the
+// sync writer and the comments handler. An empty dir skips seeding entirely;
+// classification then runs on the embedded built-ins. Call before Run.
+// The mode getter reads the live classification state, so a mode change from
+// SET_CLASSIFICATION_SETTINGS invalidates fingerprints lazily.
+func (a *App) SetRulesDir(dir string) {
+	if dir != "" {
+		if err := classify.SeedAndUpdate(dir); err != nil {
+			a.log.Warn("rules dir unusable, classification falls back to embedded built-ins",
+				"dir", dir, "err", err)
+		}
+	}
+	a.classifier = classify.NewEngineProvider(dir, a.classificationState.Mode, a.log)
 }
 
 // SetSyncInterval configures the interval between automatic sync cycles.
@@ -354,6 +426,25 @@ func (a *App) Run(ctx context.Context) error {
 	currentUserStore := store.NewCurrentUserStore(a.db)
 	a.currentUserStore = currentUserStore // stored on App for SetProvider re-creation
 
+	// BYOK LLM tier (Phase 3.8): async post-commit/PR-open refinement.
+	// Emit bridges straight to the WS broadcast; the tier no-ops outside
+	// rules+llm / llm-all modes so constructing it unconditionally is safe.
+	a.llmTier = llm.NewTier(llm.TierConfig{
+		DB:     a.db.DB,
+		Client: &liveByokClient{state: a.classificationState, tokens: a.tokenManager},
+		Mode:   a.classificationState.Mode,
+		Settings: func() llm.SettingsSnapshot {
+			s := a.classificationState.Snapshot()
+			return llm.SettingsSnapshot{Provider: s.Provider, Model: s.Model}
+		},
+		Emit: func(eventType string, data map[string]interface{}) {
+			a.wsServer.Broadcast(wsEventMsg{Type: eventType, Data: data})
+		},
+		Log: slogPrintf{a.log},
+	})
+	llmKick := func(prID string) { a.llmTier.KickPR(ctx, prID) }
+	a.llmKick = llmKick
+
 	if a.prov != nil {
 		a.provMu.Lock()
 		a.attachOrchestratorLocked(ctx, a.prov, "github")
@@ -403,7 +494,24 @@ func (a *App) Run(ctx context.Context) error {
 		Log:         a.log,
 	}))
 	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandler(a.db.DB, a.log))
-	a.wsServer.RegisterHandler("REQUEST_COMMENTS", handler.NewRequestCommentsHandler(a.db.DB, a.log))
+	a.wsServer.RegisterHandler("REQUEST_COMMENTS",
+		handler.NewRequestCommentsHandlerWithLLMKick(a.db.DB, a.log, a.classifier, llmKick))
+	dismissDeps := handler.DismissDeps{
+		DB:          a.db.DB,
+		Dismissals:  store.NewDismissals(a.db.DB),
+		CurrentUser: currentUserStore,
+		GetApplier:  a.currentApplier,
+		Scope:       a.classificationState.DismissalScope,
+		Log:         a.log,
+	}
+	a.wsServer.RegisterHandler("DISMISS_COMMENTS", handler.NewDismissCommentsHandler(dismissDeps))
+	a.wsServer.RegisterHandler("UNDISMISS_COMMENTS", handler.NewUndismissCommentsHandler(dismissDeps))
+	a.wsServer.RegisterHandler("SET_CLASSIFICATION_SETTINGS",
+		handler.NewSetClassificationSettingsHandler(a.classificationState, a.log))
+	a.wsServer.RegisterHandler("SET_BYOK_KEY",
+		handler.NewSetByokKeyHandler(a.tokenManager, a.llmTier.ResetAuth, a.log))
+	a.wsServer.RegisterHandler("DELETE_BYOK_KEY",
+		handler.NewDeleteByokKeyHandler(a.tokenManager, a.llmTier.ResetAuth, a.log))
 	a.wsServer.RegisterHandler("REQUEST_REPO_LIST",
 		handler.NewRequestRepoListHandler(a.getProvider, a.db.DB, a.log))
 	a.wsServer.RegisterHandler("TOGGLE_WATCH_REPO",

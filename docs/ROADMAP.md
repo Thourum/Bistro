@@ -350,47 +350,50 @@ CREATE TABLE patchsets (
 
 ---
 
-## Phase 3 — AI Comment Classification (the wedge) — **status: not started (verified 2026-07-11)**
+## Phase 3 — AI Comment Classification (the wedge) — **status: implemented 2026-07-12 (3.7 deferred to Team plan)**
 
-> Verified 2026-07-11: zero code hits for any 3.x sub-feature (no classification
-> columns, no rules engine, no bot identification, no bulk ops, no dedup, no slop
-> score, no BYOK settings). The 3.1–3.4 spec/plan existed as docs
-> (`docs/superpowers/`, removed 2026-07-11 in the docs cleanup — recover from git
-> history if implementation starts).
+> **Implemented 2026-07-12** (PR #22, branch `P3-Comment-Classification`) —
+> sub-features 3.1–3.6 + 3.8; **3.7 deferred to the Team plan** (see below).
+> Authoritative docs:
+> - Spec: `docs/superpowers/specs/2026-07-12-comment-classification-design.md`
+> - Plan: `docs/superpowers/plans/2026-07-12-comment-classification.md`
+> - User guide: `website/src/pages/docs/comment-classification.mdx`
+>
+> (History: a 2026-07-11 audit found zero 3.x code; the 2026-06-19 foundation
+> spec/plan were recovered from git history and superseded by the docs above.)
 
 This is what makes Bistro the answer to the AI-PR era. Implemented as a rules engine + heuristics, with optional BYOK to push specific tasks to a user-supplied LLM.
 
 **Design principle.** Every classification is deterministic, inspectable, and explainable. The user can always click a comment and see *why* it was tagged as "nit" — the matching rule, the regex, the heuristic.
 
-> **Foundation slice designed & planned (2026-06-19).** Sub-features **3.1–3.4**
-> (schema, bot identification, rules engine, heuristics) have a brainstormed spec
-> and a task-by-task implementation plan:
-> - Spec: `docs/superpowers/specs/2026-06-19-comment-classification-foundation-design.md` (removed 2026-07-11; in git history)
-> - Plan: `docs/superpowers/plans/2026-06-19-comment-classification-foundation.md` (removed 2026-07-11; in git history)
->
-> Status of these four: **planned, not yet built.** Decisions that diverge from the
-> original draft below (the draft is left intact for history; the spec is authoritative):
+> **As-built decisions** (where the implementation diverges from the original
+> draft below — the draft is left intact for history; the spec is authoritative):
 > - **Single engine.** Heuristics (3.4) are not a separate code path — they ship as a
 >   built-in YAML (`zz-fallback.yml`) loaded last. The rule schema gained `weight` for
 >   weighted heuristic scoring; vendor rules set severity directly.
 > - **Resolution is last-match-wins**, not "highest confidence wins." Files load
 >   alphabetically; `coderabbit.company.yml` overrides `coderabbit.yml` by loading later.
 >   No confidence score in v1 (deferred until conflicts are observed in practice).
-> - **No hot-reload / fsnotify.** A coarse `sha256` fingerprint over the rules dir is
->   stored per comment; comments re-classify lazily on PR-open when the fingerprint is stale.
-> - **Rule distribution = bundled + app auto-update** (resolves open question #2). Built-ins
->   are `go:embed`-ed, seeded to `~/.config/bistro/rules/` on first launch, then
->   presence-gated-updated on app upgrade (overwrite present built-ins, respect deletions,
->   never touch user files). No runtime fetch.
-> - **Schema trims for the slice:** `dedup_group_id` moves to the 3.6 migration (only 3.6
->   uses it); `classification_source` values are `rule:<file>:<name>` | `unclassified`
->   (the `byok:`/`manual` variants arrive with 3.8/3.5).
-> - **Per-PR counter lives in the sidebar** (3.2), not a per-PR header. The overview view
->   reorders comments by severity and auto-collapses nits; the diff view gets an inline
->   severity marker. First three built-in vendors shipped: CodeRabbit, Greptile, fallback
+> - **No hot-reload / fsnotify.** A coarse `sha256` fingerprint over the rules dir
+>   (+ classification mode) is stored per comment; comments re-classify lazily on
+>   PR-open when the fingerprint is stale.
+> - **Rule distribution = bundled + app auto-update.** Built-ins are `go:embed`-ed,
+>   seeded to `~/.config/bistro/rules/` on first launch, then manifest-gated-updated
+>   on app upgrade (`.seeded-builtins` tracks what shipped: present built-ins are
+>   overwritten, new built-ins arrive, user deletions stay deleted, user files are
+>   never touched). No runtime fetch.
+> - **Per-PR counter lives in the sidebar** (3.2), not a per-PR header. The overview
+>   reorders comments by severity and auto-collapses nits; the diff view shows inline
+>   severity markers. Built-in vendors shipped: CodeRabbit, Greptile, fallback
 >   heuristics (remaining vendors added as comment samples are collected).
+> - **Corpus gate:** 50-comment fixture with a ≥70% heuristic-accuracy CI gate;
+>   shipped built-ins score 90%.
+> - **BYOK per-task toggles collapsed to one mode setting** (`rules` /
+>   `rules+llm` / `llm-all`; `server` is a hidden Team-plan stub) — severity+category
+>   are the only LLM jobs in v1, so per-job toggles had nothing to toggle. Official
+>   vendor SDKs (`openai-go`, `anthropic-sdk-go`) replace hand-rolled HTTP.
 
-### 3.1 Schema additions
+### 3.1 Schema additions — **done (migrations 027–029)**
 
 ```sql
 ALTER TABLE comments ADD COLUMN author_type TEXT;       -- 'human' | 'bot' | 'unknown'
@@ -401,7 +404,12 @@ ALTER TABLE comments ADD COLUMN classification_source TEXT; -- 'rule:<name>' | '
 ALTER TABLE comments ADD COLUMN dedup_group_id TEXT;    -- comments in the same group are duplicates of each other
 ```
 
-### 3.2 Bot identification
+### 3.2 Bot identification — **done**
+
+> As-built: CodeRabbit + Greptile ship as built-in rule files; the remaining
+> vendors (Copilot, Qodo, Cursor BugBot, Claude Code, Codex, Sourcery) are
+> added as one YAML each when real comment samples are collected. Unknown
+> `[bot]` logins classify as `bot`/`unknown`. The counter lives in the sidebar.
 
 **Acceptance.**
 
@@ -410,7 +418,11 @@ ALTER TABLE comments ADD COLUMN dedup_group_id TEXT;    -- comments in the same 
 - Unknown bots (author login ends in `[bot]` or matches heuristics) flagged as `bot:unknown`.
 - Per-PR header counter: `Human: 4 · CodeRabbit: 23 · Greptile: 8 · Other bots: 2`.
 
-### 3.3 Severity classification (rules engine)
+### 3.3 Severity classification (rules engine) — **done**
+
+> As-built: no confidence score (last-match-wins + weighted tally instead;
+> deferred until real conflicts appear), and "hot-reload" is lazy — rule
+> edits apply on next PR open via the fingerprint, not via a file watcher.
 
 A YAML-driven rules engine that's hot-reloadable, shippable as data, and extensible by users.
 
@@ -446,7 +458,7 @@ classifiers:
 - A "show classification reason" tooltip shows which rule fired.
 - Users can author their own rules under `~/.config/bistro/rules/` and they hot-reload.
 
-### 3.4 Severity heuristics for unlabeled comments
+### 3.4 Severity heuristics for unlabeled comments — **done (90% on corpus, gate ≥70%)**
 
 Used when a comment doesn't match a vendor-specific rule (humans, unknown bots, bots without severity hints).
 
@@ -462,7 +474,7 @@ Used when a comment doesn't match a vendor-specific rule (humans, unknown bots, 
 - 70%+ accuracy on a held-out set of real review comments (we'll build the test corpus from public PRs in popular OSS repos before v1.0).
 - Every heuristic is documented with examples in `docs/classification.md`.
 
-### 3.5 Bulk comment operations
+### 3.5 Bulk comment operations — **done**
 
 **User story.**
 
@@ -470,14 +482,14 @@ Used when a comment doesn't match a vendor-specific rule (humans, unknown bots, 
 
 **Acceptance.**
 
-- `dN` — dismiss all nits in this PR (mark resolved).
-- `dB <vendor>` — dismiss all comments from one bot.
+- `d n` — dismiss all nits (+info) in this PR. *(shipped)*
+- `d b` — dismiss all bot comments (per-vendor picker deferred; selection helper already supports it). *(shipped)*
 - `f c` / `f w` / `f s` / `f n` — filter to critical / warning / suggestion / nit.
 - `f h` — show only human comments.
 - All bulk operations are reversible via `u` (undo) within the session.
 - Dismissals from FOSS are local-only; they don't write back to the provider unless the user explicitly enables that in settings (per-account opt-in).
 
-### 3.6 Multi-bot deduplication
+### 3.6 Multi-bot deduplication — **done**
 
 **Why it matters.** When a team has CodeRabbit + Greptile + Copilot all running, they routinely flag the same line with overlapping comments. Today the user reads three near-identical paragraphs.
 
@@ -488,7 +500,13 @@ Used when a comment doesn't match a vendor-specific rule (humans, unknown bots, 
 - Each source is expandable individually.
 - The most severe rating in the group becomes the group's severity.
 
-### 3.7 PR spam / slop detection
+### 3.7 PR spam / slop detection — **deferred to Team plan (2026-07-12)**
+
+> **Deferred (2026-07-12).** Two of the five signals need data FOSS doesn't
+> sync: commit messages (no commits table) and contributor account age (author
+> account created-date isn't fetched). Rather than adding sync surface for a
+> single feature, slop scoring moves to the Team plan where it can be computed
+> server-side with complete data. The acceptance below is kept for that scope.
 
 **Why it matters.** OSS maintainers in 2025 reported being overwhelmed by AI-generated PRs that look plausible but are slop. curl shut down its bug bounty for this reason.
 
@@ -503,14 +521,14 @@ Used when a comment doesn't match a vendor-specific rule (humans, unknown bots, 
 - Slop score is shown as a sidebar indicator on each PR; doesn't auto-hide anything.
 - Filter `f !` — hide PRs with slop score > 70.
 
-### 3.8 BYOK (Bring Your Own Key) AI
+### 3.8 BYOK (Bring Your Own Key) AI — **done**
 
 **Acceptance.**
 
 - Settings page: "AI Classification (Optional)" section.
 - Provider dropdown: Anthropic, OpenAI, OpenRouter, Ollama (any OpenAI-compatible endpoint).
 - API key stored in OS keychain.
-- Per-task toggle: which classification jobs to send to LLM (severity, category, dedup, slop, all, none).
+- ~~Per-task toggle~~ As-built: one mode setting (rules / rules+llm / llm-all) — severity+category are the only LLM jobs in v1.
 - All LLM calls go from the local Go process directly to the provider's API. No traffic through Bistro infrastructure (FOSS doesn't have any).
 - Token-usage display in the UI: "This session: 14,230 tokens, est. $0.18."
 - Aggressive cache: same comment text → same classification, never re-classify.
@@ -751,9 +769,15 @@ Everything left between here and FOSS v1.0, in rough dependency order. Done work
 - [ ] Post *new* line-level review comments (`PostReviewComment` with path/commitSHA/side) — replies already work (1.3)
 - [ ] Wire a local repo path into the range-diff handler so 2.1/2.2 stop always degrading
 
-**Phase 3 — classification (not started, the wedge)**
-- [ ] 3.1 schema + 3.2 bot identification + 3.3 rules engine + 3.4 heuristics (spec/plan in git history)
-- [ ] 3.5 bulk ops, 3.6 dedup, 3.7 slop score, 3.8 BYOK
+**Phase 3 — classification (implemented 2026-07-12, the wedge)**
+- [x] 3.1 schema + 3.2 bot identification + 3.3 rules engine + 3.4 heuristics
+- [x] 3.5 bulk ops, 3.6 dedup, 3.8 BYOK (3.7 slop score deferred to Team plan, 2026-07-12)
+- Spec for all of the above: `docs/superpowers/specs/2026-07-12-comment-classification-design.md`
+- User guide: `website/src/pages/docs/comment-classification.mdx`
+- Follow-ups (non-gating): remaining vendor rule files as samples land (Copilot,
+  Qodo, Cursor BugBot, Claude Code, Codex, Sourcery); `d b` per-vendor picker;
+  manual acceptance still pending — `local+provider` dismissal resolving a real
+  GitHub thread, and the rule-edit-without-restart walkthrough on a live PR
 
 **Phase 4 — expertise (not started, now unblocked by migration 022)**
 - [ ] 4.1 scoring engine + `file_expertise` table
