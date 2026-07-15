@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+
+	"github.com/pressly/goose/v3"
 )
 
 // newTestDB opens an :memory: DB and runs all migrations. Registered as a
@@ -85,7 +87,7 @@ func TestMigrations(t *testing.T) {
 		t.Fatalf("migration failed: %v", err)
 	}
 
-	tables := []string{"prs", "comments", "files", "schema_migrations", "goose_db_version"}
+	tables := []string{"prs", "comments", "files", "schema_migrations", goose.DefaultTablename}
 	for _, table := range tables {
 		var count int
 		err = db.QueryRow(
@@ -117,6 +119,61 @@ func TestMigrationsIdempotent(t *testing.T) {
 	}
 }
 
+func TestMigrationsRerunAfterGooseVersionMetadataLoss(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	runner := NewMigrationRunner(log, db.DB)
+
+	ctx := context.Background()
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("first Run() failed: %v", err)
+	}
+	mustExec(t, db, `DELETE FROM `+goose.DefaultTablename)
+
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("rerun after goose metadata loss failed: %v", err)
+	}
+
+	assertColumnExists(t, db.DB, "prs", "repo_id")
+	assertColumnExists(t, db.DB, "pr_diffs", "diff_status")
+	for _, columnName := range []string{
+		"local_path",
+		"source",
+		"last_used_at",
+		"location_status",
+		"location_error_code",
+		"location_error",
+	} {
+		assertColumnExists(t, db.DB, "repos", columnName)
+	}
+	for _, columnName := range []string{
+		"author_type",
+		"bot_vendor",
+		"severity",
+		"classification_source",
+	} {
+		assertColumnExists(t, db.DB, "comments", columnName)
+	}
+	if exists, err := tableExists(ctx, db.DB, "comment_classification_state"); err != nil {
+		t.Fatalf("check comment_classification_state table: %v", err)
+	} else if !exists {
+		t.Fatal("comment_classification_state table does not exist")
+	}
+
+	var appliedCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT version_id) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
+		t.Fatalf("query applied goose versions: %v", err)
+	}
+	if appliedCount != 29 {
+		t.Errorf("applied goose version count = %d, want 29", appliedCount)
+	}
+}
+
 func TestMigrationRunnerHasGooseMigrationFiles(t *testing.T) {
 	migrationFiles, err := fs.Glob(migrationsFS, "migrations/[0-9][0-9][0-9][0-9][0-9]_*.sql")
 	if err != nil {
@@ -143,11 +200,11 @@ func TestMigrationRunnerRecordsVersions(t *testing.T) {
 	}
 
 	var migCount int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM goose_db_version WHERE version_id > 0 AND is_applied = 1").Scan(&migCount); err != nil {
-		t.Fatalf("failed to query goose_db_version: %v", err)
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&migCount); err != nil {
+		t.Fatalf("failed to query %s: %v", goose.DefaultTablename, err)
 	}
 	if migCount == 0 {
-		t.Error("expected migrations to be recorded in goose_db_version")
+		t.Errorf("expected migrations to be recorded in %s", goose.DefaultTablename)
 	}
 }
 
@@ -179,7 +236,7 @@ func TestMigrationRunnerSeedsGooseFromLegacySchemaMigrations(t *testing.T) {
 	}
 
 	var appliedCount int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
 	if appliedCount != 29 {
@@ -283,6 +340,15 @@ func tableColumns(t *testing.T, db interface {
 		t.Fatalf("tableColumns rows.Err: %v", err)
 	}
 	return cols
+}
+
+func assertColumnExists(t *testing.T, db interface {
+	Query(string, ...interface{}) (*sql.Rows, error)
+}, table string, column string) {
+	t.Helper()
+	if !tableColumns(t, db, table)[column] {
+		t.Fatalf("%s missing column %q", table, column)
+	}
 }
 
 func TestMigration012_Schema(t *testing.T) {

@@ -6,7 +6,10 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"path/filepath"
+	"strconv"
 
 	"github.com/pressly/goose/v3"
 )
@@ -34,18 +37,36 @@ func NewMigrationRunner(log *slog.Logger, db *sql.DB) *MigrationRunner {
 // Run applies all pending migrations in version order.
 // It is idempotent: already-applied migrations are skipped.
 func (mr *MigrationRunner) Run(ctx context.Context) error {
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		return fmt.Errorf("set goose dialect: %w", err)
+	migrationFS, err := fs.Sub(migrationsFS, migrationsDir)
+	if err != nil {
+		return fmt.Errorf("open embedded migrations: %w", err)
 	}
-	goose.SetBaseFS(migrationsFS)
-	goose.SetLogger(goose.NopLogger())
 
 	if err := mr.seedGooseFromLegacyMigrations(ctx); err != nil {
 		return fmt.Errorf("seed goose migration versions: %w", err)
 	}
+	if err := mr.reconcileGooseFromCurrentSchema(ctx); err != nil {
+		return fmt.Errorf("reconcile goose migration versions: %w", err)
+	}
 
 	mr.log.Debug("running embedded goose migrations")
-	if err := goose.UpContext(ctx, mr.db, migrationsDir); err != nil {
+	if err := mr.runGooseProvider(ctx, migrationFS); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (mr *MigrationRunner) runGooseProvider(ctx context.Context, migrationFS fs.FS) error {
+	if err := mr.ensureGooseVersionTable(ctx); err != nil {
+		return fmt.Errorf("create %s table: %w", goose.DefaultTablename, err)
+	}
+
+	provider, err := goose.NewProvider(goose.DialectSQLite3, mr.db, migrationFS, goose.WithLogger(goose.NopLogger()))
+	if err != nil {
+		return fmt.Errorf("create goose provider: %w", err)
+	}
+
+	if _, err := provider.Up(ctx); err != nil {
 		return fmt.Errorf("run goose migrations: %w", err)
 	}
 	return nil
@@ -60,9 +81,9 @@ func (mr *MigrationRunner) seedGooseFromLegacyMigrations(ctx context.Context) er
 		return nil
 	}
 
-	hasGooseTable, err := tableExists(ctx, mr.db, goose.TableName())
+	hasGooseTable, err := tableExists(ctx, mr.db, goose.DefaultTablename)
 	if err != nil {
-		return fmt.Errorf("check %s table: %w", goose.TableName(), err)
+		return fmt.Errorf("check %s table: %w", goose.DefaultTablename, err)
 	}
 	if hasGooseTable {
 		return nil
@@ -76,16 +97,15 @@ func (mr *MigrationRunner) seedGooseFromLegacyMigrations(ctx context.Context) er
 		return nil
 	}
 
-	if _, err := goose.EnsureDBVersionContext(ctx, mr.db); err != nil {
-		return fmt.Errorf("create %s table: %w", goose.TableName(), err)
+	if err := mr.ensureGooseVersionTable(ctx); err != nil {
+		return fmt.Errorf("create %s table: %w", goose.DefaultTablename, err)
 	}
 
-	const insertVersion = `INSERT INTO goose_db_version (version_id, is_applied) VALUES (?, ?)`
 	for _, version := range legacyVersions {
 		if version == 0 {
 			continue
 		}
-		if _, err := mr.db.ExecContext(ctx, insertVersion, version, true); err != nil {
+		if err := mr.markGooseVersionApplied(ctx, version); err != nil {
 			return fmt.Errorf("insert goose version %d: %w", version, err)
 		}
 	}
@@ -93,10 +113,122 @@ func (mr *MigrationRunner) seedGooseFromLegacyMigrations(ctx context.Context) er
 	return nil
 }
 
+func (mr *MigrationRunner) reconcileGooseFromCurrentSchema(ctx context.Context) error {
+	if err := mr.ensureGooseVersionTable(ctx); err != nil {
+		return err
+	}
+
+	hasCurrentSchema, err := currentSchemaExists(ctx, mr.db)
+	if err != nil {
+		return fmt.Errorf("check current schema: %w", err)
+	}
+	if !hasCurrentSchema {
+		return nil
+	}
+
+	for _, version := range schemaMigrationVersions() {
+		if err := mr.markGooseVersionApplied(ctx, version); err != nil {
+			return fmt.Errorf("mark existing schema migration %d applied: %w", version, err)
+		}
+	}
+
+	return nil
+}
+
+func schemaMigrationVersions() []int64 {
+	migrationFiles, err := fs.Glob(migrationsFS, migrationsDir+"/[0-9][0-9][0-9][0-9][0-9]_*.sql")
+	if err != nil {
+		return []int64{}
+	}
+
+	versions := make([]int64, 0, len(migrationFiles))
+	for _, migrationFile := range migrationFiles {
+		fileName := filepath.Base(migrationFile)
+		versionText := fileName[:5]
+		version, err := strconv.ParseInt(versionText, 10, 64)
+		if err != nil || version == 0 {
+			continue
+		}
+		versions = append(versions, version)
+	}
+	return versions
+}
+
+func (mr *MigrationRunner) ensureGooseVersionTable(ctx context.Context) error {
+	createTable := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		version_id INTEGER NOT NULL,
+		is_applied INTEGER NOT NULL,
+		tstamp TIMESTAMP DEFAULT (datetime('now'))
+	)`, goose.DefaultTablename)
+	if _, err := mr.db.ExecContext(ctx, createTable); err != nil {
+		return err
+	}
+
+	insertZeroVersion := fmt.Sprintf(`INSERT INTO %s (version_id, is_applied)
+		SELECT 0, 1
+		WHERE NOT EXISTS (
+			SELECT 1 FROM %s WHERE version_id = 0 AND is_applied = 1
+		)`, goose.DefaultTablename, goose.DefaultTablename)
+	_, err := mr.db.ExecContext(ctx, insertZeroVersion)
+	return err
+}
+
+func (mr *MigrationRunner) markGooseVersionApplied(ctx context.Context, version int64) error {
+	if err := mr.ensureGooseVersionTable(ctx); err != nil {
+		return err
+	}
+
+	insertVersion := fmt.Sprintf(`INSERT INTO %s (version_id, is_applied)
+		SELECT ?, 1
+		WHERE NOT EXISTS (
+			SELECT 1 FROM %s WHERE version_id = ? AND is_applied = 1
+		)`, goose.DefaultTablename, goose.DefaultTablename)
+	_, err := mr.db.ExecContext(ctx, insertVersion, version, version)
+	return err
+}
+
+func currentSchemaExists(ctx context.Context, db *sql.DB) (bool, error) {
+	checks := []struct {
+		table  string
+		column string
+	}{
+		{table: "prs", column: "repo_id"},
+		{table: "pr_diffs", column: "diff_status"},
+		{table: "repos", column: "local_path"},
+		{table: "comments", column: "author_type"},
+		{table: "comments", column: "dedup_group_id"},
+	}
+
+	for _, check := range checks {
+		hasColumn, err := columnExists(ctx, db, check.table, check.column)
+		if err != nil {
+			return false, fmt.Errorf("check %s.%s column: %w", check.table, check.column, err)
+		}
+		if !hasColumn {
+			return false, nil
+		}
+	}
+
+	return tableExists(ctx, db, "comment_classification_state")
+}
+
 func tableExists(ctx context.Context, db *sql.DB, tableName string) (bool, error) {
 	const query = `SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1`
 	var found int
 	if err := db.QueryRowContext(ctx, query, tableName).Scan(&found); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func columnExists(ctx context.Context, db *sql.DB, tableName string, columnName string) (bool, error) {
+	const query = `SELECT 1 FROM pragma_table_info(?) WHERE name=? LIMIT 1`
+	var found int
+	if err := db.QueryRowContext(ctx, query, tableName, columnName).Scan(&found); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}

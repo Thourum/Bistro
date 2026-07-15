@@ -7,7 +7,7 @@ ALTER TABLE comments ADD COLUMN bot_vendor TEXT;
 ALTER TABLE comments ADD COLUMN severity TEXT;
 ALTER TABLE comments ADD COLUMN classification_source TEXT;
 
-CREATE TABLE comment_classification_state (
+CREATE TABLE IF NOT EXISTS comment_classification_state (
   comment_id  TEXT PRIMARY KEY,
   fingerprint TEXT NOT NULL,
   FOREIGN KEY(comment_id) REFERENCES comments(id) ON DELETE CASCADE
