@@ -1,16 +1,60 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { Logger } from 'electron-log';
 import { describe, expect, it, vi } from 'vitest';
 
+const electronStoreMock = vi.hoisted(() => {
+  class MockElectronStore<T extends Record<string, unknown>> {
+    readonly path: string;
+    private storeValue: T;
+    private readonly listeners: Array<(next: Readonly<T>) => void> = [];
+
+    constructor(options: { cwd: string; name: string; defaults: T }) {
+      this.path = join(options.cwd, `${options.name}.json`);
+      this.storeValue = existsSync(this.path)
+        ? JSON.parse(readFileSync(this.path, 'utf-8'))
+        : options.defaults;
+      mkdirSync(dirname(this.path), { recursive: true });
+      writeFileSync(this.path, `${JSON.stringify(this.storeValue, null, 2)}\n`);
+    }
+
+    get store(): T {
+      return this.storeValue;
+    }
+
+    set store(value: T) {
+      this.storeValue = value;
+      mkdirSync(dirname(this.path), { recursive: true });
+      writeFileSync(this.path, `${JSON.stringify(value, null, 2)}\n`);
+      for (const listener of this.listeners) {
+        listener(value);
+      }
+    }
+
+    onDidAnyChange(listener: (next: Readonly<T>) => void): () => void {
+      this.listeners.push(listener);
+      return () => undefined;
+    }
+
+    _closeWatcher(): void {
+      // Test double has no watcher to close.
+    }
+  }
+
+  return { default: MockElectronStore };
+});
+
 const electronMock = vi.hoisted(() => ({
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
-  app: { getPath: vi.fn(() => '') },
+  app: { getPath: vi.fn(() => ''), getVersion: vi.fn(() => '0.0.0') },
+  ipcMain: { on: vi.fn() },
   shell: { openPath: vi.fn() },
 }));
 
 vi.mock('electron', () => electronMock);
+vi.mock('electron-store', () => electronStoreMock);
 
 import { SettingsService } from '../../src/main/settings';
 import { DEFAULT_SETTINGS } from '../../src/types/settings';
