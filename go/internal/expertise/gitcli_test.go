@@ -69,11 +69,16 @@ func makeFixtureRepo(t *testing.T) string {
 	appendFile(t, filepath.Join(dir, "main.go"), numberedLines("// bob line", 6))
 	writeFile(t, filepath.Join(dir, "util.go"), numberedLines("package util", 4))
 	writeFile(t, filepath.Join(dir, "generated.go"), numberedLines("// generated", 3))
+	vendorPath := filepath.Join(dir, "vendor")
+	if err := os.MkdirAll(vendorPath, 0o755); err != nil {
+		t.Fatalf("mkdir vendor: %v", err)
+	}
+	writeFile(t, filepath.Join(vendorPath, "dependency.go"), numberedLines("package dependency", 3))
 	runGit(t, dir, gitIdentity{
 		name:  bobName,
 		email: bobEmail,
 		date:  "2026-06-15T10:00:00+00:00",
-	}, "add", "main.go", "util.go", "generated.go")
+	}, "add", "main.go", "util.go", "generated.go", "vendor/dependency.go")
 	runGit(t, dir, gitIdentity{
 		name:  bobName,
 		email: bobEmail,
