@@ -169,8 +169,8 @@ func TestMigrationsRerunAfterGooseVersionMetadataLoss(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT version_id) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
-	if appliedCount != 29 {
-		t.Errorf("applied goose version count = %d, want 29", appliedCount)
+	if appliedCount != 30 {
+		t.Errorf("applied goose version count = %d, want 30", appliedCount)
 	}
 }
 
@@ -287,8 +287,8 @@ func TestMigrationRunnerSeedsGooseFromLegacySchemaMigrations(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
-	if appliedCount != 29 {
-		t.Errorf("applied goose version count = %d, want 29", appliedCount)
+	if appliedCount != 30 {
+		t.Errorf("applied goose version count = %d, want 30", appliedCount)
 	}
 
 	var prsSQL string
