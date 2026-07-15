@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { CICheck, Comment, PR } from '../types';
 import { aggregateCounts } from '../utils/classification';
-import ExternalLink from './ExternalLink';
+import { ExternalLink } from './ExternalLink';
 import { type StatusKind, StatusSquare } from './StatusSquare';
 
 const REVIEW_STATUS: Record<string, StatusKind> = {

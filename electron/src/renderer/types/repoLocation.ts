@@ -19,7 +19,7 @@ export interface LocationError {
   message: string;
 }
 
-export interface ScannedRepository {
+interface ScannedRepository {
   repo_id: string;
   path: string;
   remote_url: string;
@@ -32,7 +32,7 @@ export interface LegacyScanDevFolderResult {
   errors: LocationError[];
 }
 
-export interface ScanDevFolderSummaryResult {
+interface ScanDevFolderSummaryResult {
   ok: true;
   discovered: number;
   healthy: number;

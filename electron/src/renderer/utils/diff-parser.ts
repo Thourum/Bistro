@@ -5,14 +5,14 @@ import {
   processFile,
 } from '@pierre/diffs';
 
-export interface DiffLine {
+interface DiffLine {
   type: 'context' | 'added' | 'removed';
   content: string;
   oldLineNumber?: number;
   newLineNumber?: number;
 }
 
-export interface DiffHunk {
+interface DiffHunk {
   header: string;
   lines: DiffLine[];
 }

@@ -37,8 +37,3 @@ const rootLogger = pino({
 export function createLogger(component: string): pino.Logger {
   return rootLogger.child({ component });
 }
-
-/**
- * The root logger instance — use createLogger() for component-specific loggers.
- */
-export default rootLogger;

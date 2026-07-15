@@ -19,10 +19,7 @@ const TOAST_ICONS: Record<Toast['type'], string> = {
   warning: '⚠',
 };
 
-/**
- * Dismiss a toast by id — exported so callers (e.g. useWebSocket) can trigger dismissal.
- */
-export function dismissToast(id: string): void {
+function dismissToast(id: string): void {
   appStore.setState((s) => ({
     ...s,
     toasts: s.toasts.filter((t) => t.id !== id),
@@ -66,6 +63,7 @@ function ToastItem({ toast }: ToastItemProps): React.ReactElement {
       <span className="flex-1">{toast.message}</span>
       {toast.dismissible && (
         <button
+          type="button"
           onClick={() => dismissToast(toast.id)}
           className="ml-2 text-xs opacity-70 hover:opacity-100"
           aria-label="Dismiss"

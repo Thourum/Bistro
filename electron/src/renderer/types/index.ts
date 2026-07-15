@@ -30,7 +30,7 @@ export interface PR {
 /**
  * Comment model — matches Go `comments` table.
  */
-export type CommentAuthorType = 'human' | 'bot' | 'unknown';
+type CommentAuthorType = 'human' | 'bot' | 'unknown';
 
 export type CommentSeverity =
   | 'critical'
@@ -72,13 +72,6 @@ export interface Comment {
 /**
  * File model for PR changed files.
  */
-export interface File {
-  path: string;
-  status: 'added' | 'modified' | 'deleted';
-  additions: number;
-  deletions: number;
-}
-
 /**
  * A single changed file as returned in a `DIFF_READY` payload.
  *
@@ -196,12 +189,6 @@ export interface CICheck {
 /**
  * Extended PR with detail data (fetched via WebSocket).
  */
-export interface PRDetail extends PR {
-  files: File[];
-  comments: Comment[];
-  ci_checks: CICheck[];
-}
-
 /**
  * A PR action in progress.
  */

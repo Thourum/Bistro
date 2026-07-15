@@ -17,9 +17,9 @@ import { useWebSocket } from './useWebSocket';
 const log = createLogger('useDismissals');
 
 /** DOM events dispatched by the d/u keybindings (emitThreadsEvent pattern). */
-export const DISMISS_NITS_EVENT = 'bistro:comments:dismiss-nits';
-export const DISMISS_BOTS_EVENT = 'bistro:comments:dismiss-bots';
-export const UNDO_DISMISS_EVENT = 'bistro:comments:undo-dismiss';
+const DISMISS_NITS_EVENT = 'bistro:comments:dismiss-nits';
+const DISMISS_BOTS_EVENT = 'bistro:comments:dismiss-bots';
+const UNDO_DISMISS_EVENT = 'bistro:comments:undo-dismiss';
 
 function bumpCommentsRevision(): void {
   appStore.setState((s) => ({

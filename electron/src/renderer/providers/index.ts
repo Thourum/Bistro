@@ -1,7 +1,7 @@
 import type { ProviderDef } from './provider';
 
 export type { ProviderDef } from './provider';
-export { AUTH_ACTION_PREFIX, authAction } from './provider';
+export { authAction } from './provider';
 
 import { gitea } from './gitea';
 import { github } from './github';

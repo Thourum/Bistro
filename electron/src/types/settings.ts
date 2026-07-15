@@ -9,10 +9,10 @@
 
 export const SETTINGS_SCHEMA_VERSION = 1 as const;
 
-export type ThemeMode = 'light' | 'dark';
+type ThemeMode = 'light' | 'dark';
 export type ClassificationMode = 'rules' | 'rules+llm' | 'llm-all' | 'server';
 export type DismissalScope = 'local' | 'local+provider';
-export type ClassificationProvider =
+type ClassificationProvider =
   | 'anthropic'
   | 'openai'
   | 'openrouter'

@@ -5,7 +5,7 @@ import type { Logger } from 'electron-log';
 import type { EventMessage, PostHogOptions } from 'posthog-node';
 import { PostHog } from 'posthog-node';
 
-export const TELEMETRY_SCHEMA_VERSION = 1 as const;
+const TELEMETRY_SCHEMA_VERSION = 1 as const;
 
 const EVENT_NAMES = [
   'app_started',

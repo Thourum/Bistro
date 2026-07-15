@@ -1,7 +1,7 @@
 import { cn } from '@renderer/lib/utils';
 import * as React from 'react';
 
-export interface SwitchProps {
+interface SwitchProps {
   /** Controlled on/off state. */
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;

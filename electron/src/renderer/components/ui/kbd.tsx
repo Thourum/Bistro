@@ -1,7 +1,7 @@
 import { cn } from '@renderer/lib/utils';
 import type * as React from 'react';
 
-export type KbdProps = React.HTMLAttributes<HTMLElement>;
+type KbdProps = React.HTMLAttributes<HTMLElement>;
 
 /**
  * Bistro-branded Kbd primitive — a boxed keyboard key.

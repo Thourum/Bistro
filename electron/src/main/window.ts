@@ -84,7 +84,3 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
   logger.info('Main window created');
   return mainWindow;
 }
-
-export function getMainWindow(): BrowserWindow | null {
-  return mainWindow;
-}
