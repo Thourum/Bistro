@@ -69,7 +69,27 @@ WHERE p.repo_id = ?
   AND lrs.login = ?;
 
 -- name: GetTopExpertsForFiles :many
-SELECT repo_id, file_path, author_email, author_login, score, dormant
+SELECT repo_id, file_path, author_email, author_login, surviving_lines, total_lines, commit_score, is_original, score, dormant
 FROM file_expertise
 WHERE repo_id = ? AND dormant = 0
 ORDER BY file_path, score DESC;
+
+-- name: GetExpertiseForPRs :many
+SELECT
+    p.id AS pr_id,
+    fe.repo_id,
+    fe.file_path,
+    fe.author_email,
+    fe.author_login,
+    fe.surviving_lines,
+    fe.total_lines,
+    fe.commit_score,
+    fe.is_original,
+    fe.score,
+    fe.dormant
+FROM prs p
+JOIN pr_diffs pd ON pd.pr_id = p.id
+JOIN file_expertise fe ON fe.repo_id = p.repo_id AND fe.file_path = pd.file_path
+WHERE p.id IN (sqlc.slice('pr_ids'))
+  AND fe.dormant = 0
+ORDER BY p.id, fe.file_path, fe.score DESC;

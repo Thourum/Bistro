@@ -60,6 +60,9 @@ type Orchestrator struct {
 	// postCommit is optional; when set, writers invoke it after each committed
 	// batch with the written PR ids (Phase 3.8 LLM tier kick).
 	postCommit func(prIDs []string)
+	// postReview is optional; when set, successful local review submissions invoke it
+	// after last_reviewed_sha tracking has run.
+	postReview func(ctx context.Context, prID string)
 }
 
 const (
@@ -165,6 +168,12 @@ func (o *Orchestrator) WithRepoPathResolver(resolve RepoPathResolver) *Orchestra
 // with the written PR ids (Phase 3.8 async LLM tier kick).
 func (o *Orchestrator) WithPostCommit(fn func(prIDs []string)) *Orchestrator {
 	o.postCommit = fn
+	return o
+}
+
+// WithPostReview attaches a hook invoked after successful review-like actions.
+func (o *Orchestrator) WithPostReview(fn func(ctx context.Context, prID string)) *Orchestrator {
+	o.postReview = fn
 	return o
 }
 
@@ -661,6 +670,10 @@ func (o *Orchestrator) executeAction(ctx context.Context, req *actions.ActionReq
 			o.handleThreadActionSuccess(ctx, req, log)
 		case actions.ReplyCommentCommand:
 			o.handleReplyCommentSuccess(req)
+		case actions.ApproveCommand, actions.RequestChangesCommand, actions.PostCommentCommand:
+			if o.postReview != nil {
+				o.postReview(ctx, req.PRID)
+			}
 		}
 	}
 

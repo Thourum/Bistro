@@ -101,6 +101,11 @@ func NewIndexer(log *slog.Logger, store *Store, git expertiseGit, identity func(
 	}
 }
 
+func (indexer *Indexer) WithEmitter(emit func(eventType string, payload any)) *Indexer {
+	indexer.emit = emit
+	return indexer
+}
+
 func (indexer *Indexer) Index(ctx context.Context, repoID, repoPath string) error {
 	if err := indexer.setIndexing(ctx, repoID); err != nil {
 		return err

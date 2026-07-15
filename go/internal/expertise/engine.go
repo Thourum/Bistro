@@ -90,6 +90,17 @@ func (engine *Engine) ShouldNudge(ctx context.Context, repoID string, account Ac
 	return ShouldNudge(ctx, engine.store, repoID, account)
 }
 
+func (engine *Engine) GitAvailable() bool {
+	return engine == nil || engine.git == nil || engine.git.Available()
+}
+
+func (engine *Engine) GitUnavailableReason() string {
+	if engine == nil || engine.git == nil || engine.git.Available() {
+		return ""
+	}
+	return engine.git.UnavailableReason()
+}
+
 func (engine *Engine) TouchesYou(ctx context.Context, repoID string, prFiles []string, identity Identity, minLines int) (bool, error) {
 	if engine == nil || engine.store == nil {
 		return false, errors.New("expertise engine is nil")
@@ -106,6 +117,48 @@ func (engine *Engine) TouchesYou(ctx context.Context, repoID string, prFiles []s
 	return false, nil
 }
 
+func (engine *Engine) TouchesYouForPRs(ctx context.Context, prIDs []string) (map[string]bool, error) {
+	result := make(map[string]bool, len(prIDs))
+	for _, prID := range prIDs {
+		result[prID] = false
+	}
+	if engine == nil || engine.store == nil || len(prIDs) == 0 {
+		return result, nil
+	}
+
+	experts, err := engine.store.ExpertiseForPRs(ctx, prIDs)
+	if err != nil {
+		return nil, err
+	}
+	identity := Identity{}
+	minLines := DefaultMinSurvivingLines
+	if engine.indexer != nil {
+		identity = engine.indexer.identity(ctx)
+		minLines = engine.minSurvivingLines(ctx)
+	}
+
+	checkedByPRFile := make(map[string]map[string]int)
+	for _, expert := range experts {
+		if result[expert.PRID] || expert.Dormant || !IsExpert(expert.SurvivingLines, minLines, expert.Score) {
+			continue
+		}
+		byFile, ok := checkedByPRFile[expert.PRID]
+		if !ok {
+			byFile = make(map[string]int)
+		}
+		if byFile[expert.FilePath] >= maxExpertsPerFile {
+			checkedByPRFile[expert.PRID] = byFile
+			continue
+		}
+		byFile[expert.FilePath]++
+		checkedByPRFile[expert.PRID] = byFile
+		if identity.Matches(expert.AuthorLogin.String, expert.AuthorEmail) {
+			result[expert.PRID] = true
+		}
+	}
+	return result, nil
+}
+
 func (engine *Engine) Shutdown() {
 	if engine == nil {
 		return
@@ -116,6 +169,14 @@ func (engine *Engine) Shutdown() {
 		cancel()
 		delete(engine.running, repoID)
 	}
+}
+
+func (engine *Engine) minSurvivingLines(ctx context.Context) int {
+	var minLines int
+	if err := engine.store.Setting(ctx, "min_surviving_lines", &minLines); err != nil || minLines <= 0 {
+		return DefaultMinSurvivingLines
+	}
+	return minLines
 }
 
 func (engine *Engine) validateEnable(repoID, repoPath string) error {

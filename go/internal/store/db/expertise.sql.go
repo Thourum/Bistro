@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -55,6 +56,86 @@ type DeleteFileExpertiseForFileParams struct {
 func (q *Queries) DeleteFileExpertiseForFile(ctx context.Context, arg DeleteFileExpertiseForFileParams) error {
 	_, err := q.db.ExecContext(ctx, deleteFileExpertiseForFile, arg.RepoID, arg.FilePath)
 	return err
+}
+
+const getExpertiseForPRs = `-- name: GetExpertiseForPRs :many
+SELECT
+    p.id AS pr_id,
+    fe.repo_id,
+    fe.file_path,
+    fe.author_email,
+    fe.author_login,
+    fe.surviving_lines,
+    fe.total_lines,
+    fe.commit_score,
+    fe.is_original,
+    fe.score,
+    fe.dormant
+FROM prs p
+JOIN pr_diffs pd ON pd.pr_id = p.id
+JOIN file_expertise fe ON fe.repo_id = p.repo_id AND fe.file_path = pd.file_path
+WHERE p.id IN (/*SLICE:pr_ids*/?)
+  AND fe.dormant = 0
+ORDER BY p.id, fe.file_path, fe.score DESC
+`
+
+type GetExpertiseForPRsRow struct {
+	PrID           string         `json:"pr_id"`
+	RepoID         string         `json:"repo_id"`
+	FilePath       string         `json:"file_path"`
+	AuthorEmail    string         `json:"author_email"`
+	AuthorLogin    sql.NullString `json:"author_login"`
+	SurvivingLines int64          `json:"surviving_lines"`
+	TotalLines     int64          `json:"total_lines"`
+	CommitScore    float64        `json:"commit_score"`
+	IsOriginal     int64          `json:"is_original"`
+	Score          float64        `json:"score"`
+	Dormant        int64          `json:"dormant"`
+}
+
+func (q *Queries) GetExpertiseForPRs(ctx context.Context, prIds []string) ([]GetExpertiseForPRsRow, error) {
+	query := getExpertiseForPRs
+	var queryParams []interface{}
+	if len(prIds) > 0 {
+		for _, v := range prIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:pr_ids*/?", strings.Repeat(",?", len(prIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:pr_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetExpertiseForPRsRow
+	for rows.Next() {
+		var i GetExpertiseForPRsRow
+		if err := rows.Scan(
+			&i.PrID,
+			&i.RepoID,
+			&i.FilePath,
+			&i.AuthorEmail,
+			&i.AuthorLogin,
+			&i.SurvivingLines,
+			&i.TotalLines,
+			&i.CommitScore,
+			&i.IsOriginal,
+			&i.Score,
+			&i.Dormant,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getExpertiseRepoState = `-- name: GetExpertiseRepoState :one
@@ -139,19 +220,23 @@ func (q *Queries) GetFileExpertise(ctx context.Context, arg GetFileExpertisePara
 }
 
 const getTopExpertsForFiles = `-- name: GetTopExpertsForFiles :many
-SELECT repo_id, file_path, author_email, author_login, score, dormant
+SELECT repo_id, file_path, author_email, author_login, surviving_lines, total_lines, commit_score, is_original, score, dormant
 FROM file_expertise
 WHERE repo_id = ? AND dormant = 0
 ORDER BY file_path, score DESC
 `
 
 type GetTopExpertsForFilesRow struct {
-	RepoID      string         `json:"repo_id"`
-	FilePath    string         `json:"file_path"`
-	AuthorEmail string         `json:"author_email"`
-	AuthorLogin sql.NullString `json:"author_login"`
-	Score       float64        `json:"score"`
-	Dormant     int64          `json:"dormant"`
+	RepoID         string         `json:"repo_id"`
+	FilePath       string         `json:"file_path"`
+	AuthorEmail    string         `json:"author_email"`
+	AuthorLogin    sql.NullString `json:"author_login"`
+	SurvivingLines int64          `json:"surviving_lines"`
+	TotalLines     int64          `json:"total_lines"`
+	CommitScore    float64        `json:"commit_score"`
+	IsOriginal     int64          `json:"is_original"`
+	Score          float64        `json:"score"`
+	Dormant        int64          `json:"dormant"`
 }
 
 func (q *Queries) GetTopExpertsForFiles(ctx context.Context, repoID string) ([]GetTopExpertsForFilesRow, error) {
@@ -168,6 +253,10 @@ func (q *Queries) GetTopExpertsForFiles(ctx context.Context, repoID string) ([]G
 			&i.FilePath,
 			&i.AuthorEmail,
 			&i.AuthorLogin,
+			&i.SurvivingLines,
+			&i.TotalLines,
+			&i.CommitScore,
+			&i.IsOriginal,
 			&i.Score,
 			&i.Dormant,
 		); err != nil {

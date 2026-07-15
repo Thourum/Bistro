@@ -48,12 +48,21 @@ type ExpertiseRepoState struct {
 }
 
 type Expert struct {
-	RepoID      string
-	FilePath    string
-	AuthorEmail string
-	AuthorLogin sql.NullString
-	Score       float64
-	Dormant     bool
+	RepoID         string
+	FilePath       string
+	AuthorEmail    string
+	AuthorLogin    sql.NullString
+	SurvivingLines int
+	TotalLines     int
+	CommitScore    float64
+	IsOriginal     bool
+	Score          float64
+	Dormant        bool
+}
+
+type PRExpert struct {
+	PRID string
+	Expert
 }
 
 func NewStore(db *sql.DB) *Store {
@@ -190,15 +199,49 @@ func (s *Store) TopExpertsByFile(ctx context.Context, repoID string) (map[string
 	expertsByFile := make(map[string][]Expert)
 	for _, row := range rows {
 		expertsByFile[row.FilePath] = append(expertsByFile[row.FilePath], Expert{
-			RepoID:      row.RepoID,
-			FilePath:    row.FilePath,
-			AuthorEmail: row.AuthorEmail,
-			AuthorLogin: row.AuthorLogin,
-			Score:       row.Score,
-			Dormant:     row.Dormant != 0,
+			RepoID:         row.RepoID,
+			FilePath:       row.FilePath,
+			AuthorEmail:    row.AuthorEmail,
+			AuthorLogin:    row.AuthorLogin,
+			SurvivingLines: int(row.SurvivingLines),
+			TotalLines:     int(row.TotalLines),
+			CommitScore:    row.CommitScore,
+			IsOriginal:     row.IsOriginal != 0,
+			Score:          row.Score,
+			Dormant:        row.Dormant != 0,
 		})
 	}
 	return expertsByFile, nil
+}
+
+func (s *Store) ExpertiseForPRs(ctx context.Context, prIDs []string) ([]PRExpert, error) {
+	if len(prIDs) == 0 {
+		return []PRExpert{}, nil
+	}
+	rows, err := s.queries.GetExpertiseForPRs(ctx, prIDs)
+	if err != nil {
+		return nil, fmt.Errorf("get expertise for PRs: %w", err)
+	}
+
+	experts := make([]PRExpert, 0, len(rows))
+	for _, row := range rows {
+		experts = append(experts, PRExpert{
+			PRID: row.PrID,
+			Expert: Expert{
+				RepoID:         row.RepoID,
+				FilePath:       row.FilePath,
+				AuthorEmail:    row.AuthorEmail,
+				AuthorLogin:    row.AuthorLogin,
+				SurvivingLines: int(row.SurvivingLines),
+				TotalLines:     int(row.TotalLines),
+				CommitScore:    row.CommitScore,
+				IsOriginal:     row.IsOriginal != 0,
+				Score:          row.Score,
+				Dormant:        row.Dormant != 0,
+			},
+		})
+	}
+	return experts, nil
 }
 
 func (s *Store) withTx(ctx context.Context, fn func(*storedb.Queries) error) error {

@@ -15,6 +15,7 @@ import (
 	"github.com/itterno/bistro/internal/cache"
 	"github.com/itterno/bistro/internal/classify"
 	"github.com/itterno/bistro/internal/classify/llm"
+	"github.com/itterno/bistro/internal/expertise"
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/keychain"
 	"github.com/itterno/bistro/internal/provider"
@@ -81,6 +82,11 @@ type App struct {
 	// llmKick kicks the tier for one PR; set in Run, read by orchestrator
 	// wiring (post-commit hook) and the comments handler (PR-open kick).
 	llmKick func(prID string)
+	// expertiseEngine is the Phase 4 local expertise scorer, shared by handlers
+	// and sync/review hooks.
+	expertiseEngine *expertise.Engine
+	// resolveRepoPath maps repo IDs to local checkout paths for expertise hooks.
+	resolveRepoPath sync.RepoPathResolver
 }
 
 // slogPrintf adapts *slog.Logger to the llm.Logger Printf interface.
@@ -166,6 +172,8 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 		WithActionQueue(store.NewActionQueue(a.db.DB)).
 		WithLiveness(a.provCtx).
 		WithClassifier(a.classifier).
+		WithExpertise(a.expertiseEngine).
+		WithRepoPathResolver(a.resolveRepoPath).
 		WithPostCommit(func(prIDs []string) {
 			if a.llmKick == nil {
 				return
@@ -173,6 +181,9 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 			for _, prID := range prIDs {
 				a.llmKick(prID)
 			}
+		}).
+		WithPostReview(func(reviewCtx context.Context, prID string) {
+			a.broadcastExpertiseNudge(reviewCtx, prID)
 		})
 	a.prov = prov
 	a.activeProviderName = name
@@ -385,6 +396,46 @@ func (a *App) startEventBridge(parent context.Context) {
 	}()
 }
 
+func (a *App) broadcastExpertiseEvent(eventType string, payload any) {
+	data, ok := payload.(map[string]interface{})
+	if !ok {
+		data = map[string]interface{}{"payload": payload}
+	}
+	a.wsServer.Broadcast(wsEventMsg{Type: eventType, Data: data})
+}
+
+func (a *App) broadcastExpertiseNudge(ctx context.Context, prID string) {
+	if a.expertiseEngine == nil || a.db == nil || a.currentUserStore == nil {
+		return
+	}
+	var repoID string
+	if err := a.db.QueryRowContext(ctx, `SELECT repo_id FROM prs WHERE id = ?`, prID).Scan(&repoID); err != nil {
+		a.log.Warn("expertise nudge skipped: PR repo lookup failed", "pr_id", prID, "error", err)
+		return
+	}
+	login, ok, err := a.currentUserStore.GetCurrentUser(ctx, "github")
+	if err != nil || !ok || login == "" {
+		if err != nil {
+			a.log.Warn("expertise nudge skipped: current user lookup failed", "pr_id", prID, "error", err)
+		}
+		return
+	}
+	shouldNudge, err := a.expertiseEngine.ShouldNudge(ctx, repoID, expertise.Account{Provider: "github", Login: login})
+	if err != nil {
+		a.log.Warn("expertise nudge check failed", "repo_id", repoID, "error", err)
+		return
+	}
+	if !shouldNudge {
+		return
+	}
+	count, err := expertise.NewStore(a.db.DB).ReviewedPRCount(ctx, repoID, "github", login, login)
+	if err != nil {
+		a.log.Warn("expertise nudge count failed", "repo_id", repoID, "error", err)
+		return
+	}
+	a.wsServer.Broadcast(wsEventMsg{Type: "EXPERTISE_NUDGE", Data: map[string]interface{}{"repo_id": repoID, "reviewed_count": count}})
+}
+
 // Run initializes the database, starts the WebSocket server, and blocks until
 // a SIGTERM or SIGINT signal is received, then shuts down gracefully.
 func (a *App) Run(ctx context.Context) error {
@@ -425,6 +476,45 @@ func (a *App) Run(ctx context.Context) error {
 
 	currentUserStore := store.NewCurrentUserStore(a.db)
 	a.currentUserStore = currentUserStore // stored on App for SetProvider re-creation
+
+	repoLocationStore := store.NewRepoLocationStore(a.db.DB)
+	a.configureRepoLocationStore(repoLocationStore)
+	a.resolveRepoPath = func(repoID string) (string, bool) {
+		location, err := repoLocationStore.Get(context.Background(), repoID)
+		if err != nil {
+			a.log.Warn("expertise repo path resolve failed", "repo_id", repoID, "error", err)
+			return "", false
+		}
+		if location == nil || location.Source != "local" || location.LocalPath == "" {
+			return "", false
+		}
+		return location.LocalPath, true
+	}
+	expertiseStore := expertise.NewStore(a.db.DB)
+	expertiseGit := expertise.NewGitCLI(a.log)
+	expertiseIdentity := func(identityCtx context.Context) expertise.Identity {
+		login, ok, err := currentUserStore.GetCurrentUser(identityCtx, "github")
+		if err != nil || !ok {
+			if err != nil {
+				a.log.Warn("expertise identity current user lookup failed", "error", err)
+			}
+			return expertise.Identity{}
+		}
+		settings, err := handler.NewExpertiseSQLSettingsStore(a.db.DB, expertiseStore).ExpertiseSettings(identityCtx)
+		if err != nil {
+			a.log.Warn("expertise identity settings lookup failed", "error", err)
+		}
+		return expertise.Identity{Login: login, AliasEmails: settings.AliasEmails}
+	}
+	expertiseIndexer := expertise.NewIndexer(a.log, expertiseStore, expertiseGit, expertiseIdentity).WithEmitter(a.broadcastExpertiseEvent)
+	expertiseUpdater := expertise.NewUpdater(a.log, expertiseStore, expertiseGit, expertiseIdentity)
+	a.expertiseEngine = expertise.NewEngine(a.log, expertiseStore, expertiseGit, expertiseIndexer, expertiseUpdater)
+	go func() {
+		if err := a.expertiseEngine.RestartInterrupted(ctx, a.resolveRepoPath); err != nil {
+			a.log.Warn("expertise restart interrupted indexing failed", "error", err)
+		}
+	}()
+	defer a.expertiseEngine.Shutdown()
 
 	// BYOK LLM tier (Phase 3.8): async post-commit/PR-open refinement.
 	// Emit bridges straight to the WS broadcast; the tier no-ops outside
@@ -493,7 +583,7 @@ func (a *App) Run(ctx context.Context) error {
 		CurrentUser: currentUserStore,
 		Log:         a.log,
 	}))
-	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandler(a.db.DB, a.log))
+	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandlerWithExpertise(a.db.DB, a.expertiseEngine, a.log))
 	a.wsServer.RegisterHandler("REQUEST_COMMENTS",
 		handler.NewRequestCommentsHandlerWithLLMKick(a.db.DB, a.log, a.classifier, llmKick))
 	dismissDeps := handler.DismissDeps{
@@ -537,8 +627,24 @@ func (a *App) Run(ctx context.Context) error {
 	a.wsServer.RegisterHandler("SUBMIT_ACTION",
 		handler.NewSubmitActionHandler(a.currentApplier, a.log))
 
-	repoLocationStore := store.NewRepoLocationStore(a.db.DB)
-	a.configureRepoLocationStore(repoLocationStore)
+	expertiseRepoStore := handler.NewExpertiseSQLRepoStore(a.db.DB)
+	expertiseDataStore := handler.NewExpertiseSQLDataStore(a.db.DB, expertiseStore)
+	expertiseSettingsStore := handler.NewExpertiseSQLSettingsStore(a.db.DB, expertiseStore)
+	expertiseDeps := handler.ExpertiseHandlerDeps{
+		Engine:      a.expertiseEngine,
+		Repos:       expertiseRepoStore,
+		Data:        expertiseDataStore,
+		Settings:    expertiseSettingsStore,
+		CurrentUser: currentUserStore,
+		Log:         a.log,
+	}
+	a.wsServer.RegisterHandler("EXPERTISE_ENABLE", handler.NewExpertiseEnableHandler(expertiseDeps))
+	a.wsServer.RegisterHandler("EXPERTISE_DISABLE", handler.NewExpertiseDisableHandler(expertiseDeps))
+	a.wsServer.RegisterHandler("GET_EXPERTISE", handler.NewGetExpertiseHandler(expertiseDeps))
+	a.wsServer.RegisterHandler("EXPERTISE_NUDGE_DISMISS", handler.NewExpertiseNudgeDismissHandler(expertiseDeps))
+	a.wsServer.RegisterHandler("GET_EXPERTISE_SETTINGS", handler.NewGetExpertiseSettingsHandler(expertiseDeps))
+	a.wsServer.RegisterHandler("SET_EXPERTISE_SETTINGS", handler.NewSetExpertiseSettingsHandler(expertiseDeps))
+
 	deleteCacheDir := func(path string) error {
 		return git.DeleteCacheDir(path)
 	}

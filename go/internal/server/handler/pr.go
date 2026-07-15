@@ -18,34 +18,39 @@ type prListRequest struct {
 }
 
 type prRow struct {
-	ID           string  `json:"id"`
-	Provider     string  `json:"provider"`
-	Owner        string  `json:"owner"`
-	Repo         string  `json:"repo"`
-	Number       int     `json:"number"`
-	Title        string  `json:"title"`
-	Body         *string `json:"body"`
-	Author       string  `json:"author"`
-	State        string  `json:"state"`
-	CreatedAt    string  `json:"created_at"`
-	UpdatedAt    string  `json:"updated_at"`
-	MergedAt     *string `json:"merged_at"`
-	BaseBranch   string  `json:"base_branch"`
-	HeadBranch   string  `json:"head_branch"`
-	BaseSHA      string  `json:"base_sha"`
-	HeadSHA      string  `json:"head_sha"`
-	CommentCount int      `json:"comment_count"`
-	CIStatus     *string  `json:"ci_status"`
-	Draft        int      `json:"draft"`
+	ID                 string   `json:"id"`
+	Provider           string   `json:"provider"`
+	Owner              string   `json:"owner"`
+	Repo               string   `json:"repo"`
+	Number             int      `json:"number"`
+	Title              string   `json:"title"`
+	Body               *string  `json:"body"`
+	Author             string   `json:"author"`
+	State              string   `json:"state"`
+	CreatedAt          string   `json:"created_at"`
+	UpdatedAt          string   `json:"updated_at"`
+	MergedAt           *string  `json:"merged_at"`
+	BaseBranch         string   `json:"base_branch"`
+	HeadBranch         string   `json:"head_branch"`
+	BaseSHA            string   `json:"base_sha"`
+	HeadSHA            string   `json:"head_sha"`
+	CommentCount       int      `json:"comment_count"`
+	CIStatus           *string  `json:"ci_status"`
+	Draft              int      `json:"draft"`
 	ReviewStatus       *string  `json:"review_status"`
 	ApprovedBy         *string  `json:"approved_by"`
 	ChangesRequestedBy *string  `json:"changes_requested_by"`
 	RequestedReviewers []string `json:"requested_reviewers"`
+	TouchesYou         bool     `json:"touches_you"`
 }
 
 // prLister is the subset of *sql.DB needed to list PRs.
 type prLister interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
+}
+
+type touchesYouResolver interface {
+	TouchesYouForPRs(ctx context.Context, prIDs []string) (map[string]bool, error)
 }
 
 // decodeReviewers parses the requested_reviewers JSON column. NULL (rows
@@ -66,6 +71,10 @@ func decodeReviewers(logger *slog.Logger, prID string, raw *string) []string {
 }
 
 func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
+	return NewRequestPRListHandlerWithExpertise(db, nil, log)
+}
+
+func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouResolver, log *slog.Logger) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		logger := logging.FromContext(ctx)
 		if log != nil {
@@ -122,6 +131,7 @@ func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
 		defer rows.Close()
 
 		var prs []prRow
+		prIDs := []string{}
 		for rows.Next() {
 			var pr prRow
 			var requestedReviewers *string
@@ -139,6 +149,18 @@ func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
 			}
 			pr.RequestedReviewers = decodeReviewers(logger, pr.ID, requestedReviewers)
 			prs = append(prs, pr)
+			prIDs = append(prIDs, pr.ID)
+		}
+
+		if touchesYou != nil && len(prIDs) > 0 {
+			matches, err := touchesYou.TouchesYouForPRs(ctx, prIDs)
+			if err != nil {
+				logger.Warn("touches_you resolution failed", "err", err)
+			} else {
+				for index, pr := range prs {
+					prs[index].TouchesYou = matches[pr.ID]
+				}
+			}
 		}
 
 		if prs == nil {
