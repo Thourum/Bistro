@@ -536,11 +536,15 @@ Used when a comment doesn't match a vendor-specific rule (humans, unknown bots, 
 
 ---
 
-## Phase 4 — Local Expertise Scoring (the killer feature, FOSS layer) — **status: spec approved (2026-07-15)**
+## Phase 4 — Local Expertise Scoring (the killer feature, FOSS layer) — **status: implemented 2026-07-15**
 
-> Verified 2026-07-11: no `file_expertise` table, no scoring code, no "Touches Your
-> Code" view. The current-user-identity
-> prerequisite is now in place (migration 022), so this phase is unblocked.
+> **Implemented 2026-07-15** — sub-features 4.1–4.3 landed: local-only
+> expertise indexing, the "Touches Your Code" inbox filter, per-file why view,
+> nudge, palette commands, and SQLite-backed expertise settings.
+> Authoritative docs:
+> - Spec: `docs/superpowers/specs/2026-07-15-local-expertise-scoring-design.md`
+> - Plan: `docs/superpowers/plans/2026-07-15-local-expertise-scoring.md`
+> - User guide: `website/src/pages/docs/expertise.mdx`
 
 > ✅ **Spec (2026-07-15):** `docs/superpowers/specs/2026-07-15-local-expertise-scoring-design.md`
 > is authoritative; the draft below is left for history. Key deviations:
@@ -559,7 +563,7 @@ Used when a comment doesn't match a vendor-specific rule (humans, unknown bots, 
 
 The Layer 1 of expertise routing. Computes per-file expertise from local git history. Layer 2 (team-wide expertise graph, departed-employee handling, write-back to provider) is Team-only.
 
-### 4.1 Expertise score per file per author
+### 4.1 Expertise score per file per author — **done (2026-07-15)**
 
 **Algorithm.** A weighted sum of:
 
@@ -577,7 +581,7 @@ The Layer 1 of expertise routing. Computes per-file expertise from local git his
 - Stored in `file_expertise(repo_id, path, author, score, last_computed_at, dormant)`.
 - A "why" view per file: "Alice: 312/480 surviving lines, original author, 4 reviews in last 6 months → score 87."
 
-### 4.2 "PRs touching files you've worked on" view
+### 4.2 "PRs touching files you've worked on" view — **done (2026-07-15)**
 
 **User story.**
 
@@ -590,7 +594,7 @@ The Layer 1 of expertise routing. Computes per-file expertise from local git his
 - Each row shows which files are "yours" with the expertise score.
 - Default behaviour is *FYI in the local inbox only*. No external notifications. No write-back to provider. The user can promote one to a real reviewer-request manually.
 
-### 4.3 Configuration — **rewritten 2026-07-15 (no repo file)**
+### 4.3 Configuration — **done (2026-07-15; no repo file)**
 
 > `.bistro/expertise.yml` and pinned owners are **removed permanently** — the
 > Team plan replaces them with AST + vector-store expertise. FOSS config is
@@ -788,10 +792,11 @@ Everything left between here and FOSS v1.0, in rough dependency order. Done work
   manual acceptance still pending — `local+provider` dismissal resolving a real
   GitHub thread, and the rule-edit-without-restart walkthrough on a live PR
 
-**Phase 4 — expertise (spec approved 2026-07-15, unblocked by migration 022)**
-- [ ] 4.1 scoring engine + `file_expertise` table (signals 1–3; signal 4 → Team)
-- [ ] 4.2 "Touches Your Code" view, 4.3 SQLite settings (expertise.yml dropped)
+**Phase 4 — expertise (implemented 2026-07-15)**
+- [x] 4.1 scoring engine + `file_expertise` table (signals 1–3; signal 4 → Team)
+- [x] 4.2 "Touches Your Code" view, 4.3 SQLite settings (expertise.yml dropped)
 - Spec: `docs/superpowers/specs/2026-07-15-local-expertise-scoring-design.md`
+- User guide: `website/src/pages/docs/expertise.mdx`
 
 **Polish (partial)**
 - [ ] Default view → "Needs Action"; triage counters into a sidebar; drop or implement the mentions rule (1.6)

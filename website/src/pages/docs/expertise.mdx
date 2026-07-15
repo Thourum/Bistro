@@ -1,0 +1,110 @@
+---
+title: Local Expertise
+description: How Bistro uses your local git history to find PRs that touch code you know.
+---
+
+# Local Expertise
+
+Bistro can highlight PRs that touch files you have meaningful history with, even
+when GitHub did not request your review. The PR list gets a **Touches Your Code**
+filter, the sidebar shows the count, and the diff view can explain why a file is
+considered yours.
+
+Expertise is computed **locally from your own checkout**. Bistro reads git
+history, stores scores in its local SQLite cache, and never writes expertise
+results back to GitHub.
+
+:::note
+Expertise is opt-in per repository. Bistro only indexes repos linked to a local
+checkout, never cache-only clones.
+:::
+
+## Enabling expertise
+
+Use the command palette on a PR from a local repo:
+
+| Command | Action |
+| ------- | ------ |
+| `enable expertise` | Starts the first full-repo index for the focused PR's repo |
+| `disable expertise` | Stops indexing for that repo and hides expertise signals |
+
+Bistro also nudges you after you review 10 PRs from the same local repo:
+_"You've reviewed 10 PRs from this repo. Enable expertise indexing?"_ You can
+enable from the banner or dismiss it.
+
+The first index can take a few minutes on large repos. Progress appears in the
+repo/status surfaces. After the first pass, Bistro updates only files touched by
+newly synced PRs.
+
+## How scores work
+
+For each file and author, Bistro combines three local git signals:
+
+| Signal | What it means |
+| ------ | ------------- |
+| Surviving lines | Lines currently in the file that `git blame HEAD` attributes to that author |
+| Recent substantial commits | Commits in the last 12 months that changed more than 5 lines in that file, with a 6-month half-life |
+| Original authorship | Whether the author created the file |
+
+The score is a 0–100 weighted sum:
+
+```text
+55 × surviving-line ratio + 30 × recent-commit score + 15 × original-author flag
+```
+
+An author counts as an expert for a file when either:
+
+- they have at least the configured minimum surviving lines (default 50), or
+- their score is at least 40.
+
+Authors with no commits in that repo in the last 90 days are marked dormant.
+Dormant authors remain visible in the raw explanation, but Bistro does not use
+them for the default **Touches Your Code** routing.
+
+## Touches Your Code
+
+A PR appears in **Touches Your Code** when your identity is among the top 3
+non-dormant experts for any file in the PR's diff.
+
+Bistro matches your identity from:
+
+- your GitHub login and GitHub noreply email patterns,
+- your configured account email when available,
+- manual alias emails from Settings.
+
+The diff view can show a per-file explanation such as:
+
+```text
+alice: 312/480 surviving lines, original author → 87
+```
+
+That explanation is read from the local cache; opening the why view does not
+rerun git history analysis.
+
+## Settings
+
+Open _Settings → Expertise_ to adjust:
+
+| Setting | Default | Notes |
+| ------- | ------- | ----- |
+| Alias emails | empty | Extra commit emails that should count as you |
+| Minimum surviving lines | 50 | Lower it for smaller repos or generated-heavy codebases |
+| Per-repo exclude globs | empty | Add repo-specific paths to skip during indexing |
+
+Bistro always applies built-in excludes for common generated or vendored paths:
+`vendor/**`, `dist/**`, `node_modules/**`, lockfiles, `**/*.pb.go`, and
+`**/testdata/**`. It also respects `.gitattributes` entries marked
+`linguist-generated=true`.
+
+Settings are stored in Bistro's local SQLite database. There is no
+`.bistro/expertise.yml` file and no repo-committed expertise configuration.
+
+## Privacy and degradation
+
+- Expertise data stays on your machine in SQLite.
+- Bistro does not notify anyone, request reviewers, or write provider metadata
+  from expertise results.
+- If system `git` is unavailable, the repo is not local, or a checkout is
+  missing, Bistro shows a labeled unavailable state instead of guessing.
+- Binary or unblameable files are skipped and counted; indexing continues for
+  the rest of the repo.
