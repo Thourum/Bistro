@@ -1,9 +1,12 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
+
+	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
 // DiffFile represents a single file's diff entry for storage.
@@ -23,12 +26,13 @@ type DiffFile struct {
 
 // DiffStore provides persistence for per-file PR diffs in the pr_diffs table.
 type DiffStore struct {
-	db *sql.DB
+	db      *sql.DB
+	queries *storedb.Queries
 }
 
 // NewDiffStore creates a DiffStore backed by the given *sql.DB.
 func NewDiffStore(db *sql.DB) *DiffStore {
-	return &DiffStore{db: db}
+	return &DiffStore{db: db, queries: storedb.New(db)}
 }
 
 // SaveDiffs atomically replaces all stored diffs for prID.
@@ -36,40 +40,35 @@ func NewDiffStore(db *sql.DB) *DiffStore {
 // or deleted in the current diff, and clears stale rows when diffs is empty.
 // Passing nil or an empty slice clears all existing rows and is not a no-op.
 func (s *DiffStore) SaveDiffs(prID string, diffs []DiffFile) error {
-	tx, err := s.db.Begin()
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	qtx := s.queries.WithTx(tx)
+
 	// Always delete first: ensures removed/renamed files and empty diffs leave no orphans.
-	if _, err := tx.Exec(`DELETE FROM pr_diffs WHERE pr_id = ?`, prID); err != nil {
+	if err := qtx.DeleteDiffsForPR(ctx, prID); err != nil {
 		return fmt.Errorf("clear diffs for %s: %w", prID, err)
 	}
 
-	if len(diffs) == 0 {
-		return tx.Commit()
-	}
-
-	const query = `
-		INSERT INTO pr_diffs (
-			pr_id, file_path, status, old_path, is_binary, is_truncated,
-			patch_bytes, hunk_count, patch, additions, deletions, diff_status
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`
-
-	stmt, err := tx.Prepare(query)
-	if err != nil {
-		return fmt.Errorf("prepare statement: %w", err)
-	}
-	defer stmt.Close()
-
 	for _, d := range diffs {
-		if _, err := stmt.Exec(
-			prID, d.FilePath, diffStatus(d.Status), nullableString(d.OldPath), boolToInt(d.IsBinary), boolToInt(d.IsTruncated),
-			d.PatchBytes, d.HunkCount, d.Patch, d.Additions, d.Deletions, storedDiffStatus(d.DiffStatus),
-		); err != nil {
+		if err := qtx.InsertDiff(ctx, storedb.InsertDiffParams{
+			PrID:        prID,
+			FilePath:    d.FilePath,
+			Status:      diffStatus(d.Status),
+			OldPath:     nullableString(d.OldPath),
+			IsBinary:    boolToInt(d.IsBinary),
+			IsTruncated: boolToInt(d.IsTruncated),
+			PatchBytes:  int64(d.PatchBytes),
+			HunkCount:   int64(d.HunkCount),
+			Patch:       d.Patch,
+			Additions:   int64(d.Additions),
+			Deletions:   int64(d.Deletions),
+			DiffStatus:  storedDiffStatus(d.DiffStatus),
+		}); err != nil {
 			return fmt.Errorf("insert diff for %s/%s: %w", prID, d.FilePath, err)
 		}
 	}
@@ -80,37 +79,14 @@ func (s *DiffStore) SaveDiffs(prID string, diffs []DiffFile) error {
 // GetDiffs returns all stored DiffFile entries for the given PR, ordered by file path.
 // Returns an empty slice (not an error) when no diffs exist.
 func (s *DiffStore) GetDiffs(prID string) ([]DiffFile, error) {
-	const query = `
-		SELECT file_path, status, COALESCE(old_path, ''), is_binary, is_truncated,
-		       patch_bytes, hunk_count, patch, additions, deletions, diff_status
-		FROM pr_diffs
-		WHERE pr_id = ?
-		ORDER BY file_path
-	`
-
-	rows, err := s.db.Query(query, prID)
+	rows, err := s.queries.ListDiffsForPR(context.Background(), prID)
 	if err != nil {
 		return nil, fmt.Errorf("query diffs for %s: %w", prID, err)
 	}
-	defer rows.Close()
 
-	diffs := make([]DiffFile, 0)
-	for rows.Next() {
-		var d DiffFile
-		var isBinary, isTruncated int
-		if err := rows.Scan(
-			&d.FilePath, &d.Status, &d.OldPath, &isBinary, &isTruncated,
-			&d.PatchBytes, &d.HunkCount, &d.Patch, &d.Additions, &d.Deletions, &d.DiffStatus,
-		); err != nil {
-			return nil, fmt.Errorf("scan diff row: %w", err)
-		}
-		d.IsBinary = isBinary != 0
-		d.IsTruncated = isTruncated != 0
-		diffs = append(diffs, d)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate diff rows: %w", err)
+	diffs := make([]DiffFile, 0, len(rows))
+	for _, row := range rows {
+		diffs = append(diffs, diffFileFromRow(row))
 	}
 
 	return diffs, nil
@@ -160,16 +136,29 @@ func storedDiffStatus(status string) string {
 	return status
 }
 
-func boolToInt(b bool) int {
+func diffFileFromRow(row storedb.ListDiffsForPRRow) DiffFile {
+	return DiffFile{
+		FilePath:    row.FilePath,
+		Status:      row.Status,
+		OldPath:     row.OldPath,
+		IsBinary:    row.IsBinary != 0,
+		IsTruncated: row.IsTruncated != 0,
+		PatchBytes:  int(row.PatchBytes),
+		HunkCount:   int(row.HunkCount),
+		Patch:       row.Patch,
+		Additions:   int(row.Additions),
+		Deletions:   int(row.Deletions),
+		DiffStatus:  row.DiffStatus,
+	}
+}
+
+func boolToInt(b bool) int64 {
 	if b {
 		return 1
 	}
 	return 0
 }
 
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
+func nullableString(s string) sql.NullString {
+	return sql.NullString{String: s, Valid: s != ""}
 }
