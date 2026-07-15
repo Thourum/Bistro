@@ -533,7 +533,7 @@ Define handler deps as small interfaces (existing pattern: `rangeDiffRunner`, `l
 
 - [ ] **Step 4: `touches_you` on the PR list**
 
-In `handler/pr.go`: add `TouchesYou bool \`json:"touches_you"\`` to `prRow`. Populate via a `touchesYouResolver` interface (`TouchesYouForPRs(ctx, prIDs []string) (map[string]bool, error)`) implemented on the Engine using one batched query joining `files` (PR file lists are in the `files` table) against `file_expertise` top-3 — implement that query in `queries/expertise.sql` + regenerate (`sqlc generate`) rather than N per-PR lookups. Nil resolver (expertise not constructed) → field stays false, zero cost. Add a handler test.
+In `handler/pr.go`: add `TouchesYou bool \`json:"touches_you"\`` to `prRow`. Populate via a `touchesYouResolver` interface (`TouchesYouForPRs(ctx, prIDs []string) (map[string]bool, error)`) implemented on the Engine using one batched query joining **`pr_diffs`** (the live per-file diff metadata written by the sync writer — the legacy `files` table has no current writer, do NOT join it) against `file_expertise` top-3 — implement that query in `queries/expertise.sql` + regenerate (`sqlc generate`) rather than N per-PR lookups. Read `queries/diff_store.sql` first for the `pr_diffs` per-file column names (`pr_id`, `file_path`). Nil resolver (expertise not constructed) → field stays false, zero cost. Add a handler test whose fixture writes `pr_diffs` rows.
 
 - [ ] **Step 5: Wire in `app.go`**
 
