@@ -20,6 +20,7 @@ import { RangeDiffView } from '../components/RangeDiffView';
 import { StatusSquare } from '../components/StatusSquare';
 import { addToast } from '../components/ToastContainer';
 import { useActionDispatch } from '../hooks/useActionDispatch';
+import { useExpertise } from '../hooks/useExpertise';
 import { useMarkFileViewed } from '../hooks/useMarkFileViewed';
 import { type RangeDiffRequest, useRangeDiff } from '../hooks/useRangeDiff';
 import { useReviewThreads } from '../hooks/useReviewThreads';
@@ -29,10 +30,14 @@ import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
-import type { Comment, DiffFile } from '../types';
+import type { Comment, DiffFile, PR } from '../types';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('DiffPage');
+
+function repoIdForPR(pr: PR): string {
+  return `${pr.provider}:${pr.owner}/${pr.repo}`;
+}
 
 /**
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
@@ -81,6 +86,10 @@ export function DiffPage() {
   const { request } = useWebSocket();
   const { dispatchReplyComment } = useActionDispatch(pr?.id);
   const { markViewed } = useMarkFileViewed();
+  const { expertise } = useExpertise(pr?.id);
+  const expertiseStatus = useStore(appStore, (s: UIState) =>
+    pr !== undefined ? s.expertiseRepoStatuses?.[repoIdForPR(pr)] : undefined,
+  );
 
   const [diff, setDiff] = useState<string>('');
   const [files, setFiles] = useState<DiffFile[]>([]);
@@ -302,6 +311,12 @@ export function DiffPage() {
             onThreadReply={(threadId, body) => {
               dispatchReplyComment(body, { threadId });
             }}
+            expertiseFiles={expertise?.files ?? []}
+            expertiseError={
+              expertiseStatus?.status === 'error'
+                ? (expertiseStatus.message ?? expertiseStatus.code ?? 'unknown')
+                : null
+            }
           />
         )}
       </div>

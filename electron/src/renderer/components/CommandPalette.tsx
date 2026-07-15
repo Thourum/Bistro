@@ -22,6 +22,10 @@ interface CommandItem {
 
 const isDev = import.meta.env.DEV;
 
+function repoIdForPR(pr: PR): string {
+  return `${pr.provider}:${pr.owner}/${pr.repo}`;
+}
+
 const COMMANDS: readonly CommandItem[] = [
   {
     id: 'help',
@@ -58,6 +62,8 @@ const COMMANDS: readonly CommandItem[] = [
     description: 'Clone or link a repository from a Git URL',
     icon: 'add_link',
   },
+  { id: 'expertise-enable', name: 'Enable expertise', icon: 'psychology' },
+  { id: 'expertise-disable', name: 'Disable expertise', icon: 'psychology' },
   { id: 'focus-list', name: 'Focus PR list', icon: 'list_alt' },
   { id: 'focus-detail', name: 'Focus PR detail', icon: 'article' },
   { id: 'about', name: 'About BISTRO', icon: 'info' },
@@ -152,6 +158,21 @@ export function CommandPalette(): React.ReactElement | null {
     setQuery('');
   };
 
+  const sendExpertiseCommand = (
+    type: 'EXPERTISE_ENABLE' | 'EXPERTISE_DISABLE',
+  ): void => {
+    const selectedPR = prs[appStore.state.selectedPRIndex] ?? recentPRs[0];
+    if (selectedPR === undefined) {
+      openRepoPicker();
+      setQuery('');
+      return;
+    }
+
+    send(type, { repo_id: repoIdForPR(selectedPR) });
+    closeOverlay();
+    setQuery('');
+  };
+
   const handleExecuteCommand = (command: CommandItem): void => {
     switch (command.id) {
       case 'settings':
@@ -193,6 +214,12 @@ export function CommandPalette(): React.ReactElement | null {
       case 'add-repo-by-url':
         openAddRepo();
         setQuery('');
+        return;
+      case 'expertise-enable':
+        sendExpertiseCommand('EXPERTISE_ENABLE');
+        return;
+      case 'expertise-disable':
+        sendExpertiseCommand('EXPERTISE_DISABLE');
         return;
       case 'sync':
         send('FORCE_SYNC', {});

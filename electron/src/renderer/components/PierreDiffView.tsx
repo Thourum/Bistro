@@ -7,6 +7,7 @@ import { appStore } from '../store';
 import {
   type Comment,
   type CommentSeverity,
+  type ExpertiseFileData,
   type ReviewThread,
   type ThreadLifecycle,
   threadLifecycle,
@@ -17,6 +18,7 @@ import {
   type DiffFileIdentity,
   findFileByKey,
 } from '../utils/diffFileKey';
+import { formatWhy } from '../utils/expertise';
 import { Markdown } from './Markdown';
 import { type StatusKind, StatusSquare } from './StatusSquare';
 import { Badge } from './ui/badge';
@@ -78,6 +80,10 @@ export interface PierreDiffViewProps {
   comments?: Comment[];
   /** Called when a user submits a reply to an inline review thread. */
   onThreadReply?: (threadId: string, body: string) => void;
+  /** Per-file expertise data from GET_EXPERTISE, keyed by file_path. */
+  expertiseFiles?: ExpertiseFileData[];
+  /** One-line expertise error hint; null/undefined stays quiet. */
+  expertiseError?: string | null;
 }
 
 interface ParsedFile {
@@ -130,8 +136,14 @@ export function PierreDiffView({
   threads = [],
   comments = [],
   onThreadReply,
+  expertiseFiles = [],
+  expertiseError = null,
 }: PierreDiffViewProps) {
   const files = useMemo(() => splitUnifiedDiff(diff), [diff]);
+  const expertiseByPath = useMemo(
+    () => new Map(expertiseFiles.map((file) => [file.file_path, file])),
+    [expertiseFiles],
+  );
   const [activeId, setActiveId] = useState<string | null>(files[0]?.id ?? null);
   // Registered by DiffCanvas so nav clicks can jump the virtualized list.
   const scrollToFileRef = useRef<(id: string) => void>(() => undefined);
@@ -367,6 +379,8 @@ export function PierreDiffView({
           }));
         }}
         {...(onThreadReply !== undefined ? { onThreadReply } : {})}
+        expertiseByPath={expertiseByPath}
+        expertiseError={expertiseError}
       />
     </div>
   );
@@ -435,6 +449,8 @@ interface DiffCanvasProps {
   onAnnotationActivate: (key: string) => void;
   onReplyClose: () => void;
   onThreadReply?: (threadId: string, body: string) => void;
+  expertiseByPath: Map<string, ExpertiseFileData>;
+  expertiseError: string | null;
 }
 
 /** Estimated rendered height of one diff line, used until measurement. */
@@ -461,6 +477,8 @@ function DiffCanvas({
   onAnnotationActivate,
   onReplyClose,
   onThreadReply,
+  expertiseByPath,
+  expertiseError,
 }: DiffCanvasProps) {
   const scrollRef = useRef<HTMLElement>(null);
 
@@ -526,6 +544,7 @@ function DiffCanvas({
               lineNumber: t.line,
               metadata: t,
             }));
+          const expertise = expertiseByPath.get(file.path);
 
           return (
             <div
@@ -550,6 +569,7 @@ function DiffCanvas({
                   <span className="text-error">-{file.deletions}</span>
                 </div>
               </div>
+              <FileExpertiseLine expertise={expertise} error={expertiseError} />
               <PatchDiff
                 options={{
                   theme: `pierre-${_theme}`,
@@ -594,6 +614,48 @@ function DiffCanvas({
         })}
       </div>
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// File expertise line
+// ---------------------------------------------------------------------------
+
+function FileExpertiseLine({
+  expertise,
+  error,
+}: {
+  expertise: ExpertiseFileData | undefined;
+  error: string | null;
+}): React.ReactElement | null {
+  if (error !== null) {
+    return (
+      <div className="border-b border-outline-variant/10 bg-surface-container-lowest px-4 py-1 font-mono text-[10px] uppercase tracking-widest text-error">
+        Expertise unavailable: {error}
+      </div>
+    );
+  }
+
+  if (expertise === undefined || expertise.experts.length === 0) {
+    return null;
+  }
+
+  return (
+    <details className="border-b border-outline-variant/10 bg-surface-container-lowest px-4 py-1 font-mono text-[10px] text-outline">
+      <summary className="cursor-crosshair uppercase tracking-widest text-on-surface-variant hover:text-on-surface">
+        Expertise why
+      </summary>
+      <ul className="mt-2 space-y-1 border-l border-outline-variant/30 pl-3">
+        {expertise.experts.map((expert) => (
+          <li key={`${expertise.file_path}-${expert.author_email}`}>
+            {formatWhy(expert)}
+          </li>
+        ))}
+      </ul>
+      {expertise.your_rank !== null && (
+        <p className="mt-2 text-primary">Your rank: #{expertise.your_rank}</p>
+      )}
+    </details>
   );
 }
 
