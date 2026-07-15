@@ -169,4 +169,24 @@ describe('Go Process Spawn', () => {
     expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
     expect(isGoProcessRunning()).toBe(false);
   });
+
+  it('does not restart after intentional shutdown', async () => {
+    const mockProcess = createMockProcess();
+    const onCrash = vi.fn();
+    execaMock.mockReturnValue(mockProcess);
+
+    const portPromise = spawnGoProcess({
+      config,
+      logger: logger as Logger,
+      onCrash,
+    });
+    mockProcess.stdout.write('{"event":"ready","wsPort":8080}\n');
+    await portPromise;
+
+    killGoProcess();
+    await mockProcess;
+
+    expect(onCrash).not.toHaveBeenCalled();
+    expect(execaMock).toHaveBeenCalledTimes(1);
+  });
 });

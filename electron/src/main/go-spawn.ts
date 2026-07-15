@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import type { Logger } from 'electron-log';
 import { execa, type ResultPromise } from 'execa';
-import { fromPromise, fromThrowable } from 'neverthrow';
+import { fromPromise, fromThrowable, type ResultAsync } from 'neverthrow';
 import type { GoProcessConfig } from './types';
 
 const require = createRequire(import.meta.url);
@@ -16,7 +16,10 @@ type WaitOnOptions = {
 
 const waitOn = require('wait-on') as (options: WaitOnOptions) => Promise<void>;
 
-function waitForPort(port: number, timeoutMs: number): Promise<void> {
+function waitForPort(
+  port: number,
+  timeoutMs: number,
+): ResultAsync<void, Error> {
   return fromPromise(
     waitOn({
       resources: [`tcp:127.0.0.1:${port}`],
@@ -27,11 +30,6 @@ function waitForPort(port: number, timeoutMs: number): Promise<void> {
     }),
     () =>
       new Error(`Timed out waiting for external Go process on port ${port}`),
-  ).match(
-    () => undefined,
-    (error) => {
-      throw error;
-    },
   );
 }
 
@@ -45,6 +43,7 @@ const FALLBACK_EXTERNAL_PORT = 8080;
 let restartCount = 0;
 let lastKnownPort: number | null = null;
 let exitHandlerRegistered = false;
+let intentionalShutdownCount = 0;
 
 /**
  * Parses the machine-readable ready signal the Go process prints to stdout:
@@ -150,6 +149,11 @@ const handleProcessExit = (
   wasStartupResolved: boolean,
 ): void => {
   if (!wasStartupResolved) {
+    return;
+  }
+
+  if (intentionalShutdownCount > 0) {
+    intentionalShutdownCount -= 1;
     return;
   }
 
@@ -273,10 +277,18 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
       'BISTRO_SKIP_GO_SPAWN=1 — waiting for external Go process on port ' +
         externalPort,
     );
-    return waitForPort(externalPort, GO_READY_TIMEOUT_MS).then(() => {
-      lastKnownPort = externalPort;
-      return externalPort;
-    });
+    return waitForPort(externalPort, GO_READY_TIMEOUT_MS)
+      .map(() => {
+        lastKnownPort = externalPort;
+        return externalPort;
+      })
+      .match(
+        (port) => ({ ok: true, port }) as const,
+        (error) => ({ ok: false, error }) as const,
+      )
+      .then((result) =>
+        result.ok ? Promise.resolve(result.port) : Promise.reject(result.error),
+      );
   }
 
   if (goProcess) {
@@ -407,6 +419,7 @@ export function isGoProcessRunning(): boolean {
 
 export function killGoProcess(): void {
   if (goProcess && !goProcess.killed) {
+    intentionalShutdownCount += 1;
     goProcess.kill('SIGTERM');
     goProcess = null;
   }

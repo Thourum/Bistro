@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   resolveTelemetryEndpoint,
   sanitizeTelemetryEvent,
@@ -15,6 +15,15 @@ const logger = {
 } as never;
 
 describe('privacy-safe telemetry', () => {
+  beforeEach(() => {
+    vi.stubEnv('BISTRO_POSTHOG_API_KEY', '');
+    vi.stubEnv('POSTHOG_API_KEY', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('drops confidential and non-allowlisted event properties', () => {
     const event = sanitizeTelemetryEvent('review_action_requested', {
       action: 'approve',

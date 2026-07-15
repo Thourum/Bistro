@@ -1,9 +1,10 @@
 import { mkdir } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
-import type Conf from 'conf';
 import { app, BrowserWindow, shell } from 'electron';
 import type { Logger } from 'electron-log';
-import ElectronStore from 'electron-store';
+import ElectronStore, {
+  type Options as ElectronStoreOptions,
+} from 'electron-store';
 import { fromPromise, fromThrowable } from 'neverthrow';
 import { merge } from 'ts-deepmerge';
 import {
@@ -120,10 +121,10 @@ export class SettingsService {
       name,
       defaults: DEFAULT_SETTINGS,
       migrations: {
-        '>=0.0.0': (store: Conf<AppSettings>) => {
+        '>=0.0.0': (store) => {
           store.store = normalise(store.store);
         },
-      },
+      } satisfies ElectronStoreOptions<AppSettings>['migrations'],
       clearInvalidConfig: true,
       serialize: (value: AppSettings) =>
         `${JSON.stringify(normalise(value), null, 2)}\n`,
