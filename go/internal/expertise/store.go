@@ -171,6 +171,16 @@ func (s *Store) ReviewedPRCount(ctx context.Context, repoID, accountProvider, ac
 	return count, nil
 }
 
+func (s *Store) IsLocalRepo(ctx context.Context, repoID string) (bool, error) {
+	var source sql.NullString
+	if err := s.db.QueryRowContext(ctx, `SELECT source FROM repos WHERE id = ?`, repoID).Scan(&source); errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("get expertise repo source %s: %w", repoID, err)
+	}
+	return source.Valid && source.String == "local", nil
+}
+
 func (s *Store) TopExpertsByFile(ctx context.Context, repoID string) (map[string][]Expert, error) {
 	rows, err := s.queries.GetTopExpertsForFiles(ctx, repoID)
 	if err != nil {
