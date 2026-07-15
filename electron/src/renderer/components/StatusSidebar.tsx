@@ -4,6 +4,7 @@ import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { CICheck, Comment, PR } from '../types';
 import { aggregateCounts } from '../utils/classification';
+import { repoIdForPR } from '../utils/expertise';
 import { ExternalLink } from './ExternalLink';
 import { type StatusKind, StatusSquare } from './StatusSquare';
 
@@ -30,10 +31,6 @@ const CI_LABELS: Record<string, string> = {
   failure: 'CI FAILED',
   pending: 'CI RUNNING',
 };
-
-function repoIdForPR(pr: PR): string {
-  return `${pr.provider}:${pr.owner}/${pr.repo}`;
-}
 
 function formatIndexedFiles(
   done: number | undefined,

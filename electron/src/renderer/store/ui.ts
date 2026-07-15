@@ -1,7 +1,6 @@
 import { Store } from '@tanstack/store';
 import type {
   ActionResult,
-  ExpertiseDataPayload,
   ExpertiseNudgePayload,
   ExpertiseRepoStatus,
   ExpertiseSettingsPayload,
@@ -130,8 +129,6 @@ export interface UIState {
   byokAuthFailed: boolean;
   /** Per-repo expertise indexing state, keyed by repo_id. */
   expertiseRepoStatuses: Record<string, ExpertiseRepoStatus>;
-  /** Latest GET_EXPERTISE payload, keyed by PR id when present. */
-  expertiseByPrId: Record<string, ExpertiseDataPayload>;
   /** Pending expertise nudges, keyed by repo_id. */
   expertiseNudges: Record<string, ExpertiseNudgePayload>;
   /** Latest server-backed expertise settings payload. */
@@ -182,7 +179,6 @@ export const initialUIState: UIState = {
   byokEstCost: 0,
   byokAuthFailed: false,
   expertiseRepoStatuses: {},
-  expertiseByPrId: {},
   expertiseNudges: {},
   expertiseSettings: null,
 };

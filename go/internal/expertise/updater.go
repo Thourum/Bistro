@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"time"
 )
 
@@ -199,9 +200,9 @@ func (updater *Updater) signals(ctx context.Context, repoID, repoPath, headSHA s
 		now:           now,
 		identity:      updater.identity(ctx),
 		commitAges:    commitAgesByFileAndAuthor(logResult.Events, now),
-		lastCommitAt:  copyTimeMap(logResult.LastCommitAt),
-		activeAuthors: copyBoolMap(activeAuthors),
-		firstCommits:  copyStringMap(firstCommits),
+		lastCommitAt:  maps.Clone(logResult.LastCommitAt),
+		activeAuthors: maps.Clone(activeAuthors),
+		firstCommits:  maps.Clone(firstCommits),
 	}, nil
 }
 

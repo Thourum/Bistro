@@ -200,30 +200,6 @@ func (s *Store) IsLocalRepo(ctx context.Context, repoID string) (bool, error) {
 	return source.Valid && source.String == "local", nil
 }
 
-func (s *Store) TopExpertsByFile(ctx context.Context, repoID string) (map[string][]Expert, error) {
-	rows, err := s.queries.GetTopExpertsForFiles(ctx, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("get top experts for repo %s: %w", repoID, err)
-	}
-
-	expertsByFile := make(map[string][]Expert)
-	for _, row := range rows {
-		expertsByFile[row.FilePath] = append(expertsByFile[row.FilePath], Expert{
-			RepoID:         row.RepoID,
-			FilePath:       row.FilePath,
-			AuthorEmail:    row.AuthorEmail,
-			AuthorLogin:    row.AuthorLogin,
-			SurvivingLines: int(row.SurvivingLines),
-			TotalLines:     int(row.TotalLines),
-			CommitScore:    row.CommitScore,
-			IsOriginal:     row.IsOriginal != 0,
-			Score:          row.Score,
-			Dormant:        row.Dormant != 0,
-		})
-	}
-	return expertsByFile, nil
-}
-
 func (s *Store) ExpertiseForPRs(ctx context.Context, prIDs []string) ([]PRExpert, error) {
 	if len(prIDs) == 0 {
 		return []PRExpert{}, nil

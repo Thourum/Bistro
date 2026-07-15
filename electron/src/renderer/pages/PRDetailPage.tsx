@@ -35,16 +35,12 @@ import {
   isAutoCollapsed,
   sortBySeverity,
 } from '../utils/classification';
-import { formatWhy, touchesYouCount } from '../utils/expertise';
+import { formatWhy, repoIdForPR, touchesYouCount } from '../utils/expertise';
 import { createLogger } from '../utils/logger';
 
 // Route API for reading the stable $prId param; detail never resolves by list index.
 
 const log = createLogger('PRDetailPage');
-
-function repoIdForPR(pr: PR): string {
-  return `${pr.provider}:${pr.owner}/${pr.repo}`;
-}
 
 function formatTimestamp(iso: string): string {
   return iso

@@ -15,6 +15,10 @@ export function focusedExpertisePR(
   return prs[selectedPRIndex];
 }
 
+export function repoIdForPR(pr: PR): string {
+  return `${pr.provider}:${pr.owner}/${pr.repo}`;
+}
+
 export function formatWhy(expert: ExpertiseExpert): string {
   const author = expert.author_login ?? expert.author_email;
   const originalAuthor = expert.is_original ? ', original author' : '';

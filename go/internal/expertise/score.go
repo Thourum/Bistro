@@ -55,10 +55,6 @@ func IsExpert(surviving, minLines int, score float64) bool {
 	return surviving >= minLines || score >= ExpertScoreFloor
 }
 
-func IsDormant(lastCommit time.Time, now time.Time) bool {
-	return now.Sub(lastCommit) > time.Duration(DormantAfterDays)*24*time.Hour
-}
-
 func clamp(value, minValue, maxValue float64) float64 {
 	return math.Max(minValue, math.Min(maxValue, value))
 }

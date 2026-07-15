@@ -8,7 +8,7 @@ import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
-import { focusedExpertisePR } from '../utils/expertise';
+import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
 
 type Icon = string;
 
@@ -22,10 +22,6 @@ interface CommandItem {
 }
 
 const isDev = import.meta.env.DEV;
-
-function repoIdForPR(pr: PR): string {
-  return `${pr.provider}:${pr.owner}/${pr.repo}`;
-}
 
 const COMMANDS: readonly CommandItem[] = [
   {

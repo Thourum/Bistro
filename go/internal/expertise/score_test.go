@@ -98,24 +98,3 @@ func TestIsExpert(t *testing.T) {
 		})
 	}
 }
-
-func TestIsDormant(t *testing.T) {
-	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
-	tests := []struct {
-		name       string
-		lastCommit time.Time
-		want       bool
-	}{
-		{name: "commit ninety one days ago is dormant", lastCommit: now.AddDate(0, 0, -91), want: true},
-		{name: "commit eighty nine days ago is active", lastCommit: now.AddDate(0, 0, -89), want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := IsDormant(tt.lastCommit, now)
-			if got != tt.want {
-				t.Errorf("IsDormant() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}

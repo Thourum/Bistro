@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 )
@@ -189,9 +190,9 @@ func (indexer *Indexer) prepareIndex(ctx context.Context, repoID, repoPath strin
 		now:           now,
 		identity:      indexer.identity(ctx),
 		commitAges:    commitAgesByFileAndAuthor(logResult.Events, now),
-		lastCommitAt:  copyTimeMap(logResult.LastCommitAt),
-		activeAuthors: copyBoolMap(activeAuthors),
-		firstCommits:  copyStringMap(firstCommits),
+		lastCommitAt:  maps.Clone(logResult.LastCommitAt),
+		activeAuthors: maps.Clone(activeAuthors),
+		firstCommits:  maps.Clone(firstCommits),
 	}
 	return headSHA, files, signals, nil
 }
@@ -324,7 +325,7 @@ func (indexer *Indexer) finishWithError(ctx context.Context, repoID string, err 
 		ErrorCode: sql.NullString{String: indexer.errorCode(), Valid: true},
 		Error:     sql.NullString{String: err.Error(), Valid: true},
 	}
-	if setErr := indexer.store.SetRepoState(contextWithoutCancellation(ctx), state); setErr != nil {
+	if setErr := indexer.store.SetRepoState(context.WithoutCancel(ctx), state); setErr != nil {
 		return fmt.Errorf("%w; additionally failed to set expertise error state: %v", err, setErr)
 	}
 	indexer.emitEvent(ExpertiseErrorEvent, expertiseErrorPayload{RepoID: repoID, Code: state.ErrorCode.String, Message: err.Error()})
@@ -409,32 +410,4 @@ func nullTime(value time.Time) sql.NullTime {
 
 func excludesSettingKey(repoID string) string {
 	return "excludes:" + repoID
-}
-
-func copyTimeMap(input map[string]time.Time) map[string]time.Time {
-	output := make(map[string]time.Time, len(input))
-	for key, value := range input {
-		output[key] = value
-	}
-	return output
-}
-
-func copyBoolMap(input map[string]bool) map[string]bool {
-	output := make(map[string]bool, len(input))
-	for key, value := range input {
-		output[key] = value
-	}
-	return output
-}
-
-func copyStringMap(input map[string]string) map[string]string {
-	output := make(map[string]string, len(input))
-	for key, value := range input {
-		output[key] = value
-	}
-	return output
-}
-
-func contextWithoutCancellation(ctx context.Context) context.Context {
-	return context.WithoutCancel(ctx)
 }

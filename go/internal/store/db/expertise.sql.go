@@ -219,60 +219,6 @@ func (q *Queries) GetFileExpertise(ctx context.Context, arg GetFileExpertisePara
 	return items, nil
 }
 
-const getTopExpertsForFiles = `-- name: GetTopExpertsForFiles :many
-SELECT repo_id, file_path, author_email, author_login, surviving_lines, total_lines, commit_score, is_original, score, dormant
-FROM file_expertise
-WHERE repo_id = ? AND dormant = 0
-ORDER BY file_path, score DESC
-`
-
-type GetTopExpertsForFilesRow struct {
-	RepoID         string         `json:"repo_id"`
-	FilePath       string         `json:"file_path"`
-	AuthorEmail    string         `json:"author_email"`
-	AuthorLogin    sql.NullString `json:"author_login"`
-	SurvivingLines int64          `json:"surviving_lines"`
-	TotalLines     int64          `json:"total_lines"`
-	CommitScore    float64        `json:"commit_score"`
-	IsOriginal     int64          `json:"is_original"`
-	Score          float64        `json:"score"`
-	Dormant        int64          `json:"dormant"`
-}
-
-func (q *Queries) GetTopExpertsForFiles(ctx context.Context, repoID string) ([]GetTopExpertsForFilesRow, error) {
-	rows, err := q.db.QueryContext(ctx, getTopExpertsForFiles, repoID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetTopExpertsForFilesRow
-	for rows.Next() {
-		var i GetTopExpertsForFilesRow
-		if err := rows.Scan(
-			&i.RepoID,
-			&i.FilePath,
-			&i.AuthorEmail,
-			&i.AuthorLogin,
-			&i.SurvivingLines,
-			&i.TotalLines,
-			&i.CommitScore,
-			&i.IsOriginal,
-			&i.Score,
-			&i.Dormant,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listInterruptedExpertiseRepos = `-- name: ListInterruptedExpertiseRepos :many
 SELECT repo_id FROM expertise_repo_state WHERE enabled = 1 AND status = 'indexing'
 `

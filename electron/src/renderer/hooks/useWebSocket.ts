@@ -3,7 +3,6 @@ import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type {
-  ExpertiseDataPayload,
   ExpertiseNudgePayload,
   ExpertiseRepoStatus,
   ExpertiseSettingsPayload,
@@ -388,20 +387,6 @@ function handleExpertiseNudge(data: ExpertiseNudgePayload): void {
   }));
 }
 
-function handleExpertiseData(data: ExpertiseDataPayload): void {
-  if (typeof data.pr_id !== 'string') {
-    return;
-  }
-
-  appStore.setState((s) => ({
-    ...s,
-    expertiseByPrId: {
-      ...s.expertiseByPrId,
-      [data.pr_id as string]: data,
-    },
-  }));
-}
-
 function handleExpertiseSettings(data: ExpertiseSettingsPayload): void {
   appStore.setState((s) => ({
     ...s,
@@ -614,8 +599,7 @@ function onMessage(event: MessageEvent<string>): void {
       handleExpertiseNudge(message.data as ExpertiseNudgePayload);
       break;
     case 'EXPERTISE_DATA': {
-      const payload = message.data as ExpertiseDataPayload;
-      handleExpertiseData(payload);
+      const payload = message.data;
       const handler = messageHandlers.get(message.id);
       if (handler) {
         handler(payload);

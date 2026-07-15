@@ -68,12 +68,6 @@ WHERE p.repo_id = ?
   AND lrs.account_login = ?
   AND lrs.login = ?;
 
--- name: GetTopExpertsForFiles :many
-SELECT repo_id, file_path, author_email, author_login, surviving_lines, total_lines, commit_score, is_original, score, dormant
-FROM file_expertise
-WHERE repo_id = ? AND dormant = 0
-ORDER BY file_path, score DESC;
-
 -- name: GetExpertiseForPRs :many
 SELECT
     p.id AS pr_id,

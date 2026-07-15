@@ -30,14 +30,11 @@ import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
-import type { Comment, DiffFile, PR } from '../types';
+import type { Comment, DiffFile } from '../types';
+import { repoIdForPR } from '../utils/expertise';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('DiffPage');
-
-function repoIdForPR(pr: PR): string {
-  return `${pr.provider}:${pr.owner}/${pr.repo}`;
-}
 
 /**
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
