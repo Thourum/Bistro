@@ -228,8 +228,9 @@ Every failure is a labeled state (range-diff precedent), never a silent gap:
   system git is unavailable (mirrors range-diff tests).
 - **Handler tests:** follow `handler/*_test.go` patterns for every message.
 - **Race:** `go test -race ./...` covers indexer/updater concurrency.
-- **Renderer (Vitest):** filter/lane logic with `touches_you`, nudge
-  component, settings form.
+- **Renderer (Vitest):** filter/lane logic with `touches_you` and other pure
+  utility functions only. **Do not test individual React components** — no
+  component render tests for the nudge banner, settings form, etc.
 
 ## Roadmap updates shipped with this spec
 
