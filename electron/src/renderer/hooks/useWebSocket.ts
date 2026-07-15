@@ -623,7 +623,8 @@ function onMessage(event: MessageEvent<string>): void {
       }
       break;
     }
-    case 'EXPERTISE_SETTINGS': {
+    case 'EXPERTISE_SETTINGS':
+    case 'EXPERTISE_SETTINGS_UPDATED': {
       const payload = message.data as ExpertiseSettingsPayload;
       handleExpertiseSettings(payload);
       const handler = messageHandlers.get(message.id);

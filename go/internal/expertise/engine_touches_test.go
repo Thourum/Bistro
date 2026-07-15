@@ -17,6 +17,9 @@ func TestEngineTouchesYouForPRsUsesPRDiffsAndTopThreeExpertRule(t *testing.T) {
 	insertTouchPR(t, db.DB, "pr-qualifies", repoID, "qualifies.go", 1)
 	insertTouchPR(t, db.DB, "pr-below-threshold", repoID, "below.go", 2)
 	insertTouchPR(t, db.DB, "pr-other-user", repoID, "other.go", 3)
+	if err := store.SetRepoState(ctx, ExpertiseRepoState{RepoID: repoID, Enabled: true, Status: ExpertiseStatusReady}); err != nil {
+		t.Fatalf("SetRepoState ready: %v", err)
+	}
 
 	if err := store.UpsertFileRows(ctx, []FileExpertiseRow{
 		{RepoID: repoID, FilePath: "qualifies.go", AuthorEmail: "first@example.com", SurvivingLines: 80, TotalLines: 100, Score: 90, ComputedAt: now, ComputedAtSHA: "sha"},
@@ -48,6 +51,43 @@ func TestEngineTouchesYouForPRsUsesPRDiffsAndTopThreeExpertRule(t *testing.T) {
 		if got[prID] != want {
 			t.Fatalf("TouchesYouForPRs[%s] = %v, want %v (full result %#v)", prID, got[prID], want, got)
 		}
+	}
+}
+
+func TestEngineTouchesYouForPRsRequiresEnabledReadyRepo(t *testing.T) {
+	db := newTestDB(t)
+	store := NewStore(db.DB)
+	ctx := context.Background()
+	repoID := "github:owner/repo"
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	insertTouchPR(t, db.DB, "pr-disabled", repoID, "owned.go", 4)
+	if err := store.UpsertFileRows(ctx, []FileExpertiseRow{
+		{RepoID: repoID, FilePath: "owned.go", AuthorEmail: "alice@example.com", SurvivingLines: DefaultMinSurvivingLines, TotalLines: 100, Score: 90, ComputedAt: now, ComputedAtSHA: "sha"},
+	}); err != nil {
+		t.Fatalf("UpsertFileRows: %v", err)
+	}
+	indexer := NewIndexer(newSilentExpertiseLogger(), store, nil, func(context.Context) Identity {
+		return Identity{Login: "alice", AliasEmails: []string{"alice@example.com"}}
+	})
+	engine := NewEngine(newSilentExpertiseLogger(), store, nil, indexer, nil)
+
+	disabled, err := engine.TouchesYouForPRs(ctx, []string{"pr-disabled"})
+	if err != nil {
+		t.Fatalf("TouchesYouForPRs disabled: %v", err)
+	}
+	if disabled["pr-disabled"] {
+		t.Fatalf("disabled repo touches_you = true, want false")
+	}
+
+	if err := store.SetRepoState(ctx, ExpertiseRepoState{RepoID: repoID, Enabled: true, Status: ExpertiseStatusError}); err != nil {
+		t.Fatalf("SetRepoState error: %v", err)
+	}
+	errored, err := engine.TouchesYouForPRs(ctx, []string{"pr-disabled"})
+	if err != nil {
+		t.Fatalf("TouchesYouForPRs errored: %v", err)
+	}
+	if errored["pr-disabled"] {
+		t.Fatalf("errored repo touches_you = true, want false")
 	}
 }
 

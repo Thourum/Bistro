@@ -1196,6 +1196,22 @@ function joinListInput(values: readonly string[]): string {
   return values.join('\n');
 }
 
+export function expertiseSettingsPayloadFromInputs(
+  aliasInput: string,
+  minSurvivingLines: number,
+  excludeInputs: Record<string, string>,
+): ExpertiseSettingsPayload {
+  return {
+    alias_emails: splitListInput(aliasInput),
+    min_surviving_lines: minSurvivingLines,
+    excludes: Object.fromEntries(
+      Object.entries(excludeInputs).map(
+        ([repoId, value]) => [repoId, splitListInput(value)] as const,
+      ),
+    ),
+  };
+}
+
 function settingsOrDefault(
   settings: ExpertiseSettingsPayload | null,
 ): ExpertiseSettingsPayload {
@@ -1272,16 +1288,11 @@ function ExpertiseSection() {
       return;
     }
 
-    const excludes = Object.fromEntries(
-      Object.entries(excludeInputs)
-        .map(([repoId, value]) => [repoId, splitListInput(value)] as const)
-        .filter(([, globs]) => globs.length > 0),
+    const payload = expertiseSettingsPayloadFromInputs(
+      aliasInput,
+      minLines,
+      excludeInputs,
     );
-    const payload: ExpertiseSettingsPayload = {
-      alias_emails: splitListInput(aliasInput),
-      min_surviving_lines: minLines,
-      excludes,
-    };
 
     setIsSaving(true);
     void fromPromise(

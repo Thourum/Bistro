@@ -22,6 +22,12 @@ func TestIndexerIndexesFixtureRepo(t *testing.T) {
 	})
 	indexer.Now = func() time.Time { return now }
 	indexer.Workers = 2
+	if err := store.UpsertFileRows(ctx, []FileExpertiseRow{
+		{RepoID: fixtureRepoID, FilePath: "generated.go", AuthorEmail: aliceEmail, SurvivingLines: 99, TotalLines: 100, Score: 99, ComputedAt: now.Add(-time.Hour), ComputedAtSHA: "old"},
+		{RepoID: fixtureRepoID, FilePath: "vendor/dependency.go", AuthorEmail: aliceEmail, SurvivingLines: 99, TotalLines: 100, Score: 99, ComputedAt: now.Add(-time.Hour), ComputedAtSHA: "old"},
+	}); err != nil {
+		t.Fatalf("seed stale rows: %v", err)
+	}
 
 	if err := indexer.Index(ctx, fixtureRepoID, repoPath); err != nil {
 		t.Fatalf("Index: %v", err)

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { ExpertiseExpert, PR } from '../types';
-import { formatWhy, touchesYouCount } from './expertise';
+import {
+  expertisePayloadForPR,
+  focusedExpertisePR,
+  formatWhy,
+  isExpertisePayloadForPR,
+  touchesYouCount,
+} from './expertise';
 
 const makePR = (overrides: Partial<PR>): PR => ({
   id: overrides.id ?? 'pr-1',
@@ -52,6 +58,12 @@ describe('expertise helpers', () => {
     expect(touchesYouCount(prs)).toBe(2);
   });
 
+  it('selects the routed PR for expertise commands over the list index', () => {
+    const prs = [makePR({ id: 'pr-list-row' }), makePR({ id: 'pr-focused' })];
+
+    expect(focusedExpertisePR(prs, 'pr-focused', 0)?.id).toBe('pr-focused');
+  });
+
   it('formats an original-author why line with rounded score', () => {
     expect(formatWhy(makeExpert({ score: 86.7 }))).toBe(
       'alice: 312/480 surviving lines, original author → 87',
@@ -69,5 +81,21 @@ describe('expertise helpers', () => {
         }),
       ),
     ).toBe('bob@example.com: 312/480 surviving lines → 42');
+  });
+
+  it('normalizes GET_EXPERTISE payloads to the requested PR id', () => {
+    expect(expertisePayloadForPR({ files: [] }, 'pr-1')).toEqual({
+      pr_id: 'pr-1',
+      files: [],
+    });
+  });
+
+  it('checks whether an expertise payload belongs to the active PR', () => {
+    expect(isExpertisePayloadForPR({ pr_id: 'pr-1', files: [] }, 'pr-1')).toBe(
+      true,
+    );
+    expect(isExpertisePayloadForPR({ pr_id: 'pr-1', files: [] }, 'pr-2')).toBe(
+      false,
+    );
   });
 });

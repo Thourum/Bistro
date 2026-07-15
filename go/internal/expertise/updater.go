@@ -104,10 +104,14 @@ func (updater *Updater) updateCandidates(ctx context.Context, repoID, repoPath s
 	uniqueExisting := make([]string, 0, len(touchedFiles))
 	seen := make(map[string]bool, len(touchedFiles))
 	for _, file := range touchedFiles {
-		if seen[file] || excluder.Excluded(file) || !existingFiles[file] {
+		if seen[file] {
 			continue
 		}
 		seen[file] = true
+		if excluder.Excluded(file) || !existingFiles[file] {
+			updater.deleteStaleFileRows(ctx, repoID, file)
+			continue
+		}
 		uniqueExisting = append(uniqueExisting, file)
 	}
 	if len(uniqueExisting) == 0 {
@@ -121,7 +125,11 @@ func (updater *Updater) updateCandidates(ctx context.Context, repoID, repoPath s
 
 	candidates := make([]string, 0, len(uniqueExisting))
 	for _, file := range uniqueExisting {
-		if generated[file] || updater.fileFresh(ctx, repoID, file, headSHA) {
+		if generated[file] {
+			updater.deleteStaleFileRows(ctx, repoID, file)
+			continue
+		}
+		if updater.fileFresh(ctx, repoID, file, headSHA) {
 			continue
 		}
 		candidates = append(candidates, file)
@@ -147,6 +155,12 @@ func (updater *Updater) excluder(ctx context.Context, repoID string) (Excluder, 
 		return Excluder{}, fmt.Errorf("load expertise excludes for repo %s: %w", repoID, err)
 	}
 	return New(userGlobs), nil
+}
+
+func (updater *Updater) deleteStaleFileRows(ctx context.Context, repoID, filePath string) {
+	if err := updater.store.DeleteFileRows(ctx, repoID, filePath); err != nil {
+		updater.log.Warn("failed to delete stale expertise rows", "repo_id", repoID, "file_path", filePath, "error", err)
+	}
 }
 
 func (updater *Updater) fileFresh(ctx context.Context, repoID, filePath, headSHA string) bool {

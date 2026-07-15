@@ -33,6 +33,12 @@ func TestUpdaterRecomputesTouchedStaleFiles(t *testing.T) {
 	if initialMain.ComputedAtSHA != oldHead || initialUtil.ComputedAtSHA != oldHead {
 		t.Fatalf("initial SHAs main=%q util=%q, want old head %q", initialMain.ComputedAtSHA, initialUtil.ComputedAtSHA, oldHead)
 	}
+	if err := store.UpsertFileRows(ctx, []FileExpertiseRow{
+		{RepoID: fixtureRepoID, FilePath: "generated.go", AuthorEmail: aliceEmail, SurvivingLines: 99, TotalLines: 100, Score: 99, ComputedAt: indexNow, ComputedAtSHA: oldHead},
+		{RepoID: fixtureRepoID, FilePath: "vendor/dependency.go", AuthorEmail: aliceEmail, SurvivingLines: 99, TotalLines: 100, Score: 99, ComputedAt: indexNow, ComputedAtSHA: oldHead},
+	}); err != nil {
+		t.Fatalf("seed stale excluded/generated rows: %v", err)
+	}
 
 	appendFile(t, repoPath+"/main.go", "// alice followup 1\n")
 	runGit(t, repoPath, gitIdentity{
@@ -58,7 +64,7 @@ func TestUpdaterRecomputesTouchedStaleFiles(t *testing.T) {
 	})
 	updater.Now = func() time.Time { return time.Date(2026, time.October, 12, 12, 0, 0, 0, time.UTC) }
 
-	if err := updater.Update(ctx, fixtureRepoID, repoPath, []string{"main.go", "util.go", "missing.go"}); err != nil {
+	if err := updater.Update(ctx, fixtureRepoID, repoPath, []string{"main.go", "util.go", "missing.go", "generated.go", "vendor/dependency.go"}); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 
@@ -83,6 +89,14 @@ func TestUpdaterRecomputesTouchedStaleFiles(t *testing.T) {
 	missingRows := mustGetRows(t, store, ctx, "missing.go")
 	if len(missingRows) != 0 {
 		t.Fatalf("missing.go rows = %#v, want none", missingRows)
+	}
+	generatedRows := mustGetRows(t, store, ctx, "generated.go")
+	if len(generatedRows) != 0 {
+		t.Fatalf("generated.go rows = %#v, want deleted", generatedRows)
+	}
+	vendorRows := mustGetRows(t, store, ctx, "vendor/dependency.go")
+	if len(vendorRows) != 0 {
+		t.Fatalf("vendor/dependency.go rows = %#v, want deleted", vendorRows)
 	}
 
 	state, err := store.RepoState(ctx, fixtureRepoID)

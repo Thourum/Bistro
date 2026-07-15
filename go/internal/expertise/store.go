@@ -84,15 +84,25 @@ func (s *Store) UpsertFileRows(ctx context.Context, rows []FileExpertiseRow) err
 
 func (s *Store) ReplaceFileRows(ctx context.Context, repoID, filePath string, rows []FileExpertiseRow) error {
 	return s.withTx(ctx, func(queries *storedb.Queries) error {
-		if err := queries.DeleteFileExpertiseForFile(ctx, storedb.DeleteFileExpertiseForFileParams{
-			RepoID:   repoID,
-			FilePath: filePath,
-		}); err != nil {
-			return fmt.Errorf("delete file expertise %s %s: %w", repoID, filePath, err)
+		if err := deleteFileExpertise(ctx, queries, repoID, filePath); err != nil {
+			return err
 		}
 
 		return upsertFileRows(ctx, queries, rows)
 	})
+}
+
+func (s *Store) DeleteFileRows(ctx context.Context, repoID, filePath string) error {
+	return s.withTx(ctx, func(queries *storedb.Queries) error {
+		return deleteFileExpertise(ctx, queries, repoID, filePath)
+	})
+}
+
+func (s *Store) DeleteRepoRows(ctx context.Context, repoID string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM file_expertise WHERE repo_id = ?`, repoID); err != nil {
+		return fmt.Errorf("delete repo expertise %s: %w", repoID, err)
+	}
+	return nil
 }
 
 func (s *Store) GetFileExpertise(ctx context.Context, repoID, filePath string) ([]FileExpertiseRow, error) {
@@ -218,7 +228,14 @@ func (s *Store) ExpertiseForPRs(ctx context.Context, prIDs []string) ([]PRExpert
 	if len(prIDs) == 0 {
 		return []PRExpert{}, nil
 	}
-	rows, err := s.queries.GetExpertiseForPRs(ctx, prIDs)
+	filteredPRIDs, err := s.readyPRIDs(ctx, prIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(filteredPRIDs) == 0 {
+		return []PRExpert{}, nil
+	}
+	rows, err := s.queries.GetExpertiseForPRs(ctx, filteredPRIDs)
 	if err != nil {
 		return nil, fmt.Errorf("get expertise for PRs: %w", err)
 	}
@@ -244,6 +261,28 @@ func (s *Store) ExpertiseForPRs(ctx context.Context, prIDs []string) ([]PRExpert
 	return experts, nil
 }
 
+func (s *Store) readyPRIDs(ctx context.Context, prIDs []string) ([]string, error) {
+	ready := make([]string, 0, len(prIDs))
+	for _, prID := range prIDs {
+		var enabled int
+		var status string
+		err := s.db.QueryRowContext(ctx, `SELECT ers.enabled, ers.status
+			FROM prs p
+			JOIN expertise_repo_state ers ON ers.repo_id = p.repo_id
+			WHERE p.id = ?`, prID).Scan(&enabled, &status)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("get expertise repo readiness for PR %s: %w", prID, err)
+		}
+		if enabled == 1 && status == ExpertiseStatusReady {
+			ready = append(ready, prID)
+		}
+	}
+	return ready, nil
+}
+
 func (s *Store) withTx(ctx context.Context, fn func(*storedb.Queries) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -267,6 +306,16 @@ func upsertFileRows(ctx context.Context, queries *storedb.Queries, rows []FileEx
 		if err := queries.UpsertFileExpertise(ctx, upsertFileExpertiseParams(row)); err != nil {
 			return fmt.Errorf("upsert file expertise %s %s %s: %w", row.RepoID, row.FilePath, row.AuthorEmail, err)
 		}
+	}
+	return nil
+}
+
+func deleteFileExpertise(ctx context.Context, queries *storedb.Queries, repoID, filePath string) error {
+	if err := queries.DeleteFileExpertiseForFile(ctx, storedb.DeleteFileExpertiseForFileParams{
+		RepoID:   repoID,
+		FilePath: filePath,
+	}); err != nil {
+		return fmt.Errorf("delete file expertise %s %s: %w", repoID, filePath, err)
 	}
 	return nil
 }

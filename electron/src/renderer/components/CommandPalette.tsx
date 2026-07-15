@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -8,6 +8,7 @@ import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
+import { focusedExpertisePR } from '../utils/expertise';
 
 type Icon = string;
 
@@ -99,6 +100,7 @@ export function CommandPalette(): React.ReactElement | null {
   const prefetchedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const params = useParams({ strict: false }) as { prId?: string };
 
   // Use the shared visible-PR source so palette results match the list route.
   const { prs } = useVisiblePRs();
@@ -158,17 +160,21 @@ export function CommandPalette(): React.ReactElement | null {
     setQuery('');
   };
 
+  const focusedPR = useMemo(
+    () => focusedExpertisePR(prs, params.prId, appStore.state.selectedPRIndex),
+    [params.prId, prs],
+  );
+
   const sendExpertiseCommand = (
     type: 'EXPERTISE_ENABLE' | 'EXPERTISE_DISABLE',
   ): void => {
-    const selectedPR = prs[appStore.state.selectedPRIndex] ?? recentPRs[0];
-    if (selectedPR === undefined) {
+    if (focusedPR === undefined) {
       openRepoPicker();
       setQuery('');
       return;
     }
 
-    send(type, { repo_id: repoIdForPR(selectedPR) });
+    send(type, { repo_id: repoIdForPR(focusedPR) });
     closeOverlay();
     setQuery('');
   };

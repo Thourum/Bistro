@@ -166,6 +166,9 @@ func (indexer *Indexer) prepareIndex(ctx context.Context, repoID, repoPath strin
 	if err != nil {
 		return "", nil, expertiseSignals{}, err
 	}
+	if err := indexer.store.DeleteRepoRows(ctx, repoID); err != nil {
+		return "", nil, expertiseSignals{}, err
+	}
 
 	logResult, err := indexer.git.LogNumstat(ctx, repoPath, now.AddDate(0, -CommitWindowMonths, 0))
 	if err != nil {

@@ -1,7 +1,18 @@
-import type { ExpertiseExpert, PR } from '../types';
+import type { ExpertiseDataPayload, ExpertiseExpert, PR } from '../types';
 
 export function touchesYouCount(prs: readonly PR[]): number {
   return prs.filter((pr) => pr.touches_you).length;
+}
+
+export function focusedExpertisePR(
+  prs: readonly PR[],
+  routedPrId: string | undefined,
+  selectedPRIndex: number,
+): PR | undefined {
+  if (routedPrId !== undefined) {
+    return prs.find((pr) => pr.id === routedPrId);
+  }
+  return prs[selectedPRIndex];
 }
 
 export function formatWhy(expert: ExpertiseExpert): string {
@@ -10,4 +21,27 @@ export function formatWhy(expert: ExpertiseExpert): string {
   const roundedScore = Math.round(expert.score);
 
   return `${author}: ${expert.surviving_lines}/${expert.total_lines} surviving lines${originalAuthor} → ${roundedScore}`;
+}
+
+export function expertisePayloadForPR(
+  payload: ExpertiseDataPayload,
+  prId: string,
+): ExpertiseDataPayload {
+  return {
+    ...payload,
+    pr_id: payload.pr_id ?? prId,
+    files: payload.files ?? [],
+  };
+}
+
+export function isExpertisePayloadForPR(
+  payload: ExpertiseDataPayload | null | undefined,
+  prId: string | undefined,
+): payload is ExpertiseDataPayload {
+  return (
+    payload !== null &&
+    payload !== undefined &&
+    prId !== undefined &&
+    payload.pr_id === prId
+  );
 }

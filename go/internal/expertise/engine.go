@@ -18,7 +18,12 @@ type Engine struct {
 	indexer *Indexer
 	updater *Updater
 	mu      sync.Mutex
-	running map[string]context.CancelFunc
+	running map[string]runningIndex
+}
+
+type runningIndex struct {
+	generation uint64
+	cancel     context.CancelFunc
 }
 
 func NewEngine(log *slog.Logger, store *Store, git expertiseGit, indexer *Indexer, updater *Updater) *Engine {
@@ -31,7 +36,7 @@ func NewEngine(log *slog.Logger, store *Store, git expertiseGit, indexer *Indexe
 		git:     git,
 		indexer: indexer,
 		updater: updater,
-		running: make(map[string]context.CancelFunc),
+		running: make(map[string]runningIndex),
 	}
 }
 
@@ -165,8 +170,8 @@ func (engine *Engine) Shutdown() {
 	}
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
-	for repoID, cancel := range engine.running {
-		cancel()
+	for repoID, running := range engine.running {
+		running.cancel()
 		delete(engine.running, repoID)
 	}
 }
@@ -196,36 +201,48 @@ func (engine *Engine) startIndex(repoID, repoPath string) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	engine.mu.Lock()
-	if existingCancel, ok := engine.running[repoID]; ok {
-		existingCancel()
+	if existing, ok := engine.running[repoID]; ok {
+		existing.cancel()
 	}
-	engine.running[repoID] = cancel
+	generation := engine.nextGenerationLocked(repoID)
+	engine.running[repoID] = runningIndex{generation: generation, cancel: cancel}
 	engine.mu.Unlock()
 
 	go func() {
-		defer engine.clearRunning(repoID)
+		defer engine.clearRunning(repoID, generation)
 		if err := engine.indexer.Index(ctx, repoID, repoPath); err != nil && !errors.Is(err, context.Canceled) {
 			engine.log.Warn("expertise indexing failed", "repo_id", repoID, "error", err)
 		}
 	}()
 }
 
+func (engine *Engine) nextGenerationLocked(repoID string) uint64 {
+	current, ok := engine.running[repoID]
+	if !ok {
+		return 1
+	}
+	return current.generation + 1
+}
+
 func (engine *Engine) cancel(repoID string) {
 	engine.mu.Lock()
-	cancel, ok := engine.running[repoID]
+	running, ok := engine.running[repoID]
 	if ok {
 		delete(engine.running, repoID)
 	}
 	engine.mu.Unlock()
 	if ok {
-		cancel()
+		running.cancel()
 	}
 }
 
-func (engine *Engine) clearRunning(repoID string) {
+func (engine *Engine) clearRunning(repoID string, generation uint64) {
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
-	delete(engine.running, repoID)
+	current, ok := engine.running[repoID]
+	if ok && current.generation == generation {
+		delete(engine.running, repoID)
+	}
 }
 
 func fileTouchesIdentity(rows []FileExpertiseRow, identity Identity, minLines int) bool {

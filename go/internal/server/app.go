@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -397,11 +398,22 @@ func (a *App) startEventBridge(parent context.Context) {
 }
 
 func (a *App) broadcastExpertiseEvent(eventType string, payload any) {
-	data, ok := payload.(map[string]interface{})
-	if !ok {
-		data = map[string]interface{}{"payload": payload}
+	a.wsServer.Broadcast(wsEventMsg{Type: eventType, Data: expertisePayloadToMap(payload)})
+}
+
+func expertisePayloadToMap(payload any) map[string]interface{} {
+	if data, ok := payload.(map[string]interface{}); ok {
+		return data
 	}
-	a.wsServer.Broadcast(wsEventMsg{Type: eventType, Data: data})
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return map[string]interface{}{"payload": payload}
+	}
+	data := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return map[string]interface{}{"payload": payload}
+	}
+	return data
 }
 
 func (a *App) broadcastExpertiseNudge(ctx context.Context, prID string) {

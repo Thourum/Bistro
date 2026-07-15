@@ -229,6 +229,34 @@ describe('useWebSocket dev-folder startup scan', () => {
     unmount();
   });
 
+  it('resolves SET_EXPERTISE_SETTINGS requests when updated response arrives', async () => {
+    const { result, unmount } = renderHook(() => useWebSocket());
+    const ws = openMountedWebSocket();
+    const payload = {
+      alias_emails: [],
+      min_surviving_lines: 50,
+      excludes: { 'github:acme/api': [] },
+    };
+
+    const request = result.current.request('SET_EXPERTISE_SETTINGS', payload);
+
+    await vi.waitFor(() => {
+      expect(sentMessagesOfType(ws, 'SET_EXPERTISE_SETTINGS')).toHaveLength(1);
+    });
+
+    const settingsRequest = sentMessagesOfType(ws, 'SET_EXPERTISE_SETTINGS')[0];
+    emitMessage(ws, {
+      id: settingsRequest?.id,
+      type: 'EXPERTISE_SETTINGS_UPDATED',
+      data: payload,
+      timestamp: new Date().toISOString(),
+    });
+
+    await expect(request).resolves.toEqual(payload);
+
+    unmount();
+  });
+
   it('resolves ADD_REPO_BY_URL requests when matching add-repo result arrives', async () => {
     const { result, unmount } = renderHook(() => useWebSocket());
     const ws = openMountedWebSocket();
