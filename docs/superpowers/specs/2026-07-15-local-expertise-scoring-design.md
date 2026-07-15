@@ -179,7 +179,7 @@ PR's diff manifest.
 | `GET_EXPERTISE` | UI → Go | `{pr_id}` → `EXPERTISE_DATA`: per touched file, top experts with raw components (`surviving_lines/total_lines`, `commit_score`, `is_original`, `score`, `dormant`) + current user's rank. |
 | `EXPERTISE_NUDGE` | Go → UI | `{repo_id, reviewed_count}` |
 | `EXPERTISE_NUDGE_DISMISS` | UI → Go | `{repo_id}` → sets `nudge_dismissed_at`. |
-| `EXPERTISE_SETTINGS_GET` / `EXPERTISE_SETTINGS_SET` | UI ↔ Go | alias emails, min-surviving-lines, per-repo excludes (classification-settings precedent). |
+| `GET_EXPERTISE_SETTINGS` / `SET_EXPERTISE_SETTINGS` | UI ↔ Go | alias emails, min-surviving-lines, per-repo excludes (classification-settings precedent; verb-first naming matches `SET_CLASSIFICATION_SETTINGS`). |
 
 PR list rows gain a `touches_you` boolean computed Go-side at list-serve time,
 so the list/lane needs no extra round trips.

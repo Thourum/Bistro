@@ -111,7 +111,7 @@ No FK to `repos` — deliberate, see spec ("Note on `repos` FK").
 
 - [ ] **Step 2: Bump the reconcile baseline**
 
-In `go/internal/store/migration_runner.go`: change `const reconcileBaselineVersion int64 = 30` to `31`, and in `currentSchemaExists` add a check that the `file_expertise` table exists, following the exact pattern of the existing checks in that function (read it first).
+In `go/internal/store/migration_runner.go`: change `const reconcileBaselineVersion int64 = 30` to `31`, and in `currentSchemaExists` add a table-existence check for `file_expertise` (use the same `tableExists`-style helper the function already uses for whole-table checks — read the function first; a migration that creates tables needs a table check, not a column check).
 
 - [ ] **Step 3: Run store tests**
 
@@ -199,10 +199,16 @@ INSERT INTO expertise_settings (key, value) VALUES (?, ?)
 ON CONFLICT(key) DO UPDATE SET value = excluded.value;
 
 -- name: CountReviewedPRsForRepo :one
+-- last_reviewed_sha is account-namespaced (migration 022); filter by the
+-- current account, not just login, or another account on the same machine
+-- inflates the count.
 SELECT COUNT(DISTINCT lrs.pr_id)
 FROM last_reviewed_sha lrs
 JOIN prs p ON p.id = lrs.pr_id
-WHERE p.repo_id = ? AND lrs.login = ?;
+WHERE p.repo_id = ?
+  AND lrs.account_provider = ?
+  AND lrs.account_login = ?
+  AND lrs.login = ?;
 
 -- name: GetTopExpertsForFiles :many
 SELECT repo_id, file_path, author_email, author_login, score, dormant
@@ -370,7 +376,8 @@ Assert:
 - `HeadSHA(ctx, repoPath) (string, error)` — `git rev-parse HEAD`
 - `LsFiles(ctx, repoPath) ([]string, error)` — `git ls-files -z` (parse NUL-separated)
 - `BlameFile(ctx, repoPath, path) (map[AuthorKey]int, int, error)` — `git blame --line-porcelain HEAD -- <path>`; parse `author `/`author-mail ` lines; returns per-author counts + total. Strip `<>` from mail.
-- `LogNumstat(ctx, repoPath, since time.Time) (*LogResult, error)` — `git log --numstat --no-renames --pretty=format:%H%x00%ae%x00%an%x00%aI --since=<iso>`; also a second cheap pass WITHOUT `--since` restricted to `--pretty` only (`git log --all=false --pretty=format:%ae%x00%aI -n`… no — simplest: run `git for-each-ref` no. Use: `git log --pretty=format:%ae%x00%aI` over the last 90 days only (`--since=90.days`) to derive "active author" set for dormancy; document that dormancy = presence in this set.)
+- `LogNumstat(ctx, repoPath, since time.Time) (*LogResult, error)` — `git log --numstat --no-renames --pretty=format:%H%x00%ae%x00%an%x00%aI --since=<iso RFC3339>`; parse into per-author-per-file changed-line events with commit timestamps.
+- `ActiveAuthors(ctx, repoPath, since time.Time) (map[string]bool, error)` — `git log --pretty=format:%ae --since=<iso RFC3339>`, dedup emails into a set. Dormancy = author email NOT in this set when called with `now - 90 days` (per spec: no commit in this repo within 90 days).
 - `LogFirstCommits(ctx, repoPath) (map[string]string, error)` — `git log --diff-filter=A --name-only --no-renames --pretty=format:%x00%ae`; first (oldest) add wins: iterate with `--reverse`.
 - `GeneratedFiles(ctx, repoPath, paths []string) (map[string]bool, error)` — `git check-attr linguist-generated --stdin -z`.
 
@@ -454,7 +461,7 @@ Fixture repo indexed (Task 7 helper). Then: add a new commit editing `main.go` (
 
 - [ ] **Step 1: Write failing nudge test**
 
-In-memory store with migrations; insert a `repos` row (`source='local'`), 10 `prs` rows + 10 `last_reviewed_sha` rows for login `alice`. `ShouldNudge(ctx, repoID, "alice")` → true. Then: mark state enabled → false; dismiss (`nudge_dismissed_at` set) → false; 9 PRs → false; repo `source='cache'` → false.
+In-memory store with migrations; insert a `repos` row (`source='local'`), 10 `prs` rows + 10 `last_reviewed_sha` rows for login `alice` under account `('github','alice')`. `ShouldNudge(ctx, repoID, Account{Provider:"github", Login:"alice"})` → true. Then: mark state enabled → false; dismiss (`nudge_dismissed_at` set) → false; 9 PRs → false; repo `source='cache'` → false; rows written under a different account (`('github','bob')`) don't count toward alice's threshold.
 
 - [ ] **Step 2: Verify fail.**
 
