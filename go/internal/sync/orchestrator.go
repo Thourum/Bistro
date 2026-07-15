@@ -22,17 +22,27 @@ import (
 	"github.com/itterno/bistro/internal/store"
 )
 
+// ExpertiseHook receives successful PR diff sync notifications for incremental expertise updates.
+type ExpertiseHook interface {
+	OnPRSynced(ctx context.Context, repoID, repoPath string, files []string)
+}
+
+// RepoPathResolver resolves a repo ID to a local checkout path.
+type RepoPathResolver func(repoID string) (string, bool)
+
 // Orchestrator coordinates sync operations
 type Orchestrator struct {
-	log            *slog.Logger
-	provider       provider.Provider
-	store          *store.DB
-	git            *git.Client
-	emitter        *events.EventEmitter
-	rateLimitMu    gosync.RWMutex
-	rateLimitState *provider.RateLimitState
-	queue          *store.ActionQueue
-	diffStore      *store.DiffStore
+	log             *slog.Logger
+	provider        provider.Provider
+	store           *store.DB
+	git             *git.Client
+	emitter         *events.EventEmitter
+	rateLimitMu     gosync.RWMutex
+	rateLimitState  *provider.RateLimitState
+	queue           *store.ActionQueue
+	diffStore       *store.DiffStore
+	expertise       ExpertiseHook
+	resolveRepoPath RepoPathResolver
 	// reviewLogin/reviewSHAWriter are optional; if set they are attached to
 	// every ActionExecutor so successful reviews record last_reviewed_sha.
 	reviewLogin     actions.ReviewLoginGetter
@@ -136,6 +146,18 @@ func (o *Orchestrator) WithLiveness(ctx context.Context) *Orchestrator {
 // by this orchestrator classify comments in the write path (Phase 3).
 func (o *Orchestrator) WithClassifier(p *classify.EngineProvider) *Orchestrator {
 	o.classifier = p
+	return o
+}
+
+// WithExpertise attaches the expertise engine hook for post-diff incremental updates.
+func (o *Orchestrator) WithExpertise(h ExpertiseHook) *Orchestrator {
+	o.expertise = h
+	return o
+}
+
+// WithRepoPathResolver attaches local checkout path resolution for expertise updates.
+func (o *Orchestrator) WithRepoPathResolver(resolve RepoPathResolver) *Orchestrator {
+	o.resolveRepoPath = resolve
 	return o
 }
 

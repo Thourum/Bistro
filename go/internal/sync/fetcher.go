@@ -298,6 +298,7 @@ func (o *Orchestrator) FetchPRDetails(
 						}
 						result.DiffFiles = diffFiles
 						result.DiffComputed = true
+						o.notifyExpertiseHook(taskCtx, prCopy, diffFiles)
 
 						// Anchor resolution is OPPORTUNISTIC against the fast
 						// base/head-only clone above. Comments whose historical or
@@ -367,6 +368,22 @@ func (o *Orchestrator) FetchPRDetails(
 	}
 	log.Debug("FetchPRDetails complete", "pr_count", len(prs))
 	return results, nil
+}
+
+func (o *Orchestrator) notifyExpertiseHook(ctx context.Context, pr *provider.PR, diffFiles []store.DiffFile) {
+	if o.expertise == nil || o.resolveRepoPath == nil || pr == nil {
+		return
+	}
+	repoID := pr.Provider + ":" + pr.Owner + "/" + pr.Repo
+	repoPath, ok := o.resolveRepoPath(repoID)
+	if !ok || repoPath == "" {
+		return
+	}
+	files := make([]string, 0, len(diffFiles))
+	for _, diffFile := range diffFiles {
+		files = append(files, diffFile.FilePath)
+	}
+	o.expertise.OnPRSynced(ctx, repoID, repoPath, files)
 }
 
 // truncateSHA returns a short 7-char prefix of a git SHA for log readability.
