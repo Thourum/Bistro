@@ -17,7 +17,7 @@ import {
  * in the 32px-tall footer. Less common bindings are reachable via the `?`
  * help overlay.
  */
-export const FOOTER_LEGEND_PRESETS_BY_ROUTE: Record<RouteBase, string[]> = {
+const FOOTER_LEGEND_PRESETS_BY_ROUTE: Record<RouteBase, string[]> = {
   list: ['list.down', 'list.up', 'list.open', 'list.filter', 'list.search'],
   detail: [
     'detail.nextFile',
@@ -41,7 +41,7 @@ export const FOOTER_LEGEND_PRESETS_BY_ROUTE: Record<RouteBase, string[]> = {
 };
 
 /** Per-overlay footer legend preset. */
-export const FOOTER_LEGEND_PRESETS_BY_OVERLAY: Record<OverlayKind, string[]> = {
+const FOOTER_LEGEND_PRESETS_BY_OVERLAY: Record<OverlayKind, string[]> = {
   threads: [
     'threads.next',
     'threads.prev',

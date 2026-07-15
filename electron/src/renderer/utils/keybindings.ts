@@ -43,7 +43,7 @@ export function routeBaseFromPath(pathname: string): RouteBase | null {
  * When an overlay is active, ONLY bindings with a matching `overlays` entry fire.
  * When no overlay is active, only route-gated bindings fire.
  */
-export interface BindingActivation {
+interface BindingActivation {
   routes?: RouteBase[];
   overlays?: OverlayKind[];
 }

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "forge.config.ts",
+    "vite.config.ts",
+    "vite.main.config.ts",
+    "vite.preload.config.ts",
+    "vite.renderer.config.ts",
+    "vitest.config.ts",
+    "tests/setup.ts",
+    "src/main/index.ts",
+    "src/main/preload.ts",
+    "src/renderer/main.tsx",
+    "scripts/bench-large-diff.mjs"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "tests/**/*.{ts,tsx}",
+    "*.config.ts",
+    "scripts/**/*.mjs"
+  ],
+  "ignore": [
+    "src/renderer/types/window.d.ts"
+  ],
+  "ignoreDependencies": [
+    "@electron-forge/shared-types",
+    "conf"
+  ],
+  "ignoreUnresolved": [
+    "src/renderer/__tests__/setup.ts"
+  ],
+  "ignoreBinaries": [
+    "go"
+  ]
+}

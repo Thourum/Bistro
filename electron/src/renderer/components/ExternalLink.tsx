@@ -32,5 +32,3 @@ export function ExternalLink({
     </a>
   );
 }
-
-export default ExternalLink;

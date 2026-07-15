@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Logger } from 'electron-log';
+import type { EventMessage, PostHogOptions } from 'posthog-node';
+import { PostHog } from 'posthog-node';
 
-export const TELEMETRY_SCHEMA_VERSION = 1 as const;
+const TELEMETRY_SCHEMA_VERSION = 1 as const;
 
 const EVENT_NAMES = [
   'app_started',
@@ -41,10 +43,46 @@ export interface TelemetryPayload extends SanitizedTelemetryEvent {
   timestamp: string;
 }
 
-type TelemetryTransport = (
-  endpoint: string,
-  payloads: readonly TelemetryPayload[],
-) => Promise<void>;
+type TelemetryClient = Pick<
+  PostHog,
+  'capture' | 'disable' | 'enable' | 'flush'
+>;
+
+type TelemetryClientFactory = (options: {
+  apiKey: string;
+  host: string;
+  enabled: boolean;
+}) => TelemetryClient;
+
+const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
+
+const DEFAULT_POSTHOG_API_KEY_ENV_KEYS = [
+  'BISTRO_POSTHOG_API_KEY',
+  'POSTHOG_API_KEY',
+] as const;
+
+const DEFAULT_POSTHOG_HOST_ENV_KEYS = [
+  'BISTRO_POSTHOG_HOST',
+  'POSTHOG_HOST',
+] as const;
+
+const posthogClientFactory: TelemetryClientFactory = ({
+  apiKey,
+  host,
+  enabled,
+}) =>
+  new PostHog(apiKey, {
+    host,
+    defaultOptIn: enabled,
+    disabled: false,
+    disableGeoip: true,
+    disableRemoteConfig: true,
+    disableRemoteFeatureFlags: true,
+    featureFlagsRequestMaxRetries: 0,
+    fetchRetryCount: 3,
+    flushAt: 20,
+    flushInterval: 10_000,
+  } satisfies PostHogOptions);
 
 function enumValue<T extends readonly string[]>(
   value: unknown,
@@ -138,23 +176,8 @@ export function resolveTelemetryEndpoint(
     : null;
 }
 
-async function defaultTransport(
-  endpoint: string,
-  payloads: readonly TelemetryPayload[],
-): Promise<void> {
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ events: payloads }),
-  });
-  if (!response.ok) {
-    throw new Error(`telemetry upload failed: ${response.status}`);
-  }
-}
-
 export class TelemetryService {
   private enabled: boolean;
-  private readonly eventsPath: string;
   private readonly installIdPath: string;
 
   constructor(options: {
@@ -164,26 +187,30 @@ export class TelemetryService {
     appVersion: string;
     platform: NodeJS.Platform;
     logger: Logger;
-    transport?: TelemetryTransport;
+    apiKey?: string | null;
+    clientFactory?: TelemetryClientFactory;
   }) {
     this.enabled = options.enabled;
-    this.endpoint = options.endpoint;
     this.appVersion = options.appVersion;
     this.platform = options.platform;
     this.logger = options.logger;
-    this.transport = options.transport ?? defaultTransport;
-    this.eventsPath = join(options.storageDir, 'events.jsonl');
     this.installIdPath = join(options.storageDir, 'anonymous-install-id');
+    this.client = this.createClient(options);
   }
 
-  private readonly endpoint: string | null;
   private readonly appVersion: string;
   private readonly platform: NodeJS.Platform;
   private readonly logger: Logger;
-  private readonly transport: TelemetryTransport;
+  private readonly client: TelemetryClient | null;
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
+    const updateConsent = enabled
+      ? this.client?.enable()
+      : this.client?.disable();
+    void updateConsent?.catch((error: unknown) => {
+      this.logger.warn(`telemetry consent update failed: ${String(error)}`);
+    });
   }
 
   async track(
@@ -193,20 +220,15 @@ export class TelemetryService {
     const event = sanitizeTelemetryEvent(name, properties);
     if (!this.enabled || event === null) return;
 
+    if (this.client === null) return;
+
     const payload = await this.payloadFor(event).catch((error: unknown) => {
       this.logger.warn(`telemetry payload skipped: ${String(error)}`);
       return null;
     });
     if (payload === null) return;
 
-    await this.persist(payload).catch((error: unknown) => {
-      this.logger.warn(`telemetry persist failed: ${String(error)}`);
-    });
-    if (this.endpoint !== null) {
-      await this.transport(this.endpoint, [payload]).catch((error: unknown) => {
-        this.logger.warn(`telemetry transmit failed: ${String(error)}`);
-      });
-    }
+    this.capture(payload);
   }
 
   trackAppStarted(): Promise<void> {
@@ -214,6 +236,56 @@ export class TelemetryService {
       appVersion: this.appVersion,
       platform: this.platform,
     });
+  }
+
+  flush(): Promise<void> {
+    return (
+      this.client?.flush().catch((error: unknown) => {
+        this.logger.warn(`telemetry flush failed: ${String(error)}`);
+      }) ?? Promise.resolve()
+    );
+  }
+
+  private createClient(options: {
+    endpoint: string | null;
+    apiKey?: string | null;
+    clientFactory?: TelemetryClientFactory;
+  }): TelemetryClient | null {
+    const apiKey = options.apiKey ?? this.resolveApiKey();
+    if (apiKey === null) return null;
+
+    return (options.clientFactory ?? posthogClientFactory)({
+      apiKey,
+      host: options.endpoint ?? this.resolvePostHogHost(),
+      enabled: this.enabled,
+    });
+  }
+
+  private resolvePostHogHost(): string {
+    const value = DEFAULT_POSTHOG_HOST_ENV_KEYS.map((key) =>
+      resolveTelemetryEndpoint(process.env[key]),
+    ).find((candidate) => candidate !== null);
+    return value ?? DEFAULT_POSTHOG_HOST;
+  }
+
+  private resolveApiKey(): string | null {
+    const value = DEFAULT_POSTHOG_API_KEY_ENV_KEYS.map((key) =>
+      process.env[key]?.trim(),
+    ).find((candidate) => candidate !== undefined && candidate.length > 0);
+    return value ?? null;
+  }
+
+  private capture(payload: TelemetryPayload): void {
+    const message = {
+      distinctId: payload.anonymousInstallId,
+      event: payload.name,
+      timestamp: new Date(payload.timestamp),
+      properties: {
+        ...payload.properties,
+        telemetrySchemaVersion: payload.schemaVersion,
+      },
+    } satisfies EventMessage;
+    this.client?.capture(message);
   }
 
   private async payloadFor(
@@ -240,10 +312,5 @@ export class TelemetryService {
     await mkdir(join(this.installIdPath, '..'), { recursive: true });
     await writeFile(this.installIdPath, `${value}\n`, 'utf-8');
     return value;
-  }
-
-  private async persist(payload: TelemetryPayload): Promise<void> {
-    await mkdir(join(this.eventsPath, '..'), { recursive: true });
-    await appendFile(this.eventsPath, `${JSON.stringify(payload)}\n`, 'utf-8');
   }
 }

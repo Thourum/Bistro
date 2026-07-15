@@ -22,7 +22,7 @@ export type OverlayKind =
   | 'repoPicker'
   | 'addRepo'
   | 'threads';
-export type HelpSourceRoute = 'list' | 'detail';
+type HelpSourceRoute = 'list' | 'detail';
 
 export interface OverlayContextValue {
   activeOverlay: OverlayKind | null;

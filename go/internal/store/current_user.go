@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+
+	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
 // CurrentUserStore persists the authenticated user identity per provider.
 type CurrentUserStore struct {
-	log *slog.Logger
-	db  *DB
+	log     *slog.Logger
+	queries *storedb.Queries
 }
 
 // NewCurrentUserStore creates a CurrentUserStore using slog.Default() as the logger.
@@ -24,17 +26,15 @@ func NewCurrentUserStoreWithLogger(log *slog.Logger, db *DB) *CurrentUserStore {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &CurrentUserStore{log: log, db: db}
+	return &CurrentUserStore{log: log, queries: storedb.New(db)}
 }
 
 // SetCurrentUser upserts the login for the given provider.
 func (s *CurrentUserStore) SetCurrentUser(ctx context.Context, providerName, login string) error {
-	const q = `
-		INSERT INTO current_user (provider, login)
-		VALUES (?, ?)
-		ON CONFLICT(provider) DO UPDATE SET
-			login = excluded.login`
-	if _, err := s.db.ExecContext(ctx, q, providerName, login); err != nil {
+	if err := s.queries.UpsertCurrentUser(ctx, storedb.UpsertCurrentUserParams{
+		Provider: providerName,
+		Login:    login,
+	}); err != nil {
 		return fmt.Errorf("set current user %s/%s: %w", providerName, login, err)
 	}
 	s.log.Debug("current user stored", "provider", providerName, "login", login)
@@ -43,7 +43,7 @@ func (s *CurrentUserStore) SetCurrentUser(ctx context.Context, providerName, log
 
 // DeleteCurrentUser removes the stored current login for the given provider.
 func (s *CurrentUserStore) DeleteCurrentUser(ctx context.Context, providerName string) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM current_user WHERE provider = ?`, providerName); err != nil {
+	if err := s.queries.DeleteCurrentUser(ctx, providerName); err != nil {
 		return fmt.Errorf("delete current user %s: %w", providerName, err)
 	}
 	s.log.Debug("current user cleared", "provider", providerName)
@@ -53,11 +53,7 @@ func (s *CurrentUserStore) DeleteCurrentUser(ctx context.Context, providerName s
 // GetCurrentUser returns the stored login and true, or ("", false, nil) if not set.
 // A non-nil error indicates a DB failure distinct from the not-set case.
 func (s *CurrentUserStore) GetCurrentUser(ctx context.Context, providerName string) (string, bool, error) {
-	var login string
-	err := s.db.QueryRowContext(ctx,
-		`SELECT login FROM current_user WHERE provider = ?`,
-		providerName,
-	).Scan(&login)
+	login, err := s.queries.GetCurrentUserLogin(ctx, providerName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}

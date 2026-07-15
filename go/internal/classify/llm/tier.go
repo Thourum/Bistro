@@ -170,7 +170,6 @@ func (t *Tier) runBatch(ctx context.Context, prID string, mode string) {
 		select {
 		case <-batchCtx.Done():
 			shouldAbandon.Store(true)
-			break
 		case semaphore <- struct{}{}:
 		}
 		if shouldAbandon.Load() {

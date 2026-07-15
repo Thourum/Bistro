@@ -1,7 +1,7 @@
 import { Store } from '@tanstack/store';
 import type { ActionResult, PendingAction, RepoInfo, Toast } from '../types';
 
-export interface SyncStats {
+interface SyncStats {
   prCount: number;
   newPRs: number;
   updatedPRs: number;

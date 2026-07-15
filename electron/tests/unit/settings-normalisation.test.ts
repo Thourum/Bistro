@@ -1,4 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('electron-store', () => ({
+  default: class MockElectronStore {},
+}));
+
+vi.mock('electron', () => ({
+  BrowserWindow: { getAllWindows: vi.fn(() => []) },
+  app: { getPath: vi.fn(() => ''), getVersion: vi.fn(() => '0.0.0') },
+  ipcMain: { on: vi.fn() },
+  shell: { openPath: vi.fn() },
+}));
 import { normalise } from '../../src/main/settings';
 import {
   type AppSettings,

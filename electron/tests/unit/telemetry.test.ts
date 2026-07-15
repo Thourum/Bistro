@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   resolveTelemetryEndpoint,
   sanitizeTelemetryEvent,
@@ -15,6 +15,15 @@ const logger = {
 } as never;
 
 describe('privacy-safe telemetry', () => {
+  beforeEach(() => {
+    vi.stubEnv('BISTRO_POSTHOG_API_KEY', '');
+    vi.stubEnv('POSTHOG_API_KEY', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('drops confidential and non-allowlisted event properties', () => {
     const event = sanitizeTelemetryEvent('review_action_requested', {
       action: 'approve',
@@ -34,9 +43,14 @@ describe('privacy-safe telemetry', () => {
     });
   });
 
-  it('does not persist or transmit before explicit consent', async () => {
+  it('does not create install id or capture before explicit consent', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'bistro-telemetry-disabled-'));
-    const transport = vi.fn(async () => undefined);
+    const client = {
+      capture: vi.fn(),
+      disable: vi.fn(async () => undefined),
+      enable: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+    };
     const service = new TelemetryService({
       enabled: false,
       storageDir: dir,
@@ -44,19 +58,25 @@ describe('privacy-safe telemetry', () => {
       appVersion: '0.1.0',
       platform: 'darwin',
       logger,
-      transport,
+      apiKey: 'phc_test',
+      clientFactory: () => client,
     });
 
     await service.trackAppStarted();
 
-    await expect(stat(join(dir, 'events.jsonl'))).rejects.toThrow();
-    expect(transport).not.toHaveBeenCalled();
+    await expect(stat(join(dir, 'anonymous-install-id'))).rejects.toThrow();
+    expect(client.capture).not.toHaveBeenCalled();
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('persists and transmits only sanitized payloads after consent', async () => {
+  it('captures only sanitized payloads through PostHog after consent', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'bistro-telemetry-enabled-'));
-    const batches: unknown[] = [];
+    const client = {
+      capture: vi.fn(),
+      disable: vi.fn(async () => undefined),
+      enable: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+    };
     const service = new TelemetryService({
       enabled: true,
       storageDir: dir,
@@ -64,9 +84,8 @@ describe('privacy-safe telemetry', () => {
       appVersion: '0.1.0',
       platform: 'darwin',
       logger,
-      transport: async (_endpoint, payloads) => {
-        batches.push(payloads);
-      },
+      apiKey: 'phc_test',
+      clientFactory: () => client,
     });
 
     await service.track('settings_updated', {
@@ -77,13 +96,44 @@ describe('privacy-safe telemetry', () => {
       code: 'private()',
     });
 
-    const stored = await readFile(join(dir, 'events.jsonl'), 'utf-8');
-    expect(stored).toContain('settings_updated');
-    expect(stored).toContain('telemetryEnabled');
-    expect(stored).not.toContain('secret/repo');
-    expect(stored).not.toContain('/private/file.ts');
-    expect(stored).not.toContain('private()');
-    expect(batches).toHaveLength(1);
+    const installId = (
+      await readFile(join(dir, 'anonymous-install-id'), 'utf-8')
+    ).trim();
+    expect(client.capture).toHaveBeenCalledWith({
+      distinctId: installId,
+      event: 'settings_updated',
+      timestamp: expect.any(Date),
+      properties: {
+        section: 'privacy',
+        telemetryEnabled: true,
+        telemetrySchemaVersion: 1,
+      },
+    });
+    const captured = JSON.stringify(client.capture.mock.calls);
+    expect(captured).not.toContain('secret/repo');
+    expect(captured).not.toContain('/private/file.ts');
+    expect(captured).not.toContain('private()');
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('does not create a PostHog client without endpoint and API key', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'bistro-telemetry-unconfigured-'));
+    const clientFactory = vi.fn();
+    const service = new TelemetryService({
+      enabled: true,
+      storageDir: dir,
+      endpoint: null,
+      appVersion: '0.1.0',
+      platform: 'darwin',
+      logger,
+      apiKey: null,
+      clientFactory,
+    });
+
+    await service.trackAppStarted();
+
+    await expect(stat(join(dir, 'anonymous-install-id'))).rejects.toThrow();
+    expect(clientFactory).not.toHaveBeenCalled();
     await rm(dir, { recursive: true, force: true });
   });
 

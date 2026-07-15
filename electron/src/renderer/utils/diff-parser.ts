@@ -1,11 +1,18 @@
-export interface DiffLine {
+import {
+  type FileDiffMetadata,
+  type Hunk,
+  parsePatchFiles,
+  processFile,
+} from '@pierre/diffs';
+
+interface DiffLine {
   type: 'context' | 'added' | 'removed';
   content: string;
   oldLineNumber?: number;
   newLineNumber?: number;
 }
 
-export interface DiffHunk {
+interface DiffHunk {
   header: string;
   lines: DiffLine[];
 }
@@ -16,140 +23,174 @@ export interface DiffSection {
   hunks: DiffHunk[];
 }
 
+interface DiffFileNames {
+  oldFile: string;
+  newFile: string;
+}
+
 /**
  * Parse a multi-file unified diff (as produced by `git diff`) into an array of DiffSections.
- * Splits on `diff --git` boundaries and delegates each section to `parseDiff`.
+ * Uses @pierre/diffs for patch parsing and adapts its metadata to the legacy UI shape.
  */
 export function parseMultiFileDiff(diffText: string): DiffSection[] {
   if (!diffText || diffText.trim() === '') return [];
 
-  // Split on "diff --git" boundaries
-  const parts = diffText.split(/^(?=diff --git )/m);
-  const sections: DiffSection[] = [];
-
-  for (const part of parts) {
-    const trimmed = part.trim();
-    if (trimmed === '') continue;
-
-    // Extract git header info for fallback file names.
-    // Handles both quoted paths (git quotes filenames with spaces) and
-    // normal unquoted paths.  For unquoted paths we split on the LAST
-    // occurrence of " b/" so that paths containing spaces are handled
-    // correctly.
-    let gitMatch: [string, string, string] | null = null;
-    const quotedGitMatch = trimmed.match(/^diff --git "a\/(.+)" "b\/(.+)"/);
-    if (quotedGitMatch) {
-      gitMatch = [quotedGitMatch[0]!, quotedGitMatch[1]!, quotedGitMatch[2]!];
-    } else {
-      const headerLine = trimmed.match(/^diff --git a\/.+ b\/.+/)?.[0];
-      if (headerLine) {
-        const withoutPrefix = headerLine.slice('diff --git '.length);
-        const lastBSlash = withoutPrefix.lastIndexOf(' b/');
-        if (lastBSlash !== -1) {
-          const aPath = withoutPrefix.slice(2, lastBSlash);
-          const bPath = withoutPrefix.slice(lastBSlash + 3);
-          gitMatch = [headerLine, aPath, bPath];
-        }
-      }
-    }
-
-    // Strip the "diff --git a/... b/..." line and optional metadata lines
-    const withoutGitHeader = trimmed
-      .replace(/^diff --git [^\n]+\n?/, '')
-      .replace(/^index [^\n]+\n?/m, '')
-      .replace(/^(new|deleted) file mode [^\n]+\n?/gm, '')
-      .replace(/^Binary files [^\n]+\n?/gm, '');
-
-    if (withoutGitHeader.trim() === '') {
-      // Binary or empty section — create a stub with names from git header
-      if (gitMatch) {
-        sections.push({
-          oldFile: `a/${gitMatch[1]}`,
-          newFile: `b/${gitMatch[2] ?? gitMatch[1]}`,
-          hunks: [],
-        });
-      }
-      continue;
-    }
-
-    const section = parseDiff(withoutGitHeader);
-
-    // If parseDiff could not extract file names, fall back to git header
-    if (!section.oldFile && !section.newFile && gitMatch) {
-      sections.push({
-        ...section,
-        oldFile: `a/${gitMatch[1]}`,
-        newFile: `b/${gitMatch[2] ?? gitMatch[1]}`,
-      });
-    } else {
-      sections.push(section);
-    }
-  }
-
-  return sections;
+  const fallbackNames = extractGitFileNames(diffText);
+  return parsePatchFiles(diffText)
+    .flatMap((patch) => patch.files)
+    .map((file, index) => mapFileToSection(file, fallbackNames[index]));
 }
 
 export function parseDiff(diffText: string): DiffSection {
-  const lines = diffText.split('\n');
-  const result: DiffSection = {
-    oldFile: '',
-    newFile: '',
-    hunks: [],
-  };
-
-  let currentHunk: DiffHunk | null = null;
-  let oldLineNum = 0;
-  let newLineNum = 0;
-
-  for (const line of lines) {
-    if (line.startsWith('--- ')) {
-      result.oldFile = line.slice(4);
-    } else if (line.startsWith('+++ ')) {
-      result.newFile = line.slice(4);
-    } else if (line.startsWith('@@')) {
-      const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-      if (match) {
-        oldLineNum = parseInt(match[1] ?? '0', 10);
-        newLineNum = parseInt(match[2] ?? '0', 10);
-      }
-      currentHunk = { header: line, lines: [] };
-      result.hunks.push(currentHunk);
-    } else if (currentHunk) {
-      if (line.startsWith('\\')) {
-        // Skip "\ No newline at end of file" markers
-        continue;
-      }
-
-      let type: DiffLine['type'];
-      let content: string;
-
-      if (line.startsWith('-')) {
-        type = 'removed';
-        content = line.slice(1);
-        const diffLine: DiffLine = { type, content, oldLineNumber: oldLineNum };
-        currentHunk.lines.push(diffLine);
-        oldLineNum++;
-      } else if (line.startsWith('+')) {
-        type = 'added';
-        content = line.slice(1);
-        const diffLine: DiffLine = { type, content, newLineNumber: newLineNum };
-        currentHunk.lines.push(diffLine);
-        newLineNum++;
-      } else {
-        type = 'context';
-        content = line.startsWith(' ') ? line.slice(1) : line;
-        const diffLine: DiffLine = {
-          type,
-          content,
-          oldLineNumber: oldLineNum,
-          newLineNumber: newLineNum,
-        };
-        currentHunk.lines.push(diffLine);
-        oldLineNum++;
-        newLineNum++;
-      }
-    }
+  if (!diffText || diffText.trim() === '') {
+    return { oldFile: '', newFile: '', hunks: [] };
   }
 
-  return result;
+  const parsedFile = processFile(diffText);
+  if (!parsedFile) {
+    return { oldFile: '', newFile: '', hunks: [] };
+  }
+
+  return mapFileToSection(parsedFile, extractUnifiedFileNames(diffText));
+}
+
+function mapFileToSection(
+  file: FileDiffMetadata,
+  fallbackNames?: DiffFileNames,
+): DiffSection {
+  return {
+    oldFile: fallbackNames?.oldFile ?? getOldFileName(file),
+    newFile: fallbackNames?.newFile ?? getNewFileName(file),
+    hunks: file.hunks.map((hunk) => mapHunk(hunk, file)),
+  };
+}
+
+function mapHunk(hunk: Hunk, file: FileDiffMetadata): DiffHunk {
+  let oldLineNumber = hunk.deletionStart;
+  let newLineNumber = hunk.additionStart;
+
+  const lines = hunk.hunkContent.flatMap((content): DiffLine[] => {
+    if (content.type === 'context') {
+      const contextLines = range(content.lines).map((offset) => ({
+        type: 'context' as const,
+        content: normalizeLineContent(
+          file.deletionLines[content.deletionLineIndex + offset] ?? '',
+        ),
+        oldLineNumber: oldLineNumber + offset,
+        newLineNumber: newLineNumber + offset,
+      }));
+
+      oldLineNumber += content.lines;
+      newLineNumber += content.lines;
+
+      return contextLines;
+    }
+
+    const removedLines = range(content.deletions).map((offset) => ({
+      type: 'removed' as const,
+      content: normalizeLineContent(
+        file.deletionLines[content.deletionLineIndex + offset] ?? '',
+      ),
+      oldLineNumber: oldLineNumber + offset,
+    }));
+    const addedLines = range(content.additions).map((offset) => ({
+      type: 'added' as const,
+      content: normalizeLineContent(
+        file.additionLines[content.additionLineIndex + offset] ?? '',
+      ),
+      newLineNumber: newLineNumber + offset,
+    }));
+
+    oldLineNumber += content.deletions;
+    newLineNumber += content.additions;
+
+    return [...removedLines, ...addedLines];
+  });
+
+  return {
+    header: normalizeHunkHeader(hunk.hunkSpecs),
+    lines,
+  };
+}
+
+function getOldFileName(file: FileDiffMetadata): string {
+  if (file.type === 'new') return '/dev/null';
+  return addGitPrefix('a', file.prevName ?? file.name);
+}
+
+function getNewFileName(file: FileDiffMetadata): string {
+  if (file.type === 'deleted') return '/dev/null';
+  return addGitPrefix('b', file.name);
+}
+
+function extractGitFileNames(diffText: string): DiffFileNames[] {
+  return diffText
+    .split(/^(?=diff --git )/m)
+    .map((section) => section.trim())
+    .filter((section) => section !== '')
+    .map(
+      (section) =>
+        extractUnifiedFileNames(section) ?? extractGitHeaderNames(section),
+    )
+    .filter((names): names is DiffFileNames => names !== undefined);
+}
+
+function extractUnifiedFileNames(diffText: string): DiffFileNames | undefined {
+  const oldFile = diffText.match(/^---\s+(.+)$/m)?.[1]?.trim();
+  const newFile = diffText.match(/^\+\+\+\s+(.+)$/m)?.[1]?.trim();
+
+  if (!oldFile && !newFile) return undefined;
+
+  return {
+    oldFile: oldFile ? unquotePath(oldFile) : '',
+    newFile: newFile ? unquotePath(newFile) : '',
+  };
+}
+
+function extractGitHeaderNames(diffText: string): DiffFileNames | undefined {
+  const headerLine = diffText.match(/^diff --git (.+)$/m)?.[1];
+  if (!headerLine) return undefined;
+
+  const quotedMatch = headerLine.match(/^"a\/(.+)" "b\/(.+)"$/);
+  if (quotedMatch) {
+    return {
+      oldFile: `a/${quotedMatch[1]}`,
+      newFile: `b/${quotedMatch[2]}`,
+    };
+  }
+
+  const lastNewPathPrefix = headerLine.lastIndexOf(' b/');
+  if (lastNewPathPrefix === -1 || !headerLine.startsWith('a/')) {
+    return undefined;
+  }
+
+  return {
+    oldFile: headerLine.slice(0, lastNewPathPrefix),
+    newFile: headerLine.slice(lastNewPathPrefix + 1),
+  };
+}
+
+function addGitPrefix(prefix: 'a' | 'b', fileName: string): string {
+  if (fileName === '' || fileName === '/dev/null') return fileName;
+  if (fileName.startsWith('a/') || fileName.startsWith('b/')) return fileName;
+  return `${prefix}/${fileName}`;
+}
+
+function unquotePath(path: string): string {
+  if (path.length >= 2 && path.startsWith('"') && path.endsWith('"')) {
+    return path.slice(1, -1);
+  }
+  return path;
+}
+
+function normalizeHunkHeader(header: string | undefined): string {
+  return header?.replace(/[\r\n]+$/, '') ?? '';
+}
+
+function normalizeLineContent(line: string): string {
+  return line.replace(/[\r\n]+$/, '');
+}
+
+function range(length: number): number[] {
+  return Array.from({ length }, (_, index) => index);
 }

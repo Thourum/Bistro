@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
+
+	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
 // SyncCursor is local-only sync bookkeeping for provider endpoints. It is kept
@@ -21,37 +24,25 @@ type SyncCursor struct {
 
 // GetSyncCursor returns persisted local-only cursor state for a scope.
 func (db *DB) GetSyncCursor(ctx context.Context, scope string) (*SyncCursor, error) {
-	row := db.QueryRowContext(ctx, `
-		SELECT scope, COALESCE(cursor_value, ''), COALESCE(etag, ''),
-		       last_success_at, last_error_at, error_json
-		FROM sync_cursors
-		WHERE scope = ?`, scope)
-
-	var cur SyncCursor
-	if err := row.Scan(&cur.Scope, &cur.CursorValue, &cur.ETag, &cur.LastSuccessAt, &cur.LastErrorAt, &cur.ErrorJSON); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
+	row, err := storedb.New(db).GetSyncCursor(ctx, scope)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
 		return nil, err
 	}
-	return &cur, nil
+
+	return syncCursorFromRow(row), nil
 }
 
 // SaveSyncCursorSuccess atomically advances a scope after the corresponding
 // endpoint pages and local hydration/write have completed successfully.
 func (db *DB) SaveSyncCursorSuccess(ctx context.Context, scope, cursorValue, etag string) error {
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO sync_cursors
-			(scope, cursor_value, etag, last_success_at, last_error_at, error_json, updated_at)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP, NULL, NULL, CURRENT_TIMESTAMP)
-		ON CONFLICT(scope) DO UPDATE SET
-			cursor_value = excluded.cursor_value,
-			etag = excluded.etag,
-			last_success_at = CURRENT_TIMESTAMP,
-			last_error_at = NULL,
-			error_json = NULL,
-			updated_at = CURRENT_TIMESTAMP`, scope, cursorValue, etag)
-	return err
+	return storedb.New(db).SaveSyncCursorSuccess(ctx, storedb.SaveSyncCursorSuccessParams{
+		Scope:       scope,
+		CursorValue: nonNullString(cursorValue),
+		Etag:        nonNullString(etag),
+	})
 }
 
 // MarkSyncCursorError records a failed attempt without advancing cursor_value.
@@ -62,15 +53,11 @@ func (db *DB) MarkSyncCursorError(ctx context.Context, scope string, syncErr err
 	if err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO sync_cursors
-			(scope, last_error_at, error_json, updated_at)
-		VALUES (?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
-		ON CONFLICT(scope) DO UPDATE SET
-			last_error_at = CURRENT_TIMESTAMP,
-			error_json = excluded.error_json,
-			updated_at = CURRENT_TIMESTAMP`, scope, string(payload))
-	return err
+
+	return storedb.New(db).MarkSyncCursorError(ctx, storedb.MarkSyncCursorErrorParams{
+		Scope:     scope,
+		ErrorJson: nonNullString(string(payload)),
+	})
 }
 
 func FormatSyncCursorTime(t time.Time) string {
@@ -79,4 +66,19 @@ func FormatSyncCursorTime(t time.Time) string {
 
 func ParseSyncCursorTime(value string) (time.Time, error) {
 	return time.Parse(time.RFC3339Nano, value)
+}
+
+func syncCursorFromRow(row storedb.GetSyncCursorRow) *SyncCursor {
+	return &SyncCursor{
+		Scope:         row.Scope,
+		CursorValue:   row.CursorValue,
+		ETag:          row.Etag,
+		LastSuccessAt: row.LastSuccessAt,
+		LastErrorAt:   row.LastErrorAt,
+		ErrorJSON:     row.ErrorJson,
+	}
+}
+
+func nonNullString(value string) sql.NullString {
+	return sql.NullString{String: value, Valid: true}
 }

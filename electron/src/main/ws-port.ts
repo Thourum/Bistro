@@ -1,4 +1,4 @@
-export const WS_PORT_ARG_PREFIX = '--bistro-ws-port=';
+const WS_PORT_ARG_PREFIX = '--bistro-ws-port=';
 export const DEFAULT_WS_PORT = 8080;
 
 export function wsPortToArg(port: number): string {

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
 // FileViewed is one row from files_viewed.
@@ -17,13 +19,14 @@ type FileViewed struct {
 // The content_hash is updated on conflict — viewing after a rebase replaces
 // the old hash so IsFileViewed correctly returns false for stale content.
 func (db *DB) MarkFileViewed(ctx context.Context, prID, filePath, login, contentHash string) error {
-	const q = `
-		INSERT INTO files_viewed (pr_id, file_path, account_provider, account_login, login, content_hash, viewed_at)
-		VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-		ON CONFLICT(pr_id, file_path, account_provider, account_login, login) DO UPDATE SET
-			content_hash = excluded.content_hash,
-			viewed_at    = excluded.viewed_at`
-	if _, err := db.ExecContext(ctx, q, prID, filePath, localReviewAccountProvider, login, login, contentHash); err != nil {
+	if err := storedb.New(db).UpsertFileViewed(ctx, storedb.UpsertFileViewedParams{
+		PrID:            prID,
+		FilePath:        filePath,
+		AccountProvider: localReviewAccountProvider,
+		AccountLogin:    login,
+		Login:           login,
+		ContentHash:     contentHash,
+	}); err != nil {
 		return fmt.Errorf("mark file viewed (%s, %s, %s): %w", prID, filePath, login, err)
 	}
 	return nil
@@ -33,12 +36,13 @@ func (db *DB) MarkFileViewed(ctx context.Context, prID, filePath, login, content
 // AND the stored content_hash matches the given hash.
 // A different hash returns false — the content changed and needs re-review.
 func (db *DB) IsFileViewed(ctx context.Context, prID, filePath, login, contentHash string) (bool, error) {
-	var stored string
-	err := db.QueryRowContext(ctx,
-		`SELECT content_hash FROM files_viewed
-		 WHERE pr_id = ? AND file_path = ? AND account_provider = ? AND account_login = ? AND login = ?`,
-		prID, filePath, localReviewAccountProvider, login, login,
-	).Scan(&stored)
+	stored, err := storedb.New(db).GetViewedFileContentHash(ctx, storedb.GetViewedFileContentHashParams{
+		PrID:            prID,
+		FilePath:        filePath,
+		AccountProvider: localReviewAccountProvider,
+		AccountLogin:    login,
+		Login:           login,
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -51,23 +55,22 @@ func (db *DB) IsFileViewed(ctx context.Context, prID, filePath, login, contentHa
 // ListViewedFiles returns all files the given login has viewed for pr_id,
 // ordered by file_path, with the stored content_hash for each.
 func (db *DB) ListViewedFiles(ctx context.Context, prID, login string) ([]FileViewed, error) {
-	rows, err := db.QueryContext(ctx,
-		`SELECT file_path, content_hash FROM files_viewed
-		 WHERE pr_id = ? AND account_provider = ? AND account_login = ? AND login = ?
-		 ORDER BY file_path`,
-		prID, localReviewAccountProvider, login, login,
-	)
+	rows, err := storedb.New(db).ListViewedFilesForLogin(ctx, storedb.ListViewedFilesForLoginParams{
+		PrID:            prID,
+		AccountProvider: localReviewAccountProvider,
+		AccountLogin:    login,
+		Login:           login,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list viewed files (%s, %s): %w", prID, login, err)
 	}
-	defer rows.Close()
-	var out []FileViewed
-	for rows.Next() {
-		var fv FileViewed
-		if err := rows.Scan(&fv.FilePath, &fv.ContentHash); err != nil {
-			return nil, fmt.Errorf("scan file viewed: %w", err)
-		}
-		out = append(out, fv)
+
+	out := make([]FileViewed, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, FileViewed{
+			FilePath:    row.FilePath,
+			ContentHash: row.ContentHash,
+		})
 	}
-	return out, rows.Err()
+	return out, nil
 }

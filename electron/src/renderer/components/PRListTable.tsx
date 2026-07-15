@@ -12,13 +12,12 @@ import { RepoRecoveryDialog } from './RepoRecoveryDialog';
 
 export type PRRepoGroup = readonly [repoKey: string, prs: PR[]];
 
-export function groupPRsByRepo(prs: PR[]): PRRepoGroup[] {
+function groupPRsByRepo(prs: PR[]): PRRepoGroup[] {
   const groups = new Map<string, PR[]>();
   for (const pr of prs) {
     const key = `${pr.owner}/${pr.repo}`;
-    const existing = groups.get(key);
-    if (existing) existing.push(pr);
-    else groups.set(key, [pr]);
+    const existing = groups.get(key) ?? [];
+    groups.set(key, [...existing, pr]);
   }
   return Array.from(groups.entries());
 }

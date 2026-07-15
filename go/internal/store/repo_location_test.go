@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"io/fs"
 	"testing"
 	"time"
+
+	"github.com/pressly/goose/v3"
 )
 
 func TestMigration026AddsLocationColumns(t *testing.T) {
@@ -292,25 +295,24 @@ func newTestDBMigratedThrough(t *testing.T, throughVersion int) *DB {
 	t.Cleanup(func() { _ = db.Close() })
 
 	ctx := context.Background()
-	runner := NewMigrationRunner(nil, db.DB)
-	if err := runner.createMigrationTable(ctx); err != nil {
-		t.Fatalf("create migration table: %v", err)
-	}
-
-	migrations, err := runner.loadMigrationFiles()
+	provider, err := goose.NewProvider(goose.DialectSQLite3, db.DB, mustSubMigrationsFS(t))
 	if err != nil {
-		t.Fatalf("load migration files: %v", err)
+		t.Fatalf("create goose provider: %v", err)
 	}
-	for _, migration := range migrations {
-		if migration.Version > throughVersion {
-			continue
-		}
-		if err := runner.applyMigration(ctx, migration); err != nil {
-			t.Fatalf("apply migration %s: %v", migration.Name, err)
-		}
+	if _, err := provider.UpTo(ctx, int64(throughVersion)); err != nil {
+		t.Fatalf("apply migrations through %d: %v", throughVersion, err)
 	}
 
 	return db
+}
+
+func mustSubMigrationsFS(t *testing.T) fs.FS {
+	t.Helper()
+	migrationFS, err := fs.Sub(migrationsFS, migrationsDir)
+	if err != nil {
+		t.Fatalf("sub migrations fs: %v", err)
+	}
+	return migrationFS
 }
 
 func mustInsertRepo(t *testing.T, db *DB, repoID string) {

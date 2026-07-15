@@ -78,25 +78,25 @@ func (ar *ActionRequest) Validate() error {
 		return nil
 	case RequestChangesCommand:
 		if ar.Body == "" {
-			return fmt.Errorf("Body is required for request_changes")
+			return fmt.Errorf("body is required for request_changes")
 		}
 		return nil
 	case PostCommentCommand:
 		if ar.Body == "" {
-			return fmt.Errorf("Body is required for post_comment")
+			return fmt.Errorf("body is required for post_comment")
 		}
 		return nil
 	case ReplyCommentCommand:
 		if ar.Body == "" {
-			return fmt.Errorf("Body is required for reply_comment")
+			return fmt.Errorf("body is required for reply_comment")
 		}
 		if ar.InReplyTo == "" && ar.ThreadID == "" {
-			return fmt.Errorf("InReplyTo or ThreadID is required for reply_comment")
+			return fmt.Errorf("inReplyTo or threadID is required for reply_comment")
 		}
 		return nil
 	case ResolveThreadCommand, UnresolveThreadCommand:
 		if ar.Body == "" {
-			return fmt.Errorf("Body (thread node ID) is required for %s", ar.Action)
+			return fmt.Errorf("body (thread node ID) is required for %s", ar.Action)
 		}
 		return nil
 	default:

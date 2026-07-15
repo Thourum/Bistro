@@ -282,12 +282,6 @@ func labeledDegraded(msgID, prID string, fromPS, toPS int, fromSHA, toSHA, reaso
 	return buildRangeDiffReady(msgID, prID, fromPS, toPS, fromSHA, toSHA, raw, true, reason)
 }
 
-// rangeDiffReady builds a RANGE_DIFF_READY for a successful non-degraded result.
-// Reserved for the future local-clone wiring path.
-func rangeDiffReady(msgID, prID string, fromPS, toPS int, fromSHA, toSHA string, r git.RangeDiffResult) interface{} {
-	return buildRangeDiffReady(msgID, prID, fromPS, toPS, fromSHA, toSHA, r.Raw, r.Degraded, r.FallbackReason)
-}
-
 func buildRangeDiffReady(msgID, prID string, fromPS, toPS int, fromSHA, toSHA, raw string, degraded bool, reason string) interface{} {
 	return map[string]interface{}{
 		"id":   msgID,

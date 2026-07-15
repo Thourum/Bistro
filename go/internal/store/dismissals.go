@@ -4,16 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
 // Dismissals provides persistence for per-account comment dismissals.
 type Dismissals struct {
-	db *sql.DB
+	db      *sql.DB
+	queries *storedb.Queries
 }
 
 // NewDismissals creates a new Dismissals store backed by the given database.
 func NewDismissals(db *sql.DB) *Dismissals {
-	return &Dismissals{db: db}
+	return &Dismissals{db: db, queries: storedb.New(db)}
 }
 
 // Dismiss inserts comment dismissal rows for the given account in one transaction.
@@ -23,26 +26,21 @@ func (d *Dismissals) Dismiss(ctx context.Context, commentIDs []string, provider 
 	if err != nil {
 		return fmt.Errorf("begin dismiss comments: %w", err)
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
+	defer tx.Rollback() //nolint:errcheck
 
-	const query = `
-		INSERT OR IGNORE INTO comment_dismissals (comment_id, account_provider, account_login)
-		VALUES (?, ?, ?)
-	`
+	qtx := d.queries.WithTx(tx)
 	for _, commentID := range commentIDs {
-		if _, err := tx.ExecContext(ctx, query, commentID, provider, login); err != nil {
+		if err := qtx.InsertCommentDismissal(ctx, storedb.InsertCommentDismissalParams{
+			CommentID:       commentID,
+			AccountProvider: provider,
+			AccountLogin:    login,
+		}); err != nil {
 			return fmt.Errorf("dismiss comments (%s, %s/%s): %w", commentID, provider, login, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit dismiss comments: %w", err)
 	}
-	committed = true
 	return nil
 }
 
@@ -52,53 +50,38 @@ func (d *Dismissals) Undismiss(ctx context.Context, commentIDs []string, provide
 	if err != nil {
 		return fmt.Errorf("begin undismiss comments: %w", err)
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
+	defer tx.Rollback() //nolint:errcheck
 
-	const query = `
-		DELETE FROM comment_dismissals
-		WHERE comment_id = ? AND account_provider = ? AND account_login = ?
-	`
+	qtx := d.queries.WithTx(tx)
 	for _, commentID := range commentIDs {
-		if _, err := tx.ExecContext(ctx, query, commentID, provider, login); err != nil {
+		if err := qtx.DeleteCommentDismissal(ctx, storedb.DeleteCommentDismissalParams{
+			CommentID:       commentID,
+			AccountProvider: provider,
+			AccountLogin:    login,
+		}); err != nil {
 			return fmt.Errorf("undismiss comments (%s, %s/%s): %w", commentID, provider, login, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit undismiss comments: %w", err)
 	}
-	committed = true
 	return nil
 }
 
 // DismissedIDs returns the set of dismissed comment IDs for a PR and account.
 func (d *Dismissals) DismissedIDs(ctx context.Context, prID string, provider string, login string) (map[string]bool, error) {
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT d.comment_id
-		FROM comment_dismissals d
-		JOIN comments c ON c.id = d.comment_id
-		WHERE c.pr_id = ? AND d.account_provider = ? AND d.account_login = ?
-		ORDER BY d.comment_id
-	`, prID, provider, login)
+	commentIDs, err := d.queries.ListDismissedCommentIDsForPR(ctx, storedb.ListDismissedCommentIDsForPRParams{
+		PrID:            prID,
+		AccountProvider: provider,
+		AccountLogin:    login,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list dismissed comments (%s, %s/%s): %w", prID, provider, login, err)
 	}
-	defer rows.Close()
 
-	ids := make(map[string]bool)
-	for rows.Next() {
-		var commentID string
-		if err := rows.Scan(&commentID); err != nil {
-			return nil, fmt.Errorf("scan dismissed comment: %w", err)
-		}
+	ids := make(map[string]bool, len(commentIDs))
+	for _, commentID := range commentIDs {
 		ids[commentID] = true
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate dismissed comments (%s, %s/%s): %w", prID, provider, login, err)
 	}
 	return ids, nil
 }

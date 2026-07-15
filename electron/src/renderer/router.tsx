@@ -266,14 +266,14 @@ const prsIndexRoute = createRoute({
 
 // /prs/$prId — detail route; PR identity is the stable pr.id (route param),
 // never a list index — prevents opening/acting on the wrong PR under filtering/sorting
-export const prDetailRoute = createRoute({
+const prDetailRoute = createRoute({
   getParentRoute: () => prsRoute,
   path: '$prId',
   component: PRDetailPage,
 });
 
 // /prs/$prId/diff — diff route with canonical, path-based file identity (stable across renames/reorder)
-export const prDiffRoute = createRoute({
+const prDiffRoute = createRoute({
   getParentRoute: () => prsRoute,
   path: '$prId/diff',
   validateSearch: diffSearchSchema,

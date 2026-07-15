@@ -6,20 +6,9 @@
  * - Response: { ok: T } | { err: string }
  */
 
-export interface IPCRequest {
-  method: string;
-  params?: unknown;
-}
-
-export interface IPCSuccess<T> {
-  ok: T;
-}
-
 export interface IPCError {
   err: string;
 }
-
-export type IPCResponse<T> = IPCSuccess<T> | IPCError;
 
 // ---- DB Query Channel ----
 
@@ -60,10 +49,6 @@ export interface GoCommandRequest {
 export interface GoCommandResponse {
   ok: boolean;
 }
-
-// ---- Sync Subscribe Channel ----
-
-export type SyncSubscribeRequest = Record<string, never>;
 
 // ---- Sync Action Channel ----
 

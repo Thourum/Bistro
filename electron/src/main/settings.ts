@@ -1,8 +1,11 @@
-import { unwatchFile, watchFile } from 'node:fs';
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { mkdir } from 'node:fs/promises';
+import { basename, dirname } from 'node:path';
 import { app, BrowserWindow, shell } from 'electron';
 import type { Logger } from 'electron-log';
+import ElectronStore, {
+  type Options as ElectronStoreOptions,
+} from 'electron-store';
+import { fromPromise, fromThrowable } from 'neverthrow';
 import { merge } from 'ts-deepmerge';
 import {
   type AppearanceSettings,
@@ -88,22 +91,64 @@ export function normalise(raw: unknown): AppSettings {
   };
 }
 
+function basenameWithoutJson(filePath: string): string {
+  const fileName = basename(filePath);
+  return fileName.endsWith('.json') ? fileName.slice(0, -5) : fileName;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export class SettingsService {
   private current: AppSettings = DEFAULT_SETTINGS;
-  private readonly filePath: string;
-  private writing = false;
-  private watchHandle: ReturnType<typeof watchFile> | null = null;
+  private readonly store: ElectronStore<AppSettings>;
+  private readonly unsubscribeFromStore: () => void;
+  private isLoading = false;
+  private isWriting = false;
   private changeListeners: Array<(s: AppSettings) => void> = [];
 
   constructor(
     private readonly logger: Logger,
     filePath?: string,
   ) {
-    this.filePath = filePath ?? join(app.getPath('userData'), 'settings.json');
+    const cwd =
+      filePath === undefined ? app.getPath('userData') : dirname(filePath);
+    const name =
+      filePath === undefined ? 'settings' : basenameWithoutJson(filePath);
+    const storeOptions = {
+      cwd,
+      name,
+      defaults: DEFAULT_SETTINGS,
+      migrations: {
+        '>=0.0.0': (store) => {
+          store.store = normalise(store.store);
+        },
+      } satisfies ElectronStoreOptions<AppSettings>['migrations'],
+      clearInvalidConfig: true,
+      serialize: (value: AppSettings) =>
+        `${JSON.stringify(normalise(value), null, 2)}\n`,
+      deserialize: (value: string) => normalise(JSON.parse(value)),
+      watch: true,
+    };
+    this.store = new ElectronStore<AppSettings>({
+      ...storeOptions,
+      projectVersion: app.getVersion(),
+    } as unknown as ConstructorParameters<
+      typeof ElectronStore<AppSettings>
+    >[0]);
+    this.writeNormalisedStore();
+    this.unsubscribeFromStore = this.store.onDidAnyChange((next) => {
+      if (this.isLoading || this.isWriting) return;
+      const normalised = normalise(next);
+      this.current = normalised;
+      this.broadcast(normalised);
+      this.logger.info('Settings reloaded from disk (external edit)');
+    });
   }
 
   get path(): string {
-    return this.filePath;
+    return this.store.path;
   }
 
   get snapshot(): AppSettings {
@@ -112,30 +157,8 @@ export class SettingsService {
 
   /** Read settings from disk, or write defaults if missing/corrupt. */
   async load(): Promise<AppSettings> {
-    try {
-      await access(this.filePath);
-    } catch {
-      this.logger.info(
-        `Settings file missing; writing defaults to ${this.filePath}`,
-      );
-      await this.persist(DEFAULT_SETTINGS);
-      this.current = DEFAULT_SETTINGS;
-      this.startWatching();
-      return this.current;
-    }
-    try {
-      const raw = await readFile(this.filePath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      this.current = normalise(parsed);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(
-        `Failed to parse settings (${msg}); reverting to defaults`,
-      );
-      this.current = DEFAULT_SETTINGS;
-      await this.persist(DEFAULT_SETTINGS);
-    }
-    this.startWatching();
+    this.writeNormalisedStore();
+    this.current = normalise(this.store.store);
     return this.current;
   }
 
@@ -146,7 +169,7 @@ export class SettingsService {
   async set(patch: Partial<AppSettings>): Promise<AppSettings> {
     const next = normalise(mergeSettings(this.current, patch));
     this.current = next;
-    await this.persist(next);
+    this.writeStore(next);
     this.broadcast(next);
     return next;
   }
@@ -154,23 +177,36 @@ export class SettingsService {
   /** Reset to defaults. */
   async reset(): Promise<AppSettings> {
     this.current = DEFAULT_SETTINGS;
-    await this.persist(DEFAULT_SETTINGS);
+    this.writeStore(DEFAULT_SETTINGS);
     this.broadcast(DEFAULT_SETTINGS);
     return this.current;
   }
 
   /** Reveal settings.json in the system's default editor / file manager. */
   async openFile(): Promise<{ ok: true } | { err: string }> {
-    try {
-      await mkdir(dirname(this.filePath), { recursive: true });
-      // Ensure the file exists before opening
-      await access(this.filePath).catch(() => this.persist(this.current));
-      const err = await shell.openPath(this.filePath);
-      if (err) return { err };
-      return { ok: true };
-    } catch (err) {
-      return { err: err instanceof Error ? err.message : String(err) };
-    }
+    const mkdirError = await fromPromise(
+      mkdir(dirname(this.store.path), { recursive: true }),
+      errorMessage,
+    ).match(
+      () => null,
+      (err) => err,
+    );
+    if (mkdirError !== null) return { err: mkdirError };
+
+    const writeResult = fromThrowable(() => {
+      this.writeStore(this.current);
+    }, errorMessage)();
+    if (writeResult.isErr()) return { err: writeResult.error };
+
+    const openResult = await fromPromise(
+      shell.openPath(this.store.path),
+      errorMessage,
+    ).match(
+      (err) => err,
+      (err) => err,
+    );
+    if (openResult) return { err: openResult };
+    return { ok: true };
   }
 
   /** Register a callback invoked whenever settings change (set, reset, or external edit). */
@@ -179,59 +215,22 @@ export class SettingsService {
   }
 
   stop(): void {
-    if (this.watchHandle !== null) {
-      unwatchFile(this.filePath);
-      this.watchHandle = null;
-    }
+    this.unsubscribeFromStore();
+    this.store._closeWatcher();
   }
 
   // ─── internals ───────────────────────────────────────────────
 
-  private async persist(state: AppSettings): Promise<void> {
-    this.writing = true;
-    try {
-      await mkdir(dirname(this.filePath), { recursive: true });
-      const body = `${JSON.stringify(state, null, 2)}\n`;
-      await writeFile(this.filePath, body, 'utf-8');
-    } finally {
-      // Debounce: clear the "our own write" flag shortly after so external
-      // edits land again. `watchFile` polls every ~1s, so 500ms is safe.
-      setTimeout(() => {
-        this.writing = false;
-      }, 500);
-    }
+  private writeNormalisedStore(): void {
+    this.isLoading = true;
+    this.writeStore(normalise(this.store.store));
+    this.isLoading = false;
   }
 
-  private startWatching(): void {
-    if (this.watchHandle !== null) return;
-    this.watchHandle = watchFile(
-      this.filePath,
-      { interval: 1000 },
-      (curr, prev) => {
-        if (this.writing) return;
-        if (curr.mtimeMs === prev.mtimeMs) return;
-        this.reloadFromDisk().catch((err) => {
-          this.logger.error(
-            `External settings reload failed: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          );
-        });
-      },
-    );
-  }
-
-  private async reloadFromDisk(): Promise<void> {
-    try {
-      const raw = await readFile(this.filePath, 'utf-8');
-      const next = normalise(JSON.parse(raw));
-      this.current = next;
-      this.broadcast(next);
-      this.logger.info('Settings reloaded from disk (external edit)');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`External settings reload: ${msg}`);
-    }
+  private writeStore(state: AppSettings): void {
+    this.isWriting = true;
+    this.store.store = state;
+    this.isWriting = false;
   }
 
   private broadcast(state: AppSettings): void {

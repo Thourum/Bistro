@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
 // parseCreatedAt tries RFC 3339 first (ISO 8601, used by SQLite's strftime default),
@@ -33,14 +35,14 @@ type QueuedAction struct {
 
 // ActionQueue provides persistence for offline actions using SQLite.
 type ActionQueue struct {
-	db *sql.DB
+	queries *storedb.Queries
 }
 
 var actionQueueReplayMu sync.Mutex
 
 // NewActionQueue creates a new ActionQueue backed by the given database.
 func NewActionQueue(db *sql.DB) *ActionQueue {
-	return &ActionQueue{db: db}
+	return &ActionQueue{queries: storedb.New(db)}
 }
 
 // LockReplay serializes offline action replay in this Bistro process. The Go
@@ -67,22 +69,19 @@ func (q *ActionQueue) Enqueue(ctx context.Context, action *QueuedAction) error {
 	if action.PRID == "" {
 		return fmt.Errorf("pr_id cannot be empty")
 	}
+
 	if action.AccountProvider == "" {
 		action.AccountProvider = localReviewAccountProvider
 	}
 
-	const query = `
-		INSERT INTO action_queue (id, action_type, pr_id, payload, account_provider, account_login, status, retry_count)
-		VALUES (?, ?, ?, ?, ?, ?, 'pending', 0)
-		ON CONFLICT(id) DO UPDATE SET
-			payload = excluded.payload,
-			account_provider = excluded.account_provider,
-			account_login = excluded.account_login,
-			status = 'pending',
-			retry_count = 0
-	`
-	_, err := q.db.ExecContext(ctx, query, action.ID, action.ActionType, action.PRID, action.Payload, action.AccountProvider, action.AccountLogin)
-	if err != nil {
+	if err := q.queries.UpsertQueuedAction(ctx, storedb.UpsertQueuedActionParams{
+		ID:              action.ID,
+		ActionType:      action.ActionType,
+		PrID:            action.PRID,
+		Payload:         action.Payload,
+		AccountProvider: action.AccountProvider,
+		AccountLogin:    action.AccountLogin,
+	}); err != nil {
 		return fmt.Errorf("enqueue action %s: %w", action.ID, err)
 	}
 	return nil
@@ -90,28 +89,7 @@ func (q *ActionQueue) Enqueue(ctx context.Context, action *QueuedAction) error {
 
 // GetByID retrieves a single action by its ID. Returns an error if not found.
 func (q *ActionQueue) GetByID(ctx context.Context, id string) (*QueuedAction, error) {
-	const query = `
-		SELECT id, action_type, pr_id, payload, account_provider, account_login, created_at, retry_count,
-		       COALESCE(last_error, ''), status
-		FROM action_queue
-		WHERE id = ?
-	`
-	row := q.db.QueryRowContext(ctx, query, id)
-
-	var a QueuedAction
-	var createdAt string
-	err := row.Scan(
-		&a.ID,
-		&a.ActionType,
-		&a.PRID,
-		&a.Payload,
-		&a.AccountProvider,
-		&a.AccountLogin,
-		&createdAt,
-		&a.RetryCount,
-		&a.LastError,
-		&a.Status,
-	)
+	row, err := q.queries.GetQueuedActionByID(ctx, id)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("action %q not found", id)
 	}
@@ -119,56 +97,30 @@ func (q *ActionQueue) GetByID(ctx context.Context, id string) (*QueuedAction, er
 		return nil, fmt.Errorf("get action %s: %w", id, err)
 	}
 
-	a.CreatedAt, err = parseCreatedAt(createdAt)
+	action, err := queuedActionFromGetRow(row)
 	if err != nil {
-		return nil, fmt.Errorf("parse created_at for action %s: %w", a.ID, err)
+		return nil, fmt.Errorf("parse created_at for action %s: %w", row.ID, err)
 	}
-	return &a, nil
+	return action, nil
 }
 
 // GetPending returns up to limit pending actions with retry_count below MaxRetryCount, ordered by created_at.
 func (q *ActionQueue) GetPending(ctx context.Context, limit int) ([]*QueuedAction, error) {
-	query := fmt.Sprintf(`
-		SELECT id, action_type, pr_id, payload, account_provider, account_login, created_at, retry_count,
-		       COALESCE(last_error, ''), status
-		FROM action_queue
-		WHERE status = 'pending' AND retry_count < %d
-		ORDER BY created_at ASC
-		LIMIT ?
-	`, MaxRetryCount)
-	rows, err := q.db.QueryContext(ctx, query, limit)
+	rows, err := q.queries.ListPendingQueuedActions(ctx, storedb.ListPendingQueuedActionsParams{
+		RetryCount: sql.NullInt64{Int64: MaxRetryCount, Valid: true},
+		Limit:      int64(limit),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("get pending actions: %w", err)
 	}
-	defer rows.Close()
 
-	var actions []*QueuedAction
-	for rows.Next() {
-		var a QueuedAction
-		var createdAt string
-		if err = rows.Scan(
-			&a.ID,
-			&a.ActionType,
-			&a.PRID,
-			&a.Payload,
-			&a.AccountProvider,
-			&a.AccountLogin,
-			&createdAt,
-			&a.RetryCount,
-			&a.LastError,
-			&a.Status,
-		); err != nil {
-			return nil, fmt.Errorf("scan pending action: %w", err)
-		}
-		a.CreatedAt, err = parseCreatedAt(createdAt)
+	actions := make([]*QueuedAction, 0, len(rows))
+	for _, row := range rows {
+		action, err := queuedActionFromPendingRow(row)
 		if err != nil {
-			return nil, fmt.Errorf("parse created_at for action %s: %w", a.ID, err)
+			return nil, fmt.Errorf("parse created_at for action %s: %w", row.ID, err)
 		}
-		actions = append(actions, &a)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate pending actions: %w", err)
+		actions = append(actions, action)
 	}
 
 	return actions, nil
@@ -182,50 +134,23 @@ func (q *ActionQueue) GetPendingForAccount(ctx context.Context, providerName, ac
 	if providerName == "" {
 		providerName = localReviewAccountProvider
 	}
-	query := fmt.Sprintf(`
-		SELECT id, action_type, pr_id, payload, account_provider, account_login, created_at, retry_count,
-		       COALESCE(last_error, ''), status
-		FROM action_queue
-		WHERE status = 'pending'
-		  AND retry_count < %d
-		  AND account_provider = ?
-		  AND account_login = ?
-		ORDER BY created_at ASC
-		LIMIT ?
-	`, MaxRetryCount)
-	rows, err := q.db.QueryContext(ctx, query, providerName, accountLogin, limit)
+	rows, err := q.queries.ListPendingQueuedActionsForAccount(ctx, storedb.ListPendingQueuedActionsForAccountParams{
+		RetryCount:      sql.NullInt64{Int64: MaxRetryCount, Valid: true},
+		AccountProvider: providerName,
+		AccountLogin:    accountLogin,
+		Limit:           int64(limit),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("get pending actions for account: %w", err)
 	}
-	defer rows.Close()
 
-	var actions []*QueuedAction
-	for rows.Next() {
-		var a QueuedAction
-		var createdAt string
-		if err = rows.Scan(
-			&a.ID,
-			&a.ActionType,
-			&a.PRID,
-			&a.Payload,
-			&a.AccountProvider,
-			&a.AccountLogin,
-			&createdAt,
-			&a.RetryCount,
-			&a.LastError,
-			&a.Status,
-		); err != nil {
-			return nil, fmt.Errorf("scan pending action for account: %w", err)
-		}
-		a.CreatedAt, err = parseCreatedAt(createdAt)
+	actions := make([]*QueuedAction, 0, len(rows))
+	for _, row := range rows {
+		action, err := queuedActionFromPendingAccountRow(row)
 		if err != nil {
-			return nil, fmt.Errorf("parse created_at for action %s: %w", a.ID, err)
+			return nil, fmt.Errorf("parse created_at for action %s: %w", row.ID, err)
 		}
-		actions = append(actions, &a)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate pending actions for account: %w", err)
+		actions = append(actions, action)
 	}
 
 	return actions, nil
@@ -236,14 +161,9 @@ func (q *ActionQueue) GetPendingForAccount(ctx context.Context, providerName, ac
 // execute again. The action_queue row is local-only retry metadata; GitHub
 // remains authoritative for whether the remote mutation already happened.
 func (q *ActionQueue) ResetProcessing(ctx context.Context) (int64, error) {
-	const query = `UPDATE action_queue SET status = 'pending' WHERE status = 'processing'`
-	result, err := q.db.ExecContext(ctx, query)
+	rows, err := q.queries.ResetProcessingQueuedActions(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("reset processing actions: %w", err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("reset processing rows affected: %w", err)
 	}
 	return rows, nil
 }
@@ -253,14 +173,9 @@ func (q *ActionQueue) ResetProcessing(ctx context.Context) (int64, error) {
 // startup resets this local-only state and reconciles against GitHub before any
 // duplicate non-idempotent mutation is attempted.
 func (q *ActionQueue) MarkProcessing(ctx context.Context, id string) error {
-	const query = `UPDATE action_queue SET status = 'processing' WHERE id = ? AND status = 'pending'`
-	result, err := q.db.ExecContext(ctx, query, id)
+	rows, err := q.queries.MarkQueuedActionProcessing(ctx, id)
 	if err != nil {
 		return fmt.Errorf("mark processing %s: %w", id, err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("mark processing rows affected %s: %w", id, err)
 	}
 	if rows == 0 {
 		return fmt.Errorf("action %q not found or not pending", id)
@@ -270,14 +185,9 @@ func (q *ActionQueue) MarkProcessing(ctx context.Context, id string) error {
 
 // MarkCompleted sets the status of an action to 'completed'.
 func (q *ActionQueue) MarkCompleted(ctx context.Context, id string) error {
-	const query = `UPDATE action_queue SET status = 'completed' WHERE id = ?`
-	result, err := q.db.ExecContext(ctx, query, id)
+	rows, err := q.queries.MarkQueuedActionCompleted(ctx, id)
 	if err != nil {
 		return fmt.Errorf("mark completed %s: %w", id, err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("mark completed rows affected %s: %w", id, err)
 	}
 	if rows == 0 {
 		return fmt.Errorf("action %q not found", id)
@@ -298,18 +208,15 @@ func (q *ActionQueue) MarkFailed(ctx context.Context, id string, errMsg string, 
 	if retryCount >= MaxRetryCount {
 		status = "failed"
 	}
-	const query = `
-		UPDATE action_queue
-		SET status = ?, last_error = ?, retry_count = ?
-		WHERE id = ?
-	`
-	result, err := q.db.ExecContext(ctx, query, status, errMsg, retryCount, id)
+
+	rows, err := q.queries.MarkQueuedActionFailed(ctx, storedb.MarkQueuedActionFailedParams{
+		Status:     sql.NullString{String: status, Valid: true},
+		LastError:  sql.NullString{String: errMsg, Valid: true},
+		RetryCount: sql.NullInt64{Int64: int64(retryCount), Valid: true},
+		ID:         id,
+	})
 	if err != nil {
 		return fmt.Errorf("mark failed %s: %w", id, err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("mark failed rows affected %s: %w", id, err)
 	}
 	if rows == 0 {
 		return fmt.Errorf("action %q not found", id)
@@ -326,17 +233,12 @@ func (q *ActionQueue) MarkFailed(ctx context.Context, id string, errMsg string, 
 // long time in the queue before completing may be deleted sooner than
 // expected relative to their completion time.
 func (q *ActionQueue) DeleteCompleted(ctx context.Context, olderThan time.Duration) (int64, error) {
-	cutoff := time.Now().Add(-olderThan)
-	const query = `DELETE FROM action_queue WHERE status = 'completed' AND created_at <= ?`
-	result, err := q.db.ExecContext(ctx, query, cutoff.UTC().Format("2006-01-02 15:04:05"))
+	cutoff := actionQueueCutoff(olderThan)
+	rows, err := q.queries.DeleteCompletedQueuedActionsBefore(ctx, cutoff)
 	if err != nil {
 		return 0, fmt.Errorf("delete completed actions: %w", err)
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("delete completed rows affected: %w", err)
-	}
-	return n, nil
+	return rows, nil
 }
 
 // DeleteFailed removes failed actions older than the given duration.
@@ -345,11 +247,70 @@ func (q *ActionQueue) DeleteCompleted(ctx context.Context, olderThan time.Durati
 // cutoff timestamp. This means the retention window is measured from when
 // the action was first created, not when it reached the failed state.
 func (q *ActionQueue) DeleteFailed(ctx context.Context, olderThan time.Duration) error {
-	cutoff := time.Now().Add(-olderThan)
-	const query = `DELETE FROM action_queue WHERE status = 'failed' AND created_at <= ?`
-	_, err := q.db.ExecContext(ctx, query, cutoff.UTC().Format("2006-01-02 15:04:05"))
-	if err != nil {
+	cutoff := actionQueueCutoff(olderThan)
+	if err := q.queries.DeleteFailedQueuedActionsBefore(ctx, cutoff); err != nil {
 		return fmt.Errorf("delete failed actions: %w", err)
 	}
 	return nil
+}
+
+func actionQueueCutoff(olderThan time.Duration) string {
+	return time.Now().Add(-olderThan).UTC().Format("2006-01-02 15:04:05")
+}
+
+func queuedActionFromGetRow(row storedb.GetQueuedActionByIDRow) (*QueuedAction, error) {
+	createdAt, err := parseCreatedAt(row.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &QueuedAction{
+		ID:              row.ID,
+		ActionType:      row.ActionType,
+		PRID:            row.PrID,
+		Payload:         row.Payload,
+		AccountProvider: row.AccountProvider,
+		AccountLogin:    row.AccountLogin,
+		CreatedAt:       createdAt,
+		RetryCount:      int(row.RetryCount.Int64),
+		LastError:       row.LastError,
+		Status:          row.Status.String,
+	}, nil
+}
+
+func queuedActionFromPendingRow(row storedb.ListPendingQueuedActionsRow) (*QueuedAction, error) {
+	createdAt, err := parseCreatedAt(row.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &QueuedAction{
+		ID:              row.ID,
+		ActionType:      row.ActionType,
+		PRID:            row.PrID,
+		Payload:         row.Payload,
+		AccountProvider: row.AccountProvider,
+		AccountLogin:    row.AccountLogin,
+		CreatedAt:       createdAt,
+		RetryCount:      int(row.RetryCount.Int64),
+		LastError:       row.LastError,
+		Status:          row.Status.String,
+	}, nil
+}
+
+func queuedActionFromPendingAccountRow(row storedb.ListPendingQueuedActionsForAccountRow) (*QueuedAction, error) {
+	createdAt, err := parseCreatedAt(row.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &QueuedAction{
+		ID:              row.ID,
+		ActionType:      row.ActionType,
+		PRID:            row.PrID,
+		Payload:         row.Payload,
+		AccountProvider: row.AccountProvider,
+		AccountLogin:    row.AccountLogin,
+		CreatedAt:       createdAt,
+		RetryCount:      int(row.RetryCount.Int64),
+		LastError:       row.LastError,
+		Status:          row.Status.String,
+	}, nil
 }

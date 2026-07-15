@@ -6,7 +6,7 @@ export interface ProviderDef {
   readonly icon: string;
 }
 
-export const AUTH_ACTION_PREFIX = 'auth_' as const;
+const AUTH_ACTION_PREFIX = 'auth_' as const;
 
 export function authAction(provider: ProviderDef): string {
   return `${AUTH_ACTION_PREFIX}${provider.id}`;
