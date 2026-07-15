@@ -46,7 +46,7 @@ func TestFullSyncFlow(t *testing.T) {
 	}
 
 	if result == nil {
-		t.Error("result should not be nil")
+		t.Fatal("result should not be nil")
 	}
 
 	if result.PRCount == 0 {
@@ -117,7 +117,7 @@ func TestErrorRecovery(t *testing.T) {
 	}
 
 	if result == nil {
-		t.Error("result should not be nil even on error")
+		t.Fatal("result should not be nil even on error")
 	}
 
 	if len(result.Errors) == 0 {

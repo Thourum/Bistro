@@ -106,7 +106,9 @@ func TestQueuedActionID_SameThreadSamePR(t *testing.T) {
 		Action: actions.ResolveThreadCommand,
 		Body:   "PRRT_abc",
 	}
-	if queuedActionID(req) != queuedActionID(req) {
+	first := queuedActionID(req)
+	second := queuedActionID(req)
+	if first != second {
 		t.Error("same request must always produce the same queue ID")
 	}
 }

@@ -23,9 +23,6 @@ type ActionApplier interface {
 	ApplyAction(ctx context.Context, req *actions.ActionRequest) *actions.ActionResult
 }
 
-// actionApplier is an internal alias to ActionApplier.
-type actionApplier = ActionApplier
-
 // ApplierGetter is a function that returns the current ActionApplier (may be
 // nil when no provider is authenticated). Using a getter instead of a direct
 // reference ensures SUBMIT_ACTION always routes to the live orchestrator even

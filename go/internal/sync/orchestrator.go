@@ -1246,7 +1246,7 @@ func (o *Orchestrator) DiscoverAndSyncInbox(ctx context.Context) (*SyncResult, e
 	}
 
 	result := &SyncResult{PRCount: len(discovered.PRs), Errors: make([]string, 0)}
-	fetchedPRs := make([]*PRFetchResult, 0, len(discovered.PRs))
+	var fetchedPRs []*PRFetchResult
 	if len(discovered.PRs) > 0 {
 		details, err := o.FetchPRDetails(ctx, discovered.PRs, true, true, true)
 		if err != nil {

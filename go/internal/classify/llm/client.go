@@ -217,7 +217,7 @@ func firstAnthropicText(content []anthropic.ContentBlockUnion) (string, error) {
 			return item.Text, nil
 		}
 	}
-	return "", errors.New("Anthropic classification response had no text content")
+	return "", errors.New("anthropic classification response had no text content")
 }
 
 func systemPrompt() string {

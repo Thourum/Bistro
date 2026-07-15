@@ -53,14 +53,6 @@ type diffFileDetail struct {
 	Viewed      bool   `json:"viewed"`
 }
 
-// diffFileStat is kept for backward-compat in existing tests that check
-// the concrete type. New code should use diffFileDetail.
-type diffFileStat struct {
-	Path      string `json:"path"`
-	Additions int    `json:"additions"`
-	Deletions int    `json:"deletions"`
-}
-
 // PatchContentHash computes the canonical content hash for a per-file diff patch.
 // Algorithm: SHA-256 of the raw patch string, hex-encoded.
 // This is the value that must appear in DIFF_READY content_hash and that clients

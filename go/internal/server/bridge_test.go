@@ -12,15 +12,6 @@ import (
 	"github.com/itterno/bistro/internal/ws"
 )
 
-// fakeBroadcast records the messages passed to it so tests can inspect them.
-type fakeBroadcast struct {
-	msgs []interface{}
-}
-
-func (f *fakeBroadcast) record(msg interface{}) {
-	f.msgs = append(f.msgs, msg)
-}
-
 // TestStartEventBridge_NilOrchestrator verifies that startEventBridge is a
 // safe no-op when no orchestrator has been set.
 func TestStartEventBridge_NilOrchestrator(t *testing.T) {
@@ -202,4 +193,3 @@ func TestCurrentApplier_RequiresBothProvAndOrchestrator(t *testing.T) {
 		t.Error("currentApplier must return non-nil when both prov and orchestrator are set")
 	}
 }
-

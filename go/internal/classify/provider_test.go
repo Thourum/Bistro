@@ -60,7 +60,9 @@ func TestProviderCachesWhenUnchanged(t *testing.T) {
 	writeRule(t, dir, "a.yml", providerTestRule)
 	p := NewEngineProvider(dir, func() string { return "rules" }, nil)
 
-	if p.Current() != p.Current() {
+	first := p.Current()
+	second := p.Current()
+	if first != second {
 		t.Errorf("unchanged dir should return the cached *Engine instance")
 	}
 }
