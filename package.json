@@ -1,0 +1,9 @@
+{
+  "name": "bistro",
+  "private": true,
+  "scripts": {
+    "start": "pnpm --dir electron run build && pnpm --dir electron run start",
+    "dev": "pnpm --dir electron run build && pnpm --dir electron run start",
+    "docs": "pnpm --dir website run dev"
+  }
+}
