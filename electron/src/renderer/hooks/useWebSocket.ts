@@ -2,7 +2,13 @@ import { useCallback, useEffect } from 'react';
 import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
-import type { RepoInfo } from '../types';
+import type {
+  ExpertiseDataPayload,
+  ExpertiseNudgePayload,
+  ExpertiseRepoStatus,
+  ExpertiseSettingsPayload,
+  RepoInfo,
+} from '../types';
 import type {
   LegacyScanDevFolderResult,
   LocationError,
@@ -83,6 +89,25 @@ interface ScanDevFolderRequest {
 
 type LocationErrorData = LocationError;
 type ScanDevFolderData = ScanDevFolderResult;
+
+interface ExpertiseProgressData {
+  repo_id: string;
+  files_done: number;
+  files_total: number;
+}
+
+interface ExpertiseReadyData {
+  repo_id: string;
+  indexed_sha: string;
+  files_total: number;
+  skipped_files: number;
+}
+
+interface ExpertiseErrorData {
+  repo_id: string;
+  code: string;
+  message: string;
+}
 
 const LOCATION_ERROR_CODES = [
   'path_missing',
@@ -303,6 +328,87 @@ function handleCIStatusChanged(_data: unknown): void {
   }
 }
 
+function mergeExpertiseStatus(status: ExpertiseRepoStatus): void {
+  appStore.setState((s) => ({
+    ...s,
+    expertiseRepoStatuses: {
+      ...s.expertiseRepoStatuses,
+      [status.repo_id]: {
+        ...(s.expertiseRepoStatuses[status.repo_id] ?? {}),
+        ...status,
+      },
+    },
+  }));
+}
+
+function handleExpertiseIndexProgress(data: ExpertiseProgressData): void {
+  mergeExpertiseStatus({
+    repo_id: data.repo_id,
+    status: 'indexing',
+    files_done: data.files_done,
+    files_total: data.files_total,
+  });
+}
+
+function handleExpertiseReady(data: ExpertiseReadyData): void {
+  mergeExpertiseStatus({
+    repo_id: data.repo_id,
+    status: 'ready',
+    indexed_sha: data.indexed_sha,
+    files_total: data.files_total,
+    skipped_files: data.skipped_files,
+  });
+  appStore.setState((s) => ({
+    ...s,
+    prListRevision: s.prListRevision + 1,
+  }));
+}
+
+function handleExpertiseError(data: ExpertiseErrorData): void {
+  mergeExpertiseStatus({
+    repo_id: data.repo_id,
+    status: 'error',
+    code: data.code,
+    message: data.message,
+  });
+  addToast({
+    type: 'error',
+    message: `Expertise indexing failed: ${data.message}`,
+    dismissible: true,
+  });
+}
+
+function handleExpertiseNudge(data: ExpertiseNudgePayload): void {
+  appStore.setState((s) => ({
+    ...s,
+    expertiseNudges: {
+      ...s.expertiseNudges,
+      [data.repo_id]: data,
+    },
+  }));
+}
+
+function handleExpertiseData(data: ExpertiseDataPayload): void {
+  if (typeof data.pr_id !== 'string') {
+    return;
+  }
+
+  appStore.setState((s) => ({
+    ...s,
+    expertiseByPrId: {
+      ...s.expertiseByPrId,
+      [data.pr_id as string]: data,
+    },
+  }));
+}
+
+function handleExpertiseSettings(data: ExpertiseSettingsPayload): void {
+  appStore.setState((s) => ({
+    ...s,
+    expertiseSettings: data,
+  }));
+}
+
 function isRecord(data: unknown): data is Record<string, unknown> {
   return typeof data === 'object' && data !== null;
 }
@@ -495,6 +601,38 @@ function onMessage(event: MessageEvent<string>): void {
     case 'LOCATION_ERROR':
       handleLocationError(message.data);
       break;
+    case 'EXPERTISE_INDEX_PROGRESS':
+      handleExpertiseIndexProgress(message.data as ExpertiseProgressData);
+      break;
+    case 'EXPERTISE_READY':
+      handleExpertiseReady(message.data as ExpertiseReadyData);
+      break;
+    case 'EXPERTISE_ERROR':
+      handleExpertiseError(message.data as ExpertiseErrorData);
+      break;
+    case 'EXPERTISE_NUDGE':
+      handleExpertiseNudge(message.data as ExpertiseNudgePayload);
+      break;
+    case 'EXPERTISE_DATA': {
+      const payload = message.data as ExpertiseDataPayload;
+      handleExpertiseData(payload);
+      const handler = messageHandlers.get(message.id);
+      if (handler) {
+        handler(payload);
+        messageHandlers.delete(message.id);
+      }
+      break;
+    }
+    case 'EXPERTISE_SETTINGS': {
+      const payload = message.data as ExpertiseSettingsPayload;
+      handleExpertiseSettings(payload);
+      const handler = messageHandlers.get(message.id);
+      if (handler) {
+        handler(payload);
+        messageHandlers.delete(message.id);
+      }
+      break;
+    }
     case 'AUTH_REDIRECT': {
       const payload = message.data as { provider: string; url: string };
       try {
@@ -668,6 +806,7 @@ function onMessage(event: MessageEvent<string>): void {
     case 'VALIDATE_DEV_FOLDER_RESULT':
     case 'ADD_REPO_BY_URL_RESULT':
     case 'GET_CACHE_STATS_RESULT':
+    case 'SET_EXPERTISE_SETTINGS':
     case 'PRUNE_CACHE_RESULT':
     case 'CLEAR_CACHE_RESULT':
     case 'DELETE_CACHE_REPO_RESULT':

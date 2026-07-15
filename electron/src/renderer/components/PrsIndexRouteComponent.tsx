@@ -10,7 +10,7 @@ import { PRListPage } from '../pages/PRListPage';
 
 export function PrsIndexRouteComponent(): React.ReactElement {
   const search = useSearch({ strict: false }) as {
-    filter: 'open' | 'draft' | 'all' | 'needs_action';
+    filter: 'open' | 'draft' | 'all' | 'needs_action' | 'touches_you';
     sort: 'updated' | 'created';
     q: string;
   };

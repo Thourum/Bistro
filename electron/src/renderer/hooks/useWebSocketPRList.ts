@@ -24,8 +24,8 @@ interface PRListReadyData {
  * Fetches PR list from sync engine via WebSocket
  * Replaces SQLite-based queries with live sync engine data
  *
- * 'needs_action' is a client-side lane: the backend serves open PRs and the
- * list is narrowed by triage classification against the signed-in user.
+ * 'needs_action' and 'touches_you' are client-side lanes: the backend serves
+ * open PRs and the list is narrowed locally.
  */
 export function useWebSocketPRList(filterState: FilterState = 'open') {
   const { request } = useWebSocket();
@@ -39,7 +39,9 @@ export function useWebSocketPRList(filterState: FilterState = 'open') {
     queryKey: ['prs-websocket', filterState, username, prListRevision],
     queryFn: async (): Promise<PR[]> => {
       const backendFilter: RequestPRListData['filter'] =
-        filterState === 'needs_action' ? 'open' : filterState;
+        filterState === 'needs_action' || filterState === 'touches_you'
+          ? 'open'
+          : filterState;
       try {
         const data = await request('REQUEST_PR_LIST', {
           filter: backendFilter,
@@ -52,6 +54,9 @@ export function useWebSocketPRList(filterState: FilterState = 'open') {
           return payload.prs.filter(
             (pr) => classifyPR(pr, username) === 'needs_action',
           );
+        }
+        if (filterState === 'touches_you') {
+          return payload.prs.filter((pr) => pr.touches_you);
         }
         return payload.prs;
       } catch (err) {

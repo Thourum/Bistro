@@ -25,6 +25,55 @@ export interface PR {
   approved_by: string | null;
   changes_requested_by: string | null;
   requested_reviewers: string[]; // logins whose review is currently requested
+  touches_you: boolean;
+}
+
+export interface ExpertiseExpert {
+  author_email: string;
+  author_login: string | null;
+  surviving_lines: number;
+  total_lines: number;
+  commit_score: number;
+  is_original: boolean;
+  score: number;
+  dormant: boolean;
+}
+
+export interface ExpertiseFileData {
+  file_path: string;
+  experts: ExpertiseExpert[];
+  your_rank: number | null;
+}
+
+export type ExpertiseRepoStatusKind = 'idle' | 'indexing' | 'ready' | 'error';
+
+export interface ExpertiseRepoStatus {
+  repo_id: string;
+  status: ExpertiseRepoStatusKind;
+  files_done?: number;
+  files_total?: number;
+  indexed_sha?: string;
+  skipped_files?: number;
+  code?: string;
+  message?: string;
+}
+
+export interface ExpertiseDataPayload {
+  pr_id?: string;
+  status?: 'ready' | 'unavailable';
+  reason?: string;
+  files: ExpertiseFileData[];
+}
+
+export interface ExpertiseNudgePayload {
+  repo_id: string;
+  reviewed_count: number;
+}
+
+export interface ExpertiseSettingsPayload {
+  alias_emails: string[];
+  min_surviving_lines: number;
+  excludes: Record<string, string[]>;
 }
 
 /**

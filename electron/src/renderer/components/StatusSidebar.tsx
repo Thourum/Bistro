@@ -1,4 +1,7 @@
 import { useMemo } from 'react';
+import { useStore } from '../hooks/useStore';
+import { appStore } from '../store';
+import type { UIState } from '../store/ui';
 import type { CICheck, Comment, PR } from '../types';
 import { aggregateCounts } from '../utils/classification';
 import { ExternalLink } from './ExternalLink';
@@ -28,16 +31,31 @@ const CI_LABELS: Record<string, string> = {
   pending: 'CI RUNNING',
 };
 
+function repoIdForPR(pr: PR): string {
+  return `${pr.provider}:${pr.owner}/${pr.repo}`;
+}
+
+function formatIndexedFiles(
+  done: number | undefined,
+  total: number | undefined,
+): string {
+  const formattedDone = (done ?? 0).toLocaleString();
+  const formattedTotal = (total ?? 0).toLocaleString();
+  return `${formattedDone}/${formattedTotal}`;
+}
+
 interface StatusSidebarProps {
   pr: PR;
   ciChecks: CICheck[];
   comments?: Comment[];
+  touchesYouCount?: number;
 }
 
 export default function StatusSidebar({
   pr,
   ciChecks,
   comments = [],
+  touchesYouCount,
 }: StatusSidebarProps) {
   const counts = useMemo(() => aggregateCounts(comments), [comments]);
   const severitySummary = [
@@ -54,6 +72,10 @@ export default function StatusSidebar({
   const reviewStatus = pr.review_status ?? 'pending';
   const reviewKind = REVIEW_STATUS[reviewStatus] ?? 'neutral';
   const reviewLabel = REVIEW_LABELS[reviewStatus] ?? reviewStatus;
+  const expertiseStatus = useStore(
+    appStore,
+    (s: UIState) => s.expertiseRepoStatuses?.[repoIdForPR(pr)],
+  );
 
   return (
     <div className="w-56 flex-shrink-0 border-l border-outline-variant bg-surface-container overflow-y-auto p-4 space-y-5 text-sm">
@@ -134,6 +156,36 @@ export default function StatusSidebar({
         <div className="space-y-1 font-mono text-[11px] text-outline">
           <p>{severitySummary}</p>
           <p>{vendorSummary}</p>
+        </div>
+      </section>
+
+      {/* Expertise */}
+      <section>
+        <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-outline mb-2">
+          Expertise
+        </h3>
+        <div className="space-y-1 font-mono text-[11px] text-outline">
+          {touchesYouCount !== undefined && (
+            <p>Touches Your Code {touchesYouCount}</p>
+          )}
+          <p>
+            {pr.touches_you ? 'Touches your code' : 'No local expertise match'}
+          </p>
+          {expertiseStatus?.status === 'indexing' && (
+            <p>
+              indexing{' '}
+              {formatIndexedFiles(
+                expertiseStatus.files_done,
+                expertiseStatus.files_total,
+              )}
+            </p>
+          )}
+          {expertiseStatus?.status === 'error' && (
+            <p className="text-error">
+              error:{' '}
+              {expertiseStatus.message ?? expertiseStatus.code ?? 'unknown'}
+            </p>
+          )}
         </div>
       </section>
     </div>

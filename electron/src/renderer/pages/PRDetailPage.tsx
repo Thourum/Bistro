@@ -27,6 +27,7 @@ import {
   isAutoCollapsed,
   sortBySeverity,
 } from '../utils/classification';
+import { touchesYouCount } from '../utils/expertise';
 import { createLogger } from '../utils/logger';
 
 // Route API for reading the stable $prId param; detail never resolves by list index.
@@ -79,6 +80,7 @@ export function PRDetailPage() {
   // Fetch ALL PRs via current filter and find by id.
   // We use 'all' to ensure deep-linked PRs (any status) are always resolvable.
   const { data: allPRs = [], isLoading, error } = useWebSocketPRList('all');
+  const { data: openPRs = [] } = useWebSocketPRList('open');
   // Also try the current filter as a fallback source — whichever has the PR.
   const { data: filteredPRs = [] } = useWebSocketPRList(filterState);
 
@@ -286,7 +288,12 @@ export function PRDetailPage() {
         </footer>
       </article>
 
-      <StatusSidebar pr={pr} ciChecks={ciChecks} comments={comments} />
+      <StatusSidebar
+        pr={pr}
+        ciChecks={ciChecks}
+        comments={comments}
+        touchesYouCount={touchesYouCount(openPRs)}
+      />
 
       {activeOverlay === 'threads' && (
         <UnresolvedThreadsView prId={pr.id} comments={comments} />

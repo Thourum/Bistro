@@ -828,6 +828,15 @@ const filterBindings: KeyBinding[] = [
     },
   },
   {
+    actionId: 'filter.touchesYou',
+    keys: 'y',
+    description: 'Touches Your Code',
+    activation: { overlays: ['filter'] },
+    action: (ctx) => {
+      applyFilter(ctx, 'touches_you');
+    },
+  },
+  {
     actionId: 'filter.open',
     keys: 'o',
     description: 'Open',

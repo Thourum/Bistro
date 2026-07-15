@@ -52,6 +52,7 @@ const FOOTER_LEGEND_PRESETS_BY_OVERLAY: Record<OverlayKind, string[]> = {
   search: ['global.escape'],
   filter: [
     'filter.needsAction',
+    'filter.touchesYou',
     'filter.open',
     'filter.draft',
     'filter.all',

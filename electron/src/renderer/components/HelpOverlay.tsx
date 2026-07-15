@@ -62,6 +62,7 @@ const ACTION_IDS = new Set([
   'detail.reply',
   'global.escape',
   'filter.needsAction',
+  'filter.touchesYou',
   'filter.open',
   'filter.draft',
   'filter.all',
