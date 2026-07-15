@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"log/slog"
 	"os"
 	"testing"
@@ -84,7 +85,7 @@ func TestMigrations(t *testing.T) {
 		t.Fatalf("migration failed: %v", err)
 	}
 
-	tables := []string{"prs", "comments", "files", "schema_migrations"}
+	tables := []string{"prs", "comments", "files", "schema_migrations", "goose_db_version"}
 	for _, table := range tables {
 		var count int
 		err = db.QueryRow(
@@ -116,22 +117,13 @@ func TestMigrationsIdempotent(t *testing.T) {
 	}
 }
 
-func TestMigrationRunnerLoadsFiles(t *testing.T) {
-	runner := NewMigrationRunner(nil, nil)
-
-	migrations, err := runner.loadMigrationFiles()
+func TestMigrationRunnerHasGooseMigrationFiles(t *testing.T) {
+	migrationFiles, err := fs.Glob(migrationsFS, "migrations/[0-9][0-9][0-9][0-9][0-9]_*.sql")
 	if err != nil {
-		t.Fatalf("loadMigrationFiles error = %v", err)
+		t.Fatalf("glob goose migration files: %v", err)
 	}
-	if len(migrations) == 0 {
-		t.Error("expected at least one migration file")
-	}
-
-	for i := 1; i < len(migrations); i++ {
-		if migrations[i].Version <= migrations[i-1].Version {
-			t.Errorf("migrations not sorted by version: index %d (%d) <= index %d (%d)",
-				i, migrations[i].Version, i-1, migrations[i-1].Version)
-		}
+	if len(migrationFiles) == 0 {
+		t.Error("expected at least one goose migration file")
 	}
 }
 
@@ -151,11 +143,55 @@ func TestMigrationRunnerRecordsVersions(t *testing.T) {
 	}
 
 	var migCount int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migCount); err != nil {
-		t.Fatalf("failed to query schema_migrations: %v", err)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM goose_db_version WHERE version_id > 0 AND is_applied = 1").Scan(&migCount); err != nil {
+		t.Fatalf("failed to query goose_db_version: %v", err)
 	}
 	if migCount == 0 {
-		t.Error("expected migrations to be recorded in schema_migrations")
+		t.Error("expected migrations to be recorded in goose_db_version")
+	}
+}
+
+func TestMigrationRunnerSeedsGooseFromLegacySchemaMigrations(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	mustExec(t, db, `CREATE TABLE schema_migrations (
+		version INTEGER PRIMARY KEY,
+		description TEXT NOT NULL,
+		applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`)
+	for version := 0; version <= 29; version++ {
+		if version == 13 {
+			continue
+		}
+		mustExec(t, db, `INSERT INTO schema_migrations (version, description) VALUES (?, ?)`, version, "pre-applied")
+	}
+	mustExec(t, db, `CREATE TABLE prs (id TEXT PRIMARY KEY)`)
+	mustExec(t, db, `CREATE TABLE comments (id TEXT PRIMARY KEY)`)
+	mustExec(t, db, `CREATE TABLE files (id TEXT PRIMARY KEY)`)
+
+	if err := NewMigrationRunner(nil, db.DB).Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	var appliedCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
+		t.Fatalf("query applied goose versions: %v", err)
+	}
+	if appliedCount != 29 {
+		t.Errorf("applied goose version count = %d, want 29", appliedCount)
+	}
+
+	var prsSQL string
+	if err := db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type='table' AND name='prs'`).Scan(&prsSQL); err != nil {
+		t.Fatalf("query prs schema: %v", err)
+	}
+	if prsSQL != "CREATE TABLE prs (id TEXT PRIMARY KEY)" {
+		t.Errorf("prs table was re-migrated; schema = %q", prsSQL)
 	}
 }
 

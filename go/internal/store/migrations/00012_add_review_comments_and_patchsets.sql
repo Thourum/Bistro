@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: 012_add_review_comments_and_patchsets
 -- Description: Inline review comments (unified comments table), review threads, observed patchsets, current_user
 
@@ -56,3 +57,6 @@ CREATE TABLE IF NOT EXISTS current_user (
     provider TEXT PRIMARY KEY,
     login TEXT NOT NULL
 );
+
+-- +goose Down
+-- This migration is irreversible.

@@ -4,18 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"log/slog"
-	"path"
-	"sort"
-	"strconv"
-	"strings"
+
+	"github.com/pressly/goose/v3"
 )
+
+const migrationsDir = "migrations"
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// MigrationRunner handles versioned, filesystem-based migrations.
+// MigrationRunner handles embedded goose migrations.
 type MigrationRunner struct {
 	log *slog.Logger
 	db  *sql.DB
@@ -33,177 +34,92 @@ func NewMigrationRunner(log *slog.Logger, db *sql.DB) *MigrationRunner {
 // Run applies all pending migrations in version order.
 // It is idempotent: already-applied migrations are skipped.
 func (mr *MigrationRunner) Run(ctx context.Context) error {
-	if err := mr.createMigrationTable(ctx); err != nil {
-		return fmt.Errorf("create migration table: %w", err)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		return fmt.Errorf("set goose dialect: %w", err)
+	}
+	goose.SetBaseFS(migrationsFS)
+	goose.SetLogger(goose.NopLogger())
+
+	if err := mr.seedGooseFromLegacyMigrations(ctx); err != nil {
+		return fmt.Errorf("seed goose migration versions: %w", err)
 	}
 
-	applied, err := mr.getAppliedMigrations(ctx)
-	if err != nil {
-		return fmt.Errorf("get applied migrations: %w", err)
+	mr.log.Debug("running embedded goose migrations")
+	if err := goose.UpContext(ctx, mr.db, migrationsDir); err != nil {
+		return fmt.Errorf("run goose migrations: %w", err)
 	}
-
-	migrations, err := mr.loadMigrationFiles()
-	if err != nil {
-		return fmt.Errorf("load migration files: %w", err)
-	}
-
-	mr.log.Debug("running migrations",
-		"total", len(migrations),
-		"applied", len(applied),
-	)
-
-	for _, mig := range migrations {
-		if applied[mig.Version] {
-			mr.log.Debug("migration already applied", "version", mig.Version, "description", mig.Description)
-			continue
-		}
-
-		if err := mr.applyMigration(ctx, mig); err != nil {
-			mr.log.Error("migration apply failed",
-				"version", mig.Version,
-				"name", mig.Name,
-				"error", err,
-			)
-			return fmt.Errorf("apply migration %s: %w", mig.Name, err)
-		}
-
-		mr.log.Info("migration applied", "version", mig.Version, "description", mig.Description)
-	}
-
 	return nil
 }
 
-// Migration represents a single versioned SQL migration file.
-type Migration struct {
-	Version     int
-	Name        string
-	Description string
-	Content     string
-}
-
-// loadMigrationFiles reads all .sql files from the embedded assets directory,
-// parses their version number, and returns them sorted by version ascending.
-func (mr *MigrationRunner) loadMigrationFiles() ([]Migration, error) {
-	const dir = "migrations"
-
-	entries, err := migrationsFS.ReadDir(dir)
+func (mr *MigrationRunner) seedGooseFromLegacyMigrations(ctx context.Context) error {
+	hasLegacyTable, err := tableExists(ctx, mr.db, "schema_migrations")
 	if err != nil {
-		return nil, fmt.Errorf("read migrations dir: %w", err)
+		return fmt.Errorf("check schema_migrations table: %w", err)
+	}
+	if !hasLegacyTable {
+		return nil
 	}
 
-	migrations := make([]Migration, 0, len(entries))
+	hasGooseTable, err := tableExists(ctx, mr.db, goose.TableName())
+	if err != nil {
+		return fmt.Errorf("check %s table: %w", goose.TableName(), err)
+	}
+	if hasGooseTable {
+		return nil
+	}
 
-	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".sql") {
+	legacyVersions, err := legacyMigrationVersions(ctx, mr.db)
+	if err != nil {
+		return fmt.Errorf("read legacy migration versions: %w", err)
+	}
+	if len(legacyVersions) == 0 {
+		return nil
+	}
+
+	if _, err := goose.EnsureDBVersionContext(ctx, mr.db); err != nil {
+		return fmt.Errorf("create %s table: %w", goose.TableName(), err)
+	}
+
+	const insertVersion = `INSERT INTO goose_db_version (version_id, is_applied) VALUES (?, ?)`
+	for _, version := range legacyVersions {
+		if version == 0 {
 			continue
 		}
-
-		content, err := migrationsFS.ReadFile(path.Join(dir, name))
-		if err != nil {
-			return nil, fmt.Errorf("read migration file %s: %w", name, err)
-		}
-
-		version, err := parseVersion(name)
-		if err != nil {
-			return nil, fmt.Errorf("parse version for migration file %s: %w", name, err)
-		}
-
-		for _, existing := range migrations {
-			if existing.Version == version {
-				return nil, fmt.Errorf("duplicate migration version %d: files %s and %s", version, existing.Name, name)
-			}
-		}
-
-		description := extractDescription(string(content))
-
-		migrations = append(migrations, Migration{
-			Version:     version,
-			Name:        name,
-			Description: description,
-			Content:     string(content),
-		})
-	}
-
-	sort.Slice(migrations, func(i, j int) bool {
-		return migrations[i].Version < migrations[j].Version
-	})
-
-	return migrations, nil
-}
-
-// parseVersion extracts the leading integer from a filename like "001_init.sql".
-func parseVersion(name string) (int, error) {
-	parts := strings.SplitN(name, "_", 2)
-	if len(parts) == 0 {
-		return 0, fmt.Errorf("migration filename %q has no version prefix", name)
-	}
-	v, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return 0, fmt.Errorf("migration filename %q has non-integer version prefix %q: %w", name, parts[0], err)
-	}
-	return v, nil
-}
-
-// extractDescription finds the "-- Description:" comment line in SQL content.
-func extractDescription(content string) string {
-	for _, line := range strings.Split(content, "\n") {
-		if strings.Contains(line, "Description:") {
-			return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-- Description:"))
+		if _, err := mr.db.ExecContext(ctx, insertVersion, version, true); err != nil {
+			return fmt.Errorf("insert goose version %d: %w", version, err)
 		}
 	}
-	return ""
+	mr.log.Info("seeded goose migration versions from legacy schema_migrations", "count", len(legacyVersions))
+	return nil
 }
 
-// createMigrationTable ensures the schema_migrations tracking table exists.
-func (mr *MigrationRunner) createMigrationTable(ctx context.Context) error {
-	const query = `
-		CREATE TABLE IF NOT EXISTS schema_migrations (
-			version     INTEGER PRIMARY KEY,
-			description TEXT    NOT NULL,
-			applied_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`
-	_, err := mr.db.ExecContext(ctx, query)
-	return err
+func tableExists(ctx context.Context, db *sql.DB, tableName string) (bool, error) {
+	const query = `SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1`
+	var found int
+	if err := db.QueryRowContext(ctx, query, tableName).Scan(&found); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
-// getAppliedMigrations returns a set of already-applied version numbers.
-func (mr *MigrationRunner) getAppliedMigrations(ctx context.Context) (map[int]bool, error) {
-	rows, err := mr.db.QueryContext(ctx, "SELECT version FROM schema_migrations")
+func legacyMigrationVersions(ctx context.Context, db *sql.DB) ([]int64, error) {
+	const query = `SELECT version FROM schema_migrations ORDER BY version ASC`
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	applied := make(map[int]bool)
+	versions := []int64{}
 	for rows.Next() {
-		var v int
-		if err := rows.Scan(&v); err != nil {
+		var version int64
+		if err := rows.Scan(&version); err != nil {
 			return nil, err
 		}
-		applied[v] = true
+		versions = append(versions, version)
 	}
-
-	return applied, rows.Err()
-}
-
-// applyMigration executes a single migration SQL and records it atomically.
-func (mr *MigrationRunner) applyMigration(ctx context.Context, mig Migration) error {
-	tx, err := mr.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	if _, err := tx.ExecContext(ctx, mig.Content); err != nil {
-		return err
-	}
-
-	const record = `INSERT INTO schema_migrations (version, description) VALUES (?, ?)`
-	if _, err := tx.ExecContext(ctx, record, mig.Version, mig.Description); err != nil {
-		return err
-	}
-
-	return tx.Commit()
+	return versions, rows.Err()
 }

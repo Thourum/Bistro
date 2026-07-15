@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: 024_add_pr_diff_metadata
 -- Description: Persist per-file diff metadata for local diffs
 
@@ -25,3 +26,6 @@ CREATE INDEX IF NOT EXISTS idx_pr_diffs_pr_id ON pr_diffs(pr_id);
 -- Backfill stats for rows written before these columns existed.
 -- hunk_count 0 is treated as "unknown" for pre-migration rows.
 UPDATE pr_diffs SET patch_bytes = length(patch) WHERE patch_bytes = 0 AND length(patch) > 0;
+
+-- +goose Down
+-- This migration is irreversible.

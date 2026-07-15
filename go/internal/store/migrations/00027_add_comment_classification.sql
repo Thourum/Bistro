@@ -1,3 +1,4 @@
+-- +goose Up
 -- 026_add_comment_classification.sql
 -- Phase 3.1: classification columns + fingerprint side-table.
 -- No CHECK constraints: the Go engine is the single writer and validates values.
@@ -11,3 +12,6 @@ CREATE TABLE comment_classification_state (
   fingerprint TEXT NOT NULL,
   FOREIGN KEY(comment_id) REFERENCES comments(id) ON DELETE CASCADE
 );
+
+-- +goose Down
+-- This migration is irreversible.

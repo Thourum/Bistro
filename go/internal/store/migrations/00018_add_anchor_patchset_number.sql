@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: 018_add_anchor_patchset_number
 -- Description: Add anchor_patchset_number to comments for precise anchor cache
 --              invalidation. anchor_head_sha alone is insufficient when the same
@@ -8,3 +9,6 @@
 --              NULL = anchor was computed before this migration; treat as stale.
 
 ALTER TABLE comments ADD COLUMN anchor_patchset_number INTEGER;
+
+-- +goose Down
+-- This migration is irreversible.

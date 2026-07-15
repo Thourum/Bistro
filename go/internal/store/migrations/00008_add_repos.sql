@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration 008: Add repos table and repo_id column to prs
 
 CREATE TABLE IF NOT EXISTS repos (
@@ -12,3 +13,6 @@ CREATE TABLE IF NOT EXISTS repos (
 ALTER TABLE prs ADD COLUMN repo_id TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_prs_repo_id ON prs(repo_id);
+
+-- +goose Down
+-- This migration is irreversible.

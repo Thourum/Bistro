@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: 011_fix_rate_limit_state_provider_key
 -- Description: Rebuild rate_limit_state so the PRIMARY KEY is the provider name, removing the DEFAULT 'github' landmine that would silently overwrite rows when a second provider is added
 
@@ -22,3 +23,6 @@ ALTER TABLE rate_limit_state_new RENAME TO rate_limit_state;
 
 -- Recreate the index that was on the old table.
 CREATE INDEX IF NOT EXISTS idx_rate_limit_provider ON rate_limit_state(provider);
+
+-- +goose Down
+-- This migration is irreversible.

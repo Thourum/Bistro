@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: 021_add_sync_cursors
 -- Description: Add local-only durable sync cursor and ETag state.
 
@@ -15,3 +16,6 @@ CREATE TABLE IF NOT EXISTS sync_cursors (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sync_cursors_updated_at ON sync_cursors(updated_at);
+
+-- +goose Down
+-- This migration is irreversible.

@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: 002_add_pr_indexes
 -- Description: Add indexes for common queries
 
@@ -7,3 +8,6 @@ CREATE INDEX IF NOT EXISTS idx_prs_provider_owner_repo ON prs(provider, owner, r
 CREATE INDEX IF NOT EXISTS idx_comments_pr_id ON comments(pr_id);
 CREATE INDEX IF NOT EXISTS idx_files_pr_id ON files(pr_id);
 CREATE INDEX IF NOT EXISTS idx_files_status ON files(status);
+
+-- +goose Down
+-- This migration is irreversible.

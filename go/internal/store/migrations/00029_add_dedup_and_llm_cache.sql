@@ -1,3 +1,4 @@
+-- +goose Up
 -- 029_add_dedup_and_llm_cache.sql
 -- No extra indexes by design: cache lookups hit the body_hash PRIMARY KEY,
 -- and dedup_group_id is only read on rows already narrowed by pr_id.
@@ -10,3 +11,6 @@ CREATE TABLE llm_classification_cache (
   model      TEXT NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+
+-- +goose Down
+-- This migration is irreversible.

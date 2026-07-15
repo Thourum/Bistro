@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: 001_init
 -- Description: Initial schema - create prs, comments, files tables
 
@@ -47,3 +48,6 @@ CREATE TABLE IF NOT EXISTS files (
     FOREIGN KEY(pr_id) REFERENCES prs(id) ON DELETE CASCADE,
     UNIQUE(pr_id, file_path)
 );
+
+-- +goose Down
+-- This migration is irreversible.

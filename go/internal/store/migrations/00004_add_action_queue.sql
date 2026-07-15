@@ -1,3 +1,4 @@
+-- +goose Up
 -- Description: Add action queue for offline action persistence
 
 CREATE TABLE IF NOT EXISTS action_queue (
@@ -13,3 +14,6 @@ CREATE TABLE IF NOT EXISTS action_queue (
 
 CREATE INDEX IF NOT EXISTS idx_action_queue_status ON action_queue(status);
 CREATE INDEX IF NOT EXISTS idx_action_queue_created_at ON action_queue(created_at);
+
+-- +goose Down
+-- This migration is irreversible.

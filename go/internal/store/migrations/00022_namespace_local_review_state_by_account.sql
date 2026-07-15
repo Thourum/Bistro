@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: 022_namespace_local_review_state_by_account
 -- Description: Namespace local-only review progress and queued actions by GitHub account.
 
@@ -77,3 +78,6 @@ WHERE account_provider = 'github' AND account_login = '';
 
 CREATE INDEX IF NOT EXISTS idx_action_queue_account_status
     ON action_queue(account_provider, account_login, status, created_at);
+
+-- +goose Down
+-- This migration is irreversible.

@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: 019_add_anchor_current_patchset_number
 -- Description: Separate current-cache identity from source geometry identity for
 --              anchor freshness. anchor_patchset_number records the source patchset
@@ -12,3 +13,6 @@
 --              NULL = pre-migration cache; treated as stale by handler.
 
 ALTER TABLE comments ADD COLUMN anchor_current_patchset_number INTEGER;
+
+-- +goose Down
+-- This migration is irreversible.

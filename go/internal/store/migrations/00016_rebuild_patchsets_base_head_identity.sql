@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: 016_rebuild_patchsets_base_head_identity
 -- Description: Repair Phase 2 Groundwork patchsets identity from head-only to base+head.
 
@@ -24,3 +25,6 @@ FROM patchsets_old;
 DROP TABLE patchsets_old;
 
 CREATE INDEX IF NOT EXISTS idx_patchsets_pr_id ON patchsets(pr_id);
+
+-- +goose Down
+-- This migration is irreversible.

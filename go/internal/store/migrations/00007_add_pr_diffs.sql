@@ -1,3 +1,4 @@
+-- +goose Up
 -- Migration: 007_add_pr_diffs
 -- Description: Add pr_diffs table for storing per-file diff patches
 
@@ -14,3 +15,6 @@ CREATE TABLE IF NOT EXISTS pr_diffs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pr_diffs_pr_id ON pr_diffs(pr_id);
+
+-- +goose Down
+-- This migration is irreversible.

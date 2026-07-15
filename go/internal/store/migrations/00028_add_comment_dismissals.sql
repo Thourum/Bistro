@@ -1,3 +1,4 @@
+-- +goose Up
 -- 028_add_comment_dismissals.sql
 -- Phase 3.5: local dismissals, namespaced per account (pattern of migration 022).
 CREATE TABLE comment_dismissals (
@@ -8,3 +9,6 @@ CREATE TABLE comment_dismissals (
   PRIMARY KEY (comment_id, account_provider, account_login),
   FOREIGN KEY(comment_id) REFERENCES comments(id) ON DELETE CASCADE
 );
+
+-- +goose Down
+-- This migration is irreversible.
