@@ -349,6 +349,11 @@ func TestRequestPRListPopulatesTouchesYou(t *testing.T) {
 	insertExpertisePRListRow(t, db, "pr-other-user", repoID, "other.go", 3)
 
 	expertiseStore := expertise.NewStore(db)
+	if err := expertiseStore.SetRepoState(context.Background(), expertise.ExpertiseRepoState{
+		RepoID: repoID, Enabled: true, Status: expertise.ExpertiseStatusReady,
+	}); err != nil {
+		t.Fatalf("SetRepoState: %v", err)
+	}
 	if err := expertiseStore.UpsertFileRows(context.Background(), []expertise.FileExpertiseRow{
 		{RepoID: repoID, FilePath: "qualifies.go", AuthorEmail: "first@example.com", SurvivingLines: 80, TotalLines: 100, Score: 90, ComputedAt: now, ComputedAtSHA: "sha"},
 		{RepoID: repoID, FilePath: "qualifies.go", AuthorEmail: "alice@example.com", SurvivingLines: expertise.DefaultMinSurvivingLines, TotalLines: 100, Score: 70, ComputedAt: now, ComputedAtSHA: "sha"},
