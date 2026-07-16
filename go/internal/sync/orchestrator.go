@@ -68,6 +68,16 @@ type Orchestrator struct {
 const (
 	inboxCursorLag                = 2 * time.Minute
 	replayReconciliationClockSkew = 10 * time.Minute
+
+	// prListWindow bounds per-repo PR list syncs to recently updated PRs;
+	// prListMinCount guarantees quiet repos still surface their newest PRs.
+	prListWindow   = 30 * 24 * time.Hour
+	prListMinCount = 10
+
+	// hydrationThreshold is the PR count above which a repo sync skips the
+	// per-PR detail fetch (comments, CI, diff) and writes list-only rows;
+	// details are hydrated on demand when the user selects a PR.
+	hydrationThreshold = 100
 )
 
 // SupportsInboxDiscovery reports whether the provider can discover relevant PRs
@@ -1331,16 +1341,19 @@ func (o *Orchestrator) syncPRList(ctx context.Context, req *SyncRequest) ([]*pro
 		return nil, fmt.Errorf("provider not configured")
 	}
 
+	updatedSince := time.Now().Add(-prListWindow)
 	filters := provider.PRFilters{
-		Owner: req.Owner,
-		Repo:  req.Repo,
-		State: req.State,
-		Limit: 100,
+		Owner:        req.Owner,
+		Repo:         req.Repo,
+		State:        req.State,
+		UpdatedSince: &updatedSince,
+		MinCount:     prListMinCount,
 	}
 
 	log.Debug("calling provider.ListPRs",
 		"state", filters.State,
-		"limit", filters.Limit,
+		"updated_since", updatedSince,
+		"min_count", filters.MinCount,
 	)
 	start := time.Now()
 	prs, err := o.provider.ListPRs(ctx, filters)
