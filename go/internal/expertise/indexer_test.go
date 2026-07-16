@@ -155,7 +155,7 @@ func TestIndexerEmitsProgressEveryTwentyFiveFiles(t *testing.T) {
 	}
 }
 
-func TestIndexerCancellationLeavesStatusIndexing(t *testing.T) {
+func TestIndexerCancellationLeavesRetryableErrorState(t *testing.T) {
 	db := newTestDB(t)
 	store := NewStore(db.DB)
 	git := newFakeIndexerGit(3)
@@ -182,8 +182,11 @@ func TestIndexerCancellationLeavesStatusIndexing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RepoState after cancel: %v", err)
 	}
-	if state.Status != ExpertiseStatusIndexing {
-		t.Fatalf("state.Status = %q, want %q", state.Status, ExpertiseStatusIndexing)
+	if state.Status != ExpertiseStatusError {
+		t.Fatalf("state.Status = %q, want %q", state.Status, ExpertiseStatusError)
+	}
+	if !state.ErrorCode.Valid || state.ErrorCode.String != expertiseErrorCodeIndexError {
+		t.Fatalf("state.ErrorCode = %#v, want %q", state.ErrorCode, expertiseErrorCodeIndexError)
 	}
 	if state.IndexedSHA.Valid {
 		t.Fatalf("state.IndexedSHA = %#v, want invalid", state.IndexedSHA)

@@ -48,31 +48,32 @@ func (updater *Updater) Update(ctx context.Context, repoID, repoPath string, tou
 
 	candidates, err := updater.updateCandidates(ctx, repoID, repoPath, touchedFiles, headSHA)
 	if err != nil {
-		updater.log.Warn("skipping expertise update after candidate filtering failure", "repo_id", repoID, "error", err)
-		return nil
+		return err
 	}
 
 	now := updater.now()
-	if updater.headMoved(state, headSHA) {
-		if err := updater.setIndexedSHA(ctx, state, headSHA, now); err != nil {
-			return err
-		}
-	}
 	if len(candidates) == 0 {
+		if updater.headMoved(state, headSHA) {
+			return updater.setIndexedSHA(ctx, state, headSHA, now)
+		}
 		return nil
 	}
 
 	signals, err := updater.signals(ctx, repoID, repoPath, headSHA, now)
 	if err != nil {
-		updater.log.Warn("skipping expertise update after signal gathering failure", "repo_id", repoID, "error", err)
-		return nil
+		return err
 	}
 
 	for _, file := range candidates {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		updater.updateFile(ctx, repoID, repoPath, file, signals)
+		if err := updater.updateFile(ctx, repoID, repoPath, file, signals); err != nil {
+			return err
+		}
+	}
+	if updater.headMoved(state, headSHA) {
+		return updater.setIndexedSHA(ctx, state, headSHA, now)
 	}
 	return nil
 }
@@ -110,7 +111,9 @@ func (updater *Updater) updateCandidates(ctx context.Context, repoID, repoPath s
 		}
 		seen[file] = true
 		if excluder.Excluded(file) || !existingFiles[file] {
-			updater.deleteStaleFileRows(ctx, repoID, file)
+			if err := updater.deleteStaleFileRows(ctx, repoID, file); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		uniqueExisting = append(uniqueExisting, file)
@@ -127,7 +130,9 @@ func (updater *Updater) updateCandidates(ctx context.Context, repoID, repoPath s
 	candidates := make([]string, 0, len(uniqueExisting))
 	for _, file := range uniqueExisting {
 		if generated[file] {
-			updater.deleteStaleFileRows(ctx, repoID, file)
+			if err := updater.deleteStaleFileRows(ctx, repoID, file); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		if updater.fileFresh(ctx, repoID, file, headSHA) {
@@ -158,10 +163,11 @@ func (updater *Updater) excluder(ctx context.Context, repoID string) (Excluder, 
 	return New(userGlobs), nil
 }
 
-func (updater *Updater) deleteStaleFileRows(ctx context.Context, repoID, filePath string) {
+func (updater *Updater) deleteStaleFileRows(ctx context.Context, repoID, filePath string) error {
 	if err := updater.store.DeleteFileRows(ctx, repoID, filePath); err != nil {
-		updater.log.Warn("failed to delete stale expertise rows", "repo_id", repoID, "file_path", filePath, "error", err)
+		return fmt.Errorf("delete stale expertise rows %s %s: %w", repoID, filePath, err)
 	}
+	return nil
 }
 
 func (updater *Updater) fileFresh(ctx context.Context, repoID, filePath, headSHA string) bool {
@@ -206,16 +212,16 @@ func (updater *Updater) signals(ctx context.Context, repoID, repoPath, headSHA s
 	}, nil
 }
 
-func (updater *Updater) updateFile(ctx context.Context, repoID, repoPath, filePath string, signals expertiseSignals) {
+func (updater *Updater) updateFile(ctx context.Context, repoID, repoPath, filePath string, signals expertiseSignals) error {
 	blame, total, err := updater.git.BlameFile(ctx, repoPath, filePath)
 	if err != nil {
-		updater.log.Warn("skipping expertise file after update blame failure", "repo_id", repoID, "file_path", filePath, "error", err)
-		return
+		return fmt.Errorf("expertise update blame %s %s: %w", repoID, filePath, err)
 	}
 	rows := buildFileExpertiseRows(filePath, blame, total, signals)
 	if err := updater.store.ReplaceFileRows(ctx, repoID, filePath, rows); err != nil {
-		updater.log.Warn("skipping expertise file after update write failure", "repo_id", repoID, "file_path", filePath, "error", err)
+		return fmt.Errorf("expertise update write %s %s: %w", repoID, filePath, err)
 	}
+	return nil
 }
 
 func (updater *Updater) headMoved(state ExpertiseRepoState, headSHA string) bool {

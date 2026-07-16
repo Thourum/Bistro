@@ -259,15 +259,15 @@ git commit -m "feat(expertise): sqlc queries + store wrapper"
 
 Cover (formulas are normative in the spec §Scoring algorithm):
 - `CommitScore`: 4 substantial commits today → 1.0 (saturated); one commit 6 months ago → 0.125; zero commits → 0; 12-month window enforcement is the caller's job (document).
-- `Score`: surviving 312/480, commit_score 0.4, original → `55*0.65 + 30*0.4 + 15*1 = 62.75+12+15 = 89.75`; empty file (total 0) → surviving term 0.
+- `Score`: surviving 312/480, commit_score 0.4, original → `55*0.65 + 30*0.4 + 15*1 = 35.75+12+15 = 62.75`; empty file (total 0) → surviving term 0.
 - `IsExpert`: surviving ≥ minLines → true; score ≥ 40 with few lines → true (EXPERT_SCORE_FLOOR); neither → false.
 - `Dormant`: last commit 91 days before now → true; 89 → false.
 
 ```go
 func TestScore(t *testing.T) {
     got := Score(312, 480, 0.4, true)
-    if math.Abs(got-89.75) > 0.01 {
-        t.Errorf("Score = %v, want 89.75", got)
+    if math.Abs(got-62.75) > 0.01 {
+        t.Errorf("Score = %v, want 62.75", got)
     }
 }
 ```

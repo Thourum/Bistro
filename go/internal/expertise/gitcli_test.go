@@ -253,9 +253,9 @@ func TestGitCLIParseFunctions(t *testing.T) {
 	}
 
 	logOutput := strings.Join([]string{
-		"abc\x00alice@example.com\x00Alice\x002026-01-15T10:00:00+00:00",
-		"10\t0\tmain.go",
-		"-\t-\tbinary.dat",
+		"abc\x1falice@example.com\x1fAlice\x1f2026-01-15T10:00:00+00:00\x00",
+		"10\t0\tmain.go\x00",
+		"-\t-\tbinary.dat\x00",
 		"",
 	}, "\n")
 	result, err := parseLogNumstat(logOutput)
@@ -272,7 +272,7 @@ func TestGitCLIParseFunctions(t *testing.T) {
 		t.Error("LastCommitAt missing alice")
 	}
 
-	first := parseFirstCommits("\x00alice@example.com\nmain.go\n\x00bob@example.com\nmain.go\nutil.go\n")
+	first := parseFirstCommits("\x00alice@example.com\x00\nmain.go\x00\x00bob@example.com\x00\nmain.go\x00util.go\x00")
 	if got := first["main.go"]; got != "alice@example.com" {
 		t.Errorf("first main.go = %q, want alice@example.com", got)
 	}

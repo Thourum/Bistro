@@ -174,6 +174,29 @@ func TestMigrationsRerunAfterGooseVersionMetadataLoss(t *testing.T) {
 	}
 }
 
+func TestCurrentSchemaExistsRejectsPre31Schema(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	mustExec(t, db, `CREATE TABLE prs (id TEXT PRIMARY KEY, repo_id TEXT)`)
+	mustExec(t, db, `CREATE TABLE pr_diffs (pr_id TEXT, file_path TEXT, diff_status TEXT)`)
+	mustExec(t, db, `CREATE TABLE repos (id TEXT PRIMARY KEY, local_path TEXT)`)
+	mustExec(t, db, `CREATE TABLE comments (id TEXT PRIMARY KEY, author_type TEXT, dedup_group_id TEXT)`)
+	mustExec(t, db, `CREATE TABLE comment_classification_state (comment_id TEXT PRIMARY KEY)`)
+
+	exists, err := currentSchemaExists(ctx, db.DB)
+	if err != nil {
+		t.Fatalf("currentSchemaExists: %v", err)
+	}
+	if exists {
+		t.Fatal("currentSchemaExists = true, want false before file_expertise exists")
+	}
+}
+
 func TestReconcilePreservesMigrationsNewerThanBaseline(t *testing.T) {
 	db, err := OpenDB(":memory:")
 	if err != nil {

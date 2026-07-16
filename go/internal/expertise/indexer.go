@@ -74,6 +74,12 @@ type indexFileResult struct {
 	err      error
 }
 
+type indexFilesResult struct {
+	rows      []FileExpertiseRow
+	processed int
+	skipped   int
+}
+
 type expertiseSignals struct {
 	repoID        string
 	headSHA       string
@@ -121,8 +127,11 @@ func (indexer *Indexer) Index(ctx context.Context, repoID, repoPath string) erro
 		return indexer.finishWithError(ctx, repoID, err)
 	}
 
-	processed, skipped, err := indexer.indexFiles(ctx, repoID, repoPath, files, signals)
+	indexResult, err := indexer.indexFiles(ctx, repoID, repoPath, files, signals)
 	if err != nil {
+		return indexer.finishWithError(ctx, repoID, err)
+	}
+	if err := indexer.store.ReplaceRepoRows(ctx, repoID, indexResult.rows); err != nil {
 		return indexer.finishWithError(ctx, repoID, err)
 	}
 
@@ -133,14 +142,14 @@ func (indexer *Indexer) Index(ctx context.Context, repoID, repoPath string) erro
 		IndexedSHA: sql.NullString{String: headSHA, Valid: true},
 		IndexedAt:  sql.NullTime{Time: signals.now, Valid: true},
 		FilesTotal: sql.NullInt64{Int64: int64(len(files)), Valid: true},
-		FilesDone:  sql.NullInt64{Int64: int64(processed), Valid: true},
+		FilesDone:  sql.NullInt64{Int64: int64(indexResult.processed), Valid: true},
 		ErrorCode:  sql.NullString{},
 		Error:      sql.NullString{},
 	}
 	if err := indexer.store.SetRepoState(ctx, readyState); err != nil {
 		return indexer.finishWithError(ctx, repoID, err)
 	}
-	indexer.emitEvent(ExpertiseReadyEvent, indexReadyPayload{RepoID: repoID, IndexedSHA: headSHA, FilesTotal: len(files), SkippedFiles: skipped})
+	indexer.emitEvent(ExpertiseReadyEvent, indexReadyPayload{RepoID: repoID, IndexedSHA: headSHA, FilesTotal: len(files), SkippedFiles: indexResult.skipped})
 	return nil
 }
 
@@ -165,9 +174,6 @@ func (indexer *Indexer) prepareIndex(ctx context.Context, repoID, repoPath strin
 
 	files, err := indexer.indexableFiles(ctx, repoID, repoPath)
 	if err != nil {
-		return "", nil, expertiseSignals{}, err
-	}
-	if err := indexer.store.DeleteRepoRows(ctx, repoID); err != nil {
 		return "", nil, expertiseSignals{}, err
 	}
 
@@ -235,33 +241,34 @@ func (indexer *Indexer) excluder(ctx context.Context, repoID string) (Excluder, 
 	return New(userGlobs), nil
 }
 
-func (indexer *Indexer) indexFiles(ctx context.Context, repoID, repoPath string, files []string, signals expertiseSignals) (int, int, error) {
+func (indexer *Indexer) indexFiles(ctx context.Context, repoID, repoPath string, files []string, signals expertiseSignals) (indexFilesResult, error) {
 	results := indexer.blameFiles(ctx, repoPath, files, signals)
+	rows := make([]FileExpertiseRow, 0)
 	processed := 0
 	skipped := 0
 	for result := range results {
 		if ctx.Err() != nil {
-			return processed, skipped, ctx.Err()
+			return indexFilesResult{}, ctx.Err()
 		}
 		processed++
 		if result.err != nil {
 			skipped++
 			indexer.log.Warn("skipping expertise file after blame failure", "repo_id", repoID, "file_path", result.filePath, "error", result.err)
-		} else if err := indexer.store.ReplaceFileRows(ctx, repoID, result.filePath, result.rows); err != nil {
-			return processed, skipped, err
+		} else {
+			rows = append(rows, result.rows...)
 		}
 
 		if processed%expertiseProgressEveryFiles == 0 || processed == len(files) {
 			if err := indexer.store.SetProgress(ctx, repoID, processed, len(files)); err != nil {
-				return processed, skipped, err
+				return indexFilesResult{}, err
 			}
 			indexer.emitEvent(ExpertiseIndexProgressEvent, indexProgressPayload{RepoID: repoID, FilesDone: processed, FilesTotal: len(files)})
 			if ctx.Err() != nil {
-				return processed, skipped, ctx.Err()
+				return indexFilesResult{}, indexer.finishWithCanceled(ctx, repoID, ctx.Err())
 			}
 		}
 	}
-	return processed, skipped, nil
+	return indexFilesResult{rows: rows, processed: processed, skipped: skipped}, nil
 }
 
 func (indexer *Indexer) blameFiles(ctx context.Context, repoPath string, files []string, signals expertiseSignals) <-chan indexFileResult {
@@ -330,6 +337,24 @@ func (indexer *Indexer) finishWithError(ctx context.Context, repoID string, err 
 	}
 	indexer.emitEvent(ExpertiseErrorEvent, expertiseErrorPayload{RepoID: repoID, Code: state.ErrorCode.String, Message: err.Error()})
 	return err
+}
+
+func (indexer *Indexer) finishWithCanceled(ctx context.Context, repoID string, err error) error {
+	cancelErr := context.Canceled
+	if err != nil {
+		cancelErr = err
+	}
+	state := ExpertiseRepoState{
+		RepoID:    repoID,
+		Enabled:   true,
+		Status:    ExpertiseStatusError,
+		ErrorCode: sql.NullString{String: expertiseErrorCodeIndexError, Valid: true},
+		Error:     sql.NullString{String: cancelErr.Error(), Valid: true},
+	}
+	if setErr := indexer.store.SetRepoState(context.WithoutCancel(ctx), state); setErr != nil {
+		return fmt.Errorf("%w; additionally failed to set expertise cancellation state: %v", cancelErr, setErr)
+	}
+	return cancelErr
 }
 
 func (indexer *Indexer) errorCode() string {

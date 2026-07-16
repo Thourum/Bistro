@@ -1,8 +1,10 @@
+import { ResultAsync } from 'neverthrow';
 import { useCallback } from 'react';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
+import { addToast } from './ToastContainer';
 import { Button } from './ui/button';
 
 interface ExpertiseNudgeProps {
@@ -16,7 +18,7 @@ export function ExpertiseNudge({
     appStore,
     (s: UIState) => s.expertiseNudges?.[repoId] ?? null,
   );
-  const { send } = useWebSocket();
+  const { request, send } = useWebSocket();
 
   const clearNudge = useCallback(() => {
     appStore.setState((s) => {
@@ -27,8 +29,19 @@ export function ExpertiseNudge({
   }, [repoId]);
 
   const handleEnable = (): void => {
-    send('EXPERTISE_ENABLE', { repo_id: repoId });
-    clearNudge();
+    void ResultAsync.fromPromise(
+      request('EXPERTISE_ENABLE', { repo_id: repoId }),
+      (err) => err,
+    ).match(
+      () => clearNudge(),
+      (err) => {
+        addToast({
+          type: 'error',
+          message: `Enabling expertise failed: ${err instanceof Error ? err.message : 'sync engine unreachable'}`,
+          dismissible: true,
+        });
+      },
+    );
   };
 
   const handleDismiss = (): void => {

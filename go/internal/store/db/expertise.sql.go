@@ -58,6 +58,15 @@ func (q *Queries) DeleteFileExpertiseForFile(ctx context.Context, arg DeleteFile
 	return err
 }
 
+const deleteFileExpertiseForRepo = `-- name: DeleteFileExpertiseForRepo :exec
+DELETE FROM file_expertise WHERE repo_id = ?
+`
+
+func (q *Queries) DeleteFileExpertiseForRepo(ctx context.Context, repoID string) error {
+	_, err := q.db.ExecContext(ctx, deleteFileExpertiseForRepo, repoID)
+	return err
+}
+
 const getExpertiseForPRs = `-- name: GetExpertiseForPRs :many
 SELECT
     p.id AS pr_id,

@@ -22,6 +22,7 @@ const (
 	gitHeadSHALength      = 40
 	logHeaderFieldCount   = 4
 	numstatFieldCount     = 3
+	logNumstatHeaderSep   = "\x1f"
 	checkAttrFieldCount   = 3
 	checkAttrGeneratedSet = "set"
 )
@@ -119,7 +120,7 @@ func (cli *GitCLI) BlameFile(ctx context.Context, repoPath, path string) (map[Au
 
 func (cli *GitCLI) LogNumstat(ctx context.Context, repoPath string, since time.Time) (*LogResult, error) {
 	out, err := cli.runGit(ctx, repoPath, gitLogTimeout,
-		"log", "--numstat", "--no-renames", "--pretty=format:%H%x00%ae%x00%an%x00%aI", "--since="+since.Format(time.RFC3339))
+		"log", "-z", "--numstat", "--no-renames", "--pretty=format:%H%x1f%ae%x1f%an%x1f%aI%x00", "--since="+since.Format(time.RFC3339))
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +136,7 @@ func (cli *GitCLI) ActiveAuthors(ctx context.Context, repoPath string, since tim
 }
 
 func (cli *GitCLI) LogFirstCommits(ctx context.Context, repoPath string) (map[string]string, error) {
-	out, err := cli.runGit(ctx, repoPath, gitLogTimeout, "log", "--reverse", "--diff-filter=A", "--name-only", "--no-renames", "--pretty=format:%x00%ae")
+	out, err := cli.runGit(ctx, repoPath, gitLogTimeout, "log", "-z", "--reverse", "--diff-filter=A", "--name-only", "--no-renames", "--pretty=format:%x00%ae%x00")
 	if err != nil {
 		return nil, err
 	}
@@ -231,13 +232,13 @@ func parseLogNumstat(output string) (*LogResult, error) {
 	result := &LogResult{LastCommitAt: make(map[string]time.Time)}
 	var current *LogEvent
 
-	for _, rawLine := range strings.Split(output, "\n") {
-		line := strings.TrimSpace(rawLine)
-		if line == "" {
+	for _, part := range strings.Split(output, "\x00") {
+		section := strings.TrimPrefix(part, "\n")
+		if section == "" {
 			continue
 		}
-		if strings.Contains(line, "\x00") {
-			commit, err := parseLogHeader(line)
+		if strings.Contains(section, logNumstatHeaderSep) {
+			commit, err := parseLogHeader(section)
 			if err != nil {
 				return nil, err
 			}
@@ -248,7 +249,7 @@ func parseLogNumstat(output string) (*LogResult, error) {
 		if current == nil {
 			continue
 		}
-		event, ok, err := parseNumstatLine(line, *current)
+		event, ok, err := parseNumstatLine(section, *current)
 		if err != nil {
 			return nil, err
 		}
@@ -260,10 +261,10 @@ func parseLogNumstat(output string) (*LogResult, error) {
 	return result, nil
 }
 
-func parseLogHeader(line string) (LogEvent, error) {
-	fields := strings.Split(line, "\x00")
+func parseLogHeader(section string) (LogEvent, error) {
+	fields := strings.Split(section, logNumstatHeaderSep)
 	if len(fields) != logHeaderFieldCount {
-		return LogEvent{}, fmt.Errorf("git log header has %d fields, want %d: %q", len(fields), logHeaderFieldCount, line)
+		return LogEvent{}, fmt.Errorf("git log header has %d fields, want %d: %q", len(fields), logHeaderFieldCount, section)
 	}
 	committedAt, err := time.Parse(time.RFC3339, fields[3])
 	if err != nil {
@@ -310,13 +311,19 @@ func parseActiveAuthors(output string) map[string]bool {
 func parseFirstCommits(output string) map[string]string {
 	firstCommits := make(map[string]string)
 	currentEmail := ""
+	expectingEmail := true
 
-	for _, line := range strings.Split(output, "\n") {
-		if strings.HasPrefix(line, "\x00") {
-			currentEmail = strings.TrimSpace(strings.TrimPrefix(line, "\x00"))
+	for _, part := range strings.Split(output, "\x00") {
+		if part == "" {
+			expectingEmail = true
 			continue
 		}
-		path := strings.TrimSpace(line)
+		if expectingEmail {
+			currentEmail = strings.TrimSpace(part)
+			expectingEmail = false
+			continue
+		}
+		path := strings.TrimPrefix(part, "\n")
 		if path == "" || currentEmail == "" {
 			continue
 		}

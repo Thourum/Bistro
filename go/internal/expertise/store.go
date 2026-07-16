@@ -92,6 +92,15 @@ func (s *Store) ReplaceFileRows(ctx context.Context, repoID, filePath string, ro
 	})
 }
 
+func (s *Store) ReplaceRepoRows(ctx context.Context, repoID string, rows []FileExpertiseRow) error {
+	return s.withTx(ctx, func(queries *storedb.Queries) error {
+		if err := queries.DeleteFileExpertiseForRepo(ctx, repoID); err != nil {
+			return fmt.Errorf("delete repo expertise %s: %w", repoID, err)
+		}
+		return upsertFileRows(ctx, queries, rows)
+	})
+}
+
 func (s *Store) DeleteFileRows(ctx context.Context, repoID, filePath string) error {
 	return s.withTx(ctx, func(queries *storedb.Queries) error {
 		return deleteFileExpertise(ctx, queries, repoID, filePath)
@@ -101,6 +110,34 @@ func (s *Store) DeleteFileRows(ctx context.Context, repoID, filePath string) err
 func (s *Store) DeleteRepoRows(ctx context.Context, repoID string) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM file_expertise WHERE repo_id = ?`, repoID); err != nil {
 		return fmt.Errorf("delete repo expertise %s: %w", repoID, err)
+	}
+	return nil
+}
+
+func (s *Store) DeleteExcludedRows(ctx context.Context, repoID string, excluder Excluder) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT file_path FROM file_expertise WHERE repo_id = ?`, repoID)
+	if err != nil {
+		return fmt.Errorf("list expertise rows for exclude pruning %s: %w", repoID, err)
+	}
+	defer rows.Close()
+
+	pathsToDelete := []string{}
+	for rows.Next() {
+		var filePath string
+		if err := rows.Scan(&filePath); err != nil {
+			return fmt.Errorf("scan expertise row for exclude pruning %s: %w", repoID, err)
+		}
+		if excluder.Excluded(filePath) {
+			pathsToDelete = append(pathsToDelete, filePath)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate expertise rows for exclude pruning %s: %w", repoID, err)
+	}
+	for _, filePath := range pathsToDelete {
+		if err := s.DeleteFileRows(ctx, repoID, filePath); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -131,6 +168,16 @@ func (s *Store) SetRepoState(ctx context.Context, state ExpertiseRepoState) erro
 		return fmt.Errorf("set expertise repo state %s: %w", state.RepoID, err)
 	}
 	return nil
+}
+
+func (s *Store) DismissNudge(ctx context.Context, repoID string) error {
+	state := ExpertiseRepoState{
+		RepoID:           repoID,
+		Enabled:          false,
+		Status:           ExpertiseStatusIdle,
+		NudgeDismissedAt: sql.NullTime{Time: time.Now().UTC(), Valid: true},
+	}
+	return s.SetRepoState(ctx, state)
 }
 
 func (s *Store) SetProgress(ctx context.Context, repoID string, filesDone, filesTotal int) error {
@@ -175,6 +222,21 @@ func (s *Store) SetSetting(ctx context.Context, key string, value any) error {
 		return fmt.Errorf("set expertise setting %s: %w", key, err)
 	}
 	return nil
+}
+
+func (s *Store) SetSettings(ctx context.Context, settings map[string]any) error {
+	return s.withTx(ctx, func(queries *storedb.Queries) error {
+		for key, value := range settings {
+			raw, err := json.Marshal(value)
+			if err != nil {
+				return fmt.Errorf("encode expertise setting %s: %w", key, err)
+			}
+			if err := queries.UpsertExpertiseSetting(ctx, storedb.UpsertExpertiseSettingParams{Key: key, Value: string(raw)}); err != nil {
+				return fmt.Errorf("set expertise setting %s: %w", key, err)
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) ReviewedPRCount(ctx context.Context, repoID, accountProvider, accountLogin, login string) (int64, error) {

@@ -36,18 +36,12 @@ func (f *fakeExpertiseEngine) GitAvailable() bool { return f.gitAvailable }
 func (f *fakeExpertiseEngine) GitUnavailableReason() string { return f.gitReason }
 
 type fakeExpertiseRepoStore struct {
-	repos     map[string]expertiseRepo
-	dismissed string
+	repos map[string]expertiseRepo
 }
 
 func (f *fakeExpertiseRepoStore) ExpertiseRepo(_ context.Context, repoID string) (expertiseRepo, bool, error) {
 	repo, ok := f.repos[repoID]
 	return repo, ok, nil
-}
-
-func (f *fakeExpertiseRepoStore) DismissExpertiseNudge(_ context.Context, repoID string) error {
-	f.dismissed = repoID
-	return nil
 }
 
 type fakeExpertiseDataStore struct {
@@ -102,12 +96,21 @@ func (f *fakeExpertiseDataStore) RepoState(_ context.Context, repoID string) (ex
 }
 
 type fakeExpertiseSettingsStore struct {
-	settings expertiseSettings
-	err      error
+	settings  expertiseSettings
+	dismissed string
+	err       error
 }
 
 func (f *fakeExpertiseSettingsStore) ExpertiseSettings(_ context.Context) (expertiseSettings, error) {
 	return f.settings, f.err
+}
+
+func (f *fakeExpertiseSettingsStore) DismissExpertiseNudge(_ context.Context, repoID string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.dismissed = repoID
+	return nil
 }
 
 func (f *fakeExpertiseSettingsStore) SetExpertiseSettings(_ context.Context, settings expertiseSettings) error {
@@ -266,15 +269,15 @@ func TestGetExpertiseUnavailableWhenRepoNotIndexed(t *testing.T) {
 }
 
 func TestExpertiseNudgeDismiss(t *testing.T) {
-	repos := &fakeExpertiseRepoStore{}
-	h := NewExpertiseNudgeDismissHandler(ExpertiseHandlerDeps{Repos: repos, Log: testRepoLogger()})
+	settings := &fakeExpertiseSettingsStore{}
+	h := NewExpertiseNudgeDismissHandler(ExpertiseHandlerDeps{Settings: settings, Log: testRepoLogger()})
 
 	resp, err := callHandler(t, h, "EXPERTISE_NUDGE_DISMISS", map[string]string{"repo_id": "github:owner/repo"})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	if repos.dismissed != "github:owner/repo" {
-		t.Fatalf("dismissed repo = %q", repos.dismissed)
+	if settings.dismissed != "github:owner/repo" {
+		t.Fatalf("dismissed repo = %q", settings.dismissed)
 	}
 	if responseType(resp) != "EXPERTISE_NUDGE_DISMISSED" {
 		t.Fatalf("type = %q, want EXPERTISE_NUDGE_DISMISSED", responseType(resp))

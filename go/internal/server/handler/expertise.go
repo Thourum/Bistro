@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/itterno/bistro/internal/expertise"
 	"github.com/itterno/bistro/internal/logging"
@@ -29,7 +28,6 @@ type expertiseEngine interface {
 
 type expertiseRepoStore interface {
 	ExpertiseRepo(ctx context.Context, repoID string) (expertiseRepo, bool, error)
-	DismissExpertiseNudge(ctx context.Context, repoID string) error
 }
 
 type expertiseDataStore interface {
@@ -41,6 +39,7 @@ type expertiseDataStore interface {
 
 type expertiseSettingsStore interface {
 	ExpertiseSettings(ctx context.Context) (expertiseSettings, error)
+	DismissExpertiseNudge(ctx context.Context, repoID string) error
 	SetExpertiseSettings(ctx context.Context, settings expertiseSettings) error
 }
 
@@ -210,10 +209,10 @@ func NewExpertiseNudgeDismissHandler(deps ExpertiseHandlerDeps) ws.MessageHandle
 		if err != nil {
 			return nil, err
 		}
-		if deps.Repos == nil {
-			return nil, errors.New("expertise repo store is nil")
+		if deps.Settings == nil {
+			return nil, errors.New("expertise settings store is nil")
 		}
-		if err := deps.Repos.DismissExpertiseNudge(ctx, req.RepoID); err != nil {
+		if err := deps.Settings.DismissExpertiseNudge(ctx, req.RepoID); err != nil {
 			return nil, err
 		}
 		return expertiseEnvelope(msg.ID, "EXPERTISE_NUDGE_DISMISSED", map[string]interface{}{"repo_id": req.RepoID}), nil
@@ -290,16 +289,6 @@ func (s *expertiseRepoSQLStore) ExpertiseRepo(ctx context.Context, repoID string
 	return repo, true, nil
 }
 
-func (s *expertiseRepoSQLStore) DismissExpertiseNudge(ctx context.Context, repoID string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO expertise_repo_state (repo_id, enabled, status, nudge_dismissed_at)
-		VALUES (?, 0, 'idle', ?)
-		ON CONFLICT(repo_id) DO UPDATE SET nudge_dismissed_at = excluded.nudge_dismissed_at`, repoID, time.Now().UTC())
-	if err != nil {
-		return fmt.Errorf("dismiss expertise nudge %s: %w", repoID, err)
-	}
-	return nil
-}
-
 func (s *expertiseDataSQLStore) ExpertisePRRepo(ctx context.Context, prID string) (string, bool, error) {
 	var repoID string
 	err := s.db.QueryRowContext(ctx, `SELECT repo_id FROM prs WHERE id = ?`, prID).Scan(&repoID)
@@ -373,15 +362,23 @@ func (s *expertiseSettingsSQLStore) ExpertiseSettings(ctx context.Context) (expe
 	return settings, nil
 }
 
+func (s *expertiseSettingsSQLStore) DismissExpertiseNudge(ctx context.Context, repoID string) error {
+	return s.store.DismissNudge(ctx, repoID)
+}
+
 func (s *expertiseSettingsSQLStore) SetExpertiseSettings(ctx context.Context, settings expertiseSettings) error {
-	if err := s.store.SetSetting(ctx, expertiseSettingsAliasEmailsKey, settings.AliasEmails); err != nil {
-		return err
+	values := map[string]any{
+		expertiseSettingsAliasEmailsKey:       settings.AliasEmails,
+		expertiseSettingsMinSurvivingLinesKey: settings.MinSurvivingLines,
 	}
-	if err := s.store.SetSetting(ctx, expertiseSettingsMinSurvivingLinesKey, settings.MinSurvivingLines); err != nil {
+	for repoID, excludes := range settings.ExcludesByRepo {
+		values[expertiseSettingsExcludesPrefix+repoID] = excludes
+	}
+	if err := s.store.SetSettings(ctx, values); err != nil {
 		return err
 	}
 	for repoID, excludes := range settings.ExcludesByRepo {
-		if err := s.store.SetSetting(ctx, expertiseSettingsExcludesPrefix+repoID, excludes); err != nil {
+		if err := s.store.DeleteExcludedRows(ctx, repoID, expertise.New(excludes)); err != nil {
 			return err
 		}
 	}

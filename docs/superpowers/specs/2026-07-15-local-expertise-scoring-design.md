@@ -95,7 +95,7 @@ PR list / detail ◄── touches_you flag ◄───┘
 | `nudge.go` | Zero new counters: `COUNT(DISTINCT pr_id)` from `last_reviewed_sha` joined to `prs` for the repo. Checked on review submission; fires `EXPERTISE_NUDGE` when count ≥ 10 ∧ repo local ∧ not enabled ∧ nudge not dismissed. |
 | `store.go` | SQLite access for the three tables below (owned here, not in `internal/store`, to keep the feature contained; uses the shared `*sql.DB`). |
 
-### Data model (migration 030)
+### Data model (migration 00031)
 
 ```sql
 CREATE TABLE file_expertise (

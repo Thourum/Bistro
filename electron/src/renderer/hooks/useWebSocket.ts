@@ -592,13 +592,23 @@ function onMessage(event: MessageEvent<string>): void {
     case 'EXPERTISE_READY':
       handleExpertiseReady(message.data as ExpertiseReadyData);
       break;
-    case 'EXPERTISE_ERROR':
-      handleExpertiseError(message.data as ExpertiseErrorData);
+    case 'EXPERTISE_ERROR': {
+      const payload = message.data as ExpertiseErrorData;
+      handleExpertiseError(payload);
+      const handler = messageHandlers.get(message.id);
+      if (handler) {
+        handler({ error: payload.message || payload.code });
+        messageHandlers.delete(message.id);
+      }
       break;
+    }
     case 'EXPERTISE_NUDGE':
       handleExpertiseNudge(message.data as ExpertiseNudgePayload);
       break;
-    case 'EXPERTISE_DATA': {
+    case 'EXPERTISE_DATA':
+    case 'EXPERTISE_ENABLE_ACCEPTED':
+    case 'EXPERTISE_DISABLE_ACCEPTED':
+    case 'EXPERTISE_NUDGE_DISMISSED': {
       const payload = message.data;
       const handler = messageHandlers.get(message.id);
       if (handler) {

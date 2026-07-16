@@ -2,11 +2,13 @@ package expertise
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"sync"
+	"time"
 )
 
 const maxExpertsPerFile = 3
@@ -24,6 +26,7 @@ type Engine struct {
 type runningIndex struct {
 	generation uint64
 	cancel     context.CancelFunc
+	done       chan struct{}
 }
 
 func NewEngine(log *slog.Logger, store *Store, git expertiseGit, indexer *Indexer, updater *Updater) *Engine {
@@ -54,7 +57,7 @@ func (engine *Engine) Enable(ctx context.Context, repoID, repoPath string) error
 
 func (engine *Engine) Disable(ctx context.Context, repoID string) error {
 	engine.cancel(repoID)
-	if err := engine.store.SetRepoState(ctx, ExpertiseRepoState{RepoID: repoID, Enabled: false, Status: ExpertiseStatusIdle}); err != nil {
+	if err := engine.store.SetRepoState(ctx, ExpertiseRepoState{RepoID: repoID, Enabled: false, Status: ExpertiseStatusIdle, NudgeDismissedAt: sql.NullTime{Time: time.Now().UTC(), Valid: true}}); err != nil {
 		return fmt.Errorf("disable expertise repo %s: %w", repoID, err)
 	}
 	return nil
@@ -96,11 +99,14 @@ func (engine *Engine) ShouldNudge(ctx context.Context, repoID string, account Ac
 }
 
 func (engine *Engine) GitAvailable() bool {
-	return engine == nil || engine.git == nil || engine.git.Available()
+	return engine != nil && engine.git != nil && engine.git.Available()
 }
 
 func (engine *Engine) GitUnavailableReason() string {
-	if engine == nil || engine.git == nil || engine.git.Available() {
+	if engine == nil || engine.git == nil {
+		return "system git is unavailable"
+	}
+	if engine.git.Available() {
 		return ""
 	}
 	return engine.git.UnavailableReason()
@@ -169,10 +175,15 @@ func (engine *Engine) Shutdown() {
 		return
 	}
 	engine.mu.Lock()
-	defer engine.mu.Unlock()
+	runningIndexes := make([]runningIndex, 0, len(engine.running))
 	for repoID, running := range engine.running {
-		running.cancel()
+		runningIndexes = append(runningIndexes, running)
 		delete(engine.running, repoID)
+	}
+	engine.mu.Unlock()
+	for _, running := range runningIndexes {
+		running.cancel()
+		<-running.done
 	}
 }
 
@@ -188,7 +199,10 @@ func (engine *Engine) validateEnable(repoID, repoPath string) error {
 	if engine == nil || engine.store == nil || engine.indexer == nil {
 		return errors.New("expertise engine is nil")
 	}
-	if engine.git != nil && !engine.git.Available() {
+	if engine.git == nil {
+		return fmt.Errorf("%s: system git is unavailable", expertiseErrorCodeGitUnavailable)
+	}
+	if !engine.git.Available() {
 		return fmt.Errorf("%s: %s", expertiseErrorCodeGitUnavailable, engine.git.UnavailableReason())
 	}
 	if _, err := os.Stat(repoPath); err != nil {
@@ -198,22 +212,39 @@ func (engine *Engine) validateEnable(repoID, repoPath string) error {
 }
 
 func (engine *Engine) startIndex(repoID, repoPath string) {
+	engine.cancel(repoID)
+
 	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 
 	engine.mu.Lock()
-	if existing, ok := engine.running[repoID]; ok {
-		existing.cancel()
-	}
 	generation := engine.nextGenerationLocked(repoID)
-	engine.running[repoID] = runningIndex{generation: generation, cancel: cancel}
+	engine.running[repoID] = runningIndex{generation: generation, cancel: cancel, done: done}
 	engine.mu.Unlock()
 
 	go func() {
+		defer close(done)
 		defer engine.clearRunning(repoID, generation)
-		if err := engine.indexer.Index(ctx, repoID, repoPath); err != nil && !errors.Is(err, context.Canceled) {
+		if err := engine.indexer.Index(ctx, repoID, repoPath); err != nil {
+			if errors.Is(err, context.Canceled) {
+				engine.finishCanceledIndex(repoID)
+				return
+			}
 			engine.log.Warn("expertise indexing failed", "repo_id", repoID, "error", err)
 		}
 	}()
+}
+
+func (engine *Engine) finishCanceledIndex(repoID string) {
+	if err := engine.store.SetRepoState(context.Background(), ExpertiseRepoState{
+		RepoID:    repoID,
+		Enabled:   true,
+		Status:    ExpertiseStatusError,
+		ErrorCode: sql.NullString{String: expertiseErrorCodeIndexError, Valid: true},
+		Error:     sql.NullString{String: context.Canceled.Error(), Valid: true},
+	}); err != nil {
+		engine.log.Warn("failed to set expertise cancellation state", "repo_id", repoID, "error", err)
+	}
 }
 
 func (engine *Engine) nextGenerationLocked(repoID string) uint64 {
@@ -233,6 +264,7 @@ func (engine *Engine) cancel(repoID string) {
 	engine.mu.Unlock()
 	if ok {
 		running.cancel()
+		<-running.done
 	}
 }
 

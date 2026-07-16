@@ -8,15 +8,24 @@ import (
 
 var builtInExcludeGlobs = []string{
 	"vendor/**",
+	"**/vendor/**",
 	"dist/**",
+	"**/dist/**",
 	"node_modules/**",
+	"**/node_modules/**",
 	"**/*.pb.go",
+	"testdata/**",
 	"**/testdata/**",
+	"*.lock",
 	"**/*.lock",
 	"pnpm-lock.yaml",
+	"**/pnpm-lock.yaml",
 	"package-lock.json",
+	"**/package-lock.json",
 	"go.sum",
+	"**/go.sum",
 	"yarn.lock",
+	"**/yarn.lock",
 }
 
 type Excluder struct {

@@ -7,11 +7,16 @@ func TestExcluderBuiltInDefaults(t *testing.T) {
 
 	excludedPaths := []string{
 		"vendor/x.go",
+		"apps/api/vendor/x.go",
 		"dist/app.js",
+		"apps/web/dist/app.js",
 		"node_modules/a/b.js",
+		"packages/ui/node_modules/a/b.js",
 		"a/b.pb.go",
 		"pnpm-lock.yaml",
+		"apps/web/pnpm-lock.yaml",
 		"go.sum",
+		"services/api/go.sum",
 		"internal/testdata/f.json",
 	}
 	for _, path := range excludedPaths {

@@ -19,6 +19,9 @@ ON CONFLICT(repo_id, file_path, author_email) DO UPDATE SET
 -- name: DeleteFileExpertiseForFile :exec
 DELETE FROM file_expertise WHERE repo_id = ? AND file_path = ?;
 
+-- name: DeleteFileExpertiseForRepo :exec
+DELETE FROM file_expertise WHERE repo_id = ?;
+
 -- name: GetFileExpertise :many
 SELECT * FROM file_expertise
 WHERE repo_id = ? AND file_path = ?

@@ -1278,11 +1278,16 @@ function ExpertiseSection() {
   const watchedRepos = repos.filter((repo) => repo.watched);
 
   const save = (): void => {
-    const minLines = Number.parseInt(minLinesInput, 10);
-    if (!Number.isFinite(minLines) || minLines <= 0) {
+    const trimmedMinLinesInput = minLinesInput.trim();
+    const minLines = Number(trimmedMinLinesInput);
+    if (
+      trimmedMinLinesInput === '' ||
+      !Number.isSafeInteger(minLines) ||
+      minLines <= 0
+    ) {
       addToast({
         type: 'error',
-        message: 'Minimum surviving lines must be greater than zero.',
+        message: 'Minimum surviving lines must be a positive whole number.',
         dismissible: true,
       });
       return;

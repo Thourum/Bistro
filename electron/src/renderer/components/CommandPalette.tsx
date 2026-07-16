@@ -2,10 +2,12 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
+import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
@@ -100,6 +102,10 @@ export function CommandPalette(): React.ReactElement | null {
 
   // Use the shared visible-PR source so palette results match the list route.
   const { prs } = useVisiblePRs();
+  const selectedPRIndex = useStore(
+    appStore,
+    (state: UIState) => state.selectedPRIndex,
+  );
   const recentPRs = useMemo(() => prs.slice(0, 5), [prs]);
 
   const filteredPRs = useMemo(() => {
@@ -157,8 +163,8 @@ export function CommandPalette(): React.ReactElement | null {
   };
 
   const focusedPR = useMemo(
-    () => focusedExpertisePR(prs, params.prId, appStore.state.selectedPRIndex),
-    [params.prId, prs],
+    () => focusedExpertisePR(prs, params.prId, selectedPRIndex),
+    [params.prId, prs, selectedPRIndex],
   );
 
   const sendExpertiseCommand = (

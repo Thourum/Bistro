@@ -163,7 +163,7 @@ export default function StatusSidebar({
         </h3>
         <div className="space-y-1 font-mono text-[11px] text-outline">
           {touchesYouCount !== undefined && (
-            <p>Touches Your Code {touchesYouCount}</p>
+            <p>Open PRs Touching Your Code {touchesYouCount}</p>
           )}
           <p>
             {pr.touches_you ? 'Touches your code' : 'No local expertise match'}
