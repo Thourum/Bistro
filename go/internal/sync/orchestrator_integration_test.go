@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -222,5 +223,56 @@ func TestOrchestratorCleanupOldQueuedActions(t *testing.T) {
 	}
 	if pendingCount != 1 {
 		t.Errorf("expected recent pending action to remain, got count %d", pendingCount)
+	}
+}
+
+// TestSyncListOnlyOverHydrationThreshold verifies that a repo listing more
+// than hydrationThreshold PRs skips the detail fetch and writes rows with
+// hydrated=0, so one busy repo cannot burn the rate-limit budget.
+func TestSyncListOnlyOverHydrationThreshold(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now().UTC()
+
+	prs := make([]*provider.PR, hydrationThreshold+1)
+	for i := range prs {
+		prs[i] = &provider.PR{
+			ID: "github:org/repo:" + strconv.Itoa(i+1), Provider: "github",
+			Owner: "org", Repo: "repo", Number: i + 1, Title: "t", Author: "a",
+			State: "open", BaseBranch: "main", HeadBranch: "f",
+			BaseSHA: "b", HeadSHA: "h", CreatedAt: now, UpdatedAt: now,
+		}
+	}
+	mockProv := mock.NewMockProvider().WithPRs(prs).WithComments([]*provider.Comment{
+		{ID: "c1", PRID: prs[0].ID, Author: "bob", Body: "should not be fetched", CreatedAt: now, UpdatedAt: now},
+	})
+
+	orch := NewOrchestrator(nil, mockProv, db, nil)
+	result, err := orch.Sync(context.Background(), &SyncRequest{
+		Provider: "github", Owner: "org", Repo: "repo",
+		IncludePRs: true, IncludeComments: true, IncludeDiff: true, State: "open",
+	})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if result.PRCount != hydrationThreshold+1 {
+		t.Fatalf("PRCount = %d, want %d", result.PRCount, hydrationThreshold+1)
+	}
+	if result.CommentCount != 0 {
+		t.Fatalf("CommentCount = %d, want 0 (details skipped)", result.CommentCount)
+	}
+
+	var total, unhydrated int
+	if err := db.QueryRow(`SELECT COUNT(*), SUM(hydrated = 0) FROM prs`).Scan(&total, &unhydrated); err != nil {
+		t.Fatalf("count prs: %v", err)
+	}
+	if total != hydrationThreshold+1 || unhydrated != hydrationThreshold+1 {
+		t.Fatalf("prs total=%d unhydrated=%d, want both %d", total, unhydrated, hydrationThreshold+1)
+	}
+	var comments int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM comments`).Scan(&comments); err != nil {
+		t.Fatalf("count comments: %v", err)
+	}
+	if comments != 0 {
+		t.Fatalf("comments = %d, want 0", comments)
 	}
 }

@@ -1148,8 +1148,23 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 		log.Debug("phase list-prs skipped (include_prs=false)")
 	}
 
+	// Very active repos: skip the per-PR detail fetch entirely and write
+	// list-only rows. Details are hydrated on demand when the user selects a
+	// PR (SyncPR), so one busy repo can't burn the whole rate-limit budget.
+	listOnly := len(fetchedPRs) > hydrationThreshold
+	if listOnly {
+		log.Info("phase fetch-details skipped (list-only)",
+			"pr_count", len(fetchedPRs),
+			"threshold", hydrationThreshold,
+		)
+		for _, r := range fetchedPRs {
+			r.ListOnly = true
+		}
+		result.UpdatedPRs = len(fetchedPRs)
+	}
+
 	// Phase 2: Fetch details concurrently (comments, CI, diffs)
-	if len(fetchedPRs) > 0 {
+	if !listOnly && len(fetchedPRs) > 0 {
 		log.Debug("phase fetch-details start",
 			"pr_count", len(fetchedPRs),
 			"include_comments", req.IncludeComments,
