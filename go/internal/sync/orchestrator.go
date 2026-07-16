@@ -1252,6 +1252,41 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 	return result, nil
 }
 
+// SyncPR fetches full details (comments, CI, diff) for a single PR and writes
+// them, marking the row hydrated. Used for on-demand hydration when the user
+// selects a list-only PR from a very active repo.
+func (o *Orchestrator) SyncPR(ctx context.Context, prID string) error {
+	if o.provider == nil {
+		return fmt.Errorf("provider not configured")
+	}
+	if o.store == nil {
+		return fmt.Errorf("store not configured")
+	}
+
+	log := logging.FromContext(ctx).With("pr_id", prID)
+	ctx = logging.WithLogger(ctx, log)
+
+	pr, err := o.provider.GetPR(ctx, prID)
+	if err != nil {
+		return fmt.Errorf("get PR %s: %w", prID, err)
+	}
+
+	results, err := o.FetchPRDetails(ctx, []*provider.PR{pr}, true, true, true)
+	if err != nil {
+		return fmt.Errorf("fetch details for %s: %w", prID, err)
+	}
+	if len(results) == 1 && results[0] != nil && results[0].Error != nil {
+		return fmt.Errorf("hydrate %s: %w", prID, results[0].Error)
+	}
+
+	writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithPostCommit(o.postCommit)
+	if err := writer.WriteSyncResultsContext(ctx, results); err != nil {
+		return fmt.Errorf("write hydrated PR %s: %w", prID, err)
+	}
+	log.Info("pr hydrated on demand")
+	return nil
+}
+
 // DiscoverAndSyncInbox runs the local-first inbox discovery lane: GitHub search
 // finds lightweight `involves:USERNAME` PR pointers, then provider repo PR
 // endpoints hydrate canonical PR rows before SQLite is updated. The local-only

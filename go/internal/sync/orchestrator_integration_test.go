@@ -276,3 +276,44 @@ func TestSyncListOnlyOverHydrationThreshold(t *testing.T) {
 		t.Fatalf("comments = %d, want 0", comments)
 	}
 }
+
+// TestSyncPRHydratesListOnlyRow verifies that on-demand SyncPR fetches details
+// for a single PR and flips its row to hydrated=1.
+func TestSyncPRHydratesListOnlyRow(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now().UTC()
+
+	pr := &provider.PR{
+		ID: "github:org/repo:1", Provider: "github", Owner: "org", Repo: "repo",
+		Number: 1, Title: "t", Author: "a", State: "open",
+		BaseBranch: "main", HeadBranch: "f", BaseSHA: "b", HeadSHA: "h",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	mockProv := mock.NewMockProvider().WithPRs([]*provider.PR{pr}).WithComments([]*provider.Comment{
+		{ID: "c1", PRID: pr.ID, Author: "bob", Body: "hydrated", CreatedAt: now, UpdatedAt: now},
+	})
+	orch := NewOrchestrator(nil, mockProv, db, nil)
+
+	// Seed a list-only row.
+	if err := NewWriter(nil, db).WriteSyncResults([]*PRFetchResult{{PR: pr, ListOnly: true}}); err != nil {
+		t.Fatalf("seed list-only row: %v", err)
+	}
+
+	if err := orch.SyncPR(context.Background(), pr.ID); err != nil {
+		t.Fatalf("SyncPR: %v", err)
+	}
+
+	var hydrated, comments int
+	if err := db.QueryRow(`SELECT hydrated FROM prs WHERE id = ?`, pr.ID).Scan(&hydrated); err != nil {
+		t.Fatalf("select hydrated: %v", err)
+	}
+	if hydrated != 1 {
+		t.Fatalf("hydrated = %d, want 1", hydrated)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM comments WHERE pr_id = ?`, pr.ID).Scan(&comments); err != nil {
+		t.Fatalf("count comments: %v", err)
+	}
+	if comments != 1 {
+		t.Fatalf("comments = %d, want 1", comments)
+	}
+}

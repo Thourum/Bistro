@@ -26,6 +26,7 @@ export interface PR {
   changes_requested_by: string | null;
   requested_reviewers: string[]; // logins whose review is currently requested
   touches_you: boolean;
+  hydrated: number; // 0 or 1 from SQLite; 0 = list-only row, details fetched on demand
 }
 
 export interface ExpertiseExpert {

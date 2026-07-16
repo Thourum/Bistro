@@ -242,3 +242,64 @@ func TestSetSyncSettingsHandler_ChannelFull_Coalesces(t *testing.T) {
 		t.Error("expected the latest SyncSettingsMsg on the channel")
 	}
 }
+
+type fakePRSyncer struct {
+	syncedPRID string
+	err        error
+}
+
+func (f *fakePRSyncer) SyncPR(_ context.Context, prID string) error {
+	f.syncedPRID = prID
+	return f.err
+}
+
+func TestRequestPRSyncHandler_HydratesPR(t *testing.T) {
+	syncer := &fakePRSyncer{}
+	h := NewRequestPRSyncHandler(func() PRSyncer { return syncer }, testRepoLogger())
+
+	resp, err := h(context.Background(), ws.InboundMessage{
+		ID:   "req-1",
+		Type: "REQUEST_PR_SYNC",
+		Data: json.RawMessage(`{"pr_id":"github:org/repo:7"}`),
+	})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if syncer.syncedPRID != "github:org/repo:7" {
+		t.Errorf("synced pr_id = %q, want github:org/repo:7", syncer.syncedPRID)
+	}
+
+	msgType, data := forceSyncResponse(t, resp)
+	if msgType != "PR_SYNCED" {
+		t.Errorf("type = %q, want PR_SYNCED", msgType)
+	}
+	if data["pr_id"] != "github:org/repo:7" {
+		t.Errorf("pr_id = %v, want github:org/repo:7", data["pr_id"])
+	}
+}
+
+func TestRequestPRSyncHandler_RequiresPRID(t *testing.T) {
+	h := NewRequestPRSyncHandler(func() PRSyncer { return &fakePRSyncer{} }, testRepoLogger())
+
+	_, err := h(context.Background(), ws.InboundMessage{
+		ID:   "req-1",
+		Type: "REQUEST_PR_SYNC",
+		Data: json.RawMessage(`{}`),
+	})
+	if err == nil {
+		t.Fatal("expected error for missing pr_id")
+	}
+}
+
+func TestRequestPRSyncHandler_RejectsWhenNoProvider(t *testing.T) {
+	h := NewRequestPRSyncHandler(func() PRSyncer { return nil }, testRepoLogger())
+
+	_, err := h(context.Background(), ws.InboundMessage{
+		ID:   "req-1",
+		Type: "REQUEST_PR_SYNC",
+		Data: json.RawMessage(`{"pr_id":"github:org/repo:7"}`),
+	})
+	if err == nil {
+		t.Fatal("expected error when no provider is authenticated")
+	}
+}

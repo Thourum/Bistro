@@ -22,6 +22,7 @@ import { addToast } from '../components/ToastContainer';
 import { useActionDispatch } from '../hooks/useActionDispatch';
 import { useExpertise } from '../hooks/useExpertise';
 import { useMarkFileViewed } from '../hooks/useMarkFileViewed';
+import { usePRHydration } from '../hooks/usePRHydration';
 import { type RangeDiffRequest, useRangeDiff } from '../hooks/useRangeDiff';
 import { useReviewThreads } from '../hooks/useReviewThreads';
 import { useStore } from '../hooks/useStore';
@@ -79,6 +80,7 @@ export function DiffPage() {
   // Fetch ALL PRs so deep-linked PRs (any status) are always resolvable.
   const { data: allPRs = [], isLoading: prLoading } = useWebSocketPRList('all');
   const pr = allPRs.find((p) => p.id === prId);
+  usePRHydration(pr);
 
   const { request } = useWebSocket();
   const { dispatchReplyComment } = useActionDispatch(pr?.id);

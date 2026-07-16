@@ -123,3 +123,52 @@ func NewSetSyncSettingsHandler(settings chan SyncSettingsMsg, log *slog.Logger) 
 		}, nil
 	}
 }
+
+// PRSyncer hydrates a single PR's details on demand.
+// Satisfied by *sync.Orchestrator.
+type PRSyncer interface {
+	SyncPR(ctx context.Context, prID string) error
+}
+
+// PRSyncerGetter returns the current PRSyncer (nil when no provider is
+// authenticated) so the handler always routes to the live orchestrator.
+type PRSyncerGetter func() PRSyncer
+
+// NewRequestPRSyncHandler returns the handler for REQUEST_PR_SYNC — the
+// on-demand hydration path for list-only PR rows (hydrated=0). It fetches
+// comments, CI, and diff for one PR and responds PR_SYNCED when the row is
+// fully written, so the UI can re-request comments/diff immediately.
+func NewRequestPRSyncHandler(getSyncer PRSyncerGetter, log *slog.Logger) ws.MessageHandler {
+	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
+		logger := logging.FromContext(ctx)
+		if log != nil {
+			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+		}
+
+		var req struct {
+			PRID string `json:"pr_id"`
+		}
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			return nil, fmt.Errorf("invalid REQUEST_PR_SYNC payload: %w", err)
+		}
+		if req.PRID == "" {
+			return nil, fmt.Errorf("REQUEST_PR_SYNC: pr_id is required")
+		}
+
+		syncer := getSyncer()
+		if syncer == nil {
+			return nil, fmt.Errorf("REQUEST_PR_SYNC unavailable: no authenticated provider")
+		}
+
+		logger.Info("on-demand pr sync requested", "pr_id", req.PRID)
+		if err := syncer.SyncPR(ctx, req.PRID); err != nil {
+			return nil, fmt.Errorf("REQUEST_PR_SYNC %s: %w", req.PRID, err)
+		}
+
+		return map[string]interface{}{
+			"id":   msg.ID,
+			"type": "PR_SYNCED",
+			"data": map[string]interface{}{"pr_id": req.PRID},
+		}, nil
+	}
+}
