@@ -20,7 +20,7 @@ func TestConfigureRepoLocationStoreWiresGitClientLocalResolver(t *testing.T) {
 	db := newServerRepoLocationMigratedDB(t)
 	locations := store.NewRepoLocationStore(db.DB)
 	missingPath := filepath.Join(t.TempDir(), "missing")
-	if err := locations.UpsertLocal(ctx, "github", "acme", "api", missingPath); err != nil {
+	if err := locations.UpsertLocal(ctx, "github", "acme", "api", missingPath, false); err != nil {
 		t.Fatalf("upsert local repo: %v", err)
 	}
 
