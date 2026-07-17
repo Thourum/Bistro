@@ -408,15 +408,38 @@ func (w *Writer) writePRRow(ctx context.Context, tx *sql.Tx, pr *provider.PR, hy
 			head_branch            = excluded.head_branch,
 			base_sha               = excluded.base_sha,
 			head_sha               = excluded.head_sha,
-			comment_count          = excluded.comment_count,
-			ci_status              = excluded.ci_status,
-			draft                  = excluded.draft,
-			review_status          = excluded.review_status,
-			approved_by            = excluded.approved_by,
-			changes_requested_by   = excluded.changes_requested_by,
-			requested_reviewers    = excluded.requested_reviewers,
-			repo_id                = excluded.repo_id,
-			hydrated               = MAX(prs.hydrated, excluded.hydrated)
+			comment_count = CASE
+				WHEN excluded.hydrated = 0 AND (prs.base_sha <> excluded.base_sha OR prs.head_sha <> excluded.head_sha) THEN 0
+				WHEN excluded.hydrated = 0 THEN prs.comment_count
+				ELSE excluded.comment_count
+			END,
+			ci_status = CASE
+				WHEN excluded.hydrated = 0 AND (prs.base_sha <> excluded.base_sha OR prs.head_sha <> excluded.head_sha) THEN NULL
+				WHEN excluded.hydrated = 0 THEN prs.ci_status
+				ELSE excluded.ci_status
+			END,
+			draft = excluded.draft,
+			review_status = CASE
+				WHEN excluded.hydrated = 0 AND (prs.base_sha <> excluded.base_sha OR prs.head_sha <> excluded.head_sha) THEN NULL
+				WHEN excluded.hydrated = 0 THEN prs.review_status
+				ELSE excluded.review_status
+			END,
+			approved_by = CASE
+				WHEN excluded.hydrated = 0 AND (prs.base_sha <> excluded.base_sha OR prs.head_sha <> excluded.head_sha) THEN NULL
+				WHEN excluded.hydrated = 0 THEN prs.approved_by
+				ELSE excluded.approved_by
+			END,
+			changes_requested_by = CASE
+				WHEN excluded.hydrated = 0 AND (prs.base_sha <> excluded.base_sha OR prs.head_sha <> excluded.head_sha) THEN NULL
+				WHEN excluded.hydrated = 0 THEN prs.changes_requested_by
+				ELSE excluded.changes_requested_by
+			END,
+			requested_reviewers = excluded.requested_reviewers,
+			repo_id             = excluded.repo_id,
+			hydrated = CASE
+				WHEN excluded.hydrated = 0 AND (prs.base_sha <> excluded.base_sha OR prs.head_sha <> excluded.head_sha) THEN 0
+				ELSE MAX(prs.hydrated, excluded.hydrated)
+			END
 	`
 
 	repoID := pr.Provider + ":" + pr.Owner + "/" + pr.Repo
