@@ -16,6 +16,7 @@ import { useActionDispatch } from '../hooks/useActionDispatch';
 import { useDismissals } from '../hooks/useDismissals';
 import { useExpertise } from '../hooks/useExpertise';
 import { usePatchsets } from '../hooks/usePatchsets';
+import { usePRHydration } from '../hooks/usePRHydration';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
@@ -97,6 +98,7 @@ export function PRDetailPage() {
   const selectedPrId = pr?.id;
 
   const { request } = useWebSocket();
+  usePRHydration(pr);
   const { patchsets } = usePatchsets(pr?.id);
   const { expertise } = useExpertise(pr?.id);
   const expertiseStatus = useStore(appStore, (s: UIState) =>

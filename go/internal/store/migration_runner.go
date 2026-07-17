@@ -21,7 +21,7 @@ const migrationsDir = "migrations"
 // mark versions past it as applied: a DB that lost its goose metadata may
 // predate newer migrations, and marking them applied would silently skip
 // them. Bump this only together with new checks in currentSchemaExists.
-const reconcileBaselineVersion int64 = 31
+const reconcileBaselineVersion int64 = 32
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
@@ -208,6 +208,7 @@ func currentSchemaExists(ctx context.Context, db *sql.DB) (bool, error) {
 		{table: "repos", column: "local_path"},
 		{table: "comments", column: "author_type"},
 		{table: "comments", column: "dedup_group_id"},
+		{table: "prs", column: "hydrated"},
 	}
 
 	for _, check := range checks {

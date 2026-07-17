@@ -1509,3 +1509,49 @@ func TestWriteAnchorUpdates_BothZero_WritesNull(t *testing.T) {
 }
 
 func mustTime() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }
+
+func TestWritePRRowHydratedSemantics(t *testing.T) {
+	db := openTestDB(t)
+	writer := NewWriter(nil, db)
+
+	now := time.Now().UTC()
+	pr := &provider.PR{
+		ID: "github:org/repo:9", Provider: "github", Owner: "org", Repo: "repo",
+		Number: 9, Title: "t", Author: "a", State: "open",
+		BaseBranch: "main", HeadBranch: "f", BaseSHA: "b", HeadSHA: "h",
+		CreatedAt: now, UpdatedAt: now,
+	}
+
+	hydratedOf := func() int {
+		t.Helper()
+		var hydrated int
+		if err := db.QueryRow(`SELECT hydrated FROM prs WHERE id = ?`, pr.ID).Scan(&hydrated); err != nil {
+			t.Fatalf("select hydrated: %v", err)
+		}
+		return hydrated
+	}
+
+	// List-only write creates an unhydrated row.
+	if err := writer.WriteSyncResults([]*PRFetchResult{{PR: pr, ListOnly: true}}); err != nil {
+		t.Fatalf("list-only write: %v", err)
+	}
+	if got := hydratedOf(); got != 0 {
+		t.Fatalf("hydrated after list-only insert = %d, want 0", got)
+	}
+
+	// Full write hydrates it.
+	if err := writer.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
+		t.Fatalf("full write: %v", err)
+	}
+	if got := hydratedOf(); got != 1 {
+		t.Fatalf("hydrated after full write = %d, want 1", got)
+	}
+
+	// A later list-only write must never downgrade a hydrated row.
+	if err := writer.WriteSyncResults([]*PRFetchResult{{PR: pr, ListOnly: true}}); err != nil {
+		t.Fatalf("second list-only write: %v", err)
+	}
+	if got := hydratedOf(); got != 1 {
+		t.Fatalf("hydrated after list-only re-sync = %d, want 1 (no downgrade)", got)
+	}
+}

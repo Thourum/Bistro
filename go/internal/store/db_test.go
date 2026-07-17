@@ -169,8 +169,8 @@ func TestMigrationsRerunAfterGooseVersionMetadataLoss(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT version_id) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
-	if appliedCount != 30 {
-		t.Errorf("applied goose version count = %d, want 30", appliedCount)
+	if appliedCount != 31 {
+		t.Errorf("applied goose version count = %d, want 31", appliedCount)
 	}
 }
 
@@ -310,15 +310,17 @@ func TestMigrationRunnerSeedsGooseFromLegacySchemaMigrations(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
-	if appliedCount != 30 {
-		t.Errorf("applied goose version count = %d, want 30", appliedCount)
+	if appliedCount != 31 {
+		t.Errorf("applied goose version count = %d, want 31", appliedCount)
 	}
 
 	var prsSQL string
 	if err := db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type='table' AND name='prs'`).Scan(&prsSQL); err != nil {
 		t.Fatalf("query prs schema: %v", err)
 	}
-	if prsSQL != "CREATE TABLE prs (id TEXT PRIMARY KEY)" {
+	// Migrations past the legacy seed (00032 adds hydrated) still apply, but
+	// the table must not have been dropped and re-created.
+	if prsSQL != "CREATE TABLE prs (id TEXT PRIMARY KEY, hydrated INTEGER NOT NULL DEFAULT 1)" {
 		t.Errorf("prs table was re-migrated; schema = %q", prsSQL)
 	}
 }

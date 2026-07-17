@@ -205,7 +205,7 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 		snap := w.readPRSnapshot(ctx, tx, prID)
 
 		// ── Critical write 1: PR row ───────────────────────────────────────
-		if err := w.writePRRow(ctx, tx, result.PR); err != nil {
+		if err := w.writePRRow(ctx, tx, result.PR, !result.ListOnly); err != nil {
 			if rollbackSP("failed to write PR row (savepoint rolled back)", err) {
 				continue
 			}
@@ -379,7 +379,10 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 // writePRRow inserts or updates the PR row in the database using an upsert.
 // It does NOT record patchsets — the caller (WriteSyncResultsContext) handles
 // that separately inside the savepoint boundary.
-func (w *Writer) writePRRow(ctx context.Context, tx *sql.Tx, pr *provider.PR) error {
+// writePRRow upserts the PR row. hydrated=false marks a list-only write (no
+// detail fetch); an existing hydrated row is never downgraded — its cached
+// comments/CI/diff stay valid until the next detail fetch refreshes them.
+func (w *Writer) writePRRow(ctx context.Context, tx *sql.Tx, pr *provider.PR, hydrated bool) error {
 	if pr.ID == "" {
 		return fmt.Errorf("PR ID cannot be empty")
 	}
@@ -392,8 +395,9 @@ func (w *Writer) writePRRow(ctx context.Context, tx *sql.Tx, pr *provider.PR) er
 			comment_count, ci_status, draft,
 			review_status, approved_by, changes_requested_by,
 			requested_reviewers,
-			repo_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			repo_id,
+			hydrated
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title                  = excluded.title,
 			body                   = excluded.body,
@@ -411,10 +415,16 @@ func (w *Writer) writePRRow(ctx context.Context, tx *sql.Tx, pr *provider.PR) er
 			approved_by            = excluded.approved_by,
 			changes_requested_by   = excluded.changes_requested_by,
 			requested_reviewers    = excluded.requested_reviewers,
-			repo_id                = excluded.repo_id
+			repo_id                = excluded.repo_id,
+			hydrated               = MAX(prs.hydrated, excluded.hydrated)
 	`
 
 	repoID := pr.Provider + ":" + pr.Owner + "/" + pr.Repo
+
+	hydratedValue := 0
+	if hydrated {
+		hydratedValue = 1
+	}
 
 	draft := 0
 	if pr.Draft {
@@ -455,6 +465,7 @@ func (w *Writer) writePRRow(ctx context.Context, tx *sql.Tx, pr *provider.PR) er
 		pr.ChangesRequestedBy,
 		string(requestedReviewers),
 		repoID,
+		hydratedValue,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write PR %s: %w", pr.ID, err)

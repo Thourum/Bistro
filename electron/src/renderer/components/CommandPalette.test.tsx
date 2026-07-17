@@ -75,6 +75,7 @@ function makePR(overrides: Partial<PR>): PR {
     changes_requested_by: null,
     requested_reviewers: [],
     touches_you: false,
+    hydrated: 1,
   };
 }
 

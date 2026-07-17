@@ -48,6 +48,7 @@ const pr: PR = {
   changes_requested_by: null,
   requested_reviewers: [],
   touches_you: false,
+  hydrated: 1,
 };
 
 const degradedRepo: RepoInfo = {

@@ -333,6 +333,18 @@ func (a *App) currentApplier() handler.ActionApplier {
 	return a.orchestrator
 }
 
+// currentPRSyncer returns the live orchestrator as a PRSyncer under a read
+// lock, or nil when no provider is authenticated. Satisfies
+// handler.PRSyncerGetter (same lifecycle rules as currentApplier).
+func (a *App) currentPRSyncer() handler.PRSyncer {
+	a.provMu.RLock()
+	defer a.provMu.RUnlock()
+	if a.prov == nil || a.orchestrator == nil {
+		return nil
+	}
+	return a.orchestrator
+}
+
 // SetGitHubClientID sets the GitHub OAuth app client ID.
 func (a *App) SetGitHubClientID(clientID string) {
 	a.githubClientID = clientID
@@ -619,6 +631,7 @@ func (a *App) Run(ctx context.Context) error {
 	a.wsServer.RegisterHandler("TOGGLE_WATCH_REPO",
 		handler.NewToggleWatchHandler(a.db.DB, a.syncTrigger, a.log))
 	a.wsServer.RegisterHandler("FORCE_SYNC", handler.NewForceSyncHandler(a.syncTrigger, a.log))
+	a.wsServer.RegisterHandler("REQUEST_PR_SYNC", handler.NewRequestPRSyncHandler(a.currentPRSyncer, a.log))
 	a.wsServer.RegisterHandler("SET_SYNC_SETTINGS", handler.NewSetSyncSettingsHandler(a.syncSettings, a.log))
 	// Phase 2.1+2.2 handlers.
 	a.wsServer.RegisterHandler("GET_PATCHSETS",

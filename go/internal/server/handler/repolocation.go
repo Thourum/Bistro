@@ -135,7 +135,7 @@ func NewScanDevFolderHandler(locations *store.RepoLocationStore, syncTrigger cha
 			return nil, fmt.Errorf("scan dev folder %q: %w", canonicalPath, err)
 		}
 		for _, found := range result.Found {
-			if err := locations.UpsertLocal(ctx, found.Identity.Provider, found.Identity.Owner, found.Identity.Repo, found.Path); err != nil {
+			if err := locations.UpsertLocal(ctx, found.Identity.Provider, found.Identity.Owner, found.Identity.Repo, found.Path, false); err != nil {
 				return nil, fmt.Errorf("upsert scanned repo %s: %w", found.Identity.ID(), err)
 			}
 		}
@@ -445,7 +445,7 @@ func NewRecoverRepoPathHandler(locations *store.RepoLocationStore, log *slog.Log
 		if !matches {
 			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, "remote_mismatch", "path remote does not match repo")), nil
 		}
-		if err := locations.UpsertLocal(ctx, location.Provider, location.Owner, location.Repo, canonical); err != nil {
+		if err := locations.UpsertLocal(ctx, location.Provider, location.Owner, location.Repo, canonical, false); err != nil {
 			return nil, err
 		}
 		return locationResponse(msg, struct {
@@ -710,7 +710,7 @@ func targetedDevFolder(ctx context.Context, locations *store.RepoLocationStore, 
 	if !repoPathMatches(candidate, identity) {
 		return false, nil
 	}
-	if err := locations.UpsertLocal(ctx, identity.Provider, identity.Owner, identity.Repo, candidate); err != nil {
+	if err := locations.UpsertLocal(ctx, identity.Provider, identity.Owner, identity.Repo, candidate, true); err != nil {
 		return false, fmt.Errorf("upsert targeted local repo %s: %w", identity.ID(), err)
 	}
 	return true, nil
@@ -845,7 +845,7 @@ func setRepoSource(ctx context.Context, db *sql.DB, locations *store.RepoLocatio
 		}
 		return locations.SetCache(ctx, identity.ID(), path)
 	}
-	return locations.UpsertLocal(ctx, identity.Provider, identity.Owner, identity.Repo, path)
+	return locations.UpsertLocal(ctx, identity.Provider, identity.Owner, identity.Repo, path, true)
 }
 
 // cloneRepo delegates to the injected clone dependency; auth comes from the
