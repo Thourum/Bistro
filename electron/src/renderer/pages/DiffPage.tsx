@@ -80,7 +80,8 @@ export function DiffPage() {
   // Fetch ALL PRs so deep-linked PRs (any status) are always resolvable.
   const { data: allPRs = [], isLoading: prLoading } = useWebSocketPRList('all');
   const pr = allPRs.find((p) => p.id === prId);
-  usePRHydration(pr);
+  const { isHydrating, error: hydrationError, retry } = usePRHydration(pr);
+  const isAwaitingHydration = pr?.hydrated === 0;
 
   const { request } = useWebSocket();
   const { dispatchReplyComment } = useActionDispatch(pr?.id);
@@ -124,7 +125,7 @@ export function DiffPage() {
 
   // ── Full diff (default surface) ────────────────────────────────────
   useEffect(() => {
-    if (pr === undefined) return;
+    if (pr === undefined || isAwaitingHydration) return;
     setLoading(true);
     setDiffError(null);
     request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` })
@@ -140,7 +141,7 @@ export function DiffPage() {
         setDiffError(msg);
         setLoading(false);
       });
-  }, [pr, request]);
+  }, [isAwaitingHydration, pr, request]);
 
   // Fetch comments for inline thread annotations (full diff surface only).
   useEffect(() => {
@@ -284,7 +285,13 @@ export function DiffPage() {
 
       {/* Body */}
       <div className="flex-1 min-h-0">
-        {showRangeDiff ? (
+        {isAwaitingHydration ? (
+          <HydrationState
+            error={hydrationError}
+            isHydrating={isHydrating}
+            onRetry={retry}
+          />
+        ) : showRangeDiff ? (
           rangeLoading ? (
             <LoadingState label="Loading range diff…" />
           ) : rangeError !== null ? (
@@ -355,6 +362,33 @@ export function DiffPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+function HydrationState({
+  error,
+  isHydrating,
+  onRetry,
+}: {
+  error: string | null;
+  isHydrating: boolean;
+  onRetry: () => void;
+}): React.ReactElement {
+  if (isHydrating || error === null) {
+    return <LoadingState label="Preparing pull request details…" />;
+  }
+
+  return (
+    <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-error text-sm">
+      <span>Failed to prepare pull request details: {error}</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="font-mono text-[10px] uppercase tracking-widest border border-error/60 px-3 py-1 text-error hover:bg-error/10"
+      >
+        Retry hydration
+      </button>
+    </div>
   );
 }
 

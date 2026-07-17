@@ -792,6 +792,7 @@ function onMessage(event: MessageEvent<string>): void {
       });
       break;
     }
+    case 'PR_SYNCED':
     case 'DIFF_READY':
     case 'PATCHSETS_READY':
     case 'RANGE_DIFF_READY':

@@ -98,9 +98,11 @@ export function PRDetailPage() {
   const selectedPrId = pr?.id;
 
   const { request } = useWebSocket();
-  usePRHydration(pr);
-  const { patchsets } = usePatchsets(pr?.id);
-  const { expertise } = useExpertise(pr?.id);
+  const { isHydrating, error: hydrationError, retry } = usePRHydration(pr);
+  const isAwaitingHydration = pr?.hydrated === 0;
+  const detailPrId = isAwaitingHydration ? undefined : pr?.id;
+  const { patchsets } = usePatchsets(detailPrId);
+  const { expertise } = useExpertise(detailPrId);
   const expertiseStatus = useStore(appStore, (s: UIState) =>
     pr !== undefined ? s.expertiseRepoStatuses?.[repoIdForPR(pr)] : undefined,
   );
@@ -143,7 +145,7 @@ export function PRDetailPage() {
   }>({ filesCount: 0, additions: 0, deletions: 0 });
 
   useEffect(() => {
-    if (pr === undefined) return;
+    if (pr === undefined || isAwaitingHydration) return;
     log.debug({ commentsRevision }, 'fetching comments');
     request('REQUEST_COMMENTS', { pr_id: pr.id })
       .then((data) => {
@@ -153,13 +155,13 @@ export function PRDetailPage() {
       .catch((err) => {
         log.warn({ err }, 'failed to fetch comments');
       });
-  }, [pr, request, commentsRevision]);
+  }, [pr, request, commentsRevision, isAwaitingHydration]);
 
   // d n / d b / u bulk-dismiss keystrokes act on the loaded comment list.
   useDismissals(pr?.id, comments);
 
   useEffect(() => {
-    if (pr === undefined) return;
+    if (pr === undefined || isAwaitingHydration) return;
 
     request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` })
       .then((data) => {
@@ -194,7 +196,7 @@ export function PRDetailPage() {
       .catch(() => {
         // Non-critical — the Go side may not implement this yet.
       });
-  }, [pr, request]);
+  }, [pr, request, isAwaitingHydration]);
 
   if (isLoading) {
     return (
@@ -222,6 +224,16 @@ export function PRDetailPage() {
           ← Back to PRs
         </Link>
       </div>
+    );
+  }
+
+  if (isAwaitingHydration) {
+    return (
+      <HydrationState
+        error={hydrationError}
+        isHydrating={isHydrating}
+        onRetry={retry}
+      />
     );
   }
 
@@ -325,6 +337,37 @@ export function PRDetailPage() {
         <UnresolvedThreadsView prId={pr.id} comments={comments} />
       )}
     </main>
+  );
+}
+
+function HydrationState({
+  error,
+  isHydrating,
+  onRetry,
+}: {
+  error: string | null;
+  isHydrating: boolean;
+  onRetry: () => void;
+}): React.ReactElement {
+  if (isHydrating || error === null) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-on-surface-variant font-mono uppercase tracking-widest text-xs">
+        Preparing pull request details…
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-3 text-error text-sm">
+      <span>Failed to prepare pull request details: {error}</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="font-mono text-[10px] uppercase tracking-widest border border-error/60 px-3 py-1 text-error hover:bg-error/10"
+      >
+        Retry hydration
+      </button>
+    </div>
   );
 }
 
