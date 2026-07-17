@@ -95,6 +95,7 @@ describe('useWebSocket dev-folder startup scan', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
     settingsStore.setState(() => DEFAULT_SETTINGS);
   });
 
@@ -225,6 +226,62 @@ describe('useWebSocket dev-folder startup scan', () => {
       skipped: 0,
       partial: false,
     });
+
+    unmount();
+  });
+
+  it('resolves REQUEST_PR_SYNC only when a matching PR_SYNCED response arrives', async () => {
+    const { result, unmount } = renderHook(() => useWebSocket());
+    const ws = openMountedWebSocket();
+
+    const request = result.current.request('REQUEST_PR_SYNC', {
+      pr_id: 'github:acme/widgets#42',
+    });
+
+    await vi.waitFor(() => {
+      expect(sentMessagesOfType(ws, 'REQUEST_PR_SYNC')).toHaveLength(1);
+    });
+
+    const syncRequest = sentMessagesOfType(ws, 'REQUEST_PR_SYNC')[0];
+    emitMessage(ws, {
+      id: 'another-request',
+      type: 'PR_SYNCED',
+      data: { pr_id: 'github:acme/widgets#43' },
+      timestamp: new Date().toISOString(),
+    });
+    emitMessage(ws, {
+      id: syncRequest?.id,
+      type: 'PR_SYNCED',
+      data: { pr_id: 'github:acme/widgets#42' },
+      timestamp: new Date().toISOString(),
+    });
+
+    await expect(request).resolves.toEqual({ pr_id: 'github:acme/widgets#42' });
+
+    unmount();
+  });
+
+  it('keeps REQUEST_PR_SYNC pending past the standard request timeout', async () => {
+    vi.useFakeTimers();
+    const { result, unmount } = renderHook(() => useWebSocket());
+    const ws = openMountedWebSocket();
+
+    const request = result.current.request('REQUEST_PR_SYNC', {
+      pr_id: 'github:acme/widgets#42',
+    });
+
+    await vi.runAllTicks();
+    const syncRequest = sentMessagesOfType(ws, 'REQUEST_PR_SYNC')[0];
+    await vi.advanceTimersByTimeAsync(5000);
+
+    emitMessage(ws, {
+      id: syncRequest?.id,
+      type: 'PR_SYNCED',
+      data: { pr_id: 'github:acme/widgets#42' },
+      timestamp: new Date().toISOString(),
+    });
+
+    await expect(request).resolves.toEqual({ pr_id: 'github:acme/widgets#42' });
 
     unmount();
   });

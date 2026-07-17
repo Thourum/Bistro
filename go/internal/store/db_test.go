@@ -36,6 +36,22 @@ func mustExec(t *testing.T, db interface {
 	}
 }
 
+func migrateEmbeddedSchemaToVersion(t *testing.T, ctx context.Context, db *sql.DB, version int64) {
+	t.Helper()
+
+	migrationFS, err := fs.Sub(migrationsFS, migrationsDir)
+	if err != nil {
+		t.Fatalf("open embedded migrations: %v", err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, db, migrationFS, goose.WithLogger(goose.NopLogger()))
+	if err != nil {
+		t.Fatalf("create goose provider: %v", err)
+	}
+	if _, err := provider.UpTo(ctx, version); err != nil {
+		t.Fatalf("run migrations through version %d: %v", version, err)
+	}
+}
+
 // mustInsertPR inserts a minimal PR row for FK satisfaction in tests.
 // Uses the prID as the number suffix to avoid UNIQUE(provider,owner,repo,number) collisions.
 func mustInsertPR(t *testing.T, db interface {
@@ -169,8 +185,97 @@ func TestMigrationsRerunAfterGooseVersionMetadataLoss(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT version_id) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
-	if appliedCount != 30 {
-		t.Errorf("applied goose version count = %d, want 30", appliedCount)
+	if appliedCount != 31 {
+		t.Errorf("applied goose version count = %d, want 31", appliedCount)
+	}
+}
+
+func TestMigrationRunnerReconcilesSchemaWithoutHydratedColumn(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	migrateEmbeddedSchemaToVersion(t, ctx, db.DB, 31)
+	mustExec(t, db, `DROP TABLE `+goose.DefaultTablename)
+
+	runner := NewMigrationRunner(nil, db.DB)
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	assertColumnExists(t, db.DB, "prs", "hydrated")
+	assertAllEmbeddedVersionsApplied(t, ctx, db.DB)
+
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+	assertAllEmbeddedVersionsApplied(t, ctx, db.DB)
+}
+
+func TestMigrationRunnerReconcilesSchemaWithHydratedColumn(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	migrateEmbeddedSchemaToVersion(t, ctx, db.DB, reconcileBaselineVersion)
+	mustExec(t, db, `DROP TABLE `+goose.DefaultTablename)
+
+	if err := NewMigrationRunner(nil, db.DB).Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	assertAllEmbeddedVersionsApplied(t, ctx, db.DB)
+}
+
+func TestMigrationRunnerDoesNotReconcilePre31Schema(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	migrateEmbeddedSchemaToVersion(t, ctx, db.DB, 30)
+	mustExec(t, db, `DROP TABLE `+goose.DefaultTablename)
+
+	runner := NewMigrationRunner(nil, db.DB)
+	if err := runner.reconcileGooseFromCurrentSchema(ctx, reconcileBaselineVersion); err != nil {
+		t.Fatalf("reconcileGooseFromCurrentSchema() error = %v", err)
+	}
+	assertNoEmbeddedVersionsApplied(t, ctx, db.DB)
+}
+
+func assertAllEmbeddedVersionsApplied(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+
+	versions := schemaMigrationVersions()
+	if len(versions) != 31 {
+		t.Fatalf("embedded migration count = %d, want 31 through version 32 excluding version 13", len(versions))
+	}
+	for _, version := range versions {
+		var appliedCount int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+goose.DefaultTablename+` WHERE version_id = ? AND is_applied = 1`, version).Scan(&appliedCount); err != nil {
+			t.Fatalf("query applied migration version %d: %v", version, err)
+		}
+		if appliedCount != 1 {
+			t.Errorf("applied migration version %d count = %d, want 1", version, appliedCount)
+		}
+	}
+}
+
+func assertNoEmbeddedVersionsApplied(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+
+	var appliedCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
+		t.Fatalf("query applied migration versions: %v", err)
+	}
+	if appliedCount != 0 {
+		t.Errorf("applied migration version count = %d, want 0", appliedCount)
 	}
 }
 
@@ -310,15 +415,17 @@ func TestMigrationRunnerSeedsGooseFromLegacySchemaMigrations(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
-	if appliedCount != 30 {
-		t.Errorf("applied goose version count = %d, want 30", appliedCount)
+	if appliedCount != 31 {
+		t.Errorf("applied goose version count = %d, want 31", appliedCount)
 	}
 
 	var prsSQL string
 	if err := db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type='table' AND name='prs'`).Scan(&prsSQL); err != nil {
 		t.Fatalf("query prs schema: %v", err)
 	}
-	if prsSQL != "CREATE TABLE prs (id TEXT PRIMARY KEY)" {
+	// Migrations past the legacy seed (00032 adds hydrated) still apply, but
+	// the table must not have been dropped and re-created.
+	if prsSQL != "CREATE TABLE prs (id TEXT PRIMARY KEY, hydrated INTEGER NOT NULL DEFAULT 1)" {
 		t.Errorf("prs table was re-migrated; schema = %q", prsSQL)
 	}
 }

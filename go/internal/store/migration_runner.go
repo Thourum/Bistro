@@ -21,7 +21,10 @@ const migrationsDir = "migrations"
 // mark versions past it as applied: a DB that lost its goose metadata may
 // predate newer migrations, and marking them applied would silently skip
 // them. Bump this only together with new checks in currentSchemaExists.
-const reconcileBaselineVersion int64 = 31
+const (
+	reconcileBaselineVersion  int64 = 32
+	preHydrationSchemaVersion int64 = 31
+)
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
@@ -125,16 +128,12 @@ func (mr *MigrationRunner) reconcileGooseFromCurrentSchema(ctx context.Context, 
 		return err
 	}
 
-	hasCurrentSchema, err := currentSchemaExists(ctx, mr.db)
+	reconciledVersion, err := reconciledSchemaVersion(ctx, mr.db, baselineVersion)
 	if err != nil {
 		return fmt.Errorf("check current schema: %w", err)
 	}
-	if !hasCurrentSchema {
-		return nil
-	}
-
 	for _, version := range schemaMigrationVersions() {
-		if version > baselineVersion {
+		if version > reconciledVersion {
 			continue
 		}
 		if err := mr.markGooseVersionApplied(ctx, version); err != nil {
@@ -143,6 +142,26 @@ func (mr *MigrationRunner) reconcileGooseFromCurrentSchema(ctx context.Context, 
 	}
 
 	return nil
+}
+
+func reconciledSchemaVersion(ctx context.Context, db *sql.DB, baselineVersion int64) (int64, error) {
+	hasPreHydrationSchema, err := preHydrationSchemaExists(ctx, db)
+	if err != nil {
+		return 0, err
+	}
+	if !hasPreHydrationSchema {
+		return 0, nil
+	}
+
+	hasHydratedColumn, err := columnExists(ctx, db, "prs", "hydrated")
+	if err != nil {
+		return 0, fmt.Errorf("check prs.hydrated column: %w", err)
+	}
+	if !hasHydratedColumn {
+		return min(baselineVersion, preHydrationSchemaVersion), nil
+	}
+
+	return baselineVersion, nil
 }
 
 func schemaMigrationVersions() []int64 {
@@ -199,6 +218,15 @@ func (mr *MigrationRunner) markGooseVersionApplied(ctx context.Context, version 
 }
 
 func currentSchemaExists(ctx context.Context, db *sql.DB) (bool, error) {
+	hasPreHydrationSchema, err := preHydrationSchemaExists(ctx, db)
+	if err != nil || !hasPreHydrationSchema {
+		return hasPreHydrationSchema, err
+	}
+
+	return columnExists(ctx, db, "prs", "hydrated")
+}
+
+func preHydrationSchemaExists(ctx context.Context, db *sql.DB) (bool, error) {
 	checks := []struct {
 		table  string
 		column string

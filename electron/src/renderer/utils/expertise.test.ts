@@ -33,6 +33,7 @@ const makePR = (overrides: Partial<PR>): PR => ({
   changes_requested_by: null,
   requested_reviewers: [],
   touches_you: overrides.touches_you ?? false,
+  hydrated: overrides.hydrated ?? 1,
 });
 
 const makeExpert = (overrides: Partial<ExpertiseExpert>): ExpertiseExpert => ({

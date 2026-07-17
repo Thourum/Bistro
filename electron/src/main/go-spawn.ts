@@ -4,7 +4,7 @@ import { execa, type ResultPromise } from 'execa';
 import { fromPromise, fromThrowable, type ResultAsync } from 'neverthrow';
 import type { GoProcessConfig } from './types';
 
-const require = createRequire(import.meta.url);
+const require = createRequire(__filename);
 
 type WaitOnOptions = {
   resources: string[];

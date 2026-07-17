@@ -4,19 +4,28 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	ghlib "github.com/google/go-github/v84/github"
 	"github.com/itterno/bistro/internal/provider"
 )
 
-// listPRs fetches the list of PRs for a repository and normalizes them to domain types.
-func (c *Client) listPRs(ctx context.Context, owner, repo, state string) ([]*provider.PR, error) {
+// listPRs fetches the list of PRs for a repository and normalizes them to
+// domain types. When updatedSince is non-nil the list is fetched most recently
+// updated first and pagination stops once results fall out of the window —
+// keeping at least minCount PRs so quiet repos are never empty. A nil
+// updatedSince fetches every page (legacy behavior).
+func (c *Client) listPRs(ctx context.Context, owner, repo, state string, updatedSince *time.Time, minCount int) ([]*provider.PR, error) {
 	var result []*provider.PR
 	opts := &ghlib.PullRequestListOptions{
 		State: state,
 		ListOptions: ghlib.ListOptions{
 			PerPage: 100,
 		},
+	}
+	if updatedSince != nil {
+		opts.Sort = "updated"
+		opts.Direction = "desc"
 	}
 
 	for {
@@ -25,8 +34,19 @@ func (c *Client) listPRs(ctx context.Context, owner, repo, state string) ([]*pro
 			return nil, fmt.Errorf("failed to list PRs for %s/%s: %w", owner, repo, err)
 		}
 
+		pastWindow := false
 		for _, ghPR := range ghPRs {
-			result = append(result, normalizePR(owner, repo, ghPR))
+			pr := normalizePR(owner, repo, ghPR)
+			if updatedSince != nil && pr.UpdatedAt.Before(*updatedSince) {
+				if len(result) >= minCount {
+					pastWindow = true
+					break
+				}
+			}
+			result = append(result, pr)
+		}
+		if pastWindow {
+			break
 		}
 
 		if resp.NextPage == 0 {
@@ -96,7 +116,7 @@ func (c *Client) ListPRs(ctx context.Context, filters provider.PRFilters) ([]*pr
 		state = "open"
 	}
 
-	prs, err := c.listPRs(ctx, filters.Owner, filters.Repo, state)
+	prs, err := c.listPRs(ctx, filters.Owner, filters.Repo, state, filters.UpdatedSince, filters.MinCount)
 	if err != nil {
 		return nil, err
 	}

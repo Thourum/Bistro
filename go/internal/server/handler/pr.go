@@ -42,6 +42,7 @@ type prRow struct {
 	ChangesRequestedBy *string  `json:"changes_requested_by"`
 	RequestedReviewers []string `json:"requested_reviewers"`
 	TouchesYou         bool     `json:"touches_you"`
+	Hydrated           int      `json:"hydrated"`
 }
 
 // prLister is the subset of *sql.DB needed to list PRs.
@@ -99,7 +100,7 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 			"offset", req.Offset,
 		)
 
-		query := "SELECT id, provider, owner, repo, number, title, body, author, state, created_at, updated_at, merged_at, base_branch, head_branch, base_sha, head_sha, comment_count, ci_status, draft, review_status, approved_by, changes_requested_by, requested_reviewers FROM prs WHERE 1=1"
+		query := "SELECT id, provider, owner, repo, number, title, body, author, state, created_at, updated_at, merged_at, base_branch, head_branch, base_sha, head_sha, comment_count, ci_status, draft, review_status, approved_by, changes_requested_by, requested_reviewers, hydrated FROM prs WHERE 1=1"
 
 		switch req.Filter {
 		case "open":
@@ -142,7 +143,7 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 				&pr.BaseBranch, &pr.HeadBranch, &pr.BaseSHA, &pr.HeadSHA,
 				&pr.CommentCount, &pr.CIStatus, &pr.Draft,
 				&pr.ReviewStatus, &pr.ApprovedBy, &pr.ChangesRequestedBy,
-				&requestedReviewers,
+				&requestedReviewers, &pr.Hydrated,
 			); err != nil {
 				logger.Error("REQUEST_PR_LIST scan failed", "err", err)
 				continue

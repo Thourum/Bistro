@@ -12,12 +12,12 @@ INSERT INTO repos (
     location_error_code,
     location_error
 )
-VALUES (?, ?, ?, ?, 1, ?, 'local', ?, 'ok', NULL, NULL)
+VALUES (?, ?, ?, ?, ?, ?, 'local', ?, 'ok', NULL, NULL)
 ON CONFLICT(id) DO UPDATE SET
     provider = excluded.provider,
     owner = excluded.owner,
     repo = excluded.repo,
-    watched = 1,
+    watched = MAX(repos.watched, excluded.watched),
     local_path = excluded.local_path,
     source = excluded.source,
     last_used_at = excluded.last_used_at,

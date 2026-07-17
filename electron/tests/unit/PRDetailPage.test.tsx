@@ -36,6 +36,7 @@ const mockPR = {
   deletions: 2,
   changed_files: 3,
   body: 'Adds new widget',
+  hydrated: 1,
 };
 
 vi.mock('../../src/renderer/hooks/useWebSocketPRList', () => ({
@@ -43,12 +44,22 @@ vi.mock('../../src/renderer/hooks/useWebSocketPRList', () => ({
 }));
 
 const mockSend = vi.hoisted(() => vi.fn());
+const mockRequest = vi.hoisted(() => vi.fn());
+const mockRetry = vi.hoisted(() => vi.fn());
+const hydrationState = vi.hoisted(() => ({
+  isHydrating: false,
+  error: null as string | null,
+}));
 
 vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
   useWebSocket: () => ({
-    request: vi.fn().mockResolvedValue({}),
+    request: mockRequest,
     send: mockSend,
   }),
+}));
+
+vi.mock('../../src/renderer/hooks/usePRHydration', () => ({
+  usePRHydration: () => ({ ...hydrationState, retry: mockRetry }),
 }));
 
 vi.mock('../../src/renderer/hooks/useReviewThreads', () => ({
@@ -158,6 +169,12 @@ function renderWithPRRoute(prId: string) {
 describe('PRDetailPage', () => {
   beforeEach(() => {
     mockSend.mockClear();
+    mockRequest.mockReset();
+    mockRequest.mockResolvedValue({});
+    mockRetry.mockReset();
+    hydrationState.isHydrating = false;
+    hydrationState.error = null;
+    mockPR.hydrated = 1;
     mockStore.setState.mockClear();
     resetMockStoreState();
     vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue(
@@ -177,6 +194,55 @@ describe('PRDetailPage', () => {
   it('shows the SPACE-to-diff footer hint', async () => {
     renderWithPRRoute('github-1');
     expect(await screen.findByText(/view diff/i)).toBeInTheDocument();
+  });
+
+  it('waits for hydration before requesting PR details, and retries after hydration fails', async () => {
+    mockPR.hydrated = 0;
+    hydrationState.isHydrating = true;
+
+    const { unmount } = renderWithPRRoute('github-1');
+
+    expect(
+      await screen.findByText('Preparing pull request details…'),
+    ).toBeInTheDocument();
+    expect(mockRequest).not.toHaveBeenCalledWith(
+      'REQUEST_COMMENTS',
+      expect.anything(),
+    );
+    expect(mockRequest).not.toHaveBeenCalledWith(
+      'REQUEST_DIFF',
+      expect.anything(),
+    );
+    expect(mockRequest).not.toHaveBeenCalledWith(
+      'REQUEST_CI_CHECKS',
+      expect.anything(),
+    );
+
+    unmount();
+    hydrationState.isHydrating = false;
+    hydrationState.error = 'Sync service unavailable';
+    renderWithPRRoute('github-1');
+
+    expect(
+      await screen.findByText(
+        'Failed to prepare pull request details: Sync service unavailable',
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry hydration' }));
+
+    expect(mockRetry).toHaveBeenCalledTimes(1);
+    expect(mockRequest).not.toHaveBeenCalledWith(
+      'REQUEST_COMMENTS',
+      expect.anything(),
+    );
+    expect(mockRequest).not.toHaveBeenCalledWith(
+      'REQUEST_DIFF',
+      expect.anything(),
+    );
+    expect(mockRequest).not.toHaveBeenCalledWith(
+      'REQUEST_CI_CHECKS',
+      expect.anything(),
+    );
   });
 
   it('shows not-found state when prId matches no PR', async () => {

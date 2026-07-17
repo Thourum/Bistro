@@ -2,10 +2,15 @@ package github
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	ghlib "github.com/google/go-github/v84/github"
+	"github.com/itterno/bistro/internal/provider"
 )
 
 // buildTimestamp returns a fixed Timestamp for use in tests.
@@ -207,5 +212,110 @@ func TestGetPR_InvalidID(t *testing.T) {
 	_, err := client.GetPR(ctx, "invalid-id")
 	if err == nil {
 		t.Error("expected error for invalid PR ID, got nil")
+	}
+}
+
+// newListPRsTestClient points a Client at a mock server returning the given
+// handler for the pulls list endpoint.
+func newListPRsTestClient(t *testing.T, handler http.HandlerFunc) (*Client, func()) {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	client := NewClient("test-token")
+	ghClient := ghlib.NewClient(nil)
+	ghClient.BaseURL, _ = ghClient.BaseURL.Parse(srv.URL + "/")
+	client.gh = ghClient
+	return client, srv.Close
+}
+
+func listPRsResponseJSON(entries ...string) string {
+	return "[" + strings.Join(entries, ",") + "]"
+}
+
+func prJSON(number int, updatedAt string) string {
+	return fmt.Sprintf(`{
+		"number": %d,
+		"title": "PR %d",
+		"state": "open",
+		"user": {"login": "alice"},
+		"base": {"ref": "main", "sha": "base"},
+		"head": {"ref": "feature", "sha": "head"},
+		"created_at": "2026-01-01T00:00:00Z",
+		"updated_at": %q
+	}`, number, number, updatedAt)
+}
+
+func TestListPRsUpdatedSinceDropsStalePRsAndStopsPaginating(t *testing.T) {
+	// Arrange — page 1: two recent + one stale; a page 2 request would fail
+	// the test because pagination must stop inside the window cutoff.
+	requests := 0
+	client, closeSrv := newListPRsTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests > 1 {
+			t.Errorf("unexpected request %d: pagination should stop past the window", requests)
+		}
+		if got := r.URL.Query().Get("sort"); got != "updated" {
+			t.Errorf("sort = %q, want updated", got)
+		}
+		if got := r.URL.Query().Get("direction"); got != "desc" {
+			t.Errorf("direction = %q, want desc", got)
+		}
+		w.Header().Set("Link", fmt.Sprintf(`<%s?page=2>; rel="next"`, "http://"+r.Host+r.URL.Path))
+		w.Write([]byte(listPRsResponseJSON(
+			prJSON(3, "2026-07-10T00:00:00Z"),
+			prJSON(2, "2026-07-01T00:00:00Z"),
+			prJSON(1, "2020-01-01T00:00:00Z"),
+		)))
+	})
+	defer closeSrv()
+
+	since := time.Date(2026, 6, 16, 0, 0, 0, 0, time.UTC)
+
+	// Act
+	prs, err := client.ListPRs(context.Background(), provider.PRFilters{
+		Owner:        "acme",
+		Repo:         "api",
+		UpdatedSince: &since,
+		MinCount:     2,
+	})
+
+	// Assert
+	if err != nil {
+		t.Fatalf("ListPRs: %v", err)
+	}
+	if len(prs) != 2 {
+		t.Fatalf("len(prs) = %d, want 2 (stale PR dropped)", len(prs))
+	}
+	if prs[0].Number != 3 || prs[1].Number != 2 {
+		t.Fatalf("prs = %d,%d, want 3,2", prs[0].Number, prs[1].Number)
+	}
+}
+
+func TestListPRsUpdatedSinceKeepsMinCountOnQuietRepo(t *testing.T) {
+	// Arrange — every PR is older than the window; MinCount must still win.
+	client, closeSrv := newListPRsTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(listPRsResponseJSON(
+			prJSON(5, "2020-05-01T00:00:00Z"),
+			prJSON(4, "2020-04-01T00:00:00Z"),
+			prJSON(3, "2020-03-01T00:00:00Z"),
+		)))
+	})
+	defer closeSrv()
+
+	since := time.Date(2026, 6, 16, 0, 0, 0, 0, time.UTC)
+
+	// Act
+	prs, err := client.ListPRs(context.Background(), provider.PRFilters{
+		Owner:        "acme",
+		Repo:         "api",
+		UpdatedSince: &since,
+		MinCount:     2,
+	})
+
+	// Assert
+	if err != nil {
+		t.Fatalf("ListPRs: %v", err)
+	}
+	if len(prs) != 2 {
+		t.Fatalf("len(prs) = %d, want 2 (MinCount floor)", len(prs))
 	}
 }

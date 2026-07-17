@@ -235,12 +235,12 @@ INSERT INTO repos (
     location_error_code,
     location_error
 )
-VALUES (?, ?, ?, ?, 1, ?, 'local', ?, 'ok', NULL, NULL)
+VALUES (?, ?, ?, ?, ?, ?, 'local', ?, 'ok', NULL, NULL)
 ON CONFLICT(id) DO UPDATE SET
     provider = excluded.provider,
     owner = excluded.owner,
     repo = excluded.repo,
-    watched = 1,
+    watched = MAX(repos.watched, excluded.watched),
     local_path = excluded.local_path,
     source = excluded.source,
     last_used_at = excluded.last_used_at,
@@ -254,6 +254,7 @@ type UpsertLocalRepoLocationParams struct {
 	Provider   string         `json:"provider"`
 	Owner      string         `json:"owner"`
 	Repo       string         `json:"repo"`
+	Watched    int64          `json:"watched"`
 	LocalPath  sql.NullString `json:"local_path"`
 	LastUsedAt sql.NullTime   `json:"last_used_at"`
 }
@@ -264,6 +265,7 @@ func (q *Queries) UpsertLocalRepoLocation(ctx context.Context, arg UpsertLocalRe
 		arg.Provider,
 		arg.Owner,
 		arg.Repo,
+		arg.Watched,
 		arg.LocalPath,
 		arg.LastUsedAt,
 	)

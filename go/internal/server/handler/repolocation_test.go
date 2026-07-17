@@ -213,14 +213,14 @@ func TestRepoLocationScanDevFolderReconcilesHealthAndTriggersSync(t *testing.T) 
 		t.Fatalf("create healthy repo: %v", err)
 	}
 	missingPath := filepath.Join(dev, "acme", "missing")
-	if err := store.UpsertLocal(context.Background(), "github", "acme", "missing", missingPath); err != nil {
+	if err := store.UpsertLocal(context.Background(), "github", "acme", "missing", missingPath, false); err != nil {
 		t.Fatalf("upsert missing: %v", err)
 	}
 	permissionPath := filepath.Join(dev, "acme", "permission")
 	if err := createRepo(permissionPath, "origin", "https://github.com/acme/permission.git"); err != nil {
 		t.Fatalf("create permission repo: %v", err)
 	}
-	if err := store.UpsertLocal(context.Background(), "github", "acme", "permission", permissionPath); err != nil {
+	if err := store.UpsertLocal(context.Background(), "github", "acme", "permission", permissionPath, false); err != nil {
 		t.Fatalf("upsert permission: %v", err)
 	}
 	mustChmod(t, permissionPath, 0)
@@ -231,7 +231,7 @@ func TestRepoLocationScanDevFolderReconcilesHealthAndTriggersSync(t *testing.T) 
 	if err := createRepo(mismatchPath, "origin", "https://github.com/acme/other.git"); err != nil {
 		t.Fatalf("create mismatch repo: %v", err)
 	}
-	if err := store.UpsertLocal(context.Background(), "github", "acme", "mismatch", mismatchPath); err != nil {
+	if err := store.UpsertLocal(context.Background(), "github", "acme", "mismatch", mismatchPath, false); err != nil {
 		t.Fatalf("upsert mismatch: %v", err)
 	}
 	syncTrigger := make(chan string, 1)
@@ -312,7 +312,7 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 				if err := createRepo(localPath, "origin", "https://github.com/acme/api.git"); err != nil {
 					t.Fatalf("create local repo: %v", err)
 				}
-				if err := store.NewRepoLocationStore(db.DB).UpsertLocal(context.Background(), "github", "acme", "api", localPath); err != nil {
+				if err := store.NewRepoLocationStore(db.DB).UpsertLocal(context.Background(), "github", "acme", "api", localPath, true); err != nil {
 					t.Fatalf("upsert local: %v", err)
 				}
 			},

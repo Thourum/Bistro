@@ -60,7 +60,12 @@ type PRFetchResult struct {
 	// fatal error. Each entry is written back to the comments table after the
 	// per-PR savepoint releases (best-effort; never blocks PR/patchset commit).
 	AnchorUpdates []git.AnchorResult
-	Error         error
+	// ListOnly marks a result written without a detail fetch (very active
+	// repo over the hydration threshold). The PR row is stored hydrated=0 and
+	// details are fetched on demand; an already-hydrated row is never
+	// downgraded.
+	ListOnly bool
+	Error    error
 }
 
 // FetchPRDetails fetches comments, CI status, and diff size for each PR

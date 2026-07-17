@@ -46,7 +46,7 @@ func TestRepoLocationStoreUpsertLocalCreatesWatchedRepo(t *testing.T) {
 	path := t.TempDir()
 
 	// Act
-	err := store.UpsertLocal(ctx, "GitHub", "Acme", "API", path)
+	err := store.UpsertLocal(ctx, "GitHub", "Acme", "API", path, true)
 
 	// Assert
 	if err != nil {
@@ -85,7 +85,7 @@ func TestRepoLocationStoreUpsertLocalUpdatesUnhealthyPath(t *testing.T) {
 	`, oldPath)
 
 	// Act
-	err := store.UpsertLocal(ctx, "github", "acme", "api", newPath)
+	err := store.UpsertLocal(ctx, "github", "acme", "api", newPath, false)
 
 	// Assert
 	if err != nil {
@@ -100,6 +100,48 @@ func TestRepoLocationStoreUpsertLocalUpdatesUnhealthyPath(t *testing.T) {
 	}
 	if location.LocationErrorCode != "" || location.LocationError != "" {
 		t.Fatalf("expected cleared errors, got code=%q msg=%q", location.LocationErrorCode, location.LocationError)
+	}
+	assertWatched(t, db, "github:acme/api", false)
+}
+
+func TestRepoLocationStoreUpsertLocalWithoutWatchDoesNotWatchNewRepo(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	db := newTestDBMigratedThrough(t, 26)
+	store := NewRepoLocationStore(db.DB)
+	path := t.TempDir()
+
+	// Act — dev-folder scans register locations without watching.
+	err := store.UpsertLocal(ctx, "github", "acme", "api", path, false)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("upsert local repo: %v", err)
+	}
+	location := mustGetRepoLocation(t, store, "github:acme/api")
+	if location.Source != "local" || location.LocalPath != path {
+		t.Fatalf("expected registered local location, got source=%q path=%q", location.Source, location.LocalPath)
+	}
+	assertWatched(t, db, "github:acme/api", false)
+}
+
+func TestRepoLocationStoreUpsertLocalWithoutWatchPreservesWatchedRepo(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	db := newTestDBMigratedThrough(t, 26)
+	store := NewRepoLocationStore(db.DB)
+	path := t.TempDir()
+	mustExec(t, db, `
+		INSERT INTO repos (id, provider, owner, repo, watched)
+		VALUES ('github:acme/api', 'github', 'acme', 'api', 1)
+	`)
+
+	// Act — a rescan must not unwatch a repo the user is watching.
+	err := store.UpsertLocal(ctx, "github", "acme", "api", path, false)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("upsert local repo: %v", err)
 	}
 	assertWatched(t, db, "github:acme/api", true)
 }
@@ -117,7 +159,7 @@ func TestRepoLocationStoreUpsertLocalPreservesExistingHealthyPathThatExists(t *t
 	`, existingPath)
 
 	// Act
-	err := store.UpsertLocal(ctx, "github", "acme", "api", duplicatePath)
+	err := store.UpsertLocal(ctx, "github", "acme", "api", duplicatePath, false)
 
 	// Assert
 	if err != nil {

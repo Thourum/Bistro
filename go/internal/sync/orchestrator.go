@@ -68,6 +68,16 @@ type Orchestrator struct {
 const (
 	inboxCursorLag                = 2 * time.Minute
 	replayReconciliationClockSkew = 10 * time.Minute
+
+	// prListWindow bounds per-repo PR list syncs to recently updated PRs;
+	// prListMinCount guarantees quiet repos still surface their newest PRs.
+	prListWindow   = 30 * 24 * time.Hour
+	prListMinCount = 10
+
+	// hydrationThreshold is the PR count above which a repo sync skips the
+	// per-PR detail fetch (comments, CI, diff) and writes list-only rows;
+	// details are hydrated on demand when the user selects a PR.
+	hydrationThreshold = 100
 )
 
 // SupportsInboxDiscovery reports whether the provider can discover relevant PRs
@@ -1138,8 +1148,23 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 		log.Debug("phase list-prs skipped (include_prs=false)")
 	}
 
+	// Very active repos: skip the per-PR detail fetch entirely and write
+	// list-only rows. Details are hydrated on demand when the user selects a
+	// PR (SyncPR), so one busy repo can't burn the whole rate-limit budget.
+	listOnly := len(fetchedPRs) > hydrationThreshold
+	if listOnly {
+		log.Info("phase fetch-details skipped (list-only)",
+			"pr_count", len(fetchedPRs),
+			"threshold", hydrationThreshold,
+		)
+		for _, r := range fetchedPRs {
+			r.ListOnly = true
+		}
+		result.UpdatedPRs = len(fetchedPRs)
+	}
+
 	// Phase 2: Fetch details concurrently (comments, CI, diffs)
-	if len(fetchedPRs) > 0 {
+	if !listOnly && len(fetchedPRs) > 0 {
 		log.Debug("phase fetch-details start",
 			"pr_count", len(fetchedPRs),
 			"include_comments", req.IncludeComments,
@@ -1225,6 +1250,41 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 	))
 
 	return result, nil
+}
+
+// SyncPR fetches full details (comments, CI, diff) for a single PR and writes
+// them, marking the row hydrated. Used for on-demand hydration when the user
+// selects a list-only PR from a very active repo.
+func (o *Orchestrator) SyncPR(ctx context.Context, prID string) error {
+	if o.provider == nil {
+		return fmt.Errorf("provider not configured")
+	}
+	if o.store == nil {
+		return fmt.Errorf("store not configured")
+	}
+
+	log := logging.FromContext(ctx).With("pr_id", prID)
+	ctx = logging.WithLogger(ctx, log)
+
+	pr, err := o.provider.GetPR(ctx, prID)
+	if err != nil {
+		return fmt.Errorf("get PR %s: %w", prID, err)
+	}
+
+	results, err := o.FetchPRDetails(ctx, []*provider.PR{pr}, true, true, true)
+	if err != nil {
+		return fmt.Errorf("fetch details for %s: %w", prID, err)
+	}
+	if len(results) == 1 && results[0] != nil && results[0].Error != nil {
+		return fmt.Errorf("hydrate %s: %w", prID, results[0].Error)
+	}
+
+	writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithPostCommit(o.postCommit)
+	if err := writer.WriteSyncResultsContext(ctx, results); err != nil {
+		return fmt.Errorf("write hydrated PR %s: %w", prID, err)
+	}
+	log.Info("pr hydrated on demand")
+	return nil
 }
 
 // DiscoverAndSyncInbox runs the local-first inbox discovery lane: GitHub search
@@ -1331,16 +1391,19 @@ func (o *Orchestrator) syncPRList(ctx context.Context, req *SyncRequest) ([]*pro
 		return nil, fmt.Errorf("provider not configured")
 	}
 
+	updatedSince := time.Now().Add(-prListWindow)
 	filters := provider.PRFilters{
-		Owner: req.Owner,
-		Repo:  req.Repo,
-		State: req.State,
-		Limit: 100,
+		Owner:        req.Owner,
+		Repo:         req.Repo,
+		State:        req.State,
+		UpdatedSince: &updatedSince,
+		MinCount:     prListMinCount,
 	}
 
 	log.Debug("calling provider.ListPRs",
 		"state", filters.State,
-		"limit", filters.Limit,
+		"updated_since", updatedSince,
+		"min_count", filters.MinCount,
 	)
 	start := time.Now()
 	prs, err := o.provider.ListPRs(ctx, filters)

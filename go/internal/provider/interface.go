@@ -48,6 +48,14 @@ type PRFilters struct {
 	State  string // "open", "closed", "merged"
 	Limit  int    // max results per page
 	Offset int    // pagination offset
+	// UpdatedSince bounds the list to PRs updated at or after this time.
+	// Older PRs are dropped, except that at least MinCount of the most
+	// recently updated PRs are always returned when the repo has them.
+	UpdatedSince *time.Time
+	// MinCount is the floor applied with UpdatedSince: quiet repos still
+	// return their MinCount most recently updated PRs. Ignored when
+	// UpdatedSince is nil.
+	MinCount int
 }
 
 // ThreadProvider is an optional capability for providers that support

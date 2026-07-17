@@ -32,10 +32,13 @@ func NewRepoLocationStore(db *sql.DB) *RepoLocationStore {
 	return &RepoLocationStore{queries: storedb.New(db)}
 }
 
-// UpsertLocal registers/updates a local repo. Creates the repos row when missing
-// (watched=1). Preserves an existing healthy local_path when it still exists on
-// disk so duplicate checkout scans do not replace the user's chosen location.
-func (s *RepoLocationStore) UpsertLocal(ctx context.Context, provider, owner, repo, canonicalPath string) error {
+// UpsertLocal registers/updates a local repo. watch=true marks the repo
+// watched (explicit user adds); watch=false only registers the location and
+// never changes an existing watched state — dev-folder scans must not
+// auto-watch every discovered checkout. Preserves an existing healthy
+// local_path when it still exists on disk so duplicate checkout scans do not
+// replace the user's chosen location.
+func (s *RepoLocationStore) UpsertLocal(ctx context.Context, provider, owner, repo, canonicalPath string, watch bool) error {
 	normalizedProvider := strings.ToLower(provider)
 	normalizedOwner := strings.ToLower(owner)
 	normalizedRepo := strings.ToLower(repo)
@@ -51,11 +54,16 @@ func (s *RepoLocationStore) UpsertLocal(ctx context.Context, provider, owner, re
 		localPath = existing.LocalPath
 	}
 
+	watched := int64(0)
+	if watch {
+		watched = 1
+	}
 	if err := s.queries.UpsertLocalRepoLocation(ctx, storedb.UpsertLocalRepoLocationParams{
 		ID:         repoID,
 		Provider:   normalizedProvider,
 		Owner:      normalizedOwner,
 		Repo:       normalizedRepo,
+		Watched:    watched,
 		LocalPath:  validNullString(localPath),
 		LastUsedAt: currentNullTime(),
 	}); err != nil {
