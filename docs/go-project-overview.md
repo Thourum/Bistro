@@ -44,6 +44,17 @@ go/
 │   ├── events/                         # Shared event types & broadcaster
 │   │   └── events.go                   #   Event, EventEmitter, NewProgressEvent, NewCompleteEvent, NewErrorEvent
 │   │
+│   ├── expertise/                      # Local git-history expertise scoring
+│   │   ├── engine.go                   #   Enable/disable, restart, touches-you resolver, shutdown
+│   │   ├── gitcli.go                   #   Bounded system-git wrapper for blame/log/check-attr
+│   │   ├── indexer.go                  #   Full-repo indexing pass with progress events
+│   │   ├── updater.go                  #   Incremental PR-touched-file rescoring
+│   │   ├── score.go                    #   Pure scoring math and expert/dormancy thresholds
+│   │   ├── identity.go                 #   Current-user alias and noreply matching
+│   │   ├── excludes.go                 #   Built-in and user exclude glob matching
+│   │   ├── nudge.go                    #   10-reviewed-PR enable nudge
+│   │   └── store.go                    #   Thin wrapper over sqlc expertise queries
+│   │
 │   ├── git/                            # Git clone, diff generation, repo caching, repo identity
 │   │   ├── types.go                    #   RepoEntry, CloneResult, DiffFile, DiffResult
 │   │   ├── clone.go                    #   Client.Clone (go-git based)
@@ -255,6 +266,9 @@ SQLite via `mattn/go-sqlite3`. `DB` is a thin wrapper applying pragmas (FK, WAL)
 
 ### `internal/git` -- Git Operations
 Uses `go-git` for cloning repos and generating unified diffs between two SHAs. Includes an in-memory cache with TTL for cloned repos, remote identity normalization (`ParseRemoteURL`, `SafeRepoID`), per-repo operation locks, local-clone PR ref fetching, and cache-maintenance helpers for stats, orphan sweeping, and safe deletion under the cache root.
+
+### `internal/expertise` -- Local Expertise Scoring
+Computes per-file expertise from user-owned local checkouts. The package wraps bounded system `git` calls for blame/log/check-attr, applies built-in and user exclude rules, scores surviving lines/recent substantial commits/original authorship, writes raw components to SQLite, performs incremental updates for PR-touched files, powers the `touches_you` resolver, and derives the opt-in enable nudge.
 
 ### `internal/scan` -- Developer Folder Scanner
 Validates developer-folder inputs and scans immediate child repositories. It rejects unsafe/system folders, skips symlinks, extracts parseable Git remotes, and returns stable repo identities for matching local clones to provider repositories.

@@ -1,5 +1,13 @@
 import { Store } from '@tanstack/store';
-import type { ActionResult, PendingAction, RepoInfo, Toast } from '../types';
+import type {
+  ActionResult,
+  ExpertiseNudgePayload,
+  ExpertiseRepoStatus,
+  ExpertiseSettingsPayload,
+  PendingAction,
+  RepoInfo,
+  Toast,
+} from '../types';
 
 interface SyncStats {
   prCount: number;
@@ -21,7 +29,7 @@ export interface UIState {
   showFileTree: boolean;
   paneLayout: 'list' | 'detail' | 'split';
   sortBy: 'updated' | 'created';
-  filterState: 'open' | 'draft' | 'all' | 'needs_action';
+  filterState: 'open' | 'draft' | 'all' | 'needs_action' | 'touches_you';
   confirmingAction: string | null;
   pendingAction: PendingAction | null;
   actionResult: ActionResult | null;
@@ -119,6 +127,12 @@ export interface UIState {
   byokEstCost: number;
   /** Set by BYOK_AUTH_FAILED; cleared on a successful SET_BYOK_KEY ack. */
   byokAuthFailed: boolean;
+  /** Per-repo expertise indexing state, keyed by repo_id. */
+  expertiseRepoStatuses: Record<string, ExpertiseRepoStatus>;
+  /** Pending expertise nudges, keyed by repo_id. */
+  expertiseNudges: Record<string, ExpertiseNudgePayload>;
+  /** Latest server-backed expertise settings payload. */
+  expertiseSettings: ExpertiseSettingsPayload | null;
 }
 
 export const initialUIState: UIState = {
@@ -164,6 +178,9 @@ export const initialUIState: UIState = {
   byokSessionTokens: 0,
   byokEstCost: 0,
   byokAuthFailed: false,
+  expertiseRepoStatuses: {},
+  expertiseNudges: {},
+  expertiseSettings: null,
 };
 
 export function createUIStore(): Store<UIState> {

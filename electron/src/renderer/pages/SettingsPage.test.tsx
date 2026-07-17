@@ -15,7 +15,10 @@ import ToastContainer from '../components/ToastContainer';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import { initialUIState } from '../store/ui';
-import { SettingsPage } from './SettingsPage';
+import {
+  expertiseSettingsPayloadFromInputs,
+  SettingsPage,
+} from './SettingsPage';
 
 const requestMock = vi.fn();
 const sendMock = vi.fn();
@@ -106,6 +109,20 @@ function renderSettingsPage(): void {
     </>,
   );
 }
+
+describe('expertise settings helpers', () => {
+  it('preserves empty per-repo excludes so clearing a repo is persisted', () => {
+    expect(
+      expertiseSettingsPayloadFromInputs('alice@example.com', 50, {
+        'github:acme/api': '',
+      }),
+    ).toEqual({
+      alias_emails: ['alice@example.com'],
+      min_surviving_lines: 50,
+      excludes: { 'github:acme/api': [] },
+    });
+  });
+});
 
 describe('SettingsPage RepositoriesSection', () => {
   beforeEach(() => {

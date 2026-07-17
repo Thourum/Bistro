@@ -148,7 +148,9 @@ const redirectSearchSchema = z.object({
 });
 
 const prsIndexSearchSchema = z.object({
-  filter: z.enum(['open', 'draft', 'all', 'needs_action']).default('open'),
+  filter: z
+    .enum(['open', 'draft', 'all', 'needs_action', 'touches_you'])
+    .default('open'),
   sort: z.enum(['updated', 'created']).default('updated'),
   q: z.string().default(''),
 });

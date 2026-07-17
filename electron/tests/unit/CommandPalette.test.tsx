@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import * as matchers from '@testing-library/jest-dom/matchers';
-import { act, render, screen } from '@testing-library/react';
-import { renderHook } from '@testing-library/react';
+import { act, render, renderHook, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommandPalette } from '../../src/renderer/components/CommandPalette';
-import { OverlayProvider, useOverlays } from '../../src/renderer/overlays/OverlayContext';
+import {
+  OverlayProvider,
+  useOverlays,
+} from '../../src/renderer/overlays/OverlayContext';
 import { appStore } from '../../src/renderer/store';
 
 vi.mock('../../src/renderer/hooks/useWebSocketPRList', () => ({
@@ -23,6 +25,7 @@ vi.mock('../../src/renderer/router', () => ({
 }));
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: vi.fn(() => vi.fn()),
+  useParams: vi.fn(() => ({})),
   useRouterState: vi.fn(() => ({ location: { pathname: '/prs' } })),
 }));
 
@@ -36,7 +39,9 @@ function wrapper({ children }: { children: React.ReactNode }) {
 function renderWithCommand() {
   const TestComp = () => {
     const overlays = useOverlays();
-    React.useEffect(() => { overlays.openCommand(); }, []);
+    React.useEffect(() => {
+      overlays.openCommand();
+    }, []);
     return <CommandPalette />;
   };
   return { result: render(<TestComp />, { wrapper }) };
@@ -84,7 +89,9 @@ describe('CommandPalette', () => {
     // Render palette inside same wrapper
     const TestComp = () => {
       const overlays = useOverlays();
-      React.useEffect(() => { overlays.openCommand(); }, []);
+      React.useEffect(() => {
+        overlays.openCommand();
+      }, []);
       return <CommandPalette />;
     };
     render(<TestComp />, { wrapper: OverlayProvider as React.ComponentType });
@@ -118,7 +125,9 @@ describe('CommandPalette', () => {
   it('Enter on "shortcuts" opens help overlay', async () => {
     const TestComp = () => {
       const overlays = useOverlays();
-      React.useEffect(() => { overlays.openCommand(); }, []);
+      React.useEffect(() => {
+        overlays.openCommand();
+      }, []);
       return (
         <>
           <CommandPalette />
@@ -137,7 +146,9 @@ describe('CommandPalette', () => {
   it('repository picker command opens repoPicker overlay', async () => {
     const TestComp = () => {
       const overlays = useOverlays();
-      React.useEffect(() => { overlays.openCommand(); }, []);
+      React.useEffect(() => {
+        overlays.openCommand();
+      }, []);
       return (
         <>
           <CommandPalette />

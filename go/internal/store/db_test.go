@@ -169,8 +169,31 @@ func TestMigrationsRerunAfterGooseVersionMetadataLoss(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT version_id) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
-	if appliedCount != 29 {
-		t.Errorf("applied goose version count = %d, want 29", appliedCount)
+	if appliedCount != 30 {
+		t.Errorf("applied goose version count = %d, want 30", appliedCount)
+	}
+}
+
+func TestCurrentSchemaExistsRejectsPre31Schema(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	mustExec(t, db, `CREATE TABLE prs (id TEXT PRIMARY KEY, repo_id TEXT)`)
+	mustExec(t, db, `CREATE TABLE pr_diffs (pr_id TEXT, file_path TEXT, diff_status TEXT)`)
+	mustExec(t, db, `CREATE TABLE repos (id TEXT PRIMARY KEY, local_path TEXT)`)
+	mustExec(t, db, `CREATE TABLE comments (id TEXT PRIMARY KEY, author_type TEXT, dedup_group_id TEXT)`)
+	mustExec(t, db, `CREATE TABLE comment_classification_state (comment_id TEXT PRIMARY KEY)`)
+
+	exists, err := currentSchemaExists(ctx, db.DB)
+	if err != nil {
+		t.Fatalf("currentSchemaExists: %v", err)
+	}
+	if exists {
+		t.Fatal("currentSchemaExists = true, want false before file_expertise exists")
 	}
 }
 
@@ -287,8 +310,8 @@ func TestMigrationRunnerSeedsGooseFromLegacySchemaMigrations(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
-	if appliedCount != 29 {
-		t.Errorf("applied goose version count = %d, want 29", appliedCount)
+	if appliedCount != 30 {
+		t.Errorf("applied goose version count = %d, want 30", appliedCount)
 	}
 
 	var prsSQL string

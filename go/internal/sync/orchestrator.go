@@ -22,17 +22,27 @@ import (
 	"github.com/itterno/bistro/internal/store"
 )
 
+// ExpertiseHook receives successful PR diff sync notifications for incremental expertise updates.
+type ExpertiseHook interface {
+	OnPRSynced(ctx context.Context, repoID, repoPath string, files []string)
+}
+
+// RepoPathResolver resolves a repo ID to a local checkout path.
+type RepoPathResolver func(repoID string) (string, bool)
+
 // Orchestrator coordinates sync operations
 type Orchestrator struct {
-	log            *slog.Logger
-	provider       provider.Provider
-	store          *store.DB
-	git            *git.Client
-	emitter        *events.EventEmitter
-	rateLimitMu    gosync.RWMutex
-	rateLimitState *provider.RateLimitState
-	queue          *store.ActionQueue
-	diffStore      *store.DiffStore
+	log             *slog.Logger
+	provider        provider.Provider
+	store           *store.DB
+	git             *git.Client
+	emitter         *events.EventEmitter
+	rateLimitMu     gosync.RWMutex
+	rateLimitState  *provider.RateLimitState
+	queue           *store.ActionQueue
+	diffStore       *store.DiffStore
+	expertise       ExpertiseHook
+	resolveRepoPath RepoPathResolver
 	// reviewLogin/reviewSHAWriter are optional; if set they are attached to
 	// every ActionExecutor so successful reviews record last_reviewed_sha.
 	reviewLogin     actions.ReviewLoginGetter
@@ -50,6 +60,9 @@ type Orchestrator struct {
 	// postCommit is optional; when set, writers invoke it after each committed
 	// batch with the written PR ids (Phase 3.8 LLM tier kick).
 	postCommit func(prIDs []string)
+	// postReview is optional; when set, successful local review submissions invoke it
+	// after last_reviewed_sha tracking has run.
+	postReview func(ctx context.Context, prID string)
 }
 
 const (
@@ -139,10 +152,28 @@ func (o *Orchestrator) WithClassifier(p *classify.EngineProvider) *Orchestrator 
 	return o
 }
 
+// WithExpertise attaches the expertise engine hook for post-diff incremental updates.
+func (o *Orchestrator) WithExpertise(h ExpertiseHook) *Orchestrator {
+	o.expertise = h
+	return o
+}
+
+// WithRepoPathResolver attaches local checkout path resolution for expertise updates.
+func (o *Orchestrator) WithRepoPathResolver(resolve RepoPathResolver) *Orchestrator {
+	o.resolveRepoPath = resolve
+	return o
+}
+
 // WithPostCommit attaches a hook writers invoke after each committed batch
 // with the written PR ids (Phase 3.8 async LLM tier kick).
 func (o *Orchestrator) WithPostCommit(fn func(prIDs []string)) *Orchestrator {
 	o.postCommit = fn
+	return o
+}
+
+// WithPostReview attaches a hook invoked after successful review-like actions.
+func (o *Orchestrator) WithPostReview(fn func(ctx context.Context, prID string)) *Orchestrator {
+	o.postReview = fn
 	return o
 }
 
@@ -639,6 +670,10 @@ func (o *Orchestrator) executeAction(ctx context.Context, req *actions.ActionReq
 			o.handleThreadActionSuccess(ctx, req, log)
 		case actions.ReplyCommentCommand:
 			o.handleReplyCommentSuccess(req)
+		case actions.ApproveCommand, actions.RequestChangesCommand, actions.PostCommentCommand:
+			if o.postReview != nil {
+				o.postReview(ctx, req.PRID)
+			}
 		}
 	}
 

@@ -76,6 +76,24 @@ type CurrentUser struct {
 	Login    string `json:"login"`
 }
 
+type ExpertiseRepoState struct {
+	RepoID           string         `json:"repo_id"`
+	Enabled          int64          `json:"enabled"`
+	Status           string         `json:"status"`
+	IndexedSha       sql.NullString `json:"indexed_sha"`
+	IndexedAt        sql.NullTime   `json:"indexed_at"`
+	ErrorCode        sql.NullString `json:"error_code"`
+	Error            sql.NullString `json:"error"`
+	FilesTotal       sql.NullInt64  `json:"files_total"`
+	FilesDone        sql.NullInt64  `json:"files_done"`
+	NudgeDismissedAt sql.NullTime   `json:"nudge_dismissed_at"`
+}
+
+type ExpertiseSetting struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 type File struct {
 	ID        string         `json:"id"`
 	PrID      string         `json:"pr_id"`
@@ -84,6 +102,22 @@ type File struct {
 	Additions sql.NullInt64  `json:"additions"`
 	Deletions sql.NullInt64  `json:"deletions"`
 	PatchPath sql.NullString `json:"patch_path"`
+}
+
+type FileExpertise struct {
+	RepoID         string         `json:"repo_id"`
+	FilePath       string         `json:"file_path"`
+	AuthorEmail    string         `json:"author_email"`
+	AuthorLogin    sql.NullString `json:"author_login"`
+	SurvivingLines int64          `json:"surviving_lines"`
+	TotalLines     int64          `json:"total_lines"`
+	CommitScore    float64        `json:"commit_score"`
+	IsOriginal     int64          `json:"is_original"`
+	Score          float64        `json:"score"`
+	LastCommitAt   sql.NullTime   `json:"last_commit_at"`
+	Dormant        int64          `json:"dormant"`
+	ComputedAt     time.Time      `json:"computed_at"`
+	ComputedAtSha  string         `json:"computed_at_sha"`
 }
 
 type FilesViewed struct {

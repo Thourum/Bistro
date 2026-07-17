@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/itterno/bistro/internal/expertise"
+
 	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/provider/mock"
 	gosync "github.com/itterno/bistro/internal/sync"
@@ -58,6 +60,40 @@ func TestStartEventBridge_CancelsOldGoroutine(t *testing.T) {
 
 // TestWsEventMsg_MarshalShape verifies that wsEventMsg serialises into the
 // expected {"type":..., "data":...} envelope that WS clients expect.
+func TestBroadcastExpertiseEventFlattensTypedPayload(t *testing.T) {
+	data := expertisePayloadDataForTest(expertiseReadyPayloadForTest())
+	if _, ok := data["payload"]; ok {
+		t.Fatalf("typed expertise event data contains payload wrapper: %#v", data)
+	}
+	if data["repo_id"] != "github:owner/repo" {
+		t.Fatalf("repo_id = %v, want github:owner/repo", data["repo_id"])
+	}
+	if data["indexed_sha"] != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Fatalf("indexed_sha = %v, want sha", data["indexed_sha"])
+	}
+	if data["files_total"] != float64(3) {
+		t.Fatalf("files_total = %v, want 3", data["files_total"])
+	}
+}
+
+func expertiseReadyPayloadForTest() any {
+	return struct {
+		RepoID     string `json:"repo_id"`
+		IndexedSHA string `json:"indexed_sha"`
+		FilesTotal int    `json:"files_total"`
+	}{
+		RepoID:     "github:owner/repo",
+		IndexedSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		FilesTotal: 3,
+	}
+}
+
+func expertisePayloadDataForTest(payload any) map[string]interface{} {
+	return expertisePayloadToMap(payload)
+}
+
+var _ = expertise.ExpertiseStatusReady
+
 func TestWsEventMsg_MarshalShape(t *testing.T) {
 	msg := wsEventMsg{
 		Type: "THREAD_RESOLVED",

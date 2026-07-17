@@ -6,10 +6,12 @@ import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
+import { touchesYouCount } from '../utils/expertise';
 import { countTriageLanes, prBrowserUrl } from '../utils/triage';
 
 const FILTER_TITLES: Record<UIState['filterState'], string> = {
   needs_action: 'Needs Your Action',
+  touches_you: 'Touches Your Code',
   open: 'Open Pull Requests',
   draft: 'Draft Pull Requests',
   all: 'All Pull Requests',
@@ -82,6 +84,7 @@ export function PRListPage({
   // Counters always reflect the full open lane, independent of the filter.
   const { data: openPRs = [] } = useWebSocketPRList('open');
   const triage = countTriageLanes(openPRs, username);
+  const touchesYou = touchesYouCount(openPRs);
 
   return (
     <main
@@ -113,6 +116,7 @@ export function PRListPage({
               </span>
               {' · '}WAITING: {triage.waitingAuthor}
               {' · '}FYI: {triage.fyi}
+              {' · '}TOUCHES YOUR CODE: {touchesYou}
               {' · '}TOTAL: {prs.length}
             </span>
           </div>

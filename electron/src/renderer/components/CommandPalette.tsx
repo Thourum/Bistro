@@ -1,13 +1,16 @@
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
+import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
+import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
 
 type Icon = string;
 
@@ -58,6 +61,8 @@ const COMMANDS: readonly CommandItem[] = [
     description: 'Clone or link a repository from a Git URL',
     icon: 'add_link',
   },
+  { id: 'expertise-enable', name: 'Enable expertise', icon: 'psychology' },
+  { id: 'expertise-disable', name: 'Disable expertise', icon: 'psychology' },
   { id: 'focus-list', name: 'Focus PR list', icon: 'list_alt' },
   { id: 'focus-detail', name: 'Focus PR detail', icon: 'article' },
   { id: 'about', name: 'About BISTRO', icon: 'info' },
@@ -93,9 +98,14 @@ export function CommandPalette(): React.ReactElement | null {
   const prefetchedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const params = useParams({ strict: false }) as { prId?: string };
 
   // Use the shared visible-PR source so palette results match the list route.
   const { prs } = useVisiblePRs();
+  const selectedPRIndex = useStore(
+    appStore,
+    (state: UIState) => state.selectedPRIndex,
+  );
   const recentPRs = useMemo(() => prs.slice(0, 5), [prs]);
 
   const filteredPRs = useMemo(() => {
@@ -152,6 +162,25 @@ export function CommandPalette(): React.ReactElement | null {
     setQuery('');
   };
 
+  const focusedPR = useMemo(
+    () => focusedExpertisePR(prs, params.prId, selectedPRIndex),
+    [params.prId, prs, selectedPRIndex],
+  );
+
+  const sendExpertiseCommand = (
+    type: 'EXPERTISE_ENABLE' | 'EXPERTISE_DISABLE',
+  ): void => {
+    if (focusedPR === undefined) {
+      openRepoPicker();
+      setQuery('');
+      return;
+    }
+
+    send(type, { repo_id: repoIdForPR(focusedPR) });
+    closeOverlay();
+    setQuery('');
+  };
+
   const handleExecuteCommand = (command: CommandItem): void => {
     switch (command.id) {
       case 'settings':
@@ -193,6 +222,12 @@ export function CommandPalette(): React.ReactElement | null {
       case 'add-repo-by-url':
         openAddRepo();
         setQuery('');
+        return;
+      case 'expertise-enable':
+        sendExpertiseCommand('EXPERTISE_ENABLE');
+        return;
+      case 'expertise-disable':
+        sendExpertiseCommand('EXPERTISE_DISABLE');
         return;
       case 'sync':
         send('FORCE_SYNC', {});

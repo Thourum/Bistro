@@ -1,6 +1,7 @@
 import { Link, useParams } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ActionFeedback from '../components/ActionFeedback';
+import { ExpertiseNudge } from '../components/ExpertiseNudge';
 import { FooterCenterSlot } from '../components/FooterSlot';
 import { Markdown } from '../components/Markdown';
 import { MergeReadinessBadge } from '../components/MergeReadinessBadge';
@@ -13,6 +14,7 @@ import { ShortcutBadge } from '../components/ui/shortcut-badge';
 import { Textarea } from '../components/ui/textarea';
 import { useActionDispatch } from '../hooks/useActionDispatch';
 import { useDismissals } from '../hooks/useDismissals';
+import { useExpertise } from '../hooks/useExpertise';
 import { usePatchsets } from '../hooks/usePatchsets';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -20,13 +22,20 @@ import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
-import type { CICheck, Comment, Patchset, PR } from '../types';
+import type {
+  CICheck,
+  Comment,
+  ExpertiseFileData,
+  Patchset,
+  PR,
+} from '../types';
 import {
   filterBySeverity,
   groupVisibleFindings,
   isAutoCollapsed,
   sortBySeverity,
 } from '../utils/classification';
+import { formatWhy, repoIdForPR, touchesYouCount } from '../utils/expertise';
 import { createLogger } from '../utils/logger';
 
 // Route API for reading the stable $prId param; detail never resolves by list index.
@@ -79,6 +88,7 @@ export function PRDetailPage() {
   // Fetch ALL PRs via current filter and find by id.
   // We use 'all' to ensure deep-linked PRs (any status) are always resolvable.
   const { data: allPRs = [], isLoading, error } = useWebSocketPRList('all');
+  const { data: openPRs = [] } = useWebSocketPRList('open');
   // Also try the current filter as a fallback source — whichever has the PR.
   const { data: filteredPRs = [] } = useWebSocketPRList(filterState);
 
@@ -88,6 +98,10 @@ export function PRDetailPage() {
 
   const { request } = useWebSocket();
   const { patchsets } = usePatchsets(pr?.id);
+  const { expertise } = useExpertise(pr?.id);
+  const expertiseStatus = useStore(appStore, (s: UIState) =>
+    pr !== undefined ? s.expertiseRepoStatuses?.[repoIdForPR(pr)] : undefined,
+  );
 
   function handleSelectPair(from: Patchset, to: Patchset): void {
     appStore.setState((s) => ({
@@ -229,6 +243,8 @@ export function PRDetailPage() {
           onDismiss={clearActionResult}
         />
 
+        <ExpertiseNudge repoId={repoIdForPR(pr)} />
+
         <PatchsetTimeline
           patchsets={patchsets}
           onSelectPair={handleSelectPair}
@@ -262,7 +278,17 @@ export function PRDetailPage() {
 
         {comments.length > 0 && <RecentComments comments={comments} />}
 
-        {files.length > 0 && <FileList files={files} />}
+        {files.length > 0 && (
+          <FileList
+            files={files}
+            expertiseFiles={expertise?.files ?? []}
+            expertiseError={
+              expertiseStatus?.status === 'error'
+                ? (expertiseStatus.message ?? expertiseStatus.code ?? 'unknown')
+                : null
+            }
+          />
+        )}
 
         <footer className="mt-auto pt-12">
           <div className="inline-flex items-center gap-x-6">
@@ -286,7 +312,12 @@ export function PRDetailPage() {
         </footer>
       </article>
 
-      <StatusSidebar pr={pr} ciChecks={ciChecks} comments={comments} />
+      <StatusSidebar
+        pr={pr}
+        ciChecks={ciChecks}
+        comments={comments}
+        touchesYouCount={touchesYouCount(openPRs)}
+      />
 
       {activeOverlay === 'threads' && (
         <UnresolvedThreadsView prId={pr.id} comments={comments} />
@@ -630,9 +661,18 @@ function RecentComments({ comments }: { comments: Comment[] }) {
 
 function FileList({
   files,
+  expertiseFiles,
+  expertiseError,
 }: {
   files: Array<{ path: string; additions: number; deletions: number }>;
+  expertiseFiles: ExpertiseFileData[];
+  expertiseError: string | null;
 }) {
+  const expertiseByPath = useMemo(
+    () => new Map(expertiseFiles.map((file) => [file.file_path, file])),
+    [expertiseFiles],
+  );
+
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between">
@@ -643,17 +683,46 @@ function FileList({
           {files.length.toString().padStart(2, '0')} FILES
         </span>
       </div>
+      {expertiseError !== null && (
+        <p className="font-mono text-[10px] uppercase tracking-widest text-error">
+          Expertise unavailable: {expertiseError}
+        </p>
+      )}
       <div className="space-y-1">
-        {files.map((f) => (
-          <div
-            key={f.path}
-            className="grid grid-cols-[1fr_auto_auto] gap-4 items-center py-2 px-3 cursor-crosshair border-l-2 border-transparent hover:border-primary hover:bg-surface-container-low transition-colors duration-150 font-mono text-xs"
-          >
-            <span className="truncate text-on-surface">{f.path}</span>
-            <span className="text-primary">+{f.additions}</span>
-            <span className="text-error">-{f.deletions}</span>
-          </div>
-        ))}
+        {files.map((f) => {
+          const expertise = expertiseByPath.get(f.path);
+          return (
+            <div
+              key={f.path}
+              className="border-l-2 border-transparent hover:border-primary hover:bg-surface-container-low transition-colors duration-150"
+            >
+              <div className="grid grid-cols-[1fr_auto_auto] gap-4 items-center py-2 px-3 cursor-crosshair font-mono text-xs">
+                <span className="truncate text-on-surface">{f.path}</span>
+                <span className="text-primary">+{f.additions}</span>
+                <span className="text-error">-{f.deletions}</span>
+              </div>
+              {expertise !== undefined && expertise.experts.length > 0 && (
+                <details className="px-3 pb-3 font-mono text-[10px] text-outline">
+                  <summary className="cursor-crosshair uppercase tracking-widest text-on-surface-variant hover:text-on-surface">
+                    Expertise why
+                  </summary>
+                  <ul className="mt-2 space-y-1 border-l border-outline-variant/30 pl-3">
+                    {expertise.experts.map((expert) => (
+                      <li key={`${f.path}-${expert.author_email}`}>
+                        {formatWhy(expert)}
+                      </li>
+                    ))}
+                  </ul>
+                  {expertise.your_rank !== null && (
+                    <p className="mt-2 text-primary">
+                      Your rank: #{expertise.your_rank}
+                    </p>
+                  )}
+                </details>
+              )}
+            </div>
+          );
+        })}
       </div>
     </section>
   );

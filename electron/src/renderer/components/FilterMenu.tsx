@@ -10,6 +10,7 @@ type FilterValue = UIState['filterState'];
 
 const FILTER_OPTIONS: { label: string; value: FilterValue; hint: string }[] = [
   { label: 'Needs Action', value: 'needs_action', hint: 'n' },
+  { label: 'Touches Your Code', value: 'touches_you', hint: 'y' },
   { label: 'Open', value: 'open', hint: 'o' },
   { label: 'Draft', value: 'draft', hint: 'd' },
   { label: 'All', value: 'all', hint: 'a' },
