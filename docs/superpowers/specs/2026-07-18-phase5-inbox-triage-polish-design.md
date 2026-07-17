@@ -59,7 +59,7 @@ All bindings are pure config in `keybindings.ts` (sequence bindings are already 
 
 - `g 1` … `g 6` — jump to first row of lane N.
 - `j`/`k` — unchanged; walk the flat visible list across lane boundaries.
-- `Shift-R` — mark all PRs in the current lane read.
+- `Shift-R` — mark read all *filter-visible* PRs in the current lane (the lane rows the user can see, after search/repo filters). "Current lane" = the lane containing the selected row; with no selection (empty list) the binding is a no-op.
 
 ---
 
@@ -77,22 +77,26 @@ All bindings are pure config in `keybindings.ts` (sequence bindings are already 
 
 | Feature | Mechanism |
 |---|---|
-| Side-by-side toggle | `s` toggles `diffStyle: 'unified' \| 'split'` (library prop). Persisted in settings as the default view mode. |
+| Side-by-side toggle | `Shift+S` toggles `diffStyle: 'unified' \| 'split'` (library prop). Persisted in settings as the default view mode. Plain `s` stays bound to the existing `diff.sinceLastReview` range diff — unchanged. |
 | Word-level intra-line diff | `lineDiffType: 'word'` + library's `maxLineDiffLength` cap. On by default; no UI. |
 | Whitespace-only collapse | Custom: pure `isWhitespaceOnlyChange(hunk)` over parsed patch data (compare `-`/`+` lines after whitespace normalization). `w` toggles hiding those hunks behind a one-line "N whitespace-only lines hidden" marker. The library has no ignore-whitespace option (verified against 1.2.11 typings). |
 | Generated-file collapse | Custom detection: constant pattern list (`*.lock`, `pnpm-lock.yaml`, `go.sum`, `*_generated.*`, `dist/`, linguist-generated conventions), not user-configurable. Collapse rendering uses the library's `collapsed` option (header stays visible). Manual expand/collapse per file. |
-| Image/binary diffs | Deferred. Binary files render a placeholder row: "binary file — `o` opens in browser". |
+| Image/binary diffs | Deferred. Binary files render a placeholder row: "binary file — `o` opens in browser". `o` here targets the specific file's blob view on the PR (GitHub `…/pull/N/files#diff-<file-anchor>`), distinct from the PR-level `list.openBrowser`/`:open in browser` action which opens the PR page. |
 
 ---
 
 ## 5.3 Command palette polish
 
 - **`:open in browser`** — palette command wired to the existing `list.openBrowser` action path (`o` keybinding + `openExternal` IPC already exist; wiring only).
-- **`:open in editor`** — opens the current diff file at the current line:
+- **`:open in editor`** — opens the current diff file at the current line.
+
+  **Current file/line model** (defined; no new cursor state invented): the *file* is the one the diff view is focused on (the `n`/`p` file navigation target). The *line* is the selected inline-comment line when an inline comment is selected; otherwise the first line of the file's first hunk (new-side line number); fallback line 1. This reuses existing diff-view state only.
+
+  **Flow:**
   1. Look up the repo's local path (`repo_location`, migration 026). No local path → error toast.
-  2. Verify the PR head SHA exists locally (`git cat-file -e <sha>` via a small Go WS request).
-  3. SHA present → open `$EDITOR` at `file:line` using the `+line` CLI convention (`code -g file:line`, `vim +line`, fallback `$EDITOR file`), launched from the Electron main process.
-  4. SHA missing → dialog: **"Branch not checked out"** with three choices: *Check out PR head* (Go runs `git fetch` + `checkout`, only if the worktree is clean — dirty tree returns an error toast), *Open current version* (open the local file as-is; may differ from the PR), *Cancel*.
+  2. Go WS request compares `git rev-parse HEAD` in that worktree against the PR head SHA (and reports whether the SHA object exists locally via `git cat-file -e`).
+  3. **HEAD == PR head SHA** → open `$EDITOR` at `file:line` using the `+line` CLI convention (`code -g file:line`, `vim +line`, fallback `$EDITOR file`), launched from the Electron main process.
+  4. **HEAD != PR head SHA** (whether or not the object exists locally) → dialog: **"PR revision not checked out"** with three choices: *Check out PR head* (Go runs `git checkout <sha>`, preceded by `git fetch` when the object is missing locally; refuses on a dirty worktree with an error toast), *Open current version* (open the local file as-is, with an explicit "may differ from the PR revision" warning in the dialog body), *Cancel*. Opening the working-tree file never happens silently on a mismatched HEAD.
 
 ---
 
