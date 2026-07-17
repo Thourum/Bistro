@@ -153,6 +153,8 @@ function getWsUrl(): string {
   return `ws://localhost:${port}/ws`;
 }
 const REQUEST_TIMEOUT_MS = 5000;
+const PR_SYNC_RESPONSE_MARGIN_MS = 15000;
+const PR_SYNC_REQUEST_TIMEOUT_MS = 2 * 60 * 1000 + PR_SYNC_RESPONSE_MARGIN_MS;
 const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -1067,8 +1069,15 @@ export function extractResponseError(data: unknown): string | null {
 
 const CONNECT_WAIT_INTERVAL_MS = 250;
 
+function requestTimeoutFor(type: string): number {
+  return type === 'REQUEST_PR_SYNC'
+    ? PR_SYNC_REQUEST_TIMEOUT_MS
+    : REQUEST_TIMEOUT_MS;
+}
+
 function requestMessage(type: string, data: unknown): Promise<unknown> {
   return new Promise((resolve, reject) => {
+    const requestTimeout = requestTimeoutFor(type);
     const connectDeadline = Date.now() + REQUEST_TIMEOUT_MS;
 
     // The socket connects asynchronously on mount; requests issued in the
@@ -1101,7 +1110,7 @@ function requestMessage(type: string, data: unknown): Promise<unknown> {
             `Timeout waiting for ${type} response (socket state: ${readyState} — see bistro-sync.log for the backend side)`,
           ),
         );
-      }, REQUEST_TIMEOUT_MS);
+      }, requestTimeout);
 
       messageHandlers.set(id, (responseData) => {
         clearTimeout(timeout);
