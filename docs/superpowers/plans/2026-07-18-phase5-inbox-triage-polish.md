@@ -147,8 +147,9 @@ CREATE TABLE IF NOT EXISTS pr_read_state (
   - **Write `last_read_at` from Go, not SQLite:** bind `time.Now().UTC()` as the parameter so the stored representation matches how the sync writer stores `prs.updated_at` (both go through mattn/go-sqlite3 `time.Time` binding). Do NOT use `CURRENT_TIMESTAMP` (string form differs from Go-bound timestamps and breaks `<` comparison).
   - `INSERT INTO pr_read_state (pr_id, login, last_read_at) VALUES (?, ?, ?) ON CONFLICT(pr_id, login) DO UPDATE SET last_read_at = excluded.last_read_at` in one transaction.
   - Return `{ok: true, marked: N}`.
-  - Register in `app.go`: `a.wsServer.RegisterHandler("MARK_PRS_READ", handler.NewMarkPRsReadHandler(...))` next to `MARK_FILE_VIEWED`.
-  - **After a successful write, broadcast an invalidation push** via the ws server's existing `Broadcast` (used for sync events): `{type: "PRS_READ_CHANGED", data: {pr_ids}}`. The renderer's PR-list hook refetches on it (Task 7).
+  - **Broadcaster dependency:** handlers don't receive the ws server directly, so declare a consumer-side interface in the handler package — `type broadcaster interface { Broadcast(msg interface{}) }` — and take it as a constructor param: `NewMarkPRsReadHandler(db prReadMarker, cu currentUserReader, bc broadcaster, log *slog.Logger)`. `*ws.Server` satisfies it. Tests use a spy broadcaster recording the pushed message.
+  - Register in `app.go`: `a.wsServer.RegisterHandler("MARK_PRS_READ", handler.NewMarkPRsReadHandler(db, cu, a.wsServer, log))` next to `MARK_FILE_VIEWED`.
+  - **After a successful write, broadcast an invalidation push** via that dependency: `{type: "PRS_READ_CHANGED", data: {pr_ids}}`. The renderer's PR-list hook refetches on it (Task 7). Test asserts the spy saw it (and saw nothing on the no-user path).
 
 - [ ] **Step 8: Run handler tests + `go vet ./...`, confirm PASS.**
 
@@ -176,9 +177,14 @@ CREATE TABLE IF NOT EXISTS pr_read_state (
 SELECT ..., mentioned,
   EXISTS(SELECT 1 FROM comments c WHERE c.pr_id = prs.id AND c.author = ?) AS viewer_commented,
   (COALESCE((SELECT unixepoch(r.last_read_at) FROM pr_read_state r
-             WHERE r.pr_id = prs.id AND r.login = ?), 0) < unixepoch(prs.updated_at)) AS unread
+             WHERE r.pr_id = prs.id AND r.login = ?), 0) < unixepoch(prs.updated_at)) AS unread,
+  EXISTS(SELECT 1 FROM last_reviewed_sha lrs
+         WHERE lrs.pr_id = prs.id AND lrs.login = ?
+           AND lrs.sha != prs.head_sha) AS reviewed_head_stale
 FROM prs WHERE 1=1 ...
 ```
+
+(`last_reviewed_sha` is account-namespaced — check its PK/columns in `go/internal/store/db/last_reviewed.sql.go` and match the predicate to how `UpsertLastReviewedSHA` keys rows: if `account_provider`/`account_login` participate, bind them too, same values the executor writes.)
 
   - Add `"viewer_login": login` to the `PR_LIST_READY` `data` map.
   - When no current user is available, ship `mentioned` from the column, `viewer_commented:false`, `unread:false`, `viewer_login:""` (inbox degrades to FYI-heavy — acceptable pre-auth).
@@ -192,7 +198,7 @@ FROM prs WHERE 1=1 ...
 ### Task 5: Renderer lane model — `lanes.ts` + types
 
 **Files:**
-- Modify: `electron/src/renderer/types/index.ts` (PR interface: add `mentioned: boolean; viewer_commented: boolean; unread: boolean;`)
+- Modify: `electron/src/renderer/types/index.ts` (PR interface: add `mentioned: boolean; viewer_commented: boolean; unread: boolean; reviewed_head_stale: boolean;` — all four Task-4 payload fields)
 - Modify: the `PR_LIST_READY` consumer (`electron/src/renderer/hooks/useWebSocketPRList.ts`) to surface `viewer_login` (store it in the app store as `viewerLogin: string`)
 - Create: `electron/src/renderer/utils/lanes.ts`
 - Create: `electron/src/renderer/utils/lanes.test.ts`
@@ -289,7 +295,7 @@ export function laneForPR(pr: PR, viewerLogin: string): LaneId {
 
 - [ ] **Step 4: Run tests, confirm PASS.** Also `pnpm type-check`.
 
-- [ ] **Step 5: Wire payload fields**: add the three booleans to the `PR` interface; in `useWebSocketPRList.ts`, read `viewer_login` from `PR_LIST_READY` data and write it to the app store (`viewerLogin`, default `''`, in `store/ui.ts`).
+- [ ] **Step 5: Wire payload fields**: add the four booleans (`mentioned`, `viewer_commented`, `unread`, `reviewed_head_stale`) to the `PR` interface; in `useWebSocketPRList.ts`, read `viewer_login` from `PR_LIST_READY` data and write it to the app store (`viewerLogin`, default `''`, in `store/ui.ts`).
 
 - [ ] **Step 6: `pnpm type-check && pnpm lint && pnpm test`, all green. Commit** — `feat(inbox): lane assignment model`
 
@@ -299,12 +305,34 @@ export function laneForPR(pr: PR, viewerLogin: string): LaneId {
 
 **View-mode reality check (verified):** `prList.view` exists in settings but NOTHING consumes it today — `PRListTable.tsx` and `PRListPage.tsx` always project repo-grouped rows through `visiblePRListRows` (repo `<details>` groups + `collapsedRepoKeys`). This task makes `prList.view` real: `'flat'` (default) renders lane sections, `'grouped'` renders the existing repo groups. Both the table AND the page's cursor-row projection must switch on it, or `selectedPRIndex`/`j`/`k`/`Enter` desync from what's on screen.
 
+**Cursor/header design (the load-bearing decision):** the keyboard cursor NEVER sees headers. Two layers, strictly separated:
+
+1. **Cursor layer (unchanged contract):** `useVisiblePRs().prs` stays a PR-only array; `selectedPRIndex` indexes it; `j`/`k` stay plain ±1; `Enter` stays `prs[selectedPRIndex]`. NO skip logic anywhere. The only Task-6 change at this layer is the `'flat'`-view sort: `(lane asc, updated_at desc)`.
+2. **Presentation layer:** lane headers are rendered BETWEEN PR rows by the table alone. Because the list is lane-sorted, the table derives header positions with a pure helper:
+
+```typescript
+// utils/lanes.ts (add alongside laneForPR)
+/** Positions in a lane-sorted PR list where each lane's header renders.
+ *  Returns all six lanes; empty lanes carry startIndex of the next lane
+ *  (header renders with count 0 and a '— clear —' row). */
+export function laneSections(
+  prs: PR[], viewerLogin: string,
+): { lane: LaneId; startIndex: number; count: number }[]
+```
+
+The table iterates `laneSections` and slices `prs[startIndex, startIndex+count)` under each header. `globalIndex` passed to `PRRow` is the index in `prs` — identical to today's contract, so selection highlighting, `Enter`, and `Shift+G` need zero changes.
+
+3. **Lane jumps (`g N`):** `selectedPRIndex = laneSections(prs, login)[N-1].startIndex`, no-op when `count === 0`. **Current lane for `Shift-R`:** the section whose `[startIndex, startIndex+count)` contains `selectedPRIndex`. Both are pure functions over the same `laneSections` output — one source of truth, no drift.
+
+`'grouped'` view: `visiblePRListRows` (repo groups) is used exactly as today; lane sections don't exist there, and the lane keybindings no-op (guard on view mode in the action).
+
 **Files:**
-- Modify: `electron/src/renderer/hooks/useVisiblePRs.ts` — in `'flat'` view, order the canonical list by `(lane, updated_at DESC)` (lane from `laneForPR(pr, viewerLogin)`) so the keyboard cursor walks lanes in order. In `'grouped'` view, ordering is unchanged.
-- Modify: the `visiblePRListRows` projection (in `PRListTable.tsx`, shared with `PRListPage.tsx`) — make it view-aware: `'flat'` → PR rows + lane-header rows (headers are non-selectable, cursor indexes skip them); `'grouped'` → existing repo-group rows unchanged. Keep ONE projection function used by both files so cursor math stays consistent.
-- Modify: `electron/src/renderer/components/PRListTable.tsx` — render lane header rows: `<laneId> <LABEL> — <count>` in the existing uppercase/mono style; ALL six headers render including empty lanes (empty: header + dimmed `— clear —` row). Unread rows: title `font-semibold` + `●` prefix; read rows: existing dimmed styles.
+- Modify: `electron/src/renderer/hooks/useVisiblePRs.ts` — `'flat'`-view sort by `(lane, updated_at DESC)` (lane from `laneForPR(pr, viewerLogin)`); `'grouped'` unchanged.
+- Modify: `electron/src/renderer/utils/lanes.ts` — add `laneSections` + tests (empty lanes, all-in-one-lane, interleaved input gets sorted upstream so sections are contiguous).
+- Modify: `electron/src/renderer/components/PRListTable.tsx` — `'flat'`: render lane headers from `laneSections` (`<laneId> <LABEL> — <count>`, existing uppercase/mono style; empty lane: header + dimmed `— clear —` row); `'grouped'`: existing `visiblePRListRows` path untouched. Unread rows: title `font-semibold` + `●` prefix; read rows: existing dimmed styles.
+- Modify: `electron/src/renderer/pages/PRListPage.tsx` — cursor math already reads the PR-only list; verify nothing there assumes repo-group rows in `'flat'` view.
 - Read first: where the settings value reaches the renderer (`grep -rn 'prList' electron/src/renderer --include='*.ts*'` — likely via `useSettingsEffect.ts`/app store); wire it if it isn't already in the store.
-- Test: `electron/src/renderer/components/PRListTable.test.tsx` (extend existing tests)
+- Test: `electron/src/renderer/utils/lanes.test.ts` (laneSections) + `electron/src/renderer/components/PRListTable.test.tsx` (extend existing tests)
 
 - [ ] **Step 1: Failing component test:** in `'flat'` view, given PRs mapped to lanes 1/4/6, the table renders six headers with counts `1 NEEDS ACTION — 1`, `4 YOUR CODE — 1`, `6 FYI — 1`, empty lanes show `— clear —`, an unread PR row shows the `●` marker; in `'grouped'` view, repo groups render exactly as before (existing tests keep passing).
 
@@ -331,7 +359,7 @@ export function laneForPR(pr: PR, viewerLogin: string): LaneId {
 **Bridge constraint (verified):** keybinding actions are pure config receiving only `KeyActionContext` (store/router/overlays) — they CANNOT call React hooks. The existing bridge pattern is DOM CustomEvents: `emitThreadsEvent('bistro:comments:dismiss-nits')` in `keybindings.ts` + a listener in `useDismissals.ts`. Reuse exactly that pattern.
 
 - [ ] **Step 1:** Add bindings config (test-first where a test harness exists):
-  - `inbox.lane1`…`inbox.lane6`: keys `['g','1']`…`['g','6']`, route `list`, hidden: lanes 2–6 (avoid help-overlay noise, same convention as jump keys), description "Jump to lane N". Action: set `selectedPRIndex` to the first PR of lane N via the store (pure store write — no hook needed; no-op if lane empty).
+  - `inbox.lane1`…`inbox.lane6`: keys `['g','1']`…`['g','6']`, route `list`, hidden: lanes 2–6 (avoid help-overlay noise, same convention as jump keys), description "Jump to lane N". Action: `selectedPRIndex = laneSections(...)[N-1].startIndex` via the store (pure store write — no hook needed; no-op if the lane's `count === 0` or view is `'grouped'`).
   - `inbox.markLaneRead`: keys `'Shift+R'`, route `list`. Action: `document.dispatchEvent(new CustomEvent('bistro:inbox:mark-lane-read'))` (same helper as `emitThreadsEvent`). NOTE: `Shift+R` is `detail.requestChanges` on the `detail` route — route gating keeps them disjoint; verify with the help overlay.
 - [ ] **Step 2:** Implement `useMarkPRsRead` (WS request hook per `useMarkFileViewed` pattern) plus a listener hook `useInboxReadActions` mounted in the list page: on `bistro:inbox:mark-lane-read`, compute filter-visible PRs in the selected row's lane (from `useVisiblePRs` + `laneForPR`) and call `markPRsRead(ids)`; no-op when the list is empty.
 - [ ] **Step 3:** **Refetch on push:** in `useWebSocketPRList.ts`, subscribe to the `PRS_READ_CHANGED` broadcast (Task 3) and refetch/invalidate the list — this is the concrete list-update path; the same push satisfies "opened PR loses its dot" for every open path.
