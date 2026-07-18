@@ -42,6 +42,10 @@ type prRow struct {
 	ChangesRequestedBy *string  `json:"changes_requested_by"`
 	RequestedReviewers []string `json:"requested_reviewers"`
 	TouchesYou         bool     `json:"touches_you"`
+	Mentioned          bool     `json:"mentioned"`
+	ViewerCommented    bool     `json:"viewer_commented"`
+	Unread             bool     `json:"unread"`
+	ReviewedHeadStale  bool     `json:"reviewed_head_stale"`
 	Hydrated           int      `json:"hydrated"`
 }
 
@@ -71,11 +75,11 @@ func decodeReviewers(logger *slog.Logger, prID string, raw *string) []string {
 	return reviewers
 }
 
-func NewRequestPRListHandler(db prLister, log *slog.Logger) ws.MessageHandler {
-	return NewRequestPRListHandlerWithExpertise(db, nil, log)
+func NewRequestPRListHandler(db prLister, cu currentUserReader, log *slog.Logger) ws.MessageHandler {
+	return NewRequestPRListHandlerWithExpertise(db, nil, cu, log)
 }
 
-func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouResolver, log *slog.Logger) ws.MessageHandler {
+func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouResolver, cu currentUserReader, log *slog.Logger) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		logger := logging.FromContext(ctx)
 		if log != nil {
@@ -100,7 +104,21 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 			"offset", req.Offset,
 		)
 
-		query := "SELECT id, provider, owner, repo, number, title, body, author, state, created_at, updated_at, merged_at, base_branch, head_branch, base_sha, head_sha, comment_count, ci_status, draft, review_status, approved_by, changes_requested_by, requested_reviewers, hydrated FROM prs WHERE 1=1"
+		login := ""
+		if cu != nil {
+			resolvedLogin, found, err := cu.GetCurrentUser(ctx, "github")
+			if err != nil {
+				logger.Warn("resolve current user for REQUEST_PR_LIST", "err", err)
+			} else if found && resolvedLogin != "" {
+				login = resolvedLogin
+			}
+		}
+
+		query := `SELECT id, provider, owner, repo, number, title, body, author, state, created_at, updated_at, merged_at, base_branch, head_branch, base_sha, head_sha, comment_count, ci_status, draft, review_status, approved_by, changes_requested_by, requested_reviewers, mentioned,
+			(? <> '' AND EXISTS(SELECT 1 FROM comments c WHERE c.pr_id = prs.id AND c.author = ?)) AS viewer_commented,
+			(? <> '' AND COALESCE((SELECT unixepoch(r.last_read_at) FROM pr_read_state r WHERE r.pr_id = prs.id AND r.login = ?), 0) < unixepoch(prs.updated_at)) AS unread,
+			(? <> '' AND EXISTS(SELECT 1 FROM last_reviewed_sha lrs WHERE lrs.pr_id = prs.id AND lrs.account_provider = 'github' AND lrs.account_login = ? AND lrs.login = ? AND lrs.sha != prs.head_sha)) AS reviewed_head_stale,
+			hydrated FROM prs WHERE 1=1`
 
 		switch req.Filter {
 		case "open":
@@ -115,7 +133,7 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 
 		query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
 
-		rows, err := db.Query(query, req.Limit, req.Offset)
+		rows, err := db.Query(query, login, login, login, login, login, login, login, req.Limit, req.Offset)
 		if err != nil {
 			logger.Error("REQUEST_PR_LIST query failed", "err", err)
 			return map[string]interface{}{
@@ -143,7 +161,8 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 				&pr.BaseBranch, &pr.HeadBranch, &pr.BaseSHA, &pr.HeadSHA,
 				&pr.CommentCount, &pr.CIStatus, &pr.Draft,
 				&pr.ReviewStatus, &pr.ApprovedBy, &pr.ChangesRequestedBy,
-				&requestedReviewers, &pr.Hydrated,
+				&requestedReviewers, &pr.Mentioned, &pr.ViewerCommented, &pr.Unread,
+				&pr.ReviewedHeadStale, &pr.Hydrated,
 			); err != nil {
 				logger.Error("REQUEST_PR_LIST scan failed", "err", err)
 				continue
@@ -178,9 +197,10 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 			"id":   msg.ID,
 			"type": "PR_LIST_READY",
 			"data": map[string]interface{}{
-				"prs":      prs,
-				"count":    len(prs),
-				"has_more": len(prs) == req.Limit,
+				"prs":          prs,
+				"count":        len(prs),
+				"has_more":     len(prs) == req.Limit,
+				"viewer_login": login,
 			},
 		}, nil
 	}

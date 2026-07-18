@@ -608,7 +608,7 @@ func (a *App) Run(ctx context.Context) error {
 		CurrentUser: currentUserStore,
 		Log:         a.log,
 	}))
-	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandlerWithExpertise(a.db.DB, a.expertiseEngine, a.log))
+	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandlerWithExpertise(a.db.DB, a.expertiseEngine, currentUserStore, a.log))
 	a.wsServer.RegisterHandler("REQUEST_COMMENTS",
 		handler.NewRequestCommentsHandlerWithLLMKick(a.db.DB, a.log, a.classifier, llmKick))
 	dismissDeps := handler.DismissDeps{

@@ -370,7 +370,7 @@ func TestRequestPRListPopulatesTouchesYou(t *testing.T) {
 		return expertise.Identity{Login: "alice", AliasEmails: []string{"alice@example.com"}}
 	})
 	engine := expertise.NewEngine(testRepoLogger(), expertiseStore, nil, indexer, nil)
-	h := NewRequestPRListHandlerWithExpertise(db, engine, testRepoLogger())
+	h := NewRequestPRListHandlerWithExpertise(db, engine, &mockCurrentUserReader{login: "alice", found: true}, testRepoLogger())
 
 	resp, err := callHandler(t, h, "REQUEST_PR_LIST", map[string]interface{}{"filter": "all", "limit": 10})
 	if err != nil {
