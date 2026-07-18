@@ -554,7 +554,7 @@ Screens (content, keys rendered from `keybindings.ts` config via the same lookup
 4. Actions (`c` comment, `a a` approve, `Shift+R` — "request changes *(on a PR)*", `d n`/`d b` dismiss)
 5. Palette & help (`:` commands, `?` bindings)
 
-- [ ] **Step 1: Failing tests:** renders screen 1 of 5; advances; Esc closes and persists `tourComplete: true`; shows override key when a binding is overridden.
+- [ ] **Step 1: Failing tests:** renders screen 1 of 5; advances; Esc closes and persists `tourComplete: true`; advancing past screen 5 (normal completion) ALSO closes and persists `tourComplete: true`; shows override key when a binding is overridden.
 - [ ] **Step 2:** Run — FAIL. Implement.
 - [ ] **Step 3:** Wire show-once + `:tour`. All checks green. Commit — `feat(help): 5-screen first-run tour`
 

@@ -35,7 +35,7 @@
 Ordering notes:
 
 - Lanes 1 and 2 require `state === 'open'`: a closed/merged PR carrying stale review-request or changes-requested signals never outranks live work (it falls through to Your PRs / Your Code / FYI).
-- "Author pushed since your review" is detected via the existing `last_reviewed_sha` table (written on every successful review action): when `head_sha` no longer equals your recorded review SHA, the PR moves from lane 2 back to lane 1 — an author responding with commits resurfaces as actionable even when GitHub does not re-request review. (An author responding with *comments only* does not re-lane; accepted limitation.)
+- "Author pushed since your review" is detected via the existing `last_reviewed_sha` table (written on every successful review action): when `head_sha` no longer equals your recorded review SHA, the PR moves from lane 2 back to lane 1 — an author responding with commits resurfaces as actionable even when GitHub does not re-request review. Two accepted limitations, both bounded by the unread marker (any `updated_at` bump re-bolds the row in lane 2): an author responding with *comments only* does not re-lane, and a PR you only *commented* on (never formally reviewed) has no recorded review SHA, so author pushes there also surface via the unread marker rather than a lane change.
 - "Your PRs" is checked before "Your Code" so your own PRs don't land in lane 4.
 - "Waiting on Author" requires `author !== viewer`, so your own PRs never match it.
 - When GitHub re-requests your review after you reviewed, `requested_reviewers` contains you again → the PR returns to lane 1.
@@ -111,7 +111,7 @@ All bindings are pure config in `keybindings.ts` (sequence bindings are already 
 - 5-screen overlay, new `OverlayKind: 'tour'`: (1) Inbox & lanes, (2) `j`/`k`/`enter` navigation, (3) diff review keys, (4) comment/approve actions, (5) command palette & `?` help.
 - Keys that are route-dependent are labeled with their context on every screen (e.g. screen 1: "`Shift-R` — mark lane read *(in the inbox)*"; screen 4: "`Shift-R` — request changes *(on a PR)*"), so the same key appearing twice reads as deliberate, not contradictory.
 - Key hints render from the actual `keybindings.ts` config so user overrides display correctly — no hardcoded key names.
-- Shows once (settings flag), skippable with `Esc`, re-runnable via `:tour`.
+- Shows once (settings flag). The flag is set on ANY exit — finishing screen 5 (Enter/advance past the last screen) and `Esc` mid-tour both persist `tourComplete: true`; re-runnable via `:tour`.
 - "Did you know?" tooltips: won't-do; ROADMAP updated accordingly.
 
 ---
