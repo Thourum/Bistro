@@ -4,7 +4,7 @@
 //
 // Covers:
 //   1. Diff route renders the PR matching $prId (NOT selectedPRIndex).
-//   2. Diff route passes the file matching ?file as selectedFileKey to PierreDiffView.
+//   2. Diff route passes the file matching ?file as selectedFileKey to DiffView.
 //   3. Unknown ?file → falls back to first file (selectedFileKey='').
 //   4. detail.viewDiff (Space) navigates to /prs/$prId/diff?file=....
 //   5. Cold-start /prs/$prId/diff → mode:'diff'.
@@ -110,22 +110,20 @@ vi.mock('../../src/renderer/hooks/useReviewThreads', () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock PierreDiffView so we can inspect which selectedFileKey was passed.
+// Mock DiffView so we can inspect which selectedFileKey was passed.
 // Render a testid marker so test assertions can query by file key.
 // ---------------------------------------------------------------------------
 
-const { mockPierreDiffViewSelectedKey, mockPierreDiffViewProps } = vi.hoisted(
-  () => ({
-    mockPierreDiffViewSelectedKey: vi.fn<[string | undefined], null>(() => null),
-    mockPierreDiffViewProps: vi.fn<
-      [{ threads?: unknown[]; comments?: unknown[] }],
-      null
-    >(() => null),
-  }),
-);
+const { mockDiffViewSelectedKey, mockDiffViewProps } = vi.hoisted(() => ({
+  mockDiffViewSelectedKey: vi.fn<[string | undefined], null>(() => null),
+  mockDiffViewProps: vi.fn<
+    [{ threads?: unknown[]; comments?: unknown[] }],
+    null
+  >(() => null),
+}));
 
-vi.mock('../../src/renderer/components/PierreDiffView', () => ({
-  PierreDiffView: ({
+vi.mock('../../src/renderer/components/diff/DiffView', () => ({
+  DiffView: ({
     selectedFileKey,
     onFilesResolved,
     threads,
@@ -139,15 +137,15 @@ vi.mock('../../src/renderer/components/PierreDiffView', () => ({
     threads?: unknown[];
     comments?: unknown[];
   }) => {
-    mockPierreDiffViewSelectedKey(selectedFileKey);
-    mockPierreDiffViewProps({ threads, comments });
+    mockDiffViewSelectedKey(selectedFileKey);
+    mockDiffViewProps({ threads, comments });
     // Simulate resolving 2 files so next/prev keybinding tests work.
     React.useEffect(() => {
       onFilesResolved?.(['src/alpha.ts', 'src/beta.ts']);
     }, [onFilesResolved]);
     return (
       <div
-        data-testid="pierre-diff-view"
+        data-testid="diff-view"
         data-selected-file-key={selectedFileKey ?? ''}
       >
         MockDiff
@@ -354,8 +352,8 @@ function makeTestCtx(
 
 beforeEach(() => {
   mockRouterNavigate.mockClear();
-  mockPierreDiffViewSelectedKey.mockClear();
-  mockPierreDiffViewProps.mockClear();
+  mockDiffViewSelectedKey.mockClear();
+  mockDiffViewProps.mockClear();
   appStore.setState(() => ({
     ...initialUIState,
     isAuthenticated: true,
@@ -414,16 +412,16 @@ describe('DiffPage resolves PR by id', () => {
 // ---------------------------------------------------------------------------
 
 describe('?file canonical resolution', () => {
-  it('passes ?file key to PierreDiffView as selectedFileKey', async () => {
+  it('passes ?file key to DiffView as selectedFileKey', async () => {
     // no-op (mode removed)
 
     makeDiffRouteRouter('/prs/pr-aaa/diff?file=src%2Falpha.ts&side=right');
 
     await waitFor(() => {
-      expect(screen.getByTestId('pierre-diff-view')).toBeInTheDocument();
+      expect(screen.getByTestId('diff-view')).toBeInTheDocument();
     });
 
-    const view = screen.getByTestId('pierre-diff-view');
+    const view = screen.getByTestId('diff-view');
     expect(view.getAttribute('data-selected-file-key')).toBe('src/alpha.ts');
   });
 
@@ -434,11 +432,11 @@ describe('?file canonical resolution', () => {
     makeDiffRouteRouter('/prs/pr-aaa/diff');
 
     await waitFor(() => {
-      expect(screen.getByTestId('pierre-diff-view')).toBeInTheDocument();
+      expect(screen.getByTestId('diff-view')).toBeInTheDocument();
     });
 
-    const view = screen.getByTestId('pierre-diff-view');
-    // Empty string → PierreDiffView falls back to first file internally.
+    const view = screen.getByTestId('diff-view');
+    // Empty string → DiffView falls back to first file internally.
     expect(view.getAttribute('data-selected-file-key')).toBe('');
   });
 
@@ -448,10 +446,10 @@ describe('?file canonical resolution', () => {
     makeDiffRouteRouter('/prs/pr-aaa/diff?file=src%2Fmy%20file.ts&side=right');
 
     await waitFor(() => {
-      expect(screen.getByTestId('pierre-diff-view')).toBeInTheDocument();
+      expect(screen.getByTestId('diff-view')).toBeInTheDocument();
     });
 
-    const view = screen.getByTestId('pierre-diff-view');
+    const view = screen.getByTestId('diff-view');
     expect(view.getAttribute('data-selected-file-key')).toBe('src/my file.ts');
   });
 });
@@ -612,19 +610,19 @@ describe('in-diff n/p keybindings update ?file', () => {
 // to "correct". The underlying routing behavior (pathname) is tested above.
 
 // ---------------------------------------------------------------------------
-// DiffPage passes comments and threads to PierreDiffView
+// DiffPage passes comments and threads to DiffView
 // ---------------------------------------------------------------------------
 
 describe('DiffPage inline annotations', () => {
-  it('passes threads and comments props to PierreDiffView', async () => {
+  it('passes threads and comments props to DiffView', async () => {
     makeDiffRouteRouter('/prs/pr-aaa/diff');
 
     await waitFor(() => {
-      expect(screen.getByTestId('pierre-diff-view')).toBeInTheDocument();
+      expect(screen.getByTestId('diff-view')).toBeInTheDocument();
     });
 
     // DiffPage should pass threads and comments arrays (even if empty from mocks).
-    expect(mockPierreDiffViewProps).toHaveBeenCalledWith(
+    expect(mockDiffViewProps).toHaveBeenCalledWith(
       expect.objectContaining({
         threads: expect.any(Array),
         comments: expect.any(Array),
@@ -636,7 +634,7 @@ describe('DiffPage inline annotations', () => {
     makeDiffRouteRouter('/prs/pr-aaa/diff');
 
     await waitFor(() => {
-      expect(screen.getByTestId('pierre-diff-view')).toBeInTheDocument();
+      expect(screen.getByTestId('diff-view')).toBeInTheDocument();
     });
 
     expect(mockRequest).toHaveBeenCalledWith(
@@ -661,9 +659,9 @@ describe('diffFileKeys cleared on prId change', () => {
     makeDiffRouteRouter('/prs/pr-bbb/diff');
 
     // After mounting, diffFileKeys should be cleared (then repopulated by the
-    // mock PierreDiffView via onFilesResolved).
+    // mock DiffView via onFilesResolved).
     await waitFor(() => {
-      // The mock PierreDiffView calls onFilesResolved with ['src/alpha.ts','src/beta.ts'].
+      // The mock DiffView calls onFilesResolved with ['src/alpha.ts','src/beta.ts'].
       // Verify stale keys are gone.
       expect(appStore.state.diffFileKeys).not.toContain('old-pr/file-a.ts');
     });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
-// Unit tests for PierreDiffView — covers:
-//  1. PatchDiff receives lineAnnotations filtered to the current file.
+// Unit tests for DiffView — covers:
+//  1. CodeView receives annotations filtered to the current file.
 //  2. renderAnnotation is wired when annotations exist for a file.
 //  3. No annotations are passed for files with no matching threads.
 //  4. annotation has correct side, lineNumber, metadata.
@@ -22,7 +22,7 @@ import {
 } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PierreDiffView } from '../../src/renderer/components/PierreDiffView';
+import { DiffView } from '../../src/renderer/components/diff/DiffView';
 import { appStore } from '../../src/renderer/store';
 import { initialUIState } from '../../src/renderer/store/ui';
 import type { Comment, ReviewThread } from '../../src/renderer/types';
@@ -42,10 +42,12 @@ Element.prototype.scrollBy = vi.fn();
 // Mocks
 // ---------------------------------------------------------------------------
 
-// Capture what PatchDiff is called with per invocation.
-const patchDiffCalls: Array<{
-  lineAnnotations: unknown;
-  renderAnnotation: unknown;
+// Capture CodeView's controlled items and render callbacks.
+const codeViewCalls: Array<{
+  items: Array<{
+    annotations?: MockAnnotation[];
+  }>;
+  renderAnnotation?: (annotation: MockAnnotation) => React.ReactNode;
 }> = [];
 
 type MockAnnotation = {
@@ -55,45 +57,34 @@ type MockAnnotation = {
 };
 
 vi.mock('@pierre/diffs/react', () => ({
-  PatchDiff: ({
-    lineAnnotations,
+  CodeView: ({
+    items,
     renderAnnotation,
+    containerRef,
   }: {
-    patch: string;
-    options?: unknown;
-    disableWorkerPool?: boolean;
-    className?: string;
-    lineAnnotations?: MockAnnotation[];
-    renderAnnotation?: (a: MockAnnotation) => React.ReactNode;
+    items: Array<{ annotations?: MockAnnotation[] }>;
+    renderAnnotation?: (annotation: MockAnnotation) => React.ReactNode;
+    containerRef?: (node: HTMLDivElement | null) => void;
   }) => {
-    patchDiffCalls.push({ lineAnnotations, renderAnnotation });
+    codeViewCalls.push({ items, renderAnnotation });
     return (
       <div
-        data-testid="patch-diff"
-        data-has-annotations={lineAnnotations !== undefined ? 'true' : 'false'}
-        data-has-render-annotation={
-          renderAnnotation !== undefined ? 'true' : 'false'
-        }
+        ref={containerRef}
+        data-testid="code-view"
+        className="overflow-y-auto"
       >
-        {/* Render annotation cards so keyboard-nav tests can inspect them. */}
-        {lineAnnotations?.map((ann) => (
-          <div key={`${ann.lineNumber}-${ann.metadata?.id ?? 'x'}`}>
-            {renderAnnotation?.(ann)}
-          </div>
-        ))}
+        {items
+          .flatMap((item) => item.annotations ?? [])
+          .map((annotation) => (
+            <div
+              key={`${annotation.lineNumber}-${annotation.metadata?.id ?? 'x'}`}
+            >
+              {renderAnnotation?.(annotation)}
+            </div>
+          ))}
       </div>
     );
   },
-}));
-
-vi.mock('@tanstack/react-virtual', () => ({
-  useVirtualizer: () => ({
-    getVirtualItems: () => [{ key: 'f0', index: 0, start: 0, end: 100 }],
-    getTotalSize: () => 100,
-    scrollToIndex: vi.fn(),
-    measureElement: vi.fn(),
-    scrollOffset: 0,
-  }),
 }));
 
 vi.mock('../../src/renderer/components/Markdown', () => ({
@@ -222,15 +213,15 @@ beforeEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('PierreDiffView annotation wiring', () => {
+describe('DiffView annotation wiring', () => {
   beforeEach(() => {
-    patchDiffCalls.length = 0;
+    codeViewCalls.length = 0;
     appStore.setState(() => initialUIState);
   });
 
-  it('passes lineAnnotations and renderAnnotation to PatchDiff when thread matches file', () => {
+  it('passes annotations and renderAnnotation to CodeView when thread matches file', () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO]}
@@ -238,20 +229,20 @@ describe('PierreDiffView annotation wiring', () => {
       />,
     );
 
-    const patchDiff = screen.getAllByTestId('patch-diff')[0];
-    expect(patchDiff).toBeDefined();
-    expect(patchDiff!.getAttribute('data-has-annotations')).toBe('true');
-    expect(patchDiff!.getAttribute('data-has-render-annotation')).toBe('true');
+    const call = codeViewCalls.at(-1);
+    expect(call).toBeDefined();
+    expect(call!.items[0]?.annotations).toHaveLength(1);
+    expect(call!.renderAnnotation).toBeDefined();
   });
 
-  it('does NOT pass lineAnnotations when no thread matches the file', () => {
+  it('does NOT pass annotations when no thread matches the file', () => {
     const threadOtherFile: ReviewThread = {
       ...THREAD_FOO,
       id: 'thread-2',
       file_path: 'src/other.ts',
     };
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[threadOtherFile]}
@@ -259,9 +250,10 @@ describe('PierreDiffView annotation wiring', () => {
       />,
     );
 
-    const patchDiff = screen.getAllByTestId('patch-diff')[0];
-    expect(patchDiff!.getAttribute('data-has-annotations')).toBe('false');
-    expect(patchDiff!.getAttribute('data-has-render-annotation')).toBe('false');
+    const call = codeViewCalls.at(-1);
+    expect(call).toBeDefined();
+    expect(call!.items[0]?.annotations).toEqual([]);
+    expect(call!.renderAnnotation).toBeDefined();
   });
 
   it('does NOT publish invalid or outdated thread anchors as inline annotations', () => {
@@ -272,7 +264,7 @@ describe('PierreDiffView annotation wiring', () => {
     ];
 
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={invalidThreads}
@@ -280,21 +272,23 @@ describe('PierreDiffView annotation wiring', () => {
       />,
     );
 
-    const patchDiff = screen.getAllByTestId('patch-diff')[0];
-    expect(patchDiff!.getAttribute('data-has-annotations')).toBe('false');
+    const call = codeViewCalls.at(-1);
+    expect(call).toBeDefined();
+    expect(call!.items[0]?.annotations).toEqual([]);
     expect(appStore.state.inlineCommentThreadIds).toEqual([]);
   });
 
-  it('does NOT pass lineAnnotations when no threads provided', () => {
-    render(<PierreDiffView diff={MINIMAL_PATCH} theme="light" />);
+  it('does NOT pass annotations when no threads are provided', () => {
+    render(<DiffView diff={MINIMAL_PATCH} theme="light" />);
 
-    const patchDiff = screen.getAllByTestId('patch-diff')[0];
-    expect(patchDiff!.getAttribute('data-has-annotations')).toBe('false');
+    const call = codeViewCalls.at(-1);
+    expect(call).toBeDefined();
+    expect(call!.items[0]?.annotations).toEqual([]);
   });
 
   it('annotation has correct side and lineNumber for the thread', () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO]}
@@ -302,9 +296,9 @@ describe('PierreDiffView annotation wiring', () => {
       />,
     );
 
-    const call = patchDiffCalls[0];
+    const call = codeViewCalls.at(-1);
     expect(call).toBeDefined();
-    const annotations = call!.lineAnnotations as MockAnnotation[];
+    const annotations = call!.items[0]?.annotations ?? [];
     expect(annotations).toHaveLength(1);
     expect(annotations[0]!.side).toBe('additions');
     expect(annotations[0]!.lineNumber).toBe(2);
@@ -316,15 +310,15 @@ describe('PierreDiffView annotation wiring', () => {
 // Keyboard navigation: j/k
 // ---------------------------------------------------------------------------
 
-describe('PierreDiffView keyboard navigation (j/k)', () => {
+describe('DiffView keyboard navigation (j/k)', () => {
   beforeEach(() => {
-    patchDiffCalls.length = 0;
+    codeViewCalls.length = 0;
     appStore.setState(() => initialUIState);
   });
 
   it('j moves to first annotation when none is active', async () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO]}
@@ -346,7 +340,7 @@ describe('PierreDiffView keyboard navigation (j/k)', () => {
 
   it('k moves to last annotation when none is active', async () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO, THREAD_FOO_2]}
@@ -369,7 +363,7 @@ describe('PierreDiffView keyboard navigation (j/k)', () => {
 
   it('j then j moves forward through annotations', async () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO, THREAD_FOO_2]}
@@ -396,7 +390,7 @@ describe('PierreDiffView keyboard navigation (j/k)', () => {
 
   it('k moves backward after j', async () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO, THREAD_FOO_2]}
@@ -434,7 +428,7 @@ describe('PierreDiffView keyboard navigation (j/k)', () => {
 
   it('j does not go past the last annotation', async () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO]}
@@ -463,7 +457,7 @@ describe('PierreDiffView keyboard navigation (j/k)', () => {
 
   it('k does not go before the first annotation', async () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO, THREAD_FOO_2]}
@@ -495,14 +489,14 @@ describe('PierreDiffView keyboard navigation (j/k)', () => {
 // Reply UI: Enter / Escape / Cancel
 // ---------------------------------------------------------------------------
 
-describe('PierreDiffView reply UI (Enter/Escape)', () => {
+describe('DiffView reply UI (Enter/Escape)', () => {
   beforeEach(() => {
-    patchDiffCalls.length = 0;
+    codeViewCalls.length = 0;
   });
 
   it('Enter opens reply composer for the active annotation', async () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO]}
@@ -535,7 +529,7 @@ describe('PierreDiffView reply UI (Enter/Escape)', () => {
 
   it('Enter does nothing when no annotation is active', async () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO]}
@@ -552,7 +546,7 @@ describe('PierreDiffView reply UI (Enter/Escape)', () => {
 
   it('Escape closes the reply composer', async () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO]}
@@ -581,7 +575,7 @@ describe('PierreDiffView reply UI (Enter/Escape)', () => {
 
   it('Cancel button closes the reply composer', async () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO]}
@@ -614,7 +608,7 @@ describe('PierreDiffView reply UI (Enter/Escape)', () => {
 
   it('reply composer shows textarea labelled "Reply to thread"', async () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO]}
@@ -638,7 +632,7 @@ describe('PierreDiffView reply UI (Enter/Escape)', () => {
 
   it('Escape inside the reply textarea closes the composer', async () => {
     render(
-      <PierreDiffView
+      <DiffView
         diff={MINIMAL_PATCH}
         theme="light"
         threads={[THREAD_FOO]}
@@ -672,16 +666,16 @@ describe('PierreDiffView reply UI (Enter/Escape)', () => {
 // Text-input guard: shortcuts ignored when textarea/input has focus
 // ---------------------------------------------------------------------------
 
-describe('PierreDiffView shortcuts are ignored inside text fields', () => {
+describe('DiffView shortcuts are ignored inside text fields', () => {
   beforeEach(() => {
-    patchDiffCalls.length = 0;
+    codeViewCalls.length = 0;
   });
 
   it('j does not move annotation when a textarea has focus', async () => {
     render(
       <>
         <textarea data-testid="outside-textarea" />
-        <PierreDiffView
+        <DiffView
           diff={MINIMAL_PATCH}
           theme="light"
           threads={[THREAD_FOO]}
@@ -709,7 +703,7 @@ describe('PierreDiffView shortcuts are ignored inside text fields', () => {
     render(
       <>
         <input type="text" data-testid="outside-input" />
-        <PierreDiffView
+        <DiffView
           diff={MINIMAL_PATCH}
           theme="light"
           threads={[THREAD_FOO]}
@@ -737,13 +731,13 @@ describe('PierreDiffView shortcuts are ignored inside text fields', () => {
 // Edge cases: zero annotations
 // ---------------------------------------------------------------------------
 
-describe('PierreDiffView with zero annotations', () => {
+describe('DiffView with zero annotations', () => {
   beforeEach(() => {
-    patchDiffCalls.length = 0;
+    codeViewCalls.length = 0;
   });
 
   it('j/k/Enter are safe with zero annotations', async () => {
-    render(<PierreDiffView diff={MINIMAL_PATCH} theme="light" />);
+    render(<DiffView diff={MINIMAL_PATCH} theme="light" />);
 
     // Should not throw or cause any state errors.
     expect(() => {
@@ -760,7 +754,7 @@ describe('PierreDiffView with zero annotations', () => {
   });
 
   it('renders "No changes" for an empty diff', () => {
-    render(<PierreDiffView diff="" theme="light" />);
+    render(<DiffView diff="" theme="light" />);
     expect(screen.getByText('No changes')).toBeInTheDocument();
   });
 });
@@ -769,17 +763,17 @@ describe('PierreDiffView with zero annotations', () => {
 // Annotation ordering: file order → line number → thread id
 // ---------------------------------------------------------------------------
 
-describe('PierreDiffView annotation ordering', () => {
+describe('DiffView annotation ordering', () => {
   beforeEach(() => {
-    patchDiffCalls.length = 0;
+    codeViewCalls.length = 0;
   });
 
   it('annotations from earlier files come before later files', async () => {
     // TWO_FILE_PATCH has src/foo.ts first, src/bar.ts second.
-    // The virtualizer mock only renders index 0 (foo.ts), so only foo
+    // The CodeView mock renders all controlled items, so both files
     // annotations appear in DOM. We verify that j lands on the foo thread.
     render(
-      <PierreDiffView
+      <DiffView
         diff={TWO_FILE_PATCH}
         theme="light"
         threads={[THREAD_BAR, THREAD_FOO]}
