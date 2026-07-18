@@ -173,6 +173,7 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 		WithActionQueue(store.NewActionQueue(a.db.DB)).
 		WithLiveness(a.provCtx).
 		WithClassifier(a.classifier).
+		WithCurrentUser(a.currentUserStore).
 		WithExpertise(a.expertiseEngine).
 		WithRepoPathResolver(a.resolveRepoPath).
 		WithPostCommit(func(prIDs []string) {

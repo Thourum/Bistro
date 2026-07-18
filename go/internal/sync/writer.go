@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"time"
 
 	"log/slog"
@@ -19,11 +20,16 @@ import (
 )
 
 // Writer handles database writes for sync results.
+type currentUserReader interface {
+	GetCurrentUser(ctx context.Context, provider string) (string, bool, error)
+}
+
 type Writer struct {
-	log        *slog.Logger
-	db         *store.DB
-	emitter    *events.EventEmitter
-	classifier *classify.EngineProvider
+	log         *slog.Logger
+	db          *store.DB
+	emitter     *events.EventEmitter
+	classifier  *classify.EngineProvider
+	currentUser currentUserReader
 	// postCommit runs after a successful tx.Commit() with the ids of the PRs
 	// written in the batch — the hook the async LLM tier kicks from (never
 	// inside the tx; sync never waits on the network).
@@ -55,6 +61,13 @@ func (w *Writer) WithEmitter(e *events.EventEmitter) *Writer {
 // (columns stay NULL), preserving pre-Phase-3 behavior.
 func (w *Writer) WithClassifier(p *classify.EngineProvider) *Writer {
 	w.classifier = p
+	return w
+}
+
+// WithCurrentUser attaches a current-user reader used to detect @mentions while
+// writing PRs. Nil readers leave mentioned at its database default.
+func (w *Writer) WithCurrentUser(reader currentUserReader) *Writer {
+	w.currentUser = reader
 	return w
 }
 
@@ -131,6 +144,11 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 	var eng *classify.Engine
 	if w.classifier != nil {
 		eng = w.classifier.Current()
+	}
+
+	mentionPattern, err := w.mentionPattern(ctx)
+	if err != nil {
+		return err
 	}
 
 	tx, err := w.db.BeginTx(ctx, nil)
@@ -264,6 +282,22 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 			commentCount++
 		}
 
+		if mentionPattern != nil {
+			mentioned := mentionPattern.MatchString(result.PR.Description)
+			if !mentioned {
+				mentioned = hasMention(mentionPattern, result.Comments)
+			}
+			if !mentioned {
+				mentioned = hasThreadMention(mentionPattern, result.Threads)
+			}
+			canClearMentioned := !result.ListOnly && result.CommentsFetched && result.ThreadsFetched
+			if err := w.writeMentioned(ctx, tx, prID, mentioned, canClearMentioned); err != nil {
+				if rollbackSP("failed to write mentioned state (savepoint rolled back)", err) {
+					continue
+				}
+			}
+		}
+
 		// ── Best-effort: review threads (per-item skip, no savepoint rollback)
 		if len(result.Threads) > 0 {
 			w.writeReviewThreads(ctx, tx, result.Threads, currentPatchsetNum, eng)
@@ -373,6 +407,56 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 		"diffs", diffCount,
 		"duration_ms", totalDur,
 	)
+	return nil
+}
+
+func (w *Writer) mentionPattern(ctx context.Context) (*regexp.Regexp, error) {
+	if w.currentUser == nil {
+		return nil, nil
+	}
+
+	login, ok, err := w.currentUser.GetCurrentUser(ctx, "github")
+	if err != nil {
+		return nil, fmt.Errorf("get current user for mention detection: %w", err)
+	}
+	if !ok || login == "" {
+		return nil, nil
+	}
+
+	return regexp.Compile(`(?i)@` + regexp.QuoteMeta(login) + `\b`)
+}
+
+func hasMention(pattern *regexp.Regexp, comments []*provider.Comment) bool {
+	for _, comment := range comments {
+		if comment != nil && pattern.MatchString(comment.Body) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasThreadMention(pattern *regexp.Regexp, threads []*provider.ReviewThread) bool {
+	for _, thread := range threads {
+		if thread != nil && hasMention(pattern, thread.Comments) {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *Writer) writeMentioned(ctx context.Context, tx *sql.Tx, prID string, mentioned, canClear bool) error {
+	mentionedValue := 0
+	if mentioned {
+		mentionedValue = 1
+	}
+
+	query := `UPDATE prs SET mentioned = MAX(mentioned, ?) WHERE id = ?`
+	if canClear {
+		query = `UPDATE prs SET mentioned = ? WHERE id = ?`
+	}
+	if _, err := tx.ExecContext(ctx, query, mentionedValue, prID); err != nil {
+		return fmt.Errorf("update mentioned for PR %s: %w", prID, err)
+	}
 	return nil
 }
 
