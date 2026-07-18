@@ -333,9 +333,9 @@ The table iterates `laneSections` and slices `prs[startIndex, startIndex+count)`
 - Modify: `electron/src/renderer/pages/PRListPage.tsx` — cursor math already reads the PR-only list; verify nothing there assumes repo-group rows in `'flat'` view.
 - Read first: where the settings value reaches the renderer (`grep -rn 'prList' electron/src/renderer --include='*.ts*'` — likely via `useSettingsEffect.ts`/app store); wire it if it isn't already in the store.
 - Modify: the Settings page (`electron/src/renderer/pages/` — find the settings route component) — **add the user-facing view toggle**: a "PR list view: Lanes / Repo groups" control writing `prList.view`, styled like the neighboring settings controls (nothing consumes or sets this field today, so without this control the retained grouped view is unreachable). Plus a `:view lanes` / `:view groups` palette command pair wired to the same setting (cheap, keyboard-first).
-- Test: `electron/src/renderer/utils/lanes.test.ts` (laneSections — including `startIndex` correctness for leading, middle, and trailing EMPTY lanes, since `g N` jumps depend on those indexes) + `electron/src/renderer/components/PRListTable.test.tsx` (extend existing tests) + settings-page test for the toggle if the page has a test file
+- Test: `electron/src/renderer/utils/lanes.test.ts` (laneSections — including `startIndex` correctness for leading, middle, and trailing EMPTY lanes, since `g N` jumps depend on those indexes). **NO React component tests (user directive 2026-07-18) — component behavior is verified manually.**
 
-- [ ] **Step 1: Failing component test:** in `'flat'` view, given PRs mapped to lanes 1/4/6, the table renders six headers with counts `1 NEEDS ACTION — 1`, `4 YOUR CODE — 1`, `6 FYI — 1`, empty lanes show `— clear —`, an unread PR row shows the `●` marker; in `'grouped'` view, repo groups render exactly as before (existing tests keep passing).
+- [ ] **Step 1: Failing laneSections unit tests** (no component tests — user directive): empty-lane startIndex cases, all-in-one-lane, normal distribution. Flat-view rendering (six headers with counts, `— clear —` rows, unread `●`) and grouped-view preservation are verified MANUALLY in Step 5.
 
 - [ ] **Step 2: Run, confirm FAIL.**
 
@@ -545,7 +545,7 @@ Current file/line model (spec): file = `n`/`p` focus target; line = selected inl
 - Modify: `electron/src/types/settings.ts` — `appearance.tourComplete: boolean` default `false` (sibling of `onboardingComplete`)
 - Modify: `electron/src/renderer/components/CommandPalette.tsx` — `:tour` command re-opens it
 - Modify: app shell (where onboarding gating lives — `grep -rn 'onboardingComplete' electron/src/renderer`) — auto-open tour once after onboarding completes
-- Test: `TourOverlay.test.tsx`
+- Test: none for the overlay component (no React component tests — user directive 2026-07-18). The show-once/Esc/finish-screen-5 persistence and override-key rendering are verified manually; any pure helper extracted (e.g. screen-content builder reading keybindings) gets a plain unit test.
 
 Screens (content, keys rendered from `keybindings.ts` config via the same lookup the help overlay uses — no hardcoded key names; check `HelpOverlay.tsx` for the accessor). Route-dependent keys carry a context label so the same key on two screens reads as deliberate (spec §5.4):
 1. Inbox & lanes (`g 1`–`g 6`, `Shift-R` — "mark lane read *(in the inbox)*")

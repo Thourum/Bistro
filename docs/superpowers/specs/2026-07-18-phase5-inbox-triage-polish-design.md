@@ -126,7 +126,7 @@ All bindings are pure config in `keybindings.ts` (sequence bindings are already 
 
 - **Unit (TS):** `laneForPR` (exhaustive over lane rules and ordering), `isWhitespaceOnlyChange`, generated-file pattern matching, editor CLI argument construction.
 - **Unit (Go):** migration 033/034 schema tests (existing `db_test.go` pattern), `mentioned` computation, `viewer_commented` subquery, `MARK_PRS_READ` handler, cat-file/checkout handlers (incl. dirty-worktree refusal).
-- **Component:** lane headers + counts render, `Shift-R` mark-read flow, unread/read row styling, tour overlay show-once/re-run.
+- **Component surfaces (manual only — no React component tests, user directive 2026-07-18):** lane headers + counts render, `Shift-R` mark-read flow, unread/read row styling, tour overlay show-once/re-run.
 - **Manual/spike:** CodeView renders a large real PR with annotations; side-by-side and word-diff verified visually; `pnpm bench:large-diff` compared before/after migration.
 
 ## Out of scope
