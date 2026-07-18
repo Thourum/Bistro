@@ -93,4 +93,38 @@ describe('useInboxReadActions', () => {
 
     expect(mockMarkPRsRead).not.toHaveBeenCalled();
   });
+
+  it('removes its listener on unmount', () => {
+    const { unmount } = renderHook(() => useInboxReadActions([makePR('pr-1')]));
+
+    unmount();
+    act(() => {
+      document.dispatchEvent(new CustomEvent('bistro:inbox:mark-lane-read'));
+    });
+
+    expect(mockMarkPRsRead).not.toHaveBeenCalled();
+  });
+
+  it('uses the latest cursor and lane snapshot after rerendering', () => {
+    const prs = [makePR('pr-1'), makePR('pr-2'), makePR('pr-3')];
+    const { rerender } = renderHook(() => useInboxReadActions(prs));
+
+    act(() => {
+      appStore.setState((state) => ({
+        ...state,
+        selectedPRIndex: 0,
+        laneSectionsSnapshot: [
+          { lane: 1, startIndex: 0, count: 1 },
+          { lane: 2, startIndex: 1, count: 2 },
+        ],
+      }));
+    });
+    rerender();
+
+    act(() => {
+      document.dispatchEvent(new CustomEvent('bistro:inbox:mark-lane-read'));
+    });
+
+    expect(mockMarkPRsRead).toHaveBeenCalledWith(['pr-1']);
+  });
 });
