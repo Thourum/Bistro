@@ -115,9 +115,9 @@ export function CommandPalette(): React.ReactElement | null {
 
   // Use the shared visible-PR source so palette results match the list route.
   const { prs } = useVisiblePRs();
-  const selectedPRIndex = useStore(
+  const selectedPRId = useStore(
     appStore,
-    (state: UIState) => state.selectedPRIndex,
+    (state: UIState) => state.visiblePRIds[state.selectedPRIndex] || undefined,
   );
   const prList = useStore(settingsStore, (state) => state.prList);
   const recentPRs = useMemo(() => prs.slice(0, 5), [prs]);
@@ -177,8 +177,8 @@ export function CommandPalette(): React.ReactElement | null {
   };
 
   const focusedPR = useMemo(
-    () => focusedExpertisePR(prs, params.prId, selectedPRIndex),
-    [params.prId, prs, selectedPRIndex],
+    () => focusedExpertisePR(prs, params.prId, selectedPRId),
+    [params.prId, prs, selectedPRId],
   );
 
   const sendExpertiseCommand = (
