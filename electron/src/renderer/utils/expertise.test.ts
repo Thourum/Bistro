@@ -33,6 +33,10 @@ const makePR = (overrides: Partial<PR>): PR => ({
   changes_requested_by: null,
   requested_reviewers: [],
   touches_you: overrides.touches_you ?? false,
+  mentioned: overrides.mentioned ?? false,
+  viewer_commented: overrides.viewer_commented ?? false,
+  unread: overrides.unread ?? false,
+  reviewed_head_stale: overrides.reviewed_head_stale ?? false,
   hydrated: overrides.hydrated ?? 1,
 });
 

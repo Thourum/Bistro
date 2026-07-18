@@ -59,6 +59,8 @@ export interface UIState {
   authError: string | null;
   authChecked: boolean;
   connectedProviders: Array<{ provider: string; username: string }>;
+  /** Viewer login returned by the PR-list payload. */
+  viewerLogin: string;
   // Repo discovery
   repos: RepoInfo[];
   reposLoading: boolean;
@@ -159,6 +161,7 @@ export const initialUIState: UIState = {
   authError: null,
   authChecked: false,
   connectedProviders: [],
+  viewerLogin: '',
   repos: [],
   reposLoading: false,
   repoFilter: null,

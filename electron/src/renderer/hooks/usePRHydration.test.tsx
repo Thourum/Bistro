@@ -37,6 +37,10 @@ const listOnlyPR: PR = {
   changes_requested_by: null,
   requested_reviewers: [],
   touches_you: false,
+  mentioned: false,
+  viewer_commented: false,
+  unread: false,
+  reviewed_head_stale: false,
   hydrated: 0,
 };
 

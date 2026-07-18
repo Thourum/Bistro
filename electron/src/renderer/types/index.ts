@@ -26,6 +26,11 @@ export interface PR {
   changes_requested_by: string | null;
   requested_reviewers: string[]; // logins whose review is currently requested
   touches_you: boolean;
+  // Inbox signals (Phase 5, Task 4) — payload keys match Go JSON verbatim.
+  mentioned: boolean;
+  viewer_commented: boolean;
+  unread: boolean;
+  reviewed_head_stale: boolean;
   hydrated: number; // 0 or 1 from SQLite; 0 = list-only row, details fetched on demand
 }
 
