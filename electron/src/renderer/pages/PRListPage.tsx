@@ -5,6 +5,7 @@ import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
+import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { touchesYouCount } from '../utils/expertise';
 import { countTriageLanes, prBrowserUrl } from '../utils/triage';
@@ -62,24 +63,39 @@ export function PRListPage({
     appStore,
     (s: UIState) => s.collapsedRepoKeys,
   );
+  const view = useStore(settingsStore, (s) => s.prList.view);
 
-  // Sync visible cursor rows to store so keybinding actions (list.open,
-  // list.bottom, list.toggleGroup) can act without a React hook context.
-  // A collapsed repo group contributes one header row (empty id/url) so the
-  // cursor and rendered rows stay index-aligned.
-  // useLayoutEffect ensures ids are committed BEFORE any synchronous user input
-  // (e.g. filter-then-immediate-Enter) reads the list.
+  // In lanes view, headers are presentation only and the keyboard cursor maps
+  // directly to the PR-only canonical list. Grouped view retains its existing
+  // collapsed-header cursor projection.
   React.useLayoutEffect(() => {
-    const rows = visiblePRListRows(prs, collapsedRepoKeys);
-    appStore.setState((s) => ({
-      ...s,
-      visiblePRIds: rows.map((r) => r.pr?.id ?? ''),
-      visiblePRBrowserUrls: rows.map((r) =>
-        r.pr ? (prBrowserUrl(r.pr) ?? '') : '',
-      ),
-      visiblePRRepoKeys: rows.map((r) => r.repoKey),
-    }));
-  }, [prs, collapsedRepoKeys]);
+    const rows =
+      view !== 'grouped'
+        ? prs.map((pr) => ({ pr, repoKey: `${pr.owner}/${pr.repo}` }))
+        : visiblePRListRows(prs, collapsedRepoKeys);
+    appStore.setState((s) => {
+      const selectedPRId = s.visiblePRIds[s.selectedPRIndex] ?? '';
+      const selectedRepoKey = s.visiblePRRepoKeys[s.selectedPRIndex] ?? '';
+      const selectedRowIndex =
+        selectedPRId === ''
+          ? rows.findIndex((row) => row.repoKey === selectedRepoKey)
+          : rows.findIndex((row) => row.pr?.id === selectedPRId);
+      const selectedPRIndex =
+        selectedRowIndex >= 0
+          ? selectedRowIndex
+          : Math.min(s.selectedPRIndex, Math.max(rows.length - 1, 0));
+
+      return {
+        ...s,
+        selectedPRIndex,
+        visiblePRIds: rows.map((r) => r.pr?.id ?? ''),
+        visiblePRBrowserUrls: rows.map((r) =>
+          r.pr ? (prBrowserUrl(r.pr) ?? '') : '',
+        ),
+        visiblePRRepoKeys: rows.map((r) => r.repoKey),
+      };
+    });
+  }, [collapsedRepoKeys, prs, view]);
 
   // Counters always reflect the full open lane, independent of the filter.
   const { data: openPRs = [] } = useWebSocketPRList('open');

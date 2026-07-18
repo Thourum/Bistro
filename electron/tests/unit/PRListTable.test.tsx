@@ -16,7 +16,9 @@ import {
   visiblePRListRows,
 } from '../../src/renderer/components/PRListTable';
 import * as storeModule from '../../src/renderer/store';
+import { settingsStore } from '../../src/renderer/store/settings';
 import type { PR } from '../../src/renderer/types';
+import { DEFAULT_SETTINGS } from '../../src/types/settings';
 
 expect.extend(matchers);
 
@@ -67,6 +69,10 @@ const mockStore = {
 
 describe('PRListTable', () => {
   beforeEach(() => {
+    settingsStore.setState(() => ({
+      ...DEFAULT_SETTINGS,
+      prList: { view: 'grouped' },
+    }));
     vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue(
       mockStore as unknown as typeof storeModule.appStore,
     );

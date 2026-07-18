@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { appStore } from '../store';
+import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import type { PR } from '../types';
+import { laneForPR } from '../utils/lanes';
 import { useStore } from './useStore';
 import { useWebSocketPRList } from './useWebSocketPRList';
 
@@ -55,6 +57,8 @@ export function useVisiblePRs(
   const storeSort = useStore(appStore, (s: UIState) => s.sortBy);
   const storeQ = useStore(appStore, (s: UIState) => s.searchQuery);
   const storeRepoFilter = useStore(appStore, (s: UIState) => s.repoFilter);
+  const viewerLogin = useStore(appStore, (s: UIState) => s.viewerLogin);
+  const view = useStore(settingsStore, (s) => s.prList.view);
 
   const filter = overrides?.filter ?? storeFilter;
   const sort = overrides?.sort ?? storeSort;
@@ -95,8 +99,19 @@ export function useVisiblePRs(
       );
     }
 
+    if (view === 'flat') {
+      result = [...result].sort((a, b) => {
+        const laneDifference =
+          laneForPR(a, viewerLogin) - laneForPR(b, viewerLogin);
+        if (laneDifference !== 0) return laneDifference;
+        return (
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        );
+      });
+    }
+
     return result;
-  }, [rawPRs, repoFilter, q, sort]);
+  }, [rawPRs, repoFilter, q, sort, view, viewerLogin]);
 
   return { prs, isLoading, error: error as Error | null };
 }

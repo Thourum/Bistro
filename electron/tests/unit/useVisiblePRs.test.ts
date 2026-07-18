@@ -2,9 +2,11 @@
 
 import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_SETTINGS } from '../../src/types/settings';
 import { useVisiblePRs } from '../../src/renderer/hooks/useVisiblePRs';
 import * as prListModule from '../../src/renderer/hooks/useWebSocketPRList';
 import * as storeModule from '../../src/renderer/store';
+import { settingsStore } from '../../src/renderer/store/settings';
 
 type PR = Parameters<typeof prListModule.useWebSocketPRList>[0] extends infer _
   ? Awaited<ReturnType<typeof prListModule.useWebSocketPRList>>['data'][number]
@@ -49,6 +51,7 @@ function makeStore(overrides: {
   sortBy?: string;
   searchQuery?: string;
   repoFilter?: string | null;
+  viewerLogin?: string;
 } = {}) {
   return {
     state: {
@@ -57,6 +60,7 @@ function makeStore(overrides: {
       searchQuery: overrides.searchQuery ?? '',
       repoFilter: overrides.repoFilter !== undefined ? overrides.repoFilter : null,
       selectedPRIndex: 0,
+      viewerLogin: overrides.viewerLogin ?? '',
       repos: [],
       connectedProviders: [],
       prListRevision: 0,
@@ -67,6 +71,10 @@ function makeStore(overrides: {
 
 describe('useVisiblePRs', () => {
   beforeEach(() => {
+    settingsStore.setState(() => ({
+      ...DEFAULT_SETTINGS,
+      prList: { view: 'grouped' },
+    }));
     vi.spyOn(prListModule, 'useWebSocketPRList').mockReturnValue({
       data: [prA, prB, prC],
       isLoading: false,
@@ -129,6 +137,17 @@ describe('useVisiblePRs', () => {
   it('sort=updated preserves backend order (no re-sort)', () => {
     const { result } = renderHook(() => useVisiblePRs({ sort: 'updated' }));
     // Backend order (as supplied): prA, prB, prC
+    expect(result.current.prs.map((p) => p.id)).toEqual(['pr-a', 'pr-b', 'pr-c']);
+  });
+
+  it('sorts flat view by lane then newest update', () => {
+    settingsStore.setState(() => DEFAULT_SETTINGS);
+    vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue(
+      makeStore() as unknown as typeof storeModule.appStore,
+    );
+
+    const { result } = renderHook(() => useVisiblePRs());
+
     expect(result.current.prs.map((p) => p.id)).toEqual(['pr-a', 'pr-b', 'pr-c']);
   });
 

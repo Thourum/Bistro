@@ -1,13 +1,15 @@
 import { useNavigate } from '@tanstack/react-router';
 import { ResultAsync } from 'neverthrow';
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { appStore } from '../store';
+import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { toggleRepoGroup } from '../store/ui';
 import type { PR, RepoInfo } from '../types';
+import { LANES, laneSections } from '../utils/lanes';
 import { RepoRecoveryDialog } from './RepoRecoveryDialog';
 
 export type PRRepoGroup = readonly [repoKey: string, prs: PR[]];
@@ -146,7 +148,12 @@ function PRRow({
           aria-label={ciTitle(pr)}
         />
         <div className="font-mono text-[11px] text-outline">#{pr.number}</div>
-        <div className="font-medium text-[14px] text-on-surface truncate">
+        <div
+          className={`text-[14px] text-on-surface truncate ${
+            pr.unread ? 'font-semibold' : 'font-medium'
+          }`}
+        >
+          {pr.unread && <span className="mr-2 text-primary">●</span>}
           {pr.title}
         </div>
         <div className="font-mono text-[11px] text-outline-variant text-right truncate">
@@ -175,6 +182,60 @@ function PRRow({
         </div>
       )}
     </div>
+  );
+}
+
+interface PRLaneSectionProps {
+  label: string;
+  lane: number;
+  prs: PR[];
+  startIndex: number;
+  selectedIndex: number;
+  repoByKey: ReadonlyMap<string, RepoInfo>;
+  onRecover: (repo: RepoInfo) => void;
+}
+
+function PRLaneSection({
+  label,
+  lane,
+  prs,
+  startIndex,
+  selectedIndex,
+  repoByKey,
+  onRecover,
+}: PRLaneSectionProps): React.ReactElement {
+  return (
+    <section className="mt-8 first:mt-0">
+      <div className="py-4 px-2 -mx-2 border-b border-outline-variant/30 text-[10px] font-mono text-outline uppercase tracking-widest">
+        {lane} {label} — {prs.length}
+      </div>
+      {prs.length === 0 ? (
+        <div className="py-3 px-4 font-mono text-[11px] text-outline-variant">
+          — clear —
+        </div>
+      ) : (
+        prs.map((pr, index) => {
+          const repo = repoByKey.get(`${pr.owner}/${pr.repo}`) ?? null;
+          const degradedRepo =
+            repo !== null &&
+            repo.location_status !== null &&
+            repo.location_status !== undefined &&
+            repo.location_status !== 'ok'
+              ? repo
+              : null;
+          return (
+            <PRRow
+              key={pr.id}
+              pr={pr}
+              globalIndex={startIndex + index}
+              selectedIndex={selectedIndex}
+              degradedRepo={degradedRepo}
+              onRecover={onRecover}
+            />
+          );
+        })
+      )}
+    </section>
   );
 }
 
@@ -275,8 +336,14 @@ export function PRListTable({
     (state: UIState) => state.collapsedRepoKeys,
   );
   const repos = useStore(appStore, (state: UIState) => state.repos);
+  const viewerLogin = useStore(appStore, (state: UIState) => state.viewerLogin);
+  const view = useStore(settingsStore, (state) => state.prList.view);
   const { request } = useWebSocket();
   const [recoveryRepo, setRecoveryRepo] = useState<RepoInfo | null>(null);
+  const sections = useMemo(
+    () => laneSections(visiblePRs, viewerLogin),
+    [viewerLogin, visiblePRs],
+  );
 
   useEffect(() => {
     appStore.setState((state) => ({
@@ -342,33 +409,51 @@ export function PRListTable({
   return (
     <>
       <div className="space-y-0">
-        {groups.map(([repoKey, repoPRs], idx) => {
-          const collapsed = collapsedRepoKeys.includes(repoKey);
-          const repo = repoByKey.get(repoKey) ?? null;
-          const degradedRepo =
-            repo !== null &&
-            repo.location_status !== null &&
-            repo.location_status !== undefined &&
-            repo.location_status !== 'ok'
-              ? repo
-              : null;
-          const start = cursor;
-          // Collapsed group = one header cursor row; expanded = one row per PR.
-          cursor += collapsed ? 1 : repoPRs.length;
-          return (
-            <PRGroup
-              key={repoKey}
-              repoKey={repoKey}
-              prs={repoPRs}
-              collapsed={collapsed}
-              startIndex={start}
-              selectedIndex={selectedIndex}
-              accent={idx === 0}
-              degradedRepo={degradedRepo}
-              onRecover={setRecoveryRepo}
-            />
-          );
-        })}
+        {view !== 'grouped'
+          ? sections.map((section) => {
+              const lane = LANES.find(({ id }) => id === section.lane);
+              return (
+                <PRLaneSection
+                  key={section.lane}
+                  lane={section.lane}
+                  label={lane?.label ?? ''}
+                  prs={visiblePRs.slice(
+                    section.startIndex,
+                    section.startIndex + section.count,
+                  )}
+                  startIndex={section.startIndex}
+                  selectedIndex={selectedIndex}
+                  repoByKey={repoByKey}
+                  onRecover={setRecoveryRepo}
+                />
+              );
+            })
+          : groups.map(([repoKey, repoPRs], idx) => {
+              const collapsed = collapsedRepoKeys.includes(repoKey);
+              const repo = repoByKey.get(repoKey) ?? null;
+              const degradedRepo =
+                repo !== null &&
+                repo.location_status !== null &&
+                repo.location_status !== undefined &&
+                repo.location_status !== 'ok'
+                  ? repo
+                  : null;
+              const start = cursor;
+              cursor += collapsed ? 1 : repoPRs.length;
+              return (
+                <PRGroup
+                  key={repoKey}
+                  repoKey={repoKey}
+                  prs={repoPRs}
+                  collapsed={collapsed}
+                  startIndex={start}
+                  selectedIndex={selectedIndex}
+                  accent={idx === 0}
+                  degradedRepo={degradedRepo}
+                  onRecover={setRecoveryRepo}
+                />
+              );
+            })}
       </div>
       {recoveryRepo !== null && (
         <RepoRecoveryDialog

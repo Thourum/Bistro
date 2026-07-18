@@ -7,6 +7,7 @@ import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
+import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
@@ -48,6 +49,18 @@ const COMMANDS: readonly CommandItem[] = [
     id: 'clear',
     name: 'Clear all filters and search',
     icon: 'filter_alt_off',
+  },
+  {
+    id: 'view-lanes',
+    name: ':view lanes',
+    description: 'Organize the PR inbox by review lanes',
+    icon: 'view_agenda',
+  },
+  {
+    id: 'view-groups',
+    name: ':view groups',
+    description: 'Organize the PR inbox by repository',
+    icon: 'account_tree',
   },
   {
     id: 'repo-picker',
@@ -106,6 +119,7 @@ export function CommandPalette(): React.ReactElement | null {
     appStore,
     (state: UIState) => state.selectedPRIndex,
   );
+  const prList = useStore(settingsStore, (state) => state.prList);
   const recentPRs = useMemo(() => prs.slice(0, 5), [prs]);
 
   const filteredPRs = useMemo(() => {
@@ -212,6 +226,16 @@ export function CommandPalette(): React.ReactElement | null {
           searchQuery: '',
           filterState: 'open',
         }));
+        closeOverlay();
+        setQuery('');
+        return;
+      case 'view-lanes':
+        void updateSettings({ prList: { ...prList, view: 'flat' } });
+        closeOverlay();
+        setQuery('');
+        return;
+      case 'view-groups':
+        void updateSettings({ prList: { ...prList, view: 'grouped' } });
         closeOverlay();
         setQuery('');
         return;

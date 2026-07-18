@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PR } from '../types';
-import { laneForPR } from './lanes';
+import { laneForPR, laneSections } from './lanes';
 
 const VIEWER_LOGIN = 'me';
 
@@ -159,5 +159,72 @@ describe('laneForPR', () => {
     expect(laneForPR(reviewRequest, '')).toBe(6);
     expect(laneForPR(codeOwnership, '')).toBe(4);
     expect(laneForPR(mention, '')).toBe(5);
+  });
+});
+
+describe('laneSections', () => {
+  it('assigns leading empty lanes the next populated lane start index', () => {
+    const prs = [makePR({ id: 'your-pr', author: VIEWER_LOGIN })];
+
+    expect(laneSections(prs, VIEWER_LOGIN)).toEqual([
+      { lane: 1, startIndex: 0, count: 0 },
+      { lane: 2, startIndex: 0, count: 0 },
+      { lane: 3, startIndex: 0, count: 1 },
+      { lane: 4, startIndex: 1, count: 0 },
+      { lane: 5, startIndex: 1, count: 0 },
+      { lane: 6, startIndex: 1, count: 0 },
+    ]);
+  });
+
+  it('assigns middle and trailing empty lanes their following lane start index', () => {
+    const prs = [
+      makePR({ id: 'needs-action', requested_reviewers: [VIEWER_LOGIN] }),
+      makePR({ id: 'mentioned', mentioned: true }),
+    ];
+
+    expect(laneSections(prs, VIEWER_LOGIN)).toEqual([
+      { lane: 1, startIndex: 0, count: 1 },
+      { lane: 2, startIndex: 1, count: 0 },
+      { lane: 3, startIndex: 1, count: 0 },
+      { lane: 4, startIndex: 1, count: 0 },
+      { lane: 5, startIndex: 1, count: 1 },
+      { lane: 6, startIndex: 2, count: 0 },
+    ]);
+  });
+
+  it('reports the full list in a single lane', () => {
+    const prs = [
+      makePR({ id: 'one', touches_you: true }),
+      makePR({ id: 'two', touches_you: true }),
+    ];
+
+    expect(laneSections(prs, VIEWER_LOGIN)).toEqual([
+      { lane: 1, startIndex: 0, count: 0 },
+      { lane: 2, startIndex: 0, count: 0 },
+      { lane: 3, startIndex: 0, count: 0 },
+      { lane: 4, startIndex: 0, count: 2 },
+      { lane: 5, startIndex: 2, count: 0 },
+      { lane: 6, startIndex: 2, count: 0 },
+    ]);
+  });
+
+  it('returns contiguous counts for a normal lane distribution', () => {
+    const prs = [
+      makePR({ id: 'needs-action', requested_reviewers: [VIEWER_LOGIN] }),
+      makePR({ id: 'waiting', approved_by: VIEWER_LOGIN }),
+      makePR({ id: 'your-pr', author: VIEWER_LOGIN }),
+      makePR({ id: 'your-code', touches_you: true }),
+      makePR({ id: 'mentioned', mentioned: true }),
+      makePR({ id: 'fyi' }),
+    ];
+
+    expect(laneSections(prs, VIEWER_LOGIN)).toEqual([
+      { lane: 1, startIndex: 0, count: 1 },
+      { lane: 2, startIndex: 1, count: 1 },
+      { lane: 3, startIndex: 2, count: 1 },
+      { lane: 4, startIndex: 3, count: 1 },
+      { lane: 5, startIndex: 4, count: 1 },
+      { lane: 6, startIndex: 5, count: 1 },
+    ]);
   });
 });
