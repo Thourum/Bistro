@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS pr_read_state (
 
 - [ ] **Step 3: Implement.**
   - Resolve login once per request via `cu.GetCurrentUser(ctx, "github")`.
-  - Add to `prRow`: `Mentioned bool \`json:"mentioned"\``, `ViewerCommented bool \`json:"viewer_commented"\``, `Unread bool \`json:"unread"\``.
+  - Add to `prRow`: `Mentioned bool \`json:"mentioned"\``, `ViewerCommented bool \`json:"viewer_commented"\``, `Unread bool \`json:"unread"\``, `ReviewedHeadStale bool \`json:"reviewed_head_stale"\`` (true when a `last_reviewed_sha` row exists for (pr, viewer) and `sha != prs.head_sha` — subquery against the existing `last_reviewed_sha` table; add a test: review recorded at old sha + new head_sha → true; matching sha → false; no row → false).
   - Extend the SELECT (login passed as a bind param; keep parameterized — no string concat of the login). Compare timestamps with `unixepoch()` (SQLite ≥3.38, bundled with mattn/go-sqlite3) so representation differences can't break ordering:
 
 ```sql
@@ -208,17 +208,26 @@ const base = {
   approved_by: null, changes_requested_by: null,
   requested_reviewers: [] as string[],
   touches_you: false, mentioned: false, viewer_commented: false,
+  reviewed_head_stale: false,
 } as never; // build a PR factory matching the real PR type in the actual file
 
 describe('laneForPR', () => {
-  test('changes requested on your PR → lane 1', () =>
+  test('changes requested on your open PR → lane 1', () =>
     expect(laneForPR({ ...base, author: 'me', review_status: 'changes_requested' }, 'me')).toBe(1));
-  test('you are a requested reviewer → lane 1 (no age split)', () =>
+  test('you are a requested reviewer (open PR) → lane 1 (no age split)', () =>
     expect(laneForPR({ ...base, requested_reviewers: ['me'] }, 'me')).toBe(1));
-  test('you reviewed someone else's open PR → lane 2', () =>
+  test('author pushed since your review → lane 1 (not waiting-on-author)', () =>
+    expect(laneForPR({ ...base, changes_requested_by: 'me', reviewed_head_stale: true }, 'me')).toBe(1));
+  test('CLOSED PR with review request never in lane 1 → falls through (lane 6 here)', () =>
+    expect(laneForPR({ ...base, state: 'closed', requested_reviewers: ['me'] }, 'me')).toBe(6));
+  test('MERGED PR you authored with changes_requested → lane 3, not lane 1', () =>
+    expect(laneForPR({ ...base, state: 'merged', author: 'me', review_status: 'changes_requested' }, 'me')).toBe(3));
+  test('you reviewed someone else's open PR, no new pushes → lane 2', () =>
     expect(laneForPR({ ...base, changes_requested_by: 'me' }, 'me')).toBe(2));
   test('you commented on someone else's open PR → lane 2', () =>
     expect(laneForPR({ ...base, viewer_commented: true }, 'me')).toBe(2));
+  test('closed PR you commented on → NOT lane 2 (falls through)', () =>
+    expect(laneForPR({ ...base, state: 'closed', viewer_commented: true }, 'me')).toBe(6));
   test('re-requested review wins over waiting-on-author → lane 1', () =>
     expect(laneForPR({ ...base, changes_requested_by: 'me', requested_reviewers: ['me'] }, 'me')).toBe(1));
   test('your own PR never lands in waiting-on-author → lane 3', () =>
@@ -258,12 +267,18 @@ export type LaneId = (typeof LANES)[number]['id'];
 export function laneForPR(pr: PR, viewerLogin: string): LaneId {
   const isViewer = viewerLogin !== '';
   const isAuthor = isViewer && pr.author === viewerLogin;
+  const isOpen = pr.state === 'open';
   if (isViewer) {
-    if (isAuthor && pr.review_status === 'changes_requested') return 1;
-    if (pr.requested_reviewers.includes(viewerLogin)) return 1;
     const reviewed =
       pr.approved_by === viewerLogin || pr.changes_requested_by === viewerLogin;
-    if (!isAuthor && pr.state === 'open' && (reviewed || pr.viewer_commented)) return 2;
+    // Lane 1 requires an OPEN PR: stale signals on closed/merged PRs fall through.
+    if (isOpen) {
+      if (isAuthor && pr.review_status === 'changes_requested') return 1;
+      if (pr.requested_reviewers.includes(viewerLogin)) return 1;
+      // Author pushed since your review → actionable again.
+      if (!isAuthor && reviewed && pr.reviewed_head_stale) return 1;
+    }
+    if (!isAuthor && isOpen && (reviewed || pr.viewer_commented)) return 2;
     if (isAuthor) return 3;
   }
   if (pr.touches_you) return 4;
@@ -474,7 +489,7 @@ Semantics (spec §5.3): `CHECK_PR_CHECKOUT {pr_id}` → `{local_path, head_match
 ### Task 17: Renderer `:open in editor`
 
 **Files:**
-- Modify: `electron/src/renderer/components/CommandPalette.tsx` (command entry, `diff`-route-aware)
+- Modify: `electron/src/renderer/components/CommandPalette.tsx` (command entry, `diff`-route-aware; **wording per spec: "Open file in editor"** — no "at current line" promise; description mentions the selected-comment-line behavior)
 - Create: `electron/src/renderer/hooks/useOpenInEditor.ts` (WS calls + dialog state)
 - Create: `electron/src/renderer/utils/editorArgs.ts` + `editorArgs.test.ts` (pure CLI argument builder — testable without Electron)
 - Modify: `electron/src/main/ipc.ts` — add `open-in-editor` IPC handler (sibling of `openExternal`) that spawns the editor
@@ -503,11 +518,11 @@ Current file/line model (spec): file = `n`/`p` focus target; line = selected inl
 - Modify: app shell (where onboarding gating lives — `grep -rn 'onboardingComplete' electron/src/renderer`) — auto-open tour once after onboarding completes
 - Test: `TourOverlay.test.tsx`
 
-Screens (content, keys rendered from `keybindings.ts` config via the same lookup the help overlay uses — no hardcoded key names; check `HelpOverlay.tsx` for the accessor):
-1. Inbox & lanes (`g 1`–`g 6`, `Shift-R`)
+Screens (content, keys rendered from `keybindings.ts` config via the same lookup the help overlay uses — no hardcoded key names; check `HelpOverlay.tsx` for the accessor). Route-dependent keys carry a context label so the same key on two screens reads as deliberate (spec §5.4):
+1. Inbox & lanes (`g 1`–`g 6`, `Shift-R` — "mark lane read *(in the inbox)*")
 2. Navigation (`j`/`k`/`Enter`, `/` search, `f` filter)
 3. Diff review (`n`/`p`, `Shift+S` split, `w` whitespace, `v` viewed, `s` since-last-review)
-4. Actions (`c` comment, `a a` approve, `Shift+R` request changes, `d n`/`d b` dismiss)
+4. Actions (`c` comment, `a a` approve, `Shift+R` — "request changes *(on a PR)*", `d n`/`d b` dismiss)
 5. Palette & help (`:` commands, `?` bindings)
 
 - [ ] **Step 1: Failing tests:** renders screen 1 of 5; advances; Esc closes and persists `tourComplete: true`; shows override key when a binding is overridden.
