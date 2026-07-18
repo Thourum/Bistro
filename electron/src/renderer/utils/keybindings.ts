@@ -364,6 +364,11 @@ const jumpBindings: KeyBinding[] = Array.from({ length: 9 }, (_, i) => {
   };
 });
 
+function emitInboxEvent(name: string): void {
+  if (typeof document === 'undefined') return;
+  document.dispatchEvent(new CustomEvent(name));
+}
+
 const listBindings: KeyBinding[] = [
   {
     actionId: 'list.down',

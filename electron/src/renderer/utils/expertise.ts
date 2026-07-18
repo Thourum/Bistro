@@ -7,12 +7,10 @@ export function touchesYouCount(prs: readonly PR[]): number {
 export function focusedExpertisePR(
   prs: readonly PR[],
   routedPrId: string | undefined,
-  selectedPRIndex: number,
+  selectedPRId: string | undefined,
 ): PR | undefined {
-  if (routedPrId !== undefined) {
-    return prs.find((pr) => pr.id === routedPrId);
-  }
-  return prs[selectedPRIndex];
+  const prId = routedPrId ?? selectedPRId;
+  return prId === undefined ? undefined : prs.find((pr) => pr.id === prId);
 }
 
 export function repoIdForPR(pr: PR): string {
