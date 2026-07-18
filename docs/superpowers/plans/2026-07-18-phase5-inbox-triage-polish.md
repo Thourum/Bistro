@@ -84,23 +84,18 @@ git commit -m "feat(store): add prs.mentioned column (migration 033)"
 
 ### Task 2: Compute `mentioned` during sync
 
-The sync pipeline already post-processes PRs after comments land (the Phase 4 `touches_you` post-diff hook in `go/internal/sync/` is the precedent — find it with `grep -rn "touches_you\|post-diff" go/internal/sync/`). Add a step that sets `mentioned=1` when `@<current-login>` appears (case-insensitive, word-boundary) in `prs.body` or any row of `comments` for that PR.
+**Integration point (verified):** `touches_you` is NOT computed at sync time — it's resolved at list-request time in `pr.go`. The correct write-side site is the sync writer: `go/internal/sync/writer.go`, which already post-processes comments per PR (see `writer_classify.go` usage in `writer_classify_test.go`). The writer has NO current-user dependency today; add one.
 
 **Files:**
-- Modify: the sync post-processing site found above (same package)
-- Test: sibling `_test.go` in that package
+- Modify: `go/internal/sync/writer.go` (and `types.go` if the writer's constructor/deps struct lives there)
+- Modify: `go/internal/sync/orchestrator.go` + `go/internal/server/app.go` — thread the dependency: inject the same `currentUserReader` interface the handlers use (`GetCurrentUser(ctx, "github")`, see `go/internal/server/handler/patchsets.go:~128`). Define a minimal local interface in the sync package (Go convention: consumer-side interfaces); pass the auth store at construction in `app.go`.
+- Test: `go/internal/sync/writer_test.go` (append; the package has in-memory store test helpers — see `writer_classify_test.go`)
 
-- [ ] **Step 1: Write failing test.** Seed an in-memory store with a PR whose body contains `hey @alice please look` and a current user `alice`; run the hook; assert `mentioned=1`. Add cases: mention only in a comment; `@alice2` must NOT match `alice` (word boundary); case-insensitive `@Alice` matches.
+- [ ] **Step 1: Write failing test.** Seed a store with a PR whose body contains `hey @alice please look`, current user `alice` (stub `currentUserReader` returning `alice, true, nil`); run the writer over the PR+comments batch; assert `mentioned=1` in the DB. Cases: mention only in a comment; `@alice2` must NOT match `alice` (word boundary); case-insensitive `@Alice` matches; no current user → `mentioned` left 0, no error.
 
 - [ ] **Step 2: Run it, confirm FAIL** (`go test ./internal/sync/ -run Mentioned -v`).
 
-- [ ] **Step 3: Implement.** Regex `(?i)@alice\b` built with `regexp.QuoteMeta(login)`. One UPDATE per PR batch:
-
-```go
-// UPDATE prs SET mentioned = ? WHERE id = ?
-```
-
-Match against `pr.Body` and a single `SELECT body FROM comments WHERE pr_id = ?` pass. Keep it in the same transaction the hook already uses.
+- [ ] **Step 3: Implement.** Regex `(?i)@` + `regexp.QuoteMeta(login)` + `\b`, compiled once per write batch. Match against `pr.Body` and the comment bodies the writer already holds in memory for the batch (no extra SELECT). `UPDATE prs SET mentioned = ? WHERE id = ?` inside the writer's existing transaction.
 
 - [ ] **Step 4: Run tests, confirm PASS.** Also run the full package: `go test -race ./internal/sync/`.
 
@@ -142,16 +137,18 @@ CREATE TABLE IF NOT EXISTS pr_read_state (
 
 - [ ] **Step 4: Run schema test, confirm PASS.**
 
-- [ ] **Step 5: Failing handler test** in `readstate_test.go`, copying the harness from an existing handler test (`comments_test.go` or `patchsets_test.go`): send `MARK_PRS_READ` with `{"pr_ids": ["p1","p2"]}`, assert ack `{ok: true, marked: 2}` and rows exist with fresh `last_read_at`. Error cases: empty `pr_ids` → error; no current user → `ok:false` skip (copy the `MARK_FILE_VIEWED` "no current user" behavior).
+- [ ] **Step 5: Failing handler test** in `readstate_test.go`, copying the harness from an existing handler test (`comments_test.go` or `patchsets_test.go`): send `MARK_PRS_READ` with `{"pr_ids": ["p1","p2"]}`, assert ack `{ok: true, marked: 2}` and rows exist with fresh `last_read_at`. Error cases: empty `pr_ids` → error; no current user → `ok:false` skip (copy the `MARK_FILE_VIEWED` "no current user" behavior). **Timestamp comparability test:** insert a PR with `updated_at` written the way the sync writer writes it (Go `time.Time`), mark it read, assert the Task-4 unread expression evaluates false — this test fails if the two timestamp representations don't compare correctly in SQLite.
 
 - [ ] **Step 6: Run, confirm FAIL.**
 
 - [ ] **Step 7: Implement `NewMarkPRsReadHandler`** modeled on `NewMarkFileViewedHandler`:
   - Parse `{pr_ids []string}`; validate non-empty, cap at 500 ids.
   - Resolve current login the same way `MARK_FILE_VIEWED` does.
-  - `INSERT INTO pr_read_state (pr_id, login, last_read_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(pr_id, login) DO UPDATE SET last_read_at = excluded.last_read_at` in one transaction.
+  - **Write `last_read_at` from Go, not SQLite:** bind `time.Now().UTC()` as the parameter so the stored representation matches how the sync writer stores `prs.updated_at` (both go through mattn/go-sqlite3 `time.Time` binding). Do NOT use `CURRENT_TIMESTAMP` (string form differs from Go-bound timestamps and breaks `<` comparison).
+  - `INSERT INTO pr_read_state (pr_id, login, last_read_at) VALUES (?, ?, ?) ON CONFLICT(pr_id, login) DO UPDATE SET last_read_at = excluded.last_read_at` in one transaction.
   - Return `{ok: true, marked: N}`.
   - Register in `app.go`: `a.wsServer.RegisterHandler("MARK_PRS_READ", handler.NewMarkPRsReadHandler(...))` next to `MARK_FILE_VIEWED`.
+  - **After a successful write, broadcast an invalidation push** via the ws server's existing `Broadcast` (used for sync events): `{type: "PRS_READ_CHANGED", data: {pr_ids}}`. The renderer's PR-list hook refetches on it (Task 7).
 
 - [ ] **Step 8: Run handler tests + `go vet ./...`, confirm PASS.**
 
@@ -162,22 +159,24 @@ CREATE TABLE IF NOT EXISTS pr_read_state (
 ### Task 4: Extend `REQUEST_PR_LIST` payload — `mentioned`, `viewer_commented`, `unread`, `viewer_login`
 
 **Files:**
-- Modify: `go/internal/server/handler/pr.go`
-- Test: `go/internal/server/handler/pr_test.go` (or create; follow sibling handler tests)
+- Modify: `go/internal/server/handler/pr.go` — **signature change:** `NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouResolver, log)` gains a `cu currentUserReader` parameter (the same small interface `patchsets.go` declares — reuse or redeclare per Go consumer-interface convention). All existing constructors/tests updated.
+- Modify: `go/internal/server/app.go` — pass the auth/current-user store at the registration site (same value `MARK_FILE_VIEWED` registration uses).
+- Test: `go/internal/server/handler/pr_test.go` (or create; follow sibling handler tests) — existing fixtures updated for the new parameter (a stub `currentUserReader` returning a fixed login).
 
-- [ ] **Step 1: Failing test.** Seed PRs + comments + read state; request `REQUEST_PR_LIST`; assert each PR row has `mentioned`, `viewer_commented`, `unread` booleans and the payload `data` carries `viewer_login`. Cases: PR with viewer comment → `viewer_commented: true`; PR with `updated_at` newer than `last_read_at` → `unread: true`; no read-state row → `unread: true`; marked read after update → `unread: false`.
+- [ ] **Step 1: Failing test.** Seed PRs + comments + read state; request `REQUEST_PR_LIST`; assert each PR row has `mentioned`, `viewer_commented`, `unread` booleans and the payload `data` carries `viewer_login`. Cases: PR with viewer comment → `viewer_commented: true`; PR with `updated_at` newer than `last_read_at` → `unread: true`; no read-state row → `unread: true`; marked read after update → `unread: false` (write `last_read_at` via the Task 3 handler path, NOT raw SQL, so the test exercises the real timestamp representation).
 
-- [ ] **Step 2: Run, confirm FAIL.**
+- [ ] **Step 2: Run, confirm FAIL** (compile error on signature first — fix fixtures, then behavior).
 
 - [ ] **Step 3: Implement.**
+  - Resolve login once per request via `cu.GetCurrentUser(ctx, "github")`.
   - Add to `prRow`: `Mentioned bool \`json:"mentioned"\``, `ViewerCommented bool \`json:"viewer_commented"\``, `Unread bool \`json:"unread"\``.
-  - Extend the SELECT (login resolved once, passed as a bind param; keep parameterized — no string concat of the login):
+  - Extend the SELECT (login passed as a bind param; keep parameterized — no string concat of the login). Compare timestamps with `unixepoch()` (SQLite ≥3.38, bundled with mattn/go-sqlite3) so representation differences can't break ordering:
 
 ```sql
 SELECT ..., mentioned,
   EXISTS(SELECT 1 FROM comments c WHERE c.pr_id = prs.id AND c.author = ?) AS viewer_commented,
-  (COALESCE((SELECT r.last_read_at FROM pr_read_state r
-             WHERE r.pr_id = prs.id AND r.login = ?), '1970-01-01') < prs.updated_at) AS unread
+  (COALESCE((SELECT unixepoch(r.last_read_at) FROM pr_read_state r
+             WHERE r.pr_id = prs.id AND r.login = ?), 0) < unixepoch(prs.updated_at)) AS unread
 FROM prs WHERE 1=1 ...
 ```
 
@@ -283,20 +282,24 @@ export function laneForPR(pr: PR, viewerLogin: string): LaneId {
 
 ### Task 6: Inbox UI — lane sections, unread styling, ordering
 
+**View-mode reality check (verified):** `prList.view` exists in settings but NOTHING consumes it today — `PRListTable.tsx` and `PRListPage.tsx` always project repo-grouped rows through `visiblePRListRows` (repo `<details>` groups + `collapsedRepoKeys`). This task makes `prList.view` real: `'flat'` (default) renders lane sections, `'grouped'` renders the existing repo groups. Both the table AND the page's cursor-row projection must switch on it, or `selectedPRIndex`/`j`/`k`/`Enter` desync from what's on screen.
+
 **Files:**
-- Modify: `electron/src/renderer/hooks/useVisiblePRs.ts` — when the list view is `flat` (inbox mode), order the canonical list by `(lane, updated_at DESC)` so `selectedPRIndex`/`j`/`k` naturally walk lanes in order. Lane of each PR comes from `laneForPR(pr, viewerLogin)`.
-- Modify: `electron/src/renderer/components/PRListTable.tsx` — render a lane header row before the first PR of each lane (list is already lane-sorted): `<laneId> <LABEL> — <count>` in the existing uppercase/mono style (reuse the repo-group `<summary>` styling); render ALL six headers including empty lanes (empty: header + dimmed `— clear —` row). Unread rows: title `font-semibold` + `●` prefix; read rows: existing dimmed styles.
+- Modify: `electron/src/renderer/hooks/useVisiblePRs.ts` — in `'flat'` view, order the canonical list by `(lane, updated_at DESC)` (lane from `laneForPR(pr, viewerLogin)`) so the keyboard cursor walks lanes in order. In `'grouped'` view, ordering is unchanged.
+- Modify: the `visiblePRListRows` projection (in `PRListTable.tsx`, shared with `PRListPage.tsx`) — make it view-aware: `'flat'` → PR rows + lane-header rows (headers are non-selectable, cursor indexes skip them); `'grouped'` → existing repo-group rows unchanged. Keep ONE projection function used by both files so cursor math stays consistent.
+- Modify: `electron/src/renderer/components/PRListTable.tsx` — render lane header rows: `<laneId> <LABEL> — <count>` in the existing uppercase/mono style; ALL six headers render including empty lanes (empty: header + dimmed `— clear —` row). Unread rows: title `font-semibold` + `●` prefix; read rows: existing dimmed styles.
+- Read first: where the settings value reaches the renderer (`grep -rn 'prList' electron/src/renderer --include='*.ts*'` — likely via `useSettingsEffect.ts`/app store); wire it if it isn't already in the store.
 - Test: `electron/src/renderer/components/PRListTable.test.tsx` (extend existing tests)
 
-- [ ] **Step 1: Failing component test:** given PRs mapped to lanes 1/4/6, the table renders six headers with counts `1 NEEDS ACTION — 1`, `4 YOUR CODE — 1`, `6 FYI — 1`, empty lanes show `— clear —`, and an unread PR row shows the `●` marker.
+- [ ] **Step 1: Failing component test:** in `'flat'` view, given PRs mapped to lanes 1/4/6, the table renders six headers with counts `1 NEEDS ACTION — 1`, `4 YOUR CODE — 1`, `6 FYI — 1`, empty lanes show `— clear —`, an unread PR row shows the `●` marker; in `'grouped'` view, repo groups render exactly as before (existing tests keep passing).
 
 - [ ] **Step 2: Run, confirm FAIL.**
 
 - [ ] **Step 3: Implement** (keep `useVisiblePRs` the single source of truth; lane grouping is presentation over the flat sorted list — compute `laneForPR` once per PR in a `useMemo`, don't re-derive per row).
 
-- [ ] **Step 4: Tests + type-check + lint green.**
+- [ ] **Step 4: Tests + type-check + lint green. Verify keyboard invariant:** `j`/`k` from row N lands on the PR the highlight shows, across a lane boundary, in both views.
 
-- [ ] **Step 5: Manual check:** `cd electron && pnpm start`, verify lanes render and repo-grouped view (settings `prList.view`) still works.
+- [ ] **Step 5: Manual check:** `cd electron && pnpm start`, verify lanes render, switch `prList.view` to `grouped` in settings and verify repo groups still work.
 
 - [ ] **Step 6: Commit** — `feat(inbox): lane-sectioned PR list with unread markers`
 
@@ -310,12 +313,16 @@ export function laneForPR(pr: PR, viewerLogin: string): LaneId {
 - Modify: `electron/src/renderer/components/PRListTable.tsx` or the open-navigation site — send `MARK_PRS_READ` for a PR when it is opened
 - Test: `electron/src/renderer/utils/keybindings.test.ts` if binding-level tests exist (check first); otherwise cover via `lanes.test.ts` helpers + hook test
 
+**Bridge constraint (verified):** keybinding actions are pure config receiving only `KeyActionContext` (store/router/overlays) — they CANNOT call React hooks. The existing bridge pattern is DOM CustomEvents: `emitThreadsEvent('bistro:comments:dismiss-nits')` in `keybindings.ts` + a listener in `useDismissals.ts`. Reuse exactly that pattern.
+
 - [ ] **Step 1:** Add bindings config (test-first where a test harness exists):
-  - `inbox.lane1`…`inbox.lane6`: keys `['g','1']`…`['g','6']`, route `list`, hidden: lanes 2–6 (avoid help-overlay noise, same convention as jump keys), description "Jump to lane N". Action: set `selectedPRIndex` to the first PR of lane N in the canonical list (no-op if lane empty).
-  - `inbox.markLaneRead`: keys `'Shift+R'`, route `list`. Action: collect filter-visible PRs in the selected row's lane; call `markPRsRead(ids)`; no-op when the list is empty. NOTE: `Shift+R` is `detail.requestChanges` on the `detail` route — route gating keeps them disjoint; verify with the help overlay.
-- [ ] **Step 2:** Implement `useMarkPRsRead` + auto-mark-on-open (fire-and-forget on the open action, `.catch`-free — neverthrow style per the existing hook).
-- [ ] **Step 3:** `pnpm type-check && pnpm lint && pnpm test` green. Manual: `g 3` jumps, `Shift-R` clears bold, opening a PR clears its dot.
-- [ ] **Step 4: Commit** — `feat(inbox): lane jump keys, Shift-R mark-read, auto-read on open`
+  - `inbox.lane1`…`inbox.lane6`: keys `['g','1']`…`['g','6']`, route `list`, hidden: lanes 2–6 (avoid help-overlay noise, same convention as jump keys), description "Jump to lane N". Action: set `selectedPRIndex` to the first PR of lane N via the store (pure store write — no hook needed; no-op if lane empty).
+  - `inbox.markLaneRead`: keys `'Shift+R'`, route `list`. Action: `document.dispatchEvent(new CustomEvent('bistro:inbox:mark-lane-read'))` (same helper as `emitThreadsEvent`). NOTE: `Shift+R` is `detail.requestChanges` on the `detail` route — route gating keeps them disjoint; verify with the help overlay.
+- [ ] **Step 2:** Implement `useMarkPRsRead` (WS request hook per `useMarkFileViewed` pattern) plus a listener hook `useInboxReadActions` mounted in the list page: on `bistro:inbox:mark-lane-read`, compute filter-visible PRs in the selected row's lane (from `useVisiblePRs` + `laneForPR`) and call `markPRsRead(ids)`; no-op when the list is empty.
+- [ ] **Step 3:** **Refetch on push:** in `useWebSocketPRList.ts`, subscribe to the `PRS_READ_CHANGED` broadcast (Task 3) and refetch/invalidate the list — this is the concrete list-update path; the same push satisfies "opened PR loses its dot" for every open path.
+- [ ] **Step 4:** **Auto-read on open, centralized:** send `MARK_PRS_READ` from the PR detail route component on mount (keyed by `prId`) — NOT from the row's `onClick` — so keyboard `Enter`, mouse click, palette open, and deep links all mark read through the one code path. Fire-and-forget with neverthrow (`ResultAsync`, no `.catch`/`try`). Offline note: `MARK_PRS_READ` is read-state, not a GitHub write — it does NOT go through the offline action queue; if the WS is down the mark is dropped and the PR simply stays unread until next opened (accepted; document in the hook comment).
+- [ ] **Step 5:** `pnpm type-check && pnpm lint && pnpm test` green. Manual: `g 3` jumps, `Shift-R` clears bold for the lane, opening a PR (each of: Enter, click, palette) clears its dot.
+- [ ] **Step 6: Commit** — `feat(inbox): lane jump keys, Shift-R mark-read, auto-read on open`
 
 ---
 
@@ -338,7 +345,7 @@ export function laneForPR(pr: PR, viewerLogin: string): LaneId {
 - Delete: TanStack Virtual scaffolding inside the old component (the `useVirtualizer` usage)
 - Test: unit tests for `diffPathUtils.ts` (write BEFORE moving: capture current behavior for renames/deletions/`/dev/null` cases); existing diff-related tests keep passing
 
-- [ ] **Step 1:** Write `diffPathUtils.test.ts` against the CURRENT functions (import from `PierreDiffView.tsx` temporarily) — rename returns NEW path, deletion falls back to a/ side, same-path headers. Run: PASS (locks behavior).
+- [ ] **Step 1:** Write `diffPathUtils.test.ts` — the path helpers are private in `PierreDiffView.tsx`, so do a minimal extraction FIRST (move the pure functions verbatim to `diffPathUtils.ts`, re-import them in `PierreDiffView.tsx`), then write the characterization tests against the new module — rename returns NEW path, deletion falls back to a/ side, same-path headers. Run: PASS (locks behavior).
 - [ ] **Step 2:** Extract the pure modules; re-run tests: PASS.
 - [ ] **Step 3:** Swap `PatchDiff`+virtualizer for `CodeView` per spike findings. Keep: comment threads, inline comment composer, `DegradedRangeDiffIndicator`, expertise `formatWhy` annotations, mark-viewed (`v`) flow, since-last-review (`s`) range diff entry point.
 - [ ] **Step 4:** `pnpm type-check && pnpm lint && pnpm test` green; `pnpm bench:large-diff` not worse than baseline; manual review of a real PR (threads visible, `n/p/j/k` work).
@@ -469,14 +476,17 @@ Semantics (spec §5.3): `CHECK_PR_CHECKOUT {pr_id}` → `{local_path, head_match
 **Files:**
 - Modify: `electron/src/renderer/components/CommandPalette.tsx` (command entry, `diff`-route-aware)
 - Create: `electron/src/renderer/hooks/useOpenInEditor.ts` (WS calls + dialog state)
-- Create: `electron/src/main/` IPC: `open-in-editor` channel (grep `openExternal` registration in `electron/src/main/` and add a sibling) — spawns the editor from the main process
-- Test: `useOpenInEditor.test.ts` for the decision logic (mock WS)
+- Create: `electron/src/renderer/utils/editorArgs.ts` + `editorArgs.test.ts` (pure CLI argument builder — testable without Electron)
+- Modify: `electron/src/main/ipc.ts` — add `open-in-editor` IPC handler (sibling of `openExternal`) that spawns the editor
+- Modify: `electron/src/main/preload.ts` — expose `openInEditor(path, line)` on the context bridge (context isolation is on; the renderer cannot reach `ipcRenderer` directly — follow how `openExternal` is exposed here)
+- Modify: the renderer's window/bridge type declaration (find with `grep -rn 'openExternal' electron/src/renderer electron/src/types` — add `openInEditor` beside it)
+- Test: `useOpenInEditor.test.ts` for the decision logic (mock WS + bridge), `editorArgs.test.ts` for the arg builder
 
 Current file/line model (spec): file = `n`/`p` focus target; line = selected inline-comment line, else first new-side line of the file's first hunk, else 1.
 
-- [ ] **Step 1: Failing hook test:** given `{head_matches: true}` → resolves editor launch args; `{head_matches: false}` → surfaces dialog state with three options; "no local path" error → toast text. neverthrow `ResultAsync` chains, no try/catch.
-- [ ] **Step 2:** Run — FAIL. Implement hook.
-- [ ] **Step 3:** Main-process IPC: build args by editor family — `code`/`cursor`: `-g file:line`; `vim`/`nvim`/terminal editors are out (GUI context): fall back to `$EDITOR file` without line when the `+line` convention is unknown; `$EDITOR` unset → error toast "Set $EDITOR". Validate that the resolved path stays inside the repo local path (reject `..` traversal) before spawning; spawn with an args array (no shell string).
+- [ ] **Step 1: Failing tests:** (a) `editorArgs.test.ts` — pure builder: `code`/`cursor` → `['-g', 'file:line']`; unknown editor → `[file]` without line; empty editor name → error Result. (b) `useOpenInEditor.test.ts` — given `{head_matches: true}` → invokes bridge with launch args; `{head_matches: false}` → surfaces dialog state with three options; "no local path" error → toast text. neverthrow `ResultAsync` chains, no try/catch.
+- [ ] **Step 2:** Run — FAIL. Implement `editorArgs.ts` + hook.
+- [ ] **Step 3:** Main-process IPC (`ipc.ts`) + preload bridge (`preload.ts`) + window type: handler resolves `$EDITOR` (unset → typed error the renderer toasts as "Set $EDITOR"); validates the resolved file path stays inside the repo local path (reject `..` traversal) before spawning; spawns with an args array (no shell string).
 - [ ] **Step 4:** Dialog component: "PR revision not checked out" → [Check out PR head] (calls `CHECKOUT_PR_HEAD`, then opens), [Open current version] (opens with mismatch warning in dialog body), [Cancel]. Reuse the existing dialog primitives (`components/ui/`).
 - [ ] **Step 5:** All checks green; manual end-to-end with a locally-checked-out repo. Commit — `feat(palette): open in editor with checkout verification`
 
@@ -485,7 +495,8 @@ Current file/line model (spec): file = `n`/`p` focus target; line = selected inl
 ### Task 18: First-run tour
 
 **Files:**
-- Modify: `electron/src/renderer/overlays/OverlayContext.tsx` — add `'tour'` to `OverlayKind`
+- Modify: `electron/src/renderer/overlays/OverlayContext.tsx` — add `'tour'` to `OverlayKind` AND expose an open path the same way existing overlays do (check how `help`/`command` open: the context's open/setActiveOverlay API — mirror it for `tour`)
+- Modify: `electron/src/renderer/utils/keybindings.ts` — add `'tour'` to the hard-coded `ALL_OVERLAYS` list (line ~131) so the global Escape binding fires inside the tour; tour-internal keys (arrows/Enter) are handled in the component, matching how other overlays self-handle
 - Create: `electron/src/renderer/overlays/TourOverlay.tsx` (5 screens as a const array; arrow/enter advances, Esc dismisses)
 - Modify: `electron/src/types/settings.ts` — `appearance.tourComplete: boolean` default `false` (sibling of `onboardingComplete`)
 - Modify: `electron/src/renderer/components/CommandPalette.tsx` — `:tour` command re-opens it

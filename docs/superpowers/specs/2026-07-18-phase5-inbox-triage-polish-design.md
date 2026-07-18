@@ -111,7 +111,7 @@ All bindings are pure config in `keybindings.ts` (sequence bindings are already 
 
 ## Error handling
 
-- `MARK_PRS_READ` failures: existing WS action-queue semantics (queued offline, retried); UI shows the optimistic state and reconciles on the next list push.
+- `MARK_PRS_READ` failures: read state is local-only (not a GitHub write), so it does not use the offline action queue. On WS failure the mark is dropped and the PR stays unread until next opened — logged, no user-facing error. Successful writes trigger a `PRS_READ_CHANGED` push; the list refetches on it.
 - `:open in editor`: every failure path (no local path, dirty worktree, checkout failure, editor launch failure) surfaces a user-facing toast with the specific reason; details logged.
 - Checkout is the only state-mutating git operation added; it refuses to run on a dirty worktree.
 
