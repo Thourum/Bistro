@@ -3,7 +3,9 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../types/settings';
+import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
+import { initialUIState } from '../store/ui';
 import { useWebSocket } from './useWebSocket';
 
 class MockWebSocket {
@@ -91,6 +93,7 @@ describe('useWebSocket dev-folder startup scan', () => {
     MockWebSocket.instances = [];
     vi.stubGlobal('WebSocket', MockWebSocket);
     settingsStore.setState(() => DEFAULT_SETTINGS);
+    appStore.setState(() => ({ ...initialUIState }));
   });
 
   afterEach(() => {
@@ -283,6 +286,22 @@ describe('useWebSocket dev-folder startup scan', () => {
 
     await expect(request).resolves.toEqual({ pr_id: 'github:acme/widgets#42' });
 
+    unmount();
+  });
+
+  it('invalidates PR lists when PR read state changes', () => {
+    appStore.setState((state) => ({ ...state, prListRevision: 4 }));
+    const { unmount } = renderHook(() => useWebSocket());
+    const ws = openMountedWebSocket();
+
+    emitMessage(ws, {
+      id: 'read-state-change-1',
+      type: 'PRS_READ_CHANGED',
+      data: { pr_ids: ['github:acme/api:1'] },
+      timestamp: new Date().toISOString(),
+    });
+
+    expect(appStore.state.prListRevision).toBe(5);
     unmount();
   });
 

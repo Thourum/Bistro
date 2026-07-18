@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PR } from '../types';
-import { laneForPR, laneSections } from './lanes';
+import { laneForPR, laneSections, sectionContaining } from './lanes';
 
 const VIEWER_LOGIN = 'me';
 
@@ -159,6 +159,24 @@ describe('laneForPR', () => {
     expect(laneForPR(reviewRequest, '')).toBe(6);
     expect(laneForPR(codeOwnership, '')).toBe(4);
     expect(laneForPR(mention, '')).toBe(5);
+  });
+});
+
+describe('sectionContaining', () => {
+  const sections = [
+    { lane: 1 as const, startIndex: 0, count: 2 },
+    { lane: 2 as const, startIndex: 2, count: 0 },
+    { lane: 3 as const, startIndex: 2, count: 3 },
+  ];
+
+  it('returns the populated section containing a cursor index', () => {
+    expect(sectionContaining(sections, 3)).toEqual(sections[2]);
+  });
+
+  it('returns null for an empty lane boundary or out-of-range index', () => {
+    expect(sectionContaining(sections, 2)).toEqual(sections[2]);
+    expect(sectionContaining(sections, 5)).toBeNull();
+    expect(sectionContaining(sections, -1)).toBeNull();
   });
 });
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { FooterCenterSlot } from '../components/FooterSlot';
 import { PRListTable, visiblePRListRows } from '../components/PRListTable';
+import { useInboxReadActions } from '../hooks/useInboxReadActions';
 import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
@@ -8,6 +9,7 @@ import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { touchesYouCount } from '../utils/expertise';
+import { laneSections } from '../utils/lanes';
 import { countTriageLanes, prBrowserUrl } from '../utils/triage';
 
 const FILTER_TITLES: Record<UIState['filterState'], string> = {
@@ -63,7 +65,9 @@ export function PRListPage({
     appStore,
     (s: UIState) => s.collapsedRepoKeys,
   );
+  const viewerLogin = useStore(appStore, (s: UIState) => s.viewerLogin);
   const view = useStore(settingsStore, (s) => s.prList.view);
+  useInboxReadActions(prs);
 
   // In lanes view, headers are presentation only and the keyboard cursor maps
   // directly to the PR-only canonical list. Grouped view retains its existing
@@ -89,13 +93,15 @@ export function PRListPage({
         ...s,
         selectedPRIndex,
         visiblePRIds: rows.map((r) => r.pr?.id ?? ''),
+        laneSectionsSnapshot:
+          view === 'grouped' ? [] : laneSections(prs, viewerLogin),
         visiblePRBrowserUrls: rows.map((r) =>
           r.pr ? (prBrowserUrl(r.pr) ?? '') : '',
         ),
         visiblePRRepoKeys: rows.map((r) => r.repoKey),
       };
     });
-  }, [collapsedRepoKeys, prs, view]);
+  }, [collapsedRepoKeys, prs, view, viewerLogin]);
 
   // Counters always reflect the full open lane, independent of the filter.
   const { data: openPRs = [] } = useWebSocketPRList('open');

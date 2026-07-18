@@ -8,6 +8,7 @@ import type {
   RepoInfo,
   Toast,
 } from '../types';
+import type { LaneSection } from '../utils/lanes';
 
 interface SyncStats {
   prCount: number;
@@ -71,6 +72,8 @@ export interface UIState {
    * list.openBrowser, list.bottom) without needing a hook context.
    */
   visiblePRIds: string[];
+  /** Lane positions for the flat inbox list; empty in grouped view. */
+  laneSectionsSnapshot: LaneSection[];
   visiblePRBrowserUrls: string[];
   /**
    * Repo key (`owner/repo`) for each visible row — parallel to visiblePRIds.
@@ -166,6 +169,7 @@ export const initialUIState: UIState = {
   reposLoading: false,
   repoFilter: null,
   visiblePRIds: [],
+  laneSectionsSnapshot: [],
   visiblePRBrowserUrls: [],
   visiblePRRepoKeys: [],
   collapsedRepoKeys: [],

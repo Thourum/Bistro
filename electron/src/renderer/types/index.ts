@@ -196,6 +196,13 @@ export interface FileViewedAck {
   reason?: string;
 }
 
+/** Acknowledgement of a `MARK_PRS_READ` request. */
+export interface PRsReadAck {
+  ok: boolean;
+  marked: number;
+  reason?: string;
+}
+
 /**
  * A review thread on a PR — one row of the `review_threads` table, surfaced
  * via `GET_REVIEW_THREADS` / `REVIEW_THREADS_READY`. Field names are snake_case

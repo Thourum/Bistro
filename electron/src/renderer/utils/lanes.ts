@@ -42,6 +42,22 @@ export interface LaneSection {
   count: number;
 }
 
+/** Returns the non-empty lane section containing a PR-list cursor index. */
+export function sectionContaining(
+  sections: readonly LaneSection[],
+  index: number,
+): LaneSection | null {
+  if (index < 0) return null;
+  return (
+    sections.find(
+      (section) =>
+        section.count > 0 &&
+        index >= section.startIndex &&
+        index < section.startIndex + section.count,
+    ) ?? null
+  );
+}
+
 /**
  * Positions in a lane-sorted PR list where each lane's header renders.
  * Empty lanes start at the next lane's first PR, or the list end.
