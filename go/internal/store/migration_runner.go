@@ -22,9 +22,10 @@ const migrationsDir = "migrations"
 // predate newer migrations, and marking them applied would silently skip
 // them. Bump this only together with new checks in reconciledSchemaVersion.
 const (
-	reconcileBaselineVersion  int64 = 33
+	reconcileBaselineVersion  int64 = 34
 	preHydrationSchemaVersion int64 = 31
 	preMentionedSchemaVersion int64 = 32
+	preReadStateSchemaVersion int64 = 33
 )
 
 //go:embed migrations/*.sql
@@ -170,7 +171,28 @@ func reconciledSchemaVersion(ctx context.Context, db *sql.DB, baselineVersion in
 		return min(baselineVersion, preMentionedSchemaVersion), nil
 	}
 
+	hasReadStateSchema, err := readStateSchemaExists(ctx, db)
+	if err != nil {
+		return 0, err
+	}
+	if !hasReadStateSchema {
+		return min(baselineVersion, preReadStateSchemaVersion), nil
+	}
+
 	return baselineVersion, nil
+}
+
+func readStateSchemaExists(ctx context.Context, db *sql.DB) (bool, error) {
+	for _, columnName := range []string{"pr_id", "login", "last_read_at"} {
+		hasColumn, err := columnExists(ctx, db, "pr_read_state", columnName)
+		if err != nil {
+			return false, fmt.Errorf("check pr_read_state.%s column: %w", columnName, err)
+		}
+		if !hasColumn {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func schemaMigrationVersions() []int64 {

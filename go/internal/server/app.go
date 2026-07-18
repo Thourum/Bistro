@@ -647,6 +647,8 @@ func (a *App) Run(ctx context.Context) error {
 		}, a.log))
 	a.wsServer.RegisterHandler("MARK_FILE_VIEWED",
 		handler.NewMarkFileViewedHandlerWithDiffStore(a.db, currentUserStore, diffStore, a.log))
+	a.wsServer.RegisterHandler("MARK_PRS_READ",
+		handler.NewMarkPRsReadHandler(a.db, currentUserStore, a.wsServer, a.log))
 	// Phase 2.4 handlers.
 	a.wsServer.RegisterHandler("GET_REVIEW_THREADS",
 		handler.NewGetReviewThreadsHandler(a.db, a.log))

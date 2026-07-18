@@ -185,9 +185,79 @@ func TestMigrationsRerunAfterGooseVersionMetadataLoss(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT version_id) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
-	if appliedCount != 32 {
-		t.Errorf("applied goose version count = %d, want 32", appliedCount)
+	if appliedCount != 33 {
+		t.Errorf("applied goose version count = %d, want 33", appliedCount)
 	}
+
+	if exists, err := tableExists(ctx, db.DB, "pr_read_state"); err != nil {
+		t.Fatalf("check pr_read_state table: %v", err)
+	} else if !exists {
+		t.Fatal("pr_read_state table does not exist")
+	}
+}
+
+func TestMigration034AddsPRReadState(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	for _, columnName := range []string{"pr_id", "login", "last_read_at"} {
+		assertColumnExists(t, db.DB, "pr_read_state", columnName)
+	}
+
+	mustExec(t, db, `INSERT INTO pr_read_state (pr_id, login, last_read_at) VALUES ('pr-1', 'alice', '2026-01-01T00:00:00Z')`)
+	mustExec(t, db, `INSERT INTO pr_read_state (pr_id, login, last_read_at) VALUES ('pr-1', 'alice', '2026-01-02T00:00:00Z')
+		ON CONFLICT(pr_id, login) DO UPDATE SET last_read_at = excluded.last_read_at`)
+
+	var lastReadAt string
+	if err := db.QueryRowContext(ctx, `SELECT last_read_at FROM pr_read_state WHERE pr_id = 'pr-1' AND login = 'alice'`).Scan(&lastReadAt); err != nil {
+		t.Fatalf("query read state: %v", err)
+	}
+	if lastReadAt != "2026-01-02T00:00:00Z" {
+		t.Errorf("last_read_at = %q, want updated value", lastReadAt)
+	}
+}
+
+func TestMigrationRunnerReconcilesPartialReadStateSchema(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	migrateEmbeddedSchemaToVersion(t, ctx, db.DB, 33)
+	mustExec(t, db, `CREATE TABLE pr_read_state (pr_id TEXT NOT NULL PRIMARY KEY)`)
+	mustExec(t, db, `DROP TABLE `+goose.DefaultTablename)
+
+	reconciledVersion, err := reconciledSchemaVersion(ctx, db.DB, reconcileBaselineVersion)
+	if err != nil {
+		t.Fatalf("reconciledSchemaVersion() error = %v", err)
+	}
+	if reconciledVersion != preReadStateSchemaVersion {
+		t.Errorf("reconciled schema version = %d, want %d", reconciledVersion, preReadStateSchemaVersion)
+	}
+}
+
+func TestMigrationRunnerReconcilesSchemaWithoutReadStateTable(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	migrateEmbeddedSchemaToVersion(t, ctx, db.DB, 33)
+	mustExec(t, db, `DROP TABLE `+goose.DefaultTablename)
+
+	if err := NewMigrationRunner(nil, db.DB).Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if exists, err := tableExists(ctx, db.DB, "pr_read_state"); err != nil {
+		t.Fatalf("check pr_read_state table: %v", err)
+	} else if !exists {
+		t.Fatal("pr_read_state table does not exist")
+	}
+	assertAllEmbeddedVersionsApplied(t, ctx, db.DB)
 }
 
 func TestMigrationRunnerReconcilesSchemaWithoutMentionedColumn(t *testing.T) {
@@ -277,8 +347,8 @@ func assertAllEmbeddedVersionsApplied(t *testing.T, ctx context.Context, db *sql
 	t.Helper()
 
 	versions := schemaMigrationVersions()
-	if len(versions) != 32 {
-		t.Fatalf("embedded migration count = %d, want 32 through version 33 excluding version 13", len(versions))
+	if len(versions) != 33 {
+		t.Fatalf("embedded migration count = %d, want 33 through version 34 excluding version 13", len(versions))
 	}
 	for _, version := range versions {
 		var appliedCount int
@@ -439,8 +509,8 @@ func TestMigrationRunnerSeedsGooseFromLegacySchemaMigrations(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
-	if appliedCount != 32 {
-		t.Errorf("applied goose version count = %d, want 32", appliedCount)
+	if appliedCount != 33 {
+		t.Errorf("applied goose version count = %d, want 33", appliedCount)
 	}
 
 	var prsSQL string
