@@ -100,9 +100,11 @@ export function useVisiblePRs(
     }
 
     if (view === 'flat') {
+      const laneById = new Map(
+        result.map((pr) => [pr.id, laneForPR(pr, viewerLogin)]),
+      );
       result = [...result].sort((a, b) => {
-        const laneDifference =
-          laneForPR(a, viewerLogin) - laneForPR(b, viewerLogin);
+        const laneDifference = laneById.get(a.id)! - laneById.get(b.id)!;
         if (laneDifference !== 0) return laneDifference;
         return (
           new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
