@@ -185,9 +185,33 @@ func TestMigrationsRerunAfterGooseVersionMetadataLoss(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT version_id) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
-	if appliedCount != 31 {
-		t.Errorf("applied goose version count = %d, want 31", appliedCount)
+	if appliedCount != 32 {
+		t.Errorf("applied goose version count = %d, want 32", appliedCount)
 	}
+}
+
+func TestMigrationRunnerReconcilesSchemaWithoutMentionedColumn(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	migrateEmbeddedSchemaToVersion(t, ctx, db.DB, 32)
+	mustExec(t, db, `DROP TABLE `+goose.DefaultTablename)
+
+	runner := NewMigrationRunner(nil, db.DB)
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	assertColumnExists(t, db.DB, "prs", "mentioned")
+	assertAllEmbeddedVersionsApplied(t, ctx, db.DB)
+
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+	assertAllEmbeddedVersionsApplied(t, ctx, db.DB)
 }
 
 func TestMigrationRunnerReconcilesSchemaWithoutHydratedColumn(t *testing.T) {
@@ -253,8 +277,8 @@ func assertAllEmbeddedVersionsApplied(t *testing.T, ctx context.Context, db *sql
 	t.Helper()
 
 	versions := schemaMigrationVersions()
-	if len(versions) != 31 {
-		t.Fatalf("embedded migration count = %d, want 31 through version 32 excluding version 13", len(versions))
+	if len(versions) != 32 {
+		t.Fatalf("embedded migration count = %d, want 32 through version 33 excluding version 13", len(versions))
 	}
 	for _, version := range versions {
 		var appliedCount int
@@ -415,17 +439,18 @@ func TestMigrationRunnerSeedsGooseFromLegacySchemaMigrations(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
 		t.Fatalf("query applied goose versions: %v", err)
 	}
-	if appliedCount != 31 {
-		t.Errorf("applied goose version count = %d, want 31", appliedCount)
+	if appliedCount != 32 {
+		t.Errorf("applied goose version count = %d, want 32", appliedCount)
 	}
 
 	var prsSQL string
 	if err := db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type='table' AND name='prs'`).Scan(&prsSQL); err != nil {
 		t.Fatalf("query prs schema: %v", err)
 	}
-	// Migrations past the legacy seed (00032 adds hydrated) still apply, but
-	// the table must not have been dropped and re-created.
-	if prsSQL != "CREATE TABLE prs (id TEXT PRIMARY KEY, hydrated INTEGER NOT NULL DEFAULT 1)" {
+	// Migrations past the legacy seed (00032 adds hydrated and 00033 adds
+	// mentioned) still apply, but the table must not have been dropped and
+	// re-created.
+	if prsSQL != "CREATE TABLE prs (id TEXT PRIMARY KEY, hydrated INTEGER NOT NULL DEFAULT 1, mentioned INTEGER NOT NULL DEFAULT 0)" {
 		t.Errorf("prs table was re-migrated; schema = %q", prsSQL)
 	}
 }
@@ -787,5 +812,14 @@ func TestMigration023_AddsReviewCommentPositionFields(t *testing.T) {
 	}
 	if originalLine != nil || subjectType != nil {
 		t.Fatalf("new review positioning columns default = (%v, %v), want NULLs", originalLine, subjectType)
+	}
+}
+
+func TestMigration033AddsPRMentioned(t *testing.T) {
+	db := newTestDB(t)
+
+	cols := tableColumns(t, db, "prs")
+	if !cols["mentioned"] {
+		t.Error("prs missing column mentioned")
 	}
 }

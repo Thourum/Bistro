@@ -17,13 +17,14 @@ import (
 const migrationsDir = "migrations"
 
 // reconcileBaselineVersion is the highest migration version whose effects
-// currentSchemaExists verifies. Schema-signature reconciliation must never
+// reconciledSchemaVersion verifies. Schema-signature reconciliation must never
 // mark versions past it as applied: a DB that lost its goose metadata may
 // predate newer migrations, and marking them applied would silently skip
-// them. Bump this only together with new checks in currentSchemaExists.
+// them. Bump this only together with new checks in reconciledSchemaVersion.
 const (
-	reconcileBaselineVersion  int64 = 32
+	reconcileBaselineVersion  int64 = 33
 	preHydrationSchemaVersion int64 = 31
+	preMentionedSchemaVersion int64 = 32
 )
 
 //go:embed migrations/*.sql
@@ -159,6 +160,14 @@ func reconciledSchemaVersion(ctx context.Context, db *sql.DB, baselineVersion in
 	}
 	if !hasHydratedColumn {
 		return min(baselineVersion, preHydrationSchemaVersion), nil
+	}
+
+	hasMentionedColumn, err := columnExists(ctx, db, "prs", "mentioned")
+	if err != nil {
+		return 0, fmt.Errorf("check prs.mentioned column: %w", err)
+	}
+	if !hasMentionedColumn {
+		return min(baselineVersion, preMentionedSchemaVersion), nil
 	}
 
 	return baselineVersion, nil
