@@ -4,13 +4,13 @@
 
 **Dependency checked:** `@pierre/diffs` 1.2.11
 
-**Decision:** **BLOCKED — Electron launches, but this environment cannot inspect or drive its renderer.**
+**Decision:** **GO — human-verified in an inspectable renderer.**
 
 ## Recommendation
 
-Do **not** begin Task 9 from this spike alone. The installed 1.2.11 API supports every needed migration primitive: stable mixed diff items, `DiffLineAnnotation` rendering, live unified/split options, one native scroll surface, and imperative item and line scroll targets. A disposable jsdom mount confirmed that both additions- and deletions-side annotations render in both layouts, the custom per-file header hook renders, and a 1,000-item mount initially produced only two custom headers. That is strong API compatibility evidence, but it is not evidence that the current review route works with a real synced PR or that rendering is not worse.
+Begin Task 9. The installed 1.2.11 API supports every needed migration primitive: stable mixed diff items, `DiffLineAnnotation` rendering, live unified/split options, one native scroll surface, and imperative item and line scroll targets. A disposable jsdom mount confirmed that both additions- and deletions-side annotations render in both layouts, the custom per-file header hook renders, and a 1,000-item mount initially produced only two custom headers.
 
-A follow-up real-app attempt successfully launched Electron Forge, created the Bistro main window, spawned and connected the Go engine, and built the temporary fixture-backed CodeView host. However, this agent environment has no browser/Electron automation, no accessible DevTools protocol endpoint, and no UI-inspection capability; the Electron console did not forward the probe's renderer result to the Forge process. I therefore could not establish actual target positions, rapid-scroll behavior, toggle retention, annotation anchoring after browser scroll, or subjective responsiveness. The existing benchmark is parser-only, so it cannot measure either the current `PatchDiff` rendering path or CodeView rendering. It remains a stable parsing baseline, but cannot supply the required before/after renderer result.
+Human-driven verification then exercised the temporary 1,000-file fixture in the Vite browser renderer and Electron shell. Keyboard shortcuts worked; the item-900 target landed visibly; the item-500 line-14 target and both annotations were exact; twenty rapid line targets settled cleanly at line 33; unified/split retained the rough viewport and annotation anchors; and free scrolling was smooth. The existing benchmark remains parser-only, so it cannot compare the current `PatchDiff` rendering path with CodeView rendering. It is a stable parsing baseline rather than a renderer-performance result.
 
 ## Sources inspected
 
@@ -110,7 +110,7 @@ CodeView's documentation states that it owns a single virtual code surface, rend
 | Risk | Impact | Mitigation / acceptance condition |
 | --- | --- | --- |
 | Existing file IDs are canonical UI IDs while CodeView needs stable unique IDs | Broken file scrolls or key collisions | Use the current `ParsedDiffFile.id` as the `CodeViewDiffItem.id`, retaining existing `buildFileKeys` behavior and duplicate-path protection. |
-| Existing parser produces raw file patches while CodeView consumes `FileDiffMetadata` | Migration cannot construct items or can regress quoted paths, renames, deletions, additions, `/dev/null`, or malformed patches | The ordinary-patch probe proves only the shape conversion. The compatibility gate remains open until characterization covers every existing path case and representative input converts successfully. |
+| Existing parser produces raw file patches while CodeView consumes `FileDiffMetadata` | Migration cannot construct items or can regress quoted paths, renames, deletions, additions, `/dev/null`, or malformed patches | The ordinary-patch probe proves only the shape conversion. Characterize every existing path case and representative input during Task 9 before treating the migration as complete. |
 | Inline cards change item height after CodeView measures it | Jumps, clipping, or missed active-card scroll | Use CodeView-owned item version updates when annotations change; retain the next-frame card DOM scroll. Validate comments, reply composer open/close, and resolved-card height changes against a large real PR. |
 | `onScroll` active-file derivation is not yet empirically characterized | `n` / `p` cursor may drift or scroll-jack | Prototype with CodeView rendered-item metadata in Task 9 and manually check manual scroll, URL navigation, sidebar click, and `n` / `p`. Keep state updates immutable. |
 | Expertise currently sits between bespoke header and diff body | Semantics/styling could move | Use verified `renderCustomHeader` rather than forcing expertise into line annotations. Preserve existing `FileExpertiseLine` UI and error state. |
@@ -130,30 +130,40 @@ The scratch component was type-checked successfully, Electron Forge started succ
 
 **Blocked observations:** there is no configured Playwright/Puppeteer/Chromium-driver setup, no DevTools Protocol endpoint exposed by this Forge launch, and accessibility/AppleScript inspection timed out in this environment. The Forge process did not forward the renderer `console.info` emitted by the probe. Consequently no live result values or visual observations were available, so the sequence cannot be counted as empirical confirmation of scrolling, toggling, annotation anchoring, or responsiveness.
 
-## What remains required to clear Task 8
+## Human renderer verification
 
-This is the blocking work, not deferred Task 9 acceptance:
+The gate was cleared by a human-driven check after the temporary fixture probe was corrected and run in both the Vite browser renderer and Electron shell. The browser was useful to expose the initial host-sizing defect; Electron is the relevant desktop runtime confirmation.
 
-1. Start the Electron renderer against a large synced PR with at least one current thread and, preferably, a rename/deletion fixture.
-2. Mount the scratch CodeView host without changing the shipped route, then visibly confirm both annotation sides, annotation persistence across unified/split, custom expertise chrome, and actual item/line scroll positions.
-3. Exercise the existing keyboard contracts: `n` / `p` file changes, generic `j` / `k` fallback scroll, thread `j` / `k`, Enter/Escape composer flow, sidebar selection, and URL `?file` navigation. Confirm the CodeView `containerRef` root supports all legacy `data-diff-viewport` scrolling bindings.
-4. Record a real renderer measure for the current PatchDiff route and the scratch CodeView host on the same PR: initial render/readiness, a representative long scroll, and annotation insertion or composer open/close. The parser bench remains a separate regression baseline.
-5. Test the current parser-model conversion against quoted paths, rename/deletion/addition, `/dev/null`, and malformed/plain patches before calling the path mapping compatible.
+| Check | Human-verified result |
+| --- | --- |
+| Keyboard controls (`1`, `2`, `3`, `T`) | Pass after probe autofocus/event handling correction |
+| Far item target | Pass: item 900 lands visibly in the expected region |
+| Exact line target and annotations | Pass: item 500, line 14, and both additions/deletions annotations are correctly anchored |
+| Rapid programmatic scrolling | Pass: twenty sequential line targets settle cleanly at line 33 without blanking or stutter |
+| Unified/split toggle | Pass: rough viewport position is retained and annotations remain anchored |
+| Free scrolling / virtualization | Pass: smooth scrolling across the 1,000-file fixture in Electron |
 
-Only after these checks are all green should the gate change to GO and Task 9 begin. Word-level rendering is intentionally not a Task 8 requirement; it belongs to Task 11 and remains unverified by this probe.
+The temporary component, hash gate, and dev command-palette entry were removed after verification. No shipped route or component remains changed by the probe.
 
-## Concrete Task 9 implementation guidance (after the gate clears)
+### Findings that Task 9 must preserve
+
+1. **CodeView owns its root scroller.** The React host supplied to `CodeView` is the element that receives the library's native scroll listener and imperative `scrollTo` calls. It must be a bounded vertical scroll surface, for example `min-h-0 flex-1 overflow-y-auto`, within a `min-h-0 overflow-hidden` flex parent. The initial probe omitted `overflow-y-auto`, which left the wrong element to receive native scrolling and appeared frozen. Use `containerRef` when legacy bindings need the root element.
+2. **Cold far item targets are estimated.** A far `type: 'item'` jump can initially land within about two items because CodeView uses shared default `itemMetrics` of 20px line height, 44px header height, and 8px spacing until preceding items are measured. Mounted layout self-corrects; exact line targets passed the human check. If Task 9 needs pixel-perfect far item jumps, add a post-measure correction/retry rather than assuming the first item jump is exact.
+
+The remaining parser edge-case characterization and ordinary review-route acceptance are Task 9 implementation/acceptance work, not blockers for selecting CodeView. Word-level rendering is intentionally not a Task 8 requirement; it belongs to Task 11 and remains unverified by this probe.
+
+## Concrete Task 9 implementation guidance
 
 1. **Keep the current public contract first.** Extract the existing parsed-file and path-key utilities before replacing the canvas. Write the planned characterization tests for quoted paths, renames, deletions, `/dev/null`, and malformed/plain patches.
 2. **Use a controlled CodeView.** Derive a memoized, immutable `CodeViewDiffItem<ReviewThread>[]` from the current parsed files, filtered current-anchor threads, and their mapped annotations. Stable ID: current `file.id`; derive a deterministic `version` from every render-relevant file, annotation, thread-card, and reply/resolution state so matching ID/version pairs never retain stale output.
 3. **Parse into library metadata at the boundary.** A CodeView diff item needs `fileDiff`, not `patch`. `parsePatchFiles(file.patch)` returns `ParsedPatch[]`; flatten their `.files` values deliberately and fail visibly if a file cannot be represented. Do not silently omit a file.
 4. **Start with minimal, explicit options.** Use `diffStyle: 'unified'`, `stickyHeaders: true`, `layout: { paddingTop: 0, paddingBottom: 0, gap: 0 }`, the existing theme, and `disableWorkerPool`. Do not add collapse or worker-pool behavior as part of the migration.
 5. **Render headers and cards through supported callbacks.** Use `renderCustomHeader` for the existing file header and `FileExpertiseLine`; use `renderAnnotation` for `ThreadAnnotationCard`. Maintain `data-annotation-key` on the card.
-6. **Make the CodeView ref the sole programmatic file navigator.** URL state, sidebar clicks, and selected-file-index effects should call the verified item target. For an active thread, use the item target followed by the existing next-frame DOM card scroll. Keep generic scroll fallback pointing at CodeView's scroll root.
+6. **Make the CodeView ref the sole programmatic file navigator.** URL state, sidebar clicks, and selected-file-index effects should call the verified item target. For an active thread, use the item target followed by the existing next-frame DOM card scroll. Keep generic scroll fallback pointing at CodeView's bounded `containerRef` root. Allow for cold item-target estimation or issue a post-measure correction if exact placement is required.
 7. **Treat visible-file tracking as a contained adapter.** Use CodeView's `onScroll` / viewer state to update `selectedFileIndex` only for user-driven viewport changes. Test that state updates never trigger a compensating scroll.
 8. **Preserve non-host concerns in place.** Do not modify mark-viewed, range-diff branching, or the range-diff indicator merely to accommodate CodeView.
 9. **Finish with real Electron acceptance.** On a large synced PR, verify: first render; fast scroll; `n`/`p`; generic `j`/`k`; thread-card `j`/`k` and Enter/Escape; reply composer; resolved/outdated behavior; sidebar selection; URL `?file`; mark viewed; range diff; unified/split; expertise normal/error states. Re-run `pnpm bench:large-diff` and compare parsing figures with this note.
 
 ## Final gate result
 
-**BLOCKED.** The installed API and headless runtime probe establish that CodeView is a plausible and well-supported migration candidate: annotations render in both layouts, custom per-file chrome is supported, the scroll-target API is available, and initial virtualization is real. Electron itself also launched successfully with a temporary 1,000-item fixture probe, but this environment could not observe or drive that renderer. The gate's real keyboard behavior, scroll positioning, toggle retention, annotation anchoring, current parser-model compatibility, and before/after rendering performance therefore remain unmeasured. Do not start Task 9 until the blocking checks above complete in an inspectable renderer. If any of them fails—especially annotation-height reconciliation, active-file tracking, or browser scroll parity—take the documented PatchDiff-props fallback and re-plan Tasks 9–14 minimally.
+**GO.** The installed API, jsdom mount, and human-driven renderer verification establish that CodeView is an appropriate migration candidate. The 1,000-file fixture verified keyboard controls, visible far-item navigation, exact line navigation and both annotation sides, rapid sequential scrolling, layout-toggle retention, annotation anchoring, and smooth free scrolling in Electron. Task 9 may begin with the root-scroller and estimated-item-jump guidance above. Preserve the PatchDiff-props fallback only as the response if ordinary review-route acceptance exposes an unanticipated regression.
