@@ -4,13 +4,13 @@
 
 **Dependency checked:** `@pierre/diffs` 1.2.11
 
-**Decision:** **NO-GO — the real-PR and rendering-performance gate remains unverified.**
+**Decision:** **BLOCKED — Electron launches, but this environment cannot inspect or drive its renderer.**
 
 ## Recommendation
 
 Do **not** begin Task 9 from this spike alone. The installed 1.2.11 API supports every needed migration primitive: stable mixed diff items, `DiffLineAnnotation` rendering, live unified/split options, one native scroll surface, and imperative item and line scroll targets. A disposable jsdom mount confirmed that both additions- and deletions-side annotations render in both layouts, the custom per-file header hook renders, and a 1,000-item mount initially produced only two custom headers. That is strong API compatibility evidence, but it is not evidence that the current review route works with a real synced PR or that rendering is not worse.
 
-The Task 8 gate requires a real synced PR with annotations and keyboard navigation plus a meaningful performance comparison. This checkout did not have a running Electron renderer attached to one, so browser paint time, actual target positions, active-file synchronization, generic `j`/`k` DOM compatibility, worker-backed highlighting, and sticky-header behavior remain unverified. The existing benchmark is parser-only, so it cannot measure either the current `PatchDiff` rendering path or CodeView rendering. It remains a stable parsing baseline, but cannot supply the required before/after renderer result.
+A follow-up real-app attempt successfully launched Electron Forge, created the Bistro main window, spawned and connected the Go engine, and built the temporary fixture-backed CodeView host. However, this agent environment has no browser/Electron automation, no accessible DevTools protocol endpoint, and no UI-inspection capability; the Electron console did not forward the probe's renderer result to the Forge process. I therefore could not establish actual target positions, rapid-scroll behavior, toggle retention, annotation anchoring after browser scroll, or subjective responsiveness. The existing benchmark is parser-only, so it cannot measure either the current `PatchDiff` rendering path or CodeView rendering. It remains a stable parsing baseline, but cannot supply the required before/after renderer result.
 
 ## Sources inspected
 
@@ -117,6 +117,19 @@ CodeView's documentation states that it owns a single virtual code surface, rend
 | Worker pool initialization requires bundler-specific workers | Startup/highlighting breakage | Keep the current `disableWorkerPool` setting for the migration. Add worker pooling separately only with an Electron/Vite worker-factory spike. |
 | Parser benchmark does not measure render performance | False confidence from unchanged numbers | Re-run it to prevent parsing regression, then manually test a large synced PR for initial load, scrolling, unified/split toggle, and annotation insertion. |
 
+## Real-app verification attempt
+
+A temporary, uncommitted dev-only renderer entry mounted a fixture-backed controlled `CodeView` with 1,000 diff items, one additions-side and one deletions-side annotation at item 500, custom headers, `stickyHeaders`, `disableWorkerPool`, and a programmatic sequence designed to record:
+
+1. a far item target (`file-0999`);
+2. forty immediate item targets (the hold-key / repeated `j`/`k` analogue);
+3. an annotated additions-side line target (`file-0500`, line 14);
+4. a unified-to-split toggle plus the post-toggle annotation count and scroll delta.
+
+The scratch component was type-checked successfully, Electron Forge started successfully, the Bistro main window was created, and the Go engine reached ready state and connected to the app. The temporary main-entry wiring and probe file were then removed before this note was updated; no shipped route or component changed.
+
+**Blocked observations:** there is no configured Playwright/Puppeteer/Chromium-driver setup, no DevTools Protocol endpoint exposed by this Forge launch, and accessibility/AppleScript inspection timed out in this environment. The Forge process did not forward the renderer `console.info` emitted by the probe. Consequently no live result values or visual observations were available, so the sequence cannot be counted as empirical confirmation of scrolling, toggling, annotation anchoring, or responsiveness.
+
 ## What remains required to clear Task 8
 
 This is the blocking work, not deferred Task 9 acceptance:
@@ -143,4 +156,4 @@ Only after these checks are all green should the gate change to GO and Task 9 be
 
 ## Final gate result
 
-**NO-GO.** The installed API and headless runtime probe establish that CodeView is a plausible and well-supported migration candidate: annotations render in both layouts, custom per-file chrome is supported, the scroll-target API is available, and initial virtualization is real. But the gate's real synced-PR keyboard behavior, scroll positioning, current parser-model compatibility, and before/after rendering performance are not measured. Do not start Task 9 until the blocking checks above are complete. If any of them fails—especially annotation-height reconciliation, active-file tracking, or browser scroll parity—take the documented PatchDiff-props fallback and re-plan Tasks 9–14 minimally.
+**BLOCKED.** The installed API and headless runtime probe establish that CodeView is a plausible and well-supported migration candidate: annotations render in both layouts, custom per-file chrome is supported, the scroll-target API is available, and initial virtualization is real. Electron itself also launched successfully with a temporary 1,000-item fixture probe, but this environment could not observe or drive that renderer. The gate's real keyboard behavior, scroll positioning, toggle retention, annotation anchoring, current parser-model compatibility, and before/after rendering performance therefore remain unmeasured. Do not start Task 9 until the blocking checks above complete in an inspectable renderer. If any of them fails—especially annotation-height reconciliation, active-file tracking, or browser scroll parity—take the documented PatchDiff-props fallback and re-plan Tasks 9–14 minimally.
