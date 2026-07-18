@@ -95,8 +95,28 @@ describe('useWebSocket dev-folder startup scan', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    delete (window as Partial<Window>).electron;
     vi.useRealTimers();
     settingsStore.setState(() => DEFAULT_SETTINGS);
+  });
+
+  it('waits for the main process to publish a late dynamic port', async () => {
+    const getWsPort = vi
+      .fn<() => Promise<number | null>>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(64568);
+    Object.defineProperty(window, 'electron', {
+      configurable: true,
+      value: { wsPort: null, getWsPort },
+    });
+    vi.useFakeTimers();
+
+    const { unmount } = renderHook(() => useWebSocket());
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(MockWebSocket.instances[0]?.url).toBe('ws://localhost:64568/ws');
+    unmount();
   });
 
   it('sends exactly one SCAN_DEV_FOLDER message on connection open when devFolderPath is set', () => {

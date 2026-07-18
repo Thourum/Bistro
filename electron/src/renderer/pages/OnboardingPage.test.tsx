@@ -23,6 +23,7 @@ vi.mock('../hooks/useWebSocket', () => ({
 function installElectronMock(): void {
   window.electron = {
     wsPort: 8080,
+    getWsPort: vi.fn(async () => 8080),
     db: vi.fn(),
     fs: vi.fn(),
     go: vi.fn(),

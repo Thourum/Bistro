@@ -89,7 +89,52 @@ export interface GoSpawnOptions {
   config: GoProcessConfig;
   logger: Logger;
   onCrash?: (code: number | null, signal: string | null) => void;
+  onStillStarting?: () => void;
   maxRestarts?: number;
+}
+
+export interface GoReadyWaiter {
+  wait: () => Promise<number>;
+  markReady: (port: number) => void;
+  markFailed: (error: Error) => void;
+}
+
+/**
+ * Keeps the Go process's readiness promise alive after the initial startup
+ * threshold. Slow launches are reported separately so callers can show a
+ * starting state without discarding a later ready signal.
+ */
+export function createGoReadyWaiter(
+  timeoutMs: number,
+  onStillStarting: () => void,
+): GoReadyWaiter {
+  let isSettled = false;
+  let resolveReady: (port: number) => void = () => undefined;
+  let rejectReady: (error: Error) => void = () => undefined;
+  const readyPromise = new Promise<number>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  const timeout = setTimeout(() => {
+    if (!isSettled) {
+      onStillStarting();
+    }
+  }, timeoutMs);
+
+  const settle = (callback: () => void): void => {
+    if (isSettled) {
+      return;
+    }
+    isSettled = true;
+    clearTimeout(timeout);
+    callback();
+  };
+
+  return {
+    wait: () => readyPromise,
+    markReady: (port) => settle(() => resolveReady(port)),
+    markFailed: (error) => settle(() => rejectReady(error)),
+  };
 }
 
 const createGoArgs = (config: GoProcessConfig): string[] => {
@@ -323,94 +368,83 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
   goProcess = spawnedProcess;
   registerExitHandler();
 
-  return new Promise((resolve, reject) => {
-    let resolved = false;
+  let hasReadySignal = false;
+  const readyWaiter = createGoReadyWaiter(GO_READY_TIMEOUT_MS, () => {
+    logger.warn(
+      'Go process is still starting after 15 seconds — waiting for its ready signal',
+    );
+    options.onStillStarting?.();
+  });
 
-    const readyTimeout = setTimeout(() => {
-      if (resolved) {
-        return;
-      }
-      resolved = true;
-      if (config.wsPort > 0) {
-        logger.warn(
-          'Go process did not signal readiness within timeout — proceeding with configured port',
-        );
-        resolve(config.wsPort);
-        return;
-      }
-      reject(
-        new Error(
-          'Go process did not emit a ready signal — cannot determine WebSocket port',
-        ),
-      );
-    }, GO_READY_TIMEOUT_MS);
+  const markReady = (port: number, source: string): void => {
+    if (hasReadySignal) {
+      return;
+    }
+    hasReadySignal = true;
+    lastKnownPort = port;
+    logger.info(`Go sync engine is ready on port ${port} (${source})`);
+    readyWaiter.markReady(port);
+  };
 
-    const markReady = (port: number, source: string): void => {
-      if (resolved) {
-        return;
-      }
-      resolved = true;
-      clearTimeout(readyTimeout);
-      lastKnownPort = port;
-      logger.info(`Go sync engine is ready on port ${port} (${source})`);
-      resolve(port);
-    };
-
-    spawnedProcess.stdout?.on('data', (data: Buffer) => {
-      const lines = data.toString().split('\n').filter(Boolean);
-      for (const line of lines) {
-        logger.info(`[go] ${line}`);
-
-        const readyPort = parseReadyLine(line);
-        if (readyPort !== null) {
-          markReady(readyPort, 'ready signal');
+  const logProcessLines = (
+    level: 'info' | 'warn',
+    prefix: string,
+    onLine: (line: string) => void,
+  ): ((data: Buffer) => void) => {
+    let remainder = '';
+    return (data) => {
+      const chunks = `${remainder}${data.toString()}`.split('\n');
+      remainder = chunks.pop() ?? '';
+      for (const line of chunks) {
+        if (line.length === 0) {
           continue;
         }
-        // Legacy fallback: older binaries only log "WebSocket server listening …"
-        if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
-          markReady(config.wsPort, 'log line');
-        }
+        logger[level](`${prefix}${line}`);
+        onLine(line);
       }
-    });
+    };
+  };
 
-    spawnedProcess.stderr?.on('data', (data: Buffer) => {
-      const lines = data.toString().split('\n').filter(Boolean);
-      for (const line of lines) {
-        logger.warn(`[go:stderr] ${line}`);
-
-        // Some Go programs log to stderr; also check for readiness signals there
-        if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
-          markReady(config.wsPort, 'stderr log line');
-        }
+  spawnedProcess.stdout?.on(
+    'data',
+    logProcessLines('info', '[go] ', (line) => {
+      const readyPort = parseReadyLine(line);
+      if (readyPort !== null) {
+        markReady(readyPort, 'ready signal');
+        return;
       }
-    });
-
-    spawnedProcess.once('spawn', () => {
-      logger.info('Go process spawned');
-    });
-
-    spawnedProcess.once('error', (error: Error) => {
-      logger.error(`Go process error: ${error.message}`);
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(readyTimeout);
-        reject(new Error(`Go process error: ${error.message}`));
+      if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
+        markReady(config.wsPort, 'log line');
       }
-    });
+    }),
+  );
 
-    attachProcessLifecycle(
-      spawnedProcess,
-      options,
-      () => resolved,
-      (error) => {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(readyTimeout);
-          reject(error);
-        }
-      },
-    );
+  spawnedProcess.stderr?.on(
+    'data',
+    logProcessLines('warn', '[go:stderr] ', (line) => {
+      if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
+        markReady(config.wsPort, 'stderr log line');
+      }
+    }),
+  );
+
+  spawnedProcess.once('spawn', () => {
+    logger.info('Go process spawned');
   });
+
+  spawnedProcess.once('error', (error: Error) => {
+    logger.error(`Go process error: ${error.message}`);
+    readyWaiter.markFailed(new Error(`Go process error: ${error.message}`));
+  });
+
+  attachProcessLifecycle(
+    spawnedProcess,
+    options,
+    () => hasReadySignal,
+    (error) => readyWaiter.markFailed(error),
+  );
+
+  return readyWaiter.wait();
 }
 
 export function isGoProcessRunning(): boolean {

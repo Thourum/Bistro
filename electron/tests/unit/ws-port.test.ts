@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  DEFAULT_WS_PORT,
-  readWsPortFromArgv,
-  wsPortToArg,
-} from '../../src/main/ws-port';
+import { readWsPortFromArgv, wsPortToArg } from '../../src/main/ws-port';
 
 describe('wsPortToArg', () => {
   it('formats the port as a CLI argument', () => {
@@ -22,22 +18,20 @@ describe('readWsPortFromArgv', () => {
     expect(readWsPortFromArgv([wsPortToArg(12345)])).toBe(12345);
   });
 
-  it('falls back to default when the arg is absent', () => {
-    expect(readWsPortFromArgv(['/path/electron'])).toBe(DEFAULT_WS_PORT);
+  it('returns null when the arg is absent', () => {
+    expect(readWsPortFromArgv(['/path/electron'])).toBeNull();
   });
 
-  it('falls back to default for non-numeric values', () => {
-    expect(readWsPortFromArgv(['--bistro-ws-port=abc'])).toBe(DEFAULT_WS_PORT);
+  it('returns null for non-numeric values', () => {
+    expect(readWsPortFromArgv(['--bistro-ws-port=abc'])).toBeNull();
   });
 
-  it('falls back to default for out-of-range ports', () => {
-    expect(readWsPortFromArgv(['--bistro-ws-port=0'])).toBe(DEFAULT_WS_PORT);
-    expect(readWsPortFromArgv(['--bistro-ws-port=70000'])).toBe(
-      DEFAULT_WS_PORT,
-    );
+  it('returns null for out-of-range ports', () => {
+    expect(readWsPortFromArgv(['--bistro-ws-port=0'])).toBeNull();
+    expect(readWsPortFromArgv(['--bistro-ws-port=70000'])).toBeNull();
   });
 
-  it('falls back to default for empty argv', () => {
-    expect(readWsPortFromArgv([])).toBe(DEFAULT_WS_PORT);
+  it('returns null for empty argv', () => {
+    expect(readWsPortFromArgv([])).toBeNull();
   });
 });
