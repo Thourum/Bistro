@@ -3,7 +3,12 @@ import {
   type DiffLineAnnotation,
   processFile,
 } from '@pierre/diffs';
-import type { Comment, ReviewThread } from '../../types';
+import type {
+  Comment,
+  ExpertiseExpert,
+  ExpertiseFileData,
+  ReviewThread,
+} from '../../types';
 import { buildFileAnnotations } from './diffAnnotations';
 import type { ParsedDiffFile } from './diffPathUtils';
 
@@ -45,6 +50,8 @@ export function buildCodeViewItems(
   commentsByThread: ReadonlyMap<string, readonly Comment[]>,
   activeAnnotationKey: string | null,
   replyingToThreadId: string | null,
+  expertiseByPath: ReadonlyMap<string, ExpertiseFileData>,
+  expertiseError: string | null,
 ): CodeViewItem<ReviewThread>[] {
   return parsedCodeViewFiles.map(({ file, fileDiff }) => {
     const annotations = buildFileAnnotations(file, threads);
@@ -59,9 +66,18 @@ export function buildCodeViewItems(
         commentsByThread,
         activeAnnotationKey,
         replyingToThreadId,
+        expertiseByPath.get(file.path),
+        expertiseError,
       ),
     };
   });
+}
+
+export function findUnrenderableDiffFile(
+  files: readonly UnrenderableDiffFile[],
+  id: string,
+): UnrenderableDiffFile | undefined {
+  return files.find(({ file }) => file.id === id);
 }
 
 export function groupCommentsByThread(
@@ -86,9 +102,13 @@ function buildItemVersion(
   commentsByThread: ReadonlyMap<string, readonly Comment[]>,
   activeAnnotationKey: string | null,
   replyingToThreadId: string | null,
+  expertise: ExpertiseFileData | undefined,
+  expertiseError: string | null,
 ): number {
   const content = [
     file.patch,
+    serializeExpertise(expertise),
+    expertiseError ?? '',
     ...annotations.map((annotation) => {
       const thread = annotation.metadata;
       if (thread === undefined) {
@@ -117,6 +137,28 @@ function buildItemVersion(
     }),
   ].join('|');
   return hashString(content);
+}
+
+function serializeExpertise(expertise: ExpertiseFileData | undefined): string {
+  if (expertise === undefined) return '';
+  return [
+    expertise.file_path,
+    expertise.your_rank,
+    ...expertise.experts.map(serializeExpertiseExpert),
+  ].join(':');
+}
+
+function serializeExpertiseExpert(expert: ExpertiseExpert): string {
+  return [
+    expert.author_email,
+    expert.author_login,
+    expert.surviving_lines,
+    expert.total_lines,
+    expert.commit_score,
+    expert.is_original,
+    expert.score,
+    expert.dormant,
+  ].join(':');
 }
 
 function hashString(value: string): number {

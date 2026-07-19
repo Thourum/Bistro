@@ -8,12 +8,18 @@ import { findFileByKey } from '../../utils/diffFileKey';
 import { buildOrderedAnnotations } from './diffAnnotations';
 import {
   buildCodeViewItems,
+  findUnrenderableDiffFile,
   groupCommentsByThread,
   type ParsedCodeViewFile,
   parseCodeViewFiles,
 } from './diffCodeViewItems';
+import {
+  requestSelectedFileScroll,
+  scrollToCodeViewFile,
+} from './diffCodeViewNavigation';
 import { DiffFileExpertise } from './diffFileExpertise';
 import { DiffFileSidebar } from './diffFileSidebar';
+import { DiffParseFailurePanel } from './diffParseFailurePanel';
 import { type ParsedDiffFile, splitUnifiedDiff } from './diffPathUtils';
 import { ThreadAnnotationCard } from './diffThreadAnnotation';
 
@@ -62,6 +68,7 @@ export function DiffView({
   );
   const [activeId, setActiveId] = useState<string | null>(files[0]?.id ?? null);
   const codeViewRef = useRef<CodeViewHandle<ReviewThread>>(null);
+  const pendingScrollFileIdRef = useRef<string | null>(null);
   const viewportFileIdRef = useRef<string | null>(null);
   const selectedFileIndex = useStore(
     appStore,
@@ -96,6 +103,8 @@ export function DiffView({
         commentsByThread,
         activeAnnotationKey,
         replyingToThreadId,
+        expertiseByPath,
+        expertiseError,
       ),
     [
       parsedCodeViewFiles,
@@ -103,6 +112,8 @@ export function DiffView({
       commentsByThread,
       activeAnnotationKey,
       replyingToThreadId,
+      expertiseByPath,
+      expertiseError,
     ],
   );
 
@@ -152,7 +163,7 @@ export function DiffView({
       (annotation) => annotation.key === activeAnnotationKey,
     );
     if (entry === undefined) return;
-    scrollToFile(codeViewRef.current, entry.fileId, 'nearest');
+    scrollToCodeViewFile(codeViewRef.current, entry.fileId, 'nearest');
     codeViewRef.current?.scrollTo({
       type: 'line',
       id: entry.fileId,
@@ -194,12 +205,17 @@ export function DiffView({
     if (matchedFile === undefined) return;
     setActiveId(matchedFile.id);
     viewportFileIdRef.current = matchedFile.id;
-    scrollToFile(codeViewRef.current, matchedFile.id);
+    requestSelectedFileScroll(
+      codeViewRef.current,
+      pendingScrollFileIdRef,
+      matchedFile.id,
+      unrenderableFiles,
+    );
     updateSelectedFileIndex(files, matchedFile.id);
     // The active id deliberately stays out of the dependencies: URL changes
     // are the navigation source and scroll-driven updates must not scroll back.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFileKey, files]);
+  }, [selectedFileKey, files, unrenderableFiles]);
 
   useEffect(() => {
     if (files.length === 0) return;
@@ -218,9 +234,18 @@ export function DiffView({
     if (file === undefined || file.id === activeId) return;
     setActiveId(file.id);
     viewportFileIdRef.current = file.id;
-    scrollToFile(codeViewRef.current, file.id);
-  }, [selectedFileIndex, files, activeId]);
+    requestSelectedFileScroll(
+      codeViewRef.current,
+      pendingScrollFileIdRef,
+      file.id,
+      unrenderableFiles,
+    );
+  }, [selectedFileIndex, files, activeId, unrenderableFiles]);
 
+  const activeUnrenderableFile = findUnrenderableDiffFile(
+    unrenderableFiles,
+    activeId ?? '',
+  );
   const filteredFiles = useMemo(() => {
     const query = findQuery.trim().toLowerCase();
     if (query === '') return files;
@@ -248,126 +273,114 @@ export function DiffView({
         onSelect={(id) => {
           setActiveId(id);
           viewportFileIdRef.current = id;
-          scrollToFile(codeViewRef.current, id);
+          requestSelectedFileScroll(
+            codeViewRef.current,
+            pendingScrollFileIdRef,
+            id,
+            unrenderableFiles,
+          );
           updateSelectedFileIndex(files, id);
         }}
         totalCount={files.length}
       />
       <section className="flex-1 min-w-0 min-h-0 bg-surface-container-lowest overflow-hidden relative">
-        {unrenderableFiles.map(({ file, reason }) => (
-          <section
-            key={file.id}
-            className="border-b border-error/30 bg-error/10 px-4 py-3 font-mono text-[10px] text-error"
-            data-unrenderable-diff-file={file.id}
-          >
-            <p className="uppercase tracking-widest">
-              Unable to render {file.path}
-            </p>
-            <p className="mt-1 text-outline">
-              {formatParseFailureReason(reason)}
-            </p>
-          </section>
-        ))}
-        <CodeView
-          ref={codeViewRef}
-          containerRef={(node) => {
-            if (node !== null) {
+        {activeUnrenderableFile !== undefined ? (
+          <DiffParseFailurePanel file={activeUnrenderableFile} />
+        ) : (
+          <CodeView
+            ref={codeViewRef}
+            containerRef={(node) => {
+              if (node === null) return;
               node.setAttribute('data-diff-viewport', '');
-            }
-          }}
-          className="h-full w-full overflow-y-auto overflow-x-auto"
-          disableWorkerPool
-          items={items}
-          options={{
-            theme: `pierre-${theme}`,
-            diffStyle: 'unified',
-            stickyHeaders: true,
-            layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
-          }}
-          onScroll={(scrollTop, viewer) => {
-            const visibleFile = findTopVisibleFile(
-              parsedCodeViewFiles,
-              viewer,
-              scrollTop,
-            );
-            if (visibleFile !== undefined && visibleFile.id !== activeId) {
-              viewportFileIdRef.current = visibleFile.id;
-              handleActiveChange(visibleFile.id);
-            }
-          }}
-          renderCustomHeader={(item) => {
-            const parsedFile = files.find((file) => file.id === item.id);
-            if (parsedFile === undefined) return null;
-            return (
-              <>
-                <div className="bg-surface-container-lowest border-b border-outline-variant/10 px-4 py-2 flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-outline font-mono text-[11px] truncate">
-                      {parsedFile.path}
-                    </span>
-                    <span className="bg-surface-container px-2 py-0.5 text-[10px] text-outline uppercase font-mono shrink-0">
-                      {parsedFile.lang}
-                    </span>
+              const pendingId = pendingScrollFileIdRef.current;
+              if (pendingId === null) return;
+              requestAnimationFrame(() => {
+                if (pendingScrollFileIdRef.current !== pendingId) return;
+                scrollToCodeViewFile(codeViewRef.current, pendingId);
+                pendingScrollFileIdRef.current = null;
+              });
+            }}
+            className="h-full w-full overflow-y-auto overflow-x-auto"
+            disableWorkerPool
+            items={items}
+            options={{
+              theme: `pierre-${theme}`,
+              diffStyle: 'unified',
+              stickyHeaders: true,
+              layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
+            }}
+            onScroll={(scrollTop, viewer) => {
+              const visibleFile = findTopVisibleFile(
+                parsedCodeViewFiles,
+                viewer,
+                scrollTop,
+              );
+              if (visibleFile !== undefined && visibleFile.id !== activeId) {
+                viewportFileIdRef.current = visibleFile.id;
+                handleActiveChange(visibleFile.id);
+              }
+            }}
+            renderCustomHeader={(item) => {
+              const parsedFile = files.find((file) => file.id === item.id);
+              if (parsedFile === undefined) return null;
+              return (
+                <>
+                  <div className="bg-surface-container-lowest border-b border-outline-variant/10 px-4 py-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-outline font-mono text-[11px] truncate">
+                        {parsedFile.path}
+                      </span>
+                      <span className="bg-surface-container px-2 py-0.5 text-[10px] text-outline uppercase font-mono shrink-0">
+                        {parsedFile.lang}
+                      </span>
+                    </div>
+                    <div className="flex gap-4 font-mono text-[11px] font-bold shrink-0">
+                      <span className="text-primary">
+                        +{parsedFile.additions}
+                      </span>
+                      <span className="text-error">
+                        -{parsedFile.deletions}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex gap-4 font-mono text-[11px] font-bold shrink-0">
-                    <span className="text-primary">
-                      +{parsedFile.additions}
-                    </span>
-                    <span className="text-error">-{parsedFile.deletions}</span>
-                  </div>
-                </div>
-                <DiffFileExpertise
-                  expertise={expertiseByPath.get(parsedFile.path)}
-                  error={expertiseError}
+                  <DiffFileExpertise
+                    expertise={expertiseByPath.get(parsedFile.path)}
+                    error={expertiseError}
+                  />
+                </>
+              );
+            }}
+            renderAnnotation={(annotation) => {
+              const thread = annotation.metadata;
+              if (thread === undefined) return null;
+              const threadComments = commentsByThread.get(thread.id) ?? [];
+              return (
+                <ThreadAnnotationCard
+                  thread={thread}
+                  comments={threadComments}
+                  isActive={thread.id === activeAnnotationKey}
+                  isReplying={thread.id === replyingToThreadId}
+                  onActivate={() => {
+                    appStore.setState((state) => ({
+                      ...state,
+                      activeInlineCommentThreadId: thread.id,
+                    }));
+                  }}
+                  onReplyClose={() => {
+                    appStore.setState((state) => ({
+                      ...state,
+                      replyingInlineCommentThreadId: null,
+                    }));
+                  }}
+                  {...(onThreadReply !== undefined ? { onThreadReply } : {})}
                 />
-              </>
-            );
-          }}
-          renderAnnotation={(annotation) => {
-            const thread = annotation.metadata;
-            if (thread === undefined) return null;
-            const threadComments = commentsByThread.get(thread.id) ?? [];
-            return (
-              <ThreadAnnotationCard
-                thread={thread}
-                comments={threadComments}
-                isActive={thread.id === activeAnnotationKey}
-                isReplying={thread.id === replyingToThreadId}
-                onActivate={() => {
-                  appStore.setState((state) => ({
-                    ...state,
-                    activeInlineCommentThreadId: thread.id,
-                  }));
-                }}
-                onReplyClose={() => {
-                  appStore.setState((state) => ({
-                    ...state,
-                    replyingInlineCommentThreadId: null,
-                  }));
-                }}
-                {...(onThreadReply !== undefined ? { onThreadReply } : {})}
-              />
-            );
-          }}
-        />
+              );
+            }}
+          />
+        )}
       </section>
     </div>
   );
-}
-
-function formatParseFailureReason(reason: 'parse-failed'): string {
-  if (reason === 'parse-failed') {
-    return 'The patch could not be parsed by the diff renderer.';
-  }
-  return 'The patch could not be rendered.';
-}
-
-function scrollToFile(
-  handle: CodeViewHandle<ReviewThread> | null,
-  id: string,
-  align: 'start' | 'nearest' = 'start',
-): void {
-  handle?.scrollTo({ type: 'item', id, align, behavior: 'instant' });
 }
 
 function updateSelectedFileIndex(
