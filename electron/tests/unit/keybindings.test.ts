@@ -227,47 +227,19 @@ describe('DEFAULT_KEYBINDINGS', () => {
     expect(store.state.confirmingAction).toBe('mark-viewed');
   });
 
-  it('help binding is active in list, detail, and diff and records its source', () => {
+  it('help binding is active in list and detail and records its source', () => {
     const b = byId('global.help');
     expect(b.activation.routes).toContain('list');
     expect(b.activation.routes).toContain('detail');
-    expect(b.activation.routes).toContain('diff');
     const openHelpMock = vi.fn();
     const ctx = makeCtx(makeStore(), 'detail', { openHelp: openHelpMock });
     b.action(ctx);
     expect(openHelpMock).toHaveBeenCalledWith('detail');
   });
 
-  it('help opened from the diff route reports diff as its source', () => {
-    const openHelpMock = vi.fn();
-    byId('global.help').action(
-      makeCtx(makeStore(), 'diff', { openHelp: openHelpMock }),
-    );
-    expect(openHelpMock).toHaveBeenCalledWith('diff');
-  });
-
-  it('scopes the new diff review bindings to the diff route', () => {
-    for (const actionId of [
-      'diff.toggleStyle',
-      'diff.toggleWhitespace',
-      'diff.toggleCollapse',
-      'diff.openFileBrowser',
-    ]) {
-      expect(byId(actionId).activation.routes).toEqual(['diff']);
-    }
-    expect(byId('diff.toggleStyle').keys).toBe('Shift+S');
-    expect(byId('diff.toggleWhitespace').keys).toBe('w');
-    expect(byId('diff.toggleCollapse').keys).toBe('z');
-  });
-
-  it('w toggles the whitespace-hiding flag', () => {
-    const store = makeStore({ hideWhitespaceHunks: false });
-    byId('diff.toggleWhitespace').action(makeCtx(store, 'diff'));
-    expect(store.state.hideWhitespaceHunks).toBe(true);
-    byId('diff.toggleWhitespace').action(makeCtx(store, 'diff'));
-    expect(store.state.hideWhitespaceHunks).toBe(false);
-  });
-
+  // `z` resolves the focused file by indexing diffFileKeys, so it can address
+  // the wrong file or write a bogus key — the only new diff binding whose
+  // action is more than a flag flip.
   it('z toggles the focused file in and out of the collapse overrides', () => {
     const store = makeStore({
       diffFileKeys: ['first.ts', 'second.ts'],

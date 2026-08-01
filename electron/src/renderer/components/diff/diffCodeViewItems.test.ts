@@ -109,27 +109,23 @@ describe('buildCodeViewItems', () => {
     );
   });
 
-  it('collapses generated files and leaves sources expanded', () => {
-    const items = buildItems(new Map(), null, GENERATED_FILE_PATCH);
-
-    expect(items[0]?.collapsed).toBe(true);
-    expect(items[1]?.collapsed).toBe(false);
-  });
-
-  it('inverts the default collapse state for an overridden file', () => {
+  it('collapses generated files by default and inverts on override', () => {
     const files = splitUnifiedDiff(GENERATED_FILE_PATCH);
     const lockKey = files[0]?.canonicalKey;
     const sourceKey = files[1]?.canonicalKey;
     if (lockKey === undefined || sourceKey === undefined) {
       throw new Error('missing canonical keys');
     }
-    const items = buildItems(new Map(), null, GENERATED_FILE_PATCH, [
-      lockKey,
-      sourceKey,
-    ]);
 
-    expect(items[0]?.collapsed).toBe(false);
-    expect(items[1]?.collapsed).toBe(true);
+    expect(
+      buildItems(new Map(), null, GENERATED_FILE_PATCH).map((i) => i.collapsed),
+    ).toEqual([true, false]);
+    expect(
+      buildItems(new Map(), null, GENERATED_FILE_PATCH, [
+        lockKey,
+        sourceKey,
+      ]).map((i) => i.collapsed),
+    ).toEqual([false, true]);
   });
 
   it('changes the item version when its collapse state flips', () => {

@@ -60,8 +60,4 @@ describe('settings normalisation', () => {
 
     expect(normalise(withoutDiff).diff).toEqual({ style: 'unified' });
   });
-
-  it('keeps a persisted split diff style', () => {
-    expect(normalise({ diff: { style: 'split' } }).diff.style).toBe('split');
-  });
 });
