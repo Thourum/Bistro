@@ -20,7 +20,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import React from 'react';
+import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DiffView } from '../../src/renderer/components/diff/DiffView';
 import { appStore } from '../../src/renderer/store';

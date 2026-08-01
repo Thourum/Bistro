@@ -1,9 +1,9 @@
 // @vitest-environment node
 import {
-  canonicalFileKey,
-  findFileByKey,
   buildFileKeys,
+  canonicalFileKey,
   type DiffFileIdentity,
+  findFileByKey,
 } from '../../src/renderer/utils/diffFileKey';
 
 // ---------------------------------------------------------------------------
@@ -147,10 +147,7 @@ describe('findFileByKey', () => {
 
 describe('buildFileKeys', () => {
   it('returns a parallel array of keys for each file', () => {
-    const files = [
-      f('a/foo.ts', 'b/foo.ts'),
-      f('a/bar.ts', 'b/bar.ts'),
-    ];
+    const files = [f('a/foo.ts', 'b/foo.ts'), f('a/bar.ts', 'b/bar.ts')];
     expect(buildFileKeys(files)).toEqual(['foo.ts', 'bar.ts']);
   });
 
@@ -160,7 +157,11 @@ describe('buildFileKeys', () => {
       f('a/unique.ts', 'b/unique.ts'),
       f('a/dup.ts', 'b/dup.ts'),
     ];
-    expect(buildFileKeys(files)).toEqual(['dup.ts::0', 'unique.ts', 'dup.ts::1']);
+    expect(buildFileKeys(files)).toEqual([
+      'dup.ts::0',
+      'unique.ts',
+      'dup.ts::1',
+    ]);
   });
 });
 

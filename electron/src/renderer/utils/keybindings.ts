@@ -223,9 +223,12 @@ const globalBindings: KeyBinding[] = [
     // written as Shift + the physical base key ('?' = Shift+/ on US layouts).
     keys: 'Shift+/',
     description: 'Help',
-    activation: { routes: ['list', 'detail'] },
+    activation: { routes: ['list', 'detail', 'diff'] },
     action: (ctx) => {
-      const source = ctx.routeBase === 'detail' ? 'detail' : 'list';
+      const source =
+        ctx.routeBase === 'detail' || ctx.routeBase === 'diff'
+          ? ctx.routeBase
+          : 'list';
       ctx.overlays.openHelp(source);
     },
   },

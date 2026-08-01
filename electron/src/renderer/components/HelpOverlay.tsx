@@ -69,6 +69,18 @@ const ACTION_IDS = new Set([
   'filter.close',
 ]);
 
+// Diff-review keys get their own section: on the diff route they are the
+// primary vocabulary, not incidental globals.
+const DIFF_IDS = new Set([
+  'diff.sinceLastReview',
+  'diff.toggleStyle',
+  'diff.toggleWhitespace',
+  'diff.toggleCollapse',
+  'diff.markViewed',
+  'diff.openFileBrowser',
+  'detail.inlineReply',
+]);
+
 const SEARCH_IDS = new Set([
   'list.search',
   'list.filter',
@@ -99,17 +111,20 @@ function buildSections(
   );
 
   const navBindings = visible.filter((b) => NAVIGATION_IDS.has(b.actionId));
+  const diffBindings = visible.filter((b) => DIFF_IDS.has(b.actionId));
   const actionBindings = visible.filter((b) => ACTION_IDS.has(b.actionId));
   const searchBindings = visible.filter((b) => SEARCH_IDS.has(b.actionId));
   const globalBindings = visible.filter(
     (b) =>
       !NAVIGATION_IDS.has(b.actionId) &&
+      !DIFF_IDS.has(b.actionId) &&
       !ACTION_IDS.has(b.actionId) &&
       !SEARCH_IDS.has(b.actionId),
   );
 
   const sections: ShortcutSection[] = [
     { title: 'Navigation', shortcuts: navBindings.map(toRow) },
+    { title: 'Diff review', shortcuts: diffBindings.map(toRow) },
     { title: 'Actions', shortcuts: actionBindings.map(toRow) },
     { title: 'Search & Commands', shortcuts: searchBindings.map(toRow) },
   ];

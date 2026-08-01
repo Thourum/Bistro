@@ -8,11 +8,7 @@
 //   - mode is set to 'detail'
 //   - the correct pr.id is navigated to (PR identity is the stable pr.id, not selectedPRIndex)
 
-import * as matchers from '@testing-library/jest-dom/matchers';
-import {
-  QueryClient,
-  QueryClientProvider,
-} from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRouteWithContext,
@@ -21,6 +17,7 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
+import * as matchers from '@testing-library/jest-dom/matchers';
 import {
   act,
   fireEvent,
@@ -29,22 +26,18 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
 import React from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod/v4';
 import { AuthedRouteShell } from '../../src/renderer/components/AuthedRouteShell';
 import { PrsIndexRouteComponent } from '../../src/renderer/components/PrsIndexRouteComponent';
-import { OverlayProvider, useOverlays } from '../../src/renderer/overlays/OverlayContext';
+import { useStore } from '../../src/renderer/hooks/useStore';
+import {
+  OverlayProvider,
+  useOverlays,
+} from '../../src/renderer/overlays/OverlayContext';
 import type { RouterContext } from '../../src/renderer/router';
 import { appStore } from '../../src/renderer/store';
-import { useStore } from '../../src/renderer/hooks/useStore';
 import { initialUIState } from '../../src/renderer/store/ui';
 import type { PR } from '../../src/renderer/types';
 
@@ -216,7 +209,8 @@ function makePaletteRouter(initialUrl = '/prs/') {
     routeTree,
     history,
     context: {
-      queryClient,    },
+      queryClient,
+    },
   });
 
   const utils = render(
@@ -244,7 +238,8 @@ describe('command palette: PR open navigates by pr.id', () => {
   beforeEach(() => {
     appStore.setState(() => ({
       ...initialUIState,
-      isAuthenticated: true,    }));
+      isAuthenticated: true,
+    }));
   });
 
   afterEach(() => {
@@ -270,7 +265,9 @@ describe('command palette: PR open navigates by pr.id', () => {
 
     // The real CommandPalette renders when activeOverlay==='command'.
     await waitFor(() => {
-      expect(screen.getByRole('dialog', { name: /command palette/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('dialog', { name: /command palette/i }),
+      ).toBeInTheDocument();
     });
 
     const dialog = screen.getByRole('dialog', { name: /command palette/i });
@@ -295,12 +292,18 @@ describe('command palette: PR open navigates by pr.id', () => {
 
   it('selecting the FIRST PR in a list with selectedPRIndex pointing elsewhere navigates by id', async () => {
     // selectedPRIndex=1 → pal-pr-b; we select pal-pr-a from the palette.
-    appStore.setState((s) => ({ ...s, selectedPRIndex: 1, confirmingAction: 'command' }));
+    appStore.setState((s) => ({
+      ...s,
+      selectedPRIndex: 1,
+      confirmingAction: 'command',
+    }));
 
     const { testRouter } = makePaletteRouter('/prs/');
 
     await waitFor(() => {
-      expect(screen.getByRole('dialog', { name: /command palette/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('dialog', { name: /command palette/i }),
+      ).toBeInTheDocument();
     });
 
     const dialog2 = screen.getByRole('dialog', { name: /command palette/i });

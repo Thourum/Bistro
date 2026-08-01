@@ -1,5 +1,8 @@
 // @vitest-environment node
-import { parseDiff, parseMultiFileDiff } from '../../src/renderer/utils/diff-parser';
+import {
+  parseDiff,
+  parseMultiFileDiff,
+} from '../../src/renderer/utils/diff-parser';
 
 describe('diff-parser', () => {
   it('parses file headers', () => {

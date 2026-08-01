@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
+
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect } from 'vitest';
-import * as matchers from '@testing-library/jest-dom/matchers';
 import { ProviderButton } from '../../src/renderer/components/ProviderButton';
 
 expect.extend(matchers);
@@ -16,7 +17,7 @@ describe('ProviderButton', () => {
         label="GitHub"
         keyHint="G"
         onClick={() => {}}
-      />
+      />,
     );
     expect(screen.getByText('GitHub')).toBeInTheDocument();
   });
@@ -29,7 +30,7 @@ describe('ProviderButton', () => {
         label="GitHub"
         keyHint="G"
         onClick={() => {}}
-      />
+      />,
     );
     expect(screen.getByText('G')).toBeInTheDocument();
   });
@@ -43,7 +44,7 @@ describe('ProviderButton', () => {
         label="GitHub"
         keyHint="G"
         onClick={handleClick}
-      />
+      />,
     );
     await userEvent.click(screen.getByRole('button'));
     expect(handleClick).toHaveBeenCalled();
@@ -57,7 +58,7 @@ describe('ProviderButton', () => {
         label="GitHub"
         keyHint="G"
         onClick={() => {}}
-      />
+      />,
     );
     const button = container.querySelector('button');
     expect(button).toHaveClass('h-14');

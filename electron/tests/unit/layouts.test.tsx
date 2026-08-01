@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
+
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import { expect } from 'vitest';
-import * as matchers from '@testing-library/jest-dom/matchers';
 import { AuthLayout } from '../../src/renderer/layouts/AuthLayout';
 
 expect.extend(matchers);
+
 import { MainLayout } from '../../src/renderer/layouts/MainLayout';
 import { SettingsLayout } from '../../src/renderer/layouts/SettingsLayout';
 
@@ -17,7 +19,7 @@ describe('AuthLayout', () => {
     render(
       <AuthLayout>
         <div data-testid="child">Test Content</div>
-      </AuthLayout>
+      </AuthLayout>,
     );
     expect(screen.getByTestId('child')).toBeInTheDocument();
   });
@@ -26,7 +28,7 @@ describe('AuthLayout', () => {
     const { container } = render(
       <AuthLayout>
         <div>Test</div>
-      </AuthLayout>
+      </AuthLayout>,
     );
     const layoutDiv = container.querySelector('[data-testid="auth-layout"]');
     expect(layoutDiv).toHaveClass('bg-surface');
@@ -36,7 +38,7 @@ describe('AuthLayout', () => {
     const { container } = render(
       <AuthLayout>
         <div>Test</div>
-      </AuthLayout>
+      </AuthLayout>,
     );
     const card = container.querySelector('[data-testid="auth-card"]');
     expect(card).toHaveClass('bg-surface-container-lowest');
@@ -53,7 +55,7 @@ describe('MainLayout', () => {
     render(
       <MainLayout>
         <div data-testid="main-content">Content</div>
-      </MainLayout>
+      </MainLayout>,
     );
     expect(screen.getByTestId('main-content')).toBeInTheDocument();
   });
@@ -62,16 +64,18 @@ describe('MainLayout', () => {
     render(
       <MainLayout toolbar={<button>Test Button</button>}>
         <div>Content</div>
-      </MainLayout>
+      </MainLayout>,
     );
-    expect(screen.getByRole('button', { name: /Test Button/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Test Button/i }),
+    ).toBeInTheDocument();
   });
 
   it('uses correct background color', () => {
     const { container } = render(
       <MainLayout>
         <div>Content</div>
-      </MainLayout>
+      </MainLayout>,
     );
     const layout = container.querySelector('[data-testid="main-layout"]');
     expect(layout).toHaveClass('bg-surface-container-lowest');
@@ -87,7 +91,7 @@ describe('SettingsLayout', () => {
     render(
       <SettingsLayout title="Settings" description="Configure Bistro">
         <div>Content</div>
-      </SettingsLayout>
+      </SettingsLayout>,
     );
     expect(screen.getByText('Settings')).toBeInTheDocument();
     expect(screen.getByText('Configure Bistro')).toBeInTheDocument();
@@ -97,7 +101,7 @@ describe('SettingsLayout', () => {
     render(
       <SettingsLayout title="Test" description="Desc">
         <div data-testid="settings-content">Content</div>
-      </SettingsLayout>
+      </SettingsLayout>,
     );
     expect(screen.getByTestId('settings-content')).toBeInTheDocument();
   });
@@ -106,7 +110,7 @@ describe('SettingsLayout', () => {
     const { container } = render(
       <SettingsLayout title="Test" description="Desc">
         <div>Content</div>
-      </SettingsLayout>
+      </SettingsLayout>,
     );
     const header = container.querySelector('[data-testid="settings-header"]');
     expect(header).toHaveClass('border-b');

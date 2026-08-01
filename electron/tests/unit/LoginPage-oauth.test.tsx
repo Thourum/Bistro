@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { render, screen, fireEvent } from '@testing-library/react';
-import { expect, vi, beforeEach } from 'vitest';
+
 import * as matchers from '@testing-library/jest-dom/matchers';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, expect, vi } from 'vitest';
 import { LoginPage } from '../../src/renderer/pages/LoginPage';
 import { appStore } from '../../src/renderer/store';
 
@@ -10,7 +11,11 @@ expect.extend(matchers);
 // Mock useWebSocket so send is a spy
 const mockSend = vi.fn();
 vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
-  useWebSocket: () => ({ send: mockSend, request: vi.fn(), wsRef: { current: null } }),
+  useWebSocket: () => ({
+    send: mockSend,
+    request: vi.fn(),
+    wsRef: { current: null },
+  }),
 }));
 
 beforeEach(() => {
@@ -44,7 +49,9 @@ describe('LoginPage — OAuth auth code flow', () => {
     }));
     render(<LoginPage />);
     expect(screen.getByText(/Waiting for authorization/i)).toBeInTheDocument();
-    expect(screen.getByText(/Complete the sign-in in your browser/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Complete the sign-in in your browser/i),
+    ).toBeInTheDocument();
   });
 
   it('hides provider buttons when authLoading is true', () => {

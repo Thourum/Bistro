@@ -6,7 +6,10 @@ import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { expect } from 'vitest';
 import { HelpOverlay } from '../../src/renderer/components/HelpOverlay';
-import { OverlayProvider, useOverlays } from '../../src/renderer/overlays/OverlayContext';
+import {
+  OverlayProvider,
+  useOverlays,
+} from '../../src/renderer/overlays/OverlayContext';
 
 expect.extend(matchers);
 

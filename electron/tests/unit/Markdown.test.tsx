@@ -8,7 +8,9 @@ expect.extend(matchers);
 
 describe('<Markdown> rendering', () => {
   it('renders a GFM table', () => {
-    const { container } = render(<Markdown body={'| a | b |\n|---|---|\n| 1 | 2 |'} />);
+    const { container } = render(
+      <Markdown body={'| a | b |\n|---|---|\n| 1 | 2 |'} />,
+    );
     expect(container.querySelector('table')).not.toBeNull();
     expect(container.querySelector('td')?.textContent).toBe('1');
   });
@@ -20,14 +22,18 @@ describe('<Markdown> rendering', () => {
   });
 
   it('highlights a fenced typescript block as a <pre> block', () => {
-    const { container } = render(<Markdown body={'```ts\nconst x = 1;\n```'} />);
+    const { container } = render(
+      <Markdown body={'```ts\nconst x = 1;\n```'} />,
+    );
     const code = container.querySelector('pre code.language-ts');
     expect(code).not.toBeNull();
     expect(code?.innerHTML).toContain('hljs-');
   });
 
   it('highlights a fenced diff block with add/remove classes', () => {
-    const { container } = render(<Markdown body={'```diff\n+new\n-old\n```'} />);
+    const { container } = render(
+      <Markdown body={'```diff\n+new\n-old\n```'} />,
+    );
     const html =
       container.querySelector('pre code.language-diff')?.innerHTML ?? '';
     expect(html).toContain('hljs-addition');
@@ -89,9 +95,7 @@ describe('<Markdown> rendering', () => {
   });
 
   it('keeps GitHub refs/mentions as plain text (v1 non-goal)', () => {
-    const { container } = render(
-      <Markdown body={'see #123 and @octocat'} />,
-    );
+    const { container } = render(<Markdown body={'see #123 and @octocat'} />);
     expect(container.querySelectorAll('a').length).toBe(0);
     expect(container.textContent).toContain('#123');
     expect(container.textContent).toContain('@octocat');
@@ -120,9 +124,9 @@ describe('<Markdown> security (raw-HTML path is the highest-risk surface)', () =
       <Markdown body={'[click](javascript:alert(1))'} />,
     );
     expect(
-      (
-        container.querySelector('a')?.getAttribute('href') ?? ''
-      ).startsWith('javascript:'),
+      (container.querySelector('a')?.getAttribute('href') ?? '').startsWith(
+        'javascript:',
+      ),
     ).toBe(false);
   });
 

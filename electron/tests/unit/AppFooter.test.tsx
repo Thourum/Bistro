@@ -2,7 +2,7 @@
 
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
-import React from 'react';
+import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppFooter } from '../../src/renderer/components/AppFooter';
 import {
@@ -22,10 +22,13 @@ expect.extend(matchers);
 // (under authedRoute) but tests run without one, so we mock the hooks.
 const mockPathname = { current: '/prs' };
 vi.mock('@tanstack/react-router', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@tanstack/react-router')>();
+  const actual =
+    await importOriginal<typeof import('@tanstack/react-router')>();
   return {
     ...actual,
-    useRouterState: vi.fn(() => ({ location: { pathname: mockPathname.current } })),
+    useRouterState: vi.fn(() => ({
+      location: { pathname: mockPathname.current },
+    })),
     useNavigate: vi.fn(() => vi.fn()),
   };
 });

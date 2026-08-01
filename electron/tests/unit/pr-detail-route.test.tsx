@@ -9,11 +9,7 @@
 // These tests assert that navigating/rendering always shows the CORRECT PR
 // by id — regardless of index position in filtered/sorted lists.
 
-import * as matchers from '@testing-library/jest-dom/matchers';
-import {
-  QueryClient,
-  QueryClientProvider,
-} from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRouteWithContext,
@@ -22,6 +18,7 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
+import * as matchers from '@testing-library/jest-dom/matchers';
 import {
   act,
   fireEvent,
@@ -29,14 +26,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod/v4';
 import { AuthedRouteShell } from '../../src/renderer/components/AuthedRouteShell';
 import { PrsIndexRouteComponent } from '../../src/renderer/components/PrsIndexRouteComponent';
@@ -192,9 +182,7 @@ vi.mock('../../src/renderer/hooks/useWebSocketPRList', () => ({
 
 vi.mock('../../src/renderer/pages/PRDetailPage', () => ({
   // Minimal stub: renders a sentinel testid so tests can confirm detail rendered.
-  PRDetailPage: () => (
-    <div data-testid="pr-detail-stub">Detail stub</div>
-  ),
+  PRDetailPage: () => <div data-testid="pr-detail-stub">Detail stub</div>,
 }));
 
 // ---------------------------------------------------------------------------
@@ -250,7 +238,8 @@ function makePrDetailRouteRouter(initialUrl = '/prs/') {
     routeTree,
     history,
     context: {
-      queryClient,    },
+      queryClient,
+    },
   });
 
   const utils = render(

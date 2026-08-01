@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { appStore } from '../../src/renderer/store';
 import ToastContainer from '../../src/renderer/components/ToastContainer';
+import { appStore } from '../../src/renderer/store';
 
 describe('ToastContainer', () => {
   beforeEach(() => {
@@ -18,7 +19,14 @@ describe('ToastContainer', () => {
   it('renders error toast with message', () => {
     appStore.setState((s) => ({
       ...s,
-      toasts: [{ id: 't1', type: 'error', message: 'Something broke', dismissible: true }],
+      toasts: [
+        {
+          id: 't1',
+          type: 'error',
+          message: 'Something broke',
+          dismissible: true,
+        },
+      ],
     }));
     render(<ToastContainer />);
     expect(screen.getByText('Something broke')).toBeInTheDocument();
@@ -27,7 +35,9 @@ describe('ToastContainer', () => {
   it('renders success toast with message', () => {
     appStore.setState((s) => ({
       ...s,
-      toasts: [{ id: 't2', type: 'success', message: 'All good', dismissible: true }],
+      toasts: [
+        { id: 't2', type: 'success', message: 'All good', dismissible: true },
+      ],
     }));
     render(<ToastContainer />);
     expect(screen.getByText('All good')).toBeInTheDocument();
@@ -49,7 +59,9 @@ describe('ToastContainer', () => {
   it('dismisses toast when close button clicked', () => {
     appStore.setState((s) => ({
       ...s,
-      toasts: [{ id: 't1', type: 'error', message: 'Dismiss me', dismissible: true }],
+      toasts: [
+        { id: 't1', type: 'error', message: 'Dismiss me', dismissible: true },
+      ],
     }));
     render(<ToastContainer />);
     const closeBtn = screen.getByRole('button', { name: /dismiss/i });
@@ -61,11 +73,15 @@ describe('ToastContainer', () => {
     vi.useFakeTimers();
     appStore.setState((s) => ({
       ...s,
-      toasts: [{ id: 't1', type: 'success', message: 'Done', dismissible: true }],
+      toasts: [
+        { id: 't1', type: 'success', message: 'Done', dismissible: true },
+      ],
     }));
     render(<ToastContainer />);
     expect(screen.getByText('Done')).toBeInTheDocument();
-    act(() => { vi.advanceTimersByTime(5000); });
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
     expect(appStore.state.toasts).toHaveLength(0);
     vi.useRealTimers();
   });

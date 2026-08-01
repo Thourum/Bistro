@@ -1,7 +1,8 @@
 // @vitest-environment node
-import { describe, it, expect } from 'vitest';
+
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { extname, join } from 'node:path';
+import { describe, expect, it } from 'vitest';
 
 const RENDERER_SRC = join(__dirname, '../../src/renderer');
 

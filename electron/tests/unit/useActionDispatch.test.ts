@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+
+import { act, renderHook } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { appStore } from '../../src/renderer/store';
 
 const mockSend = vi.fn();
 vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
-  useWebSocket: () => ({ send: mockSend, request: vi.fn(), wsRef: { current: null } }),
+  useWebSocket: () => ({
+    send: mockSend,
+    request: vi.fn(),
+    wsRef: { current: null },
+  }),
 }));
 
 import { useActionDispatch } from '../../src/renderer/hooks/useActionDispatch';
@@ -30,7 +35,7 @@ describe('useActionDispatch', () => {
 
     expect(mockSend).toHaveBeenCalledWith('APPROVE_PR', { pr_id: 'pr-123' });
     expect(appStore.state.pendingAction).toEqual(
-      expect.objectContaining({ type: 'approve', prId: 'pr-123' })
+      expect.objectContaining({ type: 'approve', prId: 'pr-123' }),
     );
   });
 
@@ -57,7 +62,7 @@ describe('useActionDispatch', () => {
       comment: 'Needs fixes',
     });
     expect(appStore.state.pendingAction).toEqual(
-      expect.objectContaining({ type: 'request_changes', prId: 'pr-456' })
+      expect.objectContaining({ type: 'request_changes', prId: 'pr-456' }),
     );
   });
 
@@ -75,7 +80,12 @@ describe('useActionDispatch', () => {
   it('clearActionResult resets actionResult to null', () => {
     appStore.setState((s) => ({
       ...s,
-      actionResult: { type: 'approve', prId: 'pr-1', success: true, message: 'Done' },
+      actionResult: {
+        type: 'approve',
+        prId: 'pr-1',
+        success: true,
+        message: 'Done',
+      },
     }));
     const { result } = renderHook(() => useActionDispatch('pr-1'));
 

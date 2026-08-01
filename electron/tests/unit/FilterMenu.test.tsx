@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
+
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
-import { beforeEach, afterEach, describe, expect, it } from 'vitest';
-import * as matchers from '@testing-library/jest-dom/matchers';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FilterMenu } from '../../src/renderer/components/FilterMenu';
-import { OverlayProvider, useOverlays } from '../../src/renderer/overlays/OverlayContext';
+import {
+  OverlayProvider,
+  useOverlays,
+} from '../../src/renderer/overlays/OverlayContext';
 import { appStore } from '../../src/renderer/store';
 import { initialUIState } from '../../src/renderer/store/ui';
 

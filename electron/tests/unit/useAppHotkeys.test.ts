@@ -3,13 +3,18 @@ import { act, renderHook } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppHotkeys } from '../../src/renderer/hooks/useAppHotkeys';
-import { OverlayProvider, useOverlays } from '../../src/renderer/overlays/OverlayContext';
+import {
+  OverlayProvider,
+  useOverlays,
+} from '../../src/renderer/overlays/OverlayContext';
 import { appStore } from '../../src/renderer/store';
 import { settingsStore } from '../../src/renderer/store/settings';
 import { initialUIState } from '../../src/renderer/store/ui';
 
 // Mock the router so list.open can call router.navigate without a RouterProvider.
-const mockRouterNavigate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const mockRouterNavigate = vi.hoisted(() =>
+  vi.fn().mockResolvedValue(undefined),
+);
 vi.mock('../../src/renderer/router', () => ({
   router: {
     navigate: mockRouterNavigate,
@@ -21,7 +26,9 @@ vi.mock('../../src/renderer/router', () => ({
 // Mock @tanstack/react-router so useRouterState works without RouterProvider.
 const mockPathname = { current: '/prs' };
 vi.mock('@tanstack/react-router', () => ({
-  useRouterState: vi.fn(() => ({ location: { pathname: mockPathname.current } })),
+  useRouterState: vi.fn(() => ({
+    location: { pathname: mockPathname.current },
+  })),
   useNavigate: vi.fn(() => vi.fn()),
 }));
 
@@ -166,7 +173,9 @@ describe('useAppHotkeys', () => {
   it('closes overlay on Escape when command overlay is open', () => {
     const { result } = renderWithOverlays();
     // Open command overlay first
-    act(() => { result.current.openCommand(); });
+    act(() => {
+      result.current.openCommand();
+    });
     expect(result.current.activeOverlay).toBe('command');
     act(() => {
       fireKey('Escape', { code: 'Escape' });
@@ -217,7 +226,9 @@ describe('useAppHotkeys', () => {
   it('Escape still works while typing in an input', () => {
     const { result } = renderWithOverlays();
     // Open command overlay first so Escape fires when overlay is active
-    act(() => { result.current.openCommand(); });
+    act(() => {
+      result.current.openCommand();
+    });
     const input = document.createElement('input');
     document.body.appendChild(input);
     input.focus();

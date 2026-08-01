@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+
 import * as matchers from '@testing-library/jest-dom/matchers';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { CommentThread } from '../../src/renderer/components/CommentThread';
 import type { Comment } from '../../src/renderer/types';
 
@@ -61,7 +62,13 @@ describe('CommentThread', () => {
   });
 
   it('shows edit and delete buttons for comment author', () => {
-    render(<CommentThread comments={[mockComment]} currentUser="alice" onDelete={() => {}} />);
+    render(
+      <CommentThread
+        comments={[mockComment]}
+        currentUser="alice"
+        onDelete={() => {}}
+      />,
+    );
     expect(screen.getByText('edit')).toBeInTheDocument();
     expect(screen.getByText('delete')).toBeInTheDocument();
   });
@@ -109,13 +116,25 @@ describe('CommentThread', () => {
 
   it('calls onDelete when delete button clicked', () => {
     const onDelete = vi.fn();
-    render(<CommentThread comments={[mockComment]} currentUser="alice" onDelete={onDelete} />);
+    render(
+      <CommentThread
+        comments={[mockComment]}
+        currentUser="alice"
+        onDelete={onDelete}
+      />,
+    );
     fireEvent.click(screen.getByText('delete'));
     expect(onDelete).toHaveBeenCalledWith('c1');
   });
 
   it('shows edit textarea when edit button clicked', () => {
-    render(<CommentThread comments={[mockComment]} currentUser="alice" onEdit={() => {}} />);
+    render(
+      <CommentThread
+        comments={[mockComment]}
+        currentUser="alice"
+        onEdit={() => {}}
+      />,
+    );
     fireEvent.click(screen.getByText('edit'));
     expect(screen.getByDisplayValue(/This looks good/)).toBeInTheDocument();
   });

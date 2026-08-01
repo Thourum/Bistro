@@ -18,36 +18,21 @@
 //     moved to RootShell.
 // 12. ToastContainer visible across /login and /prs.
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as matchers from '@testing-library/jest-dom/matchers';
-import {
-  QueryClient,
-  QueryClientProvider,
-} from '@tanstack/react-query';
-import {
-  act,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { router } from '../../src/renderer/router';
 import { appStore } from '../../src/renderer/store';
 import { settingsStore } from '../../src/renderer/store/settings';
 import { initialUIState } from '../../src/renderer/store/ui';
-import { DEFAULT_SETTINGS } from '../../src/types/settings';
 import {
   DEFAULT_KEYBINDINGS,
   isActive,
   routeBaseFromPath,
 } from '../../src/renderer/utils/keybindings';
-import { router } from '../../src/renderer/router';
+import { DEFAULT_SETTINGS } from '../../src/types/settings';
 
 expect.extend(matchers);
 
@@ -179,14 +164,18 @@ describe('authed hotkeys still gate correctly', () => {
 
   it('list bindings inactive on /login', () => {
     const b = DEFAULT_KEYBINDINGS.find((x) => x.actionId === 'list.down')!;
-    expect(isActive(b, { routeBase: 'login', activeOverlay: null })).toBe(false);
+    expect(isActive(b, { routeBase: 'login', activeOverlay: null })).toBe(
+      false,
+    );
   });
 
   it('detail bindings active on /prs/$prId', () => {
     const b = DEFAULT_KEYBINDINGS.find(
       (x) => x.actionId === 'detail.nextFile',
     )!;
-    expect(isActive(b, { routeBase: 'detail', activeOverlay: null })).toBe(true);
+    expect(isActive(b, { routeBase: 'detail', activeOverlay: null })).toBe(
+      true,
+    );
   });
 });
 
@@ -199,10 +188,7 @@ describe('AppFooter only under authedRoute', () => {
     const fs = await import('fs');
     const path = await import('path');
     const src = fs.readFileSync(
-      path.resolve(
-        __dirname,
-        '../../src/renderer/components/AppFooter.tsx',
-      ),
+      path.resolve(__dirname, '../../src/renderer/components/AppFooter.tsx'),
       'utf-8',
     );
     // RouterSafe class was removed (AppFooter now always inside router).
@@ -237,18 +223,29 @@ describe('requireAuthedAndOnboarded guard behavior', () => {
 
     // Now resolve auth as authenticated
     act(() => {
-      seedAuth({ authChecked: true, isAuthenticated: true, onboardingComplete: true });
+      seedAuth({
+        authChecked: true,
+        isAuthenticated: true,
+        onboardingComplete: true,
+      });
     });
 
     await navPromise.catch(() => {}); // may redirect to /prs or /login
-    await waitFor(() => {
-      expect(router.state.location.pathname).toMatch(/^\/prs/);
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(router.state.location.pathname).toMatch(/^\/prs/);
+      },
+      { timeout: 3000 },
+    );
   });
 
   // Test 4: authChecked:true, isAuthenticated:false → redirect /login
   it('4. authChecked + !isAuthenticated → redirect to /login', async () => {
-    seedAuth({ authChecked: true, isAuthenticated: false, onboardingComplete: true });
+    seedAuth({
+      authChecked: true,
+      isAuthenticated: false,
+      onboardingComplete: true,
+    });
     await router.navigate({ to: '/prs' }).catch(() => {});
     await waitFor(() => {
       expect(router.state.location.pathname).toBe('/login');
@@ -257,24 +254,41 @@ describe('requireAuthedAndOnboarded guard behavior', () => {
 
   // Test 5: On /login?redirect, authed → redirects to saved path
   it('5. /login with redirect param, then authed → redirect to saved path', async () => {
-    seedAuth({ authChecked: true, isAuthenticated: false, onboardingComplete: true });
+    seedAuth({
+      authChecked: true,
+      isAuthenticated: false,
+      onboardingComplete: true,
+    });
     // Navigate to login with redirect
-    await router.navigate({ to: '/login', search: { redirect: '/prs' } }).catch(() => {});
+    await router
+      .navigate({ to: '/login', search: { redirect: '/prs' } })
+      .catch(() => {});
     expect(router.state.location.pathname).toBe('/login');
 
     // Now become authenticated + invalidate
-    seedAuth({ authChecked: true, isAuthenticated: true, onboardingComplete: true });
+    seedAuth({
+      authChecked: true,
+      isAuthenticated: true,
+      onboardingComplete: true,
+    });
     await router.invalidate();
 
-    await waitFor(() => {
-      // /login beforeLoad should redirect to /prs (the saved redirect)
-      expect(router.state.location.pathname).toMatch(/^\/prs/);
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        // /login beforeLoad should redirect to /prs (the saved redirect)
+        expect(router.state.location.pathname).toMatch(/^\/prs/);
+      },
+      { timeout: 3000 },
+    );
   });
 
   // Test 6: authed but !onboarding → /onboarding
   it('6. authed + !onboardingComplete → /onboarding', async () => {
-    seedAuth({ authChecked: true, isAuthenticated: true, onboardingComplete: false });
+    seedAuth({
+      authChecked: true,
+      isAuthenticated: true,
+      onboardingComplete: false,
+    });
     await router.navigate({ to: '/prs' }).catch(() => {});
     await waitFor(() => {
       expect(router.state.location.pathname).toBe('/onboarding');
@@ -284,7 +298,11 @@ describe('requireAuthedAndOnboarded guard behavior', () => {
   // Test 7: Reconnect — authChecked:false transient, must NOT bounce to /login
   it('7. reconnect (authChecked:false transient) → no /login bounce', async () => {
     // Start authed and on /prs
-    seedAuth({ authChecked: true, isAuthenticated: true, onboardingComplete: true });
+    seedAuth({
+      authChecked: true,
+      isAuthenticated: true,
+      onboardingComplete: true,
+    });
     await router.navigate({ to: '/prs' });
     await waitFor(() => {
       expect(router.state.location.pathname).toMatch(/^\/prs/);
@@ -303,21 +321,32 @@ describe('requireAuthedAndOnboarded guard behavior', () => {
 
     // Reconnect resolves: authChecked:true, still authed
     act(() => {
-      appStore.setState((s) => ({ ...s, authChecked: true, isAuthenticated: true }));
+      appStore.setState((s) => ({
+        ...s,
+        authChecked: true,
+        isAuthenticated: true,
+      }));
     });
 
     await invalidatePromise.catch(() => {});
 
-    await waitFor(() => {
-      // Must NOT have redirected to /login
-      expect(router.state.location.pathname).not.toBe('/login');
-      expect(router.state.location.pathname).toMatch(/^\/prs/);
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        // Must NOT have redirected to /login
+        expect(router.state.location.pathname).not.toBe('/login');
+        expect(router.state.location.pathname).toMatch(/^\/prs/);
+      },
+      { timeout: 3000 },
+    );
   });
 
   // Test 8: Auth expired → authChecked:true, isAuthenticated:false → /login
   it('8. auth expired (isAuthenticated:false, authChecked:true) → /login', async () => {
-    seedAuth({ authChecked: true, isAuthenticated: true, onboardingComplete: true });
+    seedAuth({
+      authChecked: true,
+      isAuthenticated: true,
+      onboardingComplete: true,
+    });
     await router.navigate({ to: '/prs' });
 
     // Simulate AUTH_TOKEN_EXPIRED: authChecked stays true, isAuthenticated:false
@@ -331,9 +360,12 @@ describe('requireAuthedAndOnboarded guard behavior', () => {
 
     await router.invalidate();
 
-    await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/login');
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(router.state.location.pathname).toBe('/login');
+      },
+      { timeout: 3000 },
+    );
   });
 });
 
@@ -344,7 +376,11 @@ describe('requireAuthedAndOnboarded guard behavior', () => {
 describe('index route awaits authChecked (auth and onboarding enforced by declarative guards)', () => {
   it('3b. / with authChecked:false → does NOT navigate to /login; resolves to /prs when auth known', async () => {
     // authChecked starts false
-    appStore.setState((s) => ({ ...s, authChecked: false, isAuthenticated: false }));
+    appStore.setState((s) => ({
+      ...s,
+      authChecked: false,
+      isAuthenticated: false,
+    }));
     settingsStore.setState((s) => ({
       ...s,
       appearance: { ...s.appearance, onboardingComplete: true },
@@ -377,7 +413,11 @@ describe('index route awaits authChecked (auth and onboarding enforced by declar
   });
 
   it('3c. / with authChecked:false → does NOT navigate to /login when unauthed resolves; goes to /login after check', async () => {
-    appStore.setState((s) => ({ ...s, authChecked: false, isAuthenticated: false }));
+    appStore.setState((s) => ({
+      ...s,
+      authChecked: false,
+      isAuthenticated: false,
+    }));
 
     const navPromise = router.navigate({ to: '/' }).catch(() => {});
 
@@ -386,7 +426,11 @@ describe('index route awaits authChecked (auth and onboarding enforced by declar
 
     // Auth check resolves as NOT authenticated
     act(() => {
-      appStore.setState((s) => ({ ...s, authChecked: true, isAuthenticated: false }));
+      appStore.setState((s) => ({
+        ...s,
+        authChecked: true,
+        isAuthenticated: false,
+      }));
     });
 
     await navPromise;
@@ -419,7 +463,9 @@ describe('loader blocking', () => {
 
     // Build a minimal router that mirrors the authed-layout→child structure
     // using the REAL requireAuthedAndOnboarded guard logic (reads appStore).
-    const testRootRoute = createRootRouteWithContext<{ queryClient: typeof queryClient }>()({
+    const testRootRoute = createRootRouteWithContext<{
+      queryClient: typeof queryClient;
+    }>()({
       component: () => React.createElement(Outlet),
     });
 
@@ -432,7 +478,10 @@ describe('loader blocking', () => {
         if (!appStore.state.authChecked) {
           await new Promise<void>((resolve) => {
             const sub = appStore.subscribe(() => {
-              if (appStore.state.authChecked) { sub.unsubscribe(); resolve(); }
+              if (appStore.state.authChecked) {
+                sub.unsubscribe();
+                resolve();
+              }
             });
           });
         }
@@ -462,7 +511,9 @@ describe('loader blocking', () => {
       testLoginRoute,
     ]);
 
-    const testHistory = createMemoryHistory({ initialEntries: ['/test-protected'] });
+    const testHistory = createMemoryHistory({
+      initialEntries: ['/test-protected'],
+    });
     const testRouter = createTestRouter({
       routeTree: testRouteTree,
       history: testHistory,
@@ -470,7 +521,11 @@ describe('loader blocking', () => {
     });
 
     // authChecked:false → guard will wait
-    appStore.setState((s) => ({ ...s, authChecked: false, isAuthenticated: true }));
+    appStore.setState((s) => ({
+      ...s,
+      authChecked: false,
+      isAuthenticated: true,
+    }));
 
     // Start load — guard is now awaiting authChecked
     const loadPromise = testRouter.load();
@@ -486,9 +541,12 @@ describe('loader blocking', () => {
     await loadPromise;
 
     // After auth resolved and guard passed, loader SHOULD have run
-    await waitFor(() => {
-      expect(loaderSpy).toHaveBeenCalled();
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(loaderSpy).toHaveBeenCalled();
+      },
+      { timeout: 3000 },
+    );
   });
 });
 
@@ -502,10 +560,7 @@ describe('ToastContainer in RootShell', () => {
     const fs = await import('fs');
     const path = await import('path');
     const src = fs.readFileSync(
-      path.resolve(
-        __dirname,
-        '../../src/renderer/components/RootShell.tsx',
-      ),
+      path.resolve(__dirname, '../../src/renderer/components/RootShell.tsx'),
       'utf-8',
     );
     expect(src).toContain('ToastContainer');

@@ -157,7 +157,9 @@ describe('WebSocket dev-folder startup scan', () => {
         devFolderPath: '/Users/sam/dev',
       },
     }));
-    const { useWebSocket } = await import('../../src/renderer/hooks/useWebSocket');
+    const { useWebSocket } = await import(
+      '../../src/renderer/hooks/useWebSocket'
+    );
 
     const { unmount } = renderHook(() => useWebSocket());
     const ws = MockWebSocket.instances[0];
@@ -195,7 +197,9 @@ describe('WebSocket dev-folder startup scan', () => {
   });
 
   it('does not send SCAN_DEV_FOLDER on connection open when devFolderPath is null', async () => {
-    const { useWebSocket } = await import('../../src/renderer/hooks/useWebSocket');
+    const { useWebSocket } = await import(
+      '../../src/renderer/hooks/useWebSocket'
+    );
 
     const { unmount } = renderHook(() => useWebSocket());
     const ws = MockWebSocket.instances[0];

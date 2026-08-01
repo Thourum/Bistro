@@ -7,20 +7,8 @@
 // 4. Sync: store write updates router search params
 
 import * as matchers from '@testing-library/jest-dom/matchers';
-import {
-  act,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appStore } from '../../src/renderer/store';
 import { initialUIState } from '../../src/renderer/store/ui';
 
@@ -60,9 +48,7 @@ vi.mock('../../src/renderer/hooks/useWebSocket', () => ({
 
 // Lightweight page stubs with testid markers
 vi.mock('../../src/renderer/pages/PRDetailPage', () => ({
-  PRDetailPage: () => (
-    <div data-testid="pr-detail-page">DetailPage</div>
-  ),
+  PRDetailPage: () => <div data-testid="pr-detail-page">DetailPage</div>,
 }));
 vi.mock('../../src/renderer/pages/DiffPage', () => ({
   DiffPage: () => <div data-testid="diff-page">DiffPage</div>,
@@ -112,7 +98,7 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
-import React from 'react';
+import type React from 'react';
 import { z } from 'zod/v4';
 import { AuthedRouteShell } from '../../src/renderer/components/AuthedRouteShell';
 import { PrsIndexRouteComponent } from '../../src/renderer/components/PrsIndexRouteComponent';
@@ -163,7 +149,8 @@ function makeTestRouter(initialUrl: string) {
     routeTree,
     history,
     context: {
-      queryClient,    },
+      queryClient,
+    },
   });
 
   const utils = render(
@@ -182,7 +169,11 @@ function makeTestRouter(initialUrl: string) {
 describe('AuthedRouteShell — route-based rendering', () => {
   beforeEach(() => {
     // Reset store to defaults before each test
-    appStore.setState(() => ({ ...initialUIState, isAuthenticated: true, authChecked: true }));
+    appStore.setState(() => ({
+      ...initialUIState,
+      isAuthenticated: true,
+      authChecked: true,
+    }));
   });
 
   afterEach(() => {
@@ -226,7 +217,8 @@ describe('usePrsSearchStoreBridge — route↔store sync', () => {
   beforeEach(() => {
     appStore.setState(() => ({
       ...initialUIState,
-      isAuthenticated: true,    }));
+      isAuthenticated: true,
+    }));
   });
 
   afterEach(() => {
@@ -259,7 +251,10 @@ describe('usePrsSearchStoreBridge — route↔store sync', () => {
 
     await waitFor(() => {
       // location.search is a parsed object in TanStack Router
-      const searchObj = testRouter.state.location.search as Record<string, unknown>;
+      const searchObj = testRouter.state.location.search as Record<
+        string,
+        unknown
+      >;
       expect(searchObj['filter']).toBe('all');
     });
   });

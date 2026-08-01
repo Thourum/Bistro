@@ -13,11 +13,7 @@
 //   8. Overlay-close on /settings restores mode:'settings'.
 //   9. Onboarding: when mode:'onboarding', OnboardingPage renders even though route is /prs.
 
-import * as matchers from '@testing-library/jest-dom/matchers';
-import {
-  QueryClient,
-  QueryClientProvider,
-} from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRouteWithContext,
@@ -26,21 +22,10 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
-import {
-  act,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
-import React from 'react';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import * as matchers from '@testing-library/jest-dom/matchers';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import type React from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod/v4';
 import { AuthedRouteShell } from '../../src/renderer/components/AuthedRouteShell';
 import type { RouterContext } from '../../src/renderer/router';
@@ -195,7 +180,8 @@ function makeSettingsRouteRouter(initialUrl: string) {
     routeTree,
     history,
     context: {
-      queryClient,    },
+      queryClient,
+    },
   });
 
   const utils = render(
@@ -216,7 +202,9 @@ function byId(actionId: string): KeyBinding {
 
 /** Create a minimal KeyActionContext for testing binding actions. */
 function makeTestCtx(
-  routeBase: import('../../src/renderer/utils/keybindings').RouteBase | null = 'list',
+  routeBase:
+    | import('../../src/renderer/utils/keybindings').RouteBase
+    | null = 'list',
 ): import('../../src/renderer/utils/keybindings').KeyActionContext {
   return {
     store: appStore,
@@ -247,7 +235,8 @@ beforeEach(() => {
   mockRouterState.location.pathname = '/prs';
   appStore.setState(() => ({
     ...initialUIState,
-    isAuthenticated: true,  }));
+    isAuthenticated: true,
+  }));
 });
 
 afterEach(() => {
@@ -261,7 +250,6 @@ afterEach(() => {
 
 describe('/settings deep-link', () => {
   it('renders SettingsPage on deep-link /settings', async () => {
-    
     makeSettingsRouteRouter('/settings');
 
     await waitFor(() => {
@@ -272,7 +260,6 @@ describe('/settings deep-link', () => {
   });
 
   it('/settings deep-link is NOT collapsed to /prs by pin effect', async () => {
-    
     const { testRouter } = makeSettingsRouteRouter('/settings');
 
     await waitFor(() => {

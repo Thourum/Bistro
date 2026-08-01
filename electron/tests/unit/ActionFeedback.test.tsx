@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act, fireEvent } from '@testing-library/react';
+
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import ActionFeedback from '../../src/renderer/components/ActionFeedback';
 
 describe('ActionFeedback', () => {
   it('renders nothing when no pendingAction or actionResult', () => {
     const { container } = render(
-      <ActionFeedback pendingAction={null} actionResult={null} onDismiss={vi.fn()} />
+      <ActionFeedback
+        pendingAction={null}
+        actionResult={null}
+        onDismiss={vi.fn()}
+      />,
     );
     expect(container.firstChild).toBeNull();
   });
@@ -18,7 +23,7 @@ describe('ActionFeedback', () => {
         pendingAction={{ type: 'approve', prId: 'pr-1', startedAt: Date.now() }}
         actionResult={null}
         onDismiss={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText(/approving/i)).toBeInTheDocument();
   });
@@ -27,9 +32,14 @@ describe('ActionFeedback', () => {
     render(
       <ActionFeedback
         pendingAction={null}
-        actionResult={{ type: 'approve', prId: 'pr-1', success: true, message: 'PR approved' }}
+        actionResult={{
+          type: 'approve',
+          prId: 'pr-1',
+          success: true,
+          message: 'PR approved',
+        }}
         onDismiss={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText('PR approved')).toBeInTheDocument();
     expect(screen.getByText('✓')).toBeInTheDocument();
@@ -39,13 +49,20 @@ describe('ActionFeedback', () => {
     render(
       <ActionFeedback
         pendingAction={null}
-        actionResult={{ type: 'approve', prId: 'pr-1', success: false, message: 'Forbidden' }}
+        actionResult={{
+          type: 'approve',
+          prId: 'pr-1',
+          success: false,
+          message: 'Forbidden',
+        }}
         onDismiss={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText('Forbidden')).toBeInTheDocument();
     expect(screen.getByText('✗')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /dismiss/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /dismiss/i }),
+    ).toBeInTheDocument();
   });
 
   it('auto-dismisses successful result after 3 seconds', () => {
@@ -54,12 +71,19 @@ describe('ActionFeedback', () => {
     render(
       <ActionFeedback
         pendingAction={null}
-        actionResult={{ type: 'approve', prId: 'pr-1', success: true, message: 'Done' }}
+        actionResult={{
+          type: 'approve',
+          prId: 'pr-1',
+          success: true,
+          message: 'Done',
+        }}
         onDismiss={onDismiss}
-      />
+      />,
     );
     expect(onDismiss).not.toHaveBeenCalled();
-    act(() => { vi.advanceTimersByTime(3000); });
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
     expect(onDismiss).toHaveBeenCalled();
     vi.useRealTimers();
   });
@@ -70,11 +94,18 @@ describe('ActionFeedback', () => {
     render(
       <ActionFeedback
         pendingAction={null}
-        actionResult={{ type: 'approve', prId: 'pr-1', success: false, message: 'Error' }}
+        actionResult={{
+          type: 'approve',
+          prId: 'pr-1',
+          success: false,
+          message: 'Error',
+        }}
         onDismiss={onDismiss}
-      />
+      />,
     );
-    act(() => { vi.advanceTimersByTime(5000); });
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
     expect(onDismiss).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
@@ -82,10 +113,14 @@ describe('ActionFeedback', () => {
   it('renders request_changes label correctly', () => {
     render(
       <ActionFeedback
-        pendingAction={{ type: 'request_changes', prId: 'pr-1', startedAt: Date.now() }}
+        pendingAction={{
+          type: 'request_changes',
+          prId: 'pr-1',
+          startedAt: Date.now(),
+        }}
         actionResult={null}
         onDismiss={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText(/requesting changes/i)).toBeInTheDocument();
   });
@@ -97,10 +132,15 @@ describe('ActionFeedback retry', () => {
     render(
       <ActionFeedback
         pendingAction={null}
-        actionResult={{ type: 'approve', prId: 'pr-1', success: false, message: 'Failed' }}
+        actionResult={{
+          type: 'approve',
+          prId: 'pr-1',
+          success: false,
+          message: 'Failed',
+        }}
         onDismiss={vi.fn()}
         onRetry={onRetry}
-      />
+      />,
     );
     const retryBtn = screen.getByRole('button', { name: /retry/i });
     fireEvent.click(retryBtn);
@@ -111,9 +151,14 @@ describe('ActionFeedback retry', () => {
     render(
       <ActionFeedback
         pendingAction={null}
-        actionResult={{ type: 'approve', prId: 'pr-1', success: false, message: 'Failed' }}
+        actionResult={{
+          type: 'approve',
+          prId: 'pr-1',
+          success: false,
+          message: 'Failed',
+        }}
         onDismiss={vi.fn()}
-      />
+      />,
     );
     expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();
   });

@@ -10,6 +10,7 @@ vi.mock('electron', () => ({
   ipcMain: { on: vi.fn() },
   shell: { openPath: vi.fn() },
 }));
+
 import { normalise } from '../../src/main/settings';
 import {
   type AppSettings,

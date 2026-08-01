@@ -28,10 +28,10 @@ const FOOTER_LEGEND_PRESETS_BY_ROUTE: Record<RouteBase, string[]> = {
     'global.escape',
   ],
   diff: [
-    'detail.scrollDown',
-    'detail.scrollUp',
     'detail.nextFile',
     'detail.prevFile',
+    'diff.markViewed',
+    'diff.toggleStyle',
     'global.escape',
   ],
   settings: ['global.escape'],

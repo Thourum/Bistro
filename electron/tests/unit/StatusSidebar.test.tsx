@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
+
 import { render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
 import '@testing-library/jest-dom';
 import StatusSidebar from '../../src/renderer/components/StatusSidebar';
-import type { PR, CICheck } from '../../src/renderer/types';
+import type { CICheck, PR } from '../../src/renderer/types';
 
 const basePR: PR = {
   id: 'pr-1',
@@ -59,7 +60,12 @@ describe('StatusSidebar', () => {
   });
 
   it('renders changes_requested status', () => {
-    const pr = { ...basePR, review_status: 'changes_requested', approved_by: null, changes_requested_by: 'carol' };
+    const pr = {
+      ...basePR,
+      review_status: 'changes_requested',
+      approved_by: null,
+      changes_requested_by: 'carol',
+    };
     render(<StatusSidebar pr={pr} ciChecks={[]} />);
     expect(screen.getByText(/changes requested/i)).toBeInTheDocument();
     expect(screen.getByText(/carol/)).toBeInTheDocument();
@@ -71,7 +77,9 @@ describe('StatusSidebar', () => {
   });
 
   it('renders CI check link when url is provided', () => {
-    const checks: CICheck[] = [{ name: 'ci-build', state: 'success', url: 'https://ci.example.com/1' }];
+    const checks: CICheck[] = [
+      { name: 'ci-build', state: 'success', url: 'https://ci.example.com/1' },
+    ];
     render(<StatusSidebar pr={basePR} ciChecks={checks} />);
     const link = screen.getByRole('link', { name: 'ci-build' });
     expect(link).toHaveAttribute('href', 'https://ci.example.com/1');
