@@ -237,6 +237,29 @@ describe('DEFAULT_KEYBINDINGS', () => {
     expect(openHelpMock).toHaveBeenCalledWith('detail');
   });
 
+  // Regression: a Radix dialog dismisses Escape from a capture-phase listener,
+  // so by the time the bubble-phase binding runs the overlay is already closed.
+  // The binding is handed the overlay state from keypress time, and must close
+  // the overlay WITHOUT also running the route branch — dismissing the help
+  // overlay on /diff previously navigated out of the diff too.
+  it('escape with an overlay open closes it and does not navigate', () => {
+    mockNavigate.mockClear();
+    const closeOverlay = vi.fn();
+    byId('global.escape').action(
+      makeCtx(makeStore(), 'diff', { activeOverlay: 'help', closeOverlay }),
+    );
+    expect(closeOverlay).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('escape on the diff route with no overlay navigates back to the PR', () => {
+    mockNavigate.mockClear();
+    byId('global.escape').action(makeCtx(makeStore(), 'diff'));
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/prs/$prId' }),
+    );
+  });
+
   // `z` resolves the focused file by indexing diffFileKeys, so it can address
   // the wrong file or write a bogus key — the only new diff binding whose
   // action is more than a flag flip.

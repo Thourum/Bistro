@@ -86,7 +86,16 @@ export function useAppHotkeys(): void {
         .filter((b) => !isSequenceBinding(b))
         .map((binding) => ({
           hotkey: binding.keys as RegisterableHotkey,
-          callback: () => binding.action(makeCtx()),
+          // `enabled` is evaluated from the render that registered this
+          // binding, so it reflects the overlay state at keypress time. The
+          // action, however, reads live state via refs — and a Radix dialog
+          // dismisses Escape from a document CAPTURE listener, which runs
+          // BEFORE this bubble-phase callback. Passing the registration-time
+          // overlay keeps the two in agreement; otherwise `global.escape`
+          // observed `activeOverlay: null` for a keypress that had just closed
+          // an overlay and fell through to its route branch, so dismissing the
+          // help overlay on /diff also navigated out of the diff.
+          callback: () => binding.action({ ...makeCtx(), activeOverlay }),
           options: {
             enabled: isActive(binding, { routeBase, activeOverlay }),
             ignoreInputs: binding.keys !== 'Escape',
