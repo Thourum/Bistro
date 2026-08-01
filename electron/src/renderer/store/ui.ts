@@ -108,6 +108,11 @@ export interface UIState {
   /** Inline diff-comment thread currently showing the reply composer, if any. */
   replyingInlineCommentThreadId: string | null;
   /**
+   * Diff view: hide hunks whose only change is whitespace (`w`). Route-local
+   * and deliberately not persisted — it answers "is this churn?" for one PR.
+   */
+  hideWhitespaceHunks: boolean;
+  /**
    * Comment classification filter (Phase 3.5 `f` keystrokes): minimum
    * severity (`f c/w/s/n`) and human-only (`f h`). Cleared by `f f`.
    */
@@ -172,6 +177,7 @@ export const initialUIState: UIState = {
   inlineCommentThreadIds: [],
   activeInlineCommentThreadId: null,
   replyingInlineCommentThreadId: null,
+  hideWhitespaceHunks: false,
   commentMinSeverity: null,
   commentHumanOnly: false,
   dismissBatches: [],

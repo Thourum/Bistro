@@ -5,6 +5,7 @@ import { useStore } from '../../hooks/useStore';
 import { appStore } from '../../store';
 import type { Comment, ExpertiseFileData, ReviewThread } from '../../types';
 import { findFileByKey } from '../../utils/diffFileKey';
+import { hideWhitespaceOnlyHunks } from '../../utils/whitespaceDiff';
 import { buildOrderedAnnotations } from './diffAnnotations';
 import {
   buildCodeViewItems,
@@ -60,7 +61,18 @@ export function DiffView({
   expertiseFiles = [],
   expertiseError = null,
 }: DiffViewProps) {
-  const files = useMemo(() => splitUnifiedDiff(diff), [diff]);
+  const hideWhitespaceHunks = useStore(
+    appStore,
+    (state) => state.hideWhitespaceHunks,
+  );
+  const allFiles = useMemo(() => splitUnifiedDiff(diff), [diff]);
+  // Hiding whitespace-only hunks rewrites each file's patch text (the library
+  // has no ignore-whitespace option) but keeps file identity, so navigation,
+  // canonical keys, and the sidebar are unaffected.
+  const { files, hiddenWhitespaceByFileId } = useMemo(
+    () => filterWhitespaceHunks(allFiles, hideWhitespaceHunks),
+    [allFiles, hideWhitespaceHunks],
+  );
   const codeViewFileResult = useMemo(() => parseCodeViewFiles(files), [files]);
   const { parsedFiles: parsedCodeViewFiles, unrenderableFiles } =
     codeViewFileResult;
@@ -326,6 +338,7 @@ export function DiffView({
             renderCustomHeader={(item) => {
               const parsedFile = files.find((file) => file.id === item.id);
               if (parsedFile === undefined) return null;
+              const hiddenWhitespace = hiddenWhitespaceByFileId.get(item.id);
               return (
                 <>
                   <div className="bg-surface-container-lowest border-b border-outline-variant/10 px-4 py-2 flex items-center justify-between">
@@ -337,11 +350,16 @@ export function DiffView({
                         {parsedFile.lang}
                       </span>
                     </div>
-                    <div className="flex gap-4 font-mono text-[11px] font-bold shrink-0">
-                      <span className="text-primary">
+                    <div className="flex items-center gap-4 font-mono text-[11px] shrink-0">
+                      {hiddenWhitespace !== undefined ? (
+                        <span className="text-outline font-normal normal-case">
+                          {hiddenWhitespace} whitespace-only lines hidden
+                        </span>
+                      ) : null}
+                      <span className="text-primary font-bold">
                         +{parsedFile.additions}
                       </span>
-                      <span className="text-error">
+                      <span className="text-error font-bold">
                         -{parsedFile.deletions}
                       </span>
                     </div>
@@ -384,6 +402,29 @@ export function DiffView({
       </section>
     </div>
   );
+}
+
+interface WhitespaceFilterResult {
+  files: ParsedDiffFile[];
+  /** File id → number of `+`/`-` lines hidden in that file. */
+  hiddenWhitespaceByFileId: ReadonlyMap<string, number>;
+}
+
+function filterWhitespaceHunks(
+  files: readonly ParsedDiffFile[],
+  enabled: boolean,
+): WhitespaceFilterResult {
+  if (!enabled) {
+    return { files: [...files], hiddenWhitespaceByFileId: new Map() };
+  }
+  const hidden = new Map<string, number>();
+  const filtered = files.map((file) => {
+    const { patch, hiddenLineCount } = hideWhitespaceOnlyHunks(file.patch);
+    if (hiddenLineCount === 0) return file;
+    hidden.set(file.id, hiddenLineCount);
+    return { ...file, patch };
+  });
+  return { files: filtered, hiddenWhitespaceByFileId: hidden };
 }
 
 function updateSelectedFileIndex(

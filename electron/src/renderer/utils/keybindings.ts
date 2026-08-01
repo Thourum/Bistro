@@ -793,6 +793,18 @@ const detailBindings: KeyBinding[] = [
     },
   },
   {
+    actionId: 'diff.toggleWhitespace',
+    keys: 'w',
+    description: 'Hide whitespace-only hunks',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({
+        ...s,
+        hideWhitespaceHunks: !s.hideWhitespaceHunks,
+      }));
+    },
+  },
+  {
     actionId: 'diff.markViewed',
     keys: 'v',
     description: 'Mark file viewed',
