@@ -5,6 +5,7 @@ import { useStore } from '../../hooks/useStore';
 import { appStore } from '../../store';
 import type { Comment, ExpertiseFileData, ReviewThread } from '../../types';
 import { findFileByKey } from '../../utils/diffFileKey';
+import { openUrlInBrowser } from '../../utils/openUrl';
 import { hideWhitespaceOnlyHunks } from '../../utils/whitespaceDiff';
 import { buildOrderedAnnotations } from './diffAnnotations';
 import {
@@ -24,6 +25,8 @@ import { DiffParseFailurePanel } from './diffParseFailurePanel';
 import { type ParsedDiffFile, splitUnifiedDiff } from './diffPathUtils';
 import { ThreadAnnotationCard } from './diffThreadAnnotation';
 
+const OPEN_FILE_BROWSER_EVENT = 'bistro:diff:open-file-browser';
+
 function sameIds(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;
   return left.every((value, index) => value === right[index]);
@@ -41,6 +44,11 @@ export interface DiffViewProps {
   onThreadReply?: (threadId: string, body: string) => void;
   expertiseFiles?: ExpertiseFileData[];
   expertiseError?: string | null;
+  /**
+   * Base PR URL on the provider (no `/files` suffix). When set, `o` and the
+   * binary-file placeholder open the focused file's blob view there.
+   */
+  prBrowserUrl?: string | null;
 }
 
 /**
@@ -60,6 +68,7 @@ export function DiffView({
   onThreadReply,
   expertiseFiles = [],
   expertiseError = null,
+  prBrowserUrl = null,
 }: DiffViewProps) {
   const hideWhitespaceHunks = useStore(
     appStore,
@@ -270,6 +279,27 @@ export function DiffView({
     unrenderableFiles,
     activeId ?? '',
   );
+
+  // `o` on the diff route: open the PR's Files-changed tab in the browser.
+  // GitHub's per-file anchor is sha256(path), which needs async WebCrypto —
+  // the tab is close enough and stays correct for every provider.
+  const openFilesInBrowser =
+    prBrowserUrl === null || prBrowserUrl === ''
+      ? undefined
+      : () => {
+          openUrlInBrowser(`${prBrowserUrl.replace(/\/+$/, '')}/files`);
+        };
+
+  useEffect(() => {
+    if (openFilesInBrowser === undefined) return;
+    const handler = (): void => {
+      openFilesInBrowser();
+    };
+    document.addEventListener(OPEN_FILE_BROWSER_EVENT, handler);
+    return () => {
+      document.removeEventListener(OPEN_FILE_BROWSER_EVENT, handler);
+    };
+  }, [openFilesInBrowser]);
   const filteredFiles = useMemo(() => {
     const query = findQuery.trim().toLowerCase();
     if (query === '') return files;
@@ -309,7 +339,12 @@ export function DiffView({
       />
       <section className="flex-1 min-w-0 min-h-0 bg-surface-container-lowest overflow-hidden relative">
         {activeUnrenderableFile !== undefined ? (
-          <DiffParseFailurePanel file={activeUnrenderableFile} />
+          <DiffParseFailurePanel
+            file={activeUnrenderableFile}
+            {...(openFilesInBrowser !== undefined
+              ? { onOpenInBrowser: openFilesInBrowser }
+              : {})}
+          />
         ) : (
           <CodeView
             ref={codeViewRef}

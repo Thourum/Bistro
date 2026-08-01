@@ -1,0 +1,105 @@
+<h2>Inbox layout — which structure?</h2>
+<p class="subtitle">6 lanes: Urgent · Needs Your Action · Touches Your Code · Authored by You · Mentioned · FYI. g1–g6 jumps lanes, j/k moves rows. Click an option to select.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Sectioned single list</h3>
+      <p>One scrollable review queue, with every lane visible as a compact section.</p>
+      <div class="mockup" style="max-width:500px;font-family:ui-monospace,monospace;font-size:11px;border:1px solid #ddd;color:#333;">
+        <div class="mockup-header" style="padding:8px 10px;border-bottom:1px solid #ddd;">REVIEWER INBOX <span style="color:#888;">· j/k rows · g1–g6 lanes</span></div>
+        <div class="mockup-body">
+          <div class="section">
+            <div class="label" style="padding:5px 10px;background:#f5f5f5;border-bottom:1px solid #ddd;">1 URGENT — 2</div>
+            <div style="padding:5px 10px;border-bottom:1px solid #eee;font-weight:700;">● fix auth refresh race (#842) · api/auth · @mira · 12m · <span style="color:#468847;">CI PASS</span></div>
+            <div style="padding:5px 10px;border-bottom:1px solid #eee;font-weight:700;">● add rate limiter to sync loop (#791) · bistro/go · @tomas · 2h · <span style="color:#b94a48;">CI FAIL</span></div>
+          </div>
+          <div class="section">
+            <div class="label" style="padding:5px 10px;background:#f5f5f5;border-bottom:1px solid #ddd;">2 NEEDS YOUR ACTION — 2</div>
+            <div style="padding:5px 10px;border-bottom:1px solid #eee;font-weight:700;">● refactor keybinding registry (#788) · bistro/electron · @sam · 5h · <span style="color:#468847;">CI PASS</span></div>
+            <div style="padding:5px 10px;border-bottom:1px solid #eee;color:#888;">fix offline retry ordering (#786) · bistro/go · @rhea · 7h · CI PASS</div>
+          </div>
+          <div class="section">
+            <div class="label" style="padding:5px 10px;background:#f5f5f5;border-bottom:1px solid #ddd;">3 TOUCHES YOUR CODE — 2</div>
+            <div style="padding:5px 10px;border-bottom:1px solid #eee;font-weight:700;">● isolate ws reconnect state (#783) · bistro/electron · @leo · 9h · <span style="color:#468847;">CI PASS</span></div>
+            <div style="padding:5px 10px;border-bottom:1px solid #eee;color:#888;">update reviewer shortcut hints (#779) · bistro/electron · @mira · 1d · CI PASS</div>
+          </div>
+          <div class="section">
+            <div class="label" style="padding:5px 10px;background:#f5f5f5;border-bottom:1px solid #ddd;">4 AUTHORED BY YOU — 1</div>
+            <div style="padding:5px 10px;border-bottom:1px solid #eee;color:#888;">ship local expertise scoring (#780) · bistro/go · @sam · 1d · CI PASS</div>
+          </div>
+          <div class="section">
+            <div class="label" style="padding:5px 10px;background:#f5f5f5;border-bottom:1px solid #ddd;">5 MENTIONED — 0</div>
+            <div style="padding:4px 10px;border-bottom:1px solid #eee;color:#888;">— clear —</div>
+          </div>
+          <div class="section">
+            <div class="label" style="padding:5px 10px;background:#f5f5f5;border-bottom:1px solid #ddd;">6 FYI — 2</div>
+            <div style="padding:5px 10px;border-bottom:1px solid #eee;color:#888;">bump go-git to v6 (#775) · bistro/go · @dep-bot · 1d · CI PASS</div>
+            <div style="padding:5px 10px;color:#888;">refresh ci action versions (#771) · infra · @dep-bot · 2d · CI PASS</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Lane switcher</h3>
+      <p>A persistent lane navigator keeps the queue focused on one priority lane at a time.</p>
+      <div class="mockup" style="max-width:500px;font-family:ui-monospace,monospace;font-size:11px;border:1px solid #ddd;color:#333;">
+        <div class="mockup-header" style="padding:8px 10px;border-bottom:1px solid #ddd;">REVIEWER INBOX <span style="color:#888;">· g1–g6 switches lanes</span></div>
+        <div class="mockup-body split" style="display:flex;min-height:230px;">
+          <div style="width:150px;border-right:1px solid #ddd;padding:5px 0;">
+            <div style="padding:7px 9px;background:#eef4fb;font-weight:700;">1 URGENT <span style="float:right;">2</span></div>
+            <div style="padding:7px 9px;">2 ACTION <span style="float:right;">5</span></div>
+            <div style="padding:7px 9px;">3 TOUCHES <span style="float:right;">3</span></div>
+            <div style="padding:7px 9px;">4 YOU <span style="float:right;">1</span></div>
+            <div style="padding:7px 9px;color:#888;">5 MENTIONED <span style="float:right;">0</span></div>
+            <div style="padding:7px 9px;">6 FYI <span style="float:right;">12</span></div>
+          </div>
+          <div style="flex:1;">
+            <div class="label" style="padding:6px 10px;background:#f5f5f5;border-bottom:1px solid #ddd;">1 URGENT — 2 <span style="color:#888;font-weight:400;">· j/k rows</span></div>
+            <div style="padding:8px 10px;border-bottom:1px solid #eee;font-weight:700;">● fix auth refresh race (#842)<br><span style="font-weight:400;color:#666;">api/auth · @mira · 12m · <span style="color:#468847;">CI PASS</span></span></div>
+            <div style="padding:8px 10px;border-bottom:1px solid #eee;font-weight:700;">● add rate limiter to sync loop (#791)<br><span style="font-weight:400;color:#666;">bistro/go · @tomas · 2h · <span style="color:#b94a48;">CI FAIL</span></span></div>
+            <div style="padding:8px 10px;color:#888;">No more urgent reviews.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Sections + sticky lane bar</h3>
+      <p>A sectioned queue adds an always-on compact lane summary for quick orientation and jumps.</p>
+      <div class="mockup" style="max-width:500px;font-family:ui-monospace,monospace;font-size:11px;border:1px solid #ddd;color:#333;">
+        <div class="mockup-header" style="padding:8px 10px;border-bottom:1px solid #ddd;">REVIEWER INBOX <span style="color:#888;">· j/k rows · g1–g6 lanes</span></div>
+        <div style="padding:6px 8px;background:#fafafa;border-bottom:1px solid #ddd;white-space:nowrap;overflow:hidden;">
+          <span style="display:inline-block;padding:2px 4px;background:#eef4fb;font-weight:700;">1 URG 2</span> · <span>2 ACT 5</span> · <span>3 TCH 3</span> · <span>4 YOU 1</span> · <span style="color:#888;">5 MEN 0</span> · <span>6 FYI 12</span>
+        </div>
+        <div class="mockup-body">
+          <div class="section">
+            <div class="label" style="padding:5px 10px;background:#f5f5f5;border-bottom:1px solid #ddd;">1 URGENT — 2</div>
+            <div style="padding:6px 10px;border-bottom:1px solid #eee;font-weight:700;">● fix auth refresh race (#842) · api/auth · @mira · 12m · <span style="color:#468847;">CI PASS</span></div>
+            <div style="padding:6px 10px;border-bottom:1px solid #eee;font-weight:700;">● add rate limiter to sync loop (#791) · bistro/go · @tomas · 2h · <span style="color:#b94a48;">CI FAIL</span></div>
+          </div>
+          <div class="section">
+            <div class="label" style="padding:5px 10px;background:#f5f5f5;border-bottom:1px solid #ddd;">2 NEEDS YOUR ACTION — 5</div>
+            <div style="padding:6px 10px;border-bottom:1px solid #eee;font-weight:700;">● refactor keybinding registry (#788) · bistro/electron · @sam · 5h · <span style="color:#468847;">CI PASS</span></div>
+            <div style="padding:6px 10px;border-bottom:1px solid #eee;color:#888;">fix offline retry ordering (#786) · bistro/go · @rhea · 7h · CI PASS</div>
+            <div style="padding:6px 10px;color:#888;">bump go-git to v6 (#775) · bistro/go · @dep-bot · 1d · CI PASS</div>
+          </div>
+          <div class="section">
+            <div class="label" style="padding:5px 10px;background:#f5f5f5;border-bottom:1px solid #ddd;">3 TOUCHES YOUR CODE — 3</div>
+            <div style="padding:6px 10px;font-weight:700;">● isolate ws reconnect state (#783) · bistro/electron · @leo · 9h · <span style="color:#468847;">CI PASS</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">All three keep lane counts always visible (acceptance requirement) — A/C via headers or chip bar, B via sidebar.</p>

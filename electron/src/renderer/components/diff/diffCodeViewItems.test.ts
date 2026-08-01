@@ -3,6 +3,7 @@ import type { ExpertiseFileData } from '../../types';
 import {
   buildCodeViewItems,
   findUnrenderableDiffFile,
+  isBinaryPatch,
   parseCodeViewFiles,
 } from './diffCodeViewItems';
 import { splitUnifiedDiff } from './diffPathUtils';
@@ -140,6 +141,52 @@ describe('buildCodeViewItems', () => {
 
     expect(after[0]?.version).not.toBe(before[0]?.version);
     expect(after[1]?.version).toBe(before[1]?.version);
+  });
+});
+
+const BINARY_PATCH = `diff --git a/logo.png b/logo.png
+index 1111111..2222222 100644
+Binary files a/logo.png and b/logo.png differ
+diff --git a/src/first.ts b/src/first.ts
+--- a/src/first.ts
++++ b/src/first.ts
+@@ -1 +1 @@
+-old
++new
+`;
+
+describe('isBinaryPatch', () => {
+  it('detects the "Binary files ... differ" marker', () => {
+    expect(
+      isBinaryPatch(
+        'diff --git a/a.png b/a.png\nBinary files a/a.png and b/a.png differ\n',
+      ),
+    ).toBe(true);
+  });
+
+  it('detects a GIT binary patch payload', () => {
+    expect(
+      isBinaryPatch(
+        'diff --git a/a.png b/a.png\nGIT binary patch\nliteral 4\n',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not flag a text patch', () => {
+    expect(isBinaryPatch(TWO_FILE_PATCH)).toBe(false);
+  });
+});
+
+describe('parseCodeViewFiles', () => {
+  it('classifies a binary file as unrenderable and keeps text files renderable', () => {
+    const { parsedFiles, unrenderableFiles } = parseCodeViewFiles(
+      splitUnifiedDiff(BINARY_PATCH),
+    );
+
+    expect(unrenderableFiles).toHaveLength(1);
+    expect(unrenderableFiles[0]?.reason).toBe('binary');
+    expect(unrenderableFiles[0]?.file.path).toBe('logo.png');
+    expect(parsedFiles.map(({ file }) => file.path)).toEqual(['src/first.ts']);
   });
 });
 

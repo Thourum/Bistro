@@ -34,6 +34,7 @@ import type { UIState } from '../store/ui';
 import type { Comment, DiffFile } from '../types';
 import { repoIdForPR } from '../utils/expertise';
 import { createLogger } from '../utils/logger';
+import { prBrowserUrl } from '../utils/triage';
 
 const log = createLogger('DiffPage');
 
@@ -319,6 +320,7 @@ export function DiffPage() {
             onThreadReply={(threadId, body) => {
               dispatchReplyComment(body, { threadId });
             }}
+            prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
             expertiseFiles={expertise?.files ?? []}
             expertiseError={
               expertiseStatus?.status === 'error'

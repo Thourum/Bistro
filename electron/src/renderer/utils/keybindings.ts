@@ -9,6 +9,7 @@ import { router } from '../router';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { toggleRepoGroup } from '../store/ui';
+import { openUrlInBrowser } from './openUrl';
 
 // RouteBase: the "base" route derived from the current pathname.
 // Includes 'login' and 'onboarding' so their bindings can be properly gated
@@ -213,14 +214,6 @@ function movedPRIndex(s: UIState, delta: number): number {
   const next = Math.max(0, s.selectedPRIndex + delta);
   const len = s.visiblePRIds.length;
   return len > 0 ? Math.min(next, len - 1) : next;
-}
-
-function openUrlInBrowser(url: string): void {
-  if (window.electron?.openExternal !== undefined) {
-    void window.electron.openExternal(url);
-    return;
-  }
-  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 const globalBindings: KeyBinding[] = [
@@ -791,6 +784,15 @@ const detailBindings: KeyBinding[] = [
         diff: { style: style === 'split' ? 'unified' : 'split' },
       });
     },
+  },
+  {
+    actionId: 'diff.openFileBrowser',
+    keys: 'o',
+    description: 'Open file (in Browser)',
+    activation: { routes: ['diff'] },
+    // DiffView owns the active file, so it performs the open (emitInboxEvent
+    // pattern — bindings are pure config and cannot read component state).
+    action: (_ctx) => emitInboxEvent('bistro:diff:open-file-browser'),
   },
   {
     actionId: 'diff.toggleCollapse',

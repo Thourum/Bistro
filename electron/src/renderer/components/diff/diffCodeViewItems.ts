@@ -20,7 +20,17 @@ export interface ParsedCodeViewFile {
 
 export interface UnrenderableDiffFile {
   file: ParsedDiffFile;
-  reason: 'parse-failed';
+  reason: 'parse-failed' | 'binary';
+}
+
+const BINARY_MARKERS = [/^Binary files .* differ$/m, /^GIT binary patch$/m];
+
+/**
+ * True for patches git emits without text content. They parse to zero hunks,
+ * so CodeView would render them as an empty file.
+ */
+export function isBinaryPatch(patch: string): boolean {
+  return BINARY_MARKERS.some((marker) => marker.test(patch));
 }
 
 export interface CodeViewFileParseResult {
@@ -33,14 +43,19 @@ export function parseCodeViewFiles(
 ): CodeViewFileParseResult {
   const parsed = files.map((file) => ({
     file,
-    fileDiff: processFile(file.patch),
+    // Binary patches parse "successfully" into zero hunks, so they are
+    // classified before the parse result is consulted.
+    fileDiff: isBinaryPatch(file.patch) ? undefined : processFile(file.patch),
+    reason: isBinaryPatch(file.patch)
+      ? ('binary' as const)
+      : ('parse-failed' as const),
   }));
   return {
     parsedFiles: parsed.flatMap(({ file, fileDiff }) =>
       fileDiff === undefined ? [] : [{ file, fileDiff }],
     ),
-    unrenderableFiles: parsed.flatMap(({ file, fileDiff }) =>
-      fileDiff === undefined ? [{ file, reason: 'parse-failed' as const }] : [],
+    unrenderableFiles: parsed.flatMap(({ file, fileDiff, reason }) =>
+      fileDiff === undefined ? [{ file, reason }] : [],
     ),
   };
 }
