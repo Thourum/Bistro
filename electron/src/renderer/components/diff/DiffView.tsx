@@ -34,6 +34,7 @@ export interface DiffViewProps {
   findQuery?: string;
   selectedFileKey?: string;
   onFilesResolved?: (canonicalKeys: string[]) => void;
+  diffStyle?: AppSettings['diff']['style'];
   threads?: ReviewThread[];
   comments?: Comment[];
   onThreadReply?: (threadId: string, body: string) => void;
@@ -52,6 +53,7 @@ export function DiffView({
   findQuery = '',
   selectedFileKey,
   onFilesResolved,
+  diffStyle = 'unified',
   threads = [],
   comments = [],
   onThreadReply,
@@ -305,7 +307,8 @@ export function DiffView({
             items={items}
             options={{
               theme: `pierre-${theme}`,
-              diffStyle: 'unified',
+              diffStyle,
+              lineDiffType: 'word',
               stickyHeaders: true,
               layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
             }}

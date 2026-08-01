@@ -76,6 +76,7 @@ export function DiffPage() {
   );
 
   const theme = useStore(settingsStore, (s) => s.appearance.theme);
+  const diffStyle = useStore(settingsStore, (s) => s.diff.style);
 
   // Fetch ALL PRs so deep-linked PRs (any status) are always resolvable.
   const { data: allPRs = [], isLoading: prLoading } = useWebSocketPRList('all');
@@ -309,6 +310,7 @@ export function DiffPage() {
           <DiffView
             diff={diff}
             theme={theme}
+            diffStyle={diffStyle}
             findQuery={findQuery}
             selectedFileKey={fileKey}
             onFilesResolved={handleFilesResolved}

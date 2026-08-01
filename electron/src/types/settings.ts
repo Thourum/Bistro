@@ -54,6 +54,11 @@ export interface PRListSettings {
   view: 'flat' | 'grouped';
 }
 
+export interface DiffSettings {
+  /** Unified (single column) or split (side-by-side) diff rendering. */
+  style: 'unified' | 'split';
+}
+
 export interface PrivacySettings {
   /**
    * Explicit opt-in for v0.1 usage telemetry. Defaults false and must stay
@@ -87,6 +92,7 @@ export interface AppSettings {
   appearance: AppearanceSettings;
   sync: SyncSettings;
   prList: PRListSettings;
+  diff: DiffSettings;
   privacy: PrivacySettings;
   repositories: RepositoriesSettings;
   classification: ClassificationSettings;
@@ -112,6 +118,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   prList: {
     view: 'flat',
+  },
+  diff: {
+    style: 'unified',
   },
   privacy: {
     telemetryEnabled: false,

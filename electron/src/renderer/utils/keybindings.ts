@@ -6,6 +6,7 @@ import type {
 } from '../overlays/OverlayContext';
 import { authAction, PROVIDERS } from '../providers';
 import { router } from '../router';
+import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { toggleRepoGroup } from '../store/ui';
 
@@ -777,6 +778,18 @@ const detailBindings: KeyBinding[] = [
         ...s,
         confirmingAction: active ? null : 'since-last-review',
       }));
+    },
+  },
+  {
+    actionId: 'diff.toggleStyle',
+    keys: 'Shift+S',
+    description: 'Toggle side-by-side',
+    activation: { routes: ['diff'] },
+    action: () => {
+      const { style } = settingsStore.state.diff;
+      void updateSettings({
+        diff: { style: style === 'split' ? 'unified' : 'split' },
+      });
     },
   },
   {

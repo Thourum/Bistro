@@ -12,6 +12,7 @@ import {
   type AppSettings,
   type ClassificationSettings,
   DEFAULT_SETTINGS,
+  type DiffSettings,
   type KeybindingOverrides,
   type PRListSettings,
   type PrivacySettings,
@@ -61,6 +62,7 @@ function mergeSettings(base: AppSettings, patch: unknown): AppSettings {
     ),
     sync: mergeKnownFields<SyncSettings>(base.sync, merged.sync),
     prList: mergeKnownFields<PRListSettings>(base.prList, merged.prList),
+    diff: mergeKnownFields<DiffSettings>(base.diff, merged.diff),
     privacy: mergeKnownFields<PrivacySettings>(base.privacy, merged.privacy),
     repositories: normaliseRepositories(
       base.repositories,

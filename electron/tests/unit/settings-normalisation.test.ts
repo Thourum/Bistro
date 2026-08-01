@@ -44,4 +44,23 @@ describe('settings normalisation', () => {
       DEFAULT_SETTINGS.classification,
     );
   });
+
+  it('fills diff settings for a settings object written before the section existed', () => {
+    const withoutDiff = {
+      $schema: SETTINGS_SCHEMA_VERSION,
+      appearance: DEFAULT_SETTINGS.appearance,
+      sync: DEFAULT_SETTINGS.sync,
+      prList: DEFAULT_SETTINGS.prList,
+      privacy: DEFAULT_SETTINGS.privacy,
+      repositories: DEFAULT_SETTINGS.repositories,
+      classification: DEFAULT_SETTINGS.classification,
+      keybindings: DEFAULT_SETTINGS.keybindings,
+    } satisfies Omit<AppSettings, 'diff'>;
+
+    expect(normalise(withoutDiff).diff).toEqual({ style: 'unified' });
+  });
+
+  it('keeps a persisted split diff style', () => {
+    expect(normalise({ diff: { style: 'split' } }).diff.style).toBe('split');
+  });
 });
