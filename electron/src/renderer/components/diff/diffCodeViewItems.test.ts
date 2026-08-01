@@ -38,11 +38,27 @@ const FIRST_FILE_EXPERTISE: ExpertiseFileData = {
   your_rank: 2,
 };
 
+const GENERATED_FILE_PATCH = `diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -1 +1 @@
+-old
++new
+diff --git a/src/first.ts b/src/first.ts
+--- a/src/first.ts
++++ b/src/first.ts
+@@ -1 +1 @@
+-old
++new
+`;
+
 function buildItems(
   expertiseByPath: ReadonlyMap<string, ExpertiseFileData> = new Map(),
   expertiseError: string | null = null,
+  patch: string = TWO_FILE_PATCH,
+  collapseOverrides: readonly string[] = [],
 ) {
-  const { parsedFiles } = parseCodeViewFiles(splitUnifiedDiff(TWO_FILE_PATCH));
+  const { parsedFiles } = parseCodeViewFiles(splitUnifiedDiff(patch));
   return buildCodeViewItems(
     parsedFiles,
     [],
@@ -51,6 +67,7 @@ function buildItems(
     null,
     expertiseByPath,
     expertiseError,
+    collapseOverrides,
   );
 }
 
@@ -89,6 +106,40 @@ describe('buildCodeViewItems', () => {
     expect(after.map((item) => item.version)).not.toEqual(
       before.map((item) => item.version),
     );
+  });
+
+  it('collapses generated files and leaves sources expanded', () => {
+    const items = buildItems(new Map(), null, GENERATED_FILE_PATCH);
+
+    expect(items[0]?.collapsed).toBe(true);
+    expect(items[1]?.collapsed).toBe(false);
+  });
+
+  it('inverts the default collapse state for an overridden file', () => {
+    const files = splitUnifiedDiff(GENERATED_FILE_PATCH);
+    const lockKey = files[0]?.canonicalKey;
+    const sourceKey = files[1]?.canonicalKey;
+    if (lockKey === undefined || sourceKey === undefined) {
+      throw new Error('missing canonical keys');
+    }
+    const items = buildItems(new Map(), null, GENERATED_FILE_PATCH, [
+      lockKey,
+      sourceKey,
+    ]);
+
+    expect(items[0]?.collapsed).toBe(false);
+    expect(items[1]?.collapsed).toBe(true);
+  });
+
+  it('changes the item version when its collapse state flips', () => {
+    const files = splitUnifiedDiff(GENERATED_FILE_PATCH);
+    const lockKey = files[0]?.canonicalKey;
+    if (lockKey === undefined) throw new Error('missing canonical key');
+    const before = buildItems(new Map(), null, GENERATED_FILE_PATCH);
+    const after = buildItems(new Map(), null, GENERATED_FILE_PATCH, [lockKey]);
+
+    expect(after[0]?.version).not.toBe(before[0]?.version);
+    expect(after[1]?.version).toBe(before[1]?.version);
   });
 });
 

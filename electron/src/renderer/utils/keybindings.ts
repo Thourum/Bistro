@@ -793,6 +793,25 @@ const detailBindings: KeyBinding[] = [
     },
   },
   {
+    actionId: 'diff.toggleCollapse',
+    keys: 'z',
+    description: 'Collapse / expand file',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      // `diffFileKeys` is published by DiffView in the same order it sets
+      // `selectedFileIndex`, so the index addresses the focused file's key.
+      const key =
+        ctx.store.state.diffFileKeys[ctx.store.state.selectedFileIndex];
+      if (key === undefined || key === '') return;
+      ctx.store.setState((s) => ({
+        ...s,
+        diffCollapseOverrides: s.diffCollapseOverrides.includes(key)
+          ? s.diffCollapseOverrides.filter((entry) => entry !== key)
+          : [...s.diffCollapseOverrides, key],
+      }));
+    },
+  },
+  {
     actionId: 'diff.toggleWhitespace',
     keys: 'w',
     description: 'Hide whitespace-only hunks',

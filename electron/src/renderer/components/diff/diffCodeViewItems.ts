@@ -9,6 +9,7 @@ import type {
   ExpertiseFileData,
   ReviewThread,
 } from '../../types';
+import { isGeneratedFile } from '../../utils/generatedFiles';
 import { buildFileAnnotations } from './diffAnnotations';
 import type { ParsedDiffFile } from './diffPathUtils';
 
@@ -52,14 +53,17 @@ export function buildCodeViewItems(
   replyingToThreadId: string | null,
   expertiseByPath: ReadonlyMap<string, ExpertiseFileData>,
   expertiseError: string | null,
+  collapseOverrides: readonly string[] = [],
 ): CodeViewItem<ReviewThread>[] {
   return parsedCodeViewFiles.map(({ file, fileDiff }) => {
     const annotations = buildFileAnnotations(file, threads);
+    const collapsed = isFileCollapsed(file, collapseOverrides);
     return {
       id: file.id,
       type: 'diff',
       fileDiff,
       annotations,
+      collapsed,
       version: buildItemVersion(
         file,
         annotations,
@@ -68,9 +72,22 @@ export function buildCodeViewItems(
         replyingToThreadId,
         expertiseByPath.get(file.path),
         expertiseError,
+        collapsed,
       ),
     };
   });
+}
+
+/**
+ * Generated files start collapsed (their header still shows path + stats);
+ * `z` inverts the default for the focused file.
+ */
+export function isFileCollapsed(
+  file: ParsedDiffFile,
+  collapseOverrides: readonly string[],
+): boolean {
+  const isOverridden = collapseOverrides.includes(file.canonicalKey);
+  return isGeneratedFile(file.path) !== isOverridden;
 }
 
 export function findUnrenderableDiffFile(
@@ -104,11 +121,13 @@ function buildItemVersion(
   replyingToThreadId: string | null,
   expertise: ExpertiseFileData | undefined,
   expertiseError: string | null,
+  collapsed: boolean,
 ): number {
   const content = [
     file.patch,
     serializeExpertise(expertise),
     expertiseError ?? '',
+    String(collapsed),
     ...annotations.map((annotation) => {
       const thread = annotation.metadata;
       if (thread === undefined) {

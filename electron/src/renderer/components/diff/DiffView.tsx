@@ -65,6 +65,10 @@ export function DiffView({
     appStore,
     (state) => state.hideWhitespaceHunks,
   );
+  const collapseOverrides = useStore(
+    appStore,
+    (state) => state.diffCollapseOverrides,
+  );
   const allFiles = useMemo(() => splitUnifiedDiff(diff), [diff]);
   // Hiding whitespace-only hunks rewrites each file's patch text (the library
   // has no ignore-whitespace option) but keeps file identity, so navigation,
@@ -119,6 +123,7 @@ export function DiffView({
         replyingToThreadId,
         expertiseByPath,
         expertiseError,
+        collapseOverrides,
       ),
     [
       parsedCodeViewFiles,
@@ -128,6 +133,7 @@ export function DiffView({
       replyingToThreadId,
       expertiseByPath,
       expertiseError,
+      collapseOverrides,
     ],
   );
 
@@ -167,6 +173,10 @@ export function DiffView({
         inlineCommentThreadIds: [],
         activeInlineCommentThreadId: null,
         replyingInlineCommentThreadId: null,
+        // Collapse overrides and the whitespace toggle are keyed to the diff
+        // being reviewed; leaving them set would leak into the next PR.
+        diffCollapseOverrides: [],
+        hideWhitespaceHunks: false,
       }));
     };
   }, []);
