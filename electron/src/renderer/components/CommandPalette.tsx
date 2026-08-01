@@ -12,6 +12,8 @@ import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
+import { openUrlInBrowser } from '../utils/openUrl';
+import { prBrowserUrl } from '../utils/triage';
 
 type Icon = string;
 
@@ -61,6 +63,13 @@ const COMMANDS: readonly CommandItem[] = [
     name: ':view groups',
     description: 'Organize the PR inbox by repository',
     icon: 'account_tree',
+  },
+  {
+    id: 'open-browser',
+    name: ':open in browser',
+    description: 'Open the focused PR on GitHub',
+    icon: 'open_in_new',
+    shortcut: ['o'],
   },
   {
     id: 'diff-split',
@@ -253,6 +262,13 @@ export function CommandPalette(): React.ReactElement | null {
         closeOverlay();
         setQuery('');
         return;
+      case 'open-browser': {
+        const url = focusedPR === undefined ? null : prBrowserUrl(focusedPR);
+        if (url !== null) openUrlInBrowser(url);
+        closeOverlay();
+        setQuery('');
+        return;
+      }
       case 'diff-split':
         void updateSettings({ diff: { style: 'split' } });
         closeOverlay();
