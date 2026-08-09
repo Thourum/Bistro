@@ -52,9 +52,9 @@ function countChangeLines(lines: readonly string[]): number {
  * Remove whitespace-only hunks from a single-file patch.
  *
  * The file preamble (`diff --git`, `index`, `---`/`+++`) is always kept so the
- * file still renders with its header. When *every* hunk is whitespace-only the
- * patch is returned unchanged: an empty diff body would render as a blank file
- * with no way to tell reformatting from "no changes".
+ * file still renders with its header, even when every hunk is whitespace-only
+ * and the result has zero hunks — the header-only patch still parses, and the
+ * hidden-line count is what tells the file apart from "no changes".
  */
 export function hideWhitespaceOnlyHunks(patch: string): HiddenWhitespaceResult {
   const lines = patch.split('\n');
@@ -72,7 +72,7 @@ export function hideWhitespaceOnlyHunks(patch: string): HiddenWhitespaceResult {
   }
 
   const kept = hunks.filter((hunk) => !isWhitespaceOnlyHunk(hunk));
-  if (kept.length === hunks.length || kept.length === 0) {
+  if (kept.length === hunks.length) {
     return { patch, hiddenLineCount: 0 };
   }
 

@@ -113,7 +113,7 @@ describe('hideWhitespaceOnlyHunks', () => {
     expect(result.patch).toBe(realOnly);
   });
 
-  it('returns the original patch when every hunk is whitespace-only', () => {
+  it('drops every hunk and keeps the header when all hunks are whitespace-only', () => {
     const allWhitespace = [
       'diff --git a/foo.ts b/foo.ts',
       '--- a/foo.ts',
@@ -124,10 +124,11 @@ describe('hideWhitespaceOnlyHunks', () => {
       '',
     ].join('\n');
     const result = hideWhitespaceOnlyHunks(allWhitespace);
-    // Nothing renderable would remain, so the file keeps its content and the
-    // caller has no marker to show.
-    expect(result.hiddenLineCount).toBe(0);
-    expect(result.patch).toBe(allWhitespace);
+    // The header-only patch still parses; the hidden count is the only signal
+    // that the file changed at all.
+    expect(result.hiddenLineCount).toBe(2);
+    expect(result.patch).toContain('diff --git a/foo.ts b/foo.ts');
+    expect(result.patch).not.toContain('@@');
   });
 
   it('leaves a patch with no hunks untouched', () => {
