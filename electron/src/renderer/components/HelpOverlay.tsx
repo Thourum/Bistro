@@ -72,6 +72,10 @@ const ACTION_IDS = new Set([
 // Diff-review keys get their own section: on the diff route they are the
 // primary vocabulary, not incidental globals.
 const DIFF_IDS = new Set([
+  'diff.nextFile',
+  'diff.prevFile',
+  'diff.nextComment',
+  'diff.prevComment',
   'diff.sinceLastReview',
   'diff.toggleStyle',
   'diff.toggleWhitespace',

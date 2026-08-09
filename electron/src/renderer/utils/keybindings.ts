@@ -277,7 +277,7 @@ const globalBindings: KeyBinding[] = [
     actionId: 'global.command',
     keys: 'Shift+;', // ':' on US layouts
     description: 'Commands',
-    activation: { routes: ['list', 'detail'] },
+    activation: { routes: ['list', 'detail', 'diff'] },
     action: (ctx) => {
       ctx.overlays.openCommand();
     },
@@ -564,7 +564,7 @@ const detailBindings: KeyBinding[] = [
     actionId: 'detail.nextFile',
     keys: 'n',
     description: 'Next file',
-    activation: { routes: ['detail', 'diff'] },
+    activation: { routes: ['detail'] },
     action: (ctx) => {
       const { diffFileKeys, selectedFileIndex } = ctx.store.state;
       const newIdx = Math.min(
@@ -575,48 +575,19 @@ const detailBindings: KeyBinding[] = [
         ...s,
         selectedFileIndex: newIdx,
       }));
-      // In diff route, also update the ?file route param.
-      if (ctx.routeBase === 'diff' && diffFileKeys.length > 0) {
-        const newKey = diffFileKeys[newIdx];
-        if (newKey !== undefined) {
-          if (ctx.prId !== undefined) {
-            void router.navigate({
-              to: '/prs/$prId/diff',
-              params: { prId: ctx.prId },
-              search: { file: newKey, side: 'right' },
-              replace: true,
-            });
-          }
-        }
-      }
     },
   },
   {
     actionId: 'detail.prevFile',
     keys: 'p',
     description: 'Previous file',
-    activation: { routes: ['detail', 'diff'] },
+    activation: { routes: ['detail'] },
     action: (ctx) => {
-      const { diffFileKeys, selectedFileIndex } = ctx.store.state;
-      const newIdx = Math.max(0, selectedFileIndex - 1);
+      const { selectedFileIndex } = ctx.store.state;
       ctx.store.setState((s) => ({
         ...s,
-        selectedFileIndex: newIdx,
+        selectedFileIndex: Math.max(0, selectedFileIndex - 1),
       }));
-      // In diff route, also update the ?file route param.
-      if (ctx.routeBase === 'diff' && diffFileKeys.length > 0) {
-        const newKey = diffFileKeys[newIdx];
-        if (newKey !== undefined) {
-          if (ctx.prId !== undefined) {
-            void router.navigate({
-              to: '/prs/$prId/diff',
-              params: { prId: ctx.prId },
-              search: { file: newKey, side: 'right' },
-              replace: true,
-            });
-          }
-        }
-      }
     },
   },
   {
@@ -949,8 +920,7 @@ const detailScrollBindings: KeyBinding[] = [
     keys: 'j',
     description: 'Scroll down',
     activation: { routes: ['detail', 'diff'] },
-    action: (ctx) => {
-      if (moveInlineDiffComment(ctx, 1)) return;
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 40 });
     },
   },
@@ -959,9 +929,69 @@ const detailScrollBindings: KeyBinding[] = [
     keys: 'k',
     description: 'Scroll up',
     activation: { routes: ['detail', 'diff'] },
-    action: (ctx) => {
-      if (moveInlineDiffComment(ctx, -1)) return;
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -40 });
+    },
+  },
+  {
+    actionId: 'diff.nextFile',
+    keys: 'Shift+J',
+    description: 'Next file',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      const { diffFileKeys, selectedFileIndex } = ctx.store.state;
+      const newIdx = Math.min(
+        selectedFileIndex + 1,
+        Math.max(0, diffFileKeys.length - 1),
+      );
+      ctx.store.setState((s) => ({ ...s, selectedFileIndex: newIdx }));
+      const newKey = diffFileKeys[newIdx];
+      if (newKey !== undefined && ctx.prId !== undefined) {
+        void router.navigate({
+          to: '/prs/$prId/diff',
+          params: { prId: ctx.prId },
+          search: { file: newKey, side: 'right' },
+          replace: true,
+        });
+      }
+    },
+  },
+  {
+    actionId: 'diff.prevFile',
+    keys: 'Shift+K',
+    description: 'Previous file',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      const { diffFileKeys, selectedFileIndex } = ctx.store.state;
+      const newIdx = Math.max(0, selectedFileIndex - 1);
+      ctx.store.setState((s) => ({ ...s, selectedFileIndex: newIdx }));
+      const newKey = diffFileKeys[newIdx];
+      if (newKey !== undefined && ctx.prId !== undefined) {
+        void router.navigate({
+          to: '/prs/$prId/diff',
+          params: { prId: ctx.prId },
+          search: { file: newKey, side: 'right' },
+          replace: true,
+        });
+      }
+    },
+  },
+  {
+    actionId: 'diff.nextComment',
+    keys: 'n',
+    description: 'Next inline comment',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      moveInlineDiffComment(ctx, 1);
+    },
+  },
+  {
+    actionId: 'diff.prevComment',
+    keys: 'p',
+    description: 'Previous inline comment',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      moveInlineDiffComment(ctx, -1);
     },
   },
   {

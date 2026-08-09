@@ -543,7 +543,7 @@ describe('diff route navigation', () => {
 // 8. In-diff next/prev updates ?file
 // ---------------------------------------------------------------------------
 
-describe('in-diff n/p keybindings update ?file', () => {
+describe('in-diff Shift+J/K keybindings update ?file', () => {
   beforeEach(() => {
     // Pre-populate diffFileKeys as if DiffPage already loaded the diff.
     appStore.setState((s) => ({
@@ -555,8 +555,8 @@ describe('in-diff n/p keybindings update ?file', () => {
     mockRouterState.location.pathname = '/prs/pr-aaa/diff';
   });
 
-  it('n (nextFile) in diff mode calls navigate with next ?file key', () => {
-    byId('detail.nextFile').action(makeTestCtx(appStore, 'diff', 'pr-aaa'));
+  it('Shift+J (diff.nextFile) in diff mode calls navigate with next ?file key', () => {
+    byId('diff.nextFile').action(makeTestCtx(appStore, 'diff', 'pr-aaa'));
 
     expect(mockRouterNavigate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -569,9 +569,9 @@ describe('in-diff n/p keybindings update ?file', () => {
     expect(appStore.state.selectedFileIndex).toBe(1);
   });
 
-  it('p (prevFile) at index 0 stays at index 0 and does not navigate past first file', () => {
+  it('Shift+K (diff.prevFile) at index 0 stays at index 0 and does not navigate past first file', () => {
     appStore.setState((s) => ({ ...s, selectedFileIndex: 0 }));
-    byId('detail.prevFile').action(makeTestCtx(appStore, 'diff', 'pr-aaa'));
+    byId('diff.prevFile').action(makeTestCtx(appStore, 'diff', 'pr-aaa'));
 
     // Navigate called with file='src/alpha.ts' (clamped to 0).
     expect(mockRouterNavigate).toHaveBeenCalledWith(
@@ -582,9 +582,9 @@ describe('in-diff n/p keybindings update ?file', () => {
     expect(appStore.state.selectedFileIndex).toBe(0);
   });
 
-  it('p (prevFile) at index 1 navigates back to first file', () => {
+  it('Shift+K (diff.prevFile) at index 1 navigates back to first file', () => {
     appStore.setState((s) => ({ ...s, selectedFileIndex: 1 }));
-    byId('detail.prevFile').action(makeTestCtx(appStore, 'diff', 'pr-aaa'));
+    byId('diff.prevFile').action(makeTestCtx(appStore, 'diff', 'pr-aaa'));
 
     expect(mockRouterNavigate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -594,7 +594,7 @@ describe('in-diff n/p keybindings update ?file', () => {
     expect(appStore.state.selectedFileIndex).toBe(0);
   });
 
-  it('n/p in detail route does NOT call router.navigate', () => {
+  it('detail.nextFile in detail route does NOT call router.navigate', () => {
     byId('detail.nextFile').action(makeTestCtx(appStore, 'detail'));
 
     expect(mockRouterNavigate).not.toHaveBeenCalled();

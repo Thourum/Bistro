@@ -189,12 +189,15 @@ function hotkeyCtx(): KeyActionContext {
   };
 }
 
+// Named for the annotation-navigation intent these tests exercise. That
+// intent moved from the overloaded j/k scroll keys to dedicated n/p
+// (diff.nextComment / diff.prevComment) — see docs/keyboard-shortcuts.md.
 function pressJ(): void {
-  byId('detail.scrollDown').action(hotkeyCtx());
+  byId('diff.nextComment').action(hotkeyCtx());
 }
 
 function pressK(): void {
-  byId('detail.scrollUp').action(hotkeyCtx());
+  byId('diff.prevComment').action(hotkeyCtx());
 }
 
 function pressEnter(): void {

@@ -81,8 +81,8 @@ export interface UIState {
   collapsedRepoKeys: string[];
   /**
    * Canonical file keys for the diff currently loaded in DiffPage.
-   * Set by DiffPage via onFilesResolved when PierreDiffView parses the diff.
-   * Used by n/p keybindings (detail.nextFile / detail.prevFile) in diff mode
+   * Set by DiffPage via onFilesResolved when the diff view parses the diff.
+   * Used by the diff.nextFile / diff.prevFile (Shift+J / Shift+K) keybindings
    * to navigate the ?file search param without needing a hook context.
    */
   diffFileKeys: string[];

@@ -179,10 +179,8 @@ describe('DEFAULT_KEYBINDINGS', () => {
     expect(byId('detail.scrollLeftArrow').keys).toBe('ArrowLeft');
   });
 
-  it('detail navigation and scrolling also work in the diff view', () => {
+  it('detail scrolling also works in the diff view', () => {
     for (const id of [
-      'detail.nextFile',
-      'detail.prevFile',
       'detail.scrollDown',
       'detail.scrollUp',
       'detail.pageDown',
@@ -191,6 +189,19 @@ describe('DEFAULT_KEYBINDINGS', () => {
     ]) {
       expect(byId(id).activation.routes, id).toContain('diff');
     }
+  });
+
+  it('diff view has its own file nav (Shift+J/K) and comment nav (n/p), distinct from detail.nextFile/prevFile', () => {
+    expect(byId('detail.nextFile').activation.routes).toEqual(['detail']);
+    expect(byId('detail.prevFile').activation.routes).toEqual(['detail']);
+    expect(byId('diff.nextFile').keys).toBe('Shift+J');
+    expect(byId('diff.prevFile').keys).toBe('Shift+K');
+    expect(byId('diff.nextFile').activation.routes).toEqual(['diff']);
+    expect(byId('diff.prevFile').activation.routes).toEqual(['diff']);
+    expect(byId('diff.nextComment').keys).toBe('n');
+    expect(byId('diff.prevComment').keys).toBe('p');
+    expect(byId('diff.nextComment').activation.routes).toEqual(['diff']);
+    expect(byId('diff.prevComment').activation.routes).toEqual(['diff']);
   });
 
   it('covers the diff view: Space enters, Escape exits', () => {
@@ -536,8 +547,8 @@ describe('binding actions', () => {
     });
   });
 
-  describe('inline diff comment hotkeys', () => {
-    it('j selects the first inline comment instead of scrolling when annotations exist', () => {
+  describe('diff route: j/k always scroll, n/p navigate inline comments', () => {
+    it('j always scrolls, even when inline comments exist', () => {
       const viewport = document.createElement('div');
       viewport.setAttribute('data-diff-viewport', '');
       const scrollBy = vi.fn();
@@ -547,42 +558,51 @@ describe('binding actions', () => {
 
       byId('detail.scrollDown').action(makeCtx(store, 'diff'));
 
-      expect(store.state.activeInlineCommentThreadId).toBe('T1');
-      expect(scrollBy).not.toHaveBeenCalled();
+      expect(store.state.activeInlineCommentThreadId).toBeNull();
+      expect(scrollBy).toHaveBeenCalledWith({ top: 40 });
       viewport.remove();
     });
 
-    it('k selects the previous inline comment instead of scrolling when annotations exist', () => {
+    it('k always scrolls, even when inline comments exist', () => {
       const viewport = document.createElement('div');
       viewport.setAttribute('data-diff-viewport', '');
       const scrollBy = vi.fn();
       viewport.scrollBy = scrollBy;
       document.body.appendChild(viewport);
+      const store = makeStore({ inlineCommentThreadIds: ['T1', 'T2'] });
+
+      byId('detail.scrollUp').action(makeCtx(store, 'diff'));
+
+      expect(store.state.activeInlineCommentThreadId).toBeNull();
+      expect(scrollBy).toHaveBeenCalledWith({ top: -40 });
+      viewport.remove();
+    });
+
+    it('n (diff.nextComment) selects the first inline comment', () => {
+      const store = makeStore({ inlineCommentThreadIds: ['T1', 'T2'] });
+
+      byId('diff.nextComment').action(makeCtx(store, 'diff'));
+
+      expect(store.state.activeInlineCommentThreadId).toBe('T1');
+    });
+
+    it('p (diff.prevComment) selects the previous inline comment', () => {
       const store = makeStore({
         inlineCommentThreadIds: ['T1', 'T2'],
         activeInlineCommentThreadId: 'T2',
       });
 
-      byId('detail.scrollUp').action(makeCtx(store, 'diff'));
+      byId('diff.prevComment').action(makeCtx(store, 'diff'));
 
       expect(store.state.activeInlineCommentThreadId).toBe('T1');
-      expect(scrollBy).not.toHaveBeenCalled();
-      viewport.remove();
     });
 
-    it('j keeps existing scroll behavior when no inline annotations exist', () => {
-      const viewport = document.createElement('div');
-      viewport.setAttribute('data-diff-viewport', '');
-      const scrollBy = vi.fn();
-      viewport.scrollBy = scrollBy;
-      document.body.appendChild(viewport);
+    it('n/p are no-ops when there are no inline comments', () => {
       const store = makeStore({ inlineCommentThreadIds: [] });
 
-      byId('detail.scrollDown').action(makeCtx(store, 'diff'));
+      byId('diff.nextComment').action(makeCtx(store, 'diff'));
 
       expect(store.state.activeInlineCommentThreadId).toBeNull();
-      expect(scrollBy).toHaveBeenCalledWith({ top: 40 });
-      viewport.remove();
     });
 
     it('Enter starts inline reply for the active diff comment', () => {
