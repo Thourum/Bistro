@@ -651,6 +651,11 @@ func (a *App) Run(ctx context.Context) error {
 		handler.NewGetReviewThreadsHandler(a.db, a.log))
 	a.wsServer.RegisterHandler("SUBMIT_ACTION",
 		handler.NewSubmitActionHandler(a.currentApplier, a.log))
+	// Phase 5 :open in editor — checkout inspection and checkout.
+	a.wsServer.RegisterHandler("CHECK_PR_CHECKOUT",
+		handler.NewCheckPRCheckoutHandler(a.db, repoLocationStore, handler.GitCheckoutInspector{}, a.log))
+	a.wsServer.RegisterHandler("CHECKOUT_PR_HEAD",
+		handler.NewCheckoutPRHeadHandler(a.db, repoLocationStore, a.gitClient, a.log))
 
 	expertiseRepoStore := handler.NewExpertiseSQLRepoStore(a.db.DB)
 	expertiseDataStore := handler.NewExpertiseSQLDataStore(a.db.DB, expertiseStore)
