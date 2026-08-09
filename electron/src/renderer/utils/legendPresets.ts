@@ -62,6 +62,7 @@ const FOOTER_LEGEND_PRESETS_BY_OVERLAY: Record<OverlayKind, string[]> = {
   command: ['global.escape'],
   repoPicker: ['global.escape'],
   addRepo: ['global.escape'],
+  tour: ['global.escape'],
 };
 
 export interface FooterLegendEntry {

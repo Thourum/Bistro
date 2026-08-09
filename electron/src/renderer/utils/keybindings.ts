@@ -136,6 +136,7 @@ const ALL_OVERLAYS: OverlayKind[] = [
   'repoPicker',
   'addRepo',
   'threads',
+  'tour',
 ];
 
 const ALL_ROUTES: RouteBase[] = [

@@ -39,6 +39,9 @@ vi.mock('../../src/renderer/components/CommandPalette', () => ({
 vi.mock('../../src/renderer/components/HelpOverlay', () => ({
   HelpOverlay: () => null,
 }));
+vi.mock('../../src/renderer/components/TourOverlay', () => ({
+  TourOverlay: () => null,
+}));
 vi.mock('../../src/renderer/components/RepoPicker', () => ({
   RepoPicker: () => null,
 }));

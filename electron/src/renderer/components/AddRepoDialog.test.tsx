@@ -254,6 +254,7 @@ describe('AddRepoDialog', () => {
         openRepoPicker: vi.fn(),
         openAddRepo: vi.fn(),
         openThreads: vi.fn(),
+        openTour: vi.fn(),
         closeOverlay,
         closeSearch: vi.fn(),
       },
