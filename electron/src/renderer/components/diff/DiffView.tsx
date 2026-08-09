@@ -7,7 +7,10 @@ import type { Comment, ExpertiseFileData, ReviewThread } from '../../types';
 import { findFileByKey } from '../../utils/diffFileKey';
 import { openUrlInBrowser } from '../../utils/openUrl';
 import { hideWhitespaceOnlyHunks } from '../../utils/whitespaceDiff';
-import { buildOrderedAnnotations } from './diffAnnotations';
+import {
+  buildOrderedAnnotations,
+  lineExistsInAdditions,
+} from './diffAnnotations';
 import {
   buildCodeViewItems,
   findUnrenderableDiffFile,
@@ -197,14 +200,27 @@ export function DiffView({
     );
     if (entry === undefined) return;
     scrollToCodeViewFile(codeViewRef.current, entry.fileId, 'nearest');
-    codeViewRef.current?.scrollTo({
-      type: 'line',
-      id: entry.fileId,
-      lineNumber: entry.line,
-      side: 'additions',
-      align: 'nearest',
-      behavior: 'instant',
-    });
+    // The thread's line isn't guaranteed to land inside a hunk of our
+    // locally re-parsed diff (stale anchor, deletions-side comment, etc).
+    // CodeView.scrollTo has no fallback for that — it just warns and no-ops —
+    // so skip the CodeView-native line scroll and rely on the DOM
+    // scrollIntoView below, which always works once the file is in view.
+    const parsedFile = parsedCodeViewFiles.find(
+      ({ file }) => file.id === entry.fileId,
+    );
+    if (
+      parsedFile !== undefined &&
+      lineExistsInAdditions(parsedFile.fileDiff, entry.line)
+    ) {
+      codeViewRef.current?.scrollTo({
+        type: 'line',
+        id: entry.fileId,
+        lineNumber: entry.line,
+        side: 'additions',
+        align: 'nearest',
+        behavior: 'instant',
+      });
+    }
     const animationFrame = requestAnimationFrame(() => {
       document
         .querySelector<HTMLElement>(
@@ -213,7 +229,7 @@ export function DiffView({
         ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
     return () => cancelAnimationFrame(animationFrame);
-  }, [activeAnnotationKey, orderedAnnotations]);
+  }, [activeAnnotationKey, orderedAnnotations, parsedCodeViewFiles]);
 
   useEffect(() => {
     if (files.length === 0) {
