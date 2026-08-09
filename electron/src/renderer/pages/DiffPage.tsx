@@ -227,6 +227,11 @@ export function DiffPage() {
     void navigate({ to: '/prs/$prId', params: { prId } });
   };
 
+  const viewedPaths = useMemo(
+    () => new Set(files.filter((f) => f.viewed).map((f) => f.path)),
+    [files],
+  );
+
   if (!prLoading && pr === undefined) {
     return (
       <div className="flex-1 flex items-center justify-center text-error">
@@ -327,6 +332,7 @@ export function DiffPage() {
                 ? (expertiseStatus.message ?? expertiseStatus.code ?? 'unknown')
                 : null
             }
+            viewedPaths={viewedPaths}
           />
         )}
       </div>

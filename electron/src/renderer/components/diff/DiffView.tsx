@@ -30,6 +30,10 @@ import { ThreadAnnotationCard } from './diffThreadAnnotation';
 
 const OPEN_FILE_BROWSER_EVENT = 'bistro:diff:open-file-browser';
 
+// Stable empty-set default — avoids a new Set() on every render when the
+// caller doesn't pass viewedPaths.
+const EMPTY_VIEWED_PATHS: ReadonlySet<string> = new Set();
+
 function sameIds(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;
   return left.every((value, index) => value === right[index]);
@@ -52,6 +56,11 @@ export interface DiffViewProps {
    * binary-file placeholder open the focused file's blob view there.
    */
   prBrowserUrl?: string | null;
+  /**
+   * Paths the current user has marked viewed (`v`), keyed by the same path
+   * DiffFile.path uses server-side. Drives the sidebar's viewed indicator.
+   */
+  viewedPaths?: ReadonlySet<string>;
 }
 
 /**
@@ -72,6 +81,7 @@ export function DiffView({
   expertiseFiles = [],
   expertiseError = null,
   prBrowserUrl = null,
+  viewedPaths = EMPTY_VIEWED_PATHS,
 }: DiffViewProps) {
   const hideWhitespaceHunks = useStore(
     appStore,
@@ -352,6 +362,7 @@ export function DiffView({
           updateSelectedFileIndex(files, id);
         }}
         totalCount={files.length}
+        viewedPaths={viewedPaths}
       />
       <section className="flex-1 min-w-0 min-h-0 bg-surface-container-lowest overflow-hidden relative">
         {activeUnrenderableFile !== undefined ? (
