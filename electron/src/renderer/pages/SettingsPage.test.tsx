@@ -77,6 +77,7 @@ function installElectronMock(): void {
     syncAction: vi.fn(),
     on: vi.fn(() => vi.fn()),
     openExternal: vi.fn(),
+    openInEditor: vi.fn(),
     quitApp: vi.fn(),
     pickFolder: vi.fn(),
     settings: {

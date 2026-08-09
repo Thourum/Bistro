@@ -7,6 +7,8 @@ import type {
   GoCommandRequest,
   GoCommandResponse,
   IPCError,
+  OpenInEditorRequest,
+  OpenInEditorResponse,
   SyncActionRequest,
   SyncActionResponse,
 } from '../types/ipc';
@@ -121,6 +123,17 @@ contextBridge.exposeInMainWorld('electron', {
     return ipcRenderer.invoke('open-external', url);
   },
 
+  /**
+   * Open a file in $EDITOR at an optional line. Main validates relativePath
+   * stays inside repoRoot before spawning.
+   * @returns { ok: true } | { err: string }
+   */
+  async openInEditor(
+    request: OpenInEditorRequest,
+  ): Promise<OpenInEditorResponse | IPCError> {
+    return ipcRenderer.invoke('open-in-editor', request);
+  },
+
   quitApp(): Promise<{ ok: true }> {
     return ipcRenderer.invoke('app:quit');
   },
@@ -179,6 +192,9 @@ declare global {
         ) => void,
       ) => () => void;
       openExternal: (url: string) => Promise<{ ok: true } | { err: string }>;
+      openInEditor: (
+        request: OpenInEditorRequest,
+      ) => Promise<OpenInEditorResponse | IPCError>;
       quitApp: () => Promise<{ ok: true }>;
       pickFolder: () => Promise<string | null>;
       settings: {

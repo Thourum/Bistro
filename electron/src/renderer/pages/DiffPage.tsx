@@ -16,12 +16,16 @@ import {
   useState,
 } from 'react';
 import { DiffView } from '../components/diff/DiffView';
+import { hasCurrentInlineAnchor } from '../components/diff/diffAnnotations';
+import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
+import { OpenInEditorDialog } from '../components/OpenInEditorDialog';
 import { RangeDiffView } from '../components/RangeDiffView';
 import { StatusSquare } from '../components/StatusSquare';
 import { addToast } from '../components/ToastContainer';
 import { useActionDispatch } from '../hooks/useActionDispatch';
 import { useExpertise } from '../hooks/useExpertise';
 import { useMarkFileViewed } from '../hooks/useMarkFileViewed';
+import { useOpenInEditor } from '../hooks/useOpenInEditor';
 import { usePRHydration } from '../hooks/usePRHydration';
 import { type RangeDiffRequest, useRangeDiff } from '../hooks/useRangeDiff';
 import { useReviewThreads } from '../hooks/useReviewThreads';
@@ -33,6 +37,7 @@ import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import type { Comment, DiffFile } from '../types';
 import { repoIdForPR } from '../utils/expertise';
+import { firstHunkAdditionLine } from '../utils/firstHunkLine';
 import { createLogger } from '../utils/logger';
 import { prBrowserUrl } from '../utils/triage';
 
@@ -88,6 +93,13 @@ export function DiffPage() {
   const { request } = useWebSocket();
   const { dispatchReplyComment } = useActionDispatch(pr?.id);
   const { markViewed } = useMarkFileViewed();
+  const {
+    state: openInEditorState,
+    requestOpen: requestOpenInEditor,
+    checkoutAndOpen,
+    openCurrentVersion,
+    cancel: cancelOpenInEditor,
+  } = useOpenInEditor();
   const { expertise } = useExpertise(pr?.id);
   const expertiseStatus = useStore(appStore, (s: UIState) =>
     pr !== undefined ? s.expertiseRepoStatuses?.[repoIdForPR(pr)] : undefined,
@@ -211,6 +223,46 @@ export function DiffPage() {
     doMarkViewed();
     appStore.setState((s) => ({ ...s, confirmingAction: null }));
   }, [confirmingAction, doMarkViewed]);
+
+  // ── Open in editor (`:open in editor` palette command) ─────────────
+  // Current file/line model (spec §5.3): file = n/p focus target; line =
+  // selected inline comment's line, else the first new-side line of the
+  // file's first hunk, else 1.
+  useEffect(() => {
+    if (confirmingAction !== 'open-in-editor') return;
+    appStore.setState((s) => ({ ...s, confirmingAction: null }));
+    if (pr === undefined || currentFile === undefined) {
+      addToast({
+        type: 'warning',
+        message: 'Could not open in editor: no file focused',
+        dismissible: true,
+      });
+      return;
+    }
+    const activeThread = threads.find(
+      (t) =>
+        t.id === appStore.state.activeInlineCommentThreadId &&
+        t.file_path === currentFile.path &&
+        hasCurrentInlineAnchor(t),
+    );
+    const filePatch = splitUnifiedDiff(diff).find(
+      (f) => f.path === currentFile.path,
+    )?.patch;
+    const line =
+      activeThread?.line ??
+      (filePatch !== undefined ? firstHunkAdditionLine(filePatch) : 1);
+    void requestOpenInEditor(pr.id, currentFile.path, line);
+  }, [confirmingAction, pr, currentFile, threads, diff, requestOpenInEditor]);
+
+  // Surface a failure toast for open-in-editor errors that have no dialog.
+  useEffect(() => {
+    if (openInEditorState.error === null) return;
+    addToast({
+      type: 'warning',
+      message: `Could not open in editor: ${openInEditorState.error}`,
+      dismissible: true,
+    });
+  }, [openInEditorState.error]);
 
   // Clear range-diff intent when leaving the diff view.
   useEffect(() => {
@@ -371,6 +423,13 @@ export function DiffPage() {
           <span>DIFF</span>
         </div>
       </div>
+
+      <OpenInEditorDialog
+        dialog={openInEditorState.dialog}
+        onCheckoutAndOpen={() => void checkoutAndOpen()}
+        onOpenCurrentVersion={() => void openCurrentVersion()}
+        onCancel={cancelOpenInEditor}
+      />
     </main>
   );
 }

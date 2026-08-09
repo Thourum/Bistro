@@ -86,6 +86,13 @@ const COMMANDS: readonly CommandItem[] = [
     shortcut: ['⇧', 'S'],
   },
   {
+    id: 'open-editor',
+    name: 'Open file in editor',
+    description:
+      "Opens in $EDITOR at the selected comment's line when one is selected",
+    icon: 'edit_document',
+  },
+  {
     id: 'repo-picker',
     name: 'Open repository picker',
     description: 'Discover and watch repositories',
@@ -276,6 +283,16 @@ export function CommandPalette(): React.ReactElement | null {
         return;
       case 'diff-unified':
         void updateSettings({ diff: { style: 'unified' } });
+        closeOverlay();
+        setQuery('');
+        return;
+      case 'open-editor':
+        // DiffPage owns the current file/line and the checkout dialog; the
+        // palette only signals intent, same as diff.markViewed's 'v'.
+        appStore.setState((s) => ({
+          ...s,
+          confirmingAction: 'open-in-editor',
+        }));
         closeOverlay();
         setQuery('');
         return;

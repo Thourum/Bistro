@@ -1,11 +1,14 @@
+import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { dialog, ipcMain } from 'electron';
 import type { Logger } from 'electron-log';
+import { buildEditorArgs } from '../shared/editorArgs';
 import type {
   FSReadPatchRequest,
   GoCommandRequest,
+  OpenInEditorRequest,
   SyncActionRequest,
 } from '../types/ipc';
 import type { AppSettings } from '../types/settings';
@@ -114,6 +117,49 @@ export function setupIPC(
         const message =
           error instanceof Error ? error.message : 'Unknown error';
         logger.error(`fs:read-patch error: ${message}`);
+        return { err: message };
+      }
+    },
+  );
+
+  // ---- open-in-editor handler ----
+  // Resolves $EDITOR, verifies the target file stays inside repoRoot (reject
+  // `..` traversal and sibling-prefix bypasses like `/repo-evil` vs `/repo`),
+  // then spawns the editor with an argument array — never a shell string.
+  ipcMain.handle(
+    'open-in-editor',
+    async (_event, request: OpenInEditorRequest) => {
+      const editorCommand = process.env.EDITOR ?? '';
+      if (editorCommand === '') {
+        return { err: 'Set $EDITOR' };
+      }
+
+      const root = resolve(request.repoRoot);
+      const resolved = resolve(root, request.relativePath);
+      if (resolved !== root && !resolved.startsWith(root + sep)) {
+        logger.warn(
+          `open-in-editor: rejected path outside repo root: ${resolved}`,
+        );
+        return { err: 'Access denied: path outside repository' };
+      }
+
+      const argsResult = buildEditorArgs(editorCommand, resolved, request.line);
+      if (argsResult.isErr()) {
+        return { err: argsResult.error };
+      }
+
+      try {
+        spawn(editorCommand, argsResult.value, { detached: true }).on(
+          'error',
+          (spawnError) => {
+            logger.error(`open-in-editor spawn error: ${spawnError.message}`);
+          },
+        );
+        return { ok: true as const };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        logger.error(`open-in-editor error: ${message}`);
         return { err: message };
       }
     },
