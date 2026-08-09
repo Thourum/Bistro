@@ -61,6 +61,14 @@ go run cmd/bistro-sync/main.go
 
 Config: copy `electron/.env.example` to `electron/.env.local` (GitHub OAuth client id/secret, WS port, log level, window size).
 
+Adding or changing a SQL query: edit/add a `.sql` file under `go/internal/store/queries/`, then regenerate (`sqlc.yaml` is at `go/`):
+
+```bash
+cd go && go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 && sqlc generate
+```
+
+Generated code lives in `go/internal/store/db/` — never hand-edit it. If a migration lands without a matching `sqlc generate` run, the generated structs silently drift from the schema (this happened once — migrations 033/034 added columns/tables that `internal/store/db/models.go` didn't know about until the next `sqlc generate`).
+
 Verify a change before declaring done:
 
 ```bash
