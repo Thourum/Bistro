@@ -14,6 +14,7 @@ import type { PR } from '../types';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
 import { openUrlInBrowser } from '../utils/openUrl';
 import { prBrowserUrl } from '../utils/triage';
+import { addToast } from './ToastContainer';
 
 type Icon = string;
 
@@ -218,6 +219,14 @@ export function CommandPalette(): React.ReactElement | null {
     setQuery('');
   };
 
+  const updateSettingsFromCommand = (
+    patch: Parameters<typeof updateSettings>[0],
+  ): void => {
+    updateSettings(patch).match(handleClose, (message) => {
+      addToast({ type: 'error', message, dismissible: true });
+    });
+  };
+
   const handleExecuteCommand = (command: CommandItem): void => {
     switch (command.id) {
       case 'settings':
@@ -253,14 +262,10 @@ export function CommandPalette(): React.ReactElement | null {
         setQuery('');
         return;
       case 'view-lanes':
-        void updateSettings({ prList: { ...prList, view: 'flat' } });
-        closeOverlay();
-        setQuery('');
+        updateSettingsFromCommand({ prList: { ...prList, view: 'flat' } });
         return;
       case 'view-groups':
-        void updateSettings({ prList: { ...prList, view: 'grouped' } });
-        closeOverlay();
-        setQuery('');
+        updateSettingsFromCommand({ prList: { ...prList, view: 'grouped' } });
         return;
       case 'open-browser': {
         const url = focusedPR === undefined ? null : prBrowserUrl(focusedPR);
@@ -270,14 +275,10 @@ export function CommandPalette(): React.ReactElement | null {
         return;
       }
       case 'diff-split':
-        void updateSettings({ diff: { style: 'split' } });
-        closeOverlay();
-        setQuery('');
+        updateSettingsFromCommand({ diff: { style: 'split' } });
         return;
       case 'diff-unified':
-        void updateSettings({ diff: { style: 'unified' } });
-        closeOverlay();
-        setQuery('');
+        updateSettingsFromCommand({ diff: { style: 'unified' } });
         return;
       case 'repo-picker':
         openRepoPicker();

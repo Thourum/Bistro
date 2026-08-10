@@ -3,6 +3,7 @@
 import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { errAsync } from 'neverthrow';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OverlayProvider, useOverlays } from '../overlays/OverlayContext';
@@ -14,12 +15,18 @@ import { CommandPalette } from './CommandPalette';
 const navigateMock = vi.fn();
 const requestMock = vi.fn();
 const sendMock = vi.fn();
+const updateSettingsMock = vi.hoisted(() => vi.fn());
 let routeParams: { prId?: string } = {};
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
   useParams: () => routeParams,
 }));
+
+vi.mock('../store/settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../store/settings')>();
+  return { ...actual, updateSettings: updateSettingsMock };
+});
 
 vi.mock('../hooks/useWebSocket', () => ({
   useWebSocket: () => ({
@@ -94,6 +101,7 @@ describe('CommandPalette add repository command', () => {
     navigateMock.mockReset();
     requestMock.mockReset();
     sendMock.mockReset();
+    updateSettingsMock.mockReset();
     routeParams = {};
     visiblePRs = [];
     appStore.setState(() => initialUIState);
@@ -118,6 +126,26 @@ describe('CommandPalette add repository command', () => {
 
     expect(sendMock).toHaveBeenCalledWith('EXPERTISE_ENABLE', {
       repo_id: 'github:right/repo',
+    });
+  });
+
+  it('keeps the palette open and reports a settings write failure', async () => {
+    const user = userEvent.setup();
+    updateSettingsMock.mockReturnValue(errAsync('Settings are read-only'));
+    renderOpenPalette();
+
+    await user.type(screen.getByRole('combobox'), 'diff split');
+    await user.click(screen.getByRole('option', { name: /diff split/i }));
+
+    expect(updateSettingsMock).toHaveBeenCalledWith({
+      diff: { style: 'split' },
+    });
+    expect(screen.getByTestId('active-overlay')).toHaveTextContent('command');
+    expect(screen.getByRole('combobox')).toHaveValue('diff split');
+    expect(appStore.state.toasts.at(-1)).toMatchObject({
+      type: 'error',
+      message: 'Settings are read-only',
+      dismissible: true,
     });
   });
 
