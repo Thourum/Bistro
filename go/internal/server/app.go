@@ -715,7 +715,7 @@ func (a *App) Run(ctx context.Context) error {
 		Log:            a.log,
 	}))
 
-	wsAddr := fmt.Sprintf(":%d", a.wsPort)
+	wsAddr := wsListenAddr(a.wsPort)
 	if err := a.wsServer.Start(wsAddr); err != nil {
 		return fmt.Errorf("failed to start ws server: %w", err)
 	}
