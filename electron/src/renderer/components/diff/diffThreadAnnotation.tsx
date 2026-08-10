@@ -85,9 +85,14 @@ export function ThreadAnnotationCard({
       data-thread-id={thread.id}
       data-active={isActive ? 'true' : 'false'}
       data-replying={isReplying ? 'true' : 'false'}
-      onClick={onActivate}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onActivate?.();
+      }}
       onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
+        if (
+          event.target === event.currentTarget &&
+          (event.key === 'Enter' || event.key === ' ')
+        ) {
           event.preventDefault();
           onActivate?.();
         }

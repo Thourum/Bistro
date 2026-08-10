@@ -306,6 +306,43 @@ describe('DiffView annotation wiring', () => {
   });
 });
 
+describe('ThreadAnnotationCard nested controls', () => {
+  it('does not reactivate the card when the nested Cancel button is clicked', async () => {
+    render(
+      <DiffView
+        diff={MINIMAL_PATCH}
+        theme="light"
+        threads={[THREAD_FOO]}
+        comments={[]}
+      />,
+    );
+
+    act(() => pressJ());
+    act(() => pressEnter());
+    await waitFor(() => expect(screen.getByTestId('reply-composer')).toBeTruthy());
+    act(() => {
+      appStore.setState((state) => ({
+        ...state,
+        activeInlineCommentThreadId: null,
+      }));
+    });
+    expect(screen.getByTestId('thread-annotation-card')).toHaveAttribute(
+      'data-active',
+      'false',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('reply-composer')).toBeNull();
+      expect(screen.getByTestId('thread-annotation-card')).toHaveAttribute(
+        'data-active',
+        'false',
+      );
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Keyboard navigation: j/k
 // ---------------------------------------------------------------------------

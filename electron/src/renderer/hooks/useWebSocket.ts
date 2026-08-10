@@ -1,3 +1,4 @@
+import { ResultAsync } from 'neverthrow';
 import { useCallback, useEffect } from 'react';
 import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
@@ -167,6 +168,7 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 let singletonWs: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
+let enginePortPollAttempt = 0;
 let refCount = 0;
 let resolvedWsPort: number | null = null;
 let hasSentStartupDevFolderScan = false;
@@ -912,17 +914,45 @@ function connect(): void {
 
   const wsUrl = getWsUrl();
   if (wsUrl === null) {
-    void window.electron?.getWsPort().then((port) => {
-      if (isValidWsPort(port)) {
-        resolvedWsPort = port;
-      }
-    });
+    if (enginePortPollAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      log.error(
+        { maxAttempts: MAX_RECONNECT_ATTEMPTS },
+        'sync engine WebSocket port was not published',
+      );
+      appStore.setState((state) => ({
+        ...state,
+        syncStatus: 'error',
+        syncError: 'Sync engine did not start. Please restart the app.',
+        authChecked: true,
+        isAuthenticated: false,
+      }));
+      return;
+    }
+
+    enginePortPollAttempt += 1;
+    const getWsPort = window.electron?.getWsPort;
+    if (getWsPort !== undefined) {
+      void ResultAsync.fromPromise(getWsPort(), (error) => error).match(
+        (port) => {
+          if (isValidWsPort(port)) resolvedWsPort = port;
+        },
+        (error) => {
+          log.warn(
+            { err: error, attempt: enginePortPollAttempt },
+            'failed to query sync engine WebSocket port',
+          );
+        },
+      );
+    }
     log.info(
+      { attempt: enginePortPollAttempt, maxAttempts: MAX_RECONNECT_ATTEMPTS },
       'Go sync engine is still starting — waiting for its WebSocket port',
     );
     reconnectTimer = setTimeout(connect, ENGINE_PORT_POLL_INTERVAL_MS);
     return;
   }
+
+  enginePortPollAttempt = 0;
 
   log.info({ url: wsUrl }, 'attempting connection');
   try {
@@ -1039,6 +1069,7 @@ function disconnect(): void {
   singletonWs?.close();
   singletonWs = null;
   reconnectAttempt = 0;
+  enginePortPollAttempt = 0;
   resolvedWsPort = null;
   hasSentStartupDevFolderScan = false;
 }

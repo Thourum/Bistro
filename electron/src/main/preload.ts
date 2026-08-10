@@ -32,7 +32,12 @@ contextBridge.exposeInMainWorld('electron', {
     const response = (await ipcRenderer.invoke('engine:get-ws-port')) as {
       ok: unknown;
     };
-    return typeof response.ok === 'number' ? response.ok : null;
+    return typeof response.ok === 'number' &&
+      Number.isInteger(response.ok) &&
+      response.ok >= 1 &&
+      response.ok <= 65535
+      ? response.ok
+      : null;
   },
 
   /**

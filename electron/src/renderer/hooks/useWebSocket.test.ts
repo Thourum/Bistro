@@ -3,7 +3,9 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../types/settings';
+import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
+import { initialUIState } from '../store/ui';
 import { useWebSocket } from './useWebSocket';
 
 class MockWebSocket {
@@ -91,6 +93,7 @@ describe('useWebSocket dev-folder startup scan', () => {
     MockWebSocket.instances = [];
     vi.stubGlobal('WebSocket', MockWebSocket);
     settingsStore.setState(() => DEFAULT_SETTINGS);
+    appStore.setState(() => initialUIState);
   });
 
   afterEach(() => {
@@ -98,6 +101,46 @@ describe('useWebSocket dev-folder startup scan', () => {
     delete (window as Partial<Window>).electron;
     vi.useRealTimers();
     settingsStore.setState(() => DEFAULT_SETTINGS);
+  });
+
+  it('handles a rejected dynamic-port lookup and retries without an unhandled rejection', async () => {
+    const getWsPort = vi
+      .fn<() => Promise<number | null>>()
+      .mockRejectedValueOnce(new Error('IPC unavailable'))
+      .mockResolvedValueOnce(64568);
+    Object.defineProperty(window, 'electron', {
+      configurable: true,
+      value: { wsPort: null, getWsPort },
+    });
+    vi.useFakeTimers();
+
+    const { unmount } = renderHook(() => useWebSocket());
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(MockWebSocket.instances[0]?.url).toBe('ws://localhost:64568/ws');
+    unmount();
+  });
+
+  it('stops polling and surfaces an error when the engine never publishes a port', async () => {
+    const getWsPort = vi
+      .fn<() => Promise<number | null>>()
+      .mockResolvedValue(null);
+    Object.defineProperty(window, 'electron', {
+      configurable: true,
+      value: { wsPort: null, getWsPort },
+    });
+    vi.useFakeTimers();
+
+    const { unmount } = renderHook(() => useWebSocket());
+    await vi.advanceTimersByTimeAsync(11_000);
+
+    expect(getWsPort).toHaveBeenCalledTimes(10);
+    expect(appStore.state.syncStatus).toBe('error');
+    expect(appStore.state.syncError).toBe(
+      'Sync engine did not start. Please restart the app.',
+    );
+    unmount();
   });
 
   it('waits for the main process to publish a late dynamic port', async () => {
