@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
@@ -12,6 +11,8 @@ import type {
   SyncActionRequest,
 } from '../types/ipc';
 import type { AppSettings } from '../types/settings';
+import { launchEditor } from './editorLaunch';
+import { resolveEditorTarget } from './editorTarget';
 import type { SettingsService } from './settings';
 import type { TelemetryService } from './telemetry';
 import type { WebSocketClient } from './websocket-client';
@@ -123,9 +124,9 @@ export function setupIPC(
   );
 
   // ---- open-in-editor handler ----
-  // Resolves $EDITOR, verifies the target file stays inside repoRoot (reject
-  // `..` traversal and sibling-prefix bypasses like `/repo-evil` vs `/repo`),
-  // then spawns the editor with an argument array — never a shell string.
+  // Canonicalises the checkout root and the target (following symlinks) and
+  // rejects anything that escapes the repository, then spawns the editor with
+  // an argument array — never a shell string.
   ipcMain.handle(
     'open-in-editor',
     async (_event, request: OpenInEditorRequest) => {
@@ -134,34 +135,22 @@ export function setupIPC(
         return { err: 'Set $EDITOR' };
       }
 
-      const root = resolve(request.repoRoot);
-      const resolved = resolve(root, request.relativePath);
-      if (resolved !== root && !resolved.startsWith(root + sep)) {
-        logger.warn(
-          `open-in-editor: rejected path outside repo root: ${resolved}`,
-        );
-        return { err: 'Access denied: path outside repository' };
-      }
-
-      const argsResult = buildEditorArgs(editorCommand, resolved, request.line);
-      if (argsResult.isErr()) {
-        return { err: argsResult.error };
-      }
-
-      try {
-        spawn(editorCommand, argsResult.value, { detached: true }).on(
-          'error',
-          (spawnError) => {
-            logger.error(`open-in-editor spawn error: ${spawnError.message}`);
+      return resolveEditorTarget({
+        repoRoot: request.repoRoot,
+        relativePath: request.relativePath,
+      })
+        .andThen((target) =>
+          buildEditorArgs(editorCommand, target, request.line).asyncAndThen(
+            (args) => launchEditor(editorCommand, args, logger),
+          ),
+        )
+        .match(
+          () => ({ ok: true as const }),
+          (message) => {
+            logger.warn(`open-in-editor rejected: ${message}`);
+            return { err: message };
           },
         );
-        return { ok: true as const };
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'Unknown error';
-        logger.error(`open-in-editor error: ${message}`);
-        return { err: message };
-      }
     },
   );
 
