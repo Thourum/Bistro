@@ -1,10 +1,12 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../hooks/useStore';
 import { useOverlays } from '../overlays/OverlayContext';
 import { settingsStore, updateSettings } from '../store/settings';
 import { getEffectiveBindings } from '../utils/keybindings';
+import { createTourCompletionPatch } from '../utils/tourCompletion';
 import { resolveTourScreens } from '../utils/tourScreens';
+import { addToast } from './ToastContainer';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Kbd } from './ui/kbd';
@@ -14,7 +16,7 @@ import { Kbd } from './ui/kbd';
  * re-runnable via `:tour`. The flag is set on ANY exit — finishing screen 5 or
  * Esc mid-tour both persist it (Esc is handled by the global overlay-close
  * binding, which doesn't know about tour completion, so this component
- * persists on unmount instead of relying on the Esc path specifically).
+ * observes the open-to-closed transition rather than any specific close path).
  */
 export function TourOverlay(): React.ReactElement | null {
   const { activeOverlay, openTour, closeOverlay } = useOverlays();
@@ -25,6 +27,7 @@ export function TourOverlay(): React.ReactElement | null {
   );
   const isOpen = activeOverlay === 'tour';
   const [screenIndex, setScreenIndex] = useState(0);
+  const wasOpen = useRef(isOpen);
 
   // Auto-open once, right after onboarding completes (AuthedRouteShell only
   // mounts once authed+onboarded). Guarded on no other overlay being open so
@@ -35,16 +38,31 @@ export function TourOverlay(): React.ReactElement | null {
     openTour();
   }, [tourComplete]);
 
+  useEffect(() => {
+    const didClose = wasOpen.current && !isOpen;
+    wasOpen.current = isOpen;
+    if (!didClose) return;
+
+    setScreenIndex(0);
+    void updateSettings(
+      createTourCompletionPatch(settingsStore.state.appearance),
+    ).match(
+      () => undefined,
+      (message) =>
+        addToast({
+          type: 'error',
+          message: `Tour completion could not be saved: ${message}`,
+          dismissible: true,
+        }),
+    );
+  }, [isOpen]);
+
   const screens = resolveTourScreens(getEffectiveBindings(overrides));
   const screen = screens[screenIndex];
   const isLastScreen = screenIndex === screens.length - 1;
 
   const finish = (): void => {
-    setScreenIndex(0);
     closeOverlay();
-    void updateSettings({
-      appearance: { ...settingsStore.state.appearance, tourComplete: true },
-    });
   };
 
   const advance = (): void => {
