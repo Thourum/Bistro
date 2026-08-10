@@ -46,3 +46,6 @@ electron/src/renderer/.vite/
 
 # Local agent working state
 .slim/deepwork/
+
+# Disposable tool output
+/.superpowers/
