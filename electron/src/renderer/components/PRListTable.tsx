@@ -153,7 +153,11 @@ function PRRow({
             pr.unread ? 'font-semibold' : 'font-medium'
           }`}
         >
-          {pr.unread && <span className="mr-2 text-primary">●</span>}
+          {pr.unread && (
+            <span className="mr-2 text-primary" role="img" aria-label="Unread">
+              ●
+            </span>
+          )}
           {pr.title}
         </div>
         <div className="font-mono text-[11px] text-outline-variant text-right truncate">

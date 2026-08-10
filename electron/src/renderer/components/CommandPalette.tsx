@@ -7,6 +7,7 @@ import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
+import { addToast } from './ToastContainer';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
@@ -230,14 +231,22 @@ export function CommandPalette(): React.ReactElement | null {
         setQuery('');
         return;
       case 'view-lanes':
-        void updateSettings({ prList: { ...prList, view: 'flat' } });
-        closeOverlay();
-        setQuery('');
+        void updateSettings({ prList: { ...prList, view: 'flat' } }).match(
+          () => {
+            closeOverlay();
+            setQuery('');
+          },
+          (message) => addToast({ type: 'error', message, dismissible: true }),
+        );
         return;
       case 'view-groups':
-        void updateSettings({ prList: { ...prList, view: 'grouped' } });
-        closeOverlay();
-        setQuery('');
+        void updateSettings({ prList: { ...prList, view: 'grouped' } }).match(
+          () => {
+            closeOverlay();
+            setQuery('');
+          },
+          (message) => addToast({ type: 'error', message, dismissible: true }),
+        );
         return;
       case 'repo-picker':
         openRepoPicker();

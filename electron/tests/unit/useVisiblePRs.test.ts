@@ -140,15 +140,34 @@ describe('useVisiblePRs', () => {
     expect(result.current.prs.map((p) => p.id)).toEqual(['pr-a', 'pr-b', 'pr-c']);
   });
 
-  it('sorts flat view by lane then newest update', () => {
+  it('sorts flat view by lane before newest update, then newest within a lane', () => {
     settingsStore.setState(() => DEFAULT_SETTINGS);
     vi.spyOn(storeModule, 'appStore', 'get').mockReturnValue(
-      makeStore() as unknown as typeof storeModule.appStore,
+      makeStore({ viewerLogin: 'reviewer' }) as unknown as typeof storeModule.appStore,
     );
+    vi.spyOn(prListModule, 'useWebSocketPRList').mockReturnValue({
+      data: [
+        makePR({ id: 'fyi-newest', updated_at: '2025-01-04T10:00:00Z' }),
+        {
+          ...makePR({ id: 'needs-action-new', updated_at: '2025-01-03T10:00:00Z' }),
+          requested_reviewers: ['reviewer'],
+        },
+        {
+          ...makePR({ id: 'needs-action-old', updated_at: '2025-01-01T10:00:00Z' }),
+          requested_reviewers: ['reviewer'],
+        },
+      ],
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof prListModule.useWebSocketPRList>);
 
     const { result } = renderHook(() => useVisiblePRs());
 
-    expect(result.current.prs.map((p) => p.id)).toEqual(['pr-a', 'pr-b', 'pr-c']);
+    expect(result.current.prs.map((p) => p.id)).toEqual([
+      'needs-action-new',
+      'needs-action-old',
+      'fyi-newest',
+    ]);
   });
 
   it('composes repoFilter + q + sort deterministically', () => {

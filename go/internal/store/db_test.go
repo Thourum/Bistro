@@ -238,6 +238,75 @@ func TestMigrationRunnerReconcilesPartialReadStateSchema(t *testing.T) {
 	}
 }
 
+// Migration 33 uses a bare ALTER TABLE ADD COLUMN, which SQLite cannot guard
+// with IF NOT EXISTS. Idempotency is therefore provided by the runner: goose
+// version tracking plus schema reconciliation must keep the statement from
+// running twice, including when goose metadata is lost.
+func TestMigration033IsIdempotentAcrossRunsAndLostGooseMetadata(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	runner := NewMigrationRunner(nil, db.DB)
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("first Run() error = %v", err)
+	}
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+
+	mustExec(t, db, `DROP TABLE `+goose.DefaultTablename)
+	if err := NewMigrationRunner(nil, db.DB).Run(ctx); err != nil {
+		t.Fatalf("Run() after losing goose metadata error = %v, want mentioned column not re-added", err)
+	}
+
+	assertColumnExists(t, db.DB, "prs", "mentioned")
+	assertAllEmbeddedVersionsApplied(t, ctx, db.DB)
+
+	var mentionedColumnCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('prs') WHERE name = 'mentioned'`).Scan(&mentionedColumnCount); err != nil {
+		t.Fatalf("count prs.mentioned columns: %v", err)
+	}
+	if mentionedColumnCount != 1 {
+		t.Errorf("prs.mentioned column count = %d, want 1", mentionedColumnCount)
+	}
+}
+
+func TestMigrationRunnerDoesNotReconcileReadStateWithoutCompositeKey(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	migrateEmbeddedSchemaToVersion(t, ctx, db.DB, 33)
+	mustExec(t, db, `CREATE TABLE pr_read_state (
+		pr_id TEXT NOT NULL,
+		login TEXT NOT NULL,
+		last_read_at TIMESTAMP NOT NULL
+	)`)
+
+	hasSchema, err := readStateSchemaExists(ctx, db.DB)
+	if err != nil {
+		t.Fatalf("readStateSchemaExists() error = %v", err)
+	}
+	if hasSchema {
+		t.Fatal("readStateSchemaExists() = true, want false without PRIMARY KEY (pr_id, login)")
+	}
+
+	reconciledVersion, err := reconciledSchemaVersion(ctx, db.DB, reconcileBaselineVersion)
+	if err != nil {
+		t.Fatalf("reconciledSchemaVersion() error = %v", err)
+	}
+	if reconciledVersion != preReadStateSchemaVersion {
+		t.Errorf("reconciled schema version = %d, want %d", reconciledVersion, preReadStateSchemaVersion)
+	}
+}
+
 func TestMigrationRunnerReconcilesSchemaWithoutReadStateTable(t *testing.T) {
 	db, err := OpenDB(":memory:")
 	if err != nil {

@@ -146,9 +146,13 @@ func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetch
 		eng = w.classifier.Current()
 	}
 
+	// Mention detection is advisory metadata: a failed current-user lookup must
+	// not discard an entire synced batch. Continue with a nil pattern, which
+	// leaves existing `mentioned` values untouched.
 	mentionPattern, err := w.mentionPattern(ctx)
 	if err != nil {
-		return err
+		log.Warn("mention detection unavailable, continuing without it", "error", err)
+		mentionPattern = nil
 	}
 
 	tx, err := w.db.BeginTx(ctx, nil)
