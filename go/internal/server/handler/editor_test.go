@@ -39,9 +39,15 @@ func (m *mockPRCheckoutInspector) InspectPRCheckout(_, _ string) (git.CheckoutIn
 
 type mockPRCheckoutChecker struct {
 	err error
+	// gotRepoID records the repoID the handler passed through, so tests can
+	// assert the per-repo lock key reaches the git client.
+	gotRepoID   string
+	gotLocalPth string
 }
 
-func (m *mockPRCheckoutChecker) CheckoutPRHead(_ context.Context, _, _ string) error {
+func (m *mockPRCheckoutChecker) CheckoutPRHead(_ context.Context, repoID, localPath, _ string) error {
+	m.gotRepoID = repoID
+	m.gotLocalPth = localPath
 	return m.err
 }
 
@@ -136,5 +142,53 @@ func TestCheckoutPRHeadHandler_PRNotFound(t *testing.T) {
 	data := extractData(t, resp)
 	if data["reason"] != "PR not found" {
 		t.Errorf("expected 'PR not found', got %+v", data)
+	}
+}
+
+// TestCheckoutPRHeadHandler_PassesDBResolvedTarget pins the trust boundary and
+// the lock key: both the repo_id used for per-repo locking and the checkout
+// path come from the engine's own DB state (prs.repo_id → repos.local_path),
+// never from the WS request, which carries only pr_id.
+func TestCheckoutPRHeadHandler_PassesDBResolvedTarget(t *testing.T) {
+	tests := []struct {
+		name          string
+		repoID        string
+		localPath     string
+		wantRepoID    string
+		wantLocalPath string
+	}{
+		{
+			name:          "local checkout",
+			repoID:        "github:owner/repo",
+			localPath:     "/home/dev/src/repo",
+			wantRepoID:    "github:owner/repo",
+			wantLocalPath: "/home/dev/src/repo",
+		},
+		{
+			name:          "cache checkout",
+			repoID:        "github:other/proj",
+			localPath:     "/home/dev/.cache/bistro/abc123",
+			wantRepoID:    "github:other/proj",
+			wantLocalPath: "/home/dev/.cache/bistro/abc123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prs := &mockPRCheckoutInfoReader{info: &store.PRCheckoutInfo{RepoID: tt.repoID, HeadSHA: "sha1"}}
+			repos := &mockRepoLocationReader{location: &store.RepoLocation{LocalPath: tt.localPath}}
+			checker := &mockPRCheckoutChecker{}
+
+			h := NewCheckoutPRHeadHandler(prs, repos, checker, testRepoLogger())
+			if _, err := h(context.Background(), checkoutMsg(t, "CHECKOUT_PR_HEAD", "pr-1")); err != nil {
+				t.Fatalf("handler error: %v", err)
+			}
+			if checker.gotRepoID != tt.wantRepoID {
+				t.Errorf("repoID passed to CheckoutPRHead = %q, want %q", checker.gotRepoID, tt.wantRepoID)
+			}
+			if checker.gotLocalPth != tt.wantLocalPath {
+				t.Errorf("localPath passed to CheckoutPRHead = %q, want %q", checker.gotLocalPth, tt.wantLocalPath)
+			}
+		})
 	}
 }

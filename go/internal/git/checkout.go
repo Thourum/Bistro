@@ -58,7 +58,14 @@ var ErrWorktreeDirty = fmt.Errorf("worktree dirty")
 // locally. Refuses to run — returning ErrWorktreeDirty — when the worktree
 // has uncommitted changes, so a reviewer's in-progress work is never
 // silently discarded.
-func (c *Client) CheckoutPRHead(ctx context.Context, localPath, headSHA string) error {
+//
+// repoID is the repos.id value ("<provider>:<owner>/<repo>") — the same key
+// sync's fetch/clone paths lock on via repoLockKey. The whole
+// status → fetch → checkout sequence runs under that lock, so a background
+// sync tick writing refs and packfiles into this repository can never
+// interleave with the checkout. The dirty-worktree check is only meaningful
+// if nothing else can mutate the repo between the check and the checkout.
+func (c *Client) CheckoutPRHead(ctx context.Context, repoID, localPath, headSHA string) error {
 	if localPath == "" {
 		return fmt.Errorf("local path cannot be empty")
 	}
@@ -66,6 +73,18 @@ func (c *Client) CheckoutPRHead(ctx context.Context, localPath, headSHA string) 
 		return fmt.Errorf("headSHA cannot be empty")
 	}
 
+	operation := func() error {
+		return c.checkoutPRHeadLocked(ctx, localPath, headSHA)
+	}
+	if c.locks == nil || repoID == "" {
+		return operation()
+	}
+	return c.locks.WithRepo(repoID, operation)
+}
+
+// checkoutPRHeadLocked is CheckoutPRHead's body. Callers must hold the repo
+// lock for repoID (or have no locks configured).
+func (c *Client) checkoutPRHeadLocked(ctx context.Context, localPath, headSHA string) error {
 	repo, err := gitlib.PlainOpen(localPath)
 	if err != nil {
 		return fmt.Errorf("failed to open repository at %s: %w", localPath, err)

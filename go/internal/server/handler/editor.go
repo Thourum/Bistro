@@ -31,9 +31,10 @@ type prCheckoutInspector interface {
 }
 
 // prCheckoutChecker performs the CHECKOUT_PR_HEAD mutation. Satisfied by
-// *git.Client.
+// *git.Client. repoID is passed through so the checkout takes the same
+// per-repo lock as sync's fetch/clone paths.
 type prCheckoutChecker interface {
-	CheckoutPRHead(ctx context.Context, localPath, headSHA string) error
+	CheckoutPRHead(ctx context.Context, repoID, localPath, headSHA string) error
 }
 
 // GitCheckoutInspector adapts the git package's free function to
@@ -53,24 +54,24 @@ func resolvePRCheckoutTarget(
 	prs prCheckoutInfoReader,
 	repos repoLocationReader,
 	prID string,
-) (localPath, headSHA string, errReason string) {
+) (repoID, localPath, headSHA string, errReason string) {
 	info, err := prs.GetPRCheckoutInfo(ctx, prID)
 	if err != nil {
-		return "", "", fmt.Sprintf("failed to look up PR: %v", err)
+		return "", "", "", fmt.Sprintf("failed to look up PR: %v", err)
 	}
 	if info == nil {
-		return "", "", "PR not found"
+		return "", "", "", "PR not found"
 	}
 
 	location, err := repos.Get(ctx, info.RepoID)
 	if err != nil {
-		return "", "", fmt.Sprintf("failed to look up repo location: %v", err)
+		return "", "", "", fmt.Sprintf("failed to look up repo location: %v", err)
 	}
 	if location == nil || location.LocalPath == "" {
-		return "", "", "no local path"
+		return "", "", "", "no local path"
 	}
 
-	return location.LocalPath, info.HeadSHA, ""
+	return info.RepoID, location.LocalPath, info.HeadSHA, ""
 }
 
 // NewCheckPRCheckoutHandler returns a WS handler for CHECK_PR_CHECKOUT.
@@ -101,7 +102,7 @@ func NewCheckPRCheckoutHandler(
 			return nil, fmt.Errorf("CHECK_PR_CHECKOUT requires pr_id")
 		}
 
-		localPath, headSHA, reason := resolvePRCheckoutTarget(ctx, prs, repos, req.PRID)
+		_, localPath, headSHA, reason := resolvePRCheckoutTarget(ctx, prs, repos, req.PRID)
 		if reason != "" {
 			logger.Warn("CHECK_PR_CHECKOUT failed", "pr_id", req.PRID, "reason", reason)
 			return checkoutStatusResponse(msg.ID, req.PRID, "", false, false, reason), nil
@@ -144,13 +145,13 @@ func NewCheckoutPRHeadHandler(
 			return nil, fmt.Errorf("CHECKOUT_PR_HEAD requires pr_id")
 		}
 
-		localPath, headSHA, reason := resolvePRCheckoutTarget(ctx, prs, repos, req.PRID)
+		repoID, localPath, headSHA, reason := resolvePRCheckoutTarget(ctx, prs, repos, req.PRID)
 		if reason != "" {
 			logger.Warn("CHECKOUT_PR_HEAD failed", "pr_id", req.PRID, "reason", reason)
 			return checkoutResultResponse(msg.ID, req.PRID, "", false, reason), nil
 		}
 
-		if err := checker.CheckoutPRHead(ctx, localPath, headSHA); err != nil {
+		if err := checker.CheckoutPRHead(ctx, repoID, localPath, headSHA); err != nil {
 			reason := err.Error()
 			if err == git.ErrWorktreeDirty {
 				reason = "worktree dirty"
