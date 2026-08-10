@@ -2,6 +2,7 @@
 
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppFooter } from '../../src/renderer/components/AppFooter';
@@ -10,7 +11,10 @@ import {
   FooterLeftSlot,
   FooterSlotProvider,
 } from '../../src/renderer/components/FooterSlot';
-import { OverlayProvider } from '../../src/renderer/overlays/OverlayContext';
+import {
+  OverlayProvider,
+  useOverlays,
+} from '../../src/renderer/overlays/OverlayContext';
 import { appStore } from '../../src/renderer/store';
 import { settingsStore } from '../../src/renderer/store/settings';
 import { initialUIState } from '../../src/renderer/store/ui';
@@ -39,11 +43,17 @@ beforeEach(() => {
   settingsStore.setState(() => DEFAULT_SETTINGS);
 });
 
+function HelpSourceProbe(): React.ReactElement {
+  const { helpSourceRoute } = useOverlays();
+  return <div data-testid="help-source">{helpSourceRoute}</div>;
+}
+
 function renderFooter(children: React.ReactNode = null) {
   return render(
     <OverlayProvider>
       <FooterSlotProvider>
         {children}
+        <HelpSourceProbe />
         <AppFooter />
       </FooterSlotProvider>
     </OverlayProvider>,
@@ -125,6 +135,16 @@ describe('AppFooter', () => {
     renderFooter();
     // diff preset includes detail.scrollDown (j) and global.escape
     expect(screen.getByText('Back / Cancel')).toBeInTheDocument();
+  });
+
+  it('opens shortcut help with the diff route as its source', async () => {
+    const user = userEvent.setup();
+    mockPathname.current = '/prs/pr-1/diff';
+    renderFooter();
+
+    await user.click(screen.getByRole('button', { name: 'Shortcuts' }));
+
+    expect(screen.getByTestId('help-source')).toHaveTextContent('diff');
   });
 
   // AppFooter has NO RouterSafe — it's only rendered under authedRoute
