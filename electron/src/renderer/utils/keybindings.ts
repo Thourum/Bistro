@@ -6,7 +6,6 @@ import type {
 } from '../overlays/OverlayContext';
 import { authAction, PROVIDERS } from '../providers';
 import { router } from '../router';
-import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { toggleRepoGroup } from '../store/ui';
 import { openUrlInBrowser } from './openUrl';
@@ -757,11 +756,11 @@ const detailBindings: KeyBinding[] = [
     keys: 'Shift+S',
     description: 'Toggle side-by-side',
     activation: { routes: ['diff'] },
-    action: () => {
-      const { style } = settingsStore.state.diff;
-      void updateSettings({
-        diff: { style: style === 'split' ? 'unified' : 'split' },
-      });
+    action: (ctx) => {
+      ctx.store.setState((s) => ({
+        ...s,
+        confirmingAction: 'toggle-diff-style',
+      }));
     },
   },
   {

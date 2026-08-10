@@ -29,7 +29,7 @@ import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
-import { settingsStore } from '../store/settings';
+import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import type { Comment, DiffFile } from '../types';
 import { repoIdForPR } from '../utils/expertise';
@@ -211,6 +211,20 @@ export function DiffPage() {
     doMarkViewed();
     appStore.setState((s) => ({ ...s, confirmingAction: null }));
   }, [confirmingAction, doMarkViewed]);
+
+  // Persist the keybinding's diff-style toggle intent from the route owner so
+  // failures can be surfaced to the user instead of being discarded.
+  useEffect(() => {
+    if (confirmingAction !== 'toggle-diff-style') return;
+    const nextStyle = diffStyle === 'split' ? 'unified' : 'split';
+    appStore.setState((s) => ({ ...s, confirmingAction: null }));
+    updateSettings({ diff: { style: nextStyle } }).match(
+      () => undefined,
+      (message) => {
+        addToast({ type: 'error', message, dismissible: true });
+      },
+    );
+  }, [confirmingAction, diffStyle]);
 
   // Clear range-diff intent when leaving the diff view.
   useEffect(() => {

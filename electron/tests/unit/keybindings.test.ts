@@ -238,6 +238,12 @@ describe('DEFAULT_KEYBINDINGS', () => {
     expect(store.state.confirmingAction).toBe('mark-viewed');
   });
 
+  it('Shift+S sets a diff-style toggle intent without persisting directly', () => {
+    const store = makeStore({ confirmingAction: null });
+    byId('diff.toggleStyle').action(makeCtx(store, 'diff'));
+    expect(store.state.confirmingAction).toBe('toggle-diff-style');
+  });
+
   it('help binding is active in list and detail and records its source', () => {
     const b = byId('global.help');
     expect(b.activation.routes).toContain('list');

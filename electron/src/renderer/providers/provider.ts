@@ -8,6 +8,8 @@ export interface ProviderDef {
 
 const AUTH_ACTION_PREFIX = 'auth_' as const;
 
-export function authAction(provider: ProviderDef): string {
+export type AuthAction = `${typeof AUTH_ACTION_PREFIX}${string}`;
+
+export function authAction(provider: ProviderDef): AuthAction {
   return `${AUTH_ACTION_PREFIX}${provider.id}`;
 }
