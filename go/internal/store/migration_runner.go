@@ -60,6 +60,9 @@ func (mr *MigrationRunner) Run(ctx context.Context) error {
 	if err := mr.reconcileGooseFromCurrentSchema(ctx, reconcileBaselineVersion); err != nil {
 		return fmt.Errorf("reconcile goose migration versions: %w", err)
 	}
+	if err := repairMalformedReadStateSchema(ctx, mr.db); err != nil {
+		return fmt.Errorf("repair pr_read_state schema: %w", err)
+	}
 
 	mr.log.Debug("running embedded goose migrations")
 	if err := mr.runGooseProvider(ctx, migrationFS); err != nil {
@@ -180,6 +183,49 @@ func reconciledSchemaVersion(ctx context.Context, db *sql.DB, baselineVersion in
 	}
 
 	return baselineVersion, nil
+}
+
+// repairMalformedReadStateSchema removes an incomplete pre-existing table so
+// migration 34 can recreate it with the required composite primary key. Rows
+// are preserved while rebuilding the table.
+func repairMalformedReadStateSchema(ctx context.Context, db *sql.DB) error {
+	exists, err := tableExists(ctx, db, "pr_read_state")
+	if err != nil || !exists {
+		return err
+	}
+	valid, err := readStateSchemaExists(ctx, db)
+	if err != nil || valid {
+		return err
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin read-state repair: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+	statements := []string{
+		`ALTER TABLE pr_read_state RENAME TO pr_read_state_malformed`,
+		`CREATE TABLE pr_read_state (
+			pr_id TEXT NOT NULL,
+			login TEXT NOT NULL,
+			last_read_at TIMESTAMP NOT NULL,
+			PRIMARY KEY (pr_id, login)
+		)`,
+		`INSERT OR REPLACE INTO pr_read_state (pr_id, login, last_read_at)
+		 SELECT pr_id, login, MAX(last_read_at)
+		 FROM pr_read_state_malformed
+		 GROUP BY pr_id, login`,
+		`DROP TABLE pr_read_state_malformed`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("rebuild read-state table: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit read-state repair: %w", err)
+	}
+	return nil
 }
 
 // readStateSchemaExists reports whether pr_read_state matches migration 34:

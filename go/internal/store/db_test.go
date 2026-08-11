@@ -275,7 +275,7 @@ func TestMigration033IsIdempotentAcrossRunsAndLostGooseMetadata(t *testing.T) {
 	}
 }
 
-func TestMigrationRunnerDoesNotReconcileReadStateWithoutCompositeKey(t *testing.T) {
+func TestMigrationRunnerRepairsReadStateWithoutCompositeKey(t *testing.T) {
 	db, err := OpenDB(":memory:")
 	if err != nil {
 		t.Fatalf("failed to open db: %v", err)
@@ -289,22 +289,26 @@ func TestMigrationRunnerDoesNotReconcileReadStateWithoutCompositeKey(t *testing.
 		login TEXT NOT NULL,
 		last_read_at TIMESTAMP NOT NULL
 	)`)
+	mustExec(t, db, `INSERT INTO pr_read_state (pr_id, login, last_read_at)
+		VALUES ('pr-1', 'alice', '2026-01-01T00:00:00Z')`)
+	mustExec(t, db, `DROP TABLE `+goose.DefaultTablename)
 
-	hasSchema, err := readStateSchemaExists(ctx, db.DB)
-	if err != nil {
-		t.Fatalf("readStateSchemaExists() error = %v", err)
+	if err := NewMigrationRunner(nil, db.DB).Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
-	if hasSchema {
-		t.Fatal("readStateSchemaExists() = true, want false without PRIMARY KEY (pr_id, login)")
+	if exists, err := readStateConflictTargetExists(ctx, db.DB); err != nil {
+		t.Fatalf("check repaired conflict target: %v", err)
+	} else if !exists {
+		t.Fatal("pr_read_state was not repaired with composite conflict target")
 	}
-
-	reconciledVersion, err := reconciledSchemaVersion(ctx, db.DB, reconcileBaselineVersion)
-	if err != nil {
-		t.Fatalf("reconciledSchemaVersion() error = %v", err)
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pr_read_state WHERE pr_id = 'pr-1' AND login = 'alice'`).Scan(&count); err != nil {
+		t.Fatalf("check preserved read state: %v", err)
 	}
-	if reconciledVersion != preReadStateSchemaVersion {
-		t.Errorf("reconciled schema version = %d, want %d", reconciledVersion, preReadStateSchemaVersion)
+	if count != 1 {
+		t.Fatalf("preserved read-state rows = %d, want 1", count)
 	}
+	assertAllEmbeddedVersionsApplied(t, ctx, db.DB)
 }
 
 func TestMigrationRunnerReconcilesSchemaWithoutReadStateTable(t *testing.T) {
