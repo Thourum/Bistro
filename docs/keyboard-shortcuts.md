@@ -17,7 +17,7 @@ inbox, request changes on a PR). The redesign should make context obvious.
 
 ---
 
-## Global (every route)
+## Cross-route shortcuts
 
 | Key | Action |
 |---|---|
