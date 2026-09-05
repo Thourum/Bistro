@@ -33,6 +33,10 @@ const makePR = (overrides: Partial<PR>): PR => ({
   changes_requested_by: null,
   requested_reviewers: [],
   touches_you: overrides.touches_you ?? false,
+  mentioned: overrides.mentioned ?? false,
+  viewer_commented: overrides.viewer_commented ?? false,
+  unread: overrides.unread ?? false,
+  reviewed_head_stale: overrides.reviewed_head_stale ?? false,
   hydrated: overrides.hydrated ?? 1,
 });
 
@@ -59,10 +63,20 @@ describe('expertise helpers', () => {
     expect(touchesYouCount(prs)).toBe(2);
   });
 
-  it('selects the routed PR for expertise commands over the list index', () => {
+  it('selects the routed PR for expertise commands over the cursor PR id', () => {
     const prs = [makePR({ id: 'pr-list-row' }), makePR({ id: 'pr-focused' })];
 
-    expect(focusedExpertisePR(prs, 'pr-focused', 0)?.id).toBe('pr-focused');
+    expect(focusedExpertisePR(prs, 'pr-focused', 'pr-list-row')?.id).toBe(
+      'pr-focused',
+    );
+  });
+
+  it('selects the cursor PR by its projected id instead of its row index', () => {
+    const prs = [makePR({ id: 'pr-first' }), makePR({ id: 'pr-focused' })];
+
+    expect(focusedExpertisePR(prs, undefined, 'pr-focused')?.id).toBe(
+      'pr-focused',
+    );
   });
 
   it('formats an original-author why line with rounded score', () => {

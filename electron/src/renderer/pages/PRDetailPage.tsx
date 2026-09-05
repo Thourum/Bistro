@@ -15,6 +15,7 @@ import { Textarea } from '../components/ui/textarea';
 import { useActionDispatch } from '../hooks/useActionDispatch';
 import { useDismissals } from '../hooks/useDismissals';
 import { useExpertise } from '../hooks/useExpertise';
+import { useMarkPRsRead } from '../hooks/useMarkPRsRead';
 import { usePatchsets } from '../hooks/usePatchsets';
 import { usePRHydration } from '../hooks/usePRHydration';
 import { useStore } from '../hooks/useStore';
@@ -98,6 +99,7 @@ export function PRDetailPage() {
   const selectedPrId = pr?.id;
 
   const { request } = useWebSocket();
+  const { markPRsRead } = useMarkPRsRead();
   const { isHydrating, error: hydrationError, retry } = usePRHydration(pr);
   const isAwaitingHydration = pr?.hydrated === 0;
   const detailPrId = isAwaitingHydration ? undefined : pr?.id;
@@ -126,6 +128,11 @@ export function PRDetailPage() {
     if (selectedPrId === undefined) return;
     appStore.setState((s) => ({ ...s, selectedPatchsetPair: null }));
   }, [selectedPrId]);
+
+  useEffect(() => {
+    // Read state is local-only and silently drops when the WebSocket is down.
+    void markPRsRead([prId]);
+  }, [markPRsRead, prId]);
 
   useEffect(() => {
     if (confirmingAction === 'approve_confirmed') {
