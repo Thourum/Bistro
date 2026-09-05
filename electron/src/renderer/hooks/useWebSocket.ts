@@ -1,4 +1,4 @@
-import { fromThrowable, type Result } from 'neverthrow';
+import { fromThrowable, type Result, ResultAsync } from 'neverthrow';
 import { useCallback, useEffect } from 'react';
 import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
@@ -137,25 +137,29 @@ const LOCATION_ERROR_OPERATIONS = [
   'recover',
 ] as const;
 
-const DEFAULT_WS_PORT = 8080;
+const ENGINE_PORT_POLL_INTERVAL_MS = 1000;
+
+function isValidWsPort(port: unknown): port is number {
+  return (
+    typeof port === 'number' &&
+    Number.isInteger(port) &&
+    port > 0 &&
+    port <= 65535
+  );
+}
 
 /**
- * Resolves the sync-engine WebSocket URL. The Go process picks its port
- * dynamically; the preload script exposes it synchronously as
- * `window.electron.wsPort`. Falls back to 8080 outside Electron (tests,
- * plain browser dev).
+ * Resolves the sync-engine WebSocket URL synchronously when available.
+ * Dynamic-port engines may create the renderer before readiness; in that state
+ * this returns null so callers poll main rather than using legacy port 8080.
  */
-function getWsUrl(): string {
-  const exposedPort =
-    typeof window !== 'undefined' ? window.electron?.wsPort : undefined;
-  const port =
-    typeof exposedPort === 'number' &&
-    Number.isInteger(exposedPort) &&
-    exposedPort > 0 &&
-    exposedPort <= 65535
-      ? exposedPort
-      : DEFAULT_WS_PORT;
-  return `ws://localhost:${port}/ws`;
+function getWsUrl(): string | null {
+  const electron = typeof window !== 'undefined' ? window.electron : undefined;
+  if (electron === undefined) {
+    return 'ws://localhost:8080/ws';
+  }
+  const port = isValidWsPort(resolvedWsPort) ? resolvedWsPort : electron.wsPort;
+  return isValidWsPort(port) ? `ws://localhost:${port}/ws` : null;
 }
 const REQUEST_TIMEOUT_MS = 5000;
 const PR_SYNC_RESPONSE_MARGIN_MS = 15000;
@@ -168,7 +172,9 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 let singletonWs: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
+let enginePortPollAttempt = 0;
 let refCount = 0;
+let resolvedWsPort: number | null = null;
 let hasSentStartupDevFolderScan = false;
 const messageHandlers = new Map<string, (data: unknown) => void>();
 
@@ -925,6 +931,47 @@ function connect(): void {
   }
 
   const wsUrl = getWsUrl();
+  if (wsUrl === null) {
+    if (enginePortPollAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      log.error(
+        { maxAttempts: MAX_RECONNECT_ATTEMPTS },
+        'sync engine WebSocket port was not published',
+      );
+      appStore.setState((state) => ({
+        ...state,
+        syncStatus: 'error',
+        syncError: 'Sync engine did not start. Please restart the app.',
+        authChecked: true,
+        isAuthenticated: false,
+      }));
+      return;
+    }
+
+    enginePortPollAttempt += 1;
+    const getWsPort = window.electron?.getWsPort;
+    if (getWsPort !== undefined) {
+      void ResultAsync.fromPromise(getWsPort(), (error) => error).match(
+        (port) => {
+          if (isValidWsPort(port)) resolvedWsPort = port;
+        },
+        (error) => {
+          log.warn(
+            { err: error, attempt: enginePortPollAttempt },
+            'failed to query sync engine WebSocket port',
+          );
+        },
+      );
+    }
+    log.info(
+      { attempt: enginePortPollAttempt, maxAttempts: MAX_RECONNECT_ATTEMPTS },
+      'Go sync engine is still starting — waiting for its WebSocket port',
+    );
+    reconnectTimer = setTimeout(connect, ENGINE_PORT_POLL_INTERVAL_MS);
+    return;
+  }
+
+  enginePortPollAttempt = 0;
+
   log.info({ url: wsUrl }, 'attempting connection');
   try {
     appStore.setState((s) => ({ ...s, syncStatus: 'connecting' }));
@@ -1040,6 +1087,8 @@ function disconnect(): void {
   singletonWs?.close();
   singletonWs = null;
   reconnectAttempt = 0;
+  enginePortPollAttempt = 0;
+  resolvedWsPort = null;
   hasSentStartupDevFolderScan = false;
 }
 

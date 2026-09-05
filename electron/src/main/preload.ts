@@ -28,6 +28,18 @@ contextBridge.exposeInMainWorld('electron', {
    */
   wsPort: readWsPortFromArgv(process.argv),
 
+  async getWsPort(): Promise<number | null> {
+    const response = (await ipcRenderer.invoke('engine:get-ws-port')) as {
+      ok: unknown;
+    };
+    return typeof response.ok === 'number' &&
+      Number.isInteger(response.ok) &&
+      response.ok >= 1 &&
+      response.ok <= 65535
+      ? response.ok
+      : null;
+  },
+
   /**
    * Query SQLite database
    * @returns { ok: Record<string, unknown>[] } | { err: string }
@@ -149,7 +161,8 @@ contextBridge.exposeInMainWorld('electron', {
 declare global {
   interface Window {
     electron: {
-      wsPort: number;
+      wsPort: number | null;
+      getWsPort: () => Promise<number | null>;
       db: (request: DBQueryRequest) => Promise<DBQueryResponse | IPCError>;
       fs: (
         request: FSReadPatchRequest,

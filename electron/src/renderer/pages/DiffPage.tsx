@@ -15,7 +15,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { PierreDiffView } from '../components/PierreDiffView';
+import { DiffView } from '../components/diff/DiffView';
 import { RangeDiffView } from '../components/RangeDiffView';
 import { StatusSquare } from '../components/StatusSquare';
 import { addToast } from '../components/ToastContainer';
@@ -41,7 +41,7 @@ const log = createLogger('DiffPage');
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
  *
  * Two diff surfaces share this page:
- *   - the full PR diff (default), rendered by {@link PierreDiffView}
+ *   - the full PR diff (default), rendered by {@link DiffView}
  *   - a range diff (since-last-review or a timeline patchset pair), rendered
  *     by {@link RangeDiffView}
  *
@@ -306,7 +306,7 @@ export function DiffPage() {
         ) : diffError !== null ? (
           <ErrorState message={`Failed to load diff: ${diffError}`} />
         ) : (
-          <PierreDiffView
+          <DiffView
             diff={diff}
             theme={theme}
             findQuery={findQuery}

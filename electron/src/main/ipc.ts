@@ -23,11 +23,17 @@ const ACTION_TYPE_MAP: Record<string, string> = {
 export function setupIPC(
   path: string,
   logger: Logger,
-  wsClient: WebSocketClient,
+  getWsClient: () => WebSocketClient | null,
   settings: SettingsService,
+  getWsPort: () => number | null,
   telemetry?: TelemetryService,
 ): void {
   logger.info(`IPC setup (db path: ${path})`);
+
+  // ---- engine:* handlers ----
+  ipcMain.handle('engine:get-ws-port', () => {
+    return { ok: getWsPort() };
+  });
 
   // ---- settings:* handlers ----
   ipcMain.handle('settings:get', async () => {
@@ -116,7 +122,8 @@ export function setupIPC(
   // ---- go:command handler ----
   ipcMain.handle('go:command', async (_event, request: GoCommandRequest) => {
     try {
-      if (!wsClient.isConnected()) {
+      const wsClient = getWsClient();
+      if (!wsClient?.isConnected()) {
         void telemetry?.track('review_action_requested', {
           action: ACTION_TYPE_MAP[request.type] ?? 'unknown',
           online: false,
@@ -155,7 +162,8 @@ export function setupIPC(
   // ---- sync:action handler ----
   ipcMain.handle('sync:action', async (_event, request: SyncActionRequest) => {
     try {
-      if (!wsClient.isConnected()) {
+      const wsClient = getWsClient();
+      if (!wsClient?.isConnected()) {
         void telemetry?.track('review_action_requested', {
           action: ACTION_TYPE_MAP[request.type] ?? request.type,
           online: false,
