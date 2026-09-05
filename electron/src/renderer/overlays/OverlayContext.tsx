@@ -21,7 +21,8 @@ export type OverlayKind =
   | 'filter'
   | 'repoPicker'
   | 'addRepo'
-  | 'threads';
+  | 'threads'
+  | 'tour';
 type HelpSourceRoute = 'list' | 'detail' | 'diff';
 
 export interface OverlayContextValue {
@@ -35,6 +36,7 @@ export interface OverlayContextValue {
   openRepoPicker(): void;
   openAddRepo(): void;
   openThreads(): void;
+  openTour(): void;
   closeOverlay(): void;
   closeSearch(opts?: { clearQuery?: boolean }): void;
 }
@@ -66,6 +68,7 @@ export function OverlayProvider({
   const openRepoPicker = useCallback(() => setActiveOverlay('repoPicker'), []);
   const openAddRepo = useCallback(() => setActiveOverlay('addRepo'), []);
   const openThreads = useCallback(() => setActiveOverlay('threads'), []);
+  const openTour = useCallback(() => setActiveOverlay('tour'), []);
   const closeOverlay = useCallback(() => setActiveOverlay(null), []);
   const closeSearch = useCallback((opts?: { clearQuery?: boolean }) => {
     if (opts?.clearQuery) {
@@ -87,6 +90,7 @@ export function OverlayProvider({
       openRepoPicker,
       openAddRepo,
       openThreads,
+      openTour,
       closeOverlay,
       closeSearch,
     }),
@@ -101,6 +105,7 @@ export function OverlayProvider({
       openRepoPicker,
       openAddRepo,
       openThreads,
+      openTour,
       closeOverlay,
       closeSearch,
     ],

@@ -10,6 +10,7 @@ import { AppFooter } from './AppFooter';
 import { CommandPalette } from './CommandPalette';
 import { HelpOverlay } from './HelpOverlay';
 import { RepoPickerDialog } from './RepoPickerDialog';
+import { TourOverlay } from './TourOverlay';
 
 export function AuthedRouteShell(): React.ReactElement {
   const navigate = useNavigate();
@@ -40,6 +41,7 @@ export function AuthedRouteShell(): React.ReactElement {
       <CommandPalette />
       <RepoPickerDialog />
       <HelpOverlay />
+      <TourOverlay />
     </div>
   );
 }

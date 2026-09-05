@@ -37,6 +37,12 @@ const COMMANDS: readonly CommandItem[] = [
     shortcut: ['?'],
   },
   {
+    id: 'tour',
+    name: ':tour',
+    description: 'Replay the first-run guided tour',
+    icon: 'school',
+  },
+  {
     id: 'settings',
     name: 'Open project settings',
     icon: 'settings',
@@ -127,8 +133,14 @@ const COMMANDS: readonly CommandItem[] = [
  * Escape closes.
  */
 export function CommandPalette(): React.ReactElement | null {
-  const { activeOverlay, closeOverlay, openHelp, openRepoPicker, openAddRepo } =
-    useOverlays();
+  const {
+    activeOverlay,
+    closeOverlay,
+    openHelp,
+    openRepoPicker,
+    openAddRepo,
+    openTour,
+  } = useOverlays();
   const isOpen = activeOverlay === 'command';
   const [query, setQuery] = useState('');
   const { send } = useWebSocket();
@@ -236,6 +248,10 @@ export function CommandPalette(): React.ReactElement | null {
         return;
       case 'help':
         openHelp('list');
+        setQuery('');
+        return;
+      case 'tour':
+        openTour();
         setQuery('');
         return;
       case 'focus-list':

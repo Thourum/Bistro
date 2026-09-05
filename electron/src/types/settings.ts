@@ -41,6 +41,11 @@ export interface AppearanceSettings {
   highDensity: boolean;
   /** Set to true after the user completes (or skips) onboarding. */
   onboardingComplete: boolean;
+  /**
+   * Set to true on any tour exit — finishing screen 5 or Esc mid-tour both
+   * count. Re-runnable any time via the `:tour` palette command.
+   */
+  tourComplete: boolean;
 }
 
 export interface SyncSettings {
@@ -110,6 +115,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     codeFontSize: 13,
     highDensity: false,
     onboardingComplete: false,
+    tourComplete: false,
   },
   sync: {
     autoSync: true,
