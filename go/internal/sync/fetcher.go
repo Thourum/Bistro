@@ -44,8 +44,13 @@ type PRFetchResult struct {
 	PR       *provider.PR
 	Comments []*provider.Comment
 	Threads  []*provider.ReviewThread // populated when provider implements ThreadProvider
-	CI       *provider.CIStatus
-	DiffSize int64
+	// CommentsFetched and ThreadsFetched distinguish a successful empty refresh
+	// from a write where the corresponding source was not fetched. Mention state
+	// may only be cleared once every source has been refreshed.
+	CommentsFetched bool
+	ThreadsFetched  bool
+	CI              *provider.CIStatus
+	DiffSize        int64
 	// DiffFiles holds the per-file diffs to be persisted atomically with the PR
 	// row and patchset in WriteSyncResultsContext.
 	// nil means diff was not attempted or failed (preserve existing pr_diffs cache).
@@ -133,6 +138,7 @@ func (o *Orchestrator) FetchPRDetails(
 					)
 				} else {
 					result.Comments = comments
+					result.CommentsFetched = true
 					logSubstep(prLog, "pr comments fetched", subDur,
 						"count", len(comments),
 					)
@@ -177,9 +183,12 @@ func (o *Orchestrator) FetchPRDetails(
 							"duration_ms", subDur, "error", threadErr)
 					} else {
 						result.Threads = threads
+						result.ThreadsFetched = true
 						logSubstep(prLog, "pr review threads fetched", subDur,
 							"count", len(threads))
 					}
+				} else {
+					result.ThreadsFetched = true
 				}
 			}
 

@@ -42,7 +42,7 @@ const log = createLogger('DiffPage');
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
  *
  * Two diff surfaces share this page:
- *   - the full PR diff (default), rendered by {@link PierreDiffView}
+ *   - the full PR diff (default), rendered by {@link DiffView}
  *   - a range diff (since-last-review or a timeline patchset pair), rendered
  *     by {@link RangeDiffView}
  *

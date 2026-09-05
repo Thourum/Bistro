@@ -9,6 +9,7 @@ import type {
   RepoInfo,
   Toast,
 } from '../types';
+import type { LaneSection } from '../utils/lanes';
 
 interface SyncStats {
   prCount: number;
@@ -76,6 +77,8 @@ export interface UIState {
   authError: string | null;
   authChecked: boolean;
   connectedProviders: Array<{ provider: string; username: string }>;
+  /** Viewer login returned by the PR-list payload. */
+  viewerLogin: string;
   // Repo discovery
   repos: RepoInfo[];
   reposLoading: boolean;
@@ -86,6 +89,8 @@ export interface UIState {
    * list.openBrowser, list.bottom) without needing a hook context.
    */
   visiblePRIds: string[];
+  /** Lane positions for the flat inbox list; empty in grouped view. */
+  laneSectionsSnapshot: LaneSection[];
   visiblePRBrowserUrls: string[];
   /**
    * Repo key (`owner/repo`) for each visible row — parallel to visiblePRIds.
@@ -186,10 +191,12 @@ export const initialUIState: UIState = {
   authError: null,
   authChecked: false,
   connectedProviders: [],
+  viewerLogin: '',
   repos: [],
   reposLoading: false,
   repoFilter: null,
   visiblePRIds: [],
+  laneSectionsSnapshot: [],
   visiblePRBrowserUrls: [],
   visiblePRRepoKeys: [],
   collapsedRepoKeys: [],
