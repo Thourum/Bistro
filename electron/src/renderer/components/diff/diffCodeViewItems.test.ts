@@ -113,9 +113,9 @@ describe('buildCodeViewItems', () => {
     const files = splitUnifiedDiff(GENERATED_FILE_PATCH);
     const lockKey = files[0]?.canonicalKey;
     const sourceKey = files[1]?.canonicalKey;
-    if (lockKey === undefined || sourceKey === undefined) {
-      throw new Error('missing canonical keys');
-    }
+    expect(lockKey).toBeDefined();
+    expect(sourceKey).toBeDefined();
+    if (lockKey === undefined || sourceKey === undefined) return;
 
     expect(
       buildItems(new Map(), null, GENERATED_FILE_PATCH).map((i) => i.collapsed),
@@ -131,7 +131,8 @@ describe('buildCodeViewItems', () => {
   it('changes the item version when its collapse state flips', () => {
     const files = splitUnifiedDiff(GENERATED_FILE_PATCH);
     const lockKey = files[0]?.canonicalKey;
-    if (lockKey === undefined) throw new Error('missing canonical key');
+    expect(lockKey).toBeDefined();
+    if (lockKey === undefined) return;
     const before = buildItems(new Map(), null, GENERATED_FILE_PATCH);
     const after = buildItems(new Map(), null, GENERATED_FILE_PATCH, [lockKey]);
 

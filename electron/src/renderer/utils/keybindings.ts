@@ -6,7 +6,6 @@ import type {
 } from '../overlays/OverlayContext';
 import { authAction, PROVIDERS } from '../providers';
 import { router } from '../router';
-import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { toggleRepoGroup } from '../store/ui';
 import { openUrlInBrowser } from './openUrl';
@@ -364,6 +363,25 @@ const jumpBindings: KeyBinding[] = Array.from({ length: 9 }, (_, i) => {
   };
 });
 
+const laneJumpBindings: KeyBinding[] = Array.from({ length: 6 }, (_, i) => {
+  const laneNumber = i + 1;
+  return {
+    actionId: `inbox.lane${laneNumber}`,
+    keys: ['g', String(laneNumber)],
+    description: `Jump to lane ${laneNumber}`,
+    activation: { routes: ['list'] as RouteBase[] },
+    hidden: laneNumber !== 1,
+    action: (ctx: KeyActionContext) => {
+      const section = ctx.store.state.laneSectionsSnapshot[i];
+      if (section === undefined || section.count === 0) return;
+      ctx.store.setState((s) => ({
+        ...s,
+        selectedPRIndex: section.startIndex,
+      }));
+    },
+  };
+});
+
 function emitInboxEvent(name: string): void {
   if (typeof document === 'undefined') return;
   document.dispatchEvent(new CustomEvent(name));
@@ -507,6 +525,13 @@ const listBindings: KeyBinding[] = [
     },
   },
   {
+    actionId: 'inbox.markLaneRead',
+    keys: 'Shift+R',
+    description: 'Mark lane read',
+    activation: { routes: ['list'] },
+    action: (_ctx) => emitInboxEvent('bistro:inbox:mark-lane-read'),
+  },
+  {
     actionId: 'list.openBrowser',
     keys: 'o',
     description: 'Open (in Browser)',
@@ -560,6 +585,7 @@ const listBindings: KeyBinding[] = [
     },
   },
   ...jumpBindings,
+  ...laneJumpBindings,
 ];
 
 // ─── Detail View bindings (active in detail mode only) ────────────────────────
@@ -757,11 +783,11 @@ const detailBindings: KeyBinding[] = [
     keys: 'Shift+S',
     description: 'Toggle side-by-side',
     activation: { routes: ['diff'] },
-    action: () => {
-      const { style } = settingsStore.state.diff;
-      void updateSettings({
-        diff: { style: style === 'split' ? 'unified' : 'split' },
-      });
+    action: (ctx) => {
+      ctx.store.setState((s) => ({
+        ...s,
+        confirmingAction: 'toggle-diff-style',
+      }));
     },
   },
   {

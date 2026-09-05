@@ -33,7 +33,7 @@ import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
-import { settingsStore } from '../store/settings';
+import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import type { Comment, DiffFile } from '../types';
 import { repoIdForPR } from '../utils/expertise';
@@ -47,7 +47,7 @@ const log = createLogger('DiffPage');
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
  *
  * Two diff surfaces share this page:
- *   - the full PR diff (default), rendered by {@link PierreDiffView}
+ *   - the full PR diff (default), rendered by {@link DiffView}
  *   - a range diff (since-last-review or a timeline patchset pair), rendered
  *     by {@link RangeDiffView}
  *
@@ -263,6 +263,20 @@ export function DiffPage() {
       dismissible: true,
     });
   }, [openInEditorState.error]);
+
+  // Persist the keybinding's diff-style toggle intent from the route owner so
+  // failures can be surfaced to the user instead of being discarded.
+  useEffect(() => {
+    if (confirmingAction !== 'toggle-diff-style') return;
+    const nextStyle = diffStyle === 'split' ? 'unified' : 'split';
+    appStore.setState((s) => ({ ...s, confirmingAction: null }));
+    updateSettings({ diff: { style: nextStyle } }).match(
+      () => undefined,
+      (message) => {
+        addToast({ type: 'error', message, dismissible: true });
+      },
+    );
+  }, [confirmingAction, diffStyle]);
 
   // Clear range-diff intent when leaving the diff view.
   useEffect(() => {

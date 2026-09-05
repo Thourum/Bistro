@@ -173,6 +173,7 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 		WithActionQueue(store.NewActionQueue(a.db.DB)).
 		WithLiveness(a.provCtx).
 		WithClassifier(a.classifier).
+		WithCurrentUser(a.currentUserStore).
 		WithExpertise(a.expertiseEngine).
 		WithRepoPathResolver(a.resolveRepoPath).
 		WithPostCommit(func(prIDs []string) {
@@ -607,7 +608,7 @@ func (a *App) Run(ctx context.Context) error {
 		CurrentUser: currentUserStore,
 		Log:         a.log,
 	}))
-	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandlerWithExpertise(a.db.DB, a.expertiseEngine, a.log))
+	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandlerWithExpertise(a.db.DB, a.expertiseEngine, currentUserStore, a.log))
 	a.wsServer.RegisterHandler("REQUEST_COMMENTS",
 		handler.NewRequestCommentsHandlerWithLLMKick(a.db.DB, a.log, a.classifier, llmKick))
 	dismissDeps := handler.DismissDeps{
@@ -646,6 +647,8 @@ func (a *App) Run(ctx context.Context) error {
 		}, a.log))
 	a.wsServer.RegisterHandler("MARK_FILE_VIEWED",
 		handler.NewMarkFileViewedHandlerWithDiffStore(a.db, currentUserStore, diffStore, a.log))
+	a.wsServer.RegisterHandler("MARK_PRS_READ",
+		handler.NewMarkPRsReadHandler(a.db, currentUserStore, a.wsServer, a.log))
 	// Phase 2.4 handlers.
 	a.wsServer.RegisterHandler("GET_REVIEW_THREADS",
 		handler.NewGetReviewThreadsHandler(a.db, a.log))

@@ -159,6 +159,7 @@ function Sidebar({ active, onSelect }: SidebarProps) {
 
 function AppearanceSection() {
   const appearance = useStore(settingsStore, (s) => s.appearance);
+  const prList = useStore(settingsStore, (s) => s.prList);
 
   return (
     <Section id="appearance" title="Appearance">
@@ -193,6 +194,34 @@ function AppearanceSection() {
           updateSettings({ appearance: { ...appearance, highDensity: on } })
         }
       />
+
+      <div className="border border-outline-variant/20 bg-surface p-6">
+        <label
+          htmlFor="pr-list-view"
+          className="block font-bold text-sm text-on-surface mb-1"
+        >
+          PR list view
+        </label>
+        <p className="font-mono text-[11px] text-on-surface-variant mb-4">
+          Organize the inbox by review lanes or repository groups.
+        </p>
+        <select
+          id="pr-list-view"
+          value={prList.view}
+          onChange={(event) =>
+            updateSettings({
+              prList: {
+                ...prList,
+                view: event.target.value === 'grouped' ? 'grouped' : 'flat',
+              },
+            })
+          }
+          className="bg-surface border border-outline-variant focus:border-primary focus:outline-none transition-colors p-3 text-sm text-on-surface"
+        >
+          <option value="flat">Lanes</option>
+          <option value="grouped">Repo groups</option>
+        </select>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-outline-variant/20 border border-outline-variant/20">
         <FontPicker

@@ -1,4 +1,5 @@
 import { Store } from '@tanstack/store';
+import type { AuthAction } from '../providers/provider';
 import type {
   ActionResult,
   ExpertiseNudgePayload,
@@ -8,6 +9,7 @@ import type {
   RepoInfo,
   Toast,
 } from '../types';
+import type { LaneSection } from '../utils/lanes';
 
 interface SyncStats {
   prCount: number;
@@ -21,6 +23,22 @@ interface SyncStats {
  * All user preferences live in `settingsStore` (store/settings.ts) and are
  * round-tripped through the main process into `userData/settings.json`.
  */
+export type ConfirmingAction =
+  | 'approve'
+  | 'approve_confirmed'
+  | 'command'
+  | 'comment'
+  | 'draft'
+  | 'mark-viewed'
+  | 'mute'
+  | 'onboarding_finish'
+  | 'reply'
+  | 'request_changes'
+  | 'since-last-review'
+  | 'star'
+  | 'toggle-diff-style'
+  | AuthAction;
+
 export interface UIState {
   selectedPRIndex: number;
   selectedFileIndex: number;
@@ -30,7 +48,7 @@ export interface UIState {
   paneLayout: 'list' | 'detail' | 'split';
   sortBy: 'updated' | 'created';
   filterState: 'open' | 'draft' | 'all' | 'needs_action' | 'touches_you';
-  confirmingAction: string | null;
+  confirmingAction: ConfirmingAction | null;
   pendingAction: PendingAction | null;
   actionResult: ActionResult | null;
   // WebSocket sync state
@@ -59,6 +77,8 @@ export interface UIState {
   authError: string | null;
   authChecked: boolean;
   connectedProviders: Array<{ provider: string; username: string }>;
+  /** Viewer login returned by the PR-list payload. */
+  viewerLogin: string;
   // Repo discovery
   repos: RepoInfo[];
   reposLoading: boolean;
@@ -69,6 +89,8 @@ export interface UIState {
    * list.openBrowser, list.bottom) without needing a hook context.
    */
   visiblePRIds: string[];
+  /** Lane positions for the flat inbox list; empty in grouped view. */
+  laneSectionsSnapshot: LaneSection[];
   visiblePRBrowserUrls: string[];
   /**
    * Repo key (`owner/repo`) for each visible row — parallel to visiblePRIds.
@@ -169,10 +191,12 @@ export const initialUIState: UIState = {
   authError: null,
   authChecked: false,
   connectedProviders: [],
+  viewerLogin: '',
   repos: [],
   reposLoading: false,
   repoFilter: null,
   visiblePRIds: [],
+  laneSectionsSnapshot: [],
   visiblePRBrowserUrls: [],
   visiblePRRepoKeys: [],
   collapsedRepoKeys: [],

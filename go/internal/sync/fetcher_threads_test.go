@@ -35,6 +35,9 @@ func TestFetchPRDetails_PopulatesThreads(t *testing.T) {
 	if len(results[0].Threads) != 1 || results[0].Threads[0].ID != "t1" {
 		t.Errorf("Threads: got %+v", results[0].Threads)
 	}
+	if !results[0].CommentsFetched || !results[0].ThreadsFetched {
+		t.Errorf("fetched flags = comments:%t threads:%t, want both true", results[0].CommentsFetched, results[0].ThreadsFetched)
+	}
 }
 
 func TestFetchPRDetails_NoThreadProvider_SkipsGracefully(t *testing.T) {
@@ -59,6 +62,9 @@ func TestFetchPRDetails_NoThreadProvider_SkipsGracefully(t *testing.T) {
 	}
 	if len(results[0].Threads) != 0 {
 		t.Errorf("no-ThreadProvider: expected 0 threads, got %d", len(results[0].Threads))
+	}
+	if !results[0].CommentsFetched || !results[0].ThreadsFetched {
+		t.Errorf("fetched flags = comments:%t threads:%t, want both true", results[0].CommentsFetched, results[0].ThreadsFetched)
 	}
 }
 
@@ -95,5 +101,8 @@ func TestFetchPRDetails_ThreadProviderError_PRDataStillPersisted(t *testing.T) {
 	}
 	if len(r.Threads) != 0 {
 		t.Errorf("expected 0 threads on error, got %d", len(r.Threads))
+	}
+	if r.ThreadsFetched {
+		t.Error("ThreadsFetched must be false when the thread refresh fails")
 	}
 }

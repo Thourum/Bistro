@@ -57,6 +57,9 @@ type Orchestrator struct {
 	// classifier is optional; when set, writers classify each comment in the
 	// write path (Phase 3 deterministic tier).
 	classifier *classify.EngineProvider
+	// currentUser resolves the authenticated GitHub login for mention detection
+	// during sync writes.
+	currentUser currentUserReader
 	// postCommit is optional; when set, writers invoke it after each committed
 	// batch with the written PR ids (Phase 3.8 LLM tier kick).
 	postCommit func(prIDs []string)
@@ -159,6 +162,13 @@ func (o *Orchestrator) WithLiveness(ctx context.Context) *Orchestrator {
 // by this orchestrator classify comments in the write path (Phase 3).
 func (o *Orchestrator) WithClassifier(p *classify.EngineProvider) *Orchestrator {
 	o.classifier = p
+	return o
+}
+
+// WithCurrentUser attaches a current-user reader so sync writers can detect
+// mentions of the authenticated GitHub account.
+func (o *Orchestrator) WithCurrentUser(reader currentUserReader) *Orchestrator {
+	o.currentUser = reader
 	return o
 }
 
@@ -1216,7 +1226,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 		phaseStart := time.Now()
 		o.emitter.Emit(events.NewProgressEvent("writing_database", 0, len(fetchedPRs)))
 
-		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithPostCommit(o.postCommit)
+		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
 		if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
 			errMsg := fmt.Sprintf("failed to write results: %v", err)
 			result.Errors = append(result.Errors, errMsg)
@@ -1279,7 +1289,7 @@ func (o *Orchestrator) SyncPR(ctx context.Context, prID string) error {
 		return fmt.Errorf("hydrate %s: %w", prID, results[0].Error)
 	}
 
-	writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithPostCommit(o.postCommit)
+	writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
 	if err := writer.WriteSyncResultsContext(ctx, results); err != nil {
 		return fmt.Errorf("write hydrated PR %s: %w", prID, err)
 	}
@@ -1361,7 +1371,7 @@ func (o *Orchestrator) DiscoverAndSyncInbox(ctx context.Context) (*SyncResult, e
 			result.CommentCount += len(detail.Comments)
 		}
 
-		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithPostCommit(o.postCommit)
+		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
 		if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
 			_ = o.store.MarkSyncCursorError(ctx, scope, err)
 			return nil, err
