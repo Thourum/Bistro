@@ -18,6 +18,7 @@ interface PRListReadyData {
   prs: PR[];
   total: number;
   has_more: boolean;
+  viewer_login?: string;
 }
 
 /**
@@ -50,6 +51,10 @@ export function useWebSocketPRList(filterState: FilterState = 'open') {
         } as RequestPRListData);
 
         const payload = data as PRListReadyData;
+        const viewerLogin = payload.viewer_login ?? '';
+        if (appStore.state.viewerLogin !== viewerLogin) {
+          appStore.setState((state) => ({ ...state, viewerLogin }));
+        }
         if (filterState === 'needs_action') {
           return payload.prs.filter(
             (pr) => classifyPR(pr, username) === 'needs_action',

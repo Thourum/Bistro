@@ -1,4 +1,4 @@
-import { ResultAsync } from 'neverthrow';
+import { fromThrowable, type Result, ResultAsync } from 'neverthrow';
 import { useCallback, useEffect } from 'react';
 import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
@@ -80,6 +80,10 @@ interface ActionFailedData {
 interface ThreadStateChangedData {
   pr_id: string;
   thread_id: string;
+}
+
+interface PRsReadChangedData {
+  pr_ids: string[];
 }
 
 interface ScanDevFolderRequest {
@@ -314,15 +318,25 @@ function handleThreadStateChanged(_data: ThreadStateChangedData): void {
   }
 }
 
-function handlePRMetadataChanged(_data: unknown): void {
-  try {
+function bumpPRListRevision(): Result<void, unknown> {
+  return fromThrowable(() => {
     appStore.setState((s) => ({
       ...s,
       prListRevision: s.prListRevision + 1,
     }));
-  } catch {
-    // Store not available (test environment)
-  }
+  })();
+}
+
+function handlePRMetadataChanged(_data: unknown): void {
+  bumpPRListRevision().mapErr((error) =>
+    log.error({ err: error }, 'failed to invalidate PR list'),
+  );
+}
+
+function handlePRsReadChanged(_data: PRsReadChangedData): void {
+  bumpPRListRevision().mapErr((error) =>
+    log.error({ err: error }, 'failed to invalidate PR list'),
+  );
 }
 
 function handleCIStatusChanged(_data: unknown): void {
@@ -577,6 +591,9 @@ function onMessage(event: MessageEvent<string>): void {
     case 'PR_METADATA_CHANGED':
       handlePRMetadataChanged(message.data);
       break;
+    case 'PRS_READ_CHANGED':
+      handlePRsReadChanged(message.data as PRsReadChangedData);
+      break;
     case 'CI_STATUS_CHANGED':
       handleCIStatusChanged(message.data);
       break;
@@ -802,6 +819,7 @@ function onMessage(event: MessageEvent<string>): void {
       break;
     }
     case 'PR_SYNCED':
+    case 'PRS_READ_ACK':
     case 'DIFF_READY':
     case 'PATCHSETS_READY':
     case 'RANGE_DIFF_READY':

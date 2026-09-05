@@ -7,10 +7,12 @@ import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
+import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
+import { addToast } from './ToastContainer';
 
 type Icon = string;
 
@@ -48,6 +50,18 @@ const COMMANDS: readonly CommandItem[] = [
     id: 'clear',
     name: 'Clear all filters and search',
     icon: 'filter_alt_off',
+  },
+  {
+    id: 'view-lanes',
+    name: ':view lanes',
+    description: 'Organize the PR inbox by review lanes',
+    icon: 'view_agenda',
+  },
+  {
+    id: 'view-groups',
+    name: ':view groups',
+    description: 'Organize the PR inbox by repository',
+    icon: 'account_tree',
   },
   {
     id: 'repo-picker',
@@ -102,10 +116,11 @@ export function CommandPalette(): React.ReactElement | null {
 
   // Use the shared visible-PR source so palette results match the list route.
   const { prs } = useVisiblePRs();
-  const selectedPRIndex = useStore(
+  const selectedPRId = useStore(
     appStore,
-    (state: UIState) => state.selectedPRIndex,
+    (state: UIState) => state.visiblePRIds[state.selectedPRIndex] || undefined,
   );
+  const prList = useStore(settingsStore, (state) => state.prList);
   const recentPRs = useMemo(() => prs.slice(0, 5), [prs]);
 
   const filteredPRs = useMemo(() => {
@@ -163,8 +178,8 @@ export function CommandPalette(): React.ReactElement | null {
   };
 
   const focusedPR = useMemo(
-    () => focusedExpertisePR(prs, params.prId, selectedPRIndex),
-    [params.prId, prs, selectedPRIndex],
+    () => focusedExpertisePR(prs, params.prId, selectedPRId),
+    [params.prId, prs, selectedPRId],
   );
 
   const sendExpertiseCommand = (
@@ -214,6 +229,24 @@ export function CommandPalette(): React.ReactElement | null {
         }));
         closeOverlay();
         setQuery('');
+        return;
+      case 'view-lanes':
+        void updateSettings({ prList: { ...prList, view: 'flat' } }).match(
+          () => {
+            closeOverlay();
+            setQuery('');
+          },
+          (message) => addToast({ type: 'error', message, dismissible: true }),
+        );
+        return;
+      case 'view-groups':
+        void updateSettings({ prList: { ...prList, view: 'grouped' } }).match(
+          () => {
+            closeOverlay();
+            setQuery('');
+          },
+          (message) => addToast({ type: 'error', message, dismissible: true }),
+        );
         return;
       case 'repo-picker':
         openRepoPicker();
