@@ -121,10 +121,12 @@ the `:tour` palette command.
 
 ## Palette-only commands (no dedicated key)
 
-`:open in browser`, `:open in editor` (verifies local checkout against the
-PR head SHA first; offers checkout-and-open when they don't match),
-`:diff split` / `:diff unified`, `:view lanes` / `:view groups`, `:sync`,
-`:tour`, `:settings`, `:about`, `:help`, `:clear`.
+Production commands: `:open in browser`, `:open in editor` (verifies local
+checkout against the PR head SHA first; offers checkout-and-open when they
+don't match), `:diff split` / `:diff unified`, `:view lanes` / `:view groups`,
+`:sync`, `:tour`, `:settings`, `:about`, `:help`, `:clear`.
+
+Development builds also expose `:reset-store`.
 
 ---
 

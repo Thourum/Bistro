@@ -64,7 +64,7 @@ Config: copy `electron/.env.example` to `electron/.env.local` (GitHub OAuth clie
 Adding or changing a SQL query: edit/add a `.sql` file under `go/internal/store/queries/`, then regenerate (`sqlc.yaml` is at `go/`):
 
 ```bash
-cd go && go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 && sqlc generate
+cd go && go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
 ```
 
 Generated code lives in `go/internal/store/db/` — never hand-edit it. If a migration lands without a matching `sqlc generate` run, the generated structs silently drift from the schema (this happened once — migrations 033/034 added columns/tables that `internal/store/db/models.go` didn't know about until the next `sqlc generate`).

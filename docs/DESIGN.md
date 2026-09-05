@@ -91,7 +91,7 @@ Required signals:
 
 - `j/k` moves row focus, not scroll position alone.
 - `enter` opens selected PR and preserves inbox selection.
-- `space` opens a lightweight preview without changing route.
+- `space` toggles the selected repository group in grouped view.
 - `/` filters the current lane locally first.
 - `f` opens filter chips; filter keys are visible in-place.
 - `g 1`…`g 6` jump to lane 1–6 (shipped, replaces the earlier `g n`/`g w`/`g a`/`g f` sketch).
