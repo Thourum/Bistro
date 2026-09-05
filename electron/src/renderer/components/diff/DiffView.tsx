@@ -5,7 +5,12 @@ import { useStore } from '../../hooks/useStore';
 import { appStore } from '../../store';
 import type { Comment, ExpertiseFileData, ReviewThread } from '../../types';
 import { findFileByKey } from '../../utils/diffFileKey';
-import { buildOrderedAnnotations } from './diffAnnotations';
+import { openUrlInBrowser } from '../../utils/openUrl';
+import { hideWhitespaceOnlyHunks } from '../../utils/whitespaceDiff';
+import {
+  buildOrderedAnnotations,
+  lineExistsInAdditions,
+} from './diffAnnotations';
 import {
   buildCodeViewItems,
   findUnrenderableDiffFile,
@@ -23,6 +28,12 @@ import { DiffParseFailurePanel } from './diffParseFailurePanel';
 import { type ParsedDiffFile, splitUnifiedDiff } from './diffPathUtils';
 import { ThreadAnnotationCard } from './diffThreadAnnotation';
 
+const OPEN_FILE_BROWSER_EVENT = 'bistro:diff:open-file-browser';
+
+// Stable empty-set default — avoids a new Set() on every render when the
+// caller doesn't pass viewedPaths.
+const EMPTY_VIEWED_PATHS: ReadonlySet<string> = new Set();
+
 function sameIds(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;
   return left.every((value, index) => value === right[index]);
@@ -34,11 +45,22 @@ export interface DiffViewProps {
   findQuery?: string;
   selectedFileKey?: string;
   onFilesResolved?: (canonicalKeys: string[]) => void;
+  diffStyle?: AppSettings['diff']['style'];
   threads?: ReviewThread[];
   comments?: Comment[];
   onThreadReply?: (threadId: string, body: string) => void;
   expertiseFiles?: ExpertiseFileData[];
   expertiseError?: string | null;
+  /**
+   * Base PR URL on the provider (no `/files` suffix). When set, `o` and the
+   * binary-file placeholder open the focused file's blob view there.
+   */
+  prBrowserUrl?: string | null;
+  /**
+   * Paths the current user has marked viewed (`v`), keyed by the same path
+   * DiffFile.path uses server-side. Drives the sidebar's viewed indicator.
+   */
+  viewedPaths?: ReadonlySet<string>;
 }
 
 /**
@@ -52,13 +74,31 @@ export function DiffView({
   findQuery = '',
   selectedFileKey,
   onFilesResolved,
+  diffStyle = 'unified',
   threads = [],
   comments = [],
   onThreadReply,
   expertiseFiles = [],
   expertiseError = null,
+  prBrowserUrl = null,
+  viewedPaths = EMPTY_VIEWED_PATHS,
 }: DiffViewProps) {
-  const files = useMemo(() => splitUnifiedDiff(diff), [diff]);
+  const hideWhitespaceHunks = useStore(
+    appStore,
+    (state) => state.hideWhitespaceHunks,
+  );
+  const collapseOverrides = useStore(
+    appStore,
+    (state) => state.diffCollapseOverrides,
+  );
+  const allFiles = useMemo(() => splitUnifiedDiff(diff), [diff]);
+  // Hiding whitespace-only hunks rewrites each file's patch text (the library
+  // has no ignore-whitespace option) but keeps file identity, so navigation,
+  // canonical keys, and the sidebar are unaffected.
+  const { files, hiddenWhitespaceByFileId } = useMemo(
+    () => filterWhitespaceHunks(allFiles, hideWhitespaceHunks),
+    [allFiles, hideWhitespaceHunks],
+  );
   const codeViewFileResult = useMemo(() => parseCodeViewFiles(files), [files]);
   const { parsedFiles: parsedCodeViewFiles, unrenderableFiles } =
     codeViewFileResult;
@@ -105,6 +145,7 @@ export function DiffView({
         replyingToThreadId,
         expertiseByPath,
         expertiseError,
+        collapseOverrides,
       ),
     [
       parsedCodeViewFiles,
@@ -114,6 +155,7 @@ export function DiffView({
       replyingToThreadId,
       expertiseByPath,
       expertiseError,
+      collapseOverrides,
     ],
   );
 
@@ -153,6 +195,10 @@ export function DiffView({
         inlineCommentThreadIds: [],
         activeInlineCommentThreadId: null,
         replyingInlineCommentThreadId: null,
+        // Collapse overrides and the whitespace toggle are keyed to the diff
+        // being reviewed; leaving them set would leak into the next PR.
+        diffCollapseOverrides: [],
+        hideWhitespaceHunks: false,
       }));
     };
   }, []);
@@ -164,14 +210,27 @@ export function DiffView({
     );
     if (entry === undefined) return;
     scrollToCodeViewFile(codeViewRef.current, entry.fileId, 'nearest');
-    codeViewRef.current?.scrollTo({
-      type: 'line',
-      id: entry.fileId,
-      lineNumber: entry.line,
-      side: 'additions',
-      align: 'nearest',
-      behavior: 'instant',
-    });
+    // The thread's line isn't guaranteed to land inside a hunk of our
+    // locally re-parsed diff (stale anchor, deletions-side comment, etc).
+    // CodeView.scrollTo has no fallback for that — it just warns and no-ops —
+    // so skip the CodeView-native line scroll and rely on the DOM
+    // scrollIntoView below, which always works once the file is in view.
+    const parsedFile = parsedCodeViewFiles.find(
+      ({ file }) => file.id === entry.fileId,
+    );
+    if (
+      parsedFile !== undefined &&
+      lineExistsInAdditions(parsedFile.fileDiff, entry.line)
+    ) {
+      codeViewRef.current?.scrollTo({
+        type: 'line',
+        id: entry.fileId,
+        lineNumber: entry.line,
+        side: 'additions',
+        align: 'nearest',
+        behavior: 'instant',
+      });
+    }
     const animationFrame = requestAnimationFrame(() => {
       document
         .querySelector<HTMLElement>(
@@ -180,7 +239,7 @@ export function DiffView({
         ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
     return () => cancelAnimationFrame(animationFrame);
-  }, [activeAnnotationKey, orderedAnnotations]);
+  }, [activeAnnotationKey, orderedAnnotations, parsedCodeViewFiles]);
 
   useEffect(() => {
     if (files.length === 0) {
@@ -246,6 +305,27 @@ export function DiffView({
     unrenderableFiles,
     activeId ?? '',
   );
+
+  // `o` on the diff route: open the PR's Files-changed tab in the browser.
+  // GitHub's per-file anchor is sha256(path), which needs async WebCrypto —
+  // the tab is close enough and stays correct for every provider.
+  const openFilesInBrowser =
+    prBrowserUrl === null || prBrowserUrl === ''
+      ? undefined
+      : () => {
+          openUrlInBrowser(`${prBrowserUrl.replace(/\/+$/, '')}/files`);
+        };
+
+  useEffect(() => {
+    if (openFilesInBrowser === undefined) return;
+    const handler = (): void => {
+      openFilesInBrowser();
+    };
+    document.addEventListener(OPEN_FILE_BROWSER_EVENT, handler);
+    return () => {
+      document.removeEventListener(OPEN_FILE_BROWSER_EVENT, handler);
+    };
+  }, [openFilesInBrowser]);
   const filteredFiles = useMemo(() => {
     const query = findQuery.trim().toLowerCase();
     if (query === '') return files;
@@ -282,10 +362,16 @@ export function DiffView({
           updateSelectedFileIndex(files, id);
         }}
         totalCount={files.length}
+        viewedPaths={viewedPaths}
       />
       <section className="flex-1 min-w-0 min-h-0 bg-surface-container-lowest overflow-hidden relative">
         {activeUnrenderableFile !== undefined ? (
-          <DiffParseFailurePanel file={activeUnrenderableFile} />
+          <DiffParseFailurePanel
+            file={activeUnrenderableFile}
+            {...(openFilesInBrowser !== undefined
+              ? { onOpenInBrowser: openFilesInBrowser }
+              : {})}
+          />
         ) : (
           <CodeView
             ref={codeViewRef}
@@ -305,7 +391,8 @@ export function DiffView({
             items={items}
             options={{
               theme: `pierre-${theme}`,
-              diffStyle: 'unified',
+              diffStyle,
+              lineDiffType: 'word',
               stickyHeaders: true,
               layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
             }}
@@ -323,6 +410,7 @@ export function DiffView({
             renderCustomHeader={(item) => {
               const parsedFile = files.find((file) => file.id === item.id);
               if (parsedFile === undefined) return null;
+              const hiddenWhitespace = hiddenWhitespaceByFileId.get(item.id);
               return (
                 <>
                   <div className="bg-surface-container-lowest border-b border-outline-variant/10 px-4 py-2 flex items-center justify-between">
@@ -334,11 +422,16 @@ export function DiffView({
                         {parsedFile.lang}
                       </span>
                     </div>
-                    <div className="flex gap-4 font-mono text-[11px] font-bold shrink-0">
-                      <span className="text-primary">
+                    <div className="flex items-center gap-4 font-mono text-[11px] shrink-0">
+                      {hiddenWhitespace !== undefined ? (
+                        <span className="text-outline font-normal normal-case">
+                          {hiddenWhitespace} whitespace-only lines hidden
+                        </span>
+                      ) : null}
+                      <span className="text-primary font-bold">
                         +{parsedFile.additions}
                       </span>
-                      <span className="text-error">
+                      <span className="text-error font-bold">
                         -{parsedFile.deletions}
                       </span>
                     </div>
@@ -381,6 +474,29 @@ export function DiffView({
       </section>
     </div>
   );
+}
+
+interface WhitespaceFilterResult {
+  files: ParsedDiffFile[];
+  /** File id → number of `+`/`-` lines hidden in that file. */
+  hiddenWhitespaceByFileId: ReadonlyMap<string, number>;
+}
+
+function filterWhitespaceHunks(
+  files: readonly ParsedDiffFile[],
+  enabled: boolean,
+): WhitespaceFilterResult {
+  if (!enabled) {
+    return { files: [...files], hiddenWhitespaceByFileId: new Map() };
+  }
+  const hidden = new Map<string, number>();
+  const filtered = files.map((file) => {
+    const { patch, hiddenLineCount } = hideWhitespaceOnlyHunks(file.patch);
+    if (hiddenLineCount === 0) return file;
+    hidden.set(file.id, hiddenLineCount);
+    return { ...file, patch };
+  });
+  return { files: filtered, hiddenWhitespaceByFileId: hidden };
 }
 
 function updateSelectedFileIndex(

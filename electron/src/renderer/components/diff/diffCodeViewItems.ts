@@ -9,6 +9,7 @@ import type {
   ExpertiseFileData,
   ReviewThread,
 } from '../../types';
+import { isGeneratedFile } from '../../utils/generatedFiles';
 import { buildFileAnnotations } from './diffAnnotations';
 import type { ParsedDiffFile } from './diffPathUtils';
 
@@ -19,7 +20,17 @@ export interface ParsedCodeViewFile {
 
 export interface UnrenderableDiffFile {
   file: ParsedDiffFile;
-  reason: 'parse-failed';
+  reason: 'parse-failed' | 'binary';
+}
+
+const BINARY_MARKERS = [/^Binary files .* differ$/m, /^GIT binary patch$/m];
+
+/**
+ * True for patches git emits without text content. They parse to zero hunks,
+ * so CodeView would render them as an empty file.
+ */
+export function isBinaryPatch(patch: string): boolean {
+  return BINARY_MARKERS.some((marker) => marker.test(patch));
 }
 
 export interface CodeViewFileParseResult {
@@ -32,14 +43,19 @@ export function parseCodeViewFiles(
 ): CodeViewFileParseResult {
   const parsed = files.map((file) => ({
     file,
-    fileDiff: processFile(file.patch),
+    // Binary patches parse "successfully" into zero hunks, so they are
+    // classified before the parse result is consulted.
+    fileDiff: isBinaryPatch(file.patch) ? undefined : processFile(file.patch),
+    reason: isBinaryPatch(file.patch)
+      ? ('binary' as const)
+      : ('parse-failed' as const),
   }));
   return {
     parsedFiles: parsed.flatMap(({ file, fileDiff }) =>
       fileDiff === undefined ? [] : [{ file, fileDiff }],
     ),
-    unrenderableFiles: parsed.flatMap(({ file, fileDiff }) =>
-      fileDiff === undefined ? [{ file, reason: 'parse-failed' as const }] : [],
+    unrenderableFiles: parsed.flatMap(({ file, fileDiff, reason }) =>
+      fileDiff === undefined ? [{ file, reason }] : [],
     ),
   };
 }
@@ -52,14 +68,17 @@ export function buildCodeViewItems(
   replyingToThreadId: string | null,
   expertiseByPath: ReadonlyMap<string, ExpertiseFileData>,
   expertiseError: string | null,
+  collapseOverrides: readonly string[] = [],
 ): CodeViewItem<ReviewThread>[] {
   return parsedCodeViewFiles.map(({ file, fileDiff }) => {
     const annotations = buildFileAnnotations(file, threads);
+    const collapsed = isFileCollapsed(file, collapseOverrides);
     return {
       id: file.id,
       type: 'diff',
       fileDiff,
       annotations,
+      collapsed,
       version: buildItemVersion(
         file,
         annotations,
@@ -68,9 +87,22 @@ export function buildCodeViewItems(
         replyingToThreadId,
         expertiseByPath.get(file.path),
         expertiseError,
+        collapsed,
       ),
     };
   });
+}
+
+/**
+ * Generated files start collapsed (their header still shows path + stats);
+ * `z` inverts the default for the focused file.
+ */
+export function isFileCollapsed(
+  file: ParsedDiffFile,
+  collapseOverrides: readonly string[],
+): boolean {
+  const isOverridden = collapseOverrides.includes(file.canonicalKey);
+  return isGeneratedFile(file.path) !== isOverridden;
 }
 
 export function findUnrenderableDiffFile(
@@ -104,11 +136,13 @@ function buildItemVersion(
   replyingToThreadId: string | null,
   expertise: ExpertiseFileData | undefined,
   expertiseError: string | null,
+  collapsed: boolean,
 ): number {
   const content = [
     file.patch,
     serializeExpertise(expertise),
     expertiseError ?? '',
+    String(collapsed),
     ...annotations.map((annotation) => {
       const thread = annotation.metadata;
       if (thread === undefined) {

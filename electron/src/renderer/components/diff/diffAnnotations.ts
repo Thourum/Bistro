@@ -1,4 +1,4 @@
-import type { DiffLineAnnotation } from '@pierre/diffs';
+import type { DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import type { ReviewThread } from '../../types';
 import type { ParsedDiffFile } from './diffPathUtils';
 
@@ -55,4 +55,25 @@ export function buildFileAnnotations(
       lineNumber: thread.line,
       metadata: thread,
     }));
+}
+
+/**
+ * True when `lineNumber` falls inside the additions side of one of the
+ * file's parsed hunks. `ReviewThread.line` doesn't record which local hunk it
+ * anchors to (nor which side), so a thread can legitimately point at a line
+ * our own re-parsed patch doesn't cover — e.g. after a force-push, or when
+ * anchoring landed on the deletions side. CodeView.scrollTo has no
+ * "best effort" mode for that case: it warns and no-ops. Callers should skip
+ * the CodeView-native scroll (and fall back to the annotation card's DOM
+ * scrollIntoView) when this returns false.
+ */
+export function lineExistsInAdditions(
+  fileDiff: FileDiffMetadata,
+  lineNumber: number,
+): boolean {
+  return fileDiff.hunks.some(
+    (hunk) =>
+      lineNumber >= hunk.additionStart &&
+      lineNumber < hunk.additionStart + hunk.additionCount,
+  );
 }

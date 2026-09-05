@@ -12,6 +12,8 @@ import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
+import { openUrlInBrowser } from '../utils/openUrl';
+import { prBrowserUrl } from '../utils/triage';
 import { addToast } from './ToastContainer';
 
 type Icon = string;
@@ -62,6 +64,27 @@ const COMMANDS: readonly CommandItem[] = [
     name: ':view groups',
     description: 'Organize the PR inbox by repository',
     icon: 'account_tree',
+  },
+  {
+    id: 'open-browser',
+    name: ':open in browser',
+    description: 'Open the focused PR on GitHub',
+    icon: 'open_in_new',
+    shortcut: ['o'],
+  },
+  {
+    id: 'diff-split',
+    name: ':diff split',
+    description: 'Show diffs side by side',
+    icon: 'vertical_split',
+    shortcut: ['⇧', 'S'],
+  },
+  {
+    id: 'diff-unified',
+    name: ':diff unified',
+    description: 'Show diffs in a single column',
+    icon: 'view_stream',
+    shortcut: ['⇧', 'S'],
   },
   {
     id: 'repo-picker',
@@ -196,6 +219,14 @@ export function CommandPalette(): React.ReactElement | null {
     setQuery('');
   };
 
+  const updateSettingsFromCommand = (
+    patch: Parameters<typeof updateSettings>[0],
+  ): void => {
+    updateSettings(patch).match(handleClose, (message) => {
+      addToast({ type: 'error', message, dismissible: true });
+    });
+  };
+
   const handleExecuteCommand = (command: CommandItem): void => {
     switch (command.id) {
       case 'settings':
@@ -231,22 +262,23 @@ export function CommandPalette(): React.ReactElement | null {
         setQuery('');
         return;
       case 'view-lanes':
-        void updateSettings({ prList: { ...prList, view: 'flat' } }).match(
-          () => {
-            closeOverlay();
-            setQuery('');
-          },
-          (message) => addToast({ type: 'error', message, dismissible: true }),
-        );
+        updateSettingsFromCommand({ prList: { ...prList, view: 'flat' } });
         return;
       case 'view-groups':
-        void updateSettings({ prList: { ...prList, view: 'grouped' } }).match(
-          () => {
-            closeOverlay();
-            setQuery('');
-          },
-          (message) => addToast({ type: 'error', message, dismissible: true }),
-        );
+        updateSettingsFromCommand({ prList: { ...prList, view: 'grouped' } });
+        return;
+      case 'open-browser': {
+        const url = focusedPR === undefined ? null : prBrowserUrl(focusedPR);
+        if (url !== null) openUrlInBrowser(url);
+        closeOverlay();
+        setQuery('');
+        return;
+      }
+      case 'diff-split':
+        updateSettingsFromCommand({ diff: { style: 'split' } });
+        return;
+      case 'diff-unified':
+        updateSettingsFromCommand({ diff: { style: 'unified' } });
         return;
       case 'repo-picker':
         openRepoPicker();

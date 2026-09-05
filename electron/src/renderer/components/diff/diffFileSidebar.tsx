@@ -5,6 +5,8 @@ interface DiffFileSidebarProps {
   activeId: string | null;
   onSelect: (id: string) => void;
   totalCount: number;
+  /** Paths marked viewed (`v`) for the current user. Empty when untracked. */
+  viewedPaths?: ReadonlySet<string>;
 }
 
 export function DiffFileSidebar({
@@ -12,6 +14,7 @@ export function DiffFileSidebar({
   activeId,
   onSelect,
   totalCount,
+  viewedPaths = EMPTY_VIEWED_PATHS,
 }: DiffFileSidebarProps) {
   return (
     <aside className="w-1/4 min-w-[220px] bg-surface-container-low border-r border-outline-variant/20 overflow-y-auto">
@@ -22,6 +25,7 @@ export function DiffFileSidebar({
         <nav className="space-y-1">
           {files.map((file) => {
             const isActive = file.id === activeId;
+            const isViewed = viewedPaths.has(file.path);
             return (
               <button
                 key={file.id}
@@ -35,12 +39,23 @@ export function DiffFileSidebar({
               >
                 <span
                   className={`material-symbols-outlined text-[16px] ${
-                    isActive ? 'text-primary' : 'text-outline'
+                    isViewed
+                      ? 'text-primary'
+                      : isActive
+                        ? 'text-primary'
+                        : 'text-outline'
+                  }`}
+                  role="img"
+                  aria-label={isViewed ? 'Viewed' : 'Not viewed'}
+                  title={isViewed ? 'Viewed' : undefined}
+                >
+                  {isViewed ? 'check_circle' : 'description'}
+                </span>
+                <span
+                  className={`font-mono text-[11px] truncate flex-1 ${
+                    isViewed && !isActive ? 'text-outline' : ''
                   }`}
                 >
-                  description
-                </span>
-                <span className="font-mono text-[11px] truncate flex-1">
                   {file.path}
                 </span>
                 <span className="font-mono text-[9px] text-outline shrink-0">
@@ -54,3 +69,5 @@ export function DiffFileSidebar({
     </aside>
   );
 }
+
+const EMPTY_VIEWED_PATHS: ReadonlySet<string> = new Set();
