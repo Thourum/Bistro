@@ -262,7 +262,9 @@ app.on('ready', async () => {
     };
 
     // 2. Create WebSocket client and connect (Go is now ready)
-    const wsUrl = `ws://localhost:${actualWsPort}/ws`;
+    // 127.0.0.1, not localhost: the engine binds IPv4 loopback only and
+    // localhost may resolve to ::1 first.
+    const wsUrl = `ws://127.0.0.1:${actualWsPort}/ws`;
     wsClient = new WebSocketClient(wsUrl, log);
     const activeSettingsService = settingsService;
 

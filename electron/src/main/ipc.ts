@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { dialog, ipcMain } from 'electron';
 import type { Logger } from 'electron-log';
-import { buildEditorArgs } from '../shared/editorArgs';
+import { buildEditorArgs, parseEditorCommand } from '../shared/editorArgs';
 import type {
   FSReadPatchRequest,
   GoCommandRequest,
@@ -12,6 +12,7 @@ import type {
 } from '../types/ipc';
 import type { AppSettings } from '../types/settings';
 import { launchEditor } from './editorLaunch';
+import { validateOpenInEditorRequest } from './editorRequest';
 import { resolveEditorTarget } from './editorTarget';
 import type { SettingsService } from './settings';
 import type { TelemetryService } from './telemetry';
@@ -131,17 +132,23 @@ export function setupIPC(
     'open-in-editor',
     async (_event, request: OpenInEditorRequest) => {
       const editorCommand = process.env.EDITOR ?? '';
-      if (editorCommand === '') {
+      // `$EDITOR` may carry arguments (`code --wait`); split it into
+      // binary + leading args so spawn stays argv-based (no shell).
+      const editor = parseEditorCommand(editorCommand);
+      if (editor.isErr()) {
         return { err: 'Set $EDITOR' };
       }
 
-      return resolveEditorTarget({
-        repoRoot: request.repoRoot,
-        relativePath: request.relativePath,
-      })
-        .andThen((target) =>
-          buildEditorArgs(editorCommand, target, request.line).asyncAndThen(
-            (args) => launchEditor(editorCommand, args, logger),
+      return validateOpenInEditorRequest(request)
+        .asyncAndThen((valid) =>
+          resolveEditorTarget({
+            repoRoot: valid.repoRoot,
+            relativePath: valid.relativePath,
+          }).map((target) => ({ target, line: valid.line })),
+        )
+        .andThen(({ target, line }) =>
+          buildEditorArgs(editorCommand, target, line).asyncAndThen((args) =>
+            launchEditor(editor.value.bin, args, logger),
           ),
         )
         .match(

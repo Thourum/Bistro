@@ -3,10 +3,12 @@ package git
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -283,5 +285,120 @@ func TestCheckoutPRHead_LockKeyMatchesSyncKey(t *testing.T) {
 				t.Errorf("repoLockKey(%q) = %q, want %q (the repos.id CheckoutPRHead locks on)", tt.repoURL, got, tt.repoID)
 			}
 		})
+	}
+}
+
+// ── CheckoutPRHead remote resolution / clobber guard ────────────────────────
+
+// TestCheckoutPRHead_FetchesFromNonOriginRemote: the only remote whose URL
+// matches the repo is called "upstream"; the missing commit must still be
+// fetched from it (go-git would otherwise default to a nonexistent "origin").
+func TestCheckoutPRHead_FetchesFromNonOriginRemote(t *testing.T) {
+	localDir := t.TempDir()
+	buildCheckoutTestRepo(t, localDir)
+
+	// Upstream has one extra commit the local clone lacks.
+	upstreamDir := t.TempDir()
+	buildCheckoutTestRepo(t, upstreamDir)
+	upstream, err := gogit.PlainOpen(upstreamDir)
+	if err != nil {
+		t.Fatalf("PlainOpen upstream: %v", err)
+	}
+	upstreamWT, err := upstream.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree upstream: %v", err)
+	}
+	if err := os.WriteFile(upstreamDir+"/foo.txt", []byte("content C\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := upstreamWT.Add("foo.txt"); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	shaC, err := upstreamWT.Commit("commit C", &gogit.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("Commit C: %v", err)
+	}
+	shaA := shaC.String()
+
+	repo, err := gogit.PlainOpen(localDir)
+	if err != nil {
+		t.Fatalf("PlainOpen: %v", err)
+	}
+	// go-git transports over URLs[0]; the GitHub-shaped URL is there so the
+	// remote is matched by identity, not by name.
+	if _, err := repo.CreateRemote(&config.RemoteConfig{
+		Name: "upstream",
+		URLs: []string{"file://" + upstreamDir, "https://github.com/owner/repo.git"},
+	}); err != nil {
+		t.Fatalf("CreateRemote upstream: %v", err)
+	}
+
+	c := NewClient(nil)
+	if err := c.CheckoutPRHead(context.Background(), testRepoID, localDir, shaA); err != nil {
+		t.Fatalf("CheckoutPRHead via upstream remote: %v", err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	if head.Hash().String() != shaA {
+		t.Errorf("HEAD = %s, want %s", head.Hash(), shaA)
+	}
+	if _, err := repo.Reference("refs/remotes/origin/master", false); err == nil {
+		t.Error("fetch wrote into refs/remotes/origin/*; expected refs/bistro/checkout/*")
+	}
+}
+
+// TestCheckoutPRHead_RefusesToClobberIgnoredFile: Status().IsClean() ignores
+// gitignored files, so a target commit that starts tracking such a path must
+// be refused instead of overwriting the local copy.
+func TestCheckoutPRHead_RefusesToClobberIgnoredFile(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := gogit.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree: %v", err)
+	}
+	sig := &object.Signature{Name: "test", Email: "test@test.com", When: time.Now()}
+	commitFile := func(msg, name, content string) plumbing.Hash {
+		if err := os.WriteFile(dir+"/"+name, []byte(content), 0644); err != nil {
+			t.Fatalf("WriteFile %s: %v", name, err)
+		}
+		if _, err := wt.Add(name); err != nil {
+			t.Fatalf("Add %s: %v", name, err)
+		}
+		h, err := wt.Commit(msg, &gogit.CommitOptions{Author: sig})
+		if err != nil {
+			t.Fatalf("Commit %q: %v", msg, err)
+		}
+		return h
+	}
+
+	base := commitFile("base", ".gitignore", "secret.env\n")
+	target := commitFile("track secret", "secret.env", "UPSTREAM=1\n")
+	if err := wt.Checkout(&gogit.CheckoutOptions{Hash: base, Force: true}); err != nil {
+		t.Fatalf("Checkout base: %v", err)
+	}
+	// A local, ignored secret.env that the target commit would start tracking.
+	if err := os.WriteFile(dir+"/secret.env", []byte("LOCAL=1\n"), 0644); err != nil {
+		t.Fatalf("WriteFile secret.env: %v", err)
+	}
+
+	c := NewClient(nil)
+	err = c.CheckoutPRHead(context.Background(), testRepoID, dir, target.String())
+	if err == nil {
+		t.Fatal("expected refusal: checkout would overwrite ignored secret.env")
+	}
+	if !strings.Contains(err.Error(), "secret.env") {
+		t.Errorf("error should name the clobbered path, got: %v", err)
+	}
+	got, readErr := os.ReadFile(dir + "/secret.env")
+	if readErr != nil || string(got) != "LOCAL=1\n" {
+		t.Errorf("local secret.env was modified: %q %v", got, readErr)
 	}
 }

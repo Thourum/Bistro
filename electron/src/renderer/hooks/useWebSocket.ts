@@ -156,14 +156,17 @@ function isValidWsPort(port: unknown): port is number {
 function getWsUrl(): string | null {
   const electron = typeof window !== 'undefined' ? window.electron : undefined;
   if (electron === undefined) {
-    return 'ws://localhost:8080/ws';
+    return 'ws://127.0.0.1:8080/ws';
   }
   const port = isValidWsPort(resolvedWsPort) ? resolvedWsPort : electron.wsPort;
-  return isValidWsPort(port) ? `ws://localhost:${port}/ws` : null;
+  return isValidWsPort(port) ? `ws://127.0.0.1:${port}/ws` : null;
 }
 const REQUEST_TIMEOUT_MS = 5000;
 const PR_SYNC_RESPONSE_MARGIN_MS = 15000;
 const PR_SYNC_REQUEST_TIMEOUT_MS = 2 * 60 * 1000 + PR_SYNC_RESPONSE_MARGIN_MS;
+// CHECKOUT_PR_HEAD fetches and mutates HEAD; the generic 5s budget would
+// report failure while the engine is still mid-checkout.
+const CHECKOUT_REQUEST_TIMEOUT_MS = 60 * 1000;
 const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -1138,9 +1141,14 @@ export function extractResponseError(data: unknown): string | null {
 const CONNECT_WAIT_INTERVAL_MS = 250;
 
 function requestTimeoutFor(type: string): number {
-  return type === 'REQUEST_PR_SYNC'
-    ? PR_SYNC_REQUEST_TIMEOUT_MS
-    : REQUEST_TIMEOUT_MS;
+  switch (type) {
+    case 'REQUEST_PR_SYNC':
+      return PR_SYNC_REQUEST_TIMEOUT_MS;
+    case 'CHECKOUT_PR_HEAD':
+      return CHECKOUT_REQUEST_TIMEOUT_MS;
+    default:
+      return REQUEST_TIMEOUT_MS;
+  }
 }
 
 function requestMessage(type: string, data: unknown): Promise<unknown> {

@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from '@tanstack/react-router';
+import { useMatchRoute, useNavigate, useParams } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -25,6 +25,8 @@ interface CommandItem {
   readonly icon: Icon;
   readonly shortcut?: readonly string[];
   readonly dev?: boolean;
+  /** Only listed on the diff route — DiffPage is the sole consumer of the intent. */
+  readonly diffOnly?: boolean;
 }
 
 const isDev = import.meta.env.DEV;
@@ -92,6 +94,7 @@ const COMMANDS: readonly CommandItem[] = [
     description:
       "Opens in $EDITOR at the selected comment's line when one is selected",
     icon: 'edit_document',
+    diffOnly: true,
   },
   {
     id: 'repo-picker',
@@ -143,6 +146,8 @@ export function CommandPalette(): React.ReactElement | null {
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const params = useParams({ strict: false }) as { prId?: string };
+  const matchRoute = useMatchRoute();
+  const isDiffRoute = matchRoute({ to: '/prs/$prId/diff' }) !== false;
 
   // Use the shared visible-PR source so palette results match the list route.
   const { prs } = useVisiblePRs();
@@ -168,13 +173,14 @@ export function CommandPalette(): React.ReactElement | null {
     const q = query.trim().toLowerCase();
     return COMMANDS.filter((cmd) => {
       if (cmd.dev === true && !isDev) return false;
+      if (cmd.diffOnly === true && !isDiffRoute) return false;
       if (q === '') return true;
       return (
         cmd.name.toLowerCase().includes(q) ||
         cmd.description?.toLowerCase().includes(q) === true
       );
     });
-  }, [query]);
+  }, [query, isDiffRoute]);
 
   useEffect(() => {
     if (isOpen) {
