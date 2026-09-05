@@ -15,7 +15,14 @@ export interface TourScreen {
   /** actionIds resolved against the effective bindings at render time,
    *  paired with the label to show (a binding's own description is often
    *  too terse for a guided tour). */
-  keys: { actionId: string; label: string; context?: string }[];
+  keys: {
+    actionId: string;
+    /** Collapse a run of sibling bindings (lane1..lane6) into one hint whose
+     *  final key is rendered as a range, e.g. "g 1–6". */
+    throughActionId?: string;
+    label: string;
+    context?: string;
+  }[];
 }
 
 /**
@@ -27,7 +34,11 @@ export const TOUR_SCREENS: readonly TourScreen[] = [
   {
     title: 'Inbox & lanes',
     keys: [
-      { actionId: 'inbox.lane1', label: 'Jump to a lane' },
+      {
+        actionId: 'inbox.lane1',
+        throughActionId: 'inbox.lane6',
+        label: 'Jump to a lane',
+      },
       {
         actionId: 'inbox.markLaneRead',
         label: 'Mark lane read',
@@ -99,16 +110,24 @@ export function resolveTourScreens(
   const byId = new Map(bindings.map((b) => [b.actionId, b]));
   return TOUR_SCREENS.map((screen) => ({
     title: screen.title,
-    keys: screen.keys.flatMap(({ actionId, label, context }) => {
-      const binding = byId.get(actionId);
-      if (binding === undefined) return [];
-      return [
-        {
-          keys: formatBindingKeys(binding),
-          label,
-          ...(context !== undefined ? { context } : {}),
-        },
-      ];
-    }),
+    keys: screen.keys.flatMap(
+      ({ actionId, throughActionId, label, context }) => {
+        const binding = byId.get(actionId);
+        if (binding === undefined) return [];
+        const through =
+          throughActionId === undefined ? undefined : byId.get(throughActionId);
+        const keys =
+          through === undefined
+            ? formatBindingKeys(binding)
+            : `${formatBindingKeys(binding)}–${formatBindingKeys(through).split(' ').at(-1)}`;
+        return [
+          {
+            keys,
+            label,
+            ...(context !== undefined ? { context } : {}),
+          },
+        ];
+      },
+    ),
   }));
 }

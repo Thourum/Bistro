@@ -16,6 +16,9 @@ describe('resolveTourScreens', () => {
     const inbox = resolved.find((s) => s.title === 'Inbox & lanes');
     const markLaneRead = inbox?.keys.find((k) => k.label === 'Mark lane read');
     expect(markLaneRead?.context).toBe('in the inbox');
+    // Lane jump collapses lane1..lane6 into a single range hint.
+    const laneJump = inbox?.keys.find((k) => k.label === 'Jump to a lane');
+    expect(laneJump?.keys).toBe('G 1–6');
   });
 
   it('drops a key hint whose actionId has no matching binding', () => {
