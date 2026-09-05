@@ -15,7 +15,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { PierreDiffView } from '../components/PierreDiffView';
+import { DiffView } from '../components/diff/DiffView';
 import { RangeDiffView } from '../components/RangeDiffView';
 import { StatusSquare } from '../components/StatusSquare';
 import { addToast } from '../components/ToastContainer';
@@ -29,11 +29,12 @@ import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
-import { settingsStore } from '../store/settings';
+import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import type { Comment, DiffFile } from '../types';
 import { repoIdForPR } from '../utils/expertise';
 import { createLogger } from '../utils/logger';
+import { prBrowserUrl } from '../utils/triage';
 
 const log = createLogger('DiffPage');
 
@@ -41,7 +42,7 @@ const log = createLogger('DiffPage');
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
  *
  * Two diff surfaces share this page:
- *   - the full PR diff (default), rendered by {@link PierreDiffView}
+ *   - the full PR diff (default), rendered by {@link DiffView}
  *   - a range diff (since-last-review or a timeline patchset pair), rendered
  *     by {@link RangeDiffView}
  *
@@ -76,6 +77,7 @@ export function DiffPage() {
   );
 
   const theme = useStore(settingsStore, (s) => s.appearance.theme);
+  const diffStyle = useStore(settingsStore, (s) => s.diff.style);
 
   // Fetch ALL PRs so deep-linked PRs (any status) are always resolvable.
   const { data: allPRs = [], isLoading: prLoading } = useWebSocketPRList('all');
@@ -210,6 +212,20 @@ export function DiffPage() {
     appStore.setState((s) => ({ ...s, confirmingAction: null }));
   }, [confirmingAction, doMarkViewed]);
 
+  // Persist the keybinding's diff-style toggle intent from the route owner so
+  // failures can be surfaced to the user instead of being discarded.
+  useEffect(() => {
+    if (confirmingAction !== 'toggle-diff-style') return;
+    const nextStyle = diffStyle === 'split' ? 'unified' : 'split';
+    appStore.setState((s) => ({ ...s, confirmingAction: null }));
+    updateSettings({ diff: { style: nextStyle } }).match(
+      () => undefined,
+      (message) => {
+        addToast({ type: 'error', message, dismissible: true });
+      },
+    );
+  }, [confirmingAction, diffStyle]);
+
   // Clear range-diff intent when leaving the diff view.
   useEffect(() => {
     return () => {
@@ -224,6 +240,11 @@ export function DiffPage() {
   const handleBack = (): void => {
     void navigate({ to: '/prs/$prId', params: { prId } });
   };
+
+  const viewedPaths = useMemo(
+    () => new Set(files.filter((f) => f.viewed).map((f) => f.path)),
+    [files],
+  );
 
   if (!prLoading && pr === undefined) {
     return (
@@ -306,9 +327,10 @@ export function DiffPage() {
         ) : diffError !== null ? (
           <ErrorState message={`Failed to load diff: ${diffError}`} />
         ) : (
-          <PierreDiffView
+          <DiffView
             diff={diff}
             theme={theme}
+            diffStyle={diffStyle}
             findQuery={findQuery}
             selectedFileKey={fileKey}
             onFilesResolved={handleFilesResolved}
@@ -317,12 +339,14 @@ export function DiffPage() {
             onThreadReply={(threadId, body) => {
               dispatchReplyComment(body, { threadId });
             }}
+            prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
             expertiseFiles={expertise?.files ?? []}
             expertiseError={
               expertiseStatus?.status === 'error'
                 ? (expertiseStatus.message ?? expertiseStatus.code ?? 'unknown')
                 : null
             }
+            viewedPaths={viewedPaths}
           />
         )}
       </div>

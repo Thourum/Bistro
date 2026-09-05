@@ -1,6 +1,10 @@
 // @vitest-environment node
-import { describe, it, expect } from 'vitest';
-import { detectLanguage, highlightCode, REGISTERED_LANGUAGES } from '../../src/renderer/utils/highlighter';
+import { describe, expect, it } from 'vitest';
+import {
+  detectLanguage,
+  highlightCode,
+  REGISTERED_LANGUAGES,
+} from '../../src/renderer/utils/highlighter';
 
 describe('detectLanguage', () => {
   it('detects TypeScript from .ts extension', () => {

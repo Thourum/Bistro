@@ -142,6 +142,43 @@ func TestWriterLeavesMentionedUnsetWithoutCurrentUser(t *testing.T) {
 	}
 }
 
+func TestWriterPersistsPRWhenCurrentUserLookupFails(t *testing.T) {
+	db := openTestDB(t)
+	pr := mentionedTestPR("github:org/repo:mention-lookup-error", "hey @alice please look")
+	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{err: errors.New("keyring unavailable")})
+
+	if err := writer.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
+		t.Fatalf("WriteSyncResults() error = %v, want nil when current-user lookup fails", err)
+	}
+
+	var storedTitle string
+	if err := db.QueryRow(`SELECT title FROM prs WHERE id = ?`, pr.ID).Scan(&storedTitle); err != nil {
+		t.Fatalf("read persisted PR: %v", err)
+	}
+	if got := mentionedValue(t, db, pr.ID); got != 0 {
+		t.Errorf("mentioned = %d, want 0 when mention detection is unavailable", got)
+	}
+}
+
+func TestWriterPreservesMentionedWhenCurrentUserLookupFails(t *testing.T) {
+	db := openTestDB(t)
+	pr := mentionedTestPR("github:org/repo:mention-preserve-on-error", "hey @alice please look")
+
+	okWriter := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
+	mustWritePR(t, okWriter, pr)
+	if got := mentionedValue(t, db, pr.ID); got != 1 {
+		t.Fatalf("precondition mentioned = %d, want 1", got)
+	}
+
+	failingWriter := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{err: errors.New("keyring unavailable")})
+	if err := failingWriter.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
+		t.Fatalf("WriteSyncResults() error = %v, want nil when current-user lookup fails", err)
+	}
+	if got := mentionedValue(t, db, pr.ID); got != 1 {
+		t.Errorf("mentioned = %d, want existing value 1 preserved", got)
+	}
+}
+
 func TestWriterSetsMentionedFromThreadComment(t *testing.T) {
 	db := openTestDB(t)
 	pr := mentionedTestPR("github:org/repo:mention-thread", "no mention here")

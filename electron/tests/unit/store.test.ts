@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UIState } from '../../src/renderer/store/ui';
 import { createUIStore } from '../../src/renderer/store/ui';
 import type { Toast } from '../../src/renderer/types';
@@ -18,7 +18,7 @@ describe('UIState action fields', () => {
       pendingAction: { type: 'approve', prId: 'pr-1', startedAt: Date.now() },
     }));
     expect(store.state.pendingAction).toEqual(
-      expect.objectContaining({ type: 'approve', prId: 'pr-1' })
+      expect.objectContaining({ type: 'approve', prId: 'pr-1' }),
     );
     expect(prev.pendingAction).toBeNull();
   });
@@ -27,10 +27,15 @@ describe('UIState action fields', () => {
     const store = createUIStore();
     store.setState((s) => ({
       ...s,
-      actionResult: { type: 'approve', prId: 'pr-1', success: true, message: 'Approved' },
+      actionResult: {
+        type: 'approve',
+        prId: 'pr-1',
+        success: true,
+        message: 'Approved',
+      },
     }));
     expect(store.state.actionResult).toEqual(
-      expect.objectContaining({ success: true, message: 'Approved' })
+      expect.objectContaining({ success: true, message: 'Approved' }),
     );
   });
 });
@@ -47,7 +52,15 @@ describe('UIState toast fields', () => {
     const prev = store.state;
     store.setState((s) => ({
       ...s,
-      toasts: [...s.toasts, { id: 't1', type: 'error' as const, message: 'Oops', dismissible: true }],
+      toasts: [
+        ...s.toasts,
+        {
+          id: 't1',
+          type: 'error' as const,
+          message: 'Oops',
+          dismissible: true,
+        },
+      ],
     }));
     expect(store.state.toasts).toHaveLength(1);
     expect(prev.toasts).toHaveLength(0);
@@ -61,7 +74,12 @@ describe('UIState toast fields', () => {
       { id: 't3', type: 'error', message: 'C', dismissible: true },
     ];
     store.setState((s) => ({ ...s, toasts }));
-    const newToast: Toast = { id: 't4', type: 'info', message: 'D', dismissible: true };
+    const newToast: Toast = {
+      id: 't4',
+      type: 'info',
+      message: 'D',
+      dismissible: true,
+    };
     store.setState((s) => ({
       ...s,
       toasts: [...s.toasts.slice(-2), newToast],

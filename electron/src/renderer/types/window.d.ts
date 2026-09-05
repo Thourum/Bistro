@@ -17,7 +17,8 @@ type EventChannel = 'sync:event' | 'settings:changed';
 declare global {
   interface Window {
     electron: {
-      wsPort: number;
+      wsPort: number | null;
+      getWsPort: () => Promise<number | null>;
       db: (request: DBQueryRequest) => Promise<DBQueryResponse | IPCError>;
       fs: (
         request: FSReadPatchRequest,

@@ -82,7 +82,9 @@ describe('Sentry consent gate', () => {
       exception: {
         values: [
           {
-            stacktrace: { frames: [{ filename: '/Users/private/repo/file.ts' }] },
+            stacktrace: {
+              frames: [{ filename: '/Users/private/repo/file.ts' }],
+            },
             type: 'Error',
             value: 'failed at /Users/private/repo with ghp_secret',
           },

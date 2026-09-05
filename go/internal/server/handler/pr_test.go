@@ -95,6 +95,33 @@ func TestRequestPRListUsesAnonymousDefaultsWithoutCurrentUser(t *testing.T) {
 	assertPRListSignals(t, prs[0], true, false, false, false)
 }
 
+func TestRequestPRListReturnsErrorWhenRowScanFails(t *testing.T) {
+	db := newHandlerTestDB(t)
+	updatedAt := time.Now().UTC()
+	if _, err := db.Exec(`INSERT INTO prs (
+		id, provider, owner, repo, number, title, author, state,
+		created_at, updated_at, base_branch, head_branch, base_sha, head_sha
+	) VALUES ('bad-row', 'github', 'owner', 'repo', 'not-a-number', 'Test PR', 'author', 'open', ?, ?, 'main', 'feature', 'base', 'head')`, updatedAt, updatedAt); err != nil {
+		t.Fatalf("insert malformed PR: %v", err)
+	}
+
+	handler := NewRequestPRListHandler(db, &mockCurrentUserReader{found: false}, testRepoLogger())
+	response, err := callHandler(t, handler, "REQUEST_PR_LIST", map[string]any{"filter": "all", "limit": 10})
+	if err != nil {
+		t.Fatalf("REQUEST_PR_LIST: %v", err)
+	}
+	data := extractData(t, response)
+	if got := data["count"]; got != 0 {
+		t.Errorf("count = %v, want 0", got)
+	}
+	if got, ok := data["prs"].([]interface{}); !ok || len(got) != 0 {
+		t.Errorf("prs = %#v, want empty list", data["prs"])
+	}
+	if got, ok := data["error"].(string); !ok || got == "" {
+		t.Errorf("error = %#v, want non-empty string", data["error"])
+	}
+}
+
 func insertPRListTestPR(t *testing.T, db *sql.DB, prID string, number int, headSHA string, mentioned bool, updatedAt time.Time) {
 	t.Helper()
 	if _, err := db.Exec(`INSERT INTO prs (

@@ -179,10 +179,8 @@ describe('DEFAULT_KEYBINDINGS', () => {
     expect(byId('detail.scrollLeftArrow').keys).toBe('ArrowLeft');
   });
 
-  it('detail navigation and scrolling also work in the diff view', () => {
+  it('detail scrolling also works in the diff view', () => {
     for (const id of [
-      'detail.nextFile',
-      'detail.prevFile',
       'detail.scrollDown',
       'detail.scrollUp',
       'detail.pageDown',
@@ -191,6 +189,19 @@ describe('DEFAULT_KEYBINDINGS', () => {
     ]) {
       expect(byId(id).activation.routes, id).toContain('diff');
     }
+  });
+
+  it('diff view has its own file nav (Shift+J/K) and comment nav (n/p), distinct from detail.nextFile/prevFile', () => {
+    expect(byId('detail.nextFile').activation.routes).toEqual(['detail']);
+    expect(byId('detail.prevFile').activation.routes).toEqual(['detail']);
+    expect(byId('diff.nextFile').keys).toBe('Shift+J');
+    expect(byId('diff.prevFile').keys).toBe('Shift+K');
+    expect(byId('diff.nextFile').activation.routes).toEqual(['diff']);
+    expect(byId('diff.prevFile').activation.routes).toEqual(['diff']);
+    expect(byId('diff.nextComment').keys).toBe('n');
+    expect(byId('diff.prevComment').keys).toBe('p');
+    expect(byId('diff.nextComment').activation.routes).toEqual(['diff']);
+    expect(byId('diff.prevComment').activation.routes).toEqual(['diff']);
   });
 
   it('covers the diff view: Space enters, Escape exits', () => {
@@ -227,6 +238,12 @@ describe('DEFAULT_KEYBINDINGS', () => {
     expect(store.state.confirmingAction).toBe('mark-viewed');
   });
 
+  it('Shift+S sets a diff-style toggle intent without persisting directly', () => {
+    const store = makeStore({ confirmingAction: null });
+    byId('diff.toggleStyle').action(makeCtx(store, 'diff'));
+    expect(store.state.confirmingAction).toBe('toggle-diff-style');
+  });
+
   it('help binding is active in list and detail and records its source', () => {
     const b = byId('global.help');
     expect(b.activation.routes).toContain('list');
@@ -235,6 +252,54 @@ describe('DEFAULT_KEYBINDINGS', () => {
     const ctx = makeCtx(makeStore(), 'detail', { openHelp: openHelpMock });
     b.action(ctx);
     expect(openHelpMock).toHaveBeenCalledWith('detail');
+  });
+
+  // Regression: a Radix dialog dismisses Escape from a capture-phase listener,
+  // so by the time the bubble-phase binding runs the overlay is already closed.
+  // The binding is handed the overlay state from keypress time, and must close
+  // the overlay WITHOUT also running the route branch — dismissing the help
+  // overlay on /diff previously navigated out of the diff too.
+  it('escape with an overlay open closes it and does not navigate', () => {
+    mockNavigate.mockClear();
+    const closeOverlay = vi.fn();
+    byId('global.escape').action(
+      makeCtx(makeStore(), 'diff', { activeOverlay: 'help', closeOverlay }),
+    );
+    expect(closeOverlay).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('escape on the diff route with no overlay navigates back to the PR', () => {
+    mockNavigate.mockClear();
+    byId('global.escape').action(makeCtx(makeStore(), 'diff'));
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/prs/$prId' }),
+    );
+  });
+
+  // `z` resolves the focused file by indexing diffFileKeys, so it can address
+  // the wrong file or write a bogus key — the only new diff binding whose
+  // action is more than a flag flip.
+  it('z toggles the focused file in and out of the collapse overrides', () => {
+    const store = makeStore({
+      diffFileKeys: ['first.ts', 'second.ts'],
+      selectedFileIndex: 1,
+      diffCollapseOverrides: [],
+    });
+    byId('diff.toggleCollapse').action(makeCtx(store, 'diff'));
+    expect(store.state.diffCollapseOverrides).toEqual(['second.ts']);
+    byId('diff.toggleCollapse').action(makeCtx(store, 'diff'));
+    expect(store.state.diffCollapseOverrides).toEqual([]);
+  });
+
+  it('z is a no-op when no file key is resolved', () => {
+    const store = makeStore({
+      diffFileKeys: [],
+      selectedFileIndex: 0,
+      diffCollapseOverrides: [],
+    });
+    byId('diff.toggleCollapse').action(makeCtx(store, 'diff'));
+    expect(store.state.diffCollapseOverrides).toEqual([]);
   });
 
   it('detail scroll bindings include top and bottom jumps', () => {
@@ -488,8 +553,8 @@ describe('binding actions', () => {
     });
   });
 
-  describe('inline diff comment hotkeys', () => {
-    it('j selects the first inline comment instead of scrolling when annotations exist', () => {
+  describe('diff route: j/k always scroll, n/p navigate inline comments', () => {
+    it('j always scrolls, even when inline comments exist', () => {
       const viewport = document.createElement('div');
       viewport.setAttribute('data-diff-viewport', '');
       const scrollBy = vi.fn();
@@ -499,42 +564,51 @@ describe('binding actions', () => {
 
       byId('detail.scrollDown').action(makeCtx(store, 'diff'));
 
-      expect(store.state.activeInlineCommentThreadId).toBe('T1');
-      expect(scrollBy).not.toHaveBeenCalled();
+      expect(store.state.activeInlineCommentThreadId).toBeNull();
+      expect(scrollBy).toHaveBeenCalledWith({ top: 40 });
       viewport.remove();
     });
 
-    it('k selects the previous inline comment instead of scrolling when annotations exist', () => {
+    it('k always scrolls, even when inline comments exist', () => {
       const viewport = document.createElement('div');
       viewport.setAttribute('data-diff-viewport', '');
       const scrollBy = vi.fn();
       viewport.scrollBy = scrollBy;
       document.body.appendChild(viewport);
+      const store = makeStore({ inlineCommentThreadIds: ['T1', 'T2'] });
+
+      byId('detail.scrollUp').action(makeCtx(store, 'diff'));
+
+      expect(store.state.activeInlineCommentThreadId).toBeNull();
+      expect(scrollBy).toHaveBeenCalledWith({ top: -40 });
+      viewport.remove();
+    });
+
+    it('n (diff.nextComment) selects the first inline comment', () => {
+      const store = makeStore({ inlineCommentThreadIds: ['T1', 'T2'] });
+
+      byId('diff.nextComment').action(makeCtx(store, 'diff'));
+
+      expect(store.state.activeInlineCommentThreadId).toBe('T1');
+    });
+
+    it('p (diff.prevComment) selects the previous inline comment', () => {
       const store = makeStore({
         inlineCommentThreadIds: ['T1', 'T2'],
         activeInlineCommentThreadId: 'T2',
       });
 
-      byId('detail.scrollUp').action(makeCtx(store, 'diff'));
+      byId('diff.prevComment').action(makeCtx(store, 'diff'));
 
       expect(store.state.activeInlineCommentThreadId).toBe('T1');
-      expect(scrollBy).not.toHaveBeenCalled();
-      viewport.remove();
     });
 
-    it('j keeps existing scroll behavior when no inline annotations exist', () => {
-      const viewport = document.createElement('div');
-      viewport.setAttribute('data-diff-viewport', '');
-      const scrollBy = vi.fn();
-      viewport.scrollBy = scrollBy;
-      document.body.appendChild(viewport);
+    it('n/p are no-ops when there are no inline comments', () => {
       const store = makeStore({ inlineCommentThreadIds: [] });
 
-      byId('detail.scrollDown').action(makeCtx(store, 'diff'));
+      byId('diff.nextComment').action(makeCtx(store, 'diff'));
 
       expect(store.state.activeInlineCommentThreadId).toBeNull();
-      expect(scrollBy).toHaveBeenCalledWith({ top: 40 });
-      viewport.remove();
     });
 
     it('Enter starts inline reply for the active diff comment', () => {

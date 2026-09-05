@@ -75,6 +75,19 @@ func decodeReviewers(logger *slog.Logger, prID string, raw *string) []string {
 	return reviewers
 }
 
+func prListErrorResponse(requestID string, err error) map[string]interface{} {
+	return map[string]interface{}{
+		"id":   requestID,
+		"type": "PR_LIST_READY",
+		"data": map[string]interface{}{
+			"prs":      []interface{}{},
+			"count":    0,
+			"has_more": false,
+			"error":    err.Error(),
+		},
+	}
+}
+
 func NewRequestPRListHandler(db prLister, cu currentUserReader, log *slog.Logger) ws.MessageHandler {
 	return NewRequestPRListHandlerWithExpertise(db, nil, cu, log)
 }
@@ -136,16 +149,7 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 		rows, err := db.Query(query, login, login, login, login, login, login, login, req.Limit, req.Offset)
 		if err != nil {
 			logger.Error("REQUEST_PR_LIST query failed", "err", err)
-			return map[string]interface{}{
-				"id":   msg.ID,
-				"type": "PR_LIST_READY",
-				"data": map[string]interface{}{
-					"prs":      []interface{}{},
-					"count":    0,
-					"has_more": false,
-					"error":    err.Error(),
-				},
-			}, nil
+			return prListErrorResponse(msg.ID, err), nil
 		}
 		defer rows.Close()
 
@@ -165,11 +169,15 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 				&pr.ReviewedHeadStale, &pr.Hydrated,
 			); err != nil {
 				logger.Error("REQUEST_PR_LIST scan failed", "err", err)
-				continue
+				return prListErrorResponse(msg.ID, err), nil
 			}
 			pr.RequestedReviewers = decodeReviewers(logger, pr.ID, requestedReviewers)
 			prs = append(prs, pr)
 			prIDs = append(prIDs, pr.ID)
+		}
+		if err := rows.Err(); err != nil {
+			logger.Error("REQUEST_PR_LIST iteration failed", "err", err)
+			return prListErrorResponse(msg.ID, err), nil
 		}
 
 		if touchesYou != nil && len(prIDs) > 0 {

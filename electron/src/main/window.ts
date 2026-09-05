@@ -10,6 +10,10 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 let mainWindow: BrowserWindow | null = null;
 
 export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
+  if (mainWindow !== null && !mainWindow.isDestroyed()) {
+    return mainWindow;
+  }
+
   const iconPath = join(app.getAppPath(), 'assets/icon.png');
 
   if (process.platform === 'darwin') {

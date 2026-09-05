@@ -22,6 +22,11 @@ import { useStore } from './useStore';
 /** Sequence steps must follow each other within this window (was 500ms before the migration). */
 const SEQUENCE_TIMEOUT_MS = 500;
 
+/** Escape needs different event handling than every other binding — see below. */
+function isEscape(binding: { keys: string | readonly string[] }): boolean {
+  return binding.keys === 'Escape';
+}
+
 function routePrId(
   matches: readonly { params?: Record<string, unknown> }[] | undefined,
 ): string | undefined {
@@ -86,10 +91,34 @@ export function useAppHotkeys(): void {
         .filter((b) => !isSequenceBinding(b))
         .map((binding) => ({
           hotkey: binding.keys as RegisterableHotkey,
-          callback: () => binding.action(makeCtx()),
+          callback: (event: KeyboardEvent) => {
+            // Escape only: bail when a handler closer to the event already
+            // consumed it.
+            //
+            // Radix's dismissable layer listens in the document CAPTURE phase
+            // and calls preventDefault() when it dismisses. Escape is a
+            // discrete event, so React flushes that state update *between* the
+            // capture and bubble phases — and `useHotkeys` re-syncs
+            // `handle.callback` on every render. So by the time this
+            // bubble-phase callback runs it is a fresh closure that already
+            // sees `activeOverlay: null`, and `global.escape` fell through to
+            // its route branch: one keypress both closed the overlay and
+            // navigated out of the route.
+            //
+            // Capturing state at registration time cannot fix that (the
+            // callback is replaced), so we read the event instead. This
+            // requires `preventDefault: false` below — the manager otherwise
+            // calls preventDefault() itself before every callback, which would
+            // make this flag always true.
+            if (isEscape(binding) && event.defaultPrevented) return;
+            binding.action(makeCtx());
+          },
           options: {
             enabled: isActive(binding, { routeBase, activeOverlay }),
-            ignoreInputs: binding.keys !== 'Escape',
+            ignoreInputs: !isEscape(binding),
+            // Keep `defaultPrevented` meaningful as "already handled".
+            // Escape has no default browser action worth suppressing.
+            ...(isEscape(binding) ? { preventDefault: false } : {}),
           },
         })),
     [bindings, routeBase, activeOverlay, makeCtx],
