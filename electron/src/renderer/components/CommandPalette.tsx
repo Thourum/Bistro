@@ -7,12 +7,12 @@ import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
-import { addToast } from './ToastContainer';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
+import { addToast } from './ToastContainer';
 
 type Icon = string;
 
