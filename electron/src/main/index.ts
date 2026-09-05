@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, ipcMain, shell } from 'electron';
 import log from 'electron-log';
+import { ResultAsync } from 'neverthrow';
 import type { ClassificationSettings, SyncSettings } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import { killGoProcess, spawnGoProcess } from './go-spawn';
@@ -175,18 +176,19 @@ ipcMain.handle('app:quit', () => {
   return { ok: true as const };
 });
 
-ipcMain.handle('open-external', async (_event, url: unknown) => {
+ipcMain.handle('open-external', (_event, url: unknown) => {
   if (typeof url !== 'string' || !url.startsWith('https://')) {
     return { err: 'Only https:// URLs are allowed' };
   }
-  try {
-    await shell.openExternal(url);
-    return { ok: true as const };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log.error(`open-external failed: ${message}`);
-    return { err: message };
-  }
+  return ResultAsync.fromPromise(shell.openExternal(url), (err) =>
+    err instanceof Error ? err.message : String(err),
+  ).match(
+    () => ({ ok: true as const }),
+    (message) => {
+      log.error(`open-external failed: ${message}`);
+      return { err: message };
+    },
+  );
 });
 
 app.on('ready', async () => {

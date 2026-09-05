@@ -1,7 +1,15 @@
 import { createRequire } from 'node:module';
 import type { Logger } from 'electron-log';
 import { execa, type ResultPromise } from 'execa';
-import { fromPromise, fromThrowable, type ResultAsync } from 'neverthrow';
+import {
+  err,
+  errAsync,
+  fromPromise,
+  fromThrowable,
+  ok,
+  type Result,
+  ResultAsync,
+} from 'neverthrow';
 import type { GoProcessConfig } from './types';
 
 const require = createRequire(__filename);
@@ -94,13 +102,13 @@ export interface GoSpawnOptions {
 }
 
 export interface GoReadyWaiter {
-  wait: () => Promise<number>;
+  wait: () => ResultAsync<number, Error>;
   markReady: (port: number) => void;
   markFailed: (error: Error) => void;
 }
 
 /**
- * Keeps the Go process's readiness promise alive after the initial startup
+ * Keeps the Go process's readiness result alive after the initial startup
  * threshold. Slow launches are reported separately so callers can show a
  * starting state without discarding a later ready signal.
  */
@@ -109,33 +117,45 @@ export function createGoReadyWaiter(
   onStillStarting: () => void,
 ): GoReadyWaiter {
   let isSettled = false;
-  let resolveReady: (port: number) => void = () => undefined;
-  let rejectReady: (error: Error) => void = () => undefined;
-  const readyPromise = new Promise<number>((resolve, reject) => {
-    resolveReady = resolve;
-    rejectReady = reject;
-  });
+  let settleReady: (result: Result<number, Error>) => void = () => undefined;
+  // Never rejects: failures are carried as `err(...)` values.
+  const readyResult = ResultAsync.fromSafePromise(
+    new Promise<Result<number, Error>>((resolve) => {
+      settleReady = resolve;
+    }),
+  ).andThen((result) => result);
   const timeout = setTimeout(() => {
     if (!isSettled) {
       onStillStarting();
     }
   }, timeoutMs);
 
-  const settle = (callback: () => void): void => {
+  const settle = (result: Result<number, Error>): void => {
     if (isSettled) {
       return;
     }
     isSettled = true;
     clearTimeout(timeout);
-    callback();
+    settleReady(result);
   };
 
   return {
-    wait: () => readyPromise,
-    markReady: (port) => settle(() => resolveReady(port)),
-    markFailed: (error) => settle(() => rejectReady(error)),
+    wait: () => readyResult,
+    markReady: (port) => settle(ok(port)),
+    markFailed: (error) => settle(err(error)),
   };
 }
+
+/** Bridges a readiness result to the Promise contract of `spawnGoProcess`. */
+const toPortPromise = (ready: ResultAsync<number, Error>): Promise<number> =>
+  ready
+    .match(
+      (port) => ({ ok: true, port }) as const,
+      (error) => ({ ok: false, error }) as const,
+    )
+    .then((result) =>
+      result.ok ? Promise.resolve(result.port) : Promise.reject(result.error),
+    );
 
 const createGoArgs = (config: GoProcessConfig): string[] => {
   const args = [
@@ -322,18 +342,12 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
       'BISTRO_SKIP_GO_SPAWN=1 — waiting for external Go process on port ' +
         externalPort,
     );
-    return waitForPort(externalPort, GO_READY_TIMEOUT_MS)
-      .map(() => {
+    return toPortPromise(
+      waitForPort(externalPort, GO_READY_TIMEOUT_MS).map(() => {
         lastKnownPort = externalPort;
         return externalPort;
-      })
-      .match(
-        (port) => ({ ok: true, port }) as const,
-        (error) => ({ ok: false, error }) as const,
-      )
-      .then((result) =>
-        result.ok ? Promise.resolve(result.port) : Promise.reject(result.error),
-      );
+      }),
+    );
   }
 
   if (goProcess) {
@@ -361,7 +375,9 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
   if (processResult.isErr()) {
     const message = processResult.error.message;
     logger.error(`Failed to spawn Go process: ${message}`);
-    return Promise.reject(new Error(`Failed to spawn Go process: ${message}`));
+    return toPortPromise(
+      errAsync(new Error(`Failed to spawn Go process: ${message}`)),
+    );
   }
 
   const spawnedProcess = processResult.value;
@@ -444,7 +460,7 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
     (error) => readyWaiter.markFailed(error),
   );
 
-  return readyWaiter.wait();
+  return toPortPromise(readyWaiter.wait());
 }
 
 export function isGoProcessRunning(): boolean {
