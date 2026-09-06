@@ -45,11 +45,19 @@ export function launchEditor(
   const child = childResult.value;
   return fromPromise(
     new Promise<void>((resolve, reject) => {
-      child.once('error', reject);
-      child.once('spawn', () => {
+      // Detach whichever listener didn't fire so the closures don't outlive
+      // the spawn handshake on a long-running editor process.
+      const onError = (error: Error) => {
+        child.off('spawn', onSpawn);
+        reject(error);
+      };
+      const onSpawn = () => {
+        child.off('error', onError);
         child.unref();
         resolve();
-      });
+      };
+      child.once('error', onError);
+      child.once('spawn', onSpawn);
     }),
     (error) => {
       const message = errorMessage(error);

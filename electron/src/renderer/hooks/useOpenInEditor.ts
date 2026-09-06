@@ -7,8 +7,8 @@ const log = createLogger('useOpenInEditor');
 
 interface CheckPRCheckoutData {
   local_path?: string;
+  head_sha?: string;
   head_matches?: boolean;
-  sha_present?: boolean;
   error?: string;
 }
 
@@ -26,6 +26,9 @@ export interface EditorCheckoutDialog {
   kind: 'checkout-mismatch';
   prId: string;
   repoRoot: string;
+  /** Head SHA the mismatch was inspected against; sent back with the
+   *  checkout so the engine refuses if the PR was force-pushed meanwhile. */
+  headSha: string;
   relativePath: string;
   line: number;
 }
@@ -138,6 +141,7 @@ export function useOpenInEditor(): {
                 kind: 'checkout-mismatch',
                 prId,
                 repoRoot,
+                headSha: data.head_sha ?? '',
                 relativePath,
                 line,
               },
@@ -159,7 +163,10 @@ export function useOpenInEditor(): {
     return runExclusive(() =>
       Promise.resolve(
         fromPromise(
-          requestRef.current('CHECKOUT_PR_HEAD', { pr_id: dialog.prId }),
+          requestRef.current('CHECKOUT_PR_HEAD', {
+            pr_id: dialog.prId,
+            expected_head_sha: dialog.headSha,
+          }),
           (err) => (err instanceof Error ? err.message : 'Unknown error'),
         ).match(
           async (raw) => {

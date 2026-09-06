@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -45,9 +46,11 @@ func (GitCheckoutInspector) InspectPRCheckout(localPath, headSHA string) (git.Ch
 }
 
 // resolvePRCheckoutTarget looks up a PR's repo_id + head_sha, then the repo's
-// local_path. Returns a user-facing error string (not a Go error) for the
-// three "can't proceed" cases the WS handlers report as typed failures:
-// PR not found, no local path registered, and DB errors.
+// local_path. Only a user-linked working checkout qualifies (source "local",
+// status "ok" — the same contract shouldPreserveLocalPath enforces); Bistro's
+// own cache clones are bare and have no worktree to open or check out.
+// Returns a user-facing error string (not a Go error) for the "can't proceed"
+// cases the WS handlers report as typed failures.
 func resolvePRCheckoutTarget(
 	ctx context.Context,
 	prs prCheckoutInfoReader,
@@ -69,6 +72,9 @@ func resolvePRCheckoutTarget(
 	if location == nil || location.LocalPath == "" {
 		return "", "", "", "no local path"
 	}
+	if location.Source != "local" || location.LocationStatus != "ok" {
+		return "", "", "", "no local checkout linked — link a local checkout for this repo first"
+	}
 
 	return info.RepoID, location.LocalPath, info.HeadSHA, ""
 }
@@ -77,7 +83,7 @@ func resolvePRCheckoutTarget(
 //
 // Request: {"pr_id": "..."}
 // Response type: PR_CHECKOUT_STATUS
-// Response data: {"pr_id": "...", "local_path": "...", "head_matches": bool, "sha_present": bool}
+// Response data: {"pr_id": "...", "local_path": "...", "head_sha": "...", "head_matches": bool}
 // or {"pr_id": "...", "error": "..."}
 func NewCheckPRCheckoutHandler(
 	prs prCheckoutInfoReader,
@@ -104,22 +110,25 @@ func NewCheckPRCheckoutHandler(
 		_, localPath, headSHA, reason := resolvePRCheckoutTarget(ctx, prs, repos, req.PRID)
 		if reason != "" {
 			logger.Warn("CHECK_PR_CHECKOUT failed", "pr_id", req.PRID, "reason", reason)
-			return checkoutStatusResponse(msg.ID, req.PRID, "", false, false, reason), nil
+			return checkoutStatusResponse(msg.ID, req.PRID, "", "", false, reason), nil
 		}
 
 		inspection, err := inspector.InspectPRCheckout(localPath, headSHA)
 		if err != nil {
 			logger.Warn("CHECK_PR_CHECKOUT inspection failed", "pr_id", req.PRID, "error", err)
-			return checkoutStatusResponse(msg.ID, req.PRID, localPath, false, false, err.Error()), nil
+			return checkoutStatusResponse(msg.ID, req.PRID, localPath, headSHA, false, err.Error()), nil
 		}
 
-		return checkoutStatusResponse(msg.ID, req.PRID, localPath, inspection.HeadMatches, inspection.SHAPresent, ""), nil
+		return checkoutStatusResponse(msg.ID, req.PRID, localPath, headSHA, inspection.HeadMatches, ""), nil
 	}
 }
 
 // NewCheckoutPRHeadHandler returns a WS handler for CHECKOUT_PR_HEAD.
 //
-// Request: {"pr_id": "..."}
+// Request: {"pr_id": "...", "expected_head_sha"?: "..."} — when present, the
+// checkout is refused if the PR's head has moved since the client inspected
+// it (force-push race), so the user re-inspects instead of landing on a
+// revision they never saw.
 // Response type: PR_CHECKOUT_RESULT
 // Response data: {"pr_id": "...", "ok": bool, "local_path"?: "...", "reason"?: "..."}
 func NewCheckoutPRHeadHandler(
@@ -135,7 +144,8 @@ func NewCheckoutPRHeadHandler(
 		logger := log.With("request_id", msg.ID, "msg_type", msg.Type)
 
 		var req struct {
-			PRID string `json:"pr_id"`
+			PRID            string `json:"pr_id"`
+			ExpectedHeadSHA string `json:"expected_head_sha"`
 		}
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
 			return nil, fmt.Errorf("parse CHECKOUT_PR_HEAD: %w", err)
@@ -149,10 +159,14 @@ func NewCheckoutPRHeadHandler(
 			logger.Warn("CHECKOUT_PR_HEAD failed", "pr_id", req.PRID, "reason", reason)
 			return checkoutResultResponse(msg.ID, req.PRID, "", false, reason), nil
 		}
+		if req.ExpectedHeadSHA != "" && req.ExpectedHeadSHA != headSHA {
+			logger.Warn("CHECKOUT_PR_HEAD refused: head moved", "pr_id", req.PRID, "expected", req.ExpectedHeadSHA, "current", headSHA)
+			return checkoutResultResponse(msg.ID, req.PRID, localPath, false, "PR head changed since it was inspected; try again"), nil
+		}
 
 		if err := checker.CheckoutPRHead(ctx, repoID, localPath, headSHA); err != nil {
 			reason := err.Error()
-			if err == git.ErrWorktreeDirty {
+			if errors.Is(err, git.ErrWorktreeDirty) {
 				reason = "worktree dirty"
 			}
 			logger.Warn("CHECKOUT_PR_HEAD checkout failed", "pr_id", req.PRID, "reason", reason)
@@ -164,12 +178,12 @@ func NewCheckoutPRHeadHandler(
 	}
 }
 
-func checkoutStatusResponse(msgID, prID, localPath string, headMatches, shaPresent bool, reason string) interface{} {
+func checkoutStatusResponse(msgID, prID, localPath, headSHA string, headMatches bool, reason string) interface{} {
 	data := map[string]interface{}{
 		"pr_id":        prID,
 		"local_path":   localPath,
+		"head_sha":     headSHA,
 		"head_matches": headMatches,
-		"sha_present":  shaPresent,
 	}
 	if reason != "" {
 		data["error"] = reason

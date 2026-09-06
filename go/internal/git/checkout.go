@@ -18,14 +18,11 @@ import (
 type CheckoutInspection struct {
 	// HeadMatches is true when the repo's current HEAD commit equals headSHA.
 	HeadMatches bool
-	// SHAPresent is true when headSHA's commit object exists locally,
-	// regardless of what HEAD currently points at.
-	SHAPresent bool
 }
 
 // InspectPRCheckout opens the repository at localPath and reports whether its
-// HEAD already matches headSHA and whether the commit object is present
-// locally at all. Read-only — never fetches, never mutates the working tree.
+// HEAD already matches headSHA. Read-only — never fetches, never mutates the
+// working tree. (CheckoutPRHead probes commit presence itself before fetching.)
 func InspectPRCheckout(localPath, headSHA string) (CheckoutInspection, error) {
 	if localPath == "" {
 		return CheckoutInspection{}, fmt.Errorf("local path cannot be empty")
@@ -44,13 +41,7 @@ func InspectPRCheckout(localPath, headSHA string) (CheckoutInspection, error) {
 		return CheckoutInspection{}, fmt.Errorf("failed to resolve HEAD: %w", err)
 	}
 
-	targetHash := plumbing.NewHash(headSHA)
-	_, shaErr := repo.CommitObject(targetHash)
-
-	return CheckoutInspection{
-		HeadMatches: head.Hash() == targetHash,
-		SHAPresent:  shaErr == nil,
-	}, nil
+	return CheckoutInspection{HeadMatches: head.Hash() == plumbing.NewHash(headSHA)}, nil
 }
 
 // ErrWorktreeDirty is returned by CheckoutPRHead when the worktree has

@@ -59,8 +59,8 @@ func checkoutMsg(t *testing.T, msgType, prID string) ws.InboundMessage {
 
 func TestCheckPRCheckoutHandler_HeadMatches(t *testing.T) {
 	prs := &mockPRCheckoutInfoReader{info: &store.PRCheckoutInfo{RepoID: "github:o/r", HeadSHA: "sha1"}}
-	repos := &mockRepoLocationReader{location: &store.RepoLocation{LocalPath: "/tmp/repo"}}
-	inspector := &mockPRCheckoutInspector{inspection: git.CheckoutInspection{HeadMatches: true, SHAPresent: true}}
+	repos := &mockRepoLocationReader{location: &store.RepoLocation{LocalPath: "/tmp/repo", Source: "local", LocationStatus: "ok"}}
+	inspector := &mockPRCheckoutInspector{inspection: git.CheckoutInspection{HeadMatches: true}}
 
 	h := NewCheckPRCheckoutHandler(prs, repos, inspector, testRepoLogger())
 	resp, err := h(context.Background(), checkoutMsg(t, "CHECK_PR_CHECKOUT", "pr-1"))
@@ -68,7 +68,7 @@ func TestCheckPRCheckoutHandler_HeadMatches(t *testing.T) {
 		t.Fatalf("handler error: %v", err)
 	}
 	data := extractData(t, resp)
-	if data["head_matches"] != true || data["sha_present"] != true {
+	if data["head_matches"] != true || data["head_sha"] != "sha1" {
 		t.Errorf("unexpected status: %+v", data)
 	}
 }
@@ -99,7 +99,7 @@ func TestCheckPRCheckoutHandler_MissingPRID(t *testing.T) {
 
 func TestCheckoutPRHeadHandler_Success(t *testing.T) {
 	prs := &mockPRCheckoutInfoReader{info: &store.PRCheckoutInfo{RepoID: "github:o/r", HeadSHA: "sha1"}}
-	repos := &mockRepoLocationReader{location: &store.RepoLocation{LocalPath: "/tmp/repo"}}
+	repos := &mockRepoLocationReader{location: &store.RepoLocation{LocalPath: "/tmp/repo", Source: "local", LocationStatus: "ok"}}
 	checker := &mockPRCheckoutChecker{}
 
 	h := NewCheckoutPRHeadHandler(prs, repos, checker, testRepoLogger())
@@ -115,7 +115,7 @@ func TestCheckoutPRHeadHandler_Success(t *testing.T) {
 
 func TestCheckoutPRHeadHandler_DirtyWorktree(t *testing.T) {
 	prs := &mockPRCheckoutInfoReader{info: &store.PRCheckoutInfo{RepoID: "github:o/r", HeadSHA: "sha1"}}
-	repos := &mockRepoLocationReader{location: &store.RepoLocation{LocalPath: "/tmp/repo"}}
+	repos := &mockRepoLocationReader{location: &store.RepoLocation{LocalPath: "/tmp/repo", Source: "local", LocationStatus: "ok"}}
 	checker := &mockPRCheckoutChecker{err: git.ErrWorktreeDirty}
 
 	h := NewCheckoutPRHeadHandler(prs, repos, checker, testRepoLogger())
@@ -148,47 +148,76 @@ func TestCheckoutPRHeadHandler_PRNotFound(t *testing.T) {
 // TestCheckoutPRHeadHandler_PassesDBResolvedTarget pins the trust boundary and
 // the lock key: both the repo_id used for per-repo locking and the checkout
 // path come from the engine's own DB state (prs.repo_id → repos.local_path),
-// never from the WS request, which carries only pr_id.
+// never from the WS request, which carries only pr_id. Only a linked local
+// checkout (source "local", status "ok") qualifies — bare cache clones are
+// refused with a "link a local checkout" reason.
 func TestCheckoutPRHeadHandler_PassesDBResolvedTarget(t *testing.T) {
 	tests := []struct {
 		name          string
-		repoID        string
-		localPath     string
-		wantRepoID    string
+		location      *store.RepoLocation
 		wantLocalPath string
+		wantReason    string
 	}{
 		{
 			name:          "local checkout",
-			repoID:        "github:owner/repo",
-			localPath:     "/home/dev/src/repo",
-			wantRepoID:    "github:owner/repo",
+			location:      &store.RepoLocation{LocalPath: "/home/dev/src/repo", Source: "local", LocationStatus: "ok"},
 			wantLocalPath: "/home/dev/src/repo",
 		},
 		{
-			name:          "cache checkout",
-			repoID:        "github:other/proj",
-			localPath:     "/home/dev/.cache/bistro/abc123",
-			wantRepoID:    "github:other/proj",
-			wantLocalPath: "/home/dev/.cache/bistro/abc123",
+			name:       "cache clone refused",
+			location:   &store.RepoLocation{LocalPath: "/home/dev/.cache/bistro/abc123", Source: "cache", LocationStatus: "ok"},
+			wantReason: "no local checkout linked — link a local checkout for this repo first",
+		},
+		{
+			name:       "broken local link refused",
+			location:   &store.RepoLocation{LocalPath: "/home/dev/src/repo", Source: "local", LocationStatus: "error"},
+			wantReason: "no local checkout linked — link a local checkout for this repo first",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prs := &mockPRCheckoutInfoReader{info: &store.PRCheckoutInfo{RepoID: tt.repoID, HeadSHA: "sha1"}}
-			repos := &mockRepoLocationReader{location: &store.RepoLocation{LocalPath: tt.localPath}}
+			prs := &mockPRCheckoutInfoReader{info: &store.PRCheckoutInfo{RepoID: "github:owner/repo", HeadSHA: "sha1"}}
+			repos := &mockRepoLocationReader{location: tt.location}
 			checker := &mockPRCheckoutChecker{}
 
 			h := NewCheckoutPRHeadHandler(prs, repos, checker, testRepoLogger())
-			if _, err := h(context.Background(), checkoutMsg(t, "CHECKOUT_PR_HEAD", "pr-1")); err != nil {
+			resp, err := h(context.Background(), checkoutMsg(t, "CHECKOUT_PR_HEAD", "pr-1"))
+			if err != nil {
 				t.Fatalf("handler error: %v", err)
-			}
-			if checker.gotRepoID != tt.wantRepoID {
-				t.Errorf("repoID passed to CheckoutPRHead = %q, want %q", checker.gotRepoID, tt.wantRepoID)
 			}
 			if checker.gotLocalPth != tt.wantLocalPath {
 				t.Errorf("localPath passed to CheckoutPRHead = %q, want %q", checker.gotLocalPth, tt.wantLocalPath)
 			}
+			if tt.wantReason != "" {
+				if data := extractData(t, resp); data["reason"] != tt.wantReason {
+					t.Errorf("reason = %v, want %q", data["reason"], tt.wantReason)
+				}
+			} else if checker.gotRepoID != "github:owner/repo" {
+				t.Errorf("repoID passed to CheckoutPRHead = %q", checker.gotRepoID)
+			}
 		})
+	}
+}
+
+// A force-push between CHECK_PR_CHECKOUT and CHECKOUT_PR_HEAD must not land
+// the user on a revision they never inspected.
+func TestCheckoutPRHeadHandler_RefusesWhenHeadMoved(t *testing.T) {
+	prs := &mockPRCheckoutInfoReader{info: &store.PRCheckoutInfo{RepoID: "github:o/r", HeadSHA: "sha2"}}
+	repos := &mockRepoLocationReader{location: &store.RepoLocation{LocalPath: "/tmp/repo", Source: "local", LocationStatus: "ok"}}
+	checker := &mockPRCheckoutChecker{}
+
+	h := NewCheckoutPRHeadHandler(prs, repos, checker, testRepoLogger())
+	data, _ := json.Marshal(map[string]string{"pr_id": "pr-1", "expected_head_sha": "sha1"})
+	resp, err := h(context.Background(), ws.InboundMessage{ID: "req-1", Type: "CHECKOUT_PR_HEAD", Data: data})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	out := extractData(t, resp)
+	if out["ok"] != false || out["reason"] != "PR head changed since it was inspected; try again" {
+		t.Errorf("expected refusal, got %+v", out)
+	}
+	if checker.gotLocalPth != "" {
+		t.Error("CheckoutPRHead must not run when head moved")
 	}
 }

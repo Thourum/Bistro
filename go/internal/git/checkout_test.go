@@ -62,12 +62,9 @@ func TestInspectPRCheckout_HeadMatches(t *testing.T) {
 	if !got.HeadMatches {
 		t.Error("expected HeadMatches=true")
 	}
-	if !got.SHAPresent {
-		t.Error("expected SHAPresent=true")
-	}
 }
 
-func TestInspectPRCheckout_HeadElsewhereShaPresent(t *testing.T) {
+func TestInspectPRCheckout_HeadElsewhere(t *testing.T) {
 	dir := t.TempDir()
 	shaA, _ := buildCheckoutTestRepo(t, dir)
 
@@ -77,25 +74,6 @@ func TestInspectPRCheckout_HeadElsewhereShaPresent(t *testing.T) {
 	}
 	if got.HeadMatches {
 		t.Error("expected HeadMatches=false (HEAD is at commit B)")
-	}
-	if !got.SHAPresent {
-		t.Error("expected SHAPresent=true (commit A exists locally)")
-	}
-}
-
-func TestInspectPRCheckout_ShaAbsent(t *testing.T) {
-	dir := t.TempDir()
-	buildCheckoutTestRepo(t, dir)
-
-	got, err := InspectPRCheckout(dir, "0000000000000000000000000000000000000000")
-	if err != nil {
-		t.Fatalf("InspectPRCheckout: %v", err)
-	}
-	if got.HeadMatches {
-		t.Error("expected HeadMatches=false")
-	}
-	if got.SHAPresent {
-		t.Error("expected SHAPresent=false")
 	}
 }
 

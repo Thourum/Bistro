@@ -46,6 +46,7 @@ describe('launchEditor', () => {
           once: (event: string, cb: (...args: unknown[]) => void) => {
             if (event === 'spawn') setTimeout(() => cb(), 0);
           },
+          off: vi.fn(),
           unref,
           // biome-ignore lint/suspicious/noExplicitAny: minimal ChildProcess double
         }) as any,
