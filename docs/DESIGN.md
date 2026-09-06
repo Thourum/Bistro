@@ -48,13 +48,25 @@ The bottom bar should be present in every authenticated screen. It is the user's
 
 The inbox should answer: **What needs my review attention now?** It should not mirror GitHub's flat PR list.
 
-### Default lanes
+### Default lanes (shipped — Phase 5, 2026-07-18)
 
-1. **Needs action** — review requested from me/team, mentions me, CI finished after my last review, author responded to an unresolved thread.
-2. **Watching** — repos or PRs I track, but no direct action required.
-3. **Waiting on author** — I requested changes or left unresolved comments and the author has not responded with a new patchset.
-4. **FYI** — subscribed, authored by someone else, or repo watch noise.
-5. **Muted / archived** — explicit user choice; hidden from default counts.
+First-match-wins, in this order. The classifier in
+`electron/src/renderer/utils/lanes.ts` is the authoritative source for edge cases.
+
+1. **Needs Action** — PR is open AND: `changes_requested` on a PR you authored,
+   OR you're in `requested_reviewers`, OR you reviewed it and the author has
+   pushed since (`head_sha != your last_reviewed_sha`).
+2. **Waiting on Author** — PR by someone else, open, you reviewed or
+   commented on it, and the author hasn't pushed since your review.
+3. **Your PRs** — `pr.author === viewer`.
+4. **Your Code** — `touches_you` (Phase 4 expertise signal; lane renamed,
+   field unchanged).
+5. **Mentioned** — `@your-login` appears in the PR body or comments.
+6. **FYI** — everything else.
+
+Jump directly to any lane with `g 1`…`g 6`; `Shift-R` marks the current lane's
+filter-visible PRs read. The repo-grouped view remains available via the
+existing grouping toggle (`:view groups` / Settings).
 
 ### Row model
 
@@ -79,10 +91,10 @@ Required signals:
 
 - `j/k` moves row focus, not scroll position alone.
 - `enter` opens selected PR and preserves inbox selection.
-- `space` opens a lightweight preview without changing route.
+- `space` toggles the selected repository group in grouped view.
 - `/` filters the current lane locally first.
 - `f` opens filter chips; filter keys are visible in-place.
-- `g n`, `g w`, `g a`, `g f` may be added later for lane jumps, but MVP can keep lane changes in command palette to avoid overloading base bindings.
+- `g 1`…`g 6` jump to lane 1–6 (shipped, replaces the earlier `g n`/`g w`/`g a`/`g f` sketch).
 
 ### Empty states
 
@@ -331,7 +343,7 @@ The website should not mimic the app chrome one-to-one. It should sell the promi
 Create or track these as separate issues when implementation starts:
 
 1. **Action registry:** unify command palette, help overlay, footer hints, and keybinding settings around one action model.
-2. **Inbox lane classifier:** implement Needs Action / Watching / Waiting on Author / FYI reasons with visible row badges.
+2. ~~**Inbox lane classifier**~~ — shipped (Phase 5, 2026-07-18): six-lane taxonomy, see "Default lanes" above.
 3. **Queued action UI:** standardize `QUEUED`, `SYNCING`, `FAILED`, and retry/discard controls for comments and reviews.
 4. **Diff focus model:** ensure virtualized diff rows preserve line focus across navigation and remounts.
 5. **Website IA refresh:** split marketing copy from app UX docs and update website plan around local-first trust proof.

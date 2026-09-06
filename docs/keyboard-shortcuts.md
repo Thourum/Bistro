@@ -1,6 +1,6 @@
 # Bistro keyboard shortcuts
 
-Generated from `electron/src/renderer/utils/keybindings.ts` (2026-08-06). This is
+Generated from `electron/src/renderer/utils/keybindings.ts` (2026-08-09). This is
 the full surface for a help-menu redesign. Every key is user-overridable via
 settings, so the UI must render from config, never hardcode.
 
@@ -9,7 +9,7 @@ settings, so the UI must render from config, never hardcode.
 A binding is active in **one route** (a screen) or **one overlay** (a modal).
 When an overlay is open, ONLY that overlay's bindings fire. Routes: Inbox
 (`/prs`), PR detail, Diff, Settings. Overlays: command palette, help, search,
-filter, repo picker, add-repo, threads.
+filter, repo picker, add-repo, threads, tour.
 
 Note: the same key intentionally means different things per context (`s` = star
 in the inbox, since-last-review in a diff; `Shift+R` = mark lane read in the
@@ -19,14 +19,17 @@ inbox, request changes on a PR). The redesign should make context obvious.
 
 ## Cross-route shortcuts
 
-| Key | Action |
-|---|---|
-| `?` | Help (inbox, PR detail, diff) |
-| `:` | Command palette (inbox, PR detail, diff) |
-| `Cmd+,` | Settings |
-| `Cmd+/` | Search |
-| `Esc` | Back / cancel — closes an overlay, else leaves the screen |
-| `Cmd+Q` / `Alt+F4` | Quit |
+Only quit is truly global. The rest are inactive on login, onboarding and
+(except `Esc`) settings. `Mod` = `Cmd` on macOS, `Ctrl` elsewhere.
+
+| Key | Active on | Action |
+|---|---|---|
+| `?` | inbox, PR detail, diff | Help |
+| `:` | inbox, PR detail, diff | Command palette |
+| `Mod+,` | inbox, PR detail | Settings |
+| `Mod+/` | inbox, PR detail | Search |
+| `Esc` | inbox, PR detail, diff, settings, any overlay | Back / cancel — closes an overlay, else leaves the screen |
+| `Cmd+Q` (macOS) / `Alt+F4` (Windows/Linux) | every route | Quit |
 
 ## Inbox (`/prs`)
 
@@ -45,9 +48,9 @@ inbox, request changes on a PR). The redesign should make context obvious.
 | `f` | Filter menu |
 | `o` | Open PR in browser |
 | `Shift+R` | Mark current lane read |
-| `d` | Toggle draft |
-| `m` | Mute |
-| `s` | Star |
+| `d` | Toggle draft — bound, not yet wired (no consumer for the action) |
+| `m` | Mute — bound, not yet wired |
+| `s` | Star — bound, not yet wired |
 
 ## PR detail
 
@@ -58,7 +61,7 @@ inbox, request changes on a PR). The redesign should make context obvious.
 | `a a` | Approve (double-tap) |
 | `c` | Comment |
 | `Shift+R` | Request changes |
-| `r` | Reply |
+| `r` | Reply — bound, not yet wired (use `Enter` on a thread in the diff view) |
 | `g u` | Review threads |
 | `d n` | Dismiss nits + info |
 | `d b` | Dismiss bot comments |
@@ -113,17 +116,27 @@ instead — this is a deliberate context-dependent rebind, not a duplicate bug.
 | `u` | Unresolve |
 | `Esc` | Close |
 
-## Overlay: command palette, help, search, repo picker, add-repo
+## Overlay: command palette, help, search, repo picker, add-repo, tour
 
-`Esc` closes. Palette and search use typing + `↑`/`↓` + `Enter`.
+`Esc` closes. Palette and search use typing + `↑`/`↓` + `Enter`. The first-run
+tour (5 screens) uses its own Back/Next/Finish controls; re-open any time with
+the `:tour` palette command.
+
+## Palette-only commands (no dedicated key)
+
+Production commands: `:open in browser`, `:open in editor` (verifies local
+checkout against the PR head SHA first; offers checkout-and-open when they
+don't match), `:diff split` / `:diff unified`, `:view lanes` / `:view groups`,
+`:sync`, `:tour`, `:settings`, `:help`, `:clear`.
+
+`:about` appears in the palette but has no handler yet (selecting it is a no-op).
+Development builds also expose `:reset-store`.
 
 ---
 
 ## Known gaps for the redesign
 
-1. **`v` (mark viewed) has almost no feedback** — the sidebar already shows a
-   per-file icon; that icon should change state.
-2. Same key, different meanings across contexts (see note above) — worth showing
+1. Same key, different meanings across contexts (see note above) — worth showing
    the active context prominently.
-3. Route-dependent duplicates (`Shift+R`, `s`, `o`, `f`) should be labelled with
+2. Route-dependent duplicates (`Shift+R`, `s`, `o`, `f`) should be labelled with
    their context so they don't read as contradictions.
