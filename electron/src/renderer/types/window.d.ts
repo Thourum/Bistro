@@ -7,6 +7,8 @@ import type {
   GoCommandRequest,
   GoCommandResponse,
   IPCError,
+  OpenInEditorRequest,
+  OpenInEditorResponse,
   SyncActionRequest,
   SyncActionResponse,
 } from '../../types/ipc';
@@ -40,6 +42,9 @@ declare global {
         ) => void,
       ) => () => void;
       openExternal: (url: string) => Promise<{ ok: true } | { err: string }>;
+      openInEditor: (
+        request: OpenInEditorRequest,
+      ) => Promise<OpenInEditorResponse | IPCError>;
       quitApp: () => Promise<{ ok: true }>;
       pickFolder: () => Promise<string | null>;
       settings: {

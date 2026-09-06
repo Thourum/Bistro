@@ -32,6 +32,7 @@ export type ConfirmingAction =
   | 'mark-viewed'
   | 'mute'
   | 'onboarding_finish'
+  | 'open-in-editor'
   | 'reply'
   | 'request_changes'
   | 'since-last-review'

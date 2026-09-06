@@ -182,6 +182,8 @@ type Pr struct {
 	ChangesRequestedBy sql.NullString `json:"changes_requested_by"`
 	RepoID             string         `json:"repo_id"`
 	RequestedReviewers sql.NullString `json:"requested_reviewers"`
+	Hydrated           int64          `json:"hydrated"`
+	Mentioned          int64          `json:"mentioned"`
 }
 
 type PrDiff struct {
@@ -199,6 +201,12 @@ type PrDiff struct {
 	PatchBytes  int64          `json:"patch_bytes"`
 	HunkCount   int64          `json:"hunk_count"`
 	DiffStatus  string         `json:"diff_status"`
+}
+
+type PrReadState struct {
+	PrID       string    `json:"pr_id"`
+	Login      string    `json:"login"`
+	LastReadAt time.Time `json:"last_read_at"`
 }
 
 type RateLimitState struct {

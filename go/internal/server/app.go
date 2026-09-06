@@ -654,6 +654,11 @@ func (a *App) Run(ctx context.Context) error {
 		handler.NewGetReviewThreadsHandler(a.db, a.log))
 	a.wsServer.RegisterHandler("SUBMIT_ACTION",
 		handler.NewSubmitActionHandler(a.currentApplier, a.log))
+	// Phase 5 :open in editor — checkout inspection and checkout.
+	a.wsServer.RegisterHandler("CHECK_PR_CHECKOUT",
+		handler.NewCheckPRCheckoutHandler(a.db, repoLocationStore, handler.GitCheckoutInspector{}, a.log))
+	a.wsServer.RegisterHandler("CHECKOUT_PR_HEAD",
+		handler.NewCheckoutPRHeadHandler(a.db, repoLocationStore, a.gitClient, a.log))
 
 	expertiseRepoStore := handler.NewExpertiseSQLRepoStore(a.db.DB)
 	expertiseDataStore := handler.NewExpertiseSQLDataStore(a.db.DB, expertiseStore)
@@ -713,7 +718,7 @@ func (a *App) Run(ctx context.Context) error {
 		Log:            a.log,
 	}))
 
-	wsAddr := fmt.Sprintf(":%d", a.wsPort)
+	wsAddr := wsListenAddr(a.wsPort)
 	if err := a.wsServer.Start(wsAddr); err != nil {
 		return fmt.Errorf("failed to start ws server: %w", err)
 	}
