@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -76,6 +77,13 @@ func (c *Client) FetchIntoLocal(ctx context.Context, localPath string, id Identi
 }
 
 func matchingLocalRepoRemote(repo *gitlib.Repository, id Identity) (string, error) {
+	return matchingLocalRepoRemoteByID(repo, id.ID())
+}
+
+// matchingLocalRepoRemoteByID returns the name of the first remote whose URL
+// parses to repoID (a repos.id value such as "github:owner/repo"). Never
+// assumes "origin".
+func matchingLocalRepoRemoteByID(repo *gitlib.Repository, repoID string) (string, error) {
 	remotes, err := repo.Remotes()
 	if err != nil {
 		return "", fmt.Errorf("failed to list remotes: %w", err)
@@ -86,12 +94,12 @@ func matchingLocalRepoRemote(repo *gitlib.Repository, id Identity) (string, erro
 			if err != nil {
 				continue
 			}
-			if remoteID.ID() == id.ID() {
+			if remoteID.ID() == strings.ToLower(repoID) {
 				return remote.Config().Name, nil
 			}
 		}
 	}
-	return "", &LocalFetchError{Code: remoteMismatchCode, Err: fmt.Errorf("no remote matches %s", id.ID())}
+	return "", &LocalFetchError{Code: remoteMismatchCode, Err: fmt.Errorf("no remote matches %s", repoID)}
 }
 
 func localFetchRefSpecs(id Identity, opts *CloneOptions) []config.RefSpec {

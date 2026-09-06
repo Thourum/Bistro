@@ -31,6 +31,20 @@ export interface FSReadPatchResponse {
   ok: string;
 }
 
+// ---- Open in Editor Channel ----
+
+export interface OpenInEditorRequest {
+  /** Local repo root (from CHECK_PR_CHECKOUT's local_path). */
+  repoRoot: string;
+  /** Repo-relative file path; main resolves+validates against repoRoot. */
+  relativePath: string;
+  line: number;
+}
+
+export interface OpenInEditorResponse {
+  ok: true;
+}
+
 // ---- Go Command Channel ----
 
 // Review-thread resolve/unresolve actions intentionally do not use this legacy

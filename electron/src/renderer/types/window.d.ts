@@ -7,6 +7,8 @@ import type {
   GoCommandRequest,
   GoCommandResponse,
   IPCError,
+  OpenInEditorRequest,
+  OpenInEditorResponse,
   SyncActionRequest,
   SyncActionResponse,
 } from '../../types/ipc';
@@ -17,7 +19,8 @@ type EventChannel = 'sync:event' | 'settings:changed';
 declare global {
   interface Window {
     electron: {
-      wsPort: number;
+      wsPort: number | null;
+      getWsPort: () => Promise<number | null>;
       db: (request: DBQueryRequest) => Promise<DBQueryResponse | IPCError>;
       fs: (
         request: FSReadPatchRequest,
@@ -39,6 +42,9 @@ declare global {
         ) => void,
       ) => () => void;
       openExternal: (url: string) => Promise<{ ok: true } | { err: string }>;
+      openInEditor: (
+        request: OpenInEditorRequest,
+      ) => Promise<OpenInEditorResponse | IPCError>;
       quitApp: () => Promise<{ ok: true }>;
       pickFolder: () => Promise<string | null>;
       settings: {

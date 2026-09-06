@@ -28,10 +28,10 @@ const FOOTER_LEGEND_PRESETS_BY_ROUTE: Record<RouteBase, string[]> = {
     'global.escape',
   ],
   diff: [
-    'detail.scrollDown',
-    'detail.scrollUp',
-    'detail.nextFile',
-    'detail.prevFile',
+    'diff.nextFile',
+    'diff.prevFile',
+    'diff.markViewed',
+    'diff.toggleStyle',
     'global.escape',
   ],
   settings: ['global.escape'],
@@ -62,6 +62,7 @@ const FOOTER_LEGEND_PRESETS_BY_OVERLAY: Record<OverlayKind, string[]> = {
   command: ['global.escape'],
   repoPicker: ['global.escape'],
   addRepo: ['global.escape'],
+  tour: ['global.escape'],
 };
 
 export interface FooterLegendEntry {

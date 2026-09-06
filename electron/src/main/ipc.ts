@@ -3,12 +3,17 @@ import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { dialog, ipcMain } from 'electron';
 import type { Logger } from 'electron-log';
+import { buildEditorArgs, parseEditorCommand } from '../shared/editorArgs';
 import type {
   FSReadPatchRequest,
   GoCommandRequest,
+  OpenInEditorRequest,
   SyncActionRequest,
 } from '../types/ipc';
 import type { AppSettings } from '../types/settings';
+import { launchEditor } from './editorLaunch';
+import { validateOpenInEditorRequest } from './editorRequest';
+import { resolveEditorTarget } from './editorTarget';
 import type { SettingsService } from './settings';
 import type { TelemetryService } from './telemetry';
 import type { WebSocketClient } from './websocket-client';
@@ -23,11 +28,17 @@ const ACTION_TYPE_MAP: Record<string, string> = {
 export function setupIPC(
   path: string,
   logger: Logger,
-  wsClient: WebSocketClient,
+  getWsClient: () => WebSocketClient | null,
   settings: SettingsService,
+  getWsPort: () => number | null,
   telemetry?: TelemetryService,
 ): void {
   logger.info(`IPC setup (db path: ${path})`);
+
+  // ---- engine:* handlers ----
+  ipcMain.handle('engine:get-ws-port', () => {
+    return { ok: getWsPort() };
+  });
 
   // ---- settings:* handlers ----
   ipcMain.handle('settings:get', async () => {
@@ -113,10 +124,48 @@ export function setupIPC(
     },
   );
 
+  // ---- open-in-editor handler ----
+  // Canonicalises the checkout root and the target (following symlinks) and
+  // rejects anything that escapes the repository, then spawns the editor with
+  // an argument array — never a shell string.
+  ipcMain.handle(
+    'open-in-editor',
+    async (_event, request: OpenInEditorRequest) => {
+      const editorCommand = process.env.EDITOR ?? '';
+      // `$EDITOR` may carry arguments (`code --wait`); split it into
+      // binary + leading args so spawn stays argv-based (no shell).
+      const editor = parseEditorCommand(editorCommand);
+      if (editor.isErr()) {
+        return { err: 'Set $EDITOR' };
+      }
+
+      return validateOpenInEditorRequest(request)
+        .asyncAndThen((valid) =>
+          resolveEditorTarget({
+            repoRoot: valid.repoRoot,
+            relativePath: valid.relativePath,
+          }).map((target) => ({ target, line: valid.line })),
+        )
+        .andThen(({ target, line }) =>
+          buildEditorArgs(editorCommand, target, line).asyncAndThen((args) =>
+            launchEditor(editor.value.bin, args, logger),
+          ),
+        )
+        .match(
+          () => ({ ok: true as const }),
+          (message) => {
+            logger.warn(`open-in-editor rejected: ${message}`);
+            return { err: message };
+          },
+        );
+    },
+  );
+
   // ---- go:command handler ----
   ipcMain.handle('go:command', async (_event, request: GoCommandRequest) => {
     try {
-      if (!wsClient.isConnected()) {
+      const wsClient = getWsClient();
+      if (!wsClient?.isConnected()) {
         void telemetry?.track('review_action_requested', {
           action: ACTION_TYPE_MAP[request.type] ?? 'unknown',
           online: false,
@@ -155,7 +204,8 @@ export function setupIPC(
   // ---- sync:action handler ----
   ipcMain.handle('sync:action', async (_event, request: SyncActionRequest) => {
     try {
-      if (!wsClient.isConnected()) {
+      const wsClient = getWsClient();
+      if (!wsClient?.isConnected()) {
         void telemetry?.track('review_action_requested', {
           action: ACTION_TYPE_MAP[request.type] ?? request.type,
           online: false,

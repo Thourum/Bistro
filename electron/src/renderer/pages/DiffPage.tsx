@@ -15,13 +15,17 @@ import {
   useRef,
   useState,
 } from 'react';
-import { PierreDiffView } from '../components/PierreDiffView';
+import { DiffView } from '../components/diff/DiffView';
+import { hasCurrentInlineAnchor } from '../components/diff/diffAnnotations';
+import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
+import { OpenInEditorDialog } from '../components/OpenInEditorDialog';
 import { RangeDiffView } from '../components/RangeDiffView';
 import { StatusSquare } from '../components/StatusSquare';
 import { addToast } from '../components/ToastContainer';
 import { useActionDispatch } from '../hooks/useActionDispatch';
 import { useExpertise } from '../hooks/useExpertise';
 import { useMarkFileViewed } from '../hooks/useMarkFileViewed';
+import { useOpenInEditor } from '../hooks/useOpenInEditor';
 import { usePRHydration } from '../hooks/usePRHydration';
 import { type RangeDiffRequest, useRangeDiff } from '../hooks/useRangeDiff';
 import { useReviewThreads } from '../hooks/useReviewThreads';
@@ -29,11 +33,13 @@ import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
-import { settingsStore } from '../store/settings';
+import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import type { Comment, DiffFile } from '../types';
 import { repoIdForPR } from '../utils/expertise';
+import { firstHunkAdditionLine } from '../utils/firstHunkLine';
 import { createLogger } from '../utils/logger';
+import { prBrowserUrl } from '../utils/triage';
 
 const log = createLogger('DiffPage');
 
@@ -41,7 +47,7 @@ const log = createLogger('DiffPage');
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
  *
  * Two diff surfaces share this page:
- *   - the full PR diff (default), rendered by {@link PierreDiffView}
+ *   - the full PR diff (default), rendered by {@link DiffView}
  *   - a range diff (since-last-review or a timeline patchset pair), rendered
  *     by {@link RangeDiffView}
  *
@@ -76,6 +82,7 @@ export function DiffPage() {
   );
 
   const theme = useStore(settingsStore, (s) => s.appearance.theme);
+  const diffStyle = useStore(settingsStore, (s) => s.diff.style);
 
   // Fetch ALL PRs so deep-linked PRs (any status) are always resolvable.
   const { data: allPRs = [], isLoading: prLoading } = useWebSocketPRList('all');
@@ -86,6 +93,14 @@ export function DiffPage() {
   const { request } = useWebSocket();
   const { dispatchReplyComment } = useActionDispatch(pr?.id);
   const { markViewed } = useMarkFileViewed();
+  const {
+    state: openInEditorState,
+    requestOpen: requestOpenInEditor,
+    checkoutAndOpen,
+    openCurrentVersion,
+    cancel: cancelOpenInEditor,
+    pending: openInEditorPending,
+  } = useOpenInEditor();
   const { expertise } = useExpertise(pr?.id);
   const expertiseStatus = useStore(appStore, (s: UIState) =>
     pr !== undefined ? s.expertiseRepoStatuses?.[repoIdForPR(pr)] : undefined,
@@ -210,6 +225,60 @@ export function DiffPage() {
     appStore.setState((s) => ({ ...s, confirmingAction: null }));
   }, [confirmingAction, doMarkViewed]);
 
+  // ── Open in editor (`:open in editor` palette command) ─────────────
+  // Current file/line model (spec §5.3): file = n/p focus target; line =
+  // selected inline comment's line, else the first new-side line of the
+  // file's first hunk, else 1.
+  useEffect(() => {
+    if (confirmingAction !== 'open-in-editor') return;
+    appStore.setState((s) => ({ ...s, confirmingAction: null }));
+    if (pr === undefined || currentFile === undefined) {
+      addToast({
+        type: 'warning',
+        message: 'Could not open in editor: no file focused',
+        dismissible: true,
+      });
+      return;
+    }
+    const activeThread = threads.find(
+      (t) =>
+        t.id === appStore.state.activeInlineCommentThreadId &&
+        t.file_path === currentFile.path &&
+        hasCurrentInlineAnchor(t),
+    );
+    const filePatch = splitUnifiedDiff(diff).find(
+      (f) => f.path === currentFile.path,
+    )?.patch;
+    const line =
+      activeThread?.line ??
+      (filePatch !== undefined ? firstHunkAdditionLine(filePatch) : 1);
+    void requestOpenInEditor(pr.id, currentFile.path, line);
+  }, [confirmingAction, pr, currentFile, threads, diff, requestOpenInEditor]);
+
+  // Surface a failure toast for open-in-editor errors that have no dialog.
+  useEffect(() => {
+    if (openInEditorState.error === null) return;
+    addToast({
+      type: 'warning',
+      message: `Could not open in editor: ${openInEditorState.error}`,
+      dismissible: true,
+    });
+  }, [openInEditorState.error]);
+
+  // Persist the keybinding's diff-style toggle intent from the route owner so
+  // failures can be surfaced to the user instead of being discarded.
+  useEffect(() => {
+    if (confirmingAction !== 'toggle-diff-style') return;
+    const nextStyle = diffStyle === 'split' ? 'unified' : 'split';
+    appStore.setState((s) => ({ ...s, confirmingAction: null }));
+    updateSettings({ diff: { style: nextStyle } }).match(
+      () => undefined,
+      (message) => {
+        addToast({ type: 'error', message, dismissible: true });
+      },
+    );
+  }, [confirmingAction, diffStyle]);
+
   // Clear range-diff intent when leaving the diff view.
   useEffect(() => {
     return () => {
@@ -224,6 +293,11 @@ export function DiffPage() {
   const handleBack = (): void => {
     void navigate({ to: '/prs/$prId', params: { prId } });
   };
+
+  const viewedPaths = useMemo(
+    () => new Set(files.filter((f) => f.viewed).map((f) => f.path)),
+    [files],
+  );
 
   if (!prLoading && pr === undefined) {
     return (
@@ -306,9 +380,10 @@ export function DiffPage() {
         ) : diffError !== null ? (
           <ErrorState message={`Failed to load diff: ${diffError}`} />
         ) : (
-          <PierreDiffView
+          <DiffView
             diff={diff}
             theme={theme}
+            diffStyle={diffStyle}
             findQuery={findQuery}
             selectedFileKey={fileKey}
             onFilesResolved={handleFilesResolved}
@@ -317,12 +392,14 @@ export function DiffPage() {
             onThreadReply={(threadId, body) => {
               dispatchReplyComment(body, { threadId });
             }}
+            prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
             expertiseFiles={expertise?.files ?? []}
             expertiseError={
               expertiseStatus?.status === 'error'
                 ? (expertiseStatus.message ?? expertiseStatus.code ?? 'unknown')
                 : null
             }
+            viewedPaths={viewedPaths}
           />
         )}
       </div>
@@ -361,6 +438,14 @@ export function DiffPage() {
           <span>DIFF</span>
         </div>
       </div>
+
+      <OpenInEditorDialog
+        dialog={openInEditorState.dialog}
+        onCheckoutAndOpen={() => void checkoutAndOpen()}
+        onOpenCurrentVersion={() => void openCurrentVersion()}
+        onCancel={cancelOpenInEditor}
+        pending={openInEditorPending}
+      />
     </main>
   );
 }

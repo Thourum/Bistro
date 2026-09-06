@@ -41,6 +41,11 @@ export interface AppearanceSettings {
   highDensity: boolean;
   /** Set to true after the user completes (or skips) onboarding. */
   onboardingComplete: boolean;
+  /**
+   * Set to true on any tour exit — finishing screen 5 or Esc mid-tour both
+   * count. Re-runnable any time via the `:tour` palette command.
+   */
+  tourComplete: boolean;
 }
 
 export interface SyncSettings {
@@ -52,6 +57,11 @@ export interface SyncSettings {
 
 export interface PRListSettings {
   view: 'flat' | 'grouped';
+}
+
+export interface DiffSettings {
+  /** Unified (single column) or split (side-by-side) diff rendering. */
+  style: 'unified' | 'split';
 }
 
 export interface PrivacySettings {
@@ -87,6 +97,7 @@ export interface AppSettings {
   appearance: AppearanceSettings;
   sync: SyncSettings;
   prList: PRListSettings;
+  diff: DiffSettings;
   privacy: PrivacySettings;
   repositories: RepositoriesSettings;
   classification: ClassificationSettings;
@@ -104,6 +115,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     codeFontSize: 13,
     highDensity: false,
     onboardingComplete: false,
+    tourComplete: false,
   },
   sync: {
     autoSync: true,
@@ -112,6 +124,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   prList: {
     view: 'flat',
+  },
+  diff: {
+    style: 'unified',
   },
   privacy: {
     telemetryEnabled: false,

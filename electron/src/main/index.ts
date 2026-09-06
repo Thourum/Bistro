@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, ipcMain, shell } from 'electron';
 import log from 'electron-log';
+import { ResultAsync } from 'neverthrow';
 import type { ClassificationSettings, SyncSettings } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import { killGoProcess, spawnGoProcess } from './go-spawn';
@@ -175,6 +176,21 @@ ipcMain.handle('app:quit', () => {
   return { ok: true as const };
 });
 
+ipcMain.handle('open-external', (_event, url: unknown) => {
+  if (typeof url !== 'string' || !url.startsWith('https://')) {
+    return { err: 'Only https:// URLs are allowed' };
+  }
+  return ResultAsync.fromPromise(shell.openExternal(url), (err) =>
+    err instanceof Error ? err.message : String(err),
+  ).match(
+    () => ({ ok: true as const }),
+    (message) => {
+      log.error(`open-external failed: ${message}`);
+      return { err: message };
+    },
+  );
+});
+
 app.on('ready', async () => {
   startAutoUpdates(log);
 
@@ -197,6 +213,16 @@ app.on('ready', async () => {
   void telemetryService.trackAppStarted();
 
   const appConfig = buildConfig(settingsService.snapshot.sync);
+  runtimeConfig = appConfig;
+
+  setupIPC(
+    appConfig.goProcess.dbPath,
+    log,
+    () => wsClient,
+    settingsService,
+    () => runtimeConfig?.goProcess.wsPort ?? null,
+    telemetryService,
+  );
 
   log.info(`Go binary: ${appConfig.goProcess.binaryPath}`);
   log.info(`DB path: ${appConfig.goProcess.dbPath}`);
@@ -209,6 +235,9 @@ app.on('ready', async () => {
     const actualWsPort = await spawnGoProcess({
       config: appConfig.goProcess,
       logger: log,
+      onStillStarting: () => {
+        createWindow(runtimeConfig ?? appConfig, log);
+      },
       onCrash: (code, signal) => {
         log.error(`Go process crashed: code=${code}, signal=${signal}`);
         captureSentryException(new Error('Go sync engine crashed'), {
@@ -233,7 +262,9 @@ app.on('ready', async () => {
     };
 
     // 2. Create WebSocket client and connect (Go is now ready)
-    const wsUrl = `ws://localhost:${actualWsPort}/ws`;
+    // 127.0.0.1, not localhost: the engine binds IPv4 loopback only and
+    // localhost may resolve to ::1 first.
+    const wsUrl = `ws://127.0.0.1:${actualWsPort}/ws`;
     wsClient = new WebSocketClient(wsUrl, log);
     const activeSettingsService = settingsService;
 
@@ -261,36 +292,12 @@ app.on('ready', async () => {
     });
     wsClient.connect();
 
-    // 3. Setup IPC handlers (DB should exist now that Go has started)
-    setupIPC(
-      appConfig.goProcess.dbPath,
-      log,
-      wsClient,
-      settingsService,
-      telemetryService,
-    );
-
-    // 4a. Forward runtime sync-settings changes to Go engine over WebSocket.
+    // 3. Forward runtime sync-settings changes to Go engine over WebSocket.
     settingsService.addChangeListener((s) => {
       sendSyncSettingsToGo(s.sync);
       sendClassificationSettingsToGo(s.classification);
       telemetryService?.setEnabled(s.privacy.telemetryEnabled);
       configureSentryConsent(s.privacy.telemetryEnabled);
-    });
-
-    // 3b. Register open-external IPC handler (HTTPS-only URL validation)
-    ipcMain.handle('open-external', async (_event, url: unknown) => {
-      if (typeof url !== 'string' || !url.startsWith('https://')) {
-        return { err: 'Only https:// URLs are allowed' };
-      }
-      try {
-        await shell.openExternal(url);
-        return { ok: true as const };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        log.error(`open-external failed: ${message}`);
-        return { err: message };
-      }
     });
 
     // 4. Create window (last — everything is ready)
@@ -302,9 +309,9 @@ app.on('ready', async () => {
       tags: { component: 'electron-main' },
     });
 
-    // Still create window so user sees error state
+    // Still create window so the local settings surface remains available.
     try {
-      createWindow(appConfig, log);
+      createWindow(runtimeConfig ?? appConfig, log);
     } catch {
       // If even window creation fails, quit
       app.quit();

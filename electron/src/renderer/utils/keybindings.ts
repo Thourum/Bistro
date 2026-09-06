@@ -8,6 +8,7 @@ import { authAction, PROVIDERS } from '../providers';
 import { router } from '../router';
 import type { UIState } from '../store/ui';
 import { toggleRepoGroup } from '../store/ui';
+import { openUrlInBrowser } from './openUrl';
 
 // RouteBase: the "base" route derived from the current pathname.
 // Includes 'login' and 'onboarding' so their bindings can be properly gated
@@ -136,6 +137,7 @@ const ALL_OVERLAYS: OverlayKind[] = [
   'repoPicker',
   'addRepo',
   'threads',
+  'tour',
 ];
 
 const ALL_ROUTES: RouteBase[] = [
@@ -214,14 +216,6 @@ function movedPRIndex(s: UIState, delta: number): number {
   return len > 0 ? Math.min(next, len - 1) : next;
 }
 
-function openUrlInBrowser(url: string): void {
-  if (window.electron?.openExternal !== undefined) {
-    void window.electron.openExternal(url);
-    return;
-  }
-  window.open(url, '_blank', 'noopener,noreferrer');
-}
-
 const globalBindings: KeyBinding[] = [
   {
     actionId: 'global.help',
@@ -229,9 +223,12 @@ const globalBindings: KeyBinding[] = [
     // written as Shift + the physical base key ('?' = Shift+/ on US layouts).
     keys: 'Shift+/',
     description: 'Help',
-    activation: { routes: ['list', 'detail'] },
+    activation: { routes: ['list', 'detail', 'diff'] },
     action: (ctx) => {
-      const source = ctx.routeBase === 'detail' ? 'detail' : 'list';
+      const source =
+        ctx.routeBase === 'detail' || ctx.routeBase === 'diff'
+          ? ctx.routeBase
+          : 'list';
       ctx.overlays.openHelp(source);
     },
   },
@@ -280,7 +277,7 @@ const globalBindings: KeyBinding[] = [
     actionId: 'global.command',
     keys: 'Shift+;', // ':' on US layouts
     description: 'Commands',
-    activation: { routes: ['list', 'detail'] },
+    activation: { routes: ['list', 'detail', 'diff'] },
     action: (ctx) => {
       ctx.overlays.openCommand();
     },
@@ -366,6 +363,30 @@ const jumpBindings: KeyBinding[] = Array.from({ length: 9 }, (_, i) => {
     },
   };
 });
+
+const laneJumpBindings: KeyBinding[] = Array.from({ length: 6 }, (_, i) => {
+  const laneNumber = i + 1;
+  return {
+    actionId: `inbox.lane${laneNumber}`,
+    keys: ['g', String(laneNumber)],
+    description: `Jump to lane ${laneNumber}`,
+    activation: { routes: ['list'] as RouteBase[] },
+    hidden: laneNumber !== 1,
+    action: (ctx: KeyActionContext) => {
+      const section = ctx.store.state.laneSectionsSnapshot[i];
+      if (section === undefined || section.count === 0) return;
+      ctx.store.setState((s) => ({
+        ...s,
+        selectedPRIndex: section.startIndex,
+      }));
+    },
+  };
+});
+
+function emitInboxEvent(name: string): void {
+  if (typeof document === 'undefined') return;
+  document.dispatchEvent(new CustomEvent(name));
+}
 
 const listBindings: KeyBinding[] = [
   {
@@ -505,6 +526,13 @@ const listBindings: KeyBinding[] = [
     },
   },
   {
+    actionId: 'inbox.markLaneRead',
+    keys: 'Shift+R',
+    description: 'Mark lane read',
+    activation: { routes: ['list'] },
+    action: (_ctx) => emitInboxEvent('bistro:inbox:mark-lane-read'),
+  },
+  {
     actionId: 'list.openBrowser',
     keys: 'o',
     description: 'Open (in Browser)',
@@ -558,6 +586,7 @@ const listBindings: KeyBinding[] = [
     },
   },
   ...jumpBindings,
+  ...laneJumpBindings,
 ];
 
 // ─── Detail View bindings (active in detail mode only) ────────────────────────
@@ -567,7 +596,7 @@ const detailBindings: KeyBinding[] = [
     actionId: 'detail.nextFile',
     keys: 'n',
     description: 'Next file',
-    activation: { routes: ['detail', 'diff'] },
+    activation: { routes: ['detail'] },
     action: (ctx) => {
       const { diffFileKeys, selectedFileIndex } = ctx.store.state;
       const newIdx = Math.min(
@@ -578,48 +607,19 @@ const detailBindings: KeyBinding[] = [
         ...s,
         selectedFileIndex: newIdx,
       }));
-      // In diff route, also update the ?file route param.
-      if (ctx.routeBase === 'diff' && diffFileKeys.length > 0) {
-        const newKey = diffFileKeys[newIdx];
-        if (newKey !== undefined) {
-          if (ctx.prId !== undefined) {
-            void router.navigate({
-              to: '/prs/$prId/diff',
-              params: { prId: ctx.prId },
-              search: { file: newKey, side: 'right' },
-              replace: true,
-            });
-          }
-        }
-      }
     },
   },
   {
     actionId: 'detail.prevFile',
     keys: 'p',
     description: 'Previous file',
-    activation: { routes: ['detail', 'diff'] },
+    activation: { routes: ['detail'] },
     action: (ctx) => {
-      const { diffFileKeys, selectedFileIndex } = ctx.store.state;
-      const newIdx = Math.max(0, selectedFileIndex - 1);
+      const { selectedFileIndex } = ctx.store.state;
       ctx.store.setState((s) => ({
         ...s,
-        selectedFileIndex: newIdx,
+        selectedFileIndex: Math.max(0, selectedFileIndex - 1),
       }));
-      // In diff route, also update the ?file route param.
-      if (ctx.routeBase === 'diff' && diffFileKeys.length > 0) {
-        const newKey = diffFileKeys[newIdx];
-        if (newKey !== undefined) {
-          if (ctx.prId !== undefined) {
-            void router.navigate({
-              to: '/prs/$prId/diff',
-              params: { prId: ctx.prId },
-              search: { file: newKey, side: 'right' },
-              replace: true,
-            });
-          }
-        }
-      }
     },
   },
   {
@@ -780,6 +780,58 @@ const detailBindings: KeyBinding[] = [
     },
   },
   {
+    actionId: 'diff.toggleStyle',
+    keys: 'Shift+S',
+    description: 'Toggle side-by-side',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({
+        ...s,
+        confirmingAction: 'toggle-diff-style',
+      }));
+    },
+  },
+  {
+    actionId: 'diff.openFileBrowser',
+    keys: 'o',
+    description: 'Open file (in Browser)',
+    activation: { routes: ['diff'] },
+    // DiffView owns the active file, so it performs the open (emitInboxEvent
+    // pattern — bindings are pure config and cannot read component state).
+    action: (_ctx) => emitInboxEvent('bistro:diff:open-file-browser'),
+  },
+  {
+    actionId: 'diff.toggleCollapse',
+    keys: 'z',
+    description: 'Collapse / expand file',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      // `diffFileKeys` is published by DiffView in the same order it sets
+      // `selectedFileIndex`, so the index addresses the focused file's key.
+      const key =
+        ctx.store.state.diffFileKeys[ctx.store.state.selectedFileIndex];
+      if (key === undefined || key === '') return;
+      ctx.store.setState((s) => ({
+        ...s,
+        diffCollapseOverrides: s.diffCollapseOverrides.includes(key)
+          ? s.diffCollapseOverrides.filter((entry) => entry !== key)
+          : [...s.diffCollapseOverrides, key],
+      }));
+    },
+  },
+  {
+    actionId: 'diff.toggleWhitespace',
+    keys: 'w',
+    description: 'Hide whitespace-only hunks',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      ctx.store.setState((s) => ({
+        ...s,
+        hideWhitespaceHunks: !s.hideWhitespaceHunks,
+      }));
+    },
+  },
+  {
     actionId: 'diff.markViewed',
     keys: 'v',
     description: 'Mark file viewed',
@@ -900,8 +952,7 @@ const detailScrollBindings: KeyBinding[] = [
     keys: 'j',
     description: 'Scroll down',
     activation: { routes: ['detail', 'diff'] },
-    action: (ctx) => {
-      if (moveInlineDiffComment(ctx, 1)) return;
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: 40 });
     },
   },
@@ -910,9 +961,69 @@ const detailScrollBindings: KeyBinding[] = [
     keys: 'k',
     description: 'Scroll up',
     activation: { routes: ['detail', 'diff'] },
-    action: (ctx) => {
-      if (moveInlineDiffComment(ctx, -1)) return;
+    action: (_ctx) => {
       document.querySelector('[data-diff-viewport]')?.scrollBy({ top: -40 });
+    },
+  },
+  {
+    actionId: 'diff.nextFile',
+    keys: 'Shift+J',
+    description: 'Next file',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      const { diffFileKeys, selectedFileIndex } = ctx.store.state;
+      const newIdx = Math.min(
+        selectedFileIndex + 1,
+        Math.max(0, diffFileKeys.length - 1),
+      );
+      ctx.store.setState((s) => ({ ...s, selectedFileIndex: newIdx }));
+      const newKey = diffFileKeys[newIdx];
+      if (newKey !== undefined && ctx.prId !== undefined) {
+        void router.navigate({
+          to: '/prs/$prId/diff',
+          params: { prId: ctx.prId },
+          search: { file: newKey, side: 'right' },
+          replace: true,
+        });
+      }
+    },
+  },
+  {
+    actionId: 'diff.prevFile',
+    keys: 'Shift+K',
+    description: 'Previous file',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      const { diffFileKeys, selectedFileIndex } = ctx.store.state;
+      const newIdx = Math.max(0, selectedFileIndex - 1);
+      ctx.store.setState((s) => ({ ...s, selectedFileIndex: newIdx }));
+      const newKey = diffFileKeys[newIdx];
+      if (newKey !== undefined && ctx.prId !== undefined) {
+        void router.navigate({
+          to: '/prs/$prId/diff',
+          params: { prId: ctx.prId },
+          search: { file: newKey, side: 'right' },
+          replace: true,
+        });
+      }
+    },
+  },
+  {
+    actionId: 'diff.nextComment',
+    keys: 'n',
+    description: 'Next inline comment',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      moveInlineDiffComment(ctx, 1);
+    },
+  },
+  {
+    actionId: 'diff.prevComment',
+    keys: 'p',
+    description: 'Previous inline comment',
+    activation: { routes: ['diff'] },
+    action: (ctx) => {
+      moveInlineDiffComment(ctx, -1);
     },
   },
   {

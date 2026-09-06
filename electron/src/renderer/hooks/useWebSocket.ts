@@ -1,3 +1,4 @@
+import { fromThrowable, type Result, ResultAsync } from 'neverthrow';
 import { useCallback, useEffect } from 'react';
 import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
@@ -81,6 +82,10 @@ interface ThreadStateChangedData {
   thread_id: string;
 }
 
+interface PRsReadChangedData {
+  pr_ids: string[];
+}
+
 interface ScanDevFolderRequest {
   path: string;
   reason: 'startup';
@@ -132,29 +137,36 @@ const LOCATION_ERROR_OPERATIONS = [
   'recover',
 ] as const;
 
-const DEFAULT_WS_PORT = 8080;
+const ENGINE_PORT_POLL_INTERVAL_MS = 1000;
+
+function isValidWsPort(port: unknown): port is number {
+  return (
+    typeof port === 'number' &&
+    Number.isInteger(port) &&
+    port > 0 &&
+    port <= 65535
+  );
+}
 
 /**
- * Resolves the sync-engine WebSocket URL. The Go process picks its port
- * dynamically; the preload script exposes it synchronously as
- * `window.electron.wsPort`. Falls back to 8080 outside Electron (tests,
- * plain browser dev).
+ * Resolves the sync-engine WebSocket URL synchronously when available.
+ * Dynamic-port engines may create the renderer before readiness; in that state
+ * this returns null so callers poll main rather than using legacy port 8080.
  */
-function getWsUrl(): string {
-  const exposedPort =
-    typeof window !== 'undefined' ? window.electron?.wsPort : undefined;
-  const port =
-    typeof exposedPort === 'number' &&
-    Number.isInteger(exposedPort) &&
-    exposedPort > 0 &&
-    exposedPort <= 65535
-      ? exposedPort
-      : DEFAULT_WS_PORT;
-  return `ws://localhost:${port}/ws`;
+function getWsUrl(): string | null {
+  const electron = typeof window !== 'undefined' ? window.electron : undefined;
+  if (electron === undefined) {
+    return 'ws://127.0.0.1:8080/ws';
+  }
+  const port = isValidWsPort(resolvedWsPort) ? resolvedWsPort : electron.wsPort;
+  return isValidWsPort(port) ? `ws://127.0.0.1:${port}/ws` : null;
 }
 const REQUEST_TIMEOUT_MS = 5000;
 const PR_SYNC_RESPONSE_MARGIN_MS = 15000;
 const PR_SYNC_REQUEST_TIMEOUT_MS = 2 * 60 * 1000 + PR_SYNC_RESPONSE_MARGIN_MS;
+// CHECKOUT_PR_HEAD fetches and mutates HEAD; the generic 5s budget would
+// report failure while the engine is still mid-checkout.
+const CHECKOUT_REQUEST_TIMEOUT_MS = 60 * 1000;
 const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -163,7 +175,9 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 let singletonWs: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
+let enginePortPollAttempt = 0;
 let refCount = 0;
+let resolvedWsPort: number | null = null;
 let hasSentStartupDevFolderScan = false;
 const messageHandlers = new Map<string, (data: unknown) => void>();
 
@@ -307,15 +321,25 @@ function handleThreadStateChanged(_data: ThreadStateChangedData): void {
   }
 }
 
-function handlePRMetadataChanged(_data: unknown): void {
-  try {
+function bumpPRListRevision(): Result<void, unknown> {
+  return fromThrowable(() => {
     appStore.setState((s) => ({
       ...s,
       prListRevision: s.prListRevision + 1,
     }));
-  } catch {
-    // Store not available (test environment)
-  }
+  })();
+}
+
+function handlePRMetadataChanged(_data: unknown): void {
+  bumpPRListRevision().mapErr((error) =>
+    log.error({ err: error }, 'failed to invalidate PR list'),
+  );
+}
+
+function handlePRsReadChanged(_data: PRsReadChangedData): void {
+  bumpPRListRevision().mapErr((error) =>
+    log.error({ err: error }, 'failed to invalidate PR list'),
+  );
 }
 
 function handleCIStatusChanged(_data: unknown): void {
@@ -570,6 +594,9 @@ function onMessage(event: MessageEvent<string>): void {
     case 'PR_METADATA_CHANGED':
       handlePRMetadataChanged(message.data);
       break;
+    case 'PRS_READ_CHANGED':
+      handlePRsReadChanged(message.data as PRsReadChangedData);
+      break;
     case 'CI_STATUS_CHANGED':
       handleCIStatusChanged(message.data);
       break;
@@ -795,6 +822,7 @@ function onMessage(event: MessageEvent<string>): void {
       break;
     }
     case 'PR_SYNCED':
+    case 'PRS_READ_ACK':
     case 'DIFF_READY':
     case 'PATCHSETS_READY':
     case 'RANGE_DIFF_READY':
@@ -906,6 +934,47 @@ function connect(): void {
   }
 
   const wsUrl = getWsUrl();
+  if (wsUrl === null) {
+    if (enginePortPollAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      log.error(
+        { maxAttempts: MAX_RECONNECT_ATTEMPTS },
+        'sync engine WebSocket port was not published',
+      );
+      appStore.setState((state) => ({
+        ...state,
+        syncStatus: 'error',
+        syncError: 'Sync engine did not start. Please restart the app.',
+        authChecked: true,
+        isAuthenticated: false,
+      }));
+      return;
+    }
+
+    enginePortPollAttempt += 1;
+    const getWsPort = window.electron?.getWsPort;
+    if (getWsPort !== undefined) {
+      void ResultAsync.fromPromise(getWsPort(), (error) => error).match(
+        (port) => {
+          if (isValidWsPort(port)) resolvedWsPort = port;
+        },
+        (error) => {
+          log.warn(
+            { err: error, attempt: enginePortPollAttempt },
+            'failed to query sync engine WebSocket port',
+          );
+        },
+      );
+    }
+    log.info(
+      { attempt: enginePortPollAttempt, maxAttempts: MAX_RECONNECT_ATTEMPTS },
+      'Go sync engine is still starting — waiting for its WebSocket port',
+    );
+    reconnectTimer = setTimeout(connect, ENGINE_PORT_POLL_INTERVAL_MS);
+    return;
+  }
+
+  enginePortPollAttempt = 0;
+
   log.info({ url: wsUrl }, 'attempting connection');
   try {
     appStore.setState((s) => ({ ...s, syncStatus: 'connecting' }));
@@ -1021,6 +1090,8 @@ function disconnect(): void {
   singletonWs?.close();
   singletonWs = null;
   reconnectAttempt = 0;
+  enginePortPollAttempt = 0;
+  resolvedWsPort = null;
   hasSentStartupDevFolderScan = false;
 }
 
@@ -1070,9 +1141,14 @@ export function extractResponseError(data: unknown): string | null {
 const CONNECT_WAIT_INTERVAL_MS = 250;
 
 function requestTimeoutFor(type: string): number {
-  return type === 'REQUEST_PR_SYNC'
-    ? PR_SYNC_REQUEST_TIMEOUT_MS
-    : REQUEST_TIMEOUT_MS;
+  switch (type) {
+    case 'REQUEST_PR_SYNC':
+      return PR_SYNC_REQUEST_TIMEOUT_MS;
+    case 'CHECKOUT_PR_HEAD':
+      return CHECKOUT_REQUEST_TIMEOUT_MS;
+    default:
+      return REQUEST_TIMEOUT_MS;
+  }
 }
 
 function requestMessage(type: string, data: unknown): Promise<unknown> {

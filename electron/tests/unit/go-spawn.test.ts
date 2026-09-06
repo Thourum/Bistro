@@ -15,7 +15,9 @@ describe('parseReadyLine', () => {
   });
 
   it('returns null for JSON with a different event', () => {
-    expect(parseReadyLine('{"event":"sync_complete","wsPort":8080}')).toBeNull();
+    expect(
+      parseReadyLine('{"event":"sync_complete","wsPort":8080}'),
+    ).toBeNull();
   });
 
   it('returns null when wsPort is missing', () => {

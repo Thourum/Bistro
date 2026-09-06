@@ -7,6 +7,8 @@ import type {
   GoCommandRequest,
   GoCommandResponse,
   IPCError,
+  OpenInEditorRequest,
+  OpenInEditorResponse,
   SyncActionRequest,
   SyncActionResponse,
 } from '../types/ipc';
@@ -27,6 +29,18 @@ contextBridge.exposeInMainWorld('electron', {
    * additionalArguments at window creation (Go picks it dynamically).
    */
   wsPort: readWsPortFromArgv(process.argv),
+
+  async getWsPort(): Promise<number | null> {
+    const response = (await ipcRenderer.invoke('engine:get-ws-port')) as {
+      ok: unknown;
+    };
+    return typeof response.ok === 'number' &&
+      Number.isInteger(response.ok) &&
+      response.ok >= 1 &&
+      response.ok <= 65535
+      ? response.ok
+      : null;
+  },
 
   /**
    * Query SQLite database
@@ -114,6 +128,17 @@ contextBridge.exposeInMainWorld('electron', {
     return ipcRenderer.invoke('open-external', url);
   },
 
+  /**
+   * Open a file in $EDITOR at an optional line. Main validates relativePath
+   * stays inside repoRoot before spawning.
+   * @returns { ok: true } | { err: string }
+   */
+  async openInEditor(
+    request: OpenInEditorRequest,
+  ): Promise<OpenInEditorResponse | IPCError> {
+    return ipcRenderer.invoke('open-in-editor', request);
+  },
+
   quitApp(): Promise<{ ok: true }> {
     return ipcRenderer.invoke('app:quit');
   },
@@ -149,7 +174,8 @@ contextBridge.exposeInMainWorld('electron', {
 declare global {
   interface Window {
     electron: {
-      wsPort: number;
+      wsPort: number | null;
+      getWsPort: () => Promise<number | null>;
       db: (request: DBQueryRequest) => Promise<DBQueryResponse | IPCError>;
       fs: (
         request: FSReadPatchRequest,
@@ -171,6 +197,9 @@ declare global {
         ) => void,
       ) => () => void;
       openExternal: (url: string) => Promise<{ ok: true } | { err: string }>;
+      openInEditor: (
+        request: OpenInEditorRequest,
+      ) => Promise<OpenInEditorResponse | IPCError>;
       quitApp: () => Promise<{ ok: true }>;
       pickFolder: () => Promise<string | null>;
       settings: {

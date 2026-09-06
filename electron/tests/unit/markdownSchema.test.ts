@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { markdownSchema } from '../../src/renderer/utils/markdownSchema';
 
 describe('markdownSchema', () => {
@@ -14,7 +14,7 @@ describe('markdownSchema', () => {
     it('allows open attribute on details', () => {
       const detailsAttrs = markdownSchema.attributes?.['details'] ?? [];
       const hasOpen = detailsAttrs.some((attr) =>
-        Array.isArray(attr) ? attr[0] === 'open' : attr === 'open'
+        Array.isArray(attr) ? attr[0] === 'open' : attr === 'open',
       );
       expect(hasOpen).toBe(true);
     });

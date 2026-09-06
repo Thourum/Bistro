@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -29,15 +30,59 @@ type Server struct {
 	dispatcher *Dispatcher
 }
 
-// isLocalOrigin reports whether the request origin is localhost, 127.0.0.1,
-// or absent (non-browser client). This keeps the server safe for a local
-// desktop app while still allowing development tooling.
+// localOriginSchemes are the URL schemes a local Bistro renderer may present.
+// Anything else (javascript:, data:, custom app schemes) is rejected even when
+// the host parses as loopback.
+var localOriginSchemes = map[string]bool{
+	"http":  true,
+	"https": true,
+	"ws":    true,
+	"wss":   true,
+}
+
+// isLocalOrigin reports whether the request origin belongs to this machine's
+// Bistro UI. The allowlist is: an absent Origin (non-browser clients such as
+// the Electron main-process `ws` client and tests), "file://" (the packaged
+// renderer loaded via loadFile), and http/https/ws/wss origins whose host is
+// "localhost" or a loopback IP.
+//
+// The origin is parsed as a URL and matched on the host component exactly —
+// never by substring. Substring matching is spoofable, because an
+// attacker-controlled host can embed the allowed text anywhere in the origin
+// ("http://localhost.evil.com", "http://evil.com/127.0.0.1"), and a browser
+// on the victim's machine can reach the loopback listener.
 func isLocalOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return true // non-browser client (e.g. Electron IPC, tests)
 	}
-	return strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1")
+
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	scheme := strings.ToLower(parsed.Scheme)
+	// The packaged renderer is loaded from disk; Chromium reports "file://".
+	// A remote page can never make the browser send this origin.
+	if scheme == "file" && parsed.Host == "" {
+		return true
+	}
+	if !localOriginSchemes[scheme] {
+		return false
+	}
+	// A serialized origin is scheme://host[:port] — no userinfo, path, query,
+	// or fragment. Anything else is malformed and not trusted.
+	if parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+
+	host := parsed.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // NewServer constructs a Server that only accepts connections from localhost origins.

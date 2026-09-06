@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from '@tanstack/react-router';
+import { useMatchRoute, useNavigate, useParams } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -7,10 +7,14 @@ import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
+import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
+import { openUrlInBrowser } from '../utils/openUrl';
+import { prBrowserUrl } from '../utils/triage';
+import { addToast } from './ToastContainer';
 
 type Icon = string;
 
@@ -21,6 +25,8 @@ interface CommandItem {
   readonly icon: Icon;
   readonly shortcut?: readonly string[];
   readonly dev?: boolean;
+  /** Only listed on the diff route — DiffPage is the sole consumer of the intent. */
+  readonly diffOnly?: boolean;
 }
 
 const isDev = import.meta.env.DEV;
@@ -31,6 +37,12 @@ const COMMANDS: readonly CommandItem[] = [
     name: 'Show keyboard shortcuts',
     icon: 'keyboard',
     shortcut: ['?'],
+  },
+  {
+    id: 'tour',
+    name: ':tour',
+    description: 'Replay the first-run guided tour',
+    icon: 'school',
   },
   {
     id: 'settings',
@@ -48,6 +60,47 @@ const COMMANDS: readonly CommandItem[] = [
     id: 'clear',
     name: 'Clear all filters and search',
     icon: 'filter_alt_off',
+  },
+  {
+    id: 'view-lanes',
+    name: ':view lanes',
+    description: 'Organize the PR inbox by review lanes',
+    icon: 'view_agenda',
+  },
+  {
+    id: 'view-groups',
+    name: ':view groups',
+    description: 'Organize the PR inbox by repository',
+    icon: 'account_tree',
+  },
+  {
+    id: 'open-browser',
+    name: ':open in browser',
+    description: 'Open the focused PR on GitHub',
+    icon: 'open_in_new',
+    shortcut: ['o'],
+  },
+  {
+    id: 'diff-split',
+    name: ':diff split',
+    description: 'Show diffs side by side',
+    icon: 'vertical_split',
+    shortcut: ['⇧', 'S'],
+  },
+  {
+    id: 'diff-unified',
+    name: ':diff unified',
+    description: 'Show diffs in a single column',
+    icon: 'view_stream',
+    shortcut: ['⇧', 'S'],
+  },
+  {
+    id: 'open-editor',
+    name: 'Open file in editor',
+    description:
+      "Opens in $EDITOR at the selected comment's line when one is selected",
+    icon: 'edit_document',
+    diffOnly: true,
   },
   {
     id: 'repo-picker',
@@ -90,8 +143,14 @@ const COMMANDS: readonly CommandItem[] = [
  * Escape closes.
  */
 export function CommandPalette(): React.ReactElement | null {
-  const { activeOverlay, closeOverlay, openHelp, openRepoPicker, openAddRepo } =
-    useOverlays();
+  const {
+    activeOverlay,
+    closeOverlay,
+    openHelp,
+    openRepoPicker,
+    openAddRepo,
+    openTour,
+  } = useOverlays();
   const isOpen = activeOverlay === 'command';
   const [query, setQuery] = useState('');
   const { send } = useWebSocket();
@@ -99,13 +158,16 @@ export function CommandPalette(): React.ReactElement | null {
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const params = useParams({ strict: false }) as { prId?: string };
+  const matchRoute = useMatchRoute();
+  const isDiffRoute = matchRoute({ to: '/prs/$prId/diff' }) !== false;
 
   // Use the shared visible-PR source so palette results match the list route.
   const { prs } = useVisiblePRs();
-  const selectedPRIndex = useStore(
+  const selectedPRId = useStore(
     appStore,
-    (state: UIState) => state.selectedPRIndex,
+    (state: UIState) => state.visiblePRIds[state.selectedPRIndex] || undefined,
   );
+  const prList = useStore(settingsStore, (state) => state.prList);
   const recentPRs = useMemo(() => prs.slice(0, 5), [prs]);
 
   const filteredPRs = useMemo(() => {
@@ -123,13 +185,14 @@ export function CommandPalette(): React.ReactElement | null {
     const q = query.trim().toLowerCase();
     return COMMANDS.filter((cmd) => {
       if (cmd.dev === true && !isDev) return false;
+      if (cmd.diffOnly === true && !isDiffRoute) return false;
       if (q === '') return true;
       return (
         cmd.name.toLowerCase().includes(q) ||
         cmd.description?.toLowerCase().includes(q) === true
       );
     });
-  }, [query]);
+  }, [query, isDiffRoute]);
 
   useEffect(() => {
     if (isOpen) {
@@ -163,8 +226,8 @@ export function CommandPalette(): React.ReactElement | null {
   };
 
   const focusedPR = useMemo(
-    () => focusedExpertisePR(prs, params.prId, selectedPRIndex),
-    [params.prId, prs, selectedPRIndex],
+    () => focusedExpertisePR(prs, params.prId, selectedPRId),
+    [params.prId, prs, selectedPRId],
   );
 
   const sendExpertiseCommand = (
@@ -181,6 +244,14 @@ export function CommandPalette(): React.ReactElement | null {
     setQuery('');
   };
 
+  const updateSettingsFromCommand = (
+    patch: Parameters<typeof updateSettings>[0],
+  ): void => {
+    updateSettings(patch).match(handleClose, (message) => {
+      addToast({ type: 'error', message, dismissible: true });
+    });
+  };
+
   const handleExecuteCommand = (command: CommandItem): void => {
     switch (command.id) {
       case 'settings':
@@ -190,6 +261,10 @@ export function CommandPalette(): React.ReactElement | null {
         return;
       case 'help':
         openHelp('list');
+        setQuery('');
+        return;
+      case 'tour':
+        openTour();
         setQuery('');
         return;
       case 'focus-list':
@@ -211,6 +286,35 @@ export function CommandPalette(): React.ReactElement | null {
           ...s,
           searchQuery: '',
           filterState: 'open',
+        }));
+        closeOverlay();
+        setQuery('');
+        return;
+      case 'view-lanes':
+        updateSettingsFromCommand({ prList: { ...prList, view: 'flat' } });
+        return;
+      case 'view-groups':
+        updateSettingsFromCommand({ prList: { ...prList, view: 'grouped' } });
+        return;
+      case 'open-browser': {
+        const url = focusedPR === undefined ? null : prBrowserUrl(focusedPR);
+        if (url !== null) openUrlInBrowser(url);
+        closeOverlay();
+        setQuery('');
+        return;
+      }
+      case 'diff-split':
+        updateSettingsFromCommand({ diff: { style: 'split' } });
+        return;
+      case 'diff-unified':
+        updateSettingsFromCommand({ diff: { style: 'unified' } });
+        return;
+      case 'open-editor':
+        // DiffPage owns the current file/line and the checkout dialog; the
+        // palette only signals intent, same as diff.markViewed's 'v'.
+        appStore.setState((s) => ({
+          ...s,
+          confirmingAction: 'open-in-editor',
         }));
         closeOverlay();
         setQuery('');
