@@ -636,9 +636,10 @@ By this point Bistro is feature-rich. Phase 5 makes it *fast to live in*.
 > - **Bistro design-system primitives** — restyled shadcn-style components under
 >   `components/ui/` plus an integrated draggable title bar (`AppTitleBar.tsx`).
 
-> **Implemented 2026-07-18 through 2026-08-09.** Authoritative docs:
-> - Plan: `docs/superpowers/plans/2026-07-18-phase5-inbox-triage-polish.md`
-> - Spec: `docs/superpowers/specs/2026-07-18-phase5-inbox-triage-polish-design.md`
+> **Implemented 2026-07-18 through 2026-08-09.** Authoritative docs (the
+> original plan/spec were removed once the work shipped):
+> - Lane rules and UI spec: `docs/DESIGN.md` (lane classifier lives in
+>   `electron/src/renderer/utils/lanes.ts`)
 > - CodeView migration spike notes: `docs/superpowers/plans/2026-07-18-codeview-spike-notes.md`
 > - Shortcut reference: `docs/keyboard-shortcuts.md`
 >
@@ -852,8 +853,7 @@ Everything left between here and FOSS v1.0, in rough dependency order. Done work
 - [x] CodeView migration, side-by-side toggle, word-level diff, whitespace/generated-file collapse, viewed-file sidebar feedback (5.2)
 - [x] `:open in browser`, `:open in editor` (with checkout verification), `:tour`, diff-route command palette (5.3)
 - [x] First-run tour (5.4); "did-you-know" tooltips marked won't-do
-- Plan: `docs/superpowers/plans/2026-07-18-phase5-inbox-triage-polish.md`
-- Spec: `docs/superpowers/specs/2026-07-18-phase5-inbox-triage-polish-design.md`
+- Design reference: `docs/DESIGN.md` (plan/spec removed after shipping)
 - Follow-ups (non-gating, deferred): image/binary diff rendering (placeholder ships instead)
 
 **Polish (partial, not part of Phase 5)**

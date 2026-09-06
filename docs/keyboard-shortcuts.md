@@ -17,16 +17,19 @@ inbox, request changes on a PR). The redesign should make context obvious.
 
 ---
 
-## Global (every route)
+## Cross-route shortcuts
 
-| Key | Action |
-|---|---|
-| `?` | Help (inbox, PR detail, diff) |
-| `:` | Command palette (inbox, PR detail, diff) |
-| `Cmd+,` | Settings |
-| `Cmd+/` | Search |
-| `Esc` | Back / cancel — closes an overlay, else leaves the screen |
-| `Cmd+Q` / `Alt+F4` | Quit |
+Only quit is truly global. The rest are inactive on login, onboarding and
+(except `Esc`) settings. `Mod` = `Cmd` on macOS, `Ctrl` elsewhere.
+
+| Key | Active on | Action |
+|---|---|---|
+| `?` | inbox, PR detail, diff | Help |
+| `:` | inbox, PR detail, diff | Command palette |
+| `Mod+,` | inbox, PR detail | Settings |
+| `Mod+/` | inbox, PR detail | Search |
+| `Esc` | inbox, PR detail, diff, settings, any overlay | Back / cancel — closes an overlay, else leaves the screen |
+| `Cmd+Q` (macOS) / `Alt+F4` (Windows/Linux) | every route | Quit |
 
 ## Inbox (`/prs`)
 
@@ -45,9 +48,9 @@ inbox, request changes on a PR). The redesign should make context obvious.
 | `f` | Filter menu |
 | `o` | Open PR in browser |
 | `Shift+R` | Mark current lane read |
-| `d` | Toggle draft |
-| `m` | Mute |
-| `s` | Star |
+| `d` | Toggle draft — bound, not yet wired (no consumer for the action) |
+| `m` | Mute — bound, not yet wired |
+| `s` | Star — bound, not yet wired |
 
 ## PR detail
 
@@ -58,7 +61,7 @@ inbox, request changes on a PR). The redesign should make context obvious.
 | `a a` | Approve (double-tap) |
 | `c` | Comment |
 | `Shift+R` | Request changes |
-| `r` | Reply |
+| `r` | Reply — bound, not yet wired (use `Enter` on a thread in the diff view) |
 | `g u` | Review threads |
 | `d n` | Dismiss nits + info |
 | `d b` | Dismiss bot comments |
@@ -124,8 +127,9 @@ the `:tour` palette command.
 Production commands: `:open in browser`, `:open in editor` (verifies local
 checkout against the PR head SHA first; offers checkout-and-open when they
 don't match), `:diff split` / `:diff unified`, `:view lanes` / `:view groups`,
-`:sync`, `:tour`, `:settings`, `:about`, `:help`, `:clear`.
+`:sync`, `:tour`, `:settings`, `:help`, `:clear`.
 
+`:about` appears in the palette but has no handler yet (selecting it is a no-op).
 Development builds also expose `:reset-store`.
 
 ---

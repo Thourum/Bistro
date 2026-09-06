@@ -50,8 +50,8 @@ The inbox should answer: **What needs my review attention now?** It should not m
 
 ### Default lanes (shipped — Phase 5, 2026-07-18)
 
-First-match-wins, in this order. Full rules and edge cases:
-`docs/superpowers/specs/2026-07-18-phase5-inbox-triage-polish-design.md` §5.1.
+First-match-wins, in this order. The classifier in
+`electron/src/renderer/utils/lanes.ts` is the authoritative source for edge cases.
 
 1. **Needs Action** — PR is open AND: `changes_requested` on a PR you authored,
    OR you're in `requested_reviewers`, OR you reviewed it and the author has
