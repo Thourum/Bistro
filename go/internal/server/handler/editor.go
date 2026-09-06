@@ -7,7 +7,6 @@ import (
 	"log/slog"
 
 	"github.com/itterno/bistro/internal/git"
-	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
 )
@@ -78,8 +77,8 @@ func resolvePRCheckoutTarget(
 //
 // Request: {"pr_id": "..."}
 // Response type: PR_CHECKOUT_STATUS
-// Response data: {"pr_id": "...", "local_path": "...", "head_matches": bool,
-//                 "sha_present": bool} or {"pr_id": "...", "error": "..."}
+// Response data: {"pr_id": "...", "local_path": "...", "head_matches": bool, "sha_present": bool}
+// or {"pr_id": "...", "error": "..."}
 func NewCheckPRCheckoutHandler(
 	prs prCheckoutInfoReader,
 	repos repoLocationReader,
@@ -90,7 +89,7 @@ func NewCheckPRCheckoutHandler(
 		log = slog.Default()
 	}
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		logger := logging.FromContext(ctx).With("request_id", msg.ID, "msg_type", msg.Type)
+		logger := log.With("request_id", msg.ID, "msg_type", msg.Type)
 
 		var req struct {
 			PRID string `json:"pr_id"`
@@ -133,7 +132,7 @@ func NewCheckoutPRHeadHandler(
 		log = slog.Default()
 	}
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		logger := logging.FromContext(ctx).With("request_id", msg.ID, "msg_type", msg.Type)
+		logger := log.With("request_id", msg.ID, "msg_type", msg.Type)
 
 		var req struct {
 			PRID string `json:"pr_id"`

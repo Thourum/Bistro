@@ -14,6 +14,8 @@ interface OpenInEditorDialogProps {
   onCheckoutAndOpen: () => void;
   onOpenCurrentVersion: () => void;
   onCancel: () => void;
+  /** Disables all actions while a checkout/open is in flight. */
+  pending?: boolean;
 }
 
 /**
@@ -25,6 +27,7 @@ export function OpenInEditorDialog({
   onCheckoutAndOpen,
   onOpenCurrentVersion,
   onCancel,
+  pending = false,
 }: OpenInEditorDialogProps) {
   return (
     <Dialog open={dialog !== null} onOpenChange={(open) => !open && onCancel()}>
@@ -38,13 +41,19 @@ export function OpenInEditorDialog({
           you're currently on.
         </DialogDescription>
         <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>
+          <Button variant="outline" onClick={onCancel} disabled={pending}>
             Cancel
           </Button>
-          <Button variant="outline" onClick={onOpenCurrentVersion}>
+          <Button
+            variant="outline"
+            onClick={onOpenCurrentVersion}
+            disabled={pending}
+          >
             Open current version
           </Button>
-          <Button onClick={onCheckoutAndOpen}>Check out PR head</Button>
+          <Button onClick={onCheckoutAndOpen} disabled={pending}>
+            {pending ? 'Checking out…' : 'Check out PR head'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

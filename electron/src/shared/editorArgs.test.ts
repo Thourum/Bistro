@@ -54,4 +54,33 @@ describe('parseEditorCommand', () => {
   it('rejects blank input', () => {
     expect(parseEditorCommand('   ').isErr()).toBe(true);
   });
+
+  it('keeps a quoted executable path as one token', () => {
+    expect(
+      parseEditorCommand(
+        '"C:\\Program Files\\Microsoft VS Code\\Code.exe" --wait',
+      )._unsafeUnwrap(),
+    ).toEqual({
+      bin: 'C:\\Program Files\\Microsoft VS Code\\Code.exe',
+      leadingArgs: ['--wait'],
+    });
+  });
+
+  it('handles single quotes and backslash escapes', () => {
+    expect(
+      parseEditorCommand("nvim -c 'set ft=go' /my\\ path/x")._unsafeUnwrap(),
+    ).toEqual({ bin: 'nvim', leadingArgs: ['-c', 'set ft=go', '/my path/x'] });
+  });
+});
+
+describe('editor name matching', () => {
+  it('strips Windows executable extension when picking arg shape', () => {
+    expect(
+      buildEditorArgs(
+        '"C:\\VS Code\\Code.exe"',
+        'src/foo.ts',
+        5,
+      )._unsafeUnwrap(),
+    ).toEqual(['-g', 'src/foo.ts:5']);
+  });
 });

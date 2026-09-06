@@ -9,17 +9,62 @@ export interface EditorCommand {
 }
 
 /**
- * Split an `$EDITOR` value on whitespace. The result is always passed to
- * `spawn()` as argv — never through a shell — so quoting is not interpreted.
+ * Split an `$EDITOR` value into argv the way a shell would tokenise it:
+ * whitespace separates tokens, single/double quotes group, `\` escapes the
+ * next character when unquoted. The result is passed straight to
+ * `spawn()` — never through a shell — so `"C:\Program Files\...\Code.exe"
+ * --wait` yields a single binary token with the spaces intact.
  */
 export function parseEditorCommand(
   editorCommand: string,
 ): Result<EditorCommand, string> {
-  const [bin, ...leadingArgs] = editorCommand.trim().split(/\s+/);
+  const [bin, ...leadingArgs] = tokenize(editorCommand);
   if (bin === undefined || bin === '') {
     return err('$EDITOR is not set');
   }
   return ok({ bin, leadingArgs });
+}
+
+function tokenize(input: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let inToken = false;
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i] as string;
+    if (quote !== null) {
+      if (ch === quote) {
+        quote = null;
+      } else if (
+        ch === '\\' &&
+        quote === '"' &&
+        (input[i + 1] === '"' || input[i + 1] === '\\')
+      ) {
+        // Inside double quotes only `\"` and `\\` are escapes; other
+        // backslashes (Windows paths) are literal.
+        current += input[++i];
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      inToken = true;
+    } else if (ch === '\\' && i + 1 < input.length) {
+      current += input[++i];
+      inToken = true;
+    } else if (/\s/.test(ch)) {
+      if (inToken) tokens.push(current);
+      current = '';
+      inToken = false;
+    } else {
+      current += ch;
+      inToken = true;
+    }
+  }
+  if (inToken) tokens.push(current);
+  return tokens;
 }
 
 /**
@@ -61,8 +106,11 @@ function targetArgs(
   }
 }
 
-/** Extract the executable name from an $EDITOR binary token, ignoring any path. */
+/**
+ * Extract the executable name from an $EDITOR binary token, ignoring any path
+ * and a Windows `.exe`/`.cmd`/`.bat` suffix so `Code.exe` matches `code`.
+ */
 function editorBinaryName(bin: string): string {
   const base = bin.split(/[/\\]/).pop() ?? bin;
-  return base.toLowerCase();
+  return base.toLowerCase().replace(/\.(exe|cmd|bat)$/, '');
 }

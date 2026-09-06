@@ -1,6 +1,11 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import type { Logger } from 'electron-log';
-import { fromPromise, fromThrowable, type ResultAsync } from 'neverthrow';
+import {
+  errAsync,
+  fromPromise,
+  fromThrowable,
+  type ResultAsync,
+} from 'neverthrow';
 
 type SpawnEditor = (
   command: string,
@@ -34,7 +39,7 @@ export function launchEditor(
 
   if (childResult.isErr()) {
     logger.error(`open-in-editor error: ${childResult.error}`);
-    return fromPromise(Promise.reject(childResult.error), errorMessage);
+    return errAsync(childResult.error);
   }
 
   const child = childResult.value;

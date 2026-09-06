@@ -61,6 +61,8 @@ export function useOpenInEditor(): {
   openCurrentVersion: () => Promise<void>;
   /** Dialog action: dismiss without opening. */
   cancel: () => void;
+  /** True while a dialog action is in flight; the dialog disables its buttons. */
+  pending: boolean;
 } {
   const { request } = useWebSocket();
   const requestRef = useRef(request);
@@ -69,6 +71,24 @@ export function useOpenInEditor(): {
     dialog: null,
     error: null,
   });
+  // Ref is the synchronous guard (state updates are batched); the state
+  // mirrors it for rendering.
+  const pendingRef = useRef(false);
+  const [pending, setPending] = useState(false);
+
+  /** Run a dialog action once; drop re-entrant calls while one is in flight. */
+  const runExclusive = useCallback(
+    (action: () => Promise<void>): Promise<void> => {
+      if (pendingRef.current) return Promise.resolve();
+      pendingRef.current = true;
+      setPending(true);
+      return action().finally(() => {
+        pendingRef.current = false;
+        setPending(false);
+      });
+    },
+    [],
+  );
 
   const openViaIPC = useCallback(
     (repoRoot: string, relativePath: string, line: number): Promise<void> =>
@@ -136,40 +156,52 @@ export function useOpenInEditor(): {
   const checkoutAndOpen = useCallback((): Promise<void> => {
     const { dialog } = state;
     if (dialog === null) return Promise.resolve();
-    return Promise.resolve(
-      fromPromise(
-        requestRef.current('CHECKOUT_PR_HEAD', { pr_id: dialog.prId }),
-        (err) => (err instanceof Error ? err.message : 'Unknown error'),
-      ).match(
-        async (raw) => {
-          const data = raw as CheckoutPRHeadData;
-          if (data.ok !== true) {
-            setState({
-              dialog: null,
-              error: `Checkout failed: ${data.reason ?? 'unknown error'}`,
-            });
-            return;
-          }
-          const repoRoot = data.local_path ?? dialog.repoRoot;
-          await openViaIPC(repoRoot, dialog.relativePath, dialog.line);
-        },
-        (err) => {
-          log.warn({ err, prId: dialog.prId }, 'CHECKOUT_PR_HEAD failed');
-          setState({ dialog: null, error: err });
-        },
+    return runExclusive(() =>
+      Promise.resolve(
+        fromPromise(
+          requestRef.current('CHECKOUT_PR_HEAD', { pr_id: dialog.prId }),
+          (err) => (err instanceof Error ? err.message : 'Unknown error'),
+        ).match(
+          async (raw) => {
+            const data = raw as CheckoutPRHeadData;
+            if (data.ok !== true) {
+              setState({
+                dialog: null,
+                error: `Checkout failed: ${data.reason ?? 'unknown error'}`,
+              });
+              return;
+            }
+            const repoRoot = data.local_path ?? dialog.repoRoot;
+            await openViaIPC(repoRoot, dialog.relativePath, dialog.line);
+          },
+          (err) => {
+            log.warn({ err, prId: dialog.prId }, 'CHECKOUT_PR_HEAD failed');
+            setState({ dialog: null, error: err });
+          },
+        ),
       ),
     );
-  }, [state, openViaIPC]);
+  }, [state, openViaIPC, runExclusive]);
 
   const openCurrentVersion = useCallback((): Promise<void> => {
     const { dialog } = state;
     if (dialog === null) return Promise.resolve();
-    return openViaIPC(dialog.repoRoot, dialog.relativePath, dialog.line);
-  }, [state, openViaIPC]);
+    return runExclusive(() =>
+      openViaIPC(dialog.repoRoot, dialog.relativePath, dialog.line),
+    );
+  }, [state, openViaIPC, runExclusive]);
 
   const cancel = useCallback((): void => {
+    if (pendingRef.current) return;
     setState({ dialog: null, error: null });
   }, []);
 
-  return { state, requestOpen, checkoutAndOpen, openCurrentVersion, cancel };
+  return {
+    state,
+    requestOpen,
+    checkoutAndOpen,
+    openCurrentVersion,
+    cancel,
+    pending,
+  };
 }

@@ -99,6 +99,7 @@ export function DiffPage() {
     checkoutAndOpen,
     openCurrentVersion,
     cancel: cancelOpenInEditor,
+    pending: openInEditorPending,
   } = useOpenInEditor();
   const { expertise } = useExpertise(pr?.id);
   const expertiseStatus = useStore(appStore, (s: UIState) =>
@@ -443,6 +444,7 @@ export function DiffPage() {
         onCheckoutAndOpen={() => void checkoutAndOpen()}
         onOpenCurrentVersion={() => void openCurrentVersion()}
         onCancel={cancelOpenInEditor}
+        pending={openInEditorPending}
       />
     </main>
   );
