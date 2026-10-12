@@ -15,7 +15,7 @@ func (c *Client) getComments(ctx context.Context, owner, repo string, number int
 		ListOptions: ghlib.ListOptions{PerPage: 100},
 	}
 
-	prID := "github:" + owner + "/" + repo + ":" + strconv.Itoa(number)
+	prID := formatPRID(owner, repo, number)
 	var result []*provider.Comment
 
 	for {

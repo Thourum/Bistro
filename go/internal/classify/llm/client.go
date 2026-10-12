@@ -31,7 +31,9 @@ const (
 )
 
 var (
-	ErrAuth        = errors.New("llm authentication failed")
+	// ErrAuth indicates that the configured LLM credentials were rejected.
+	ErrAuth = errors.New("llm authentication failed")
+	// ErrRateLimited indicates an LLM provider rate limit.
 	ErrRateLimited = errors.New("llm rate limited")
 )
 
@@ -46,15 +48,18 @@ type CommentInput struct {
 	Body       string
 }
 
+// ClassifierClient classifies a comment and reports consumed tokens.
 type ClassifierClient interface {
 	Classify(ctx context.Context, comment CommentInput) (severity string, usageTokens int, err error)
 }
 
+// OpenAICompatibleClient classifies comments through an OpenAI-compatible API.
 type OpenAICompatibleClient struct {
 	client openai.Client
 	model  string
 }
 
+// AnthropicClient classifies comments through the Anthropic API.
 type AnthropicClient struct {
 	client anthropic.Client
 	model  string
@@ -64,6 +69,7 @@ type classificationReply struct {
 	Severity string `json:"severity"`
 }
 
+// NewOpenAICompatibleClient configures classification through the selected compatible provider.
 func NewOpenAICompatibleClient(provider string, model string, apiKey string, endpoint string) *OpenAICompatibleClient {
 	client := openai.NewClient(
 		openaioption.WithAPIKey(apiKey),
@@ -76,6 +82,7 @@ func NewOpenAICompatibleClient(provider string, model string, apiKey string, end
 	}
 }
 
+// NewAnthropicClient configures classification through the Anthropic API.
 func NewAnthropicClient(model string, apiKey string, endpoint string) *AnthropicClient {
 	client := anthropic.NewClient(
 		anthropicoption.WithAPIKey(apiKey),
@@ -88,6 +95,7 @@ func NewAnthropicClient(model string, apiKey string, endpoint string) *Anthropic
 	}
 }
 
+// Classify returns the severity and token usage for a comment.
 func (c *OpenAICompatibleClient) Classify(ctx context.Context, comment CommentInput) (string, int, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, clientTimeout)
 	defer cancel()
@@ -103,7 +111,7 @@ func (c *OpenAICompatibleClient) Classify(ctx context.Context, comment CommentIn
 		return "", 0, mapOpenAIError(err)
 	}
 	if len(response.Choices) == 0 {
-		return "", 0, errors.New("OpenAI-compatible classification response had no choices")
+		return "", 0, errors.New("openai-compatible classification response had no choices")
 	}
 
 	severity, err := parseClassificationReply(response.Choices[0].Message.Content)
@@ -114,6 +122,7 @@ func (c *OpenAICompatibleClient) Classify(ctx context.Context, comment CommentIn
 	return severity, int(response.Usage.TotalTokens), nil
 }
 
+// Classify returns the severity and token usage for a comment.
 func (c *AnthropicClient) Classify(ctx context.Context, comment CommentInput) (string, int, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, clientTimeout)
 	defer cancel()
@@ -176,17 +185,17 @@ func resolveAnthropicBaseURL(endpoint string) string {
 func mapOpenAIError(err error) error {
 	var apiErr *openai.Error
 	if errors.As(err, &apiErr) {
-		return mapSDKStatusError("OpenAI-compatible", apiErr.StatusCode, err)
+		return mapSDKStatusError("openai-compatible", apiErr.StatusCode, err)
 	}
-	return fmt.Errorf("send OpenAI-compatible classification request: %w", err)
+	return fmt.Errorf("send openai-compatible classification request: %w", err)
 }
 
 func mapAnthropicError(err error) error {
 	var apiErr *anthropic.Error
 	if errors.As(err, &apiErr) {
-		return mapSDKStatusError("Anthropic", apiErr.StatusCode, err)
+		return mapSDKStatusError("anthropic", apiErr.StatusCode, err)
 	}
-	return fmt.Errorf("send Anthropic classification request: %w", err)
+	return fmt.Errorf("send anthropic classification request: %w", err)
 }
 
 func mapSDKStatusError(provider string, statusCode int, err error) error {
@@ -294,6 +303,5 @@ func truncateRunes(s string, limit int) string {
 }
 
 func isValidSeverity(severity string) bool {
-	_, ok := classify.ValidSeverities[severity]
-	return ok
+	return classify.IsValidSeverity(severity)
 }

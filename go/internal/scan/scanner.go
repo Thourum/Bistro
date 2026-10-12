@@ -15,9 +15,8 @@ import (
 const (
 	MaxCandidates = 500
 	MaxDuration   = 30 * time.Second
+	maxScanDepth  = 2 // Scan the folder's children and one nested level.
 )
-
-var maxCandidates = MaxCandidates
 
 // Found is a local GitHub repo found under a dev folder.
 type Found struct {
@@ -52,12 +51,8 @@ func ValidateDevFolder(path string) (string, error) {
 		return "", err
 	}
 
-	entries, err := os.ReadDir(canonical)
-	if err != nil {
+	if _, err := os.ReadDir(canonical); err != nil {
 		return "", fmt.Errorf("validate dev folder %q: unreadable: %w", canonical, err)
-	}
-	if entries == nil {
-		return "", fmt.Errorf("validate dev folder %q: unreadable", canonical)
 	}
 
 	return canonical, nil
@@ -75,31 +70,36 @@ func Scan(ctx context.Context, devFolder string) (Result, error) {
 	scanCtx, cancel := context.WithTimeout(ctx, MaxDuration)
 	defer cancel()
 
-	result := Result{Found: []Found{}}
-	candidatesExamined := 0
-	if err := scanChildren(scanCtx, canonical, 1, &result, &candidatesExamined); err != nil {
+	progress := &scanProgress{result: Result{Found: []Found{}}, limit: MaxCandidates}
+	if err := scanChildren(scanCtx, canonical, 1, progress); err != nil {
 		return Result{}, err
 	}
 
-	return result, nil
+	return progress.result, nil
 }
 
-func scanChildren(ctx context.Context, dir string, depth int, result *Result, candidatesExamined *int) error {
+type scanProgress struct {
+	result             Result
+	candidatesExamined int
+	limit              int
+}
+
+func scanChildren(ctx context.Context, dir string, depth int, progress *scanProgress) error {
 	if err := ctx.Err(); err != nil {
-		result.Partial = true
+		progress.result.Partial = true
 		return nil
 	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		result.Partial = true
-		result.Skipped++
+		progress.result.Partial = true
+		progress.result.Skipped++
 		return nil
 	}
 
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
-			result.Partial = true
+			progress.result.Partial = true
 			return nil
 		}
 		if !entry.IsDir() || isSymlink(entry) {
@@ -108,11 +108,11 @@ func scanChildren(ctx context.Context, dir string, depth int, result *Result, ca
 
 		candidatePath := filepath.Join(dir, entry.Name())
 		if hasGitDirectory(candidatePath) {
-			addCandidate(candidatePath, result, candidatesExamined)
+			progress.addCandidate(candidatePath)
 			continue
 		}
-		if depth < 2 {
-			if err := scanChildren(ctx, candidatePath, depth+1, result, candidatesExamined); err != nil {
+		if depth < maxScanDepth {
+			if err := scanChildren(ctx, candidatePath, depth+1, progress); err != nil {
 				return err
 			}
 		}
@@ -121,27 +121,27 @@ func scanChildren(ctx context.Context, dir string, depth int, result *Result, ca
 	return nil
 }
 
-func addCandidate(path string, result *Result, candidatesExamined *int) {
-	(*candidatesExamined)++
-	if *candidatesExamined > maxCandidates {
-		result.Partial = true
-		result.Skipped++
+func (progress *scanProgress) addCandidate(path string) {
+	progress.candidatesExamined++
+	if progress.candidatesExamined > progress.limit {
+		progress.result.Partial = true
+		progress.result.Skipped++
 		return
 	}
 
 	identity, ok := repoIdentity(path)
 	if !ok {
-		result.Skipped++
+		progress.result.Skipped++
 		return
 	}
 
 	canonical, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		result.Skipped++
+		progress.result.Skipped++
 		return
 	}
 
-	result.Found = append(result.Found, Found{Identity: identity, Path: canonical})
+	progress.result.Found = append(progress.result.Found, Found{Identity: identity, Path: canonical})
 }
 
 func repoIdentity(path string) (git.Identity, bool) {

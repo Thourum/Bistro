@@ -3,6 +3,8 @@ package actions
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -66,46 +68,33 @@ func (ae *ActionExecutor) WithReviewTracking(loginGetter ReviewLoginGetter, shaW
 	return ae
 }
 
+func failedResult(req *ActionRequest, message string) *ActionResult {
+	result := &ActionResult{Error: message, Timestamp: time.Now()}
+	if req != nil {
+		result.PRID = req.PRID
+		result.Action = req.Action
+	}
+	return result
+}
+
 // Execute performs a single action (no retries).
 // Errors are returned inside ActionResult rather than as the error return value.
 func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*ActionResult, error) {
 	if req == nil {
-		return &ActionResult{
-			Success:   false,
-			Error:     "nil request",
-			Timestamp: time.Now(),
-		}, nil
+		return failedResult(nil, "nil request"), nil
 	}
 	if err := req.Validate(); err != nil {
-		return &ActionResult{
-			PRID:      req.PRID,
-			Action:    req.Action,
-			Success:   false,
-			Error:     fmt.Sprintf("validation failed: %v", err),
-			Timestamp: time.Now(),
-		}, nil
+		return failedResult(req, fmt.Sprintf("validation failed: %v", err)), nil
 	}
 
 	handler, ok := ae.handlerFor(req.Action)
 	if !ok {
-		return &ActionResult{
-			PRID:      req.PRID,
-			Action:    req.Action,
-			Success:   false,
-			Error:     fmt.Sprintf("unknown action: %s", req.Action),
-			Timestamp: time.Now(),
-		}, nil
+		return failedResult(req, fmt.Sprintf("unknown action: %s", req.Action)), nil
 	}
 
 	result, err := handler.Handle(ctx, req)
 	if err != nil {
-		result = &ActionResult{
-			PRID:      req.PRID,
-			Action:    req.Action,
-			Success:   false,
-			Error:     fmt.Sprintf("handler error: %v", err),
-			Timestamp: time.Now(),
-		}
+		result = failedResult(req, fmt.Sprintf("handler error: %v", err))
 	}
 
 	// ambiguousResult builds the sentinel failure used whenever context
@@ -113,13 +102,7 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 	// Using ErrAmbiguousRemoteSuccess prefix marks the result as terminal in
 	// the queue replay path so it is never retried (blocker 1).
 	ambiguousResult := func() *ActionResult {
-		return &ActionResult{
-			PRID:      req.PRID,
-			Action:    req.Action,
-			Success:   false,
-			Error:     ErrAmbiguousRemoteSuccess + "provider action may have executed; local effects suppressed",
-			Timestamp: time.Now(),
-		}
+		return failedResult(req, ErrAmbiguousRemoteSuccess+"provider action may have executed; local effects suppressed")
 	}
 
 	// Guard 1: immediately after handler.Handle, which is the provider mutation
@@ -183,20 +166,10 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 // ExecuteWithRetry performs an action with automatic retries using exponential backoff.
 func (ae *ActionExecutor) ExecuteWithRetry(ctx context.Context, req *ActionRequest, maxAttempts int) (*ActionResult, error) {
 	if req == nil {
-		return &ActionResult{
-			Success:   false,
-			Error:     "nil request",
-			Timestamp: time.Now(),
-		}, nil
+		return failedResult(nil, "nil request"), nil
 	}
 	if err := req.Validate(); err != nil {
-		return &ActionResult{
-			PRID:      req.PRID,
-			Action:    req.Action,
-			Success:   false,
-			Error:     fmt.Sprintf("validation failed: %v", err),
-			Timestamp: time.Now(),
-		}, nil
+		return failedResult(req, fmt.Sprintf("validation failed: %v", err)), nil
 	}
 
 	backoff := NewExponentialBackoff(100*time.Millisecond, 5*time.Second, 2.0)
@@ -214,22 +187,12 @@ func (ae *ActionExecutor) ExecuteMultiple(ctx context.Context, requests []*Actio
 
 	for i, req := range requests {
 		if req == nil {
-			results[i] = &ActionResult{
-				Success:   false,
-				Error:     "nil request",
-				Timestamp: time.Now(),
-			}
+			results[i] = failedResult(nil, "nil request")
 			continue
 		}
 		result, err := ae.Execute(ctx, req)
 		if err != nil {
-			results[i] = &ActionResult{
-				PRID:      req.PRID,
-				Action:    req.Action,
-				Success:   false,
-				Error:     fmt.Sprintf("execution error: %v", err),
-				Timestamp: time.Now(),
-			}
+			results[i] = failedResult(req, fmt.Sprintf("execution error: %v", err))
 		} else {
 			results[i] = result
 		}
@@ -273,9 +236,12 @@ func (ae *ActionExecutor) logResult(req *ActionRequest, result *ActionResult) {
 // emitEvent broadcasts an action_complete event and, on success, an
 // action-specific event (pr_approved or changes_requested) to all subscribers.
 func (ae *ActionExecutor) emitEvent(req *ActionRequest, result *ActionResult) {
+	if ae.emitter == nil {
+		return
+	}
 	ae.emitter.Emit(&events.Event{
 		Type: "action_complete",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"pr":      req.PRID,
 			"action":  req.Action,
 			"success": result.Success,
@@ -292,7 +258,7 @@ func (ae *ActionExecutor) emitEvent(req *ActionRequest, result *ActionResult) {
 	case ApproveCommand:
 		ae.emitter.Emit(&events.Event{
 			Type: "pr_approved",
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"pr_id": req.PRID,
 			},
 			Timestamp: time.Now(),
@@ -300,7 +266,7 @@ func (ae *ActionExecutor) emitEvent(req *ActionRequest, result *ActionResult) {
 	case RequestChangesCommand:
 		ae.emitter.Emit(&events.Event{
 			Type: "changes_requested",
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"pr_id": req.PRID,
 			},
 			Timestamp: time.Now(),
@@ -380,10 +346,12 @@ func (ae *ActionExecutor) recordLastReviewedSHA(ctx context.Context, prID string
 	// Look up the patchset number for (pr_id, head_sha, base_sha).
 	// Best-effort: patchsetNum stays 0 (unknown) if the patchset row doesn't exist yet.
 	var patchsetNum int
-	_ = ae.store.QueryRowContext(ctx,
+	if err := ae.store.QueryRowContext(ctx,
 		`SELECT number FROM patchsets WHERE pr_id = ? AND head_sha = ? AND base_sha = ?`,
 		prID, headSHA, baseSHA,
-	).Scan(&patchsetNum)
+	).Scan(&patchsetNum); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		ae.log.Warn("recordLastReviewedSHA: could not fetch patchset number", "pr_id", prID, "error", err)
+	}
 
 	if err := ae.reviewSHAWriter.SetLastReviewedPatchset(ctx, prID, login, patchsetNum, headSHA, baseSHA); err != nil {
 		ae.log.Warn("recordLastReviewedSHA: SetLastReviewedPatchset failed",

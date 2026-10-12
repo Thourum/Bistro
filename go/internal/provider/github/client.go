@@ -68,5 +68,5 @@ func (c *Client) Authenticate(ctx context.Context) (string, error) {
 		return c.token, nil
 	}
 
-	return "", fmt.Errorf("Authenticate via device flow not yet implemented: set token directly in Phase 3")
+	return "", fmt.Errorf("authenticate via device flow not yet implemented: set token directly in Phase 3")
 }

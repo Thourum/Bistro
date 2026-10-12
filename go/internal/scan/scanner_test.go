@@ -187,6 +187,19 @@ func TestValidateDevFolderRejectsUnreadableDir(t *testing.T) {
 	}
 }
 
+func scanWithLimitForTest(t *testing.T, devFolder string, limit int) Result {
+	t.Helper()
+	canonical, err := ValidateDevFolder(devFolder)
+	if err != nil {
+		t.Fatalf("ValidateDevFolder: %v", err)
+	}
+	progress := &scanProgress{result: Result{Found: []Found{}}, limit: limit}
+	if err := scanChildren(context.Background(), canonical, 1, progress); err != nil {
+		t.Fatalf("scanChildren: %v", err)
+	}
+	return progress.result
+}
+
 func TestScanMarksPartialWhenCandidateLimitIsExceeded(t *testing.T) {
 	// Arrange
 	devFolder := t.TempDir()
@@ -194,19 +207,12 @@ func TestScanMarksPartialWhenCandidateLimitIsExceeded(t *testing.T) {
 	createRepo(t, filepath.Join(devFolder, "two"), "origin", "https://github.com/acme/two.git")
 	createRepo(t, filepath.Join(devFolder, "three"), "origin", "https://github.com/acme/three.git")
 
-	originalMaxCandidates := maxCandidates
-	maxCandidates = 2
-	t.Cleanup(func() {
-		maxCandidates = originalMaxCandidates
-	})
+	limit := 2 // Exercise the production scan with a smaller candidate budget.
 
 	// Act
-	result, err := Scan(context.Background(), devFolder)
+	result := scanWithLimitForTest(t, devFolder, limit)
 
 	// Assert
-	if err != nil {
-		t.Fatalf("Scan: %v", err)
-	}
 	if !result.Partial {
 		t.Fatalf("expected partial result")
 	}
@@ -225,19 +231,12 @@ func TestScanMarksPartialWhenInvalidCandidatesExceedLimit(t *testing.T) {
 	createRepo(t, filepath.Join(devFolder, "b-gitlab-two"), "origin", "https://gitlab.com/acme/two.git")
 	createRepo(t, filepath.Join(devFolder, "c-github-three"), "origin", "https://github.com/acme/three.git")
 
-	originalMaxCandidates := maxCandidates
-	maxCandidates = 2
-	t.Cleanup(func() {
-		maxCandidates = originalMaxCandidates
-	})
+	limit := 2 // Exercise the production scan with a smaller candidate budget.
 
 	// Act
-	result, err := Scan(context.Background(), devFolder)
+	result := scanWithLimitForTest(t, devFolder, limit)
 
 	// Assert
-	if err != nil {
-		t.Fatalf("Scan: %v", err)
-	}
 	if !result.Partial {
 		t.Fatalf("expected partial result")
 	}

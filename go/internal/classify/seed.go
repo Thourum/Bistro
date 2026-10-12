@@ -2,6 +2,7 @@ package classify
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,7 +43,10 @@ func SeedAndUpdate(dir string) error {
 	if err != nil {
 		return fmt.Errorf("read embedded builtins: %w", err)
 	}
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
+	if _, err := os.Stat(dir); err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("stat rules dir: %w", err)
+		}
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("create rules dir: %w", err)
 		}
@@ -57,14 +61,21 @@ func SeedAndUpdate(dir string) error {
 		allNames = append(allNames, e.Name())
 	}
 	if !manifestExisted {
-		if empty, _ := isDirEmptyOfYAML(dir); !empty {
+		empty, err := isDirEmptyOfYAML(dir)
+		if err != nil {
+			return fmt.Errorf("inspect rules dir: %w", err)
+		}
+		if !empty {
 			shipped = allNames
 		}
 	}
 
 	for _, e := range entries {
 		dst := filepath.Join(dir, e.Name())
-		if _, err := os.Stat(dst); os.IsNotExist(err) {
+		if _, err := os.Stat(dst); err != nil {
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("stat rule %s: %w", e.Name(), err)
+			}
 			if slices.Contains(shipped, e.Name()) {
 				continue // previously shipped, now absent: user deleted it
 			}
@@ -74,16 +85,59 @@ func SeedAndUpdate(dir string) error {
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(dst, data, 0o644); err != nil {
+		if err := writeSeedFile(dst, data); err != nil {
 			return fmt.Errorf("seed %s: %w", e.Name(), err)
 		}
 	}
 
 	manifest := strings.Join(allNames, "\n") + "\n"
-	if err := os.WriteFile(filepath.Join(dir, shippedManifestName), []byte(manifest), 0o644); err != nil {
+	if err := writeSeedFile(filepath.Join(dir, shippedManifestName), []byte(manifest)); err != nil {
 		return fmt.Errorf("write shipped manifest: %w", err)
 	}
 	return nil
+}
+
+// writeSeedFile replaces a rule or manifest only after its complete contents
+// have been written, so a failed write cannot truncate the previous file.
+func writeSeedFile(path string, data []byte) (writeErr error) {
+	// Preserve links to user-managed rule files when replacing their contents.
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("resolve seed destination: %w", err)
+	} else if _, linkErr := os.Lstat(path); linkErr == nil {
+		return fmt.Errorf("resolve seed destination: %w", err)
+	}
+
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat seed destination: %w", err)
+	}
+
+	file, err := os.CreateTemp(filepath.Dir(path), ".bistro-seed-*")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := file.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+			writeErr = errors.Join(writeErr, fmt.Errorf("close seed temp file: %w", err))
+		}
+		if err := os.Remove(file.Name()); err != nil && !errors.Is(err, os.ErrNotExist) {
+			writeErr = errors.Join(writeErr, fmt.Errorf("remove seed temp file: %w", err))
+		}
+	}()
+	if _, err := file.Write(data); err != nil {
+		return err
+	}
+	if err := file.Chmod(mode); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), path)
 }
 
 // isDirEmptyOfYAML reports whether dir contains no rule files yet.

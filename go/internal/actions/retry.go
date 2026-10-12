@@ -19,15 +19,14 @@ type ExponentialBackoff struct {
 	Multiplier   float64
 	MaxDelay     time.Duration
 	JitterFactor float64 // 0.0-1.0, percentage variance
-	current      time.Duration
 	attempt      int
 }
 
 // CalculateDelay returns delay for attempt N with optional jitter.
 func (eb *ExponentialBackoff) CalculateDelay(attempt int) time.Duration {
-	base := time.Duration(float64(eb.InitialDelay) * math.Pow(eb.Multiplier, float64(attempt)))
-	if base > eb.MaxDelay {
-		base = eb.MaxDelay
+	base := eb.MaxDelay
+	if scaled := float64(eb.InitialDelay) * math.Pow(eb.Multiplier, float64(attempt)); scaled >= 0 && scaled < float64(eb.MaxDelay) {
+		base = time.Duration(scaled)
 	}
 
 	// Apply jitter if configured
@@ -49,7 +48,6 @@ func NewExponentialBackoff(initial, max time.Duration, multiplier float64) *Expo
 		InitialDelay: initial,
 		MaxDelay:     max,
 		Multiplier:   multiplier,
-		current:      initial,
 	}
 }
 
@@ -60,7 +58,6 @@ func (eb *ExponentialBackoff) Next() time.Duration {
 
 	result := eb.CalculateDelay(eb.attempt)
 	eb.attempt++
-	eb.current = result
 	return result
 }
 
@@ -70,6 +67,9 @@ type RetryFunc func() (*ActionResult, error)
 // RetryWithBackoff retries an action with exponential backoff.
 // maxAttempts is the total number of attempts (1 initial + N-1 retries).
 func RetryWithBackoff(ctx context.Context, backoff *ExponentialBackoff, maxAttempts int, fn RetryFunc) *ActionResult {
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
 	var lastResult *ActionResult
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
