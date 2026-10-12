@@ -1,24 +1,12 @@
-import { Fault, fromPromise } from '@thourum/fault';
 import { useCallback, useRef, useState } from 'react';
-import { z } from 'zod';
-import { wsClient } from '../services/ws/connection';
-import { parseResponse } from '../utils/error';
+import {
+  checkoutPRHead,
+  checkPRCheckout,
+  openInEditor,
+} from '../services/editor';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('useOpenInEditor');
-
-const checkPRCheckoutSchema = z.object({
-  local_path: z.string().optional(),
-  head_sha: z.string().optional(),
-  head_matches: z.boolean().optional(),
-  error: z.string().optional(),
-});
-
-const checkoutPRHeadSchema = z.object({
-  ok: z.boolean().optional(),
-  local_path: z.string().optional(),
-  reason: z.string().optional(),
-});
 
 /**
  * Dialog state surfaced when the local checkout doesn't match the PR head.
@@ -94,22 +82,12 @@ export function useOpenInEditor(): {
 
   const openViaIPC = useCallback(
     (repoRoot: string, relativePath: string, line: number): Promise<void> =>
-      fromPromise(
-        window.electron.openInEditor({ repoRoot, relativePath, line }),
-        (cause) =>
-          new Fault(cause instanceof Error ? cause : 'Unknown error')
-            .withTag('EXTERNAL_ERROR')
-            .withCause(cause),
-      ).match(
-        (response) => {
-          if ('err' in response) {
-            setState({ dialog: null, error: response.err });
-            return;
-          }
-          setState({ dialog: null, error: null });
-        },
+      openInEditor({ repoRoot, relativePath, line }).match(
+        () => setState({ dialog: null, error: null }),
         (err) => {
-          log.warn({ err: err.message }, 'openInEditor IPC failed');
+          if (err.tag !== 'EDITOR_ERROR') {
+            log.warn({ err: err.message }, 'openInEditor IPC failed');
+          }
           setState({ dialog: null, error: err.message });
         },
       ),
@@ -119,44 +97,38 @@ export function useOpenInEditor(): {
   const requestOpen = useCallback(
     (prId: string, relativePath: string, line: number): Promise<void> =>
       Promise.resolve(
-        wsClient
-          .request('CHECK_PR_CHECKOUT', { pr_id: prId })
-          .mapErr((cause) =>
-            new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
-          )
-          .andThen((data) => parseResponse(checkPRCheckoutSchema, data))
-          .match(
-            async (data) => {
-              if (data.error !== undefined) {
-                setState({ dialog: null, error: data.error });
-                return;
-              }
-              const repoRoot = data.local_path;
-              if (repoRoot === undefined || repoRoot === '') {
-                setState({ dialog: null, error: 'no local path' });
-                return;
-              }
-              if (data.head_matches === true) {
-                await openViaIPC(repoRoot, relativePath, line);
-                return;
-              }
-              setState({
-                dialog: {
-                  kind: 'checkout-mismatch',
-                  prId,
-                  repoRoot,
-                  headSha: data.head_sha ?? '',
-                  relativePath,
-                  line,
-                },
-                error: null,
-              });
-            },
-            (err) => {
-              log.warn({ err: err.message, prId }, 'CHECK_PR_CHECKOUT failed');
-              setState({ dialog: null, error: err.message });
-            },
-          ),
+        checkPRCheckout(prId).match(
+          async (data) => {
+            if (data.error !== undefined) {
+              setState({ dialog: null, error: data.error });
+              return;
+            }
+            const repoRoot = data.local_path;
+            if (repoRoot === undefined || repoRoot === '') {
+              setState({ dialog: null, error: 'no local path' });
+              return;
+            }
+            if (data.head_matches === true) {
+              await openViaIPC(repoRoot, relativePath, line);
+              return;
+            }
+            setState({
+              dialog: {
+                kind: 'checkout-mismatch',
+                prId,
+                repoRoot,
+                headSha: data.head_sha ?? '',
+                relativePath,
+                line,
+              },
+              error: null,
+            });
+          },
+          (err) => {
+            log.warn({ err: err.message, prId }, 'CHECK_PR_CHECKOUT failed');
+            setState({ dialog: null, error: err.message });
+          },
+        ),
       ),
     [openViaIPC],
   );
@@ -166,35 +138,26 @@ export function useOpenInEditor(): {
     if (dialog === null) return Promise.resolve();
     return runExclusive(() =>
       Promise.resolve(
-        wsClient
-          .request('CHECKOUT_PR_HEAD', {
-            pr_id: dialog.prId,
-            expected_head_sha: dialog.headSha,
-          })
-          .mapErr((cause) =>
-            new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
-          )
-          .andThen((data) => parseResponse(checkoutPRHeadSchema, data))
-          .match(
-            async (data) => {
-              if (data.ok !== true) {
-                setState({
-                  dialog: null,
-                  error: `Checkout failed: ${data.reason ?? 'unknown error'}`,
-                });
-                return;
-              }
-              const repoRoot = data.local_path ?? dialog.repoRoot;
-              await openViaIPC(repoRoot, dialog.relativePath, dialog.line);
-            },
-            (err) => {
-              log.warn(
-                { err: err.message, prId: dialog.prId },
-                'CHECKOUT_PR_HEAD failed',
-              );
-              setState({ dialog: null, error: err.message });
-            },
-          ),
+        checkoutPRHead(dialog.prId, dialog.headSha).match(
+          async (data) => {
+            if (data.ok !== true) {
+              setState({
+                dialog: null,
+                error: `Checkout failed: ${data.reason ?? 'unknown error'}`,
+              });
+              return;
+            }
+            const repoRoot = data.local_path ?? dialog.repoRoot;
+            await openViaIPC(repoRoot, dialog.relativePath, dialog.line);
+          },
+          (err) => {
+            log.warn(
+              { err: err.message, prId: dialog.prId },
+              'CHECKOUT_PR_HEAD failed',
+            );
+            setState({ dialog: null, error: err.message });
+          },
+        ),
       ),
     );
   }, [state, openViaIPC, runExclusive]);

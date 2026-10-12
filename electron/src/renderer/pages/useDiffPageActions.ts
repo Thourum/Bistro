@@ -3,9 +3,9 @@ import { useCallback, useEffect, useRef } from 'react';
 import { hasCurrentInlineAnchor } from '../components/diff/diffAnnotations';
 import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
 import { addToast } from '../components/ToastContainer';
-import { useMarkFileViewed } from '../hooks/useMarkFileViewed';
 import { useOpenInEditor } from '../hooks/useOpenInEditor';
 import { useStore } from '../hooks/useStore';
+import { markFileViewed } from '../services/readState';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -31,7 +31,6 @@ export function useDiffPageActions({
   setFiles,
 }: DiffPageActionsOptions): ReturnType<typeof useOpenInEditor> {
   const diffStyle = useStore(settingsStore, (s) => s.diff.style);
-  const { markViewed } = useMarkFileViewed();
   const openInEditor = useOpenInEditor();
   const { state, requestOpen } = openInEditor;
   const markInFlight = useRef(false);
@@ -41,9 +40,9 @@ export function useDiffPageActions({
       return;
     markInFlight.current = true;
     const { path, content_hash } = currentFile;
-    // The markViewed hook already handles transport rejection and returns null.
+    // The service already handles transport rejection and returns null.
     void ResultAsync.fromPromise(
-      markViewed(pr.id, path, content_hash),
+      markFileViewed(pr.id, path, content_hash),
       (cause) =>
         new Fault(cause instanceof Error ? cause : 'Could not mark file viewed')
           .withTag('MARK_VIEWED_ERROR')
@@ -76,7 +75,7 @@ export function useDiffPageActions({
         markInFlight.current = false;
       },
     );
-  }, [pr, currentFile, markViewed, setFiles]);
+  }, [pr, currentFile, setFiles]);
 
   useEffect(() => {
     if (confirmingAction !== 'mark-viewed') return;

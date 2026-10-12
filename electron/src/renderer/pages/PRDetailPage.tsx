@@ -7,15 +7,20 @@ import { MergeReadinessBadge } from '../components/MergeReadinessBadge';
 import { PatchsetTimeline } from '../components/PatchsetTimeline';
 import StatusSidebar from '../components/StatusSidebar';
 import { UnresolvedThreadsView } from '../components/UnresolvedThreadsView';
-import { useActionDispatch } from '../hooks/useActionDispatch';
 import { useDismissals } from '../hooks/useDismissals';
 import { useExpertise } from '../hooks/useExpertise';
-import { useMarkPRsRead } from '../hooks/useMarkPRsRead';
 import { usePatchsets } from '../hooks/usePatchsets';
 import { usePRHydration } from '../hooks/usePRHydration';
 import { useStore } from '../hooks/useStore';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { useOverlays } from '../overlays/OverlayContext';
+import {
+  approvePR,
+  clearActionResult,
+  postComment,
+  requestChanges,
+} from '../services/prActions';
+import { markPRsRead } from '../services/readState';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { Patchset } from '../types';
@@ -64,7 +69,6 @@ export function PRDetailPage() {
     allPRs.find((p) => p.id === prId) ?? filteredPRs.find((p) => p.id === prId);
   const selectedPrId = pr?.id;
 
-  const { markPRsRead } = useMarkPRsRead();
   const { isHydrating, error: hydrationError, retry } = usePRHydration(pr);
   const isAwaitingHydration = pr?.hydrated === 0;
   const detailPrId = isAwaitingHydration ? undefined : pr?.id;
@@ -81,13 +85,6 @@ export function PRDetailPage() {
     }));
   }, []);
 
-  const {
-    dispatchApprove,
-    dispatchRequestChanges,
-    dispatchPostComment,
-    clearActionResult,
-  } = useActionDispatch(pr?.id);
-
   // Reset patchset pair selection when the user navigates to a different PR.
   useEffect(() => {
     if (selectedPrId === undefined) return;
@@ -97,13 +94,13 @@ export function PRDetailPage() {
   useEffect(() => {
     // Read state is local-only and silently drops when the WebSocket is down.
     void markPRsRead([prId]);
-  }, [markPRsRead, prId]);
+  }, [prId]);
 
   useEffect(() => {
-    if (confirmingAction === 'approve_confirmed') {
-      dispatchApprove();
-    }
-  }, [confirmingAction, dispatchApprove]);
+    if (confirmingAction !== 'approve_confirmed' || selectedPrId === undefined)
+      return;
+    approvePR(selectedPrId);
+  }, [confirmingAction, selectedPrId]);
 
   const { files, comments, ciChecks, stats } = usePRDetailData(
     pr,
@@ -189,7 +186,7 @@ export function PRDetailPage() {
             onCancel={() => {
               appStore.setState((s) => ({ ...s, confirmingAction: null }));
             }}
-            onSubmit={dispatchPostComment}
+            onSubmit={(body) => postComment(pr.id, body)}
           />
         )}
 
@@ -202,7 +199,7 @@ export function PRDetailPage() {
             onCancel={() => {
               appStore.setState((s) => ({ ...s, confirmingAction: null }));
             }}
-            onSubmit={dispatchRequestChanges}
+            onSubmit={(comment) => requestChanges(pr.id, comment)}
           />
         )}
 

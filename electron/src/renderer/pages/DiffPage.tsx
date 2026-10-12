@@ -10,13 +10,13 @@ import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useLayoutEffect, useMemo, useState } from 'react';
 import { DiffView } from '../components/diff/DiffView';
 import { OpenInEditorDialog } from '../components/OpenInEditorDialog';
-import { useActionDispatch } from '../hooks/useActionDispatch';
 import { useExpertise } from '../hooks/useExpertise';
 import { usePRHydration } from '../hooks/usePRHydration';
 import { type RangeDiffRequest, useRangeDiff } from '../hooks/useRangeDiff';
 import { useReviewThreads } from '../hooks/useReviewThreads';
 import { useStore } from '../hooks/useStore';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
+import { replyComment } from '../services/prActions';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -77,7 +77,6 @@ export function DiffPage() {
   const { isHydrating, error: hydrationError, retry } = usePRHydration(pr);
   const isAwaitingHydration = pr?.hydrated === 0;
 
-  const { dispatchReplyComment } = useActionDispatch(pr?.id);
   const { expertise } = useExpertise(pr?.id);
   const expertiseStatus = useStore(appStore, (s: UIState) =>
     pr !== undefined ? s.expertiseRepoStatuses?.[repoIdForPR(pr)] : undefined,
@@ -192,7 +191,8 @@ export function DiffPage() {
           threads={threads}
           comments={comments}
           onThreadReply={(threadId, body) => {
-            dispatchReplyComment(body, { threadId });
+            if (pr === undefined) return;
+            replyComment(pr.id, body, { threadId });
           }}
           prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
           expertiseFiles={expertise?.files ?? []}
