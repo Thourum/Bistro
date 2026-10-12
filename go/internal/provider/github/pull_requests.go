@@ -3,7 +3,6 @@ package github
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	ghlib "github.com/google/go-github/v84/github"
@@ -72,7 +71,7 @@ func (c *Client) getPR(ctx context.Context, owner, repo string, number int) (*pr
 // ID format: "github:owner/repo:number"
 func normalizePR(owner, repo string, ghPR *ghlib.PullRequest) *provider.PR {
 	pr := &provider.PR{
-		ID:          "github:" + owner + "/" + repo + ":" + strconv.Itoa(ghPR.GetNumber()),
+		ID:          formatPRID(owner, repo, ghPR.GetNumber()),
 		Provider:    "github",
 		Owner:       owner,
 		Repo:        repo,

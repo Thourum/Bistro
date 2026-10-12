@@ -163,8 +163,7 @@ func (h *ReplyCommentHandler) Handle(ctx context.Context, req *ActionRequest) (*
 
 // isPermanentThreadError reports whether the error indicates a permanent
 // failure (thread not found / could not resolve) that should not be retried.
-// Only 404/not-found and "could not resolve" / "not resolve" errors are treated
-// as permanent.
+// Only 404/not-found and node-resolution errors are treated as permanent.
 func isPermanentThreadError(err error) bool {
 	if err == nil {
 		return false

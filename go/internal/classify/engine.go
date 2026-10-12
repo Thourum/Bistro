@@ -26,8 +26,10 @@ type Engine struct {
 	loaded *Loaded
 }
 
+// NewEngine builds a classifier from an immutable rule snapshot.
 func NewEngine(loaded *Loaded) *Engine { return &Engine{loaded: loaded} }
 
+// Fingerprint returns the loaded rule snapshot's content fingerprint.
 func (e *Engine) Fingerprint() string { return e.loaded.Fingerprint }
 
 // Classify implements the spec's resolution order:
@@ -140,7 +142,7 @@ func maxWeightSeverity(weights map[string]float64) string {
 	bestSeverity := ""
 	bestWeight := 0.0
 	for severity, weight := range weights {
-		if bestSeverity == "" || weight > bestWeight || weight == bestWeight && ValidSeverities[severity] > ValidSeverities[bestSeverity] {
+		if bestSeverity == "" || weight > bestWeight || weight == bestWeight && severityRanks[severity] > severityRanks[bestSeverity] {
 			bestSeverity = severity
 			bestWeight = weight
 		}

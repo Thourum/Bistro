@@ -160,7 +160,7 @@ func (c *Client) listReviews(ctx context.Context, owner, repo string, number int
 	var result []*provider.Review
 	opts := &ghlib.ListOptions{PerPage: 100}
 
-	prID := "github:" + owner + "/" + repo + ":" + strconv.Itoa(number)
+	prID := formatPRID(owner, repo, number)
 	for {
 		ghReviews, resp, err := c.gh.PullRequests.ListReviews(ctx, owner, repo, number, opts)
 		if err != nil {

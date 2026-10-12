@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+// formatPRID creates a stable identifier for a GitHub pull request.
+func formatPRID(owner, repo string, number int) string {
+	return "github:" + owner + "/" + repo + ":" + strconv.Itoa(number)
+}
+
 // parsePRID parses a PR ID in the format "github:owner/repo:number".
 // Returns owner, repo, and PR number, or an error if the format is invalid.
 func parsePRID(id string) (owner, repo string, number int, err error) {

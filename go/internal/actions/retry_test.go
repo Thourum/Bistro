@@ -26,6 +26,25 @@ func TestExponentialBackoff(t *testing.T) {
 	}
 }
 
+func TestBackoffCapsBeforeDurationConversion(t *testing.T) {
+	backoff := NewExponentialBackoff(time.Second, 5*time.Second, 2)
+	if got := backoff.CalculateDelay(100); got != 5*time.Second {
+		t.Fatalf("large attempt delay = %v, want 5s", got)
+	}
+}
+
+func TestRetryWithBackoffClampsNonpositiveAttempts(t *testing.T) {
+	called := 0
+	backoff := NewExponentialBackoff(time.Millisecond, time.Second, 2)
+	result := RetryWithBackoff(context.Background(), backoff, 0, func() (*ActionResult, error) {
+		called++
+		return &ActionResult{Success: true}, nil
+	})
+	if called != 1 || !result.Success || result.Retries != 0 {
+		t.Fatalf("called %d times, result = %+v; want one successful attempt", called, result)
+	}
+}
+
 func TestRetryWithBackoff(t *testing.T) {
 	attempts := 0
 	handler := func() (*ActionResult, error) {

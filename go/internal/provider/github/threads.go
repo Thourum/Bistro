@@ -71,7 +71,7 @@ func (c *Client) listReviewComments(
 	opts := &ghlib.PullRequestListCommentsOptions{
 		ListOptions: ghlib.ListOptions{PerPage: 100},
 	}
-	prID := "github:" + owner + "/" + repo + ":" + strconv.Itoa(number)
+	prID := formatPRID(owner, repo, number)
 	var comments []*provider.Comment
 	for {
 		ghComments, resp, err := c.gh.PullRequests.ListComments(ctx, owner, repo, number, opts)
@@ -126,7 +126,7 @@ func (c *Client) fetchGraphQLThreads(ctx context.Context, owner, repo string, nu
 		} `graphql:"repository(owner: $owner, name: $name)"`
 	}
 
-	vars := map[string]interface{}{
+	vars := map[string]any{
 		"owner":  githubv4.String(owner),
 		"name":   githubv4.String(repo),
 		"number": githubv4.Int(number),
@@ -138,8 +138,8 @@ func (c *Client) fetchGraphQLThreads(ctx context.Context, owner, repo string, nu
 
 	out := make([]graphqlThreadInfo, 0, len(q.Repository.PullRequest.ReviewThreads.Nodes))
 	for _, n := range q.Repository.PullRequest.ReviewThreads.Nodes {
-		nodeID := fmt.Sprintf("%v", n.ID)
-		if nodeID == "" || nodeID == "<nil>" {
+		nodeID, ok := n.ID.(string)
+		if !ok || nodeID == "" {
 			continue
 		}
 		info := graphqlThreadInfo{
