@@ -53,14 +53,17 @@ func TestContextCancellation(t *testing.T) {
 
 func TestWorkerPoolDefaultsToDefaultWorkers(t *testing.T) {
 	pool := NewWorkerPool(0, nil)
-	if pool == nil {
-		t.Fatal("expected non-nil pool for zero workers")
-	}
-	if pool.workers != DefaultWorkers {
-		t.Errorf("expected %d workers for zero input, got %d", DefaultWorkers, pool.workers)
+	wasRun := make(chan struct{}, 1)
+	if err := pool.Submit(context.Background(), func() { wasRun <- struct{}{} }); err != nil {
+		t.Fatalf("submit with default workers: %v", err)
 	}
 	if err := pool.Wait(context.Background()); err != nil {
-		t.Errorf("unexpected wait error: %v", err)
+		t.Fatalf("wait with default workers: %v", err)
+	}
+	select {
+	case <-wasRun:
+	default:
+		t.Fatal("task was not run with default workers")
 	}
 }
 
@@ -256,12 +259,5 @@ func TestWorkerPanicDoesntBlockPool(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Error("pool.Wait() blocked forever after panic — deadlock detected")
-	}
-}
-
-// TestDefaultWorkers verifies the exported constant has the expected value.
-func TestDefaultWorkers(t *testing.T) {
-	if DefaultWorkers != 4 {
-		t.Errorf("expected DefaultWorkers=4, got %d", DefaultWorkers)
 	}
 }

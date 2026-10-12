@@ -3,15 +3,12 @@ package sync
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	gosync "sync"
 	"time"
-
-	"log/slog"
 
 	"github.com/itterno/bistro/internal/actions"
 	"github.com/itterno/bistro/internal/classify"
@@ -54,14 +51,13 @@ type Orchestrator struct {
 	// replaced or disconnected). ApplyAction checks it before executing so
 	// stale orchestrators self-reject even if captured before disconnect.
 	liveness context.Context
-	// classifier is optional; when set, writers classify each comment in the
-	// write path (Phase 3 deterministic tier).
+	// classifier is optional; when set, writers classify each comment in the write path.
 	classifier *classify.EngineProvider
 	// currentUser resolves the authenticated GitHub login for mention detection
 	// during sync writes.
 	currentUser currentUserReader
 	// postCommit is optional; when set, writers invoke it after each committed
-	// batch with the written PR ids (Phase 3.8 LLM tier kick).
+	// batch with the written PR ids.
 	postCommit func(prIDs []string)
 	// postReview is optional; when set, successful local review submissions invoke it
 	// after last_reviewed_sha tracking has run.
@@ -71,6 +67,19 @@ type Orchestrator struct {
 const (
 	inboxCursorLag                = 2 * time.Minute
 	replayReconciliationClockSkew = 10 * time.Minute
+	// actionRetryCount matches the executor's bounded retry policy.
+	actionRetryCount = 3
+	// queuedIDHashBytes keeps queue IDs compact without exposing comment text.
+	queuedIDHashBytes = 8
+	// replayBatchSize caps actions claimed in one replay pass.
+	replayBatchSize = 10
+	// queueRetention windows bound local history of terminal actions.
+	completedQueueRetention = 7 * 24 * time.Hour
+	failedQueueRetention    = 24 * time.Hour
+	// defaultRateLimitCooldown is used when the provider reports no reset time.
+	defaultRateLimitCooldown = 60 * time.Second
+	// inboxDiscoveryLimit bounds the number of discovered PR pointers per pass.
+	inboxDiscoveryLimit = 100
 
 	// prListWindow bounds per-repo PR list syncs to recently updated PRs;
 	// prListMinCount guarantees quiet repos still surface their newest PRs.
@@ -159,7 +168,7 @@ func (o *Orchestrator) WithLiveness(ctx context.Context) *Orchestrator {
 }
 
 // WithClassifier attaches the classification engine provider; writers built
-// by this orchestrator classify comments in the write path (Phase 3).
+// by this orchestrator classify comments in the write path.
 func (o *Orchestrator) WithClassifier(p *classify.EngineProvider) *Orchestrator {
 	o.classifier = p
 	return o
@@ -185,7 +194,7 @@ func (o *Orchestrator) WithRepoPathResolver(resolve RepoPathResolver) *Orchestra
 }
 
 // WithPostCommit attaches a hook writers invoke after each committed batch
-// with the written PR ids (Phase 3.8 async LLM tier kick).
+// with the written PR ids.
 func (o *Orchestrator) WithPostCommit(fn func(prIDs []string)) *Orchestrator {
 	o.postCommit = fn
 	return o
@@ -197,207 +206,6 @@ func (o *Orchestrator) WithPostReview(fn func(ctx context.Context, prID string))
 	return o
 }
 
-// resolveAnchors runs AnchorResolver.Resolve on every eligible review comment.
-//
-// Geometry rules:
-//   - Current-position comments (Position != nil, > 0): use prBaseSHA as
-//     DiffBaseSHA — correct for the current patchset.
-//   - Original-position comments (Position == nil, OriginalPosition > 0):
-//     require EXACT patchset identity via patchset_number:
-//     1. Use c.PatchsetNumber if set (populated by a prior DB write).
-//     2. Otherwise look up the stored patchset_number from the DB by comment ID.
-//     3. Find the patchset row by exact number match; use its BaseSHA.
-//     If patchset_number is zero/missing, or not found in patchsets list → SKIP.
-//     Head-SHA-only matching is never used for original-position comments.
-//
-// All errors are logged at Debug/Warn level; affected comments are skipped.
-func (o *Orchestrator) resolveAnchors(
-	ctx context.Context,
-	comments []*provider.Comment,
-	threads []*provider.ReviewThread,
-	prID, localPath, headSHA, prBaseSHA string,
-	log *slog.Logger,
-) []git.AnchorResult {
-	var candidates []*provider.Comment
-	for _, c := range comments {
-		if c != nil && c.Kind == "review" && c.FilePath != "" && isAnchorable(c) {
-			candidates = append(candidates, c)
-		}
-	}
-	for _, th := range threads {
-		if th == nil {
-			continue
-		}
-		for _, c := range th.Comments {
-			if c != nil && c.Kind == "review" && c.FilePath != "" && isAnchorable(c) {
-				candidates = append(candidates, c)
-			}
-		}
-	}
-
-	if len(candidates) == 0 {
-		return nil
-	}
-
-	// Load all known patchsets for this PR.
-	var patchsets []store.Patchset
-	if o.store != nil && prID != "" {
-		var loadErr error
-		patchsets, loadErr = o.store.ListPatchsets(ctx, prID)
-		if loadErr != nil {
-			log.Warn("resolveAnchors: could not load patchsets; original-position comments will be skipped",
-				"pr_id", prID, "error", loadErr)
-		}
-	}
-
-	// Find the current patchset number for (prBaseSHA, headSHA).
-	// This is anchor_current_patchset_number — the state the anchor is valid against.
-	// May be 0 for first sync (patchset not yet in DB); writeAnchorUpdates will fill
-	// it in from currentPatchsetNum after recordPatchsetIfChanged runs.
-	currentPsNumForAnchors := 0
-	for _, ps := range patchsets {
-		if ps.BaseSHA == prBaseSHA && ps.HeadSHA == headSHA {
-			currentPsNumForAnchors = ps.Number
-			break
-		}
-	}
-
-	// For original-position candidates that lack c.PatchsetNumber, preload the
-	// stored patchset_number from the DB (set during a prior writeComment call).
-	storedPatchsetNums := map[string]int{}
-	if o.store != nil && prID != "" {
-		var needLookup []string
-		for _, c := range candidates {
-			if (c.PatchsetNumber == nil || *c.PatchsetNumber == 0) &&
-				(c.Position == nil || *c.Position == 0) {
-				needLookup = append(needLookup, c.ID)
-			}
-		}
-		if len(needLookup) > 0 {
-			loaded, err := o.store.GetCommentPatchsetNumbers(ctx, needLookup)
-			if err != nil {
-				log.Warn("resolveAnchors: could not load comment patchset_numbers; affected original-position comments will be skipped",
-					"error", err)
-			} else {
-				storedPatchsetNums = loaded
-			}
-		}
-	}
-
-	results := make([]git.AnchorResult, 0, len(candidates))
-	for _, c := range candidates {
-		side := c.Side
-		if side == "" {
-			side = "RIGHT"
-		}
-
-		isCurrentPos := c.Position != nil && *c.Position > 0
-
-		commitSHA := c.CommitSHA
-		position := 0
-		if isCurrentPos {
-			position = *c.Position
-		} else {
-			if c.OriginalPosition != nil && *c.OriginalPosition > 0 {
-				position = *c.OriginalPosition
-			}
-			if c.OriginalSHA != "" {
-				commitSHA = c.OriginalSHA
-			}
-		}
-		if commitSHA == "" || position == 0 {
-			log.Debug("anchor skip: no usable commit SHA or position", "comment_id", c.ID)
-			continue
-		}
-
-		// Resolve the patchset_number for this comment.
-		patchsetNum := 0
-		if c.PatchsetNumber != nil {
-			patchsetNum = *c.PatchsetNumber
-		} else if n, ok := storedPatchsetNums[c.ID]; ok {
-			patchsetNum = n
-		}
-
-		diffBaseSHA, resolvedPatchsetNum, skip := selectDiffBaseSHA(patchsets, patchsetNum, isCurrentPos, prBaseSHA, headSHA)
-		if skip {
-			log.Debug("anchor skip: original-position comment, patchset identity unavailable or not found",
-				"comment_id", c.ID, "patchset_num", patchsetNum)
-			continue
-		}
-
-		req := git.ResolveRequest{
-			LocalPath:   localPath,
-			CommitSHA:   commitSHA,
-			HeadSHA:     headSHA,
-			DiffBaseSHA: diffBaseSHA,
-			FilePath:    c.FilePath,
-			Side:        side,
-			Position:    position,
-			CommentID:   c.ID,
-			PatchsetNum: 0,  // unknown at fetch time; CommitSHA==HeadSHA fast path handles it
-			CurrentNum:  -1, // prevents 0==0 patchset fast path
-		}
-		res, err := o.anchorResolver.Resolve(req)
-		if err != nil {
-			log.Debug("anchor resolve failed (best-effort, skipping)",
-				"comment_id", c.ID, "error", err)
-			continue
-		}
-		// PatchsetNumber = source patchset (geometry used for position-to-line mapping).
-		// CurrentPatchsetNumber = current PR patchset at resolution time (the state the
-		// anchor is valid against). Both are needed for full freshness validation.
-		res.PatchsetNumber = resolvedPatchsetNum
-		res.CurrentPatchsetNumber = currentPsNumForAnchors
-		results = append(results, res)
-	}
-	return results
-}
-
-// selectDiffBaseSHA returns the correct DiffBaseSHA and resolved patchset number
-// for a ResolveRequest, and whether the comment should be skipped.
-//
-//   - Current-position: prBaseSHA is the correct geometry.
-//     Looks up the current patchset by (headSHA, prBaseSHA) to get its number.
-//     Returns (prBaseSHA, patchset.Number, false), or (prBaseSHA, 0, false) if
-//     the patchset row is not yet recorded (new PR, first sync).
-//   - Original-position: requires exact patchset number identity.
-//     patchsetNum > 0 → find patchset by exact number; return its BaseSHA and Number.
-//     patchsetNum == 0 or not found → ("", 0, true) — skip, never approximate.
-//
-// Head-SHA-only matching is intentionally absent: the same head can appear
-// under multiple bases (retarget/rebase), making head-only matching ambiguous.
-func selectDiffBaseSHA(patchsets []store.Patchset, patchsetNum int, isCurrentPos bool, prBaseSHA, prHeadSHA string) (diffBase string, resolvedPatchsetNum int, skip bool) {
-	if isCurrentPos {
-		// Look up the current patchset to get its number for anchor identity.
-		for _, ps := range patchsets {
-			if ps.BaseSHA == prBaseSHA && ps.HeadSHA == prHeadSHA {
-				return prBaseSHA, ps.Number, false
-			}
-		}
-		// Patchset not yet recorded (new PR) — still valid, number unknown.
-		return prBaseSHA, 0, false
-	}
-	// Original-position: require exact patchset_number identity.
-	if patchsetNum <= 0 {
-		return "", 0, true // no patchset_number recorded → skip
-	}
-	for _, ps := range patchsets {
-		if ps.Number == patchsetNum {
-			return ps.BaseSHA, ps.Number, false
-		}
-	}
-	return "", 0, true // patchset number not found in DB → skip
-}
-
-// isAnchorable reports whether a review comment has enough information to
-// attempt anchor resolution. It accepts both current-position comments and
-// outdated/rebased comments that carry only original-position data.
-func isAnchorable(c *provider.Comment) bool {
-	hasCurrent := c.CommitSHA != "" && c.Position != nil && *c.Position > 0
-	hasOriginal := c.OriginalPosition != nil && *c.OriginalPosition > 0
-	return hasCurrent || hasOriginal
-}
-
 // IsRateLimited reports whether the orchestrator is currently rate limited.
 func (o *Orchestrator) IsRateLimited() bool {
 	o.rateLimitMu.RLock()
@@ -406,665 +214,6 @@ func (o *Orchestrator) IsRateLimited() bool {
 		return false
 	}
 	return o.rateLimitState.IsLimited()
-}
-
-// validateThreadPreflight checks thread ownership and state_known before any
-// provider mutation. Returns a non-nil *ActionResult on failure (caller must
-// return it); returns nil when validation passes or is not applicable.
-// Shared between the immediate ApplyAction path and the queue replay path so
-// both enforce the same invariants.
-func (o *Orchestrator) validateThreadPreflight(ctx context.Context, req *actions.ActionRequest) *actions.ActionResult {
-	switch req.Action {
-	case actions.ResolveThreadCommand, actions.UnresolveThreadCommand:
-		if o.store == nil {
-			return nil // no store — skip validation (test/noop path)
-		}
-		thread, err := o.store.GetReviewThread(ctx, req.PRID, req.Body)
-		if err != nil {
-			return &actions.ActionResult{
-				PRID:      req.PRID,
-				Action:    req.Action,
-				Success:   false,
-				Error:     fmt.Sprintf("thread lookup failed: %v", err),
-				Timestamp: time.Now(),
-			}
-		}
-		if thread == nil {
-			return &actions.ActionResult{
-				PRID:      req.PRID,
-				Action:    req.Action,
-				Success:   false,
-				Error:     fmt.Sprintf("thread %s not found in pr %s", req.Body, req.PRID),
-				Timestamp: time.Now(),
-			}
-		}
-		if !thread.StateKnown {
-			return &actions.ActionResult{
-				PRID:      req.PRID,
-				Action:    req.Action,
-				Success:   false,
-				Error:     fmt.Sprintf("thread %s state is unknown; sync required before mutation", req.Body),
-				Timestamp: time.Now(),
-			}
-		}
-	}
-	return nil
-}
-
-// prepareReplyCommentTarget resolves thread-oriented reply requests to a
-// concrete GitHub review-comment ID before provider execution or queueing.
-// The UI is thread-oriented, while GitHub's REST reply endpoint requires a
-// review-comment database ID.
-func (o *Orchestrator) prepareReplyCommentTarget(ctx context.Context, req *actions.ActionRequest) *actions.ActionResult {
-	if req.Action != actions.ReplyCommentCommand || req.InReplyTo != "" || req.ThreadID == "" {
-		return nil
-	}
-	if o.store == nil {
-		return nil
-	}
-
-	targetID, err := o.store.ReplyTargetCommentIDForThread(ctx, req.PRID, req.ThreadID)
-	if err != nil {
-		return &actions.ActionResult{
-			PRID:      req.PRID,
-			Action:    req.Action,
-			Success:   false,
-			Error:     fmt.Sprintf("reply target lookup failed: %v", err),
-			Timestamp: time.Now(),
-		}
-	}
-	if targetID == "" {
-		return &actions.ActionResult{
-			PRID:      req.PRID,
-			Action:    req.Action,
-			Success:   false,
-			Error:     fmt.Sprintf("thread %s has no cached review comment target in pr %s", req.ThreadID, req.PRID),
-			Timestamp: time.Now(),
-		}
-	}
-	req.InReplyTo = targetID
-	return nil
-}
-
-// ApplyAction executes an action immediately or queues it when rate limited.
-func (o *Orchestrator) ApplyAction(ctx context.Context, req *actions.ActionRequest) *actions.ActionResult {
-	log := logging.FromContext(ctx).With(
-		"pr_id", req.PRID,
-		"action", string(req.Action),
-	)
-	ctx = logging.WithLogger(ctx, log)
-
-	// Reject immediately if the orchestrator's provider has been disconnected or
-	// replaced. This handles the race where a handler captured this orchestrator
-	// before disconnect and calls ApplyAction after.
-	if o.liveness != nil {
-		if err := o.liveness.Err(); err != nil {
-			return &actions.ActionResult{
-				PRID:      req.PRID,
-				Action:    req.Action,
-				Success:   false,
-				Error:     "provider disconnected: action rejected",
-				Timestamp: time.Now(),
-			}
-		}
-	}
-
-	// Validate thread ownership and state before any provider mutation or queue.
-	if result := o.validateThreadPreflight(ctx, req); result != nil {
-		return result
-	}
-	if result := o.prepareReplyCommentTarget(ctx, req); result != nil {
-		return result
-	}
-
-	if o.IsRateLimited() {
-		log.Info("rate limited, queueing action")
-
-		// Reject line-level post_comment before queueing: the queue payload only
-		// stores Body, not Line, so replay would silently drop the line context
-		// and post a general PR comment instead of the intended inline comment.
-		// Return a clear error so the caller can retry after the rate limit clears.
-		if req.Action == actions.PostCommentCommand && req.Line > 0 {
-			return &actions.ActionResult{
-				PRID:      req.PRID,
-				Action:    req.Action,
-				Success:   false,
-				Error:     "line-level post_comment cannot be queued for replay (Line context would be lost); retry after rate limit clears",
-				Timestamp: time.Now(),
-			}
-		}
-
-		payload := req.Body
-		if req.Action == actions.ReplyCommentCommand {
-			encoded, err := json.Marshal(actions.ReplyCommentPayload{Body: req.Body, InReplyTo: req.InReplyTo, ThreadID: req.ThreadID})
-			if err != nil {
-				return &actions.ActionResult{
-					PRID:      req.PRID,
-					Action:    req.Action,
-					Success:   false,
-					Error:     fmt.Sprintf("failed to encode reply_comment payload: %v", err),
-					Timestamp: time.Now(),
-				}
-			}
-			payload = string(encoded)
-		}
-
-		accountLogin := ""
-		queueID := queuedActionID(req)
-		if o.reviewLogin != nil {
-			login, ok, err := o.reviewLogin.GetCurrentUser(ctx, "github")
-			if err != nil {
-				return &actions.ActionResult{
-					PRID:      req.PRID,
-					Action:    req.Action,
-					Success:   false,
-					Error:     fmt.Sprintf("rate limited: could not resolve current GitHub account for queueing: %v", err),
-					Timestamp: time.Now(),
-				}
-			}
-			if !ok || login == "" {
-				return &actions.ActionResult{
-					PRID:      req.PRID,
-					Action:    req.Action,
-					Success:   false,
-					Error:     "rate limited: no current GitHub account, action not queued",
-					Timestamp: time.Now(),
-				}
-			}
-			accountLogin = login
-			queueID = accountScopedQueuedActionID(login, queueID)
-		}
-
-		queuedAction := &store.QueuedAction{
-			// Include Body in the ID so that multiple thread actions on the same
-			// PR (e.g. resolve thread-A and resolve thread-B) get distinct rows
-			// rather than overwriting each other. For actions without a body
-			// (e.g. approve) the ID remains pr_id+action, preserving idempotence.
-			ID:              queueID,
-			ActionType:      string(req.Action),
-			PRID:            req.PRID,
-			Payload:         payload,
-			AccountProvider: "github",
-			AccountLogin:    accountLogin,
-		}
-		if o.queue != nil {
-			if err := o.queue.Enqueue(ctx, queuedAction); err != nil {
-				log.Error("failed to queue action", "error", err)
-				return &actions.ActionResult{
-					PRID:      req.PRID,
-					Action:    req.Action,
-					Success:   false,
-					Error:     err.Error(),
-					Timestamp: time.Now(),
-				}
-			}
-			log.Debug("action queued", "queue_id", queuedAction.ID)
-			return &actions.ActionResult{
-				PRID:      req.PRID,
-				Action:    req.Action,
-				Success:   false,
-				Error:     "rate limited: action queued for later replay",
-				Timestamp: time.Now(),
-			}
-		}
-		return &actions.ActionResult{
-			PRID:      req.PRID,
-			Action:    req.Action,
-			Success:   false,
-			Error:     "rate limited: no action queue configured, action dropped",
-			Timestamp: time.Now(),
-		}
-	}
-
-	return o.executeAction(ctx, req)
-}
-
-// executeAction runs an action via the executor immediately.
-func (o *Orchestrator) executeAction(ctx context.Context, req *actions.ActionRequest) *actions.ActionResult {
-	log := logging.FromContext(ctx)
-	log.Debug("executing action", "pr_id", req.PRID, "action", string(req.Action))
-
-	// Derive an execution context that is cancelled if either the caller's ctx
-	// OR the orchestrator's liveness context is cancelled. This ensures that a
-	// provider disconnect mid-retry interrupts ExecuteWithRetry rather than
-	// letting it complete with stale credentials.
-	execCtx, execCancel := context.WithCancel(ctx)
-	defer execCancel()
-	if o.liveness != nil {
-		go func() {
-			select {
-			case <-o.liveness.Done():
-				execCancel()
-			case <-execCtx.Done():
-				// caller cancelled first or action completed — nothing to do
-			}
-		}()
-	}
-
-	executor := actions.NewActionExecutor(o.log, o.provider, o.store, o.emitter).
-		WithReviewTracking(o.reviewLogin, o.reviewSHAWriter)
-	start := time.Now()
-	result, err := executor.ExecuteWithRetry(execCtx, req, 3)
-	dur := time.Since(start).Milliseconds()
-
-	if err != nil {
-		log.Error("action execution error",
-			"pr_id", req.PRID,
-			"action", string(req.Action),
-			"duration_ms", dur,
-			"error", err,
-		)
-		return &actions.ActionResult{
-			PRID:      req.PRID,
-			Action:    req.Action,
-			Success:   false,
-			Error:     err.Error(),
-			Timestamp: time.Now(),
-		}
-	}
-	if result == nil {
-		log.Error("action executor returned nil result",
-			"pr_id", req.PRID,
-			"action", string(req.Action),
-			"duration_ms", dur,
-		)
-		return &actions.ActionResult{
-			PRID:      req.PRID,
-			Action:    req.Action,
-			Success:   false,
-			Error:     "executor returned nil result",
-			Timestamp: time.Now(),
-		}
-	}
-	log.Debug("action executed",
-		"pr_id", req.PRID,
-		"action", string(req.Action),
-		"duration_ms", dur,
-		"success", result.Success,
-	)
-
-	// Post-action local state update and event emission for thread commands.
-	if result.Success {
-		switch req.Action {
-		case actions.ResolveThreadCommand, actions.UnresolveThreadCommand:
-			o.handleThreadActionSuccess(ctx, req, log)
-		case actions.ReplyCommentCommand:
-			o.handleReplyCommentSuccess(req)
-		case actions.ApproveCommand, actions.RequestChangesCommand, actions.PostCommentCommand:
-			if o.postReview != nil {
-				o.postReview(ctx, req.PRID)
-			}
-		}
-	}
-
-	return result
-}
-
-// handleReplyCommentSuccess emits a refresh hint after a successful reply. The
-// created GitHub comment is not synchronously written to SQLite, so consumers
-// should re-request/sync comments to observe the new reply.
-func (o *Orchestrator) handleReplyCommentSuccess(req *actions.ActionRequest) {
-	if o.emitter == nil {
-		return
-	}
-	o.emitter.Emit(&events.Event{
-		Type: "COMMENT_POSTED",
-		Data: map[string]interface{}{
-			"pr_id":       req.PRID,
-			"thread_id":   req.ThreadID,
-			"in_reply_to": req.InReplyTo,
-		},
-		Timestamp: time.Now(),
-	})
-}
-
-// handleThreadActionSuccess updates local thread state and emits a WS event
-// after a successful resolve/unresolve action. Best-effort: failures are
-// logged but do not affect the returned ActionResult.
-func (o *Orchestrator) handleThreadActionSuccess(ctx context.Context, req *actions.ActionRequest, log *slog.Logger) {
-	// If the provider was disconnected/replaced during or after execution,
-	// skip local SQLite writes and event emission. The next sync cycle after
-	// re-auth will reconcile state from GitHub; a stale THREAD_RESOLVED event
-	// broadcast to a new session would be misleading.
-	if o.liveness != nil && o.liveness.Err() != nil {
-		log.Debug("handleThreadActionSuccess: liveness cancelled, skipping local write/event",
-			"thread_id", req.Body)
-		return
-	}
-
-	resolved := req.Action == actions.ResolveThreadCommand
-	threadID := req.Body
-
-	// Update local SQLite cache so REVIEW_THREADS_READY reflects the new state
-	// without waiting for the next full sync cycle.
-	if o.store != nil {
-		if err := o.store.SetThreadResolved(ctx, req.PRID, threadID, resolved); err != nil {
-			log.Warn("handleThreadActionSuccess: SetThreadResolved failed",
-				"thread_id", threadID, "resolved", resolved, "error", err)
-		}
-	}
-
-	// Emit event for WS broadcast.
-	if o.emitter != nil {
-		eventType := "THREAD_RESOLVED"
-		if !resolved {
-			eventType = "THREAD_REOPENED"
-		}
-		o.emitter.Emit(&events.Event{
-			Type: eventType,
-			Data: map[string]interface{}{
-				"thread_id": threadID,
-				"pr_id":     req.PRID,
-				"resolved":  resolved,
-			},
-			Timestamp: time.Now(),
-		})
-	}
-}
-
-// queuedActionID returns a stable unique ID for a queued action.
-// For thread actions (resolve/unresolve), Body is the thread node ID — short
-// and stable — so it is included directly.
-// For all other actions, if Body is non-empty it is hashed (sha256 prefix) so
-// that arbitrary user text does not appear raw in the queue row ID.
-// Actions without a body keep their deduplication behaviour (pr_id+action).
-func queuedActionID(req *actions.ActionRequest) string {
-	if req.Body == "" {
-		return req.PRID + "-" + string(req.Action)
-	}
-	switch req.Action {
-	case actions.ResolveThreadCommand, actions.UnresolveThreadCommand:
-		// Body is a thread node ID: stable, safe to use directly.
-		return req.PRID + "-" + string(req.Action) + "-" + req.Body
-	case actions.ReplyCommentCommand:
-		// Include both the target and body without leaking arbitrary user text.
-		h := sha256.Sum256([]byte(req.InReplyTo + "\x00" + req.Body))
-		return req.PRID + "-" + string(req.Action) + "-" + hex.EncodeToString(h[:8])
-	default:
-		// Hash arbitrary body text to keep the ID compact and free of raw user content.
-		h := sha256.Sum256([]byte(req.Body))
-		return req.PRID + "-" + string(req.Action) + "-" + hex.EncodeToString(h[:8])
-	}
-}
-
-func accountScopedQueuedActionID(accountLogin, actionID string) string {
-	h := sha256.Sum256([]byte(accountLogin))
-	return "github-" + hex.EncodeToString(h[:8]) + "-" + actionID
-}
-
-func replayNeedsRemoteReconciliation(action actions.ActionCommand) bool {
-	switch action {
-	case actions.ApproveCommand, actions.RequestChangesCommand, actions.PostCommentCommand, actions.ReplyCommentCommand:
-		return true
-	}
-	return false
-}
-
-func replayActionIsNonIdempotent(action actions.ActionCommand) bool {
-	switch action {
-	case actions.ApproveCommand, actions.RequestChangesCommand, actions.PostCommentCommand, actions.ReplyCommentCommand:
-		return true
-	}
-	return false
-}
-
-func replayTimestampMatches(remote time.Time, queuedAt time.Time) bool {
-	return !remote.IsZero() && !remote.Before(queuedAt.Add(-replayReconciliationClockSkew))
-}
-
-func (o *Orchestrator) reconcileQueuedActionSuccess(ctx context.Context, action *store.QueuedAction, req *actions.ActionRequest) (bool, error) {
-	if o.provider == nil {
-		return false, nil
-	}
-
-	switch req.Action {
-	case actions.ApproveCommand, actions.RequestChangesCommand:
-		username, err := o.provider.GetUsername(ctx)
-		if err != nil {
-			return false, err
-		}
-		reviews, err := o.provider.ListReviews(ctx, req.PRID)
-		if err != nil {
-			return false, err
-		}
-		wantState := "approved"
-		if req.Action == actions.RequestChangesCommand {
-			wantState = "changes_requested"
-		}
-		for _, review := range reviews {
-			if review.Author == username && review.State == wantState && replayTimestampMatches(review.SubmittedAt, action.CreatedAt) {
-				return true, nil
-			}
-		}
-	case actions.PostCommentCommand:
-		username, err := o.provider.GetUsername(ctx)
-		if err != nil {
-			return false, err
-		}
-		comments, err := o.provider.GetComments(ctx, req.PRID)
-		if err != nil {
-			return false, err
-		}
-		for _, comment := range comments {
-			if comment.Author == username && comment.Body == req.Body && replayTimestampMatches(comment.CreatedAt, action.CreatedAt) {
-				return true, nil
-			}
-		}
-	case actions.ReplyCommentCommand:
-		threadProvider, ok := o.provider.(provider.ThreadProvider)
-		if !ok {
-			return false, fmt.Errorf("provider does not support review-thread reconciliation")
-		}
-		username, err := o.provider.GetUsername(ctx)
-		if err != nil {
-			return false, err
-		}
-		threads, err := threadProvider.GetReviewThreads(ctx, req.PRID)
-		if err != nil {
-			return false, err
-		}
-		for _, thread := range threads {
-			for _, comment := range thread.Comments {
-				if comment.Author != username || comment.Body != req.Body || !replayTimestampMatches(comment.CreatedAt, action.CreatedAt) {
-					continue
-				}
-				if req.InReplyTo != "" && comment.InReplyTo == req.InReplyTo {
-					return true, nil
-				}
-				if req.ThreadID != "" && thread.ID == req.ThreadID {
-					return true, nil
-				}
-			}
-		}
-	case actions.ResolveThreadCommand, actions.UnresolveThreadCommand:
-		threadProvider, ok := o.provider.(provider.ThreadProvider)
-		if !ok {
-			return false, nil
-		}
-		threads, err := threadProvider.GetReviewThreads(ctx, req.PRID)
-		if err != nil {
-			return false, err
-		}
-		wantResolved := req.Action == actions.ResolveThreadCommand
-		for _, thread := range threads {
-			if thread.ID == req.Body && thread.StateKnown && thread.Resolved == wantResolved {
-				return true, nil
-			}
-		}
-	}
-
-	return false, nil
-}
-
-// ReplayQueuedActions replays pending actions after a rate limit clears.
-func (o *Orchestrator) ReplayQueuedActions(ctx context.Context) error {
-	if o.queue == nil {
-		o.log.Debug("skipping queue replay: no queue configured")
-		return nil
-	}
-
-	// Replay claims local-only queue rows and may reset crash-orphaned processing
-	// rows. Serialize via the queue so separate orchestrator instances sharing
-	// the local DB cannot reset each other's in-flight non-idempotent mutations.
-	o.queue.LockReplay()
-	defer o.queue.UnlockReplay()
-
-	batchID := shortID()
-	log := logging.FromContext(ctx).With("replay_batch", batchID)
-	ctx = logging.WithLogger(ctx, log)
-
-	if reset, err := o.queue.ResetProcessing(ctx); err != nil {
-		log.Error("failed to reset processing queue rows", "error", err)
-		return err
-	} else if reset > 0 {
-		log.Warn("reset crash-orphaned processing queue rows before replay", "count", reset)
-	}
-
-	var pending []*store.QueuedAction
-	var err error
-	if o.reviewLogin != nil {
-		login, ok, loginErr := o.reviewLogin.GetCurrentUser(ctx, "github")
-		if loginErr != nil {
-			log.Error("failed to resolve current account for queue replay", "error", loginErr)
-			return loginErr
-		}
-		if !ok || login == "" {
-			log.Info("skipping queue replay: no current GitHub account")
-			return nil
-		}
-		pending, err = o.queue.GetPendingForAccount(ctx, "github", login, 10)
-	} else {
-		pending, err = o.queue.GetPending(ctx, 10)
-	}
-	if err != nil {
-		log.Error("failed to load pending queue", "error", err)
-		return err
-	}
-
-	log.Info("replaying queued actions", "count", len(pending))
-
-	for _, action := range pending {
-		log.Info("replaying queued action",
-			"id", action.ID,
-			"pr_id", action.PRID,
-			"action", action.ActionType,
-			"retry_count", action.RetryCount,
-		)
-
-		req := &actions.ActionRequest{
-			PRID:   action.PRID,
-			Action: actions.ActionCommand(action.ActionType),
-			Body:   action.Payload,
-		}
-		if req.Action == actions.ReplyCommentCommand {
-			var payload actions.ReplyCommentPayload
-			if err := json.Unmarshal([]byte(action.Payload), &payload); err != nil {
-				log.Warn("replay: invalid reply_comment payload, marking failed",
-					"id", action.ID, "error", err)
-				if markErr := o.queue.MarkFailed(ctx, action.ID, err.Error(), store.MaxRetryCount); markErr != nil {
-					log.Error("failed to mark action failed after payload decode", "id", action.ID, "error", markErr)
-				}
-				continue
-			}
-			req.Body = payload.Body
-			req.InReplyTo = payload.InReplyTo
-			req.ThreadID = payload.ThreadID
-		}
-
-		// Re-validate thread ownership and state_known before executing.
-		// Queued actions bypass the live ApplyAction path, so we must re-run
-		// the same preflight checks here to prevent stale/wrong-PR mutations.
-		if preflightErr := o.validateThreadPreflight(ctx, req); preflightErr != nil {
-			log.Warn("replay: thread preflight failed, marking failed",
-				"id", action.ID, "reason", preflightErr.Error)
-			if err := o.queue.MarkFailed(ctx, action.ID, preflightErr.Error, store.MaxRetryCount); err != nil {
-				log.Error("failed to mark action failed after preflight", "id", action.ID, "error", err)
-			}
-			continue
-		}
-
-		reconciled, reconcileErr := o.reconcileQueuedActionSuccess(ctx, action, req)
-		if reconcileErr != nil {
-			log.Warn("replay: remote reconciliation failed", "id", action.ID, "error", reconcileErr)
-			if replayActionIsNonIdempotent(req.Action) {
-				errMsg := fmt.Sprintf("remote reconciliation failed before non-idempotent replay: %v", reconcileErr)
-				if err := o.queue.MarkFailed(ctx, action.ID, errMsg, action.RetryCount+1); err != nil {
-					log.Error("failed to defer action after reconciliation error", "id", action.ID, "error", err)
-				}
-				continue
-			}
-		} else if reconciled {
-			log.Info("replay: queued action already present on GitHub, marking completed", "id", action.ID)
-			if err := o.queue.MarkCompleted(ctx, action.ID); err != nil {
-				log.Error("failed to mark reconciled action completed", "id", action.ID, "error", err)
-			}
-			continue
-		} else if replayNeedsRemoteReconciliation(req.Action) {
-			log.Debug("replay: no prior GitHub success found, executing queued action", "id", action.ID)
-		}
-
-		if err := o.queue.MarkProcessing(ctx, action.ID); err != nil {
-			log.Error("failed to mark queued action processing; skipping unsafe replay", "id", action.ID, "error", err)
-			continue
-		}
-
-		result := o.executeAction(ctx, req)
-		if result.Success {
-			if err := o.queue.MarkCompleted(ctx, action.ID); err != nil {
-				log.Error("failed to mark action completed", "id", action.ID, "error", err)
-			}
-		} else {
-			errMsg := result.Error
-			if errMsg == "" {
-				errMsg = "unknown error"
-			}
-			// If the result carries the ambiguous-remote-success sentinel, the
-			// provider may have already mutated GitHub state. Mark the row
-			// permanently failed (MaxRetryCount) so it is never replayed again —
-			// retrying would risk duplicate mutations for non-idempotent actions
-			// like post_comment and request_changes.
-			//
-			// Use a fresh context for the terminal write: the execution context
-			// (ctx) may already be cancelled (that is precisely how the ambiguous
-			// state arises), and an ExecContext call on a cancelled context fails,
-			// which would leave the row pending and allow a duplicate mutation on
-			// the next replay pass.
-			retryCount := action.RetryCount + 1
-			markCtx := ctx
-			if result.IsAmbiguousRemoteSuccess() {
-				log.Warn("replay: ambiguous remote success, marking terminal to prevent duplicate mutation",
-					"id", action.ID, "action", action.ActionType)
-				retryCount = store.MaxRetryCount
-				markCtx = context.Background()
-			}
-			if err := o.queue.MarkFailed(markCtx, action.ID, errMsg, retryCount); err != nil {
-				log.Error("failed to mark action failed", "id", action.ID, "error", err)
-			}
-		}
-	}
-
-	return nil
-}
-
-// CleanupQueue removes old completed and failed actions from the queue.
-func (o *Orchestrator) CleanupQueue(ctx context.Context) error {
-	if o.queue == nil {
-		return nil
-	}
-
-	log := logging.FromContext(ctx)
-	deleted, err := o.queue.DeleteCompleted(ctx, 7*24*time.Hour)
-	if err != nil {
-		log.Error("queue cleanup (completed) failed", "error", err)
-		return err
-	}
-	log.Debug("cleaned up completed queue entries", "deleted", deleted)
-
-	if err := o.queue.DeleteFailed(ctx, 24*time.Hour); err != nil {
-		log.Error("queue cleanup (failed) failed", "error", err)
-		return err
-	}
-	return nil
 }
 
 // isRateLimitError reports whether err signals an HTTP 429 rate limit.
@@ -1091,175 +240,137 @@ func (o *Orchestrator) UnsubscribeEventChannel(ch <-chan *events.Event) {
 	o.emitter.Unsubscribe(ch)
 }
 
+type syncPhaseError struct {
+	phase      string
+	message    string
+	cause      error
+	durationMS int64
+}
+
 // Sync executes a full sync operation. All log records emitted downstream are
 // tagged with a per-cycle sync_id plus the repo slug so a full sync can be
 // grep'd out of interleaved output.
 func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult, error) {
 	if req == nil {
-		return nil, fmt.Errorf("sync request cannot be nil")
+		return nil, errors.New("sync request cannot be nil")
 	}
-
 	if req.Provider == "" || req.Owner == "" || req.Repo == "" {
-		return nil, fmt.Errorf("provider, owner, and repo are required")
+		return nil, errors.New("provider, owner, and repo are required")
 	}
-
+	started := time.Now()
 	syncID := shortID()
-	repoSlug := req.Owner + "/" + req.Repo
-	log := logging.FromContext(ctx).With(
-		"sync_id", syncID,
-		"repo", repoSlug,
-		"provider", req.Provider,
-	)
+	log := logging.FromContext(ctx).With("sync_id", syncID,
+		"repo", req.Owner+"/"+req.Repo, "provider", req.Provider)
 	ctx = logging.WithLogger(ctx, log)
-
-	startTime := time.Now()
-	result := &SyncResult{
-		Errors: make([]string, 0),
-	}
-
+	result := &SyncResult{Errors: make([]string, 0)}
 	log.Info("sync started")
 	o.emitter.Emit(&events.Event{
 		Type: "sync_started",
 		Data: map[string]interface{}{
-			"provider": req.Provider,
-			"owner":    req.Owner,
-			"repo":     req.Repo,
-			"sync_id":  syncID,
+			"provider": req.Provider, "owner": req.Owner, "repo": req.Repo, "sync_id": syncID,
 		},
 		Timestamp: time.Now(),
 	})
 
-	// Phase 1: Fetch PR list
-	var fetchedPRs []*PRFetchResult
-	if req.IncludePRs {
-		log.Debug("phase list-prs start")
-		phaseStart := time.Now()
-		o.emitter.Emit(events.NewProgressEvent("fetching_prs", 0, 0))
+	fetchedPRs := o.syncListPhase(ctx, req, result)
+	fetchedPRs = o.syncDetailsPhase(ctx, req, fetchedPRs, result)
+	o.syncWritePhase(ctx, fetchedPRs, result)
 
-		prs, err := o.syncPRList(ctx, req)
-		phaseDur := time.Since(phaseStart).Milliseconds()
-		if err != nil {
-			errMsg := fmt.Sprintf("failed to sync PRs: %v", err)
-			result.Errors = append(result.Errors, errMsg)
-			log.Error("phase list-prs failed", "duration_ms", phaseDur, "error", err)
-			o.emitter.Emit(events.NewErrorEvent(errMsg))
-		} else {
-			result.PRCount = len(prs)
-			fetchedPRs = make([]*PRFetchResult, len(prs))
-			for i, pr := range prs {
-				fetchedPRs[i] = &PRFetchResult{PR: pr}
-			}
-			log.Info("phase list-prs done",
-				"count", len(prs),
-				"duration_ms", phaseDur,
-			)
-		}
-	} else {
+	result.Duration = time.Since(started)
+	log.Info("sync complete", "duration_ms", result.Duration.Milliseconds(),
+		"prs_total", result.PRCount, "prs_updated", result.UpdatedPRs,
+		"comments", result.CommentCount, "errors", len(result.Errors))
+	o.emitter.Emit(events.NewCompleteEvent(result.PRCount, result.NewPRs, result.UpdatedPRs,
+		len(result.Errors), result.Duration))
+	return result, nil
+}
+
+func (o *Orchestrator) syncListPhase(ctx context.Context, req *SyncRequest, result *SyncResult) []*PRFetchResult {
+	log := logging.FromContext(ctx)
+	if !req.IncludePRs {
 		log.Debug("phase list-prs skipped (include_prs=false)")
+		return nil
 	}
+	log.Debug("phase list-prs start")
+	started := time.Now()
+	o.emitter.Emit(events.NewProgressEvent("fetching_prs", 0, 0))
+	prs, err := o.syncPRList(ctx, req)
+	phaseDuration := time.Since(started).Milliseconds()
+	if err != nil {
+		o.recordSyncPhaseError(log, result, syncPhaseError{phase: "phase list-prs failed", message: "failed to sync PRs", cause: err, durationMS: phaseDuration})
+		return nil
+	}
+	result.PRCount = len(prs)
+	fetchedPRs := make([]*PRFetchResult, len(prs))
+	for i, pr := range prs {
+		fetchedPRs[i] = &PRFetchResult{PR: pr}
+	}
+	log.Info("phase list-prs done", "count", len(prs), "duration_ms", phaseDuration)
+	return fetchedPRs
+}
 
-	// Very active repos: skip the per-PR detail fetch entirely and write
-	// list-only rows. Details are hydrated on demand when the user selects a
-	// PR (SyncPR), so one busy repo can't burn the whole rate-limit budget.
-	listOnly := len(fetchedPRs) > hydrationThreshold
-	if listOnly {
-		log.Info("phase fetch-details skipped (list-only)",
-			"pr_count", len(fetchedPRs),
-			"threshold", hydrationThreshold,
-		)
-		for _, r := range fetchedPRs {
-			r.ListOnly = true
+func (o *Orchestrator) syncDetailsPhase(ctx context.Context, req *SyncRequest, fetchedPRs []*PRFetchResult, result *SyncResult) []*PRFetchResult {
+	log := logging.FromContext(ctx)
+	// Busy repositories use list-only rows, hydrated on demand by SyncPR.
+	if len(fetchedPRs) > hydrationThreshold {
+		log.Info("phase fetch-details skipped (list-only)", "pr_count", len(fetchedPRs), "threshold", hydrationThreshold)
+		for _, fetched := range fetchedPRs {
+			fetched.ListOnly = true
 		}
 		result.UpdatedPRs = len(fetchedPRs)
+		return fetchedPRs
 	}
-
-	// Phase 2: Fetch details concurrently (comments, CI, diffs)
-	if !listOnly && len(fetchedPRs) > 0 {
-		log.Debug("phase fetch-details start",
-			"pr_count", len(fetchedPRs),
-			"include_comments", req.IncludeComments,
-			"include_ci", req.IncludeCI,
-			"include_diff", req.IncludeDiff,
-		)
-		phaseStart := time.Now()
-		o.emitter.Emit(events.NewProgressEvent("fetching_details", 0, len(fetchedPRs)))
-
-		// Extract the PR slice from the Phase 1 results to avoid a second ListPRs call.
-		prSlice := make([]*provider.PR, len(fetchedPRs))
-		for i, r := range fetchedPRs {
-			prSlice[i] = r.PR
-		}
-		detailResults, err := o.FetchPRDetails(ctx, prSlice, req.IncludeComments, req.IncludeCI, req.IncludeDiff)
-		phaseDur := time.Since(phaseStart).Milliseconds()
-		if err != nil {
-			errMsg := fmt.Sprintf("failed to fetch details: %v", err)
-			result.Errors = append(result.Errors, errMsg)
-			log.Error("phase fetch-details failed", "duration_ms", phaseDur, "error", err)
-			o.emitter.Emit(events.NewErrorEvent(errMsg))
+	if len(fetchedPRs) == 0 {
+		return fetchedPRs
+	}
+	log.Debug("phase fetch-details start", "pr_count", len(fetchedPRs),
+		"include_comments", req.IncludeComments, "include_ci", req.IncludeCI, "include_diff", req.IncludeDiff)
+	started := time.Now()
+	o.emitter.Emit(events.NewProgressEvent("fetching_details", 0, len(fetchedPRs)))
+	prs := make([]*provider.PR, len(fetchedPRs))
+	for i, fetched := range fetchedPRs {
+		prs[i] = fetched.PR
+	}
+	details, err := o.FetchPRDetails(ctx, prs, req.IncludeComments, req.IncludeCI, req.IncludeDiff)
+	phaseDuration := time.Since(started).Milliseconds()
+	if err != nil {
+		o.recordSyncPhaseError(log, result, syncPhaseError{phase: "phase fetch-details failed", message: "failed to fetch details", cause: err, durationMS: phaseDuration})
+		return fetchedPRs
+	}
+	for _, detail := range details {
+		if detail.Error == nil {
+			result.UpdatedPRs++
+			result.CommentCount += len(detail.Comments)
 		} else {
-			fetchedPRs = detailResults
-			for _, r := range detailResults {
-				if r.Error == nil {
-					result.UpdatedPRs++
-					result.CommentCount += len(r.Comments)
-				} else {
-					result.Errors = append(result.Errors, r.Error.Error())
-				}
-			}
-			log.Info("phase fetch-details done",
-				"duration_ms", phaseDur,
-				"pr_ok", result.UpdatedPRs,
-				"pr_errors", len(detailResults)-result.UpdatedPRs,
-			)
+			result.Errors = append(result.Errors, detail.Error.Error())
 		}
 	}
+	log.Info("phase fetch-details done", "duration_ms", phaseDuration,
+		"pr_ok", result.UpdatedPRs, "pr_errors", len(details)-result.UpdatedPRs)
+	return details
+}
 
-	// Phase 3: Write to SQLite (batched transactions)
-	// improve: Phase 2→3 is a full barrier — no PR row is written until every
-	// PR's details have been fetched, so one slow PR (bounded by
-	// perPRFetchTimeout) delays visibility of all the fast ones. If first-paint
-	// latency on large watch lists ever matters, stream results: write each
-	// PRFetchResult as its worker finishes (writer batches of 1..N), keeping
-	// the single-writer discipline but dropping the barrier.
-	if len(fetchedPRs) > 0 {
-		log.Debug("phase write-db start", "pr_count", len(fetchedPRs))
-		phaseStart := time.Now()
-		o.emitter.Emit(events.NewProgressEvent("writing_database", 0, len(fetchedPRs)))
-
-		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
-		if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
-			errMsg := fmt.Sprintf("failed to write results: %v", err)
-			result.Errors = append(result.Errors, errMsg)
-			log.Error("phase write-db failed",
-				"duration_ms", time.Since(phaseStart).Milliseconds(),
-				"error", err,
-			)
-			o.emitter.Emit(events.NewErrorEvent(errMsg))
-		} else {
-			log.Info("phase write-db done",
-				"duration_ms", time.Since(phaseStart).Milliseconds(),
-			)
-		}
+func (o *Orchestrator) syncWritePhase(ctx context.Context, fetchedPRs []*PRFetchResult, result *SyncResult) {
+	if len(fetchedPRs) == 0 {
+		return
 	}
+	log := logging.FromContext(ctx)
+	log.Debug("phase write-db start", "pr_count", len(fetchedPRs))
+	started := time.Now()
+	o.emitter.Emit(events.NewProgressEvent("writing_database", 0, len(fetchedPRs)))
+	writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
+	if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
+		o.recordSyncPhaseError(log, result, syncPhaseError{phase: "phase write-db failed", message: "failed to write results", cause: err, durationMS: time.Since(started).Milliseconds()})
+		return
+	}
+	log.Info("phase write-db done", "duration_ms", time.Since(started).Milliseconds())
+}
 
-	result.Duration = time.Since(startTime)
-	log.Info("sync complete",
-		"duration_ms", result.Duration.Milliseconds(),
-		"prs_total", result.PRCount,
-		"prs_updated", result.UpdatedPRs,
-		"comments", result.CommentCount,
-		"errors", len(result.Errors),
-	)
-
-	o.emitter.Emit(events.NewCompleteEvent(
-		result.PRCount,
-		result.NewPRs,
-		result.UpdatedPRs,
-		len(result.Errors),
-		result.Duration,
-	))
-
-	return result, nil
+func (o *Orchestrator) recordSyncPhaseError(log *slog.Logger, result *SyncResult, failure syncPhaseError) {
+	errMsg := fmt.Sprintf("%s: %v", failure.message, failure.cause)
+	result.Errors = append(result.Errors, errMsg)
+	log.Error(failure.phase, "duration_ms", failure.durationMS, "error", failure.cause)
+	o.emitter.Emit(events.NewErrorEvent(errMsg))
 }
 
 // SyncPR fetches full details (comments, CI, diff) for a single PR and writes
@@ -1307,82 +418,36 @@ func (o *Orchestrator) DiscoverAndSyncInbox(ctx context.Context) (*SyncResult, e
 		return &SyncResult{}, nil
 	}
 	if o.store == nil {
-		return nil, fmt.Errorf("store not configured")
+		return nil, errors.New("store not configured")
 	}
-
 	username, err := o.provider.GetUsername(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get username for inbox discovery: %w", err)
 	}
-	scope := "github:inbox:" + username + ":search:involves"
+	scope := githubProvider + ":inbox:" + username + ":search:involves"
 	started := time.Now().UTC()
-
-	cursor, err := o.store.GetSyncCursor(ctx, scope)
+	options, err := o.inboxDiscoveryOptions(ctx, scope, username)
 	if err != nil {
-		return nil, fmt.Errorf("load inbox cursor: %w", err)
-	}
-
-	var since *time.Time
-	etag := ""
-	if cursor != nil {
-		etag = cursor.ETag
-		if cursor.CursorValue != "" {
-			parsed, parseErr := store.ParseSyncCursorTime(cursor.CursorValue)
-			if parseErr != nil {
-				return nil, fmt.Errorf("parse inbox cursor %q: %w", cursor.CursorValue, parseErr)
-			}
-			lagged := parsed.Add(-inboxCursorLag)
-			since = &lagged
-		}
-	}
-
-	discovered, err := discovery.DiscoverInboxPRs(ctx, provider.InboxDiscoveryOptions{
-		Username: username,
-		Since:    since,
-		ETag:     etag,
-		Limit:    100,
-	})
-	if err != nil {
-		_ = o.store.MarkSyncCursorError(ctx, scope, err)
 		return nil, err
+	}
+	discovered, err := discovery.DiscoverInboxPRs(ctx, options)
+	if err != nil {
+		return nil, o.recordInboxCursorError(ctx, scope, err)
 	}
 	if discovered == nil {
 		discovered = &provider.InboxDiscoveryResult{}
 	}
-
-	result := &SyncResult{PRCount: len(discovered.PRs), Errors: make([]string, 0)}
-	var fetchedPRs []*PRFetchResult
+	result := &SyncResult{PRCount: len(discovered.PRs)}
 	if len(discovered.PRs) > 0 {
-		details, err := o.FetchPRDetails(ctx, discovered.PRs, true, true, true)
-		if err != nil {
-			_ = o.store.MarkSyncCursorError(ctx, scope, err)
-			return nil, err
-		}
-		fetchedPRs = details
-		for _, detail := range details {
-			if detail == nil {
-				continue
-			}
-			if detail.Error != nil {
-				result.Errors = append(result.Errors, detail.Error.Error())
-				continue
-			}
-			result.UpdatedPRs++
-			result.CommentCount += len(detail.Comments)
-		}
-
-		writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
-		if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
-			_ = o.store.MarkSyncCursorError(ctx, scope, err)
+		if err := o.writeDiscoveredPRs(ctx, scope, discovered.PRs, result); err != nil {
 			return nil, err
 		}
 		if len(result.Errors) > 0 {
-			err := fmt.Errorf("inbox discovery had %d per-PR hydration errors", len(result.Errors))
-			_ = o.store.MarkSyncCursorError(ctx, scope, err)
+			o.recordInboxCursorError(ctx, scope,
+				fmt.Errorf("inbox discovery had %d per-PR hydration errors", len(result.Errors)))
 			return result, nil
 		}
 	}
-
 	highWater := discovered.HighWater
 	if highWater.IsZero() {
 		highWater = started
@@ -1393,12 +458,65 @@ func (o *Orchestrator) DiscoverAndSyncInbox(ctx context.Context) (*SyncResult, e
 	return result, nil
 }
 
+func (o *Orchestrator) inboxDiscoveryOptions(ctx context.Context, scope, username string) (provider.InboxDiscoveryOptions, error) {
+	options := provider.InboxDiscoveryOptions{Username: username, Limit: inboxDiscoveryLimit}
+	cursor, err := o.store.GetSyncCursor(ctx, scope)
+	if err != nil {
+		return options, fmt.Errorf("load inbox cursor: %w", err)
+	}
+	if cursor == nil {
+		return options, nil
+	}
+	options.ETag = cursor.ETag
+	if cursor.CursorValue == "" {
+		return options, nil
+	}
+	parsed, err := store.ParseSyncCursorTime(cursor.CursorValue)
+	if err != nil {
+		return options, fmt.Errorf("parse inbox cursor %q: %w", cursor.CursorValue, err)
+	}
+	lagged := parsed.Add(-inboxCursorLag)
+	options.Since = &lagged
+	return options, nil
+}
+
+func (o *Orchestrator) writeDiscoveredPRs(ctx context.Context, scope string, prs []*provider.PR, result *SyncResult) error {
+	details, err := o.FetchPRDetails(ctx, prs, true, true, true)
+	if err != nil {
+		return o.recordInboxCursorError(ctx, scope, err)
+	}
+	for _, detail := range details {
+		if detail == nil {
+			continue
+		}
+		if detail.Error != nil {
+			result.Errors = append(result.Errors, detail.Error.Error())
+			continue
+		}
+		result.UpdatedPRs++
+		result.CommentCount += len(detail.Comments)
+	}
+	writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
+	if err := writer.WriteSyncResultsContext(ctx, details); err != nil {
+		return o.recordInboxCursorError(ctx, scope, err)
+	}
+	return nil
+}
+
+// Cursor failure recording is best-effort: preserve the original sync failure
+// while surfacing a failed local error write to the application log.
+func (o *Orchestrator) recordInboxCursorError(ctx context.Context, scope string, original error) error {
+	if err := o.store.MarkSyncCursorError(ctx, scope, original); err != nil {
+		logging.FromContext(ctx).Warn("record inbox cursor error failed", "error", err)
+	}
+	return original
+}
+
 // syncPRList fetches and stores the PR list
 func (o *Orchestrator) syncPRList(ctx context.Context, req *SyncRequest) ([]*provider.PR, error) {
 	log := logging.FromContext(ctx)
 	if o.provider == nil {
-		log.Error("syncPRList: provider not configured")
-		return nil, fmt.Errorf("provider not configured")
+		return nil, errors.New("provider not configured")
 	}
 
 	updatedSince := time.Now().Add(-prListWindow)
@@ -1421,7 +539,7 @@ func (o *Orchestrator) syncPRList(ctx context.Context, req *SyncRequest) ([]*pro
 	if err != nil {
 		if isRateLimitError(err) {
 			state := &provider.RateLimitState{
-				ResetAt: time.Now().Add(60 * time.Second),
+				ResetAt: time.Now().Add(defaultRateLimitCooldown),
 			}
 			o.rateLimitMu.Lock()
 			o.rateLimitState = state
@@ -1439,12 +557,7 @@ func (o *Orchestrator) syncPRList(ctx context.Context, req *SyncRequest) ([]*pro
 			})
 			return nil, err
 		}
-		log.Error("provider.ListPRs failed",
-			"duration_ms", dur,
-			"state", filters.State,
-			"error", err,
-		)
-		return nil, fmt.Errorf("failed to list PRs: %w", err)
+		return nil, fmt.Errorf("list PRs: %w", err)
 	}
 
 	log.Info("prs fetched", "count", len(prs), "duration_ms", dur)

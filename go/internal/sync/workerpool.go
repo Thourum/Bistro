@@ -5,22 +5,20 @@ import (
 	"fmt"
 	"log/slog"
 	gosync "sync"
-	"sync/atomic"
 )
 
 // DefaultWorkers is the default number of concurrent workers used in the pool.
 const DefaultWorkers = 4
 
+// workerQueueFactor allows one waiting task per active worker during bursts.
+const workerQueueFactor = 2
+
 // WorkerPool manages a pool of goroutines that process submitted tasks concurrently.
 type WorkerPool struct {
-	workers     int
-	taskCh      chan func()
-	wg          gosync.WaitGroup
-	closeOnce   gosync.Once
-	log         *slog.Logger
-	submitted   atomic.Int64
-	completed   atomic.Int64
-	panicked    atomic.Int64
+	taskCh    chan func()
+	wg        gosync.WaitGroup
+	closeOnce gosync.Once
+	log       *slog.Logger
 }
 
 // NewWorkerPool creates a new worker pool with the given number of workers.
@@ -35,12 +33,10 @@ func NewWorkerPool(workerCount int, log *slog.Logger) *WorkerPool {
 	}
 
 	pool := &WorkerPool{
-		workers: workerCount,
-		taskCh:  make(chan func(), workerCount*2),
-		log:     log,
+		taskCh: make(chan func(), workerCount*workerQueueFactor),
+		log:    log,
 	}
 
-	pool.log.Debug("worker pool starting", "workers", workerCount)
 	for i := 0; i < workerCount; i++ {
 		pool.wg.Add(1)
 		go pool.worker(i)
@@ -57,7 +53,6 @@ func (p *WorkerPool) worker(id int) {
 
 	for task := range p.taskCh {
 		p.safeRun(id, task)
-		p.completed.Add(1)
 	}
 }
 
@@ -65,7 +60,6 @@ func (p *WorkerPool) worker(id int) {
 func (p *WorkerPool) safeRun(workerID int, task func()) {
 	defer func() {
 		if r := recover(); r != nil {
-			p.panicked.Add(1)
 			p.log.Error("worker panic recovered",
 				"worker_id", workerID,
 				"panic", fmt.Sprintf("%v", r),
@@ -83,7 +77,6 @@ func (p *WorkerPool) Submit(ctx context.Context, task func()) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case p.taskCh <- task:
-		p.submitted.Add(1)
 		return nil
 	}
 }
@@ -103,18 +96,9 @@ func (p *WorkerPool) Wait(ctx context.Context) error {
 
 	select {
 	case <-done:
-		p.log.Debug("worker pool drained",
-			"submitted", p.submitted.Load(),
-			"completed", p.completed.Load(),
-			"panicked", p.panicked.Load(),
-		)
 		return nil
 	case <-ctx.Done():
-		p.log.Warn("worker pool wait cancelled",
-			"submitted", p.submitted.Load(),
-			"completed", p.completed.Load(),
-			"error", ctx.Err(),
-		)
+		p.log.Warn("worker pool wait cancelled", "error", ctx.Err())
 		return ctx.Err()
 	}
 }
