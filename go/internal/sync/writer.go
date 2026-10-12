@@ -3,27 +3,26 @@ package sync
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"time"
 
-	"log/slog"
-
 	"github.com/itterno/bistro/internal/classify"
 	"github.com/itterno/bistro/internal/events"
-	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
 )
 
-// Writer handles database writes for sync results.
-type currentUserReader interface {
-	GetCurrentUser(ctx context.Context, provider string) (string, bool, error)
-}
+const (
+	prSavepoint = "sp_pr"
+	// Surface batches that take noticeably longer than a normal local write.
+	slowSyncWrite = 500 * time.Millisecond
+)
 
+// Writer persists sync results in the local database.
 type Writer struct {
 	log         *slog.Logger
 	db          *store.DB
@@ -31,21 +30,20 @@ type Writer struct {
 	classifier  *classify.EngineProvider
 	currentUser currentUserReader
 	// postCommit runs after a successful tx.Commit() with the ids of the PRs
-	// written in the batch — the hook the async LLM tier kicks from (never
-	// inside the tx; sync never waits on the network).
+	// written in the batch; asynchronous classification must not run inside the tx.
 	postCommit func(prIDs []string)
 }
 
-// NewWriter creates a new database writer. If log is nil, slog.Default() is
-// used so the writer can always log unconditionally.
+type currentUserReader interface {
+	GetCurrentUser(ctx context.Context, provider string) (string, bool, error)
+}
+
+// NewWriter creates a database writer, using the default logger if log is nil.
 func NewWriter(log *slog.Logger, db *store.DB) *Writer {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Writer{
-		log: log,
-		db:  db,
-	}
+	return &Writer{log: log, db: db}
 }
 
 // WithEmitter wires an EventEmitter into the writer so PR metadata and CI
@@ -56,9 +54,7 @@ func (w *Writer) WithEmitter(e *events.EventEmitter) *Writer {
 }
 
 // WithClassifier wires the classification engine provider into the writer.
-// Each WriteSyncResultsContext batch resolves Current() once so every comment
-// in one sync sees one consistent engine. Nil provider = no classification
-// (columns stay NULL), preserving pre-Phase-3 behavior.
+// Each batch uses one engine so all comments see a consistent classification.
 func (w *Writer) WithClassifier(p *classify.EngineProvider) *Writer {
 	w.classifier = p
 	return w
@@ -72,13 +68,12 @@ func (w *Writer) WithCurrentUser(reader currentUserReader) *Writer {
 }
 
 // WithPostCommit registers a hook invoked after a successful commit with the
-// written PR ids. Used to kick the async BYOK LLM tier (Phase 3.8).
+// written PR ids. It runs outside the transaction.
 func (w *Writer) WithPostCommit(fn func(prIDs []string)) *Writer {
 	w.postCommit = fn
 	return w
 }
 
-// prSnapshot holds the current PR fields tracked for change detection.
 type prSnapshot struct {
 	state    string
 	ciStatus string
@@ -86,347 +81,336 @@ type prSnapshot struct {
 	draft    bool
 }
 
-// readPRSnapshot reads the current PR fields we care about for change detection.
-// Returns nil if the PR does not yet exist (new PR — no changes to detect).
-func (w *Writer) readPRSnapshot(ctx context.Context, tx *sql.Tx, prID string) *prSnapshot {
-	var s prSnapshot
+func readPRSnapshot(ctx context.Context, tx *sql.Tx, prID string) (*prSnapshot, error) {
+	var snapshot prSnapshot
 	var draftInt int
 	err := tx.QueryRowContext(ctx,
 		`SELECT state, COALESCE(ci_status,''), title, draft FROM prs WHERE id = ? LIMIT 1`,
 		prID,
-	).Scan(&s.state, &s.ciStatus, &s.title, &draftInt)
-	if err != nil {
-		return nil // not found or error — treat as new
+	).Scan(&snapshot.state, &snapshot.ciStatus, &snapshot.title, &draftInt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
 	}
-	s.draft = draftInt != 0
-	return &s
+	if err != nil {
+		return nil, fmt.Errorf("read PR snapshot %s: %w", prID, err)
+	}
+	snapshot.draft = draftInt != 0
+	return &snapshot, nil
 }
 
-// WriteSyncResults persists all sync results to the database in a single transaction.
-// Per-item errors are logged and skipped; they do not abort the transaction.
+// WriteSyncResults persists all sync results in one transaction. A failed PR
+// write rolls back its savepoint without discarding other PRs in the batch.
 func (w *Writer) WriteSyncResults(results []*PRFetchResult) error {
 	return w.WriteSyncResultsContext(context.Background(), results)
 }
 
-// WriteSyncResultsContext persists all sync results to the database in a single transaction,
-// respecting the provided context for cancellation.
-//
-// Atomicity strategy — per-PR savepoints:
-//
-//	For each accepted PR result a SQLite SAVEPOINT guards three critical writes
-//	(PR row, patchset, diffs). If any critical write fails the savepoint is
-//	rolled back so the PR's partial changes never reach the outer transaction.
-//	Other PRs in the batch are unaffected. Comments and review threads remain
-//	best-effort (per-item skip with no savepoint rollback).
-func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetchResult) error {
-	// Prefer the request-scoped logger from ctx (carries sync_id, repo, etc.)
-	// over the writer's own logger; fall back to the writer's logger when ctx
-	// doesn't carry one.
+// WriteSyncResultsContext writes a batch in one transaction, honoring ctx.
+// Each PR has a savepoint for its row, patchset, diff, comments, and threads;
+// failed critical writes roll back that PR while other PRs can still commit.
+// A failed rollback or release aborts the batch rather than commit partial data.
+// Per-comment and per-thread failures are best-effort and logged separately.
+func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetchResult) (writeErr error) {
+	if len(results) == 0 || w.db == nil {
+		return nil
+	}
 	log := logging.FromContext(ctx)
 	if log == slog.Default() && w.log != nil {
 		log = w.log
 	}
-
-	if len(results) == 0 {
-		log.Debug("WriteSyncResults: nothing to write")
-		return nil
-	}
-
-	if w.db == nil {
-		log.Debug("WriteSyncResults: no DB configured, skipping", "results", len(results))
-		return nil
-	}
-
-	overallStart := time.Now()
-
-	// Resolve one consistent classification engine for the whole batch.
-	// Nil when no classifier is wired — classification columns stay NULL.
-	var eng *classify.Engine
-	if w.classifier != nil {
-		eng = w.classifier.Current()
-	}
-
-	// Mention detection is advisory metadata: a failed current-user lookup must
-	// not discard an entire synced batch. Continue with a nil pattern, which
-	// leaves existing `mentioned` values untouched.
-	mentionPattern, err := w.mentionPattern(ctx)
+	start := time.Now()
+	batch := w.newWriterBatch(ctx, log)
+	var err error
+	batch.tx, err = w.db.BeginTx(ctx, nil)
 	if err != nil {
-		log.Warn("mention detection unavailable, continuing without it", "error", err)
-		mentionPattern = nil
+		return fmt.Errorf("begin sync write transaction: %w", err)
 	}
-
-	tx, err := w.db.BeginTx(ctx, nil)
-	if err != nil {
-		log.Error("failed to start transaction", "error", err)
-		return fmt.Errorf("failed to start transaction: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	prCount := 0
-	prSkipped := 0
-	prErrors := 0
-	commentCount := 0
-	diffCount := 0
-
-	// savepoint is the per-PR savepoint name reused each iteration.
-	// It is always RELEASED (or ROLLBACK+RELEASE) before the next iteration.
-	const savepoint = "sp_pr"
-
-	var pendingEvents []*events.Event
-	var writtenPRIDs []string
+	defer func() {
+		// After a successful Commit, Rollback returns sql.ErrTxDone; otherwise
+		// preserve a rollback failure alongside the original write error.
+		if rollbackErr := batch.tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			writeErr = errors.Join(writeErr, fmt.Errorf("roll back sync write transaction: %w", rollbackErr))
+		}
+	}()
 
 	for _, result := range results {
-		if result == nil {
-			prSkipped++
-			continue
+		if err := w.writeOnePR(ctx, &batch, result); err != nil {
+			return err
 		}
-
-		if result.Error != nil {
-			prErrors++
-			prID := ""
-			if result.PR != nil {
-				prID = result.PR.ID
-			}
-			log.Warn("skipping pr write due to upstream error",
-				"pr_id", prID,
-				"error", result.Error,
-			)
-			continue
-		}
-
-		if result.PR == nil {
-			prSkipped++
-			log.Debug("skipping nil PR in result")
-			continue
-		}
-
-		prID := result.PR.ID
-
-		// ── Open per-PR savepoint ──────────────────────────────────────────
-		if _, spErr := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); spErr != nil {
-			// Savepoint creation failure is extremely rare (e.g. nested limit).
-			log.Error("could not create savepoint, skipping PR",
-				"pr_id", prID, "error", spErr)
-			prErrors++
-			continue
-		}
-
-		// rollbackSP rolls back and releases the savepoint, counting a PR error.
-		// Returns true so callers can: if rollbackSP(...) { continue }.
-		rollbackSP := func(msg string, err error) bool {
-			log.Error(msg, "pr_id", prID, "error", err)
-			_, _ = tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint)
-			_, _ = tx.ExecContext(ctx, "RELEASE SAVEPOINT "+savepoint)
-			prErrors++
-			return true
-		}
-
-		writeStart := time.Now()
-
-		// Read current snapshot for change detection (nil = new PR).
-		snap := w.readPRSnapshot(ctx, tx, prID)
-
-		// ── Critical write 1: PR row ───────────────────────────────────────
-		if err := w.writePRRow(ctx, tx, result.PR, !result.ListOnly); err != nil {
-			if rollbackSP("failed to write PR row (savepoint rolled back)", err) {
-				continue
-			}
-		}
-
-		// ── Critical write 2: patchset ────────────────────────────────────
-		if err := w.recordPatchsetIfChanged(ctx, tx, prID, result.PR.HeadSHA, result.PR.BaseSHA); err != nil {
-			if rollbackSP("failed to record patchset (savepoint rolled back)", err) {
-				continue
-			}
-		}
-
-		// ── Critical write 3: diffs ───────────────────────────────────────
-		// Only when DiffComputed=true; failure rolls back PR+patchset too.
-		if result.DiffComputed {
-			if err := w.writeDiffs(ctx, tx, prID, result.DiffFiles); err != nil {
-				if rollbackSP("failed to write diffs (savepoint rolled back)", err) {
-					continue
-				}
-			}
-			diffCount += len(result.DiffFiles)
-		}
-
-		// Look up the current patchset number for this PR's head+base so it can
-		// be stamped on any review comments we write for this sync cycle.
-		var currentPatchsetNum int
-		tx.QueryRowContext(ctx,
-			`SELECT number FROM patchsets WHERE pr_id = ? AND head_sha = ? AND base_sha = ? LIMIT 1`,
-			prID, result.PR.HeadSHA, result.PR.BaseSHA,
-		).Scan(&currentPatchsetNum) // best-effort; 0 = unknown (patchset not yet recorded)
-
-		// ── Best-effort: comments (per-item skip, no savepoint rollback) ──
-		for _, comment := range result.Comments {
-			if comment == nil {
-				continue
-			}
-			// Only stamp currentPatchsetNum for review comments with a current
-			// position (Position != nil && > 0). Outdated/rebased comments
-			// (Position == nil, only OriginalPosition) must keep their existing
-			// patchset_number via COALESCE(NULL, existing) — overwriting with the
-			// current patchset number would destroy the original patchset identity.
-			commentPatchsetNum := 0
-			if comment.Kind == "review" && comment.Position != nil && *comment.Position > 0 {
-				commentPatchsetNum = currentPatchsetNum
-			}
-			commentStart := time.Now()
-			if err := w.writeComment(ctx, tx, prID, comment, commentPatchsetNum, eng); err != nil {
-				log.Error("failed to write comment",
-					"comment_id", comment.ID,
-					"pr_id", prID,
-					"duration_ms", time.Since(commentStart).Milliseconds(),
-					"error", err,
-				)
-				continue
-			}
-			commentCount++
-		}
-
-		if mentionPattern != nil {
-			mentioned := mentionPattern.MatchString(result.PR.Description)
-			if !mentioned {
-				mentioned = hasMention(mentionPattern, result.Comments)
-			}
-			if !mentioned {
-				mentioned = hasThreadMention(mentionPattern, result.Threads)
-			}
-			canClearMentioned := !result.ListOnly && result.CommentsFetched && result.ThreadsFetched
-			if err := w.writeMentioned(ctx, tx, prID, mentioned, canClearMentioned); err != nil {
-				if rollbackSP("failed to write mentioned state (savepoint rolled back)", err) {
-					continue
-				}
-			}
-		}
-
-		// ── Best-effort: review threads (per-item skip, no savepoint rollback)
-		if len(result.Threads) > 0 {
-			w.writeReviewThreads(ctx, tx, result.Threads, currentPatchsetNum, eng)
-		}
-
-		// ── Release savepoint — commit this PR's work into the outer tx ───
-		if _, spErr := tx.ExecContext(ctx, "RELEASE SAVEPOINT "+savepoint); spErr != nil {
-			// Very rare. The work is already in the outer tx; log and continue.
-			log.Warn("release savepoint failed (work retained in outer tx)",
-				"pr_id", prID, "error", spErr)
-		}
-
-		// ── Best-effort anchor write-back (outside savepoint) ─────────────
-		// Anchor updates run after the savepoint so their failure can never
-		// roll back the PR/patchset/diffs that were already committed above.
-		// Pass currentPatchsetNum so anchor results with PatchsetNumber=0
-		// (current-position comments whose patchset was first recorded in this
-		// cycle) get the correct non-NULL anchor_patchset_number on first write
-		// instead of requiring a second sync to become fresh.
-		if len(result.AnchorUpdates) > 0 {
-			w.writeAnchorUpdates(ctx, tx, result.AnchorUpdates, currentPatchsetNum)
-			log.Debug("anchor updates written",
-				"pr_id", prID, "count", len(result.AnchorUpdates))
-		}
-
-		// ── Best-effort: multi-bot dedup post-pass (3.6) — after anchor
-		// write-back so display lines use THIS cycle's anchored_line, not the
-		// previous sync's. Same tx; only runs when classification is on.
-		if eng != nil {
-			if err := w.dedupPRComments(ctx, tx, prID); err != nil {
-				log.Warn("dedup post-pass failed (comments remain ungrouped)",
-					"pr_id", prID, "error", err)
-			}
-		}
-
-		// ── Detect and queue change events (emitted after tx.Commit) ──────
-		if snap != nil && w.emitter != nil {
-			pr := result.PR
-			draftStr := func(b bool) string {
-				if b {
-					return "true"
-				}
-				return "false"
-			}
-			if snap.state != pr.State {
-				pendingEvents = append(pendingEvents, events.NewPRMetadataChangedEvent(
-					prID, pr.Owner, pr.Repo, pr.Number, "state", snap.state, pr.State,
-				))
-			}
-			if snap.title != pr.Title {
-				pendingEvents = append(pendingEvents, events.NewPRMetadataChangedEvent(
-					prID, pr.Owner, pr.Repo, pr.Number, "title", snap.title, pr.Title,
-				))
-			}
-			if snap.draft != pr.Draft {
-				pendingEvents = append(pendingEvents, events.NewPRMetadataChangedEvent(
-					prID, pr.Owner, pr.Repo, pr.Number, "draft", draftStr(snap.draft), draftStr(pr.Draft),
-				))
-			}
-			if snap.ciStatus != pr.CIStatus {
-				pendingEvents = append(pendingEvents, events.NewCIStatusChangedEvent(
-					prID, pr.Owner, pr.Repo, pr.Number, snap.ciStatus, pr.CIStatus,
-				))
-			}
-		}
-
-		prCount++
-		writtenPRIDs = append(writtenPRIDs, prID)
-		log.Debug("pr written",
-			"pr_id", prID,
-			"pr_number", result.PR.Number,
-			"state", result.PR.State,
-			"duration_ms", time.Since(writeStart).Milliseconds(),
-		)
 	}
-
-	commitStart := time.Now()
-	if err := tx.Commit(); err != nil {
-		log.Error("failed to commit transaction",
-			"duration_ms", time.Since(commitStart).Milliseconds(),
-			"error", err,
-		)
-		return fmt.Errorf("failed to commit transaction: %w", err)
+	if err := batch.tx.Commit(); err != nil {
+		return fmt.Errorf("commit sync write transaction: %w", err)
 	}
-
-	// Emit queued change events now that the transaction has committed.
-	for _, ev := range pendingEvents {
-		w.emitter.Emit(ev)
-	}
-
-	// Post-commit hook (LLM tier kick) — after commit only; a failed commit
-	// returns above and never reaches here.
-	if w.postCommit != nil && len(writtenPRIDs) > 0 {
-		w.postCommit(writtenPRIDs)
-	}
-
-	totalDur := time.Since(overallStart).Milliseconds()
-	logFn := log.Info
-	if totalDur > 500 {
-		logFn = log.Warn
-	}
-	logFn("sync results written",
-		"prs", prCount,
-		"prs_skipped", prSkipped,
-		"prs_errors", prErrors,
-		"comments", commentCount,
-		"diffs", diffCount,
-		"duration_ms", totalDur,
-	)
+	w.afterBatchCommit(&batch)
+	batch.logSummary(time.Since(start))
 	return nil
+}
+
+func (w *Writer) newWriterBatch(ctx context.Context, log *slog.Logger) writerBatch {
+	batch := writerBatch{log: log}
+	if w.classifier != nil {
+		batch.engine = w.classifier.Current()
+	}
+	var err error
+	batch.mentionPattern, err = w.mentionPattern(ctx)
+	if err != nil {
+		// Mention detection is advisory; a lookup error cannot discard a batch.
+		log.Warn("mention detection unavailable, continuing without it", "error", err)
+	}
+	return batch
+}
+
+func (w *Writer) afterBatchCommit(batch *writerBatch) {
+	for _, event := range batch.pendingEvents {
+		w.emitter.Emit(event)
+	}
+	if w.postCommit != nil && len(batch.writtenPRIDs) > 0 {
+		w.postCommit(batch.writtenPRIDs)
+	}
+}
+
+type writerBatch struct {
+	tx             *sql.Tx
+	log            *slog.Logger
+	engine         *classify.Engine
+	mentionPattern *regexp.Regexp
+	prCount        int
+	prSkipped      int
+	prErrors       int
+	commentCount   int
+	diffCount      int
+	pendingEvents  []*events.Event
+	writtenPRIDs   []string
+}
+
+type prWriteCounts struct {
+	comments       int
+	diffs          int
+	patchsetNumber int
+}
+
+func (w *Writer) writeOnePR(ctx context.Context, batch *writerBatch, result *PRFetchResult) error {
+	if result == nil {
+		batch.prSkipped++
+		return nil
+	}
+	if result.Error != nil {
+		batch.prErrors++
+		prID := ""
+		if result.PR != nil {
+			prID = result.PR.ID
+		}
+		batch.log.Warn("skipping pr write due to upstream error", "pr_id", prID, "error", result.Error)
+		return nil
+	}
+	if result.PR == nil {
+		batch.prSkipped++
+		return nil
+	}
+
+	prID := result.PR.ID
+	if _, err := batch.tx.ExecContext(ctx, "SAVEPOINT "+prSavepoint); err != nil {
+		batch.prErrors++
+		batch.log.Error("skipping PR after savepoint creation failed", "pr_id", prID, "error", err)
+		return nil
+	}
+	snapshot, err := readPRSnapshot(ctx, batch.tx, prID)
+	var counts prWriteCounts
+	if err == nil {
+		counts, err = w.writePRData(ctx, batch, result)
+	}
+	if err != nil {
+		return batch.skipFailedPR(ctx, prID, err)
+	}
+	if _, err := batch.tx.ExecContext(ctx, "RELEASE SAVEPOINT "+prSavepoint); err != nil {
+		// RELEASE failure leaves savepoint state unknown: rolling back the
+		// outer transaction is safer than committing a partial PR batch.
+		return fmt.Errorf("release savepoint for PR %s: %w", prID, err)
+	}
+
+	w.writeAfterSavepoint(ctx, batch, result, counts.patchsetNumber)
+	batch.recordWrittenPR(result.PR, snapshot, counts, w.emitter)
+	return nil
+}
+
+func (batch *writerBatch) recordWrittenPR(pr *provider.PR, snapshot *prSnapshot, counts prWriteCounts, emitter *events.EventEmitter) {
+	if snapshot != nil && emitter != nil {
+		batch.pendingEvents = append(batch.pendingEvents, collectChangeEvents(snapshot, pr)...)
+	}
+	batch.prCount++
+	batch.commentCount += counts.comments
+	batch.diffCount += counts.diffs
+	batch.writtenPRIDs = append(batch.writtenPRIDs, pr.ID)
+}
+
+func (batch *writerBatch) skipFailedPR(ctx context.Context, prID string, writeErr error) error {
+	if rollbackErr := rollbackPRSavepoint(ctx, batch.tx); rollbackErr != nil {
+		return errors.Join(fmt.Errorf("write PR %s: %w", prID, writeErr), rollbackErr)
+	}
+	batch.prErrors++
+	batch.log.Error("skipping PR after savepoint rollback", "pr_id", prID, "error", writeErr)
+	return nil
+}
+
+func rollbackPRSavepoint(ctx context.Context, tx *sql.Tx) error {
+	// A failed rollback or release makes the savepoint's state unknowable;
+	// the outer transaction must then abort rather than commit partial writes.
+	if _, err := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+prSavepoint); err != nil {
+		return fmt.Errorf("roll back PR savepoint: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "RELEASE SAVEPOINT "+prSavepoint); err != nil {
+		return fmt.Errorf("release rolled-back PR savepoint: %w", err)
+	}
+	return nil
+}
+
+func (w *Writer) writePRData(ctx context.Context, batch *writerBatch, result *PRFetchResult) (prWriteCounts, error) {
+	counts, err := w.writeCriticalPRData(ctx, batch.tx, result)
+	if err != nil {
+		return counts, err
+	}
+	counts.comments = w.writeComments(ctx, batch, commentBatch{
+		comments: result.Comments, prID: result.PR.ID, patchsetNumber: counts.patchsetNumber,
+	})
+	if err := w.updateMentioned(ctx, batch, result); err != nil {
+		return counts, err
+	}
+	if len(result.Threads) > 0 {
+		w.writeReviewThreads(ctx, batch.tx, reviewThreadWrite{
+			threads: result.Threads, patchsetNumber: counts.patchsetNumber, engine: batch.engine,
+		})
+	}
+	return counts, nil
+}
+
+func (w *Writer) writeCriticalPRData(ctx context.Context, tx *sql.Tx, result *PRFetchResult) (prWriteCounts, error) {
+	var counts prWriteCounts
+	pr := result.PR
+	mode := hydratedWrite
+	if result.ListOnly {
+		mode = listOnlyWrite
+	}
+	if err := w.writePRRow(ctx, tx, pr, mode); err != nil {
+		return counts, err
+	}
+	if err := w.recordPatchsetIfChanged(ctx, tx, pr); err != nil {
+		return counts, err
+	}
+	if result.DiffComputed {
+		if err := w.writeDiffs(ctx, tx, pr.ID, result.DiffFiles); err != nil {
+			return counts, err
+		}
+		counts.diffs = len(result.DiffFiles)
+	}
+	var err error
+	counts.patchsetNumber, err = readCurrentPatchsetNumber(ctx, tx, pr)
+	return counts, err
+}
+
+func readCurrentPatchsetNumber(ctx context.Context, tx *sql.Tx, pr *provider.PR) (int, error) {
+	var number int
+	err := tx.QueryRowContext(ctx,
+		`SELECT number FROM patchsets WHERE pr_id = ? AND head_sha = ? AND base_sha = ? LIMIT 1`,
+		pr.ID, pr.HeadSHA, pr.BaseSHA,
+	).Scan(&number)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil // No recorded patchset yet; comments cannot be stamped.
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read current patchset for PR %s: %w", pr.ID, err)
+	}
+	return number, nil
+}
+
+type commentBatch struct {
+	comments       []*provider.Comment
+	prID           string
+	patchsetNumber int
+}
+
+func (w *Writer) writeComments(ctx context.Context, batch *writerBatch, comments commentBatch) int {
+	written := 0
+	for _, comment := range comments.comments {
+		if comment == nil {
+			continue
+		}
+		start := time.Now()
+		err := w.writeComment(ctx, batch.tx, commentWrite{
+			prID: comments.prID, comment: comment,
+			patchsetNumber: commentPatchsetNumber(comment, comments.patchsetNumber), engine: batch.engine,
+		})
+		if err != nil {
+			batch.log.Error("failed to write comment", "comment_id", comment.ID, "pr_id", comments.prID,
+				"duration_ms", time.Since(start).Milliseconds(), "error", err)
+			continue
+		}
+		written++
+	}
+	return written
+}
+
+func commentPatchsetNumber(comment *provider.Comment, currentNumber int) int {
+	// Only current-position review comments belong to the current patchset;
+	// outdated comments must retain their original patchset on upsert.
+	if comment.Kind == "review" && comment.Position != nil && *comment.Position > 0 {
+		return currentNumber
+	}
+	return 0
+}
+
+func (w *Writer) writeAfterSavepoint(ctx context.Context, batch *writerBatch, result *PRFetchResult, patchsetNumber int) {
+	if len(result.AnchorUpdates) > 0 {
+		w.writeAnchorUpdates(ctx, batch.tx, result.AnchorUpdates, patchsetNumber)
+	}
+	// Dedup needs this cycle's anchor lines, so it runs after anchor write-back.
+	if batch.engine != nil {
+		if err := w.dedupPRComments(ctx, batch.tx, result.PR.ID); err != nil {
+			batch.log.Warn("dedup post-pass failed (comments remain ungrouped)", "pr_id", result.PR.ID, "error", err)
+		}
+	}
+}
+
+func collectChangeEvents(previous *prSnapshot, pr *provider.PR) []*events.Event {
+	var changes []*events.Event
+	if previous.state != pr.State {
+		changes = append(changes, events.NewPRMetadataChangedEvent(pr.ID, pr.Owner, pr.Repo, pr.Number,
+			"state", previous.state, pr.State))
+	}
+	if previous.title != pr.Title {
+		changes = append(changes, events.NewPRMetadataChangedEvent(pr.ID, pr.Owner, pr.Repo, pr.Number,
+			"title", previous.title, pr.Title))
+	}
+	if previous.draft != pr.Draft {
+		changes = append(changes, events.NewPRMetadataChangedEvent(pr.ID, pr.Owner, pr.Repo, pr.Number,
+			"draft", fmt.Sprint(previous.draft), fmt.Sprint(pr.Draft)))
+	}
+	if previous.ciStatus != pr.CIStatus {
+		changes = append(changes, events.NewCIStatusChangedEvent(pr.ID, pr.Owner, pr.Repo, pr.Number,
+			previous.ciStatus, pr.CIStatus))
+	}
+	return changes
+}
+
+func (batch *writerBatch) logSummary(elapsed time.Duration) {
+	logFn := batch.log.Info
+	if elapsed > slowSyncWrite {
+		logFn = batch.log.Warn
+	}
+	logFn("sync results written", "prs", batch.prCount, "prs_skipped", batch.prSkipped,
+		"prs_errors", batch.prErrors, "comments", batch.commentCount, "diffs", batch.diffCount,
+		"duration_ms", elapsed.Milliseconds())
 }
 
 func (w *Writer) mentionPattern(ctx context.Context) (*regexp.Regexp, error) {
 	if w.currentUser == nil {
 		return nil, nil
 	}
-
-	login, ok, err := w.currentUser.GetCurrentUser(ctx, "github")
+	login, ok, err := w.currentUser.GetCurrentUser(ctx, githubProvider)
 	if err != nil {
 		return nil, fmt.Errorf("get current user for mention detection: %w", err)
 	}
 	if !ok || login == "" {
 		return nil, nil
 	}
-
 	return regexp.Compile(`(?i)@` + regexp.QuoteMeta(login) + `\b`)
 }
 
@@ -448,626 +432,41 @@ func hasThreadMention(pattern *regexp.Regexp, threads []*provider.ReviewThread) 
 	return false
 }
 
-func (w *Writer) writeMentioned(ctx context.Context, tx *sql.Tx, prID string, mentioned, canClear bool) error {
+type mentionUpdate struct {
+	prID        string
+	isMentioned bool
+	canClear    bool
+}
+
+func (w *Writer) updateMentioned(ctx context.Context, batch *writerBatch, result *PRFetchResult) error {
+	pattern := batch.mentionPattern
+	if pattern == nil {
+		return nil
+	}
+	mentioned := pattern.MatchString(result.PR.Description)
+	if !mentioned {
+		mentioned = hasMention(pattern, result.Comments)
+	}
+	if !mentioned {
+		mentioned = hasThreadMention(pattern, result.Threads)
+	}
+	return w.writeMentioned(ctx, batch.tx, mentionUpdate{
+		prID: result.PR.ID, isMentioned: mentioned,
+		canClear: !result.ListOnly && result.CommentsFetched && result.ThreadsFetched,
+	})
+}
+
+func (w *Writer) writeMentioned(ctx context.Context, tx *sql.Tx, update mentionUpdate) error {
 	mentionedValue := 0
-	if mentioned {
+	if update.isMentioned {
 		mentionedValue = 1
 	}
-
 	query := `UPDATE prs SET mentioned = MAX(mentioned, ?) WHERE id = ?`
-	if canClear {
+	if update.canClear {
 		query = `UPDATE prs SET mentioned = ? WHERE id = ?`
 	}
-	if _, err := tx.ExecContext(ctx, query, mentionedValue, prID); err != nil {
-		return fmt.Errorf("update mentioned for PR %s: %w", prID, err)
+	if _, err := tx.ExecContext(ctx, query, mentionedValue, update.prID); err != nil {
+		return fmt.Errorf("update mentioned for PR %s: %w", update.prID, err)
 	}
 	return nil
-}
-
-// writePRRow inserts or updates the PR row in the database using an upsert.
-// It does NOT record patchsets — the caller (WriteSyncResultsContext) handles
-// that separately inside the savepoint boundary.
-// writePRRow upserts the PR row. hydrated=false marks a list-only write (no
-// detail fetch); an existing hydrated row is never downgraded — its cached
-// comments/CI/diff stay valid until the next detail fetch refreshes them.
-func (w *Writer) writePRRow(ctx context.Context, tx *sql.Tx, pr *provider.PR, hydrated bool) error {
-	if pr.ID == "" {
-		return fmt.Errorf("PR ID cannot be empty")
-	}
-
-	const query = `
-		INSERT INTO prs (
-			id, provider, owner, repo, number, title, body, author, state,
-			created_at, updated_at, merged_at,
-			base_branch, head_branch, base_sha, head_sha,
-			comment_count, ci_status, draft,
-			review_status, approved_by, changes_requested_by,
-			requested_reviewers,
-			repo_id,
-			hydrated
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			title                  = excluded.title,
-			body                   = excluded.body,
-			state                  = excluded.state,
-			updated_at             = excluded.updated_at,
-			merged_at              = excluded.merged_at,
-			base_branch            = excluded.base_branch,
-			head_branch            = excluded.head_branch,
-			base_sha               = excluded.base_sha,
-			head_sha               = excluded.head_sha,
-			comment_count = CASE
-				WHEN excluded.hydrated = 0 AND (prs.base_sha <> excluded.base_sha OR prs.head_sha <> excluded.head_sha) THEN 0
-				WHEN excluded.hydrated = 0 THEN prs.comment_count
-				ELSE excluded.comment_count
-			END,
-			ci_status = CASE
-				WHEN excluded.hydrated = 0 AND (prs.base_sha <> excluded.base_sha OR prs.head_sha <> excluded.head_sha) THEN NULL
-				WHEN excluded.hydrated = 0 THEN prs.ci_status
-				ELSE excluded.ci_status
-			END,
-			draft = excluded.draft,
-			review_status = CASE
-				WHEN excluded.hydrated = 0 AND (prs.base_sha <> excluded.base_sha OR prs.head_sha <> excluded.head_sha) THEN NULL
-				WHEN excluded.hydrated = 0 THEN prs.review_status
-				ELSE excluded.review_status
-			END,
-			approved_by = CASE
-				WHEN excluded.hydrated = 0 AND (prs.base_sha <> excluded.base_sha OR prs.head_sha <> excluded.head_sha) THEN NULL
-				WHEN excluded.hydrated = 0 THEN prs.approved_by
-				ELSE excluded.approved_by
-			END,
-			changes_requested_by = CASE
-				WHEN excluded.hydrated = 0 AND (prs.base_sha <> excluded.base_sha OR prs.head_sha <> excluded.head_sha) THEN NULL
-				WHEN excluded.hydrated = 0 THEN prs.changes_requested_by
-				ELSE excluded.changes_requested_by
-			END,
-			requested_reviewers = excluded.requested_reviewers,
-			repo_id             = excluded.repo_id,
-			hydrated = CASE
-				WHEN excluded.hydrated = 0 AND (prs.base_sha <> excluded.base_sha OR prs.head_sha <> excluded.head_sha) THEN 0
-				ELSE MAX(prs.hydrated, excluded.hydrated)
-			END
-	`
-
-	repoID := pr.Provider + ":" + pr.Owner + "/" + pr.Repo
-
-	hydratedValue := 0
-	if hydrated {
-		hydratedValue = 1
-	}
-
-	draft := 0
-	if pr.Draft {
-		draft = 1
-	}
-
-	reviewers := pr.RequestedReviewers
-	if reviewers == nil {
-		reviewers = []string{}
-	}
-	requestedReviewers, err := json.Marshal(reviewers)
-	if err != nil {
-		return fmt.Errorf("failed to marshal requested reviewers for %s: %w", pr.ID, err)
-	}
-
-	res, err := tx.ExecContext(ctx, query,
-		pr.ID,
-		pr.Provider,
-		pr.Owner,
-		pr.Repo,
-		pr.Number,
-		pr.Title,
-		pr.Description,
-		pr.Author,
-		pr.State,
-		pr.CreatedAt,
-		pr.UpdatedAt,
-		pr.MergedAt,
-		pr.BaseBranch,
-		pr.HeadBranch,
-		pr.BaseSHA,
-		pr.HeadSHA,
-		pr.CommentCount,
-		pr.CIStatus,
-		draft,
-		pr.ReviewStatus,
-		pr.ApprovedBy,
-		pr.ChangesRequestedBy,
-		string(requestedReviewers),
-		repoID,
-		hydratedValue,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to write PR %s: %w", pr.ID, err)
-	}
-
-	if logging.FromContext(ctx) != slog.Default() {
-		if affected, err := res.RowsAffected(); err == nil {
-			logging.FromContext(ctx).Debug("pr upsert rows affected",
-				"pr_id", pr.ID,
-				"rows_affected", affected,
-			)
-		}
-	}
-
-	return nil
-}
-
-// writeComment inserts or updates a comment in the database using an upsert.
-// patchsetNum is the current patchset number for the PR (0 = unknown); it is
-// stamped on kind='review' comments so anchoring can determine stale cache.
-func (w *Writer) writeComment(ctx context.Context, tx *sql.Tx, prID string, comment *provider.Comment, patchsetNum int, eng *classify.Engine) error {
-	if comment.ID == "" {
-		return fmt.Errorf("comment ID cannot be empty")
-	}
-	if prID == "" {
-		return fmt.Errorf("PR ID cannot be empty for comment %s", comment.ID)
-	}
-
-	kind := comment.Kind
-	if kind == "" {
-		kind = "issue"
-	}
-
-	// Stamp patchset_number only for review comments and only when known.
-	var patchsetNumVal interface{}
-	if kind == "review" && patchsetNum > 0 {
-		patchsetNumVal = patchsetNum
-	}
-
-	// Classification (Phase 3): deterministic tier, in-tx. Nil engine (no
-	// classifier wired) leaves the columns untouched on upsert via COALESCE
-	// against empty excluded values — we pass NULLs and keep existing values.
-	var authorType, botVendor, severity, source interface{}
-	if eng != nil {
-		c := eng.Classify(comment.Author, comment.Body, comment.FilePath)
-		authorType = c.AuthorType
-		botVendor = nullableString(c.BotVendor)
-		severity = nullableString(c.Severity)
-		source = c.Source
-	}
-
-	const query = `
-		INSERT INTO comments (
-			id, pr_id, author, body, created_at, updated_at, line_number, file_path,
-			kind, commit_sha, original_sha, side, position, original_position, in_reply_to, thread_id,
-			patchset_number, diff_hunk,
-			original_line, start_line, original_start_line, start_side, subject_type,
-			author_type, bot_vendor, severity, classification_source
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			body              = excluded.body,
-			updated_at        = excluded.updated_at,
-			commit_sha        = excluded.commit_sha,
-			original_sha      = excluded.original_sha,
-			side              = excluded.side,
-			position          = excluded.position,
-			original_position = excluded.original_position,
-			thread_id         = excluded.thread_id,
-			patchset_number   = COALESCE(excluded.patchset_number, comments.patchset_number),
-			diff_hunk         = excluded.diff_hunk,
-			original_line     = excluded.original_line,
-			start_line        = excluded.start_line,
-			original_start_line = excluded.original_start_line,
-			start_side        = excluded.start_side,
-			subject_type      = excluded.subject_type,
-			author_type       = COALESCE(excluded.author_type, comments.author_type),
-			bot_vendor        = CASE WHEN excluded.author_type IS NULL THEN comments.bot_vendor ELSE excluded.bot_vendor END,
-			severity          = CASE WHEN excluded.author_type IS NULL THEN comments.severity ELSE excluded.severity END,
-			classification_source = COALESCE(excluded.classification_source, comments.classification_source)
-	`
-
-	_, err := tx.ExecContext(ctx, query,
-		comment.ID,
-		prID,
-		comment.Author,
-		comment.Body,
-		comment.CreatedAt,
-		comment.UpdatedAt,
-		nullableInt(comment.LineNo),
-		nullableString(comment.FilePath),
-		kind,
-		nullableString(comment.CommitSHA),
-		nullableString(comment.OriginalSHA),
-		nullableString(comment.Side),
-		comment.Position,
-		comment.OriginalPosition,
-		nullableString(comment.InReplyTo),
-		nullableString(comment.ThreadID),
-		patchsetNumVal,
-		nullableString(comment.DiffHunk),
-		comment.OriginalLine,
-		comment.StartLine,
-		comment.OriginalStartLine,
-		nullableString(comment.StartSide),
-		nullableString(comment.SubjectType),
-		authorType,
-		botVendor,
-		severity,
-		source,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to write comment %s: %w", comment.ID, err)
-	}
-
-	if eng != nil {
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO comment_classification_state (comment_id, fingerprint) VALUES (?, ?)
-			 ON CONFLICT(comment_id) DO UPDATE SET fingerprint = excluded.fingerprint`,
-			comment.ID, eng.Fingerprint(),
-		); err != nil {
-			return fmt.Errorf("failed to write classification state for %s: %w", comment.ID, err)
-		}
-	}
-
-	return nil
-}
-
-// dedupPRComments runs the trigram-Jaccard dedup post-pass over one PR's
-// comments and persists group membership: dedup_group_id is set for members
-// and cleared for former members no longer grouped — idempotent across
-// re-syncs (group id = sha256 of sorted member ids).
-func (w *Writer) dedupPRComments(ctx context.Context, tx *sql.Tx, prID string) error {
-	rows, err := tx.QueryContext(ctx,
-		`SELECT id, COALESCE(author_type, ''), file_path, anchored_line, line_number, body
-		 FROM comments WHERE pr_id = ?`, prID)
-	if err != nil {
-		return fmt.Errorf("dedup select: %w", err)
-	}
-	var inputs []classify.DedupInput
-	for rows.Next() {
-		var in classify.DedupInput
-		var lineNumber *int
-		if err := rows.Scan(&in.ID, &in.AuthorType, &in.FilePath, &in.AnchoredLine, &lineNumber, &in.Body); err != nil {
-			rows.Close()
-			return fmt.Errorf("dedup scan: %w", err)
-		}
-		// line_number 0 means "no line" in provider terms; treat as absent.
-		if lineNumber != nil && *lineNumber > 0 {
-			in.LineNumber = lineNumber
-		}
-		inputs = append(inputs, in)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("dedup iterate: %w", err)
-	}
-
-	groups := classify.Dedup(inputs)
-	for _, in := range inputs {
-		groupID, ok := groups[in.ID]
-		if ok {
-			_, err = tx.ExecContext(ctx,
-				`UPDATE comments SET dedup_group_id = ? WHERE id = ? AND (dedup_group_id IS NULL OR dedup_group_id != ?)`,
-				groupID, in.ID, groupID)
-		} else {
-			_, err = tx.ExecContext(ctx,
-				`UPDATE comments SET dedup_group_id = NULL WHERE id = ? AND dedup_group_id IS NOT NULL`,
-				in.ID)
-		}
-		if err != nil {
-			return fmt.Errorf("dedup update %s: %w", in.ID, err)
-		}
-	}
-	return nil
-}
-
-// writeReviewThreads upserts review thread rows and their comments.
-// currentPatchsetNum is applied to thread comments using the same rule as flat
-// review comments: stamp only for kind='review' with current Position > 0;
-// outdated comments (Position == nil) preserve existing patchset_number via COALESCE.
-// Per-item errors are logged and skipped — they never abort the parent tx.
-func (w *Writer) writeReviewThreads(ctx context.Context, tx *sql.Tx, threads []*provider.ReviewThread, currentPatchsetNum int, eng *classify.Engine) {
-	for _, thread := range threads {
-		if thread.ID == "" {
-			w.log.Warn("skipping review thread with empty ID")
-			continue
-		}
-		if thread.StateKnown {
-			w.deletePromotedProvisionalThreads(ctx, tx, thread)
-		}
-		const threadQ = `
-			INSERT INTO review_threads (id, pr_id, file_path, line, resolved, outdated, state_known)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(id) DO UPDATE SET
-				resolved    = excluded.resolved,
-				outdated    = excluded.outdated,
-				state_known = excluded.state_known,
-				file_path   = excluded.file_path,
-				line        = excluded.line`
-		_, err := tx.ExecContext(ctx, threadQ,
-			thread.ID, thread.PRID,
-			nullableString(thread.FilePath),
-			nullableInt(thread.Line),
-			boolToInt(thread.Resolved),
-			boolToInt(thread.Outdated),
-			boolToInt(thread.StateKnown),
-		)
-		if err != nil {
-			w.log.Error("write review_thread failed", "thread_id", thread.ID, "error", err)
-			continue // skip this thread's comments too
-		}
-		for _, c := range thread.Comments {
-			if c == nil {
-				continue
-			}
-			if c.ThreadID == "" {
-				c.ThreadID = thread.ID
-			}
-			// Apply the same patchset_number rule as flat review comments:
-			// only stamp for current-position comments; outdated ones preserve
-			// their existing patchset_number via COALESCE.
-			commentPatchsetNum := 0
-			if c.Kind == "review" && c.Position != nil && *c.Position > 0 {
-				commentPatchsetNum = currentPatchsetNum
-			}
-			if err := w.writeComment(ctx, tx, c.PRID, c, commentPatchsetNum, eng); err != nil {
-				w.log.Error("write review comment failed",
-					"comment_id", c.ID, "thread_id", thread.ID, "error", err)
-				// continue: per-item skip, do not abort
-			}
-		}
-	}
-}
-
-// deletePromotedProvisionalThreads removes stale REST-only provisional thread rows
-// when the same logical thread is later promoted to a canonical provider thread ID.
-// Deleting is safe: comments.thread_id is ON DELETE SET NULL, and this write then
-// immediately upserts the child comments with the canonical thread.ID in the same tx.
-func (w *Writer) deletePromotedProvisionalThreads(ctx context.Context, tx *sql.Tx, thread *provider.ReviewThread) {
-	for _, provisionalID := range provisionalThreadIDs(thread) {
-		if provisionalID == "" || provisionalID == thread.ID {
-			continue
-		}
-		_, err := tx.ExecContext(ctx,
-			`DELETE FROM review_threads WHERE id = ? AND state_known = 0`,
-			provisionalID,
-		)
-		if err != nil {
-			w.log.Warn("delete promoted provisional review_thread failed",
-				"provisional_id", provisionalID, "canonical_id", thread.ID, "error", err)
-		}
-	}
-}
-
-// provisionalThreadIDs derives the REST fallback root IDs for a thread's comments.
-// It mirrors github's reply-chain fallback shape without importing provider-specific
-// code: every root comment starts one provisional thread, replies inherit the root.
-func provisionalThreadIDs(thread *provider.ReviewThread) []string {
-	byID := make(map[string]*provider.Comment, len(thread.Comments))
-	for _, c := range thread.Comments {
-		if c != nil && c.ID != "" {
-			byID[c.ID] = c
-		}
-	}
-
-	memo := make(map[string]string, len(byID))
-	visiting := make(map[string]bool, len(byID))
-	var rootOf func(id string) string
-	rootOf = func(id string) string {
-		if root, ok := memo[id]; ok {
-			return root
-		}
-		if visiting[id] {
-			// Cycle detected: treat this node as its own root.
-			memo[id] = id
-			return id
-		}
-		c, ok := byID[id]
-		if !ok || c.InReplyTo == "" {
-			memo[id] = id
-			return id
-		}
-		visiting[id] = true
-		root := rootOf(c.InReplyTo)
-		visiting[id] = false
-		memo[id] = root
-		return root
-	}
-
-	seen := make(map[string]struct{}, len(thread.Comments))
-	ids := make([]string, 0, 1)
-	for _, c := range thread.Comments {
-		if c == nil || c.ID == "" {
-			continue
-		}
-		root := rootOf(c.ID)
-		if _, ok := seen[root]; ok {
-			continue
-		}
-		seen[root] = struct{}{}
-		ids = append(ids, root)
-	}
-	return ids
-}
-
-// recordPatchsetIfChanged upserts a patchset row when head_sha changes.
-// Must be called inside the PR's transaction (same tx as writePR).
-//
-// Algorithm:
-//   - No prior patchset → nextNum = 1
-//   - Prior patchset has same base_sha and head_sha → no-op
-//   - Prior patchset has different base_sha or head_sha → nextNum = prior.number + 1
-//
-// UNIQUE(pr_id, base_sha, head_sha) is the race-safety guard; INSERT OR IGNORE
-// makes concurrent calls for the same diff endpoints safely idempotent.
-func (w *Writer) recordPatchsetIfChanged(ctx context.Context, tx *sql.Tx, prID, headSHA, baseSHA string) error {
-	var latestNum int
-	var latestHead string
-	var latestBase string
-	err := tx.QueryRowContext(ctx,
-		`SELECT number, head_sha, base_sha FROM patchsets WHERE pr_id = ? ORDER BY number DESC LIMIT 1`,
-		prID,
-	).Scan(&latestNum, &latestHead, &latestBase)
-
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("recordPatchsetIfChanged query: %w", err)
-	}
-
-	var nextNum int
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		nextNum = 1
-	case latestHead == headSHA && latestBase == baseSHA:
-		return nil // no-op: same diff endpoints
-	default:
-		nextNum = latestNum + 1
-	}
-
-	const insertQ = `
-		INSERT OR IGNORE INTO patchsets (pr_id, number, head_sha, base_sha, pushed_at)
-		VALUES (?, ?, ?, ?, ?)`
-	if _, err := tx.ExecContext(ctx, insertQ, prID, nextNum, headSHA, baseSHA, time.Now()); err != nil {
-		return fmt.Errorf("insert patchset %s P%d: %w", prID, nextNum, err)
-	}
-	return nil
-}
-
-// writeDiffs atomically replaces pr_diffs rows for prID within the provided
-// transaction. It always deletes existing rows first (clears stale files,
-// renames, and empty-diff state), then inserts the new set.
-//
-// This must be called within the same transaction as writePR so that PR row,
-// patchset row, and diff cache advance together — never independently.
-// Only call when DiffComputed==true; when diff generation failed the caller
-// must skip this to preserve the last-known-good diff cache.
-func (w *Writer) writeDiffs(ctx context.Context, tx *sql.Tx, prID string, diffs []store.DiffFile) error {
-	if _, err := tx.ExecContext(ctx, `DELETE FROM pr_diffs WHERE pr_id = ?`, prID); err != nil {
-		return fmt.Errorf("clear pr_diffs for %s: %w", prID, err)
-	}
-	if len(diffs) == 0 {
-		return nil // cleared stale rows; zero-file diff is a valid empty state
-	}
-	const q = `
-		INSERT INTO pr_diffs (
-			pr_id, file_path, status, old_path, is_binary, is_truncated,
-			patch_bytes, hunk_count, patch, additions, deletions, diff_status
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	stmt, err := tx.PrepareContext(ctx, q)
-	if err != nil {
-		return fmt.Errorf("prepare pr_diffs insert for %s: %w", prID, err)
-	}
-	defer stmt.Close()
-	for _, d := range diffs {
-		if _, err := stmt.ExecContext(
-			ctx, prID, d.FilePath, diffStatus(d.Status), nullableString(d.OldPath), boolToInt(d.IsBinary), boolToInt(d.IsTruncated),
-			d.PatchBytes, d.HunkCount, d.Patch, d.Additions, d.Deletions, storedDiffStatus(d.DiffStatus),
-		); err != nil {
-			return fmt.Errorf("insert pr_diff %s/%s: %w", prID, d.FilePath, err)
-		}
-	}
-	return nil
-}
-
-func diffStatus(status string) string {
-	if status == "" {
-		return "modified"
-	}
-	return status
-}
-
-func storedDiffStatus(status string) string {
-	if status == "" {
-		return "ok"
-	}
-	return status
-}
-
-// writeAnchorUpdates persists AnchorResolver results for review comments.
-// It runs OUTSIDE the per-PR savepoint (after RELEASE) so anchor failures never
-// roll back the critical PR/patchset/diff writes. Best-effort: per-comment
-// errors are logged and skipped.
-//
-// currentPatchsetNum is the patchset number just recorded by recordPatchsetIfChanged.
-// It fills in zero values for both anchor_patchset_number and
-// anchor_current_patchset_number when the patchset wasn't in the DB during fetch
-// (first sync / new retarget). See comments on each field below.
-func (w *Writer) writeAnchorUpdates(ctx context.Context, tx *sql.Tx, updates []git.AnchorResult, currentPatchsetNum int) {
-	if len(updates) == 0 {
-		return
-	}
-	const q = `
-		UPDATE comments
-		SET anchored_line                  = ?,
-		    anchor_head_sha                = ?,
-		    outdated                       = ?,
-		    outdated_near_line             = ?,
-		    anchor_patchset_number         = ?,
-		    anchor_current_patchset_number = ?
-		WHERE id = ?`
-	for _, u := range updates {
-		var anchoredLine interface{}
-		if u.Anchored && u.AnchoredLine > 0 {
-			anchoredLine = u.AnchoredLine
-		}
-		var nearLine interface{}
-		if u.Outdated && u.OutdatedNearLine > 0 {
-			nearLine = u.OutdatedNearLine
-		}
-
-		// anchor_patchset_number: SOURCE patchset (geometry for position-to-line).
-		//   PatchsetNumber > 0: use as-is (historical patchset for original-position,
-		//     or current patchset for current-position when found at fetch time).
-		//   PatchsetNumber == 0: fill from currentPatchsetNum (current-position first sync).
-		//   Both zero: NULL → stale.
-		srcPs := u.PatchsetNumber
-		if srcPs == 0 {
-			srcPs = currentPatchsetNum
-		}
-		var anchorPatchsetNum interface{}
-		if srcPs > 0 {
-			anchorPatchsetNum = srcPs
-		}
-
-		// anchor_current_patchset_number: CURRENT patchset at resolution time.
-		//   CurrentPatchsetNumber > 0: use as-is.
-		//   CurrentPatchsetNumber == 0: fill from currentPatchsetNum.
-		//   Both zero: NULL → stale.
-		curPs := u.CurrentPatchsetNumber
-		if curPs == 0 {
-			curPs = currentPatchsetNum
-		}
-		var anchorCurPatchsetNum interface{}
-		if curPs > 0 {
-			anchorCurPatchsetNum = curPs
-		}
-
-		if _, err := tx.ExecContext(ctx, q,
-			anchoredLine,
-			u.HeadSHA, // always set; used for cache-validity check in handler
-			boolToInt(u.Outdated),
-			nearLine,
-			anchorPatchsetNum,
-			anchorCurPatchsetNum,
-			u.CommentID,
-		); err != nil {
-			w.log.Warn("writeAnchorUpdates: failed to update anchor",
-				"comment_id", u.CommentID, "error", err)
-		}
-	}
-}
-
-// nullableString returns nil for empty strings (maps to SQL NULL).
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
-// nullableInt returns nil for zero ints (maps to SQL NULL for optional positions).
-func nullableInt(i int) interface{} {
-	if i == 0 {
-		return nil
-	}
-	return i
-}
-
-// boolToInt converts bool to SQLite integer (0/1).
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
