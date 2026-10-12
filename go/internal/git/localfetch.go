@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -17,6 +18,7 @@ type LocalFetchError struct {
 	Err  error
 }
 
+// Error returns the failure code and underlying cause when available.
 func (e *LocalFetchError) Error() string {
 	if e.Err == nil {
 		return e.Code
@@ -24,6 +26,7 @@ func (e *LocalFetchError) Error() string {
 	return fmt.Sprintf("%s: %v", e.Code, e.Err)
 }
 
+// Unwrap returns the underlying fetch error for errors.Is and errors.As.
 func (e *LocalFetchError) Unwrap() error {
 	return e.Err
 }
@@ -35,13 +38,13 @@ func (e *LocalFetchError) Unwrap() error {
 // so no .git/shallow metadata is ever written into a user-owned repo.
 func (c *Client) FetchIntoLocal(ctx context.Context, localPath string, id Identity, baseSHA, headSHA string, opts *CloneOptions) error {
 	if localPath == "" {
-		return fmt.Errorf("local path cannot be empty")
+		return errors.New("local path cannot be empty")
 	}
 	if baseSHA == "" {
-		return fmt.Errorf("baseSHA cannot be empty")
+		return errors.New("baseSHA cannot be empty")
 	}
 	if headSHA == "" {
-		return fmt.Errorf("headSHA cannot be empty")
+		return errors.New("headSHA cannot be empty")
 	}
 
 	repo, err := gitlib.PlainOpen(localPath)
@@ -65,7 +68,7 @@ func (c *Client) FetchIntoLocal(ctx context.Context, localPath string, id Identi
 		Tags:       gitlib.NoTags,
 	}
 
-	if err := repo.FetchContext(ctx, fetchOpts); err != nil && err != gitlib.NoErrAlreadyUpToDate {
+	if err := repo.FetchContext(ctx, fetchOpts); err != nil && !errors.Is(err, gitlib.NoErrAlreadyUpToDate) {
 		return fmt.Errorf("failed to fetch refs into local repo: %w", err)
 	}
 

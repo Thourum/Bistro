@@ -11,6 +11,7 @@ type RepoLocks struct {
 	maint sync.RWMutex // per-repo ops take RLock; clear-all takes Lock
 }
 
+// NewRepoLocks creates a lock manager for repo operations and cache maintenance.
 func NewRepoLocks() *RepoLocks {
 	return &RepoLocks{
 		locks: make(map[string]*sync.Mutex),
