@@ -7,11 +7,14 @@ import (
 	"time"
 )
 
+// Keep a short burst of events without blocking a sync on a slow UI client.
+const eventSubscriberBuffer = 10
+
 // Event represents a system event emitted during sync or action execution.
 type Event struct {
-	Type      string                 `json:"type"`
-	Data      map[string]interface{} `json:"data"`
-	Timestamp time.Time              `json:"timestamp"`
+	Type      string         `json:"type"`
+	Data      map[string]any `json:"data"`
+	Timestamp time.Time      `json:"timestamp"`
 }
 
 // EventEmitter broadcasts events to multiple subscribers.
@@ -32,7 +35,7 @@ func (e *EventEmitter) Subscribe() <-chan *Event {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	ch := make(chan *Event, 10) // Buffered to avoid blocking
+	ch := make(chan *Event, eventSubscriberBuffer)
 	e.subscribers[ch] = ch
 	return ch
 }
@@ -70,7 +73,7 @@ func (e *EventEmitter) Emit(event *Event) {
 func NewProgressEvent(stage string, current, total int) *Event {
 	return &Event{
 		Type: "sync_progress",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"stage":   stage,
 			"current": current,
 			"total":   total,
@@ -83,7 +86,7 @@ func NewProgressEvent(stage string, current, total int) *Event {
 func NewCompleteEvent(prCount, newPRs, updatedPRs, errors int, duration time.Duration) *Event {
 	return &Event{
 		Type: "sync_complete",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"pr_count":    prCount,
 			"new_prs":     newPRs,
 			"updated_prs": updatedPRs,
@@ -98,7 +101,7 @@ func NewCompleteEvent(prCount, newPRs, updatedPRs, errors int, duration time.Dur
 func NewPRMetadataChangedEvent(prID, owner, repo string, number int, field, oldVal, newVal string) *Event {
 	return &Event{
 		Type: "PR_METADATA_CHANGED",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"pr_id":  prID,
 			"owner":  owner,
 			"repo":   repo,
@@ -115,7 +118,7 @@ func NewPRMetadataChangedEvent(prID, owner, repo string, number int, field, oldV
 func NewCIStatusChangedEvent(prID, owner, repo string, number int, oldStatus, newStatus string) *Event {
 	return &Event{
 		Type: "CI_STATUS_CHANGED",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"pr_id":      prID,
 			"owner":      owner,
 			"repo":       repo,
@@ -131,7 +134,7 @@ func NewCIStatusChangedEvent(prID, owner, repo string, number int, oldStatus, ne
 func NewErrorEvent(message string) *Event {
 	return &Event{
 		Type: "sync_error",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"error": message,
 		},
 		Timestamp: time.Now(),

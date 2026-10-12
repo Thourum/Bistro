@@ -17,6 +17,7 @@ func newRepoLocationResolver(locations *store.RepoLocationStore, log *slog.Logge
 	return &repoLocationResolver{locations: locations, log: log}
 }
 
+// LocalPath returns a local checkout only for an exact, valid remote identity.
 func (r *repoLocationResolver) LocalPath(repoURL string) (string, bool) {
 	if r == nil || r.locations == nil {
 		return "", false
@@ -37,6 +38,7 @@ func (r *repoLocationResolver) LocalPath(repoURL string) (string, bool) {
 	return location.LocalPath, true
 }
 
+// OnLocalDegraded records a local checkout's degraded status when its remote is valid.
 func (r *repoLocationResolver) OnLocalDegraded(repoURL, status, code, msg string) {
 	if r == nil || r.locations == nil {
 		return
@@ -51,6 +53,7 @@ func (r *repoLocationResolver) OnLocalDegraded(repoURL, status, code, msg string
 	}
 }
 
+// OnUsed records when the remote's checkout was most recently used.
 func (r *repoLocationResolver) OnUsed(repoURL string) {
 	if r == nil || r.locations == nil {
 		return
@@ -65,6 +68,7 @@ func (r *repoLocationResolver) OnUsed(repoURL string) {
 	}
 }
 
+// OnCacheCloned stores the newly cloned cache path for a valid remote.
 func (r *repoLocationResolver) OnCacheCloned(repoURL, path string) {
 	if r == nil || r.locations == nil {
 		return

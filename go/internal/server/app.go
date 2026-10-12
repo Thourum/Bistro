@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -93,7 +94,8 @@ type App struct {
 // slogPrintf adapts *slog.Logger to the llm.Logger Printf interface.
 type slogPrintf struct{ log *slog.Logger }
 
-func (s slogPrintf) Printf(format string, v ...interface{}) {
+// Printf forwards tier diagnostics to the structured application logger.
+func (s slogPrintf) Printf(format string, v ...any) {
 	s.log.Warn(fmt.Sprintf(format, v...))
 }
 
@@ -106,6 +108,7 @@ type liveByokClient struct {
 	tokens *keychain.TokenManager
 }
 
+// Classify uses the latest provider configuration and key for each request.
 func (c *liveByokClient) Classify(ctx context.Context, comment llm.CommentInput) (string, int, error) {
 	s := c.state.Snapshot()
 	key, err := c.tokens.Get("byok." + s.Provider)
@@ -244,10 +247,13 @@ func (a *App) SetReplayOnStart(replay bool) {
 // Prefer SetReplayOnStart so replay happens inside Run() after the database and
 // queue are initialised; calling this before Run() is always a no-op.
 func (a *App) ReplayQueuedActions(ctx context.Context) error {
-	if a.orchestrator == nil {
+	a.provMu.RLock()
+	orchestrator := a.orchestrator
+	a.provMu.RUnlock()
+	if orchestrator == nil {
 		return nil
 	}
-	return a.orchestrator.ReplayQueuedActions(ctx)
+	return orchestrator.ReplayQueuedActions(ctx)
 }
 
 // New returns a new App configured with the given WebSocket port and database path.
@@ -370,8 +376,8 @@ func (a *App) cloneRepoLocationRepo(ctx context.Context, repoURL, destination st
 
 // wsEventMsg is the envelope sent to WebSocket clients for orchestrator events.
 type wsEventMsg struct {
-	Type string                 `json:"type"`
-	Data map[string]interface{} `json:"data"`
+	Type string         `json:"type"`
+	Data map[string]any `json:"data"`
 }
 
 // startEventBridge subscribes to the current orchestrator's event channel and
@@ -414,17 +420,17 @@ func (a *App) broadcastExpertiseEvent(eventType string, payload any) {
 	a.wsServer.Broadcast(wsEventMsg{Type: eventType, Data: expertisePayloadToMap(payload)})
 }
 
-func expertisePayloadToMap(payload any) map[string]interface{} {
-	if data, ok := payload.(map[string]interface{}); ok {
+func expertisePayloadToMap(payload any) map[string]any {
+	if data, ok := payload.(map[string]any); ok {
 		return data
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		return map[string]interface{}{"payload": payload}
+		return map[string]any{"payload": payload}
 	}
-	data := map[string]interface{}{}
+	data := map[string]any{}
 	if err := json.Unmarshal(raw, &data); err != nil {
-		return map[string]interface{}{"payload": payload}
+		return map[string]any{"payload": payload}
 	}
 	return data
 }
@@ -458,26 +464,31 @@ func (a *App) broadcastExpertiseNudge(ctx context.Context, prID string) {
 		a.log.Warn("expertise nudge count failed", "repo_id", repoID, "error", err)
 		return
 	}
-	a.wsServer.Broadcast(wsEventMsg{Type: "EXPERTISE_NUDGE", Data: map[string]interface{}{"repo_id": repoID, "reviewed_count": count}})
+	a.wsServer.Broadcast(wsEventMsg{Type: "EXPERTISE_NUDGE", Data: map[string]any{"repo_id": repoID, "reviewed_count": count}})
 }
 
-// Run initializes the database, starts the WebSocket server, and blocks until
-// a SIGTERM or SIGINT signal is received, then shuts down gracefully.
-func (a *App) Run(ctx context.Context) error {
-	var err error
+type runStores struct {
+	currentUser  *store.CurrentUserStore
+	repoLocation *store.RepoLocationStore
+	expertise    *expertise.Store
+	diff         *store.DiffStore
+	rangeDiffer  *git.RangeDiffer
+}
 
-	a.db, err = store.OpenDB(a.dbPath)
+func (a *App) openDatabase(ctx context.Context) error {
+	db, err := store.OpenDB(a.dbPath)
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		return fmt.Errorf("open database: %w", err)
 	}
-	defer a.db.Close()
-
-	if err := store.NewMigrationRunner(a.log, a.db.DB).Run(ctx); err != nil {
-		return fmt.Errorf("failed to migrate: %w", err)
+	if err := store.NewMigrationRunner(a.log, db.DB).Run(ctx); err != nil {
+		return errors.Join(fmt.Errorf("migrate database: %w", err), db.Close())
 	}
-
+	a.db = db
 	a.log.Info("database initialized")
+	return nil
+}
 
+func (a *App) prepareStores() runStores {
 	if a.repoLocks == nil {
 		a.repoLocks = git.NewRepoLocks()
 	}
@@ -487,25 +498,19 @@ func (a *App) Run(ctx context.Context) error {
 	a.gitClient.SetLocks(a.repoLocks)
 	a.gitClient.SetTokenSource(a.githubToken)
 
-	diffStore := store.NewDiffStore(a.db.DB)
-
-	// RangeDiffer: one-time probe at startup; result logged so ops can see capability.
-	rangeDiffer := git.NewRangeDiffer(a.log, a.gitClient)
-	a.log.Info("range-diff probe",
-		"available", rangeDiffer.Available(),
-		"reason", rangeDiffer.FallbackReason(),
-	)
-
-	// AnchorResolver: shared stateless instance for comment re-anchoring.
+	stores := runStores{
+		currentUser:  store.NewCurrentUserStore(a.db),
+		repoLocation: store.NewRepoLocationStore(a.db.DB),
+		expertise:    expertise.NewStore(a.db.DB),
+		diff:         store.NewDiffStore(a.db.DB),
+		rangeDiffer:  git.NewRangeDiffer(a.log, a.gitClient),
+	}
+	a.log.Info("range-diff probe", "available", stores.rangeDiffer.Available(), "reason", stores.rangeDiffer.FallbackReason())
 	a.anchorResolver = git.NewAnchorResolver(a.log)
-
-	currentUserStore := store.NewCurrentUserStore(a.db)
-	a.currentUserStore = currentUserStore // stored on App for SetProvider re-creation
-
-	repoLocationStore := store.NewRepoLocationStore(a.db.DB)
-	a.configureRepoLocationStore(repoLocationStore)
+	a.currentUserStore = stores.currentUser
+	a.configureRepoLocationStore(stores.repoLocation)
 	a.resolveRepoPath = func(repoID string) (string, bool) {
-		location, err := repoLocationStore.Get(context.Background(), repoID)
+		location, err := stores.repoLocation.Get(context.Background(), repoID)
 		if err != nil {
 			a.log.Warn("expertise repo path resolve failed", "repo_id", repoID, "error", err)
 			return "", false
@@ -515,35 +520,41 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		return location.LocalPath, true
 	}
-	expertiseStore := expertise.NewStore(a.db.DB)
-	expertiseGit := expertise.NewGitCLI(a.log)
-	expertiseIdentity := func(identityCtx context.Context) expertise.Identity {
-		login, ok, err := currentUserStore.GetCurrentUser(identityCtx, "github")
+	return stores
+}
+
+func (a *App) currentExpertiseIdentity(stores *expertise.Store) func(context.Context) expertise.Identity {
+	return func(identityCtx context.Context) expertise.Identity {
+		login, ok, err := a.currentUserStore.GetCurrentUser(identityCtx, "github")
 		if err != nil || !ok {
 			if err != nil {
 				a.log.Warn("expertise identity current user lookup failed", "error", err)
 			}
 			return expertise.Identity{}
 		}
-		settings, err := handler.NewExpertiseSQLSettingsStore(a.db.DB, expertiseStore).ExpertiseSettings(identityCtx)
+		settings, err := handler.NewExpertiseSQLSettingsStore(a.db.DB, stores).ExpertiseSettings(identityCtx)
 		if err != nil {
 			a.log.Warn("expertise identity settings lookup failed", "error", err)
 		}
 		return expertise.Identity{Login: login, AliasEmails: settings.AliasEmails}
 	}
-	expertiseIndexer := expertise.NewIndexer(a.log, expertiseStore, expertiseGit, expertiseIdentity).WithEmitter(a.broadcastExpertiseEvent)
-	expertiseUpdater := expertise.NewUpdater(a.log, expertiseStore, expertiseGit, expertiseIdentity)
-	a.expertiseEngine = expertise.NewEngine(a.log, expertiseStore, expertiseGit, expertiseIndexer, expertiseUpdater)
+}
+
+func (a *App) prepareExpertise(ctx context.Context, stores *expertise.Store) {
+	expertiseGit := expertise.NewGitCLI(a.log)
+	identity := a.currentExpertiseIdentity(stores)
+	indexer := expertise.NewIndexer(a.log, stores, expertiseGit, identity).WithEmitter(a.broadcastExpertiseEvent)
+	updater := expertise.NewUpdater(a.log, stores, expertiseGit, identity)
+	a.expertiseEngine = expertise.NewEngine(a.log, stores, expertiseGit, indexer, updater)
 	go func() {
 		if err := a.expertiseEngine.RestartInterrupted(ctx, a.resolveRepoPath); err != nil {
 			a.log.Warn("expertise restart interrupted indexing failed", "error", err)
 		}
 	}()
-	defer a.expertiseEngine.Shutdown()
+}
 
-	// BYOK LLM tier (Phase 3.8): async post-commit/PR-open refinement.
-	// Emit bridges straight to the WS broadcast; the tier no-ops outside
-	// rules+llm / llm-all modes so constructing it unconditionally is safe.
+func (a *App) prepareLLMTier(ctx context.Context) {
+	// Tier no-ops outside LLM modes, so it can be wired unconditionally.
 	a.llmTier = llm.NewTier(llm.TierConfig{
 		DB:     a.db.DB,
 		Client: &liveByokClient{state: a.classificationState, tokens: a.tokenManager},
@@ -552,27 +563,80 @@ func (a *App) Run(ctx context.Context) error {
 			s := a.classificationState.Snapshot()
 			return llm.SettingsSnapshot{Provider: s.Provider, Model: s.Model}
 		},
-		Emit: func(eventType string, data map[string]interface{}) {
+		Emit: func(eventType string, data map[string]any) {
 			a.wsServer.Broadcast(wsEventMsg{Type: eventType, Data: data})
 		},
 		Log: slogPrintf{a.log},
 	})
-	llmKick := func(prID string) { a.llmTier.KickPR(ctx, prID) }
-	a.llmKick = llmKick
+	a.llmKick = func(prID string) { a.llmTier.KickPR(ctx, prID) }
+}
 
+func (a *App) initializeStartupProvider(ctx context.Context) {
+	a.provMu.Lock()
 	if a.prov != nil {
-		a.provMu.Lock()
 		a.attachOrchestratorLocked(ctx, a.prov, "github")
-		a.provMu.Unlock()
-		a.log.Info("orchestrator initialized at startup (token from keychain)")
-		if a.replayOnStart {
-			a.log.Info("replaying offline action queue after startup")
-			if err := a.ReplayQueuedActions(ctx); err != nil {
-				a.log.Error("startup queue replay failed", "error", err)
-			}
-		}
 	}
+	hasStartupProvider := a.prov != nil
+	a.provMu.Unlock()
+	if !hasStartupProvider {
+		return
+	}
+	a.log.Info("orchestrator initialized at startup (token from keychain)")
+	if !a.replayOnStart {
+		return
+	}
+	a.log.Info("replaying offline action queue after startup")
+	if err := a.ReplayQueuedActions(ctx); err != nil {
+		a.log.Error("startup queue replay failed", "error", err)
+	}
+}
 
+// Run initializes the database, starts the WebSocket server, and blocks until
+// a SIGTERM, SIGINT, or context cancellation, then shuts down.
+func (a *App) Run(ctx context.Context) (runErr error) {
+	if err := a.openDatabase(ctx); err != nil {
+		return err
+	}
+	defer func() { runErr = errors.Join(runErr, a.db.Close()) }()
+
+	stores := a.prepareStores()
+	a.prepareExpertise(ctx, stores.expertise)
+	defer a.expertiseEngine.Shutdown()
+	a.prepareLLMTier(ctx)
+	a.initializeStartupProvider(ctx)
+	a.registerAuthHandlers(ctx, stores)
+	a.registerReviewHandlers(stores)
+	a.registerDiffAndCheckoutHandlers(stores)
+	a.registerExpertiseHandlers(stores)
+	a.registerRepoLocationHandlers(stores)
+
+	wsAddr := wsListenAddr(a.wsPort)
+	if err := a.wsServer.Start(wsAddr); err != nil {
+		return fmt.Errorf("start ws server: %w", err)
+	}
+	actualPort := a.wsServer.Port()
+	a.log.Info("WebSocket server listening", "addr", wsAddr, "port", actualPort)
+	readyOut := a.readyWriter
+	if readyOut == nil {
+		readyOut = os.Stdout
+	}
+	if err := emitReady(readyOut, actualPort); err != nil {
+		return errors.Join(fmt.Errorf("emit ready signal: %w", err), a.wsServer.Stop())
+	}
+	go a.runSyncLoop(ctx)
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(sigChan)
+	select {
+	case <-sigChan:
+		a.log.Info("shutdown signal received")
+	case <-ctx.Done():
+		a.log.Info("context cancelled")
+	}
+	return a.wsServer.Stop()
+}
+
+func (a *App) registerAuthHandlers(ctx context.Context, stores runStores) {
 	authDeps := handler.AuthDeps{
 		Log:       a.log,
 		Tokens:    a.tokenManager,
@@ -592,8 +656,8 @@ func (a *App) Run(ctx context.Context) error {
 		},
 		GetClientID:        func() string { return a.githubClientID },
 		GetClientSecret:    func() string { return a.githubClientSecret },
-		CurrentUserWriter:  currentUserStore,
-		CurrentUserClearer: currentUserStore,
+		CurrentUserWriter:  stores.currentUser,
+		CurrentUserClearer: stores.currentUser,
 	}
 
 	authCheck := handler.NewAuthCheckHandler(authDeps)
@@ -601,20 +665,23 @@ func (a *App) Run(ctx context.Context) error {
 	a.wsServer.RegisterHandler("AUTH_START", handler.NewAuthStartHandler(authDeps))
 	a.wsServer.RegisterHandler("AUTH_CHECK", authCheck)
 	a.wsServer.RegisterHandler("AUTH_DISCONNECT", handler.NewAuthDisconnectHandler(authDeps, authCheck))
+}
+
+func (a *App) registerReviewHandlers(stores runStores) {
 	// REQUEST_DIFF: enriched with per-file content_hash and viewed flag.
 	a.wsServer.RegisterHandler("REQUEST_DIFF", handler.NewRequestDiffHandlerWithDeps(handler.DiffHandlerDeps{
-		DiffStore:   diffStore,
+		DiffStore:   stores.diff,
 		ViewedStore: a.db,
-		CurrentUser: currentUserStore,
+		CurrentUser: stores.currentUser,
 		Log:         a.log,
 	}))
-	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandlerWithExpertise(a.db.DB, a.expertiseEngine, currentUserStore, a.log))
+	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandlerWithExpertise(a.db.DB, a.expertiseEngine, stores.currentUser, a.log))
 	a.wsServer.RegisterHandler("REQUEST_COMMENTS",
-		handler.NewRequestCommentsHandlerWithLLMKick(a.db.DB, a.log, a.classifier, llmKick))
+		handler.NewRequestCommentsHandlerWithLLMKick(a.db.DB, a.log, a.classifier, a.llmKick))
 	dismissDeps := handler.DismissDeps{
 		DB:          a.db.DB,
 		Dismissals:  store.NewDismissals(a.db.DB),
-		CurrentUser: currentUserStore,
+		CurrentUser: stores.currentUser,
 		GetApplier:  a.currentApplier,
 		Scope:       a.classificationState.DismissalScope,
 		Log:         a.log,
@@ -634,21 +701,24 @@ func (a *App) Run(ctx context.Context) error {
 	a.wsServer.RegisterHandler("FORCE_SYNC", handler.NewForceSyncHandler(a.syncTrigger, a.log))
 	a.wsServer.RegisterHandler("REQUEST_PR_SYNC", handler.NewRequestPRSyncHandler(a.currentPRSyncer, a.log))
 	a.wsServer.RegisterHandler("SET_SYNC_SETTINGS", handler.NewSetSyncSettingsHandler(a.syncSettings, a.log))
+}
+
+func (a *App) registerDiffAndCheckoutHandlers(stores runStores) {
 	// Phase 2.1+2.2 handlers.
 	a.wsServer.RegisterHandler("GET_PATCHSETS",
 		handler.NewListPatchsetsHandler(a.db, a.log))
 	a.wsServer.RegisterHandler("REQUEST_RANGE_DIFF",
 		handler.NewRangeDiffHandlerWithDeps(handler.RangeDiffHandlerDeps{
-			Runner:       rangeDiffer,
+			Runner:       stores.rangeDiffer,
 			Patchsets:    a.db,
 			LastReviewed: a.db,
-			CurrentUser:  currentUserStore,
-			PlainDiff:    diffStore,
+			CurrentUser:  stores.currentUser,
+			PlainDiff:    stores.diff,
 		}, a.log))
 	a.wsServer.RegisterHandler("MARK_FILE_VIEWED",
-		handler.NewMarkFileViewedHandlerWithDiffStore(a.db, currentUserStore, diffStore, a.log))
+		handler.NewMarkFileViewedHandlerWithDiffStore(a.db, stores.currentUser, stores.diff, a.log))
 	a.wsServer.RegisterHandler("MARK_PRS_READ",
-		handler.NewMarkPRsReadHandler(a.db, currentUserStore, a.wsServer, a.log))
+		handler.NewMarkPRsReadHandler(a.db, stores.currentUser, a.wsServer, a.log))
 	// Phase 2.4 handlers.
 	a.wsServer.RegisterHandler("GET_REVIEW_THREADS",
 		handler.NewGetReviewThreadsHandler(a.db, a.log))
@@ -656,19 +726,21 @@ func (a *App) Run(ctx context.Context) error {
 		handler.NewSubmitActionHandler(a.currentApplier, a.log))
 	// Phase 5 :open in editor — checkout inspection and checkout.
 	a.wsServer.RegisterHandler("CHECK_PR_CHECKOUT",
-		handler.NewCheckPRCheckoutHandler(a.db, repoLocationStore, handler.GitCheckoutInspector{}, a.log))
+		handler.NewCheckPRCheckoutHandler(a.db, stores.repoLocation, handler.GitCheckoutInspector{}, a.log))
 	a.wsServer.RegisterHandler("CHECKOUT_PR_HEAD",
-		handler.NewCheckoutPRHeadHandler(a.db, repoLocationStore, a.gitClient, a.log))
+		handler.NewCheckoutPRHeadHandler(a.db, stores.repoLocation, a.gitClient, a.log))
+}
 
+func (a *App) registerExpertiseHandlers(stores runStores) {
 	expertiseRepoStore := handler.NewExpertiseSQLRepoStore(a.db.DB)
-	expertiseDataStore := handler.NewExpertiseSQLDataStore(a.db.DB, expertiseStore)
-	expertiseSettingsStore := handler.NewExpertiseSQLSettingsStore(a.db.DB, expertiseStore)
+	expertiseDataStore := handler.NewExpertiseSQLDataStore(a.db.DB, stores.expertise)
+	expertiseSettingsStore := handler.NewExpertiseSQLSettingsStore(a.db.DB, stores.expertise)
 	expertiseDeps := handler.ExpertiseHandlerDeps{
 		Engine:      a.expertiseEngine,
 		Repos:       expertiseRepoStore,
 		Data:        expertiseDataStore,
 		Settings:    expertiseSettingsStore,
-		CurrentUser: currentUserStore,
+		CurrentUser: stores.currentUser,
 		Log:         a.log,
 	}
 	a.wsServer.RegisterHandler("EXPERTISE_ENABLE", handler.NewExpertiseEnableHandler(expertiseDeps))
@@ -677,22 +749,24 @@ func (a *App) Run(ctx context.Context) error {
 	a.wsServer.RegisterHandler("EXPERTISE_NUDGE_DISMISS", handler.NewExpertiseNudgeDismissHandler(expertiseDeps))
 	a.wsServer.RegisterHandler("GET_EXPERTISE_SETTINGS", handler.NewGetExpertiseSettingsHandler(expertiseDeps))
 	a.wsServer.RegisterHandler("SET_EXPERTISE_SETTINGS", handler.NewSetExpertiseSettingsHandler(expertiseDeps))
+}
 
+func (a *App) registerRepoLocationHandlers(stores runStores) {
 	deleteCacheDir := func(path string) error {
 		return git.DeleteCacheDir(path)
 	}
 	cacheDeps := handler.CacheMaintenanceDeps{
-		Store:          repoLocationStore,
+		Store:          stores.repoLocation,
 		Locks:          a.repoLocks,
 		DeleteCacheDir: deleteCacheDir,
 		SweepOrphans:   git.SweepOrphans,
 		Log:            a.log,
 	}
 	a.wsServer.RegisterHandler("VALIDATE_DEV_FOLDER", handler.NewValidateDevFolderHandler(a.log))
-	a.wsServer.RegisterHandler("SCAN_DEV_FOLDER", handler.NewScanDevFolderHandler(repoLocationStore, a.syncTrigger, a.log))
+	a.wsServer.RegisterHandler("SCAN_DEV_FOLDER", handler.NewScanDevFolderHandler(stores.repoLocation, a.syncTrigger, a.log))
 	a.wsServer.RegisterHandler("ADD_REPO_BY_URL", handler.NewAddRepoByURLHandler(handler.AddRepoByURLDeps{
 		DB:        a.db.DB,
-		Store:     repoLocationStore,
+		Store:     stores.repoLocation,
 		Clone:     a.cloneRepoLocationRepo,
 		CacheRoot: git.CacheRoot,
 		Log:       a.log,
@@ -702,49 +776,19 @@ func (a *App) Run(ctx context.Context) error {
 	a.wsServer.RegisterHandler("PRUNE_CACHE", handler.NewPruneCacheHandler(cacheDeps))
 	a.wsServer.RegisterHandler("CLEAR_CACHE", handler.NewClearCacheHandler(cacheDeps))
 	a.wsServer.RegisterHandler("DELETE_CACHE_REPO", handler.NewDeleteCacheRepoHandler(cacheDeps))
-	a.wsServer.RegisterHandler("RECOVER_REPO_PATH", handler.NewRecoverRepoPathHandler(repoLocationStore, a.log))
+	a.wsServer.RegisterHandler("RECOVER_REPO_PATH", handler.NewRecoverRepoPathHandler(stores.repoLocation, a.log))
 	a.wsServer.RegisterHandler("RECOVER_REPO_TO_CACHE", handler.NewRecoverRepoToCacheHandler(handler.RecoverRepoToCacheDeps{
 		DB:        a.db.DB,
-		Store:     repoLocationStore,
+		Store:     stores.repoLocation,
 		Clone:     a.cloneRepoLocationRepo,
 		CacheRoot: git.CacheRoot,
 		Log:       a.log,
 	}))
 	a.wsServer.RegisterHandler("REMOVE_REPO", handler.NewRemoveRepoHandler(handler.RemoveRepoDeps{
 		DB:             a.db.DB,
-		Store:          repoLocationStore,
+		Store:          stores.repoLocation,
 		Locks:          a.repoLocks,
 		DeleteCacheDir: deleteCacheDir,
 		Log:            a.log,
 	}))
-
-	wsAddr := wsListenAddr(a.wsPort)
-	if err := a.wsServer.Start(wsAddr); err != nil {
-		return fmt.Errorf("failed to start ws server: %w", err)
-	}
-
-	actualPort := a.wsServer.Port()
-	a.log.Info("WebSocket server listening", "addr", wsAddr, "port", actualPort)
-
-	readyOut := a.readyWriter
-	if readyOut == nil {
-		readyOut = os.Stdout
-	}
-	if err := emitReady(readyOut, actualPort); err != nil {
-		a.log.Warn("failed to emit ready signal", "error", err)
-	}
-
-	go a.runSyncLoop(ctx)
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
-
-	select {
-	case <-sigChan:
-		a.log.Info("shutdown signal received")
-	case <-ctx.Done():
-		a.log.Info("context cancelled")
-	}
-
-	return a.wsServer.Stop()
 }
