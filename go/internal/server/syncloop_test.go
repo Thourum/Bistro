@@ -64,7 +64,9 @@ func TestApplyPendingSyncSettings_Coalesces(t *testing.T) {
 	autoSync := true
 	interval := 5 * time.Minute
 
-	changed := app.applyPendingSyncSettings(ticker, &autoSync, &interval)
+	settings := &syncLoopSettings{ticker: ticker, autoSync: autoSync, interval: interval}
+	changed := app.applyPendingSyncSettings(settings)
+	autoSync, interval = settings.autoSync, settings.interval
 	if !changed {
 		t.Fatal("expected applyPendingSyncSettings to report a change")
 	}
@@ -91,7 +93,9 @@ func TestApplyPendingSyncSettings_EmptyNoop(t *testing.T) {
 	autoSync := true
 	interval := 5 * time.Minute
 
-	changed := app.applyPendingSyncSettings(ticker, &autoSync, &interval)
+	settings := &syncLoopSettings{ticker: ticker, autoSync: autoSync, interval: interval}
+	changed := app.applyPendingSyncSettings(settings)
+	autoSync, interval = settings.autoSync, settings.interval
 	if changed {
 		t.Error("expected no change when channel is empty")
 	}

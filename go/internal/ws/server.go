@@ -2,6 +2,7 @@ package ws
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -87,15 +88,7 @@ func isLocalOrigin(r *http.Request) bool {
 
 // NewServer constructs a Server that only accepts connections from localhost origins.
 func NewServer() *Server {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	return &Server{
-		upgrader: websocket.Upgrader{
-			CheckOrigin: isLocalOrigin,
-		},
-		stopChan:   make(chan struct{}),
-		conns:      make(map[*websocket.Conn]*sync.Mutex),
-		dispatcher: NewDispatcher(logger),
-	}
+	return NewServerWithLogger(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 }
 
 // NewServerWithLogger constructs a Server with a custom logger.
@@ -116,7 +109,7 @@ func (s *Server) RegisterHandler(messageType string, handler MessageHandler) {
 }
 
 // Broadcast sends a message to all connected WebSocket clients.
-func (s *Server) Broadcast(msg interface{}) {
+func (s *Server) Broadcast(msg any) {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		s.dispatcher.logger.Error("broadcast marshal failed", "error", err)
@@ -137,10 +130,10 @@ func (s *Server) Broadcast(msg interface{}) {
 	}
 	s.mu.Unlock()
 
+	// Broadcasts may include cached private PR content; never log the body.
 	s.dispatcher.logger.Debug("broadcast start",
 		"clients", clientCount,
 		"payload_bytes", len(data),
-		"payload", truncateForLog(data, 4096),
 	)
 	var writeErrs int
 	for _, w := range writers {
@@ -195,7 +188,9 @@ func (s *Server) Start(addr string) error {
 	s.httpServer = &http.Server{Handler: mux}
 
 	go func() {
-		s.httpServer.Serve(s.listener) //nolint:errcheck
+		if err := s.httpServer.Serve(s.listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			s.dispatcher.logger.Error("ws server failed", "error", err)
+		}
 	}()
 
 	return nil

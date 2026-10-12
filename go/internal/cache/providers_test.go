@@ -7,6 +7,47 @@ import (
 	"time"
 )
 
+func TestProviderCache_InvalidJSONDoesNotReplaceLiveEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "providers.json")
+	cache := NewProviderCache(path)
+	cache.entries["github"] = CacheEntry{Username: "octocat", CachedAt: time.Now()}
+	if err := os.WriteFile(path, []byte(`{"github":null,"bad":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cache.load()
+	if name, _, found := cache.Get("github"); !found || name != "octocat" {
+		t.Fatalf("invalid file overwrote live cache: found=%v, name=%q", found, name)
+	}
+}
+
+func TestProviderCache_NullJSONStillAllowsSet(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "providers.json")
+	if err := os.WriteFile(path, []byte("null"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cache := NewProviderCache(path)
+	cache.Set("github", "octocat")
+	if name, _, found := cache.Get("github"); !found || name != "octocat" {
+		t.Fatalf("set after null cache: found=%v, name=%q", found, name)
+	}
+}
+
+func TestProviderCache_PersistKeepsPrivatePermissions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "providers.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cache := NewProviderCache(path)
+	cache.Set("github", "octocat")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("cache mode = %o, want 600", got)
+	}
+}
+
 func TestProviderCache_SetAndGet(t *testing.T) {
 	dir := t.TempDir()
 	pc := NewProviderCache(filepath.Join(dir, "providers.json"))

@@ -2,7 +2,12 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -31,6 +36,17 @@ func TestEmitReady(t *testing.T) {
 	}
 	if signal.WSPort != 54321 {
 		t.Errorf("wsPort = %d, want 54321", signal.WSPort)
+	}
+}
+
+func TestRunFailsWhenReadySignalCannotBeWritten(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	app := NewWithLogger(0, filepath.Join(t.TempDir(), "sync.db"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	app.SetReadyWriter(failingWriter{})
+	app.SetAutoSync(false)
+	if err := app.Run(ctx); !errors.Is(err, errWriteFailed) {
+		t.Fatalf("Run() = %v, want ready writer error", err)
 	}
 }
 

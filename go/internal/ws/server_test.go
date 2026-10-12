@@ -1,9 +1,35 @@
 package ws
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestWebSocketLogsDoNotContainMessageData(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	server := NewServerWithLogger(logger)
+	server.RegisterHandler("SET_BYOK_KEY", func(context.Context, InboundMessage) (any, error) {
+		return nil, nil
+	})
+	secret := "sensitive-key-test-value"
+	message, err := json.Marshal(InboundMessage{Type: "SET_BYOK_KEY", Data: json.RawMessage(`{"key":"` + secret + `"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.dispatcher.Dispatch(context.Background(), message); err != nil {
+		t.Fatal(err)
+	}
+	server.Broadcast(map[string]any{"type": "SET_BYOK_KEY", "data": map[string]string{"key": secret}})
+	if strings.Contains(output.String(), secret) {
+		t.Fatal("websocket debug log contains message data")
+	}
+}
 
 func TestNewServer(t *testing.T) {
 	server := NewServer()
