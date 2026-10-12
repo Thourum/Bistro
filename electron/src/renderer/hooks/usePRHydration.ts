@@ -1,9 +1,9 @@
-import { Fault, ResultAsync } from '@thourum/fault';
+import { Fault } from '@thourum/fault';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import type { PR } from '../types';
 import { createLogger } from '../utils/logger';
-import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('usePRHydration');
 const DEFAULT_HYDRATION_ERROR = 'Unable to hydrate this pull request.';
@@ -28,9 +28,6 @@ function hydrationErrorMessage(error: unknown): string {
  * pages refetch the now-complete data. No-op for already-hydrated PRs.
  */
 export function usePRHydration(pr: PR | undefined): PRHydrationState {
-  const { request } = useWebSocket();
-  const requestRef = useRef(request);
-  requestRef.current = request;
   const inFlightRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
   const activePrIdRef = useRef(pr?.id);
@@ -49,13 +46,13 @@ export function usePRHydration(pr: PR | undefined): PRHydrationState {
     setError(null);
 
     log.debug({ prId }, 'hydrating list-only PR');
-    void ResultAsync.fromPromise(
-      requestRef.current('REQUEST_PR_SYNC', { pr_id: prId }),
-      (cause) =>
+    void wsClient
+      .request('REQUEST_PR_SYNC', { pr_id: prId })
+      .mapErr((cause) =>
         new Fault(hydrationErrorMessage(cause))
           .withTag('NETWORK_ERROR')
           .withCause(cause),
-    )
+      )
       .match(
         () => {
           if (!isMountedRef.current || activePrIdRef.current !== prId) return;

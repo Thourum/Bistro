@@ -8,8 +8,8 @@ import { initialUIState } from '../store/ui';
 import { useActionDispatch } from './useActionDispatch';
 
 const send = vi.hoisted(() => vi.fn(() => undefined));
-vi.mock('./useWebSocket', () => ({
-  useWebSocket: () => ({ send, request: vi.fn() }),
+vi.mock('../services/ws/connection', () => ({
+  wsClient: { send, request: vi.fn() },
 }));
 
 function CaptureActions({

@@ -1,8 +1,8 @@
-import { Fault, ResultAsync } from '@thourum/fault';
+import { Fault } from '@thourum/fault';
 import { useCallback } from 'react';
 import { z } from 'zod';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
-import { useWebSocket } from './useWebSocket';
 
 const actionResponseSchema = z.object({
   success: z.boolean(),
@@ -15,8 +15,6 @@ const actionResponseSchema = z.object({
  * The store fields pendingAction / actionResult are updated by ACTION_COMPLETE / ACTION_FAILED handlers.
  */
 export function useActionDispatch(prId: string | undefined) {
-  const { request, send } = useWebSocket();
-
   const dispatchApprove = useCallback(() => {
     if (prId === undefined) return;
 
@@ -26,7 +24,7 @@ export function useActionDispatch(prId: string | undefined) {
       confirmingAction: null,
     }));
 
-    if (send('APPROVE_PR', { pr_id: prId }) === undefined) {
+    if (wsClient.send('APPROVE_PR', { pr_id: prId }) === undefined) {
       appStore.setState((s) => ({
         ...s,
         pendingAction: null,
@@ -38,7 +36,7 @@ export function useActionDispatch(prId: string | undefined) {
         },
       }));
     }
-  }, [prId, send]);
+  }, [prId]);
 
   const dispatchRequestChanges = useCallback(
     (comment: string) => {
@@ -50,7 +48,9 @@ export function useActionDispatch(prId: string | undefined) {
         confirmingAction: null,
       }));
 
-      if (send('REQUEST_CHANGES', { pr_id: prId, comment }) === undefined) {
+      if (
+        wsClient.send('REQUEST_CHANGES', { pr_id: prId, comment }) === undefined
+      ) {
         appStore.setState((s) => ({
           ...s,
           pendingAction: null,
@@ -63,7 +63,7 @@ export function useActionDispatch(prId: string | undefined) {
         }));
       }
     },
-    [prId, send],
+    [prId],
   );
 
   const clearActionResult = useCallback(() => {
@@ -82,52 +82,51 @@ export function useActionDispatch(prId: string | undefined) {
         confirmingAction: null,
       }));
 
-      void ResultAsync.fromPromise(
-        request('SUBMIT_ACTION', {
+      void wsClient
+        .request('SUBMIT_ACTION', {
           pr_id: prId,
           action: 'post_comment',
           body: trimmed,
-        }),
-        (cause) =>
-          new Fault(cause instanceof Error ? cause : 'Comment failed')
-            .withTag('NETWORK_ERROR')
-            .withCause(cause),
-      ).match(
-        (data) => {
-          const parsed = actionResponseSchema.safeParse(data);
-          const success = parsed.success && parsed.data.success;
-          appStore.setState((s) => ({
-            ...s,
-            pendingAction: null,
-            actionResult: {
-              type: 'post_comment',
-              prId,
-              success,
-              message: success
-                ? 'Comment posted'
-                : ((parsed.success ? parsed.data.error : null) ??
-                  'Comment failed'),
-            },
-            commentsRevision: success
-              ? s.commentsRevision + 1
-              : s.commentsRevision,
-          }));
-        },
-        (message) => {
-          appStore.setState((s) => ({
-            ...s,
-            pendingAction: null,
-            actionResult: {
-              type: 'post_comment',
-              prId,
-              success: false,
-              message: message.message,
-            },
-          }));
-        },
-      );
+        })
+        .mapErr((cause) =>
+          new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+        )
+        .match(
+          (data) => {
+            const parsed = actionResponseSchema.safeParse(data);
+            const success = parsed.success && parsed.data.success;
+            appStore.setState((s) => ({
+              ...s,
+              pendingAction: null,
+              actionResult: {
+                type: 'post_comment',
+                prId,
+                success,
+                message: success
+                  ? 'Comment posted'
+                  : ((parsed.success ? parsed.data.error : null) ??
+                    'Comment failed'),
+              },
+              commentsRevision: success
+                ? s.commentsRevision + 1
+                : s.commentsRevision,
+            }));
+          },
+          (message) => {
+            appStore.setState((s) => ({
+              ...s,
+              pendingAction: null,
+              actionResult: {
+                type: 'post_comment',
+                prId,
+                success: false,
+                message: message.message,
+              },
+            }));
+          },
+        );
     },
-    [prId, request],
+    [prId],
   );
 
   const dispatchReplyComment = useCallback(
@@ -142,57 +141,56 @@ export function useActionDispatch(prId: string | undefined) {
         confirmingAction: null,
       }));
 
-      void ResultAsync.fromPromise(
-        request('SUBMIT_ACTION', {
+      void wsClient
+        .request('SUBMIT_ACTION', {
           pr_id: prId,
           action: 'reply_comment',
           body: trimmed,
           thread_id: target.threadId ?? '',
           comment_id: target.commentId ?? '',
-        }),
-        (cause) =>
-          new Fault(cause instanceof Error ? cause : 'Reply failed')
-            .withTag('NETWORK_ERROR')
-            .withCause(cause),
-      ).match(
-        (data) => {
-          const parsed = actionResponseSchema.safeParse(data);
-          const success = parsed.success && parsed.data.success;
-          appStore.setState((s) => ({
-            ...s,
-            pendingAction: null,
-            actionResult: {
-              type: 'reply_comment',
-              prId,
-              success,
-              message: success
-                ? 'Reply posted'
-                : ((parsed.success ? parsed.data.error : null) ??
-                  'Reply failed'),
-            },
-            commentsRevision: success
-              ? s.commentsRevision + 1
-              : s.commentsRevision,
-            threadsRevision: success
-              ? s.threadsRevision + 1
-              : s.threadsRevision,
-          }));
-        },
-        (message) => {
-          appStore.setState((s) => ({
-            ...s,
-            pendingAction: null,
-            actionResult: {
-              type: 'reply_comment',
-              prId,
-              success: false,
-              message: message.message,
-            },
-          }));
-        },
-      );
+        })
+        .mapErr((cause) =>
+          new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+        )
+        .match(
+          (data) => {
+            const parsed = actionResponseSchema.safeParse(data);
+            const success = parsed.success && parsed.data.success;
+            appStore.setState((s) => ({
+              ...s,
+              pendingAction: null,
+              actionResult: {
+                type: 'reply_comment',
+                prId,
+                success,
+                message: success
+                  ? 'Reply posted'
+                  : ((parsed.success ? parsed.data.error : null) ??
+                    'Reply failed'),
+              },
+              commentsRevision: success
+                ? s.commentsRevision + 1
+                : s.commentsRevision,
+              threadsRevision: success
+                ? s.threadsRevision + 1
+                : s.threadsRevision,
+            }));
+          },
+          (message) => {
+            appStore.setState((s) => ({
+              ...s,
+              pendingAction: null,
+              actionResult: {
+                type: 'reply_comment',
+                prId,
+                success: false,
+                message: message.message,
+              },
+            }));
+          },
+        );
     },
-    [prId, request],
+    [prId],
   );
 
   return {

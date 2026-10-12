@@ -1,7 +1,8 @@
-import { Fault, fromPromise } from '@thourum/fault';
+import { Fault } from '@thourum/fault';
 import { useEffect } from 'react';
 import { z } from 'zod';
 import { addToast } from '../components/ToastContainer';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import type { Comment } from '../types';
 import {
@@ -14,7 +15,6 @@ import {
 } from '../utils/dismissals';
 import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
-import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('useDismissals');
 
@@ -53,20 +53,19 @@ export function useDismissals(
   prId: string | undefined,
   comments: readonly Comment[],
 ): void {
-  const { request } = useWebSocket();
-
   useEffect(() => {
     if (prId === undefined) return;
 
     const dismiss = (commentIds: string[]): void => {
       if (commentIds.length === 0) return;
-      void fromPromise(
-        request('DISMISS_COMMENTS', { pr_id: prId, comment_ids: commentIds }),
-        (cause) =>
-          new Fault(cause instanceof Error ? cause : 'Unknown error')
-            .withTag('NETWORK_ERROR')
-            .withCause(cause),
-      )
+      void wsClient
+        .request('DISMISS_COMMENTS', {
+          pr_id: prId,
+          comment_ids: commentIds,
+        })
+        .mapErr((cause) =>
+          new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+        )
         .andThen((data) => parseResponse(dismissBatchSchema, data))
         .match(
           (batch) => {
@@ -105,38 +104,37 @@ export function useDismissals(
       const { batch, rest } = popBatch(appStore.state.dismissBatches);
       if (batch === undefined) return;
       appStore.setState((s) => ({ ...s, dismissBatches: rest }));
-      void fromPromise(
-        request('UNDISMISS_COMMENTS', {
+      void wsClient
+        .request('UNDISMISS_COMMENTS', {
           comment_ids: batch.dismissed_ids,
           unresolve_thread_ids: batch.resolved_thread_ids,
-        }),
-        (cause) =>
-          new Fault(cause instanceof Error ? cause : 'Unknown error')
-            .withTag('NETWORK_ERROR')
-            .withCause(cause),
-      ).match(
-        () => {
-          addToast({
-            type: 'info',
-            message: `Restored ${batch.dismissed_ids.length}`,
-            dismissible: true,
-          });
-          bumpCommentsRevision();
-        },
-        (err) => {
-          log.warn({ err: err.message }, 'undo failed');
-          // Put the batch back so `u` can retry.
-          appStore.setState((s) => ({
-            ...s,
-            dismissBatches: pushBatch(s.dismissBatches, batch),
-          }));
-          addToast({
-            type: 'error',
-            message: 'Undo failed',
-            dismissible: true,
-          });
-        },
-      );
+        })
+        .mapErr((cause) =>
+          new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+        )
+        .match(
+          () => {
+            addToast({
+              type: 'info',
+              message: `Restored ${batch.dismissed_ids.length}`,
+              dismissible: true,
+            });
+            bumpCommentsRevision();
+          },
+          (err) => {
+            log.warn({ err: err.message }, 'undo failed');
+            // Put the batch back so `u` can retry.
+            appStore.setState((s) => ({
+              ...s,
+              dismissBatches: pushBatch(s.dismissBatches, batch),
+            }));
+            addToast({
+              type: 'error',
+              message: 'Undo failed',
+              dismissible: true,
+            });
+          },
+        );
     };
 
     document.addEventListener(DISMISS_NITS_EVENT, onDismissNits);
@@ -147,5 +145,5 @@ export function useDismissals(
       document.removeEventListener(DISMISS_BOTS_EVENT, onDismissBots);
       document.removeEventListener(UNDO_DISMISS_EVENT, onUndo);
     };
-  }, [prId, comments, request]);
+  }, [prId, comments]);
 }

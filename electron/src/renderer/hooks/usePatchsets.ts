@@ -1,10 +1,10 @@
-import { Fault, fromPromise } from '@thourum/fault';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fault } from '@thourum/fault';
+import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
+import { wsClient } from '../services/ws/connection';
 import { type Patchset, patchsetSchema } from '../types';
 import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
-import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('usePatchsets');
 const patchsetsResponseSchema = z.object({
@@ -30,13 +30,6 @@ interface PatchsetsState {
 export function usePatchsets(prId: string | undefined): PatchsetsState & {
   refetch: () => void;
 } {
-  const { request } = useWebSocket();
-  // Hold the latest `request` in a ref so `load` stays stable even if the
-  // hook's identity changes between renders (avoids resolve→setState→render
-  // loops).
-  const requestRef = useRef(request);
-  requestRef.current = request;
-
   const [state, setState] = useState<PatchsetsState>({
     patchsets: [],
     loading: prId !== undefined,
@@ -46,13 +39,11 @@ export function usePatchsets(prId: string | undefined): PatchsetsState & {
   const load = useCallback(() => {
     if (prId === undefined) return;
     setState((s) => ({ ...s, loading: true, error: null }));
-    void fromPromise(
-      requestRef.current('GET_PATCHSETS', { pr_id: prId }),
-      (cause) =>
-        new Fault(cause instanceof Error ? cause : 'Unknown error')
-          .withTag('NETWORK_ERROR')
-          .withCause(cause),
-    )
+    void wsClient
+      .request('GET_PATCHSETS', { pr_id: prId })
+      .mapErr((cause) =>
+        new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+      )
       .andThen((data) => parseResponse(patchsetsResponseSchema, data))
       .match(
         (payload) => {

@@ -1,7 +1,7 @@
-import { err, Fault, ok, type Result, ResultAsync } from '@thourum/fault';
+import { err, Fault, ok, type Result } from '@thourum/fault';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import { settingsStore } from '../store/settings';
 import type { LocationErrorCode } from '../types/repoLocation';
 import { addToast } from './ToastContainer';
@@ -122,7 +122,6 @@ const FOCUSABLE_SELECTOR =
 export function AddRepoDialog({
   onClose,
 }: AddRepoDialogProps): React.ReactElement {
-  const { request } = useWebSocket();
   const [url, setUrl] = useState('');
   const [step, setStep] = useState<Step>('url');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -228,14 +227,13 @@ export function AddRepoDialog({
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    ResultAsync.fromPromise(
-      request('ADD_REPO_BY_URL', {
+    wsClient
+      .request('ADD_REPO_BY_URL', {
         url: trimmedUrl,
         destination,
         dev_folder_path: devFolderPath,
-      }),
-      requestFault,
-    )
+      })
+      .mapErr(requestFault)
       .andThen(parseAddRepoResponse)
       .match(
         (response) => {

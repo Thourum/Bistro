@@ -1,19 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import {
-  err,
-  Fault,
-  ok,
-  type Result,
-  ResultAsync,
-  ServiceError,
-} from '@thourum/fault';
+import { err, Fault, ok, type Result, ServiceError } from '@thourum/fault';
 import { z } from 'zod';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { PR } from '../types';
 import { classifyPR } from '../utils/triage';
 import { useStore } from './useStore';
-import { useWebSocket } from './useWebSocket';
 
 type FilterState = UIState['filterState'];
 
@@ -85,7 +78,6 @@ function parsePRList(
  * 'needs_action' and 'touches_you' are client-side lanes narrowed locally.
  */
 export function useWebSocketPRList(filterState: FilterState = 'open') {
-  const { request } = useWebSocket();
   const prListRevision = useStore(appStore, (s) => s.prListRevision);
   const username = useStore(
     appStore,
@@ -99,17 +91,16 @@ export function useWebSocketPRList(filterState: FilterState = 'open') {
         filterState === 'needs_action' || filterState === 'touches_you'
           ? 'open'
           : filterState;
-      const response = await ResultAsync.fromPromise(
-        request('REQUEST_PR_LIST', {
+      const response = await wsClient
+        .request('REQUEST_PR_LIST', {
           filter: backendFilter,
           limit: PR_LIST_LIMIT,
           offset: 0,
-        } satisfies RequestPRListData),
-        (cause) =>
-          new Fault(cause instanceof Error ? cause : String(cause))
-            .withTag('NETWORK_ERROR')
-            .withCause(cause),
-      ).andThen(parsePRList);
+        } satisfies RequestPRListData)
+        .mapErr((cause) =>
+          new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+        )
+        .andThen(parsePRList);
       if (response.isErr()) return Promise.reject(response.error);
 
       const payload = response.value;

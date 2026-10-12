@@ -1,9 +1,9 @@
 import { Fault, fromPromise } from '@thourum/fault';
 import { useCallback, useRef, useState } from 'react';
 import { z } from 'zod';
+import { wsClient } from '../services/ws/connection';
 import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
-import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('useOpenInEditor');
 
@@ -69,9 +69,6 @@ export function useOpenInEditor(): {
   /** True while a dialog action is in flight; the dialog disables its buttons. */
   pending: boolean;
 } {
-  const { request } = useWebSocket();
-  const requestRef = useRef(request);
-  requestRef.current = request;
   const [state, setState] = useState<OpenInEditorState>({
     dialog: null,
     error: null,
@@ -122,13 +119,11 @@ export function useOpenInEditor(): {
   const requestOpen = useCallback(
     (prId: string, relativePath: string, line: number): Promise<void> =>
       Promise.resolve(
-        fromPromise(
-          requestRef.current('CHECK_PR_CHECKOUT', { pr_id: prId }),
-          (cause) =>
-            new Fault(cause instanceof Error ? cause : 'Unknown error')
-              .withTag('NETWORK_ERROR')
-              .withCause(cause),
-        )
+        wsClient
+          .request('CHECK_PR_CHECKOUT', { pr_id: prId })
+          .mapErr((cause) =>
+            new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+          )
           .andThen((data) => parseResponse(checkPRCheckoutSchema, data))
           .match(
             async (data) => {
@@ -171,16 +166,14 @@ export function useOpenInEditor(): {
     if (dialog === null) return Promise.resolve();
     return runExclusive(() =>
       Promise.resolve(
-        fromPromise(
-          requestRef.current('CHECKOUT_PR_HEAD', {
+        wsClient
+          .request('CHECKOUT_PR_HEAD', {
             pr_id: dialog.prId,
             expected_head_sha: dialog.headSha,
-          }),
-          (cause) =>
-            new Fault(cause instanceof Error ? cause : 'Unknown error')
-              .withTag('NETWORK_ERROR')
-              .withCause(cause),
-        )
+          })
+          .mapErr((cause) =>
+            new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+          )
           .andThen((data) => parseResponse(checkoutPRHeadSchema, data))
           .match(
             async (data) => {

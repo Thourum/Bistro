@@ -1,6 +1,6 @@
-import { err, Fault, ok, type Result, ResultAsync } from '@thourum/fault';
+import { err, Fault, ok, type Result } from '@thourum/fault';
 import { useCallback, useEffect, useState } from 'react';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import type { LocationErrorCode } from '../types/repoLocation';
 import { addToast } from './ToastContainer';
 
@@ -211,10 +211,6 @@ function parseCacheActionResponse(
   );
 }
 
-function ensurePromise(value: Promise<unknown> | unknown): Promise<unknown> {
-  return value instanceof Promise ? value : Promise.resolve(value);
-}
-
 function requestFault(error: unknown): Fault {
   const message =
     error instanceof Error && error.message.trim() !== ''
@@ -270,17 +266,15 @@ function formatLastUsed(value: string | null): string {
 }
 
 export function CacheUsageCard(): React.ReactElement {
-  const { request } = useWebSocket();
   const [stats, setStats] = useState<CacheStats | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   const loadStats = useCallback((): void => {
-    ResultAsync.fromPromise(
-      ensurePromise(request('GET_CACHE_STATS', {})),
-      requestFault,
-    )
+    wsClient
+      .request('GET_CACHE_STATS', {})
+      .mapErr(requestFault)
       .andThen(parseCacheStats)
       .match(
         (nextStats) => {
@@ -289,7 +283,7 @@ export function CacheUsageCard(): React.ReactElement {
         },
         (error) => setErrorMessage(error.message),
       );
-  }, [request]);
+  }, []);
 
   useEffect(() => {
     loadStats();
@@ -301,7 +295,9 @@ export function CacheUsageCard(): React.ReactElement {
     actionKey: string,
   ): void => {
     setPendingAction(actionKey);
-    ResultAsync.fromPromise(ensurePromise(request(type, payload)), requestFault)
+    wsClient
+      .request(type, payload)
+      .mapErr(requestFault)
       .andThen(parseCacheActionResponse)
       .match(
         (response) => {

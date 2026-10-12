@@ -2,7 +2,7 @@
 // The old auth-branching gate is replaced by:
 //
 //   Bootstrap — non-visual component that:
-//     • runs useSettingsEffect() + useWebSocket() BESIDE RouterProvider so the
+//     • runs useSettingsEffect() + useWebSocketConnection() BESIDE RouterProvider so the
 //       WS is NEVER unmounted by navigation
 //     • subscribes to authChecked / isAuthenticated / onboardingComplete and
 //       calls router.invalidate() so route guards re-evaluate on auth changes
@@ -26,7 +26,7 @@ import { FooterSlotProvider } from './components/FooterSlot';
 import { addToast } from './components/ToastContainer';
 import { useSettingsEffect } from './hooks/useSettingsEffect';
 import { useStore } from './hooks/useStore';
-import { useWebSocket } from './hooks/useWebSocket';
+import { useWebSocketConnection } from './hooks/useWebSocketConnection';
 import { router } from './router';
 import { appStore } from './store';
 import { initSettings, settingsStore } from './store/settings';
@@ -47,7 +47,7 @@ const queryClient = new QueryClient();
  */
 function Bootstrap(): null {
   useSettingsEffect();
-  useWebSocket();
+  useWebSocketConnection();
 
   const authChecked = useStore(appStore, (s) => s.authChecked);
   const isAuthenticated = useStore(appStore, (s) => s.isAuthenticated);

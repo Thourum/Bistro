@@ -1,9 +1,9 @@
-import { Fault, fromPromise } from '@thourum/fault';
-import { useCallback, useRef } from 'react';
+import { Fault } from '@thourum/fault';
+import { useCallback } from 'react';
+import { wsClient } from '../services/ws/connection';
 import { type FileViewedAck, fileViewedAckSchema } from '../types';
 import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
-import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('useMarkFileViewed');
 
@@ -26,27 +26,21 @@ export function useMarkFileViewed(): {
     contentHash: string,
   ) => Promise<FileViewedAck | null>;
 } {
-  const { request } = useWebSocket();
-  const requestRef = useRef(request);
-  requestRef.current = request;
-
   const markViewed = useCallback(
     (
       prId: string,
       filePath: string,
       contentHash: string,
     ): Promise<FileViewedAck | null> =>
-      fromPromise(
-        requestRef.current('MARK_FILE_VIEWED', {
+      wsClient
+        .request('MARK_FILE_VIEWED', {
           pr_id: prId,
           file_path: filePath,
           content_hash: contentHash,
-        }),
-        (cause) =>
-          new Fault(cause instanceof Error ? cause : 'Unknown error')
-            .withTag('NETWORK_ERROR')
-            .withCause(cause),
-      )
+        })
+        .mapErr((cause) =>
+          new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+        )
         .andThen((data) => parseResponse(fileViewedAckSchema, data))
         .match(
           (data) => data,

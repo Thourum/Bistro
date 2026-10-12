@@ -1,7 +1,7 @@
 import { err, Fault, ok, ResultAsync } from '@thourum/fault';
 import React from 'react';
 import { useStore } from '../hooks/useStore';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -53,7 +53,6 @@ export function OnboardingPage(): React.ReactElement {
     appStore,
     (s: UIState) => s.confirmingAction,
   );
-  const { request } = useWebSocket();
   const [devFolderError, setDevFolderError] = React.useState<string | null>(
     null,
   );
@@ -90,20 +89,20 @@ export function OnboardingPage(): React.ReactElement {
         return ok(path);
       })
       .andThen((path) =>
-        ResultAsync.fromPromise(
-          request('VALIDATE_DEV_FOLDER', { path }),
-          validationFault,
-        ).andThen(parseValidateDevFolderResult),
+        wsClient
+          .request('VALIDATE_DEV_FOLDER', { path })
+          .mapErr(validationFault)
+          .andThen(parseValidateDevFolderResult),
       )
       .andThen(persistDevFolderPath)
       .andThen((result) =>
-        ResultAsync.fromPromise(
-          request('SCAN_DEV_FOLDER', {
+        wsClient
+          .request('SCAN_DEV_FOLDER', {
             path: result.canonicalPath,
             reason: 'settings-change',
-          }),
-          validationFault,
-        ).andThen(parseScanDevFolderResult),
+          })
+          .mapErr(validationFault)
+          .andThen(parseScanDevFolderResult),
       )
       .match(
         (result) => {
@@ -115,7 +114,7 @@ export function OnboardingPage(): React.ReactElement {
           }
         },
       );
-  }, [request]);
+  }, []);
 
   React.useEffect(() => {
     if (confirmingAction === 'onboarding_finish') {

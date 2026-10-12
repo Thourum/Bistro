@@ -4,7 +4,7 @@ import { CacheUsageCard } from '../../components/CacheUsageCard';
 import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { useStore } from '../../hooks/useStore';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { wsClient } from '../../services/ws/connection';
 import { settingsStore, updateSettings } from '../../store/settings';
 import type { LocationErrorCode } from '../../types/repoLocation';
 import { Section } from './SettingsComponents';
@@ -119,10 +119,6 @@ function scanStatusText(scan: ScanDevFolderSummary | null): string {
   return `${scan.discovered} discovered, ${scan.healthy} healthy, ${scan.degraded} degraded, ${scan.skipped} skipped.${partial}`;
 }
 
-function ensurePromise(value: Promise<unknown> | unknown): Promise<unknown> {
-  return value instanceof Promise ? value : Promise.resolve(value);
-}
-
 function requestFault(error: unknown): Fault {
   const message =
     error instanceof Error && error.message.trim() !== ''
@@ -155,7 +151,6 @@ function pickFolderResult(): ResultAsync<string | null, Fault> {
 
 export function RepositoriesSection() {
   const repositories = useStore(settingsStore, (s) => s.repositories);
-  const { request } = useWebSocket();
   const [scanResult, setScanResult] = useState<ScanDevFolderSummary | null>(
     null,
   );
@@ -165,10 +160,9 @@ export function RepositoriesSection() {
 
   const scanDevFolder = useCallback(
     (path: string): ResultAsync<ScanDevFolderSummary, Fault> =>
-      ResultAsync.fromPromise(
-        ensurePromise(request('SCAN_DEV_FOLDER', { path, reason: 'settings' })),
-        requestFault,
-      )
+      wsClient
+        .request('SCAN_DEV_FOLDER', { path, reason: 'settings' })
+        .mapErr(requestFault)
         .andThen(parseScanDevFolderSummary)
         .map((summary) => {
           setScanResult(summary);
@@ -179,7 +173,7 @@ export function RepositoriesSection() {
           setErrorMessage(error.message);
           return error;
         }),
-    [request],
+    [],
   );
 
   const handleChange = (): void => {
@@ -190,10 +184,9 @@ export function RepositoriesSection() {
           return ResultAsync.fromSafePromise(Promise.resolve(null));
         }
 
-        return ResultAsync.fromPromise(
-          ensurePromise(request('VALIDATE_DEV_FOLDER', { path })),
-          requestFault,
-        )
+        return wsClient
+          .request('VALIDATE_DEV_FOLDER', { path })
+          .mapErr(requestFault)
           .andThen((response) => {
             if (isLocationErrorResponse(response)) {
               return err(

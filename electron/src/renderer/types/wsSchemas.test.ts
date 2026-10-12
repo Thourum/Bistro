@@ -1,12 +1,12 @@
 import { Fault } from '@thourum/fault';
 import { describe, expect, it } from 'vitest';
-import { parseWsMessage } from './useWebSocket';
+import { parseWsMessage } from './wsSchemas';
 
 describe('parseWsMessage', () => {
   it.each([
     'AUTH_CHECK_RESULT',
     'AUTH_DISCONNECT_RESULT',
-  ])('normalizes a null provider list in %s from an unauthenticated Go engine', (type) => {
+  ])('normalizes null provider list in %s from unauthenticated Go engine', (type) => {
     const parsed = parseWsMessage(
       JSON.stringify({ type, data: { authenticated: false, providers: null } }),
     );
@@ -31,11 +31,28 @@ describe('parseWsMessage', () => {
   it.each([
     'PR_CHECKOUT_STATUS',
     'PR_CHECKOUT_RESULT',
-  ])('accepts %s for request correlation', (type) => {
+  ])('accepts %s request correlation', (type) => {
     expect(
       parseWsMessage(
         JSON.stringify({ id: 'request-1', type, data: {} }),
       ).isOk(),
     ).toBe(true);
+  });
+
+  it('rejects inherited object keys instead of treating them as event schemas', () => {
+    expect(
+      parseWsMessage(
+        JSON.stringify({ type: 'constructor' }),
+      )._unsafeUnwrapErr(),
+    ).toMatchObject({
+      tag: 'BAD_REQUEST',
+      message: 'Unknown WebSocket event: constructor',
+    });
+  });
+
+  it('preserves omitted response data accepted by unknown payload schemas', () => {
+    expect(
+      parseWsMessage(JSON.stringify({ type: 'DIFF_READY' }))._unsafeUnwrap(),
+    ).toEqual({ type: 'DIFF_READY', data: undefined });
   });
 });

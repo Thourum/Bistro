@@ -1,7 +1,7 @@
-import { Fault, ResultAsync } from '@thourum/fault';
+import { Fault } from '@thourum/fault';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import {
   type CICheck,
   type Comment,
@@ -43,7 +43,6 @@ export function usePRDetailData(
   isAwaitingHydration: boolean,
   commentsRevision: number,
 ): PRDetailData {
-  const { request } = useWebSocket();
   const [files, setFiles] = useState<DiffSummaryFile[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [ciChecks, setCIChecks] = useState<CICheck[]>([]);
@@ -56,10 +55,9 @@ export function usePRDetailData(
   useEffect(() => {
     void commentsRevision;
     if (pr === undefined || isAwaitingHydration) return;
-    void ResultAsync.fromPromise(
-      request('REQUEST_COMMENTS', { pr_id: pr.id }),
-      requestFault,
-    )
+    void wsClient
+      .request('REQUEST_COMMENTS', { pr_id: pr.id })
+      .mapErr(requestFault)
       .andThen((data) => parseResponse(commentsResponseSchema, data))
       .match(
         (payload) => {
@@ -67,14 +65,13 @@ export function usePRDetailData(
         },
         (error) => log.warn({ err: error.message }, 'failed to fetch comments'),
       );
-  }, [pr, request, commentsRevision, isAwaitingHydration]);
+  }, [pr, commentsRevision, isAwaitingHydration]);
 
   useEffect(() => {
     if (pr === undefined || isAwaitingHydration) return;
-    void ResultAsync.fromPromise(
-      request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` }),
-      requestFault,
-    )
+    void wsClient
+      .request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` })
+      .mapErr(requestFault)
       .andThen((data) => parseResponse(diffResponseSchema, data))
       .match(
         (payload) => {
@@ -94,10 +91,9 @@ export function usePRDetailData(
           log.warn({ err: error.message }, 'failed to fetch diff stats'),
       );
 
-    void ResultAsync.fromPromise(
-      request('REQUEST_CI_CHECKS', { pr_id: pr.id }),
-      requestFault,
-    )
+    void wsClient
+      .request('REQUEST_CI_CHECKS', { pr_id: pr.id })
+      .mapErr(requestFault)
       .andThen((data) => parseResponse(ciChecksResponseSchema, data))
       .match(
         (payload) => {
@@ -106,7 +102,7 @@ export function usePRDetailData(
         (error) =>
           log.warn({ err: error.message }, 'failed to fetch CI checks'),
       );
-  }, [pr, request, isAwaitingHydration]);
+  }, [pr, isAwaitingHydration]);
 
   return { files, comments, ciChecks, stats };
 }

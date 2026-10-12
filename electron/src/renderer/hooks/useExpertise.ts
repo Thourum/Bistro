@@ -1,5 +1,6 @@
-import { Fault, fromPromise } from '@thourum/fault';
+import { Fault } from '@thourum/fault';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { type ExpertiseDataPayload, expertiseDataSchema } from '../types';
 import { parseResponse } from '../utils/error';
@@ -9,7 +10,6 @@ import {
 } from '../utils/expertise';
 import { createLogger } from '../utils/logger';
 import { useStore } from './useStore';
-import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('useExpertise');
 
@@ -28,12 +28,9 @@ interface ExpertiseState {
 export function useExpertise(prId: string | undefined): ExpertiseState & {
   refetch: () => void;
 } {
-  const { request } = useWebSocket();
   const prListRevision = useStore(appStore, (s) => s.prListRevision);
   const latestRequestIdRef = useRef(0);
   const lastReadyRevisionRef = useRef(prListRevision);
-  const requestRef = useRef(request);
-  requestRef.current = request;
 
   const [state, setState] = useState<ExpertiseState>({
     expertise: null,
@@ -50,13 +47,11 @@ export function useExpertise(prId: string | undefined): ExpertiseState & {
     const requestId = latestRequestIdRef.current + 1;
     latestRequestIdRef.current = requestId;
     setState({ expertise: null, loading: true, error: null });
-    void fromPromise(
-      requestRef.current('GET_EXPERTISE', { pr_id: prId }),
-      (cause) =>
-        new Fault(cause instanceof Error ? cause : 'Unknown error')
-          .withTag('NETWORK_ERROR')
-          .withCause(cause),
-    )
+    void wsClient
+      .request('GET_EXPERTISE', { pr_id: prId })
+      .mapErr((cause) =>
+        new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+      )
       .andThen((data) => parseResponse(expertiseDataSchema, data))
       .match(
         (data) => {

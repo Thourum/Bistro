@@ -4,8 +4,8 @@ import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
-import { useWebSocket } from '../hooks/useWebSocket';
 import { useOverlays } from '../overlays/OverlayContext';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -156,7 +156,6 @@ export function CommandPalette(): React.ReactElement | null {
   } = useOverlays();
   const isOpen = activeOverlay === 'command';
   const [query, setQuery] = useState('');
-  const { send } = useWebSocket();
   const prefetchedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -207,13 +206,13 @@ export function CommandPalette(): React.ReactElement | null {
     if (query.toLowerCase().startsWith('repo') && !prefetchedRef.current) {
       prefetchedRef.current = true;
       appStore.setState((s) => ({ ...s, reposLoading: true }));
-      const requestId = send('REQUEST_REPO_LIST', {});
+      const requestId = wsClient.send('REQUEST_REPO_LIST', {});
       if (requestId === undefined) {
         appStore.setState((s) => ({ ...s, reposLoading: false }));
         prefetchedRef.current = false;
       }
     }
-  }, [query, send]);
+  }, [query]);
 
   const handleClose = (): void => {
     closeOverlay();
@@ -247,7 +246,7 @@ export function CommandPalette(): React.ReactElement | null {
       return;
     }
 
-    send(type, { repo_id: repoIdForPR(focusedPR) });
+    wsClient.send(type, { repo_id: repoIdForPR(focusedPR) });
     closeOverlay();
     setQuery('');
   };
@@ -345,7 +344,7 @@ export function CommandPalette(): React.ReactElement | null {
         sendExpertiseCommand('EXPERTISE_DISABLE');
         return;
       case 'sync':
-        send('FORCE_SYNC', {});
+        wsClient.send('FORCE_SYNC', {});
         appStore.setState((s) => ({
           ...s,
           syncStatus: 'syncing',

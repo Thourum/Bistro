@@ -1,7 +1,7 @@
 import { Button } from '../../components/ui/button';
 import { useStore } from '../../hooks/useStore';
-import { useWebSocket } from '../../hooks/useWebSocket';
 import { PROVIDERS } from '../../providers';
+import { wsClient } from '../../services/ws/connection';
 import { appStore } from '../../store';
 import type { UIState } from '../../store/ui';
 import { Section } from './SettingsComponents';
@@ -9,7 +9,6 @@ import { Section } from './SettingsComponents';
 export function ConnectionsSection() {
   const connected = useStore(appStore, (s: UIState) => s.connectedProviders);
   const authLoading = useStore(appStore, (s: UIState) => s.authLoading);
-  const { send } = useWebSocket();
 
   const handleConnect = (providerId: string) => {
     if (authLoading) return;
@@ -18,11 +17,11 @@ export function ConnectionsSection() {
       authLoading: true,
       authError: null,
     }));
-    send('AUTH_START', { provider: providerId });
+    wsClient.send('AUTH_START', { provider: providerId });
   };
 
   const handleDisconnect = (providerId: string) => {
-    send('AUTH_DISCONNECT', { provider: providerId });
+    wsClient.send('AUTH_DISCONNECT', { provider: providerId });
   };
 
   return (

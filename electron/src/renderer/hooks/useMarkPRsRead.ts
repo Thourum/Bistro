@@ -1,9 +1,9 @@
-import { Fault, fromPromise } from '@thourum/fault';
-import { useCallback, useRef } from 'react';
+import { Fault } from '@thourum/fault';
+import { useCallback } from 'react';
+import { wsClient } from '../services/ws/connection';
 import { type PRsReadAck, prsReadAckSchema } from '../types';
 import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
-import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('useMarkPRsRead');
 
@@ -11,19 +11,13 @@ const log = createLogger('useMarkPRsRead');
 export function useMarkPRsRead(): {
   markPRsRead: (prIds: readonly string[]) => Promise<PRsReadAck | null>;
 } {
-  const { request } = useWebSocket();
-  const requestRef = useRef(request);
-  requestRef.current = request;
-
   const markPRsRead = useCallback(
     (prIds: readonly string[]): Promise<PRsReadAck | null> =>
-      fromPromise(
-        requestRef.current('MARK_PRS_READ', { pr_ids: [...prIds] }),
-        (cause) =>
-          new Fault(cause instanceof Error ? cause : 'Unknown error')
-            .withTag('NETWORK_ERROR')
-            .withCause(cause),
-      )
+      wsClient
+        .request('MARK_PRS_READ', { pr_ids: [...prIds] })
+        .mapErr((cause) =>
+          new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+        )
         .andThen((data) => parseResponse(prsReadAckSchema, data))
         .match(
           (data) => data,

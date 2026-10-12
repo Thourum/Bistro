@@ -1,7 +1,7 @@
 import { err, Fault, ok, type Result, ResultAsync } from '@thourum/fault';
 import type React from 'react';
 import { useState } from 'react';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import type { RepoInfo } from '../types';
 import type { LocationErrorCode } from '../types/repoLocation';
 
@@ -144,20 +144,19 @@ function countsCopy(counts: RemoveCounts): string {
 }
 
 function runRequest(
-  request: (type: string, data: unknown) => Promise<unknown>,
   type: string,
   payload: unknown,
 ): ResultAsync<ActionResponse, Fault> {
-  return ResultAsync.fromPromise(request(type, payload), requestFault).andThen(
-    parseActionResponse,
-  );
+  return wsClient
+    .request(type, payload)
+    .mapErr(requestFault)
+    .andThen(parseActionResponse);
 }
 
 export function RepoRecoveryDialog({
   repo,
   onClose,
 }: RepoRecoveryDialogProps): React.ReactElement {
-  const { request } = useWebSocket();
   const [mode, setMode] = useState<DialogMode>('actions');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -189,7 +188,7 @@ export function RepoRecoveryDialog({
           });
         }
 
-        return runRequest(request, 'RECOVER_REPO_PATH', {
+        return runRequest('RECOVER_REPO_PATH', {
           repo_id: repo.id,
           path,
         });
@@ -215,7 +214,7 @@ export function RepoRecoveryDialog({
   const confirmMoveToCache = (): void => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    runRequest(request, 'RECOVER_REPO_TO_CACHE', { repo_id: repo.id }).match(
+    runRequest('RECOVER_REPO_TO_CACHE', { repo_id: repo.id }).match(
       (response) => {
         setIsSubmitting(false);
         if (handleResponse(response)) {
@@ -232,7 +231,7 @@ export function RepoRecoveryDialog({
   const preflightRemove = (): void => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    runRequest(request, 'REMOVE_REPO_PREFLIGHT', { repo_id: repo.id }).match(
+    runRequest('REMOVE_REPO_PREFLIGHT', { repo_id: repo.id }).match(
       (response) => {
         setIsSubmitting(false);
         if (!response.ok) {
@@ -256,7 +255,7 @@ export function RepoRecoveryDialog({
   const confirmRemove = (): void => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    runRequest(request, 'REMOVE_REPO', { repo_id: repo.id }).match(
+    runRequest('REMOVE_REPO', { repo_id: repo.id }).match(
       (response) => {
         setIsSubmitting(false);
         if (handleResponse(response)) {

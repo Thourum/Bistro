@@ -1,6 +1,6 @@
-import { Fault, ResultAsync } from '@thourum/fault';
+import { Fault } from '@thourum/fault';
 import { useEffect, useState } from 'react';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import {
   type Comment,
   commentsResponseSchema,
@@ -40,7 +40,6 @@ export function useDiffPageData({
   isAwaitingHydration,
   commentsRevision,
 }: DiffPageDataOptions): DiffPageData {
-  const { request } = useWebSocket();
   const [diff, setDiff] = useState('');
   const [files, setFiles] = useState<DiffFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,10 +50,9 @@ export function useDiffPageData({
     if (pr === undefined || isAwaitingHydration) return;
     setLoading(true);
     setDiffError(null);
-    void ResultAsync.fromPromise(
-      request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` }),
-      requestFault,
-    )
+    void wsClient
+      .request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` })
+      .mapErr(requestFault)
       .andThen((data) => parseResponse(diffResponseSchema, data))
       .match(
         (payload) => {
@@ -68,15 +66,14 @@ export function useDiffPageData({
           setLoading(false);
         },
       );
-  }, [isAwaitingHydration, pr, request]);
+  }, [isAwaitingHydration, pr]);
 
   useEffect(() => {
     if (pr === undefined) return;
     void commentsRevision;
-    void ResultAsync.fromPromise(
-      request('REQUEST_COMMENTS', { pr_id: pr.id }),
-      requestFault,
-    )
+    void wsClient
+      .request('REQUEST_COMMENTS', { pr_id: pr.id })
+      .mapErr(requestFault)
       .andThen((data) => parseResponse(commentsResponseSchema, data))
       .match(
         (payload) => {
@@ -88,7 +85,7 @@ export function useDiffPageData({
             'failed to fetch comments for diff annotations',
           ),
       );
-  }, [pr, request, commentsRevision]);
+  }, [pr, commentsRevision]);
 
   return { diff, files, setFiles, loading, diffError, comments };
 }

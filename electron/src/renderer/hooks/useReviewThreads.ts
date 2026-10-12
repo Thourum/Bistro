@@ -1,13 +1,13 @@
-import { Fault, fromPromise } from '@thourum/fault';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fault } from '@thourum/fault';
+import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import { type ReviewThread, reviewThreadSchema } from '../types';
 import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
 import { useStore } from './useStore';
-import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('useReviewThreads');
 const reviewThreadsResponseSchema = z.object({
@@ -39,10 +39,6 @@ export function useReviewThreads(
 ): ReviewThreadsState & {
   refetch: () => void;
 } {
-  const { request } = useWebSocket();
-  const requestRef = useRef(request);
-  requestRef.current = request;
-
   const threadsRevision = useStore(appStore, (s: UIState) => s.threadsRevision);
 
   const [state, setState] = useState<ReviewThreadsState>({
@@ -54,13 +50,11 @@ export function useReviewThreads(
   const load = useCallback(() => {
     if (prId === undefined) return;
     setState((s) => ({ ...s, loading: true, error: null }));
-    void fromPromise(
-      requestRef.current('GET_REVIEW_THREADS', { pr_id: prId }),
-      (cause) =>
-        new Fault(cause instanceof Error ? cause : 'Unknown error')
-          .withTag('NETWORK_ERROR')
-          .withCause(cause),
-    )
+    void wsClient
+      .request('GET_REVIEW_THREADS', { pr_id: prId })
+      .mapErr((cause) =>
+        new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+      )
       .andThen((data) => parseResponse(reviewThreadsResponseSchema, data))
       .match(
         (payload) => {

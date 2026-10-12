@@ -1,11 +1,11 @@
-import { Fault, fromPromise } from '@thourum/fault';
+import { Fault } from '@thourum/fault';
 import { useEffect, useState } from 'react';
 import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { useStore } from '../../hooks/useStore';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { wsClient } from '../../services/ws/connection';
 import { appStore } from '../../store';
 import type { UIState } from '../../store/ui';
 import type { ExpertiseSettingsPayload } from '../../types';
@@ -52,7 +52,6 @@ function settingsOrDefault(
 }
 
 export function ExpertiseSection() {
-  const { request } = useWebSocket();
   const repos = useStore(appStore, (s: UIState) => s.repos);
   const storedSettings = useStore(
     appStore,
@@ -77,21 +76,22 @@ export function ExpertiseSection() {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    void fromPromise(request('GET_EXPERTISE_SETTINGS', {}), (cause) =>
-      new Fault(cause instanceof Error ? cause : 'sync engine unreachable')
-        .withTag('CONNECTION_ERROR')
-        .withCause(cause),
-    ).match(
-      () => undefined,
-      (err) => {
-        addToast({
-          type: 'error',
-          message: `Loading expertise settings failed: ${err.message}`,
-          dismissible: true,
-        });
-      },
-    );
-  }, [request]);
+    void wsClient
+      .request('GET_EXPERTISE_SETTINGS', {})
+      .mapErr((cause) =>
+        new Fault(cause).withTag('CONNECTION_ERROR').withCause(cause),
+      )
+      .match(
+        () => undefined,
+        (err) => {
+          addToast({
+            type: 'error',
+            message: `Loading expertise settings failed: ${err.message}`,
+            dismissible: true,
+          });
+        },
+      );
+  }, []);
 
   useEffect(() => {
     if (storedSettings === null) return;
@@ -132,29 +132,30 @@ export function ExpertiseSection() {
     );
 
     setIsSaving(true);
-    void fromPromise(request('SET_EXPERTISE_SETTINGS', payload), (cause) =>
-      new Fault(cause instanceof Error ? cause : 'sync engine unreachable')
-        .withTag('CONNECTION_ERROR')
-        .withCause(cause),
-    ).match(
-      () => {
-        setIsSaving(false);
-        appStore.setState((s) => ({ ...s, expertiseSettings: payload }));
-        addToast({
-          type: 'success',
-          message: 'Expertise settings saved.',
-          dismissible: true,
-        });
-      },
-      (err) => {
-        setIsSaving(false);
-        addToast({
-          type: 'error',
-          message: `Saving expertise settings failed: ${err.message}`,
-          dismissible: true,
-        });
-      },
-    );
+    void wsClient
+      .request('SET_EXPERTISE_SETTINGS', payload)
+      .mapErr((cause) =>
+        new Fault(cause).withTag('CONNECTION_ERROR').withCause(cause),
+      )
+      .match(
+        () => {
+          setIsSaving(false);
+          appStore.setState((s) => ({ ...s, expertiseSettings: payload }));
+          addToast({
+            type: 'success',
+            message: 'Expertise settings saved.',
+            dismissible: true,
+          });
+        },
+        (err) => {
+          setIsSaving(false);
+          addToast({
+            type: 'error',
+            message: `Saving expertise settings failed: ${err.message}`,
+            dismissible: true,
+          });
+        },
+      );
   };
 
   const setRepoExcludes = (repoId: string, value: string): void => {

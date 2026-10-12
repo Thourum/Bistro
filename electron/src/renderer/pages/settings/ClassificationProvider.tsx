@@ -1,11 +1,11 @@
-import { Fault, fromPromise } from '@thourum/fault';
+import { Fault } from '@thourum/fault';
 import { useState } from 'react';
 import type { ClassificationSettings } from '../../../types/settings';
 import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { useStore } from '../../hooks/useStore';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { wsClient } from '../../services/ws/connection';
 import { appStore } from '../../store';
 import type { UIState } from '../../store/ui';
 import { saveSettings } from './SettingsComponents';
@@ -36,7 +36,6 @@ export function ClassificationProvider({
   );
   const byokEstCost = useStore(appStore, (s: UIState) => s.byokEstCost);
   const byokAuthFailed = useStore(appStore, (s: UIState) => s.byokAuthFailed);
-  const { request } = useWebSocket();
   const [keyInput, setKeyInput] = useState('');
   const [keySaved, setKeySaved] = useState(false);
   const [keySaving, setKeySaving] = useState(false);
@@ -46,37 +45,36 @@ export function ClassificationProvider({
     setKeySaving(true);
     // The key travels ONLY through SET_BYOK_KEY into the OS keychain —
     // never into settings JSON or any renderer store.
-    void fromPromise(
-      request('SET_BYOK_KEY', {
+    void wsClient
+      .request('SET_BYOK_KEY', {
         provider: classification.provider,
         key: keyInput,
-      }),
-      (cause) =>
-        new Fault(cause instanceof Error ? cause : 'sync engine unreachable')
-          .withTag('CONNECTION_ERROR')
-          .withCause(cause),
-    ).match(
-      () => {
-        setKeySaving(false);
-        setKeyInput('');
-        setKeySaved(true);
-        appStore.setState((s) => ({ ...s, byokAuthFailed: false }));
-        addToast({
-          type: 'success',
-          message: `API key saved to the OS keychain (${classification.provider})`,
-          dismissible: true,
-        });
-      },
-      (err) => {
-        // Key kept in the input so the user can retry.
-        setKeySaving(false);
-        addToast({
-          type: 'error',
-          message: `Saving key failed: ${err.message}`,
-          dismissible: true,
-        });
-      },
-    );
+      })
+      .mapErr((cause) =>
+        new Fault(cause).withTag('CONNECTION_ERROR').withCause(cause),
+      )
+      .match(
+        () => {
+          setKeySaving(false);
+          setKeyInput('');
+          setKeySaved(true);
+          appStore.setState((s) => ({ ...s, byokAuthFailed: false }));
+          addToast({
+            type: 'success',
+            message: `API key saved to the OS keychain (${classification.provider})`,
+            dismissible: true,
+          });
+        },
+        (err) => {
+          // Key kept in the input so the user can retry.
+          setKeySaving(false);
+          addToast({
+            type: 'error',
+            message: `Saving key failed: ${err.message}`,
+            dismissible: true,
+          });
+        },
+      );
   };
 
   return (
