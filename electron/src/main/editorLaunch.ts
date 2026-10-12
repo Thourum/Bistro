@@ -1,11 +1,12 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import type { Logger } from 'electron-log';
 import {
   errAsync,
+  Fault,
   fromPromise,
   fromThrowable,
   type ResultAsync,
-} from 'neverthrow';
+} from '@thourum/fault';
+import type { Logger } from 'electron-log';
 
 type SpawnEditor = (
   command: string,
@@ -27,18 +28,21 @@ export function launchEditor(
   args: readonly string[],
   logger: Logger,
   spawnProcess: SpawnEditor = spawnEditor,
-): ResultAsync<void, string> {
+): ResultAsync<void, Fault> {
   const childResult = fromThrowable(
     () =>
       spawnProcess(command, args, {
         detached: true,
         stdio: 'ignore',
       }),
-    errorMessage,
+    (cause) =>
+      new Fault(errorMessage(cause))
+        .withTag('EDITOR_LAUNCH_ERROR')
+        .withCause(cause),
   )();
 
   if (childResult.isErr()) {
-    logger.error(`open-in-editor error: ${childResult.error}`);
+    logger.error(`open-in-editor error: ${childResult.error.message}`);
     return errAsync(childResult.error);
   }
 
@@ -62,7 +66,7 @@ export function launchEditor(
     (error) => {
       const message = errorMessage(error);
       logger.error(`open-in-editor spawn error: ${message}`);
-      return message;
+      return new Fault(message).withTag('EDITOR_LAUNCH_ERROR').withCause(error);
     },
   );
 }

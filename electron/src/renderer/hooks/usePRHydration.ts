@@ -1,4 +1,4 @@
-import { ResultAsync } from 'neverthrow';
+import { Fault, ResultAsync } from '@thourum/fault';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { appStore } from '../store';
 import type { PR } from '../types';
@@ -51,7 +51,10 @@ export function usePRHydration(pr: PR | undefined): PRHydrationState {
     log.debug({ prId }, 'hydrating list-only PR');
     void ResultAsync.fromPromise(
       requestRef.current('REQUEST_PR_SYNC', { pr_id: prId }),
-      hydrationErrorMessage,
+      (cause) =>
+        new Fault(hydrationErrorMessage(cause))
+          .withTag('NETWORK_ERROR')
+          .withCause(cause),
     )
       .match(
         () => {
@@ -65,9 +68,9 @@ export function usePRHydration(pr: PR | undefined): PRHydrationState {
         },
         (hydrationError) => {
           if (!isMountedRef.current || activePrIdRef.current !== prId) return;
-          setError(hydrationError);
+          setError(hydrationError.message);
           log.warn(
-            { err: hydrationError, prId },
+            { err: hydrationError.message, prId },
             'on-demand PR hydration failed',
           );
         },

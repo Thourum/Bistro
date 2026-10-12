@@ -1,4 +1,4 @@
-import { ResultAsync } from 'neverthrow';
+import { Fault, ResultAsync } from '@thourum/fault';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -31,8 +31,10 @@ interface PRDetailData {
   stats: DiffStats;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unknown error';
+function requestFault(error: unknown): Fault {
+  return new Fault(error instanceof Error ? error : 'Unknown error')
+    .withTag('CONNECTION_ERROR')
+    .withCause(error);
 }
 
 /** Loads the detail page's comments, diff summary, and CI checks independently. */
@@ -56,14 +58,14 @@ export function usePRDetailData(
     if (pr === undefined || isAwaitingHydration) return;
     void ResultAsync.fromPromise(
       request('REQUEST_COMMENTS', { pr_id: pr.id }),
-      errorMessage,
+      requestFault,
     )
       .andThen((data) => parseResponse(commentsResponseSchema, data))
       .match(
         (payload) => {
           setComments(payload.comments);
         },
-        (message) => log.warn({ err: message }, 'failed to fetch comments'),
+        (error) => log.warn({ err: error.message }, 'failed to fetch comments'),
       );
   }, [pr, request, commentsRevision, isAwaitingHydration]);
 
@@ -71,7 +73,7 @@ export function usePRDetailData(
     if (pr === undefined || isAwaitingHydration) return;
     void ResultAsync.fromPromise(
       request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` }),
-      errorMessage,
+      requestFault,
     )
       .andThen((data) => parseResponse(diffResponseSchema, data))
       .match(
@@ -88,19 +90,21 @@ export function usePRDetailData(
               parsed.reduce((sum, file) => sum + file.deletions, 0),
           });
         },
-        (message) => log.warn({ err: message }, 'failed to fetch diff stats'),
+        (error) =>
+          log.warn({ err: error.message }, 'failed to fetch diff stats'),
       );
 
     void ResultAsync.fromPromise(
       request('REQUEST_CI_CHECKS', { pr_id: pr.id }),
-      errorMessage,
+      requestFault,
     )
       .andThen((data) => parseResponse(ciChecksResponseSchema, data))
       .match(
         (payload) => {
           setCIChecks(payload.checks);
         },
-        (message) => log.warn({ err: message }, 'failed to fetch CI checks'),
+        (error) =>
+          log.warn({ err: error.message }, 'failed to fetch CI checks'),
       );
   }, [pr, request, isAwaitingHydration]);
 

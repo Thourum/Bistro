@@ -1,4 +1,4 @@
-import { err, ok, type Result, ResultAsync } from 'neverthrow';
+import { err, Fault, ok, type Result, ResultAsync } from '@thourum/fault';
 import type React from 'react';
 import { useState } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -77,9 +77,13 @@ function parseCounts(data: unknown): RemoveCounts | null {
   return null;
 }
 
-function parseActionResponse(data: unknown): Result<ActionResponse, string> {
+function parseActionResponse(data: unknown): Result<ActionResponse, Fault> {
   if (!isRecord(data)) {
-    return err('Recovery action returned an invalid response.');
+    return err(
+      new Fault('Recovery action returned an invalid response.').withTag(
+        'VALIDATION_ERROR',
+      ),
+    );
   }
 
   if (data.ok === true) {
@@ -100,19 +104,21 @@ function parseActionResponse(data: unknown): Result<ActionResponse, string> {
     return ok({ ok: false, code: data.code, message: data.message });
   }
 
-  return err('Recovery action returned an invalid response.');
+  return err(
+    new Fault('Recovery action returned an invalid response.').withTag(
+      'VALIDATION_ERROR',
+    ),
+  );
 }
 
-function requestErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim() !== '') {
-    return error.message;
-  }
-
-  if (typeof error === 'string' && error.trim() !== '') {
-    return error;
-  }
-
-  return 'Bistro could not reach the sync engine. Try again.';
+function requestFault(error: unknown): Fault {
+  const message =
+    error instanceof Error && error.message.trim() !== ''
+      ? error.message
+      : typeof error === 'string' && error.trim() !== ''
+        ? error
+        : 'Bistro could not reach the sync engine. Try again.';
+  return new Fault(message).withTag('CONNECTION_ERROR').withCause(error);
 }
 
 function userFacingCodeMessage(code: LocationErrorCode): string {
@@ -141,11 +147,10 @@ function runRequest(
   request: (type: string, data: unknown) => Promise<unknown>,
   type: string,
   payload: unknown,
-): ResultAsync<ActionResponse, string> {
-  return ResultAsync.fromPromise(
-    request(type, payload),
-    requestErrorMessage,
-  ).andThen(parseActionResponse);
+): ResultAsync<ActionResponse, Fault> {
+  return ResultAsync.fromPromise(request(type, payload), requestFault).andThen(
+    parseActionResponse,
+  );
 }
 
 export function RepoRecoveryDialog({
@@ -174,10 +179,10 @@ export function RepoRecoveryDialog({
   const chooseNewPath = (): void => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    ResultAsync.fromPromise(window.electron.pickFolder(), requestErrorMessage)
+    ResultAsync.fromPromise(window.electron.pickFolder(), requestFault)
       .andThen((path) => {
         if (path === null) {
-          return ok<ActionResponse, string>({
+          return ok<ActionResponse, Fault>({
             ok: false,
             code: 'cancelled',
             message: '',
@@ -200,9 +205,9 @@ export function RepoRecoveryDialog({
             handleResponse(response);
           }
         },
-        (message) => {
+        (error) => {
           setIsSubmitting(false);
-          setErrorMessage(message);
+          setErrorMessage(error.message);
         },
       );
   };
@@ -217,9 +222,9 @@ export function RepoRecoveryDialog({
           onClose();
         }
       },
-      (message) => {
+      (error) => {
         setIsSubmitting(false);
-        setErrorMessage(message);
+        setErrorMessage(error.message);
       },
     );
   };
@@ -241,9 +246,9 @@ export function RepoRecoveryDialog({
         setRemoveCounts(response.counts);
         setMode('removeConfirm');
       },
-      (message) => {
+      (error) => {
         setIsSubmitting(false);
-        setErrorMessage(message);
+        setErrorMessage(error.message);
       },
     );
   };
@@ -258,9 +263,9 @@ export function RepoRecoveryDialog({
           onClose();
         }
       },
-      (message) => {
+      (error) => {
         setIsSubmitting(false);
-        setErrorMessage(message);
+        setErrorMessage(error.message);
       },
     );
   };

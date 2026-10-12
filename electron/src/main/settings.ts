@@ -1,11 +1,17 @@
 import { mkdir } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
+import {
+  Fault,
+  fromPromise,
+  fromThrowable,
+  type Result,
+  ServiceError,
+} from '@thourum/fault';
 import { app, BrowserWindow, shell } from 'electron';
 import type { Logger } from 'electron-log';
 import ElectronStore, {
   type Options as ElectronStoreOptions,
 } from 'electron-store';
-import { fromPromise, fromThrowable, type Result } from 'neverthrow';
 import { z } from 'zod';
 import {
   type AppSettings,
@@ -74,8 +80,10 @@ function basenameWithoutJson(filePath: string): string {
   return fileName.endsWith('.json') ? fileName.slice(0, -5) : fileName;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function settingsFault(cause: unknown): Fault {
+  return new Fault(cause instanceof Error ? cause : String(cause))
+    .withTag('SETTINGS_ERROR')
+    .withCause(cause);
 }
 
 export class SettingsService {
@@ -109,7 +117,7 @@ export class SettingsService {
       deserialize: (value: string) =>
         fromThrowable(
           () => JSON.parse(value) as unknown,
-          () => null,
+          (cause) => settingsFault(cause).withTag('PARSE_ERROR'),
         )().match(normalise, () => DEFAULT_SETTINGS),
       watch: true,
     };
@@ -135,14 +143,14 @@ export class SettingsService {
   load(): Promise<AppSettings> {
     return this.loadResult().match(
       (settings) => Promise.resolve(settings),
-      (message) => Promise.reject(new Error(message)),
+      (error) => Promise.reject(error),
     );
   }
 
-  loadResult(): Result<AppSettings, string> {
+  loadResult(): Result<AppSettings, Fault> {
     return this.writeNormalisedStore()
       .andThen(() =>
-        fromThrowable(() => normalise(this.store.store), errorMessage)(),
+        fromThrowable(() => normalise(this.store.store), settingsFault)(),
       )
       .map((settings) => {
         this.current = settings;
@@ -155,7 +163,7 @@ export class SettingsService {
     const result = this.setResult(patch);
     return 'ok' in result
       ? Promise.resolve(result.ok)
-      : Promise.reject(new Error(result.err));
+      : Promise.reject(ServiceError('SETTINGS_ERROR', result.err));
   }
 
   setResult(
@@ -163,7 +171,7 @@ export class SettingsService {
   ): { ok: AppSettings } | { err: string } {
     const next = mergeSettings(this.current, patch);
     const written = this.writeStore(next);
-    if (written.isErr()) return { err: errorMessage(written.error) };
+    if (written.isErr()) return { err: written.error.message };
     this.current = next;
     this.broadcast(next);
     return { ok: next };
@@ -174,12 +182,12 @@ export class SettingsService {
     const result = this.resetResult();
     return 'ok' in result
       ? Promise.resolve(result.ok)
-      : Promise.reject(new Error(result.err));
+      : Promise.reject(ServiceError('SETTINGS_ERROR', result.err));
   }
 
   resetResult(): { ok: AppSettings } | { err: string } {
     const written = this.writeStore(DEFAULT_SETTINGS);
-    if (written.isErr()) return { err: errorMessage(written.error) };
+    if (written.isErr()) return { err: written.error.message };
     this.current = DEFAULT_SETTINGS;
     this.broadcast(DEFAULT_SETTINGS);
     return { ok: this.current };
@@ -189,22 +197,22 @@ export class SettingsService {
   async openFile(): Promise<{ ok: true } | { err: string }> {
     const mkdirError = await fromPromise(
       mkdir(dirname(this.store.path), { recursive: true }),
-      errorMessage,
+      settingsFault,
     ).match(
       () => null,
       (err) => err,
     );
-    if (mkdirError !== null) return { err: mkdirError };
+    if (mkdirError !== null) return { err: mkdirError.message };
 
     const writeResult = this.writeStore(this.current);
-    if (writeResult.isErr()) return { err: errorMessage(writeResult.error) };
+    if (writeResult.isErr()) return { err: writeResult.error.message };
 
     const openResult = await fromPromise(
       shell.openPath(this.store.path),
-      errorMessage,
+      settingsFault,
     ).match(
-      (err) => err,
-      (err) => err,
+      (message) => message,
+      (error) => error.message,
     );
     if (openResult) return { err: openResult };
     return { ok: true };
@@ -222,21 +230,21 @@ export class SettingsService {
 
   // ─── internals ───────────────────────────────────────────────
 
-  private writeNormalisedStore(): Result<void, string> {
+  private writeNormalisedStore(): Result<void, Fault> {
     this.isLoading = true;
     const result = fromThrowable(
       () => normalise(this.store.store),
-      errorMessage,
+      settingsFault,
     )().andThen((state) => this.writeStore(state));
     this.isLoading = false;
     return result;
   }
 
-  private writeStore(state: AppSettings): Result<void, string> {
+  private writeStore(state: AppSettings): Result<void, Fault> {
     this.isWriting = true;
     const result = fromThrowable(() => {
       this.store.store = state;
-    }, errorMessage)();
+    }, settingsFault)();
     this.isWriting = false;
     return result;
   }
@@ -244,16 +252,17 @@ export class SettingsService {
   private broadcast(state: AppSettings): void {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
-        fromThrowable(() =>
-          win.webContents.send('settings:changed', state),
-        )().mapErr((error) =>
-          this.logger.warn('Settings broadcast failed', error),
+        fromThrowable(
+          () => win.webContents.send('settings:changed', state),
+          settingsFault,
+        )().orInspect((error) =>
+          this.logger.warn('Settings broadcast failed', error.message),
         );
       }
     }
     for (const listener of this.changeListeners) {
-      fromThrowable(() => listener(state))().mapErr((error) =>
-        this.logger.warn('Settings listener failed', error),
+      fromThrowable(() => listener(state), settingsFault)().orInspect((error) =>
+        this.logger.warn('Settings listener failed', error.message),
       );
     }
   }

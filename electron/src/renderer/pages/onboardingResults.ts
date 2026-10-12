@@ -1,4 +1,4 @@
-import { err, ok, type Result } from 'neverthrow';
+import { err, Fault, ok, type Result } from '@thourum/fault';
 import { z } from 'zod';
 import { createLogger } from '../utils/logger';
 
@@ -39,22 +39,28 @@ function sendResultErrorMessage(response: unknown, fallback: string): string {
 /** Interprets the engine's development-folder validation response. */
 export function parseValidateDevFolderResult(
   response: unknown,
-): Result<ValidateDevFolderResult, string> {
+): Result<ValidateDevFolderResult, Fault> {
   if (validationFailureSchema.safeParse(response).success) {
     return err(
-      sendResultErrorMessage(response, 'Unable to validate that folder.'),
+      new Fault(
+        sendResultErrorMessage(response, 'Unable to validate that folder.'),
+      ).withTag('VALIDATION_ERROR'),
     );
   }
   const parsed = validationSuccessSchema.safeParse(response);
   if (parsed.success) return ok({ canonicalPath: parsed.data.canonical_path });
   log.warn('invalid dev folder validation response');
-  return err('Dev folder validation returned an invalid response.');
+  return err(
+    new Fault('Dev folder validation returned an invalid response.').withTag(
+      'VALIDATION_ERROR',
+    ),
+  );
 }
 
 /** Accepts both legacy repository lists and the current discovery count. */
 export function parseScanDevFolderResult(
   response: unknown,
-): Result<ScanDevFolderResult, string> {
+): Result<ScanDevFolderResult, Fault> {
   const repositories = scanRepositoriesSchema.safeParse(response);
   if (repositories.success) {
     return ok({ discovered: repositories.data.repositories.length });
@@ -62,5 +68,9 @@ export function parseScanDevFolderResult(
   const parsed = scanCountSchema.safeParse(response);
   if (parsed.success) return ok({ discovered: parsed.data.discovered });
   log.warn('invalid dev folder scan response');
-  return err('Dev folder scan returned an invalid response.');
+  return err(
+    new Fault('Dev folder scan returned an invalid response.').withTag(
+      'VALIDATION_ERROR',
+    ),
+  );
 }

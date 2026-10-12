@@ -2,12 +2,14 @@ import { Store } from '@tanstack/store';
 import {
   err,
   errAsync,
+  Fault,
   fromThrowable,
   ok,
   okAsync,
   type Result,
   ResultAsync,
-} from 'neverthrow';
+  ServiceError,
+} from '@thourum/fault';
 import { z } from 'zod';
 import {
   type AppSettings,
@@ -45,23 +47,31 @@ const legacySettingsSchema = z.object({
   prListView: z.enum(['flat', 'grouped']).optional(),
 });
 
-function readLocalJson(key: string): Result<unknown | null, string> {
-  return fromThrowable(() => localStorage.getItem(key), String)().andThen(
-    (raw) =>
-      raw === null
-        ? ok(null)
-        : fromThrowable(() => JSON.parse(raw) as unknown, String)(),
+function readLocalJson(key: string): Result<unknown | null, Fault> {
+  return fromThrowable(
+    () => localStorage.getItem(key),
+    (cause) =>
+      new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
+  )().andThen((raw) =>
+    raw === null
+      ? ok(null)
+      : fromThrowable(
+          () => JSON.parse(raw) as unknown,
+          (cause) =>
+            new Fault(String(cause)).withTag('PARSE_ERROR').withCause(cause),
+        )(),
   );
 }
 
 function migrateLegacyLocalStorage(): Result<
   Partial<AppSettings> | null,
-  string
+  Fault
 > {
   return readLocalJson(LEGACY_LOCAL_KEY).andThen((value) => {
     if (value === null) return ok(null);
     const parsed = legacySettingsSchema.safeParse(value);
-    if (!parsed.success) return err('Invalid legacy settings');
+    if (!parsed.success)
+      return err(ServiceError('VALIDATION_ERROR', 'Invalid legacy settings'));
     const legacy = parsed.data;
     const patch: Partial<AppSettings> = {
       appearance: {
@@ -80,29 +90,34 @@ function migrateLegacyLocalStorage(): Result<
   });
 }
 
-function persistLocal(state: AppSettings): Result<void, string> {
+function persistLocal(state: AppSettings): Result<void, Fault> {
   return fromThrowable(
     () => localStorage.setItem(LOCAL_FALLBACK_KEY, JSON.stringify(state)),
-    String,
+    (cause) =>
+      new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
   )();
 }
 
-function loadLocal(): Result<AppSettings, string> {
+function loadLocal(): Result<AppSettings, Fault> {
   return readLocalJson(LOCAL_FALLBACK_KEY).andThen((value) => {
     if (value === null) return ok(DEFAULT_SETTINGS);
     const parsed = appSettingsSchema.safeParse(value);
-    return parsed.success ? ok(parsed.data) : err('Invalid local settings');
+    return parsed.success
+      ? ok(parsed.data)
+      : err(ServiceError('VALIDATION_ERROR', 'Invalid local settings'));
   });
 }
 
-function reportSettingsError(message: string): void {
-  console.warn(`Settings: ${message}`);
+function reportSettingsError(error: Fault | string): void {
+  console.warn(
+    `Settings: ${typeof error === 'string' ? error : error.message}`,
+  );
 }
 
 function mergeLocalSettings(
   base: AppSettings,
   patch: Partial<AppSettings>,
-): Result<AppSettings, string> {
+): Result<AppSettings, Fault> {
   const merged = Object.fromEntries(
     Object.entries(patch).map(([section, value]) => {
       if (section === '$schema' || value === undefined)
@@ -120,7 +135,9 @@ function mergeLocalSettings(
     }),
   );
   const parsed = appSettingsSchema.safeParse({ ...base, ...merged });
-  return parsed.success ? ok(parsed.data) : err('Invalid settings patch');
+  return parsed.success
+    ? ok(parsed.data)
+    : err(ServiceError('VALIDATION_ERROR', 'Invalid settings patch'));
 }
 
 /**
@@ -138,7 +155,8 @@ export async function initSettings(): Promise<void> {
     if (legacy !== null) {
       const migrated = await ResultAsync.fromPromise(
         window.electron.settings.set(legacy),
-        String,
+        (cause) =>
+          new Fault(String(cause)).withTag('SETTINGS_ERROR').withCause(cause),
       ).match(
         (response) => response,
         (message) => ({ err: message }),
@@ -146,24 +164,24 @@ export async function initSettings(): Promise<void> {
       if ('ok' in migrated) {
         fromThrowable(
           () => localStorage.removeItem(LEGACY_LOCAL_KEY),
-          String,
-        )().mapErr(reportSettingsError);
+          (cause) =>
+            new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
+        )().orInspect(reportSettingsError);
       } else {
         reportSettingsError(migrated.err);
       }
     }
-    await ResultAsync.fromPromise(window.electron.settings.get(), String).match(
-      (initial) => {
-        if ('ok' in initial) {
-          const validated = appSettingsSchema.safeParse(initial.ok);
-          if (validated.success) settingsStore.setState(() => validated.data);
-          else reportSettingsError('Invalid settings from main process');
-        } else {
-          reportSettingsError(initial.err);
-        }
-      },
-      reportSettingsError,
-    );
+    await ResultAsync.fromPromise(window.electron.settings.get(), (cause) =>
+      new Fault(String(cause)).withTag('SETTINGS_ERROR').withCause(cause),
+    ).match((initial) => {
+      if ('ok' in initial) {
+        const validated = appSettingsSchema.safeParse(initial.ok);
+        if (validated.success) settingsStore.setState(() => validated.data);
+        else reportSettingsError('Invalid settings from main process');
+      } else {
+        reportSettingsError(initial.err);
+      }
+    }, reportSettingsError);
     window.electron.on('settings:changed', (data) => {
       const validated = appSettingsSchema.safeParse(data);
       if (validated.success) settingsStore.setState(() => validated.data);
@@ -191,12 +209,13 @@ export async function initSettings(): Promise<void> {
         );
   settingsStore.setState(() => next);
   const persisted = persistLocal(next);
-  persisted.mapErr(reportSettingsError);
+  persisted.orInspect(reportSettingsError);
   if (legacy !== null && persisted.isOk()) {
     fromThrowable(
       () => localStorage.removeItem(LEGACY_LOCAL_KEY),
-      String,
-    )().mapErr(reportSettingsError);
+      (cause) =>
+        new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
+    )().orInspect(reportSettingsError);
   }
 }
 
@@ -207,20 +226,34 @@ export async function initSettings(): Promise<void> {
  */
 export function updateSettings(
   patch: Partial<AppSettings>,
-): ResultAsync<void, string> {
+): ResultAsync<void, Fault> {
   if (hasElectron()) {
-    return ResultAsync.fromPromise(window.electron.settings.set(patch), (e) =>
-      e instanceof Error && e.message.trim() !== ''
-        ? e.message
-        : 'Unable to write settings.',
+    return ResultAsync.fromPromise(
+      window.electron.settings.set(patch),
+      (cause) =>
+        new Fault(
+          cause instanceof Error && cause.message.trim() !== ''
+            ? cause.message
+            : 'Unable to write settings.',
+        )
+          .withTag('SETTINGS_ERROR')
+          .withCause(cause),
     ).andThen((res) => {
       if ('ok' in res) {
         const parsed = appSettingsSchema.safeParse(res.ok);
-        if (!parsed.success) return err('Invalid settings response');
+        if (!parsed.success)
+          return err(
+            ServiceError('VALIDATION_ERROR', 'Invalid settings response'),
+          );
         settingsStore.setState(() => parsed.data);
         return ok(undefined);
       }
-      return err(res.err.trim() === '' ? 'Unable to write settings.' : res.err);
+      return err(
+        ServiceError(
+          'SETTINGS_ERROR',
+          res.err.trim() === '' ? 'Unable to write settings.' : res.err,
+        ),
+      );
     });
   }
   return mergeLocalSettings(settingsStore.state, patch)
@@ -236,9 +269,8 @@ export function updateSettings(
 
 export async function resetSettings(): Promise<void> {
   if (hasElectron()) {
-    await ResultAsync.fromPromise(
-      window.electron.settings.reset(),
-      String,
+    await ResultAsync.fromPromise(window.electron.settings.reset(), (cause) =>
+      new Fault(String(cause)).withTag('SETTINGS_ERROR').withCause(cause),
     ).match((response) => {
       if ('err' in response) {
         reportSettingsError(response.err);
@@ -258,9 +290,8 @@ export async function resetSettings(): Promise<void> {
 
 export async function openSettingsFile(): Promise<void> {
   if (!hasElectron()) return;
-  await ResultAsync.fromPromise(
-    window.electron.settings.openFile(),
-    String,
+  await ResultAsync.fromPromise(window.electron.settings.openFile(), (cause) =>
+    new Fault(String(cause)).withTag('SETTINGS_ERROR').withCause(cause),
   ).match((response) => {
     if ('err' in response) reportSettingsError(response.err);
   }, reportSettingsError);

@@ -1,8 +1,16 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  err,
+  Fault,
+  fromThrowable,
+  ok,
+  type Result,
+  ResultAsync,
+  ServiceError,
+} from '@thourum/fault';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import log from 'electron-log';
-import { err, fromThrowable, ok, type Result, ResultAsync } from 'neverthrow';
 import { z } from 'zod';
 import type { ClassificationSettings, SyncSettings } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
@@ -136,8 +144,10 @@ function normaliseWindowDimension(
   return parsed.success ? parsed.data : fallback;
 }
 
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
+function mainFault(cause: unknown): Fault {
+  return new Fault(cause instanceof Error ? cause : String(cause))
+    .withTag('INTERNAL_ERROR')
+    .withCause(cause);
 }
 function isValidStartupPort(port: number): boolean {
   return Number.isInteger(port) && port > 0 && port <= MAX_WS_PORT;
@@ -151,7 +161,7 @@ const startupEnvironmentSchema = z.object({
 
 function buildConfig(
   sync: SyncSettings = DEFAULT_SETTINGS.sync,
-): Result<AppConfig, string> {
+): Result<AppConfig, Fault> {
   const parsed = startupEnvironmentSchema.safeParse({
     WS_PORT: process.env.WS_PORT ?? undefined,
     APP_WINDOW_WIDTH: normaliseWindowDimension(
@@ -166,7 +176,10 @@ function buildConfig(
   });
   if (!parsed.success) {
     return err(
-      `Invalid startup configuration: ${parsed.error.issues.map((issue) => issue.path.join('.')).join(', ')}`,
+      ServiceError(
+        'CONFIGURATION_ERROR',
+        `Invalid startup configuration: ${parsed.error.issues.map((issue) => issue.path.join('.')).join(', ')}`,
+      ).withCause(parsed.error),
     );
   }
   const dataDir = resolveDataDir();
@@ -188,7 +201,7 @@ function buildConfig(
         },
       } satisfies AppConfig;
     },
-    (cause) => (cause instanceof Error ? cause.message : String(cause)),
+    (cause) => mainFault(cause).withTag('FILE_SYSTEM_ERROR'),
   )();
 }
 
@@ -211,19 +224,19 @@ ipcMain.handle('open-external', (_event, url: unknown) => {
   if (typeof url !== 'string' || !url.startsWith('https://')) {
     return { err: 'Only https:// URLs are allowed' };
   }
-  return ResultAsync.fromPromise(shell.openExternal(url), (err) =>
-    err instanceof Error ? err.message : String(err),
+  return ResultAsync.fromPromise(shell.openExternal(url), (cause) =>
+    mainFault(cause).withTag('EXTERNAL_ERROR'),
   ).match(
     () => ({ ok: true as const }),
-    (message) => {
-      log.error(`open-external failed: ${message}`);
-      return { err: message };
+    (error) => {
+      log.error(`open-external failed: ${error.message}`);
+      return { err: error.message };
     },
   );
 });
 
-function initialiseMain(): Result<AppConfig, string> {
-  return fromThrowable(() => new SettingsService(log), errorMessage)()
+function initialiseMain(): Result<AppConfig, Fault> {
+  return fromThrowable(() => new SettingsService(log), mainFault)()
     .andThen((settings) => settings.loadResult().map(() => settings))
     .andThen((settings) =>
       buildConfig(settings.snapshot.sync).andThen((config) =>
@@ -256,7 +269,7 @@ function initialiseMain(): Result<AppConfig, string> {
             telemetryService,
           );
           return config;
-        }, errorMessage)(),
+        }, mainFault)(),
       ),
     );
 }
@@ -264,8 +277,8 @@ function initialiseMain(): Result<AppConfig, string> {
 app.on('ready', () => {
   const initialised = initialiseMain();
   if (initialised.isErr()) {
-    log.error(`Failed to initialise app: ${initialised.error}`);
-    dialog.showErrorBox('Bistro could not start', initialised.error);
+    log.error(`Failed to initialise app: ${initialised.error.message}`);
+    dialog.showErrorBox('Bistro could not start', initialised.error.message);
     app.quit();
     return;
   }
@@ -280,19 +293,23 @@ app.on('ready', () => {
       config: appConfig.goProcess,
       logger: log,
       onStillStarting: () => {
-        fromThrowable(() =>
-          createWindow(runtimeConfig ?? appConfig, log),
-        )().mapErr((error) => {
-          log.error('Failed to show slow-start window', error);
+        fromThrowable(
+          () => createWindow(runtimeConfig ?? appConfig, log),
+          mainFault,
+        )().orInspect((error) => {
+          log.error('Failed to show slow-start window', error.message);
           app.quit();
         });
       },
       onCrash: (code, signal) => {
         log.error(`Go process crashed: code=${code}, signal=${signal}`);
-        captureSentryException(new Error('Go sync engine crashed'), {
-          tags: { component: 'go-sync-engine' },
-          extra: { code, signal },
-        });
+        captureSentryException(
+          ServiceError('GO_PROCESS_ERROR', 'Go sync engine crashed'),
+          {
+            tags: { component: 'go-sync-engine' },
+            extra: { code, signal },
+          },
+        );
         BrowserWindow.getAllWindows().forEach((win) => {
           if (!win.isDestroyed()) {
             win.webContents.send('go:crashed', { code, signal });
@@ -300,7 +317,7 @@ app.on('ready', () => {
         });
       },
     }),
-    (cause) => (cause instanceof Error ? cause.message : String(cause)),
+    (cause) => mainFault(cause).withTag('GO_PROCESS_ERROR'),
   ).match(
     (actualWsPort) => {
       if (!isValidStartupPort(actualWsPort)) {
@@ -336,7 +353,9 @@ app.on('ready', () => {
             type: 'SET_SYNC_SETTINGS',
             data: syncSettingsPayload(sync),
           })
-          .mapErr((error) => log.warn(`Sync settings update failed: ${error}`));
+          .orInspect((error) =>
+            log.warn(`Sync settings update failed: ${error.message}`),
+          );
       };
       const sendClassificationSettingsToGo = (c: ClassificationSettings) => {
         if (!wsClient?.isConnected()) return;
@@ -345,8 +364,8 @@ app.on('ready', () => {
             type: 'SET_CLASSIFICATION_SETTINGS',
             data: classificationSettingsPayload(c),
           })
-          .mapErr((error) =>
-            log.warn(`Classification settings update failed: ${error}`),
+          .orInspect((error) =>
+            log.warn(`Classification settings update failed: ${error.message}`),
           );
       };
       wsClient.on('connected', () => {
@@ -368,22 +387,27 @@ app.on('ready', () => {
       });
 
       // 4. Create window (last — everything is ready)
-      fromThrowable(() =>
-        createWindow(runtimeConfig ?? appConfig, log),
-      )().mapErr((error) => {
-        log.error('Failed to create window', error);
+      fromThrowable(
+        () => createWindow(runtimeConfig ?? appConfig, log),
+        mainFault,
+      )().orInspect((error) => {
+        log.error('Failed to create window', error.message);
         app.quit();
       });
     },
-    (message) => {
-      log.error(`Failed to start app: ${message}`);
-      captureSentryException(new Error('Electron main startup failed'), {
-        tags: { component: 'electron-main' },
-      });
-      fromThrowable(() =>
-        createWindow(runtimeConfig ?? appConfig, log),
-      )().mapErr((error) => {
-        log.error('Failed to create fallback window', error);
+    (error) => {
+      log.error(`Failed to start app: ${error.message}`);
+      captureSentryException(
+        ServiceError('INTERNAL_ERROR', 'Electron main startup failed'),
+        {
+          tags: { component: 'electron-main' },
+        },
+      );
+      fromThrowable(
+        () => createWindow(runtimeConfig ?? appConfig, log),
+        mainFault,
+      )().orInspect((error) => {
+        log.error('Failed to create fallback window', error.message);
         app.quit();
       });
     },
@@ -409,10 +433,10 @@ app.on('activate', () => {
     const config = runtimeConfig === null ? buildConfig() : ok(runtimeConfig);
     config.match(
       (value) =>
-        fromThrowable(() => createWindow(value, log))().mapErr((error) =>
-          log.error('Failed to activate window', error),
+        fromThrowable(() => createWindow(value, log), mainFault)().orInspect(
+          (error) => log.error('Failed to activate window', error.message),
         ),
-      (message) => log.error(`Failed to activate app: ${message}`),
+      (error) => log.error(`Failed to activate app: ${error.message}`),
     );
   }
 });

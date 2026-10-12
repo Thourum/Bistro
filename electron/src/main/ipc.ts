@@ -1,9 +1,15 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
+import {
+  errAsync,
+  Fault,
+  fromPromise,
+  fromThrowable,
+  ServiceError,
+} from '@thourum/fault';
 import { dialog, ipcMain } from 'electron';
 import type { Logger } from 'electron-log';
-import { errAsync, fromPromise, fromThrowable } from 'neverthrow';
 import { buildEditorArgs, parseEditorCommand } from '../shared/editorArgs';
 import {
   fsReadPatchRequestSchema,
@@ -28,8 +34,10 @@ const ACTION_TYPE_MAP = {
   string
 >;
 
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
+function ipcFault(cause: unknown): Fault {
+  return new Fault(cause instanceof Error ? cause : String(cause))
+    .withTag('IPC_ERROR')
+    .withCause(cause);
 }
 
 export function setupIPC(
@@ -58,30 +66,30 @@ export function setupIPC(
     const patch = Object.fromEntries(
       Object.entries(parsed.data).filter(([, value]) => value !== undefined),
     ) as Partial<AppSettings>;
-    return fromThrowable(() => settings.setResult(patch), errorMessage)().match(
+    return fromThrowable(() => settings.setResult(patch), ipcFault)().match(
       (result) => {
         if ('err' in result) return result;
         telemetry?.setEnabled(result.ok.privacy.telemetryEnabled);
         trackSettingsPatch(telemetry, patch, result.ok);
         return result;
       },
-      (message) => {
-        logger.error(`settings:set error: ${message}`);
-        return { err: message };
+      (error) => {
+        logger.error(`settings:set error: ${error.message}`);
+        return { err: error.message };
       },
     );
   });
 
   ipcMain.handle('settings:reset', () =>
-    fromThrowable(() => settings.resetResult(), errorMessage)().match(
+    fromThrowable(() => settings.resetResult(), ipcFault)().match(
       (result) => {
         if ('ok' in result)
           telemetry?.setEnabled(result.ok.privacy.telemetryEnabled);
         return result;
       },
-      (message) => {
-        logger.error(`settings:reset error: ${message}`);
-        return { err: message };
+      (error) => {
+        logger.error(`settings:reset error: ${error.message}`);
+        return { err: error.message };
       },
     ),
   );
@@ -121,13 +129,17 @@ export function setupIPC(
       void telemetry?.track('fs_patch_read', { allowed: false });
       return { err: 'Access denied: path outside allowed directory' };
     }
-    return fromPromise(realpath(baseDir), errorMessage)
+    return fromPromise(realpath(baseDir), ipcFault)
       .andThen((canonicalBase) =>
-        fromPromise(realpath(resolved), errorMessage).andThen(
-          (canonicalFile) =>
-            canonicalFile.startsWith(canonicalBase + sep)
-              ? fromPromise(readFile(canonicalFile, 'utf-8'), errorMessage)
-              : errAsync('Access denied: path outside allowed directory'),
+        fromPromise(realpath(resolved), ipcFault).andThen((canonicalFile) =>
+          canonicalFile.startsWith(canonicalBase + sep)
+            ? fromPromise(readFile(canonicalFile, 'utf-8'), ipcFault)
+            : errAsync(
+                ServiceError(
+                  'AUTHORIZATION_ERROR',
+                  'Access denied: path outside allowed directory',
+                ),
+              ),
         ),
       )
       .match(
@@ -135,10 +147,10 @@ export function setupIPC(
           void telemetry?.track('fs_patch_read', { allowed: true });
           return { ok: content };
         },
-        (message) => {
+        (error) => {
           void telemetry?.track('fs_patch_read', { allowed: false });
-          logger.warn(`fs:read-patch rejected: ${message}`);
-          return { err: message };
+          logger.warn(`fs:read-patch rejected: ${error.message}`);
+          return { err: error.message };
         },
       );
   });
@@ -172,9 +184,9 @@ export function setupIPC(
         )
         .match(
           () => ({ ok: true as const }),
-          (message) => {
-            logger.warn(`open-in-editor rejected: ${message}`);
-            return { err: message };
+          (error) => {
+            logger.warn(`open-in-editor rejected: ${error.message}`);
+            return { err: error.message };
           },
         );
     },
@@ -207,9 +219,9 @@ export function setupIPC(
       })
       .match(
         () => ({ ok: true }),
-        (message) => {
-          logger.error(`go:command error: ${message}`);
-          return { err: message };
+        (error) => {
+          logger.error(`go:command error: ${error.message}`);
+          return { err: error.message };
         },
       );
   });
@@ -240,9 +252,9 @@ export function setupIPC(
       })
       .match(
         () => ({ ok: { success: true } }),
-        (message) => {
-          logger.error(`sync:action error: ${message}`);
-          return { err: message };
+        (error) => {
+          logger.error(`sync:action error: ${error.message}`);
+          return { err: error.message };
         },
       );
   });

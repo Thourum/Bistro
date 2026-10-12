@@ -38,6 +38,8 @@ describe('buildEditorArgs', () => {
   it('returns error Result for empty editor command', () => {
     const result = buildEditorArgs('', 'src/foo.ts', 1);
     expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().message).toBe('$EDITOR is not set');
+    expect(result._unsafeUnwrapErr().tag).toBe('CONFIGURATION_ERROR');
   });
 });
 

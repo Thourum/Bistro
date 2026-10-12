@@ -1,4 +1,4 @@
-import { fromPromise } from 'neverthrow';
+import { Fault, fromPromise } from '@thourum/fault';
 import { useEffect, useState } from 'react';
 import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
@@ -77,12 +77,16 @@ export function ExpertiseSection() {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    void fromPromise(request('GET_EXPERTISE_SETTINGS', {}), (err) => err).match(
+    void fromPromise(request('GET_EXPERTISE_SETTINGS', {}), (cause) =>
+      new Fault(cause instanceof Error ? cause : 'sync engine unreachable')
+        .withTag('CONNECTION_ERROR')
+        .withCause(cause),
+    ).match(
       () => undefined,
       (err) => {
         addToast({
           type: 'error',
-          message: `Loading expertise settings failed: ${err instanceof Error ? err.message : 'sync engine unreachable'}`,
+          message: `Loading expertise settings failed: ${err.message}`,
           dismissible: true,
         });
       },
@@ -128,9 +132,10 @@ export function ExpertiseSection() {
     );
 
     setIsSaving(true);
-    void fromPromise(
-      request('SET_EXPERTISE_SETTINGS', payload),
-      (err) => err,
+    void fromPromise(request('SET_EXPERTISE_SETTINGS', payload), (cause) =>
+      new Fault(cause instanceof Error ? cause : 'sync engine unreachable')
+        .withTag('CONNECTION_ERROR')
+        .withCause(cause),
     ).match(
       () => {
         setIsSaving(false);
@@ -145,7 +150,7 @@ export function ExpertiseSection() {
         setIsSaving(false);
         addToast({
           type: 'error',
-          message: `Saving expertise settings failed: ${err instanceof Error ? err.message : 'sync engine unreachable'}`,
+          message: `Saving expertise settings failed: ${err.message}`,
           dismissible: true,
         });
       },

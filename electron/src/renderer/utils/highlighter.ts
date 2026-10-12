@@ -1,3 +1,4 @@
+import { Fault, Result } from '@thourum/fault';
 import hljs from 'highlight.js/lib/core';
 import bash from 'highlight.js/lib/languages/bash';
 import css from 'highlight.js/lib/languages/css';
@@ -12,7 +13,6 @@ import sql from 'highlight.js/lib/languages/sql';
 import typescript from 'highlight.js/lib/languages/typescript';
 import xml from 'highlight.js/lib/languages/xml';
 import yaml from 'highlight.js/lib/languages/yaml';
-import { Result } from 'neverthrow';
 
 const GRAMMARS = {
   typescript,
@@ -71,8 +71,10 @@ export function detectLanguage(filePath: string): string | null {
   return EXTENSION_MAP[basename.slice(dotIndex).toLowerCase()] ?? null;
 }
 
-const highlight = Result.fromThrowable((code: string, language: string) =>
-  hljs.highlight(code, { language }),
+const highlight = Result.fromThrowable(
+  (code: string, language: string) => hljs.highlight(code, { language }),
+  (cause) =>
+    new Fault(String(cause)).withTag('HIGHLIGHT_ERROR').withCause(cause),
 );
 
 export function highlightCode(code: string, language: string | null): string {

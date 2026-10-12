@@ -255,8 +255,8 @@ export function CommandPalette(): React.ReactElement | null {
   const updateSettingsFromCommand = (
     patch: Parameters<typeof updateSettings>[0],
   ): void => {
-    updateSettings(patch).match(handleClose, (message) => {
-      addToast({ type: 'error', message, dismissible: true });
+    updateSettings(patch).match(handleClose, (error) => {
+      addToast({ type: 'error', message: error.message, dismissible: true });
     });
   };
 
@@ -307,8 +307,8 @@ export function CommandPalette(): React.ReactElement | null {
       case 'open-browser': {
         const url = focusedPR === undefined ? null : prBrowserUrl(focusedPR);
         if (url !== null)
-          void openUrlInBrowser(url).mapErr((error) =>
-            log.error({ error }, 'failed to open PR in browser'),
+          void openUrlInBrowser(url).orInspect((error) =>
+            log.error({ error: error.message }, 'failed to open PR in browser'),
           );
         closeOverlay();
         setQuery('');

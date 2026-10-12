@@ -1,4 +1,4 @@
-import { ResultAsync } from 'neverthrow';
+import { Fault, ResultAsync } from '@thourum/fault';
 import { useCallback, useEffect, useRef } from 'react';
 import { hasCurrentInlineAnchor } from '../components/diff/diffAnnotations';
 import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
@@ -44,7 +44,10 @@ export function useDiffPageActions({
     // The markViewed hook already handles transport rejection and returns null.
     void ResultAsync.fromPromise(
       markViewed(pr.id, path, content_hash),
-      () => null,
+      (cause) =>
+        new Fault(cause instanceof Error ? cause : 'Could not mark file viewed')
+          .withTag('MARK_VIEWED_ERROR')
+          .withCause(cause),
     ).match(
       (ack) => {
         if (ack?.ok) {
@@ -123,7 +126,8 @@ export function useDiffPageActions({
     appStore.setState((s) => ({ ...s, confirmingAction: null }));
     updateSettings({ diff: { style: nextStyle } }).match(
       () => undefined,
-      (message) => addToast({ type: 'error', message, dismissible: true }),
+      (error) =>
+        addToast({ type: 'error', message: error.message, dismissible: true }),
     );
   }, [confirmingAction, diffStyle]);
 

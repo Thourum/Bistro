@@ -1,4 +1,4 @@
-import { fromPromise } from 'neverthrow';
+import { Fault, fromPromise } from '@thourum/fault';
 import { useCallback, useRef, useState } from 'react';
 import { z } from 'zod';
 import { parseResponse } from '../utils/error';
@@ -99,7 +99,10 @@ export function useOpenInEditor(): {
     (repoRoot: string, relativePath: string, line: number): Promise<void> =>
       fromPromise(
         window.electron.openInEditor({ repoRoot, relativePath, line }),
-        (err) => (err instanceof Error ? err.message : 'Unknown error'),
+        (cause) =>
+          new Fault(cause instanceof Error ? cause : 'Unknown error')
+            .withTag('EXTERNAL_ERROR')
+            .withCause(cause),
       ).match(
         (response) => {
           if ('err' in response) {
@@ -109,8 +112,8 @@ export function useOpenInEditor(): {
           setState({ dialog: null, error: null });
         },
         (err) => {
-          log.warn({ err }, 'openInEditor IPC failed');
-          setState({ dialog: null, error: err });
+          log.warn({ err: err.message }, 'openInEditor IPC failed');
+          setState({ dialog: null, error: err.message });
         },
       ),
     [],
@@ -121,7 +124,10 @@ export function useOpenInEditor(): {
       Promise.resolve(
         fromPromise(
           requestRef.current('CHECK_PR_CHECKOUT', { pr_id: prId }),
-          (err) => (err instanceof Error ? err.message : 'Unknown error'),
+          (cause) =>
+            new Fault(cause instanceof Error ? cause : 'Unknown error')
+              .withTag('NETWORK_ERROR')
+              .withCause(cause),
         )
           .andThen((data) => parseResponse(checkPRCheckoutSchema, data))
           .match(
@@ -152,8 +158,8 @@ export function useOpenInEditor(): {
               });
             },
             (err) => {
-              log.warn({ err, prId }, 'CHECK_PR_CHECKOUT failed');
-              setState({ dialog: null, error: err });
+              log.warn({ err: err.message, prId }, 'CHECK_PR_CHECKOUT failed');
+              setState({ dialog: null, error: err.message });
             },
           ),
       ),
@@ -170,7 +176,10 @@ export function useOpenInEditor(): {
             pr_id: dialog.prId,
             expected_head_sha: dialog.headSha,
           }),
-          (err) => (err instanceof Error ? err.message : 'Unknown error'),
+          (cause) =>
+            new Fault(cause instanceof Error ? cause : 'Unknown error')
+              .withTag('NETWORK_ERROR')
+              .withCause(cause),
         )
           .andThen((data) => parseResponse(checkoutPRHeadSchema, data))
           .match(
@@ -186,8 +195,11 @@ export function useOpenInEditor(): {
               await openViaIPC(repoRoot, dialog.relativePath, dialog.line);
             },
             (err) => {
-              log.warn({ err, prId: dialog.prId }, 'CHECKOUT_PR_HEAD failed');
-              setState({ dialog: null, error: err });
+              log.warn(
+                { err: err.message, prId: dialog.prId },
+                'CHECKOUT_PR_HEAD failed',
+              );
+              setState({ dialog: null, error: err.message });
             },
           ),
       ),

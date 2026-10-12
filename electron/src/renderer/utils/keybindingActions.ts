@@ -150,8 +150,11 @@ function openSelectedPRInBrowser(context: KeyActionContext): void {
   const url =
     context.store.state.visiblePRBrowserUrls[selectedVisibleIndex(context)];
   if (url === undefined || url === '') return;
-  void openUrlInBrowser(url).mapErr((error) =>
-    log.error({ error }, 'failed to open selected PR in browser'),
+  void openUrlInBrowser(url).orInspect((error) =>
+    log.error(
+      { tag: error.tag, error: error.message },
+      'failed to open selected PR in browser',
+    ),
   );
 }
 

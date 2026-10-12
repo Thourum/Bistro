@@ -1,4 +1,4 @@
-import { fromPromise } from 'neverthrow';
+import { Fault, fromPromise } from '@thourum/fault';
 import { useState } from 'react';
 import type { ClassificationSettings } from '../../../types/settings';
 import { addToast } from '../../components/ToastContainer';
@@ -51,7 +51,10 @@ export function ClassificationProvider({
         provider: classification.provider,
         key: keyInput,
       }),
-      (err) => err,
+      (cause) =>
+        new Fault(cause instanceof Error ? cause : 'sync engine unreachable')
+          .withTag('CONNECTION_ERROR')
+          .withCause(cause),
     ).match(
       () => {
         setKeySaving(false);
@@ -69,7 +72,7 @@ export function ClassificationProvider({
         setKeySaving(false);
         addToast({
           type: 'error',
-          message: `Saving key failed: ${err instanceof Error ? err.message : 'sync engine unreachable'}`,
+          message: `Saving key failed: ${err.message}`,
           dismissible: true,
         });
       },

@@ -1,4 +1,4 @@
-import { fromPromise } from 'neverthrow';
+import { Fault, fromPromise } from '@thourum/fault';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { appStore } from '../store';
 import { type ExpertiseDataPayload, expertiseDataSchema } from '../types';
@@ -52,7 +52,10 @@ export function useExpertise(prId: string | undefined): ExpertiseState & {
     setState({ expertise: null, loading: true, error: null });
     void fromPromise(
       requestRef.current('GET_EXPERTISE', { pr_id: prId }),
-      (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+      (cause) =>
+        new Fault(cause instanceof Error ? cause : 'Unknown error')
+          .withTag('NETWORK_ERROR')
+          .withCause(cause),
     )
       .andThen((data) => parseResponse(expertiseDataSchema, data))
       .match(
@@ -63,8 +66,8 @@ export function useExpertise(prId: string | undefined): ExpertiseState & {
         },
         (message) => {
           if (latestRequestIdRef.current !== requestId) return;
-          log.warn({ err: message }, 'failed to load expertise');
-          setState({ expertise: null, loading: false, error: message });
+          log.warn({ err: message.message }, 'failed to load expertise');
+          setState({ expertise: null, loading: false, error: message.message });
         },
       );
   }, [prId]);

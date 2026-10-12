@@ -1,4 +1,4 @@
-import { fromPromise } from 'neverthrow';
+import { Fault, fromPromise } from '@thourum/fault';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { type RangeDiffResult, rangeDiffSchema } from '../types';
 import { parseResponse } from '../utils/error';
@@ -75,7 +75,10 @@ export function useRangeDiff(
 
     void fromPromise(
       requestRef.current('REQUEST_RANGE_DIFF', payload),
-      (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+      (cause) =>
+        new Fault(cause instanceof Error ? cause : 'Unknown error')
+          .withTag('NETWORK_ERROR')
+          .withCause(cause),
     )
       .andThen((data) => parseResponse(rangeDiffSchema, data))
       .match(
@@ -83,8 +86,8 @@ export function useRangeDiff(
           setState({ result, loading: false, error: null });
         },
         (message) => {
-          log.warn({ err: message }, 'failed to load range diff');
-          setState({ result: null, loading: false, error: message });
+          log.warn({ err: message.message }, 'failed to load range diff');
+          setState({ result: null, loading: false, error: message.message });
         },
       );
   }, [prId, reqKey]);

@@ -1,4 +1,4 @@
-import { fromPromise } from 'neverthrow';
+import { Fault, fromPromise } from '@thourum/fault';
 import { useCallback, useRef } from 'react';
 import { type FileViewedAck, fileViewedAckSchema } from '../types';
 import { parseResponse } from '../utils/error';
@@ -42,13 +42,19 @@ export function useMarkFileViewed(): {
           file_path: filePath,
           content_hash: contentHash,
         }),
-        (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+        (cause) =>
+          new Fault(cause instanceof Error ? cause : 'Unknown error')
+            .withTag('NETWORK_ERROR')
+            .withCause(cause),
       )
         .andThen((data) => parseResponse(fileViewedAckSchema, data))
         .match(
           (data) => data,
           (message) => {
-            log.warn({ err: message, filePath }, 'failed to mark file viewed');
+            log.warn(
+              { err: message.message, filePath },
+              'failed to mark file viewed',
+            );
             return null;
           },
         ),

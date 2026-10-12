@@ -1,4 +1,4 @@
-import { ResultAsync } from 'neverthrow';
+import { Fault, ResultAsync } from '@thourum/fault';
 import { useEffect, useState } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import {
@@ -28,8 +28,10 @@ interface DiffPageDataOptions {
   commentsRevision: number;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unknown error';
+function requestFault(error: unknown): Fault {
+  return new Fault(error instanceof Error ? error : 'Unknown error')
+    .withTag('CONNECTION_ERROR')
+    .withCause(error);
 }
 
 /** Loads the full diff and inline annotations independently for the current PR. */
@@ -51,7 +53,7 @@ export function useDiffPageData({
     setDiffError(null);
     void ResultAsync.fromPromise(
       request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` }),
-      errorMessage,
+      requestFault,
     )
       .andThen((data) => parseResponse(diffResponseSchema, data))
       .match(
@@ -60,9 +62,9 @@ export function useDiffPageData({
           setFiles(payload.files);
           setLoading(false);
         },
-        (message) => {
-          log.error({ err: message }, 'failed to fetch diff');
-          setDiffError(message);
+        (error) => {
+          log.error({ err: error.message }, 'failed to fetch diff');
+          setDiffError(error.message);
           setLoading(false);
         },
       );
@@ -73,16 +75,16 @@ export function useDiffPageData({
     void commentsRevision;
     void ResultAsync.fromPromise(
       request('REQUEST_COMMENTS', { pr_id: pr.id }),
-      errorMessage,
+      requestFault,
     )
       .andThen((data) => parseResponse(commentsResponseSchema, data))
       .match(
         (payload) => {
           setComments(payload.comments);
         },
-        (message) =>
+        (error) =>
           log.warn(
-            { err: message },
+            { err: error.message },
             'failed to fetch comments for diff annotations',
           ),
       );

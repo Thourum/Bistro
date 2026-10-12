@@ -1,5 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { err, ok, type Result, ResultAsync } from 'neverthrow';
+import {
+  err,
+  Fault,
+  ok,
+  type Result,
+  ResultAsync,
+  ServiceError,
+} from '@thourum/fault';
 import { z } from 'zod';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
@@ -62,10 +69,14 @@ const prListReadySchema = z.object({
 
 function parsePRList(
   value: unknown,
-): Result<z.infer<typeof prListReadySchema>, string> {
+): Result<z.infer<typeof prListReadySchema>, Fault> {
   const parsed = prListReadySchema.safeParse(value);
-  if (!parsed.success) return err('Invalid PR list response');
-  if (parsed.data.error) return err(parsed.data.error);
+  if (!parsed.success) {
+    return err(ServiceError('VALIDATION_ERROR', 'Invalid PR list response'));
+  }
+  if (parsed.data.error) {
+    return err(ServiceError('EXTERNAL_ERROR', parsed.data.error));
+  }
   return ok(parsed.data);
 }
 
@@ -94,9 +105,12 @@ export function useWebSocketPRList(filterState: FilterState = 'open') {
           limit: PR_LIST_LIMIT,
           offset: 0,
         } satisfies RequestPRListData),
-        (cause) => (cause instanceof Error ? cause.message : String(cause)),
+        (cause) =>
+          new Fault(cause instanceof Error ? cause : String(cause))
+            .withTag('NETWORK_ERROR')
+            .withCause(cause),
       ).andThen(parsePRList);
-      if (response.isErr()) return Promise.reject(new Error(response.error));
+      if (response.isErr()) return Promise.reject(response.error);
 
       const payload = response.value;
       const viewerLogin = payload.viewer_login ?? '';

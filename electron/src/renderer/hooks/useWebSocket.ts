@@ -1,4 +1,12 @@
-import { err, fromThrowable, ok, type Result, ResultAsync } from 'neverthrow';
+import {
+  err,
+  Fault,
+  fromThrowable,
+  ok,
+  type Result,
+  ResultAsync,
+  ServiceError,
+} from '@thourum/fault';
 import { useCallback, useEffect } from 'react';
 import { z } from 'zod';
 import { addToast } from '../components/ToastContainer';
@@ -221,18 +229,30 @@ type WSInboundMessage = {
   };
 }[WsEventType];
 
-export function parseWsMessage(raw: string): Result<WSInboundMessage, string> {
+export function parseWsMessage(raw: string): Result<WSInboundMessage, Fault> {
   return fromThrowable(
     () => JSON.parse(raw) as unknown,
-    () => 'Invalid WebSocket JSON',
+    () => ServiceError('PARSE_ERROR', 'Invalid WebSocket JSON'),
   )().andThen((value) => {
     const envelope = messageEnvelopeSchema.safeParse(value);
-    if (!envelope.success) return err('Invalid WebSocket envelope');
-    if (!(envelope.data.type in dataSchemas))
-      return err(`Unknown WebSocket event: ${envelope.data.type}`);
+    if (!envelope.success) {
+      return err(
+        ServiceError('VALIDATION_ERROR', 'Invalid WebSocket envelope'),
+      );
+    }
+    if (!(envelope.data.type in dataSchemas)) {
+      return err(
+        ServiceError(
+          'BAD_REQUEST',
+          `Unknown WebSocket event: ${envelope.data.type}`,
+        ),
+      );
+    }
     const type = envelope.data.type as WsEventType;
     const payload = dataSchemas[type].safeParse(envelope.data.data);
-    if (!payload.success) return err(`Invalid ${type} payload`);
+    if (!payload.success) {
+      return err(ServiceError('VALIDATION_ERROR', `Invalid ${type} payload`));
+    }
     return ok({
       ...envelope.data,
       type,
@@ -394,26 +414,32 @@ function handleThreadStateChanged(
   }));
 }
 
-function bumpPRListRevision(): Result<void, unknown> {
-  return fromThrowable(() => {
-    appStore.setState((s) => ({
-      ...s,
-      prListRevision: s.prListRevision + 1,
-    }));
-  })();
+function bumpPRListRevision(): Result<void, Fault> {
+  return fromThrowable(
+    () => {
+      appStore.setState((s) => ({
+        ...s,
+        prListRevision: s.prListRevision + 1,
+      }));
+    },
+    (cause) =>
+      new Fault(cause instanceof Error ? cause : 'Unknown error')
+        .withTag('INTERNAL_ERROR')
+        .withCause(cause),
+  )();
 }
 
 function handlePRMetadataChanged(_data: unknown): void {
-  bumpPRListRevision().mapErr((error) =>
-    log.error({ err: error }, 'failed to invalidate PR list'),
+  bumpPRListRevision().orInspect((error) =>
+    log.error({ err: error.message }, 'failed to invalidate PR list'),
   );
 }
 
 function handlePRsReadChanged(
   _data: z.infer<typeof dataSchemas.PRS_READ_CHANGED>,
 ): void {
-  bumpPRListRevision().mapErr((error) =>
-    log.error({ err: error }, 'failed to invalidate PR list'),
+  bumpPRListRevision().orInspect((error) =>
+    log.error({ err: error.message }, 'failed to invalidate PR list'),
   );
 }
 
@@ -555,7 +581,7 @@ function handleAuthRedirectError(message: string): void {
 function onMessage(event: MessageEvent<string>): void {
   const parsed = parseWsMessage(event.data);
   if (parsed.isErr()) {
-    log.warn({ reason: parsed.error }, 'invalid WebSocket message');
+    log.warn({ reason: parsed.error.message }, 'invalid WebSocket message');
     return;
   }
   const message = parsed.value;
@@ -694,18 +720,23 @@ function onMessage(event: MessageEvent<string>): void {
         break;
       }
       void ResultAsync.fromPromise(openExternal(message.data.url), (cause) =>
-        cause instanceof Error ? cause.message : String(cause),
-      ).match((result) => {
-        if (result && 'err' in result) {
-          handleAuthRedirectError(result.err);
-          return;
-        }
-        appStore.setState((state) => ({
-          ...state,
-          authLoading: true,
-          authError: null,
-        }));
-      }, handleAuthRedirectError);
+        new Fault(cause instanceof Error ? cause : String(cause))
+          .withTag('EXTERNAL_ERROR')
+          .withCause(cause),
+      ).match(
+        (result) => {
+          if (result && 'err' in result) {
+            handleAuthRedirectError(result.err);
+            return;
+          }
+          appStore.setState((state) => ({
+            ...state,
+            authLoading: true,
+            authError: null,
+          }));
+        },
+        (fault) => handleAuthRedirectError(fault.message),
+      );
       break;
     }
     case 'AUTH_CHECK_RESULT': {
@@ -905,8 +936,14 @@ function sendStartupDevFolderScan(ws: WebSocket): void {
     timestamp: new Date().toISOString(),
   };
   log.info({ id: scanMsg.id }, 'sending SCAN_DEV_FOLDER');
-  fromThrowable(() => ws.send(JSON.stringify(scanMsg)))().mapErr((error) =>
-    log.warn({ err: error }, 'startup scan request failed'),
+  fromThrowable(
+    () => ws.send(JSON.stringify(scanMsg)),
+    (cause) =>
+      new Fault(cause instanceof Error ? cause : 'Unknown error')
+        .withTag('NETWORK_ERROR')
+        .withCause(cause),
+  )().orInspect((error) =>
+    log.warn({ err: error.message }, 'startup scan request failed'),
   );
 }
 
@@ -939,13 +976,17 @@ function connect(): void {
     enginePortPollAttempt += 1;
     const getWsPort = window.electron?.getWsPort;
     if (getWsPort !== undefined) {
-      void ResultAsync.fromPromise(getWsPort(), (error) => error).match(
+      void ResultAsync.fromPromise(getWsPort(), (cause) =>
+        new Fault(cause instanceof Error ? cause : 'Unknown error')
+          .withTag('EXTERNAL_ERROR')
+          .withCause(cause),
+      ).match(
         (port) => {
           if (isValidWsPort(port)) resolvedWsPort = port;
         },
         (error) => {
           log.warn(
-            { err: error, attempt: enginePortPollAttempt },
+            { err: error.message, attempt: enginePortPollAttempt },
             'failed to query sync engine WebSocket port',
           );
         },
@@ -963,9 +1004,15 @@ function connect(): void {
 
   log.info({ url: wsUrl }, 'attempting connection');
   appStore.setState((s) => ({ ...s, syncStatus: 'connecting' }));
-  const socket = fromThrowable(() => new WebSocket(wsUrl))();
+  const socket = fromThrowable(
+    () => new WebSocket(wsUrl),
+    (cause) =>
+      new Fault(cause instanceof Error ? cause : 'Unknown error')
+        .withTag('CONNECTION_ERROR')
+        .withCause(cause),
+  )();
   if (socket.isErr()) {
-    log.error({ err: socket.error }, 'failed to create WebSocket');
+    log.error({ err: socket.error.message }, 'failed to create WebSocket');
     appStore.setState((state) => ({
       ...state,
       syncStatus: 'error',
@@ -995,8 +1042,14 @@ function connect(): void {
       timestamp: new Date().toISOString(),
     };
     log.info({ id: checkMsg.id }, 'sending AUTH_CHECK');
-    fromThrowable(() => ws.send(JSON.stringify(checkMsg)))().mapErr((error) =>
-      log.warn({ err: error }, 'auth check request failed'),
+    fromThrowable(
+      () => ws.send(JSON.stringify(checkMsg)),
+      (cause) =>
+        new Fault(cause instanceof Error ? cause : 'Unknown error')
+          .withTag('NETWORK_ERROR')
+          .withCause(cause),
+    )().orInspect((error) =>
+      log.warn({ err: error.message }, 'auth check request failed'),
     );
     sendStartupDevFolderScan(ws);
   };
@@ -1090,10 +1143,16 @@ function sendMessage(type: string, data: unknown): string | undefined {
   };
 
   log.info({ type, id }, 'sending message');
-  const sent = fromThrowable(() => ws.send(JSON.stringify(message)))();
+  const sent = fromThrowable(
+    () => ws.send(JSON.stringify(message)),
+    (cause) =>
+      new Fault(cause instanceof Error ? cause : 'Unknown error')
+        .withTag('NETWORK_ERROR')
+        .withCause(cause),
+  )();
   if (sent.isErr()) {
     log.error(
-      { type, id, err: sent.error },
+      { type, id, err: sent.error.message },
       'failed to send WebSocket message',
     );
     return undefined;

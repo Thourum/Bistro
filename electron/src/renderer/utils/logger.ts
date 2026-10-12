@@ -1,4 +1,4 @@
-import { Result } from 'neverthrow';
+import { Fault, Result } from '@thourum/fault';
 import pino from 'pino';
 
 /**
@@ -17,8 +17,9 @@ import pino from 'pino';
 const DEFAULT_LEVEL: pino.LevelWithSilent = import.meta.env.DEV
   ? 'debug'
   : 'info';
-const readStoredLevel = Result.fromThrowable(() =>
-  localStorage.getItem('bistro-log-level'),
+const readStoredLevel = Result.fromThrowable(
+  () => localStorage.getItem('bistro-log-level'),
+  (cause) => new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
 );
 
 function isLogLevel(level: string): level is pino.LevelWithSilent {

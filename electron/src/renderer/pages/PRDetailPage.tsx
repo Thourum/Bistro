@@ -130,7 +130,7 @@ export function PRDetailPage() {
       >
         <span>
           {error !== null
-            ? `Failed to load PR: ${error instanceof Error ? error.message : String(error)}`
+            ? `Failed to load PR: ${error.message}`
             : `PR not found: ${prId}`}
         </span>
         <Link

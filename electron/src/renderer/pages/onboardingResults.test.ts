@@ -7,13 +7,13 @@ import {
 const validationMessage = (response: unknown): string =>
   parseValidateDevFolderResult(response).match(
     () => 'valid',
-    (message) => message,
+    (error) => error.message,
   );
 
 const discoveryCount = (response: unknown): number | string =>
   parseScanDevFolderResult(response).match(
     (result) => result.discovered,
-    (message) => message,
+    (error) => error.message,
   );
 
 describe('development folder result interpretation', () => {
@@ -21,13 +21,18 @@ describe('development folder result interpretation', () => {
     expect(
       parseValidateDevFolderResult({ ok: true, canonical_path: '' }).match(
         (result) => result.canonicalPath,
-        (message) => message,
+        (error) => error.message,
       ),
     ).toBe('');
     for (const response of [null, {}, { ok: true, canonical_path: 1 }]) {
-      expect(validationMessage(response)).toBe(
-        'Dev folder validation returned an invalid response.',
-      );
+      const result = parseValidateDevFolderResult(response);
+      expect(result.isErr()).toBe(true);
+      if (result.isErr()) {
+        expect(result.error.message).toBe(
+          'Dev folder validation returned an invalid response.',
+        );
+        expect(result.error.tag).toBe('VALIDATION_ERROR');
+      }
     }
   });
 

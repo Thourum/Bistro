@@ -1,5 +1,5 @@
 import { formatForDisplay } from '@tanstack/react-hotkeys';
-import { ResultAsync } from 'neverthrow';
+import { Fault, ResultAsync } from '@thourum/fault';
 import { useMemo } from 'react';
 import { Button } from '../../components/ui/button';
 import { Kbd } from '../../components/ui/kbd';
@@ -34,9 +34,10 @@ export function KeyboardSection() {
           variant="link"
           size="sm"
           onClick={() => {
-            void ResultAsync.fromPromise(
-              openSettingsFile(),
-              () => 'Unable to open settings.json.',
+            void ResultAsync.fromPromise(openSettingsFile(), (cause) =>
+              new Fault('Unable to open settings.json.')
+                .withTag('SETTINGS_ERROR')
+                .withCause(cause),
             ).match(() => undefined, showSettingsError);
           }}
           className="h-auto px-0 py-0 align-baseline normal-case tracking-normal"

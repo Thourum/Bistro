@@ -1,4 +1,4 @@
-import { fromPromise } from 'neverthrow';
+import { Fault, fromPromise } from '@thourum/fault';
 import { useCallback, useRef } from 'react';
 import { type PRsReadAck, prsReadAckSchema } from '../types';
 import { parseResponse } from '../utils/error';
@@ -19,13 +19,16 @@ export function useMarkPRsRead(): {
     (prIds: readonly string[]): Promise<PRsReadAck | null> =>
       fromPromise(
         requestRef.current('MARK_PRS_READ', { pr_ids: [...prIds] }),
-        (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+        (cause) =>
+          new Fault(cause instanceof Error ? cause : 'Unknown error')
+            .withTag('NETWORK_ERROR')
+            .withCause(cause),
       )
         .andThen((data) => parseResponse(prsReadAckSchema, data))
         .match(
           (data) => data,
           (err) => {
-            log.warn({ err, prIds }, 'failed to mark PRs read');
+            log.warn({ err: err.message, prIds }, 'failed to mark PRs read');
             return null;
           },
         ),

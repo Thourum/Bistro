@@ -1,4 +1,4 @@
-import { err, ok, type Result, ResultAsync } from 'neverthrow';
+import { err, Fault, ok, type Result, ResultAsync } from '@thourum/fault';
 import { useCallback, useState } from 'react';
 import { CacheUsageCard } from '../../components/CacheUsageCard';
 import { addToast } from '../../components/ToastContainer';
@@ -58,7 +58,7 @@ function isLocationErrorCode(code: unknown): code is LocationErrorCode {
 
 function parseValidateDevFolderResponse(
   data: unknown,
-): Result<ValidateDevFolderResponse, string> {
+): Result<ValidateDevFolderResponse, Fault> {
   if (
     isRecord(data) &&
     data.ok === true &&
@@ -67,12 +67,16 @@ function parseValidateDevFolderResponse(
     return ok({ ok: true, canonical_path: data.canonical_path });
   }
 
-  return err('Dev folder validation returned an invalid response.');
+  return err(
+    new Fault('Dev folder validation returned an invalid response.').withTag(
+      'VALIDATION_ERROR',
+    ),
+  );
 }
 
 function parseScanDevFolderSummary(
   data: unknown,
-): Result<ScanDevFolderSummary, string> {
+): Result<ScanDevFolderSummary, Fault> {
   if (
     isRecord(data) &&
     data.ok === true &&
@@ -92,7 +96,7 @@ function parseScanDevFolderSummary(
     });
   }
 
-  return err('Scan failed.');
+  return err(new Fault('Scan failed.').withTag('VALIDATION_ERROR'));
 }
 
 function isLocationErrorResponse(data: unknown): data is LocationErrorResponse {
@@ -119,28 +123,33 @@ function ensurePromise(value: Promise<unknown> | unknown): Promise<unknown> {
   return value instanceof Promise ? value : Promise.resolve(value);
 }
 
-function requestErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim() !== '') {
-    return error.message;
-  }
-
-  if (typeof error === 'string' && error.trim() !== '') {
-    return error;
-  }
-
-  return 'Bistro could not reach the sync engine. Try again.';
+function requestFault(error: unknown): Fault {
+  const message =
+    error instanceof Error && error.message.trim() !== ''
+      ? error.message
+      : typeof error === 'string' && error.trim() !== ''
+        ? error
+        : 'Bistro could not reach the sync engine. Try again.';
+  return new Fault(message).withTag('CONNECTION_ERROR').withCause(error);
 }
 
-function pickFolderResult(): ResultAsync<string | null, string> {
+function pickFolderResult(): ResultAsync<string | null, Fault> {
   if (window.electron?.pickFolder === undefined) {
     return ResultAsync.fromSafePromise(
       Promise.resolve<string | null>(null),
-    ).andThen(() => err('Folder picker is unavailable.'));
+    ).andThen(() =>
+      err(
+        new Fault('Folder picker is unavailable.').withTag(
+          'FOLDER_PICKER_ERROR',
+        ),
+      ),
+    );
   }
 
-  return ResultAsync.fromPromise(
-    window.electron.pickFolder(),
-    () => 'Dev folder could not be changed.',
+  return ResultAsync.fromPromise(window.electron.pickFolder(), (cause) =>
+    new Fault('Dev folder could not be changed.')
+      .withTag('FOLDER_PICKER_ERROR')
+      .withCause(cause),
   );
 }
 
@@ -155,10 +164,10 @@ export function RepositoriesSection() {
   const currentPath = repositories.devFolderPath;
 
   const scanDevFolder = useCallback(
-    (path: string): ResultAsync<ScanDevFolderSummary, string> =>
+    (path: string): ResultAsync<ScanDevFolderSummary, Fault> =>
       ResultAsync.fromPromise(
         ensurePromise(request('SCAN_DEV_FOLDER', { path, reason: 'settings' })),
-        requestErrorMessage,
+        requestFault,
       )
         .andThen(parseScanDevFolderSummary)
         .map((summary) => {
@@ -166,9 +175,9 @@ export function RepositoriesSection() {
           setErrorMessage(null);
           return summary;
         })
-        .mapErr((message) => {
-          setErrorMessage(message);
-          return message;
+        .mapErr((error) => {
+          setErrorMessage(error.message);
+          return error;
         }),
     [request],
   );
@@ -183,11 +192,13 @@ export function RepositoriesSection() {
 
         return ResultAsync.fromPromise(
           ensurePromise(request('VALIDATE_DEV_FOLDER', { path })),
-          requestErrorMessage,
+          requestFault,
         )
           .andThen((response) => {
             if (isLocationErrorResponse(response)) {
-              return err(response.message);
+              return err(
+                new Fault(response.message).withTag('VALIDATION_ERROR'),
+              );
             }
 
             return parseValidateDevFolderResponse(response);
@@ -199,7 +210,11 @@ export function RepositoriesSection() {
                 devFolderPath: response.canonical_path,
               },
             })
-              .mapErr(() => 'Dev folder could not be changed.')
+              .mapErr((cause) =>
+                new Fault('Dev folder could not be changed.')
+                  .withTag('SETTINGS_ERROR')
+                  .withCause(cause),
+              )
               .map(() => response.canonical_path),
           )
           .andThen(scanDevFolder)
@@ -207,9 +222,13 @@ export function RepositoriesSection() {
       })
       .match(
         () => setIsChanging(false),
-        (message) => {
-          setErrorMessage(message);
-          addToast({ type: 'error', message, dismissible: true });
+        (error) => {
+          setErrorMessage(error.message);
+          addToast({
+            type: 'error',
+            message: error.message,
+            dismissible: true,
+          });
           setIsChanging(false);
         },
       );
@@ -223,16 +242,24 @@ export function RepositoriesSection() {
     updateSettings({
       repositories: { ...repositories, devFolderPath: null },
     })
-      .mapErr(() => 'Dev folder could not be cleared.')
+      .mapErr((cause) =>
+        new Fault('Dev folder could not be cleared.')
+          .withTag('SETTINGS_ERROR')
+          .withCause(cause),
+      )
       .match(
         () => {
           setScanResult(null);
           setErrorMessage(null);
           setIsChanging(false);
         },
-        (message) => {
-          setErrorMessage(message);
-          addToast({ type: 'error', message, dismissible: true });
+        (error) => {
+          setErrorMessage(error.message);
+          addToast({
+            type: 'error',
+            message: error.message,
+            dismissible: true,
+          });
           setIsChanging(false);
         },
       );

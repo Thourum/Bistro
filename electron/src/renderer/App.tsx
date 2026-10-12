@@ -19,7 +19,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
-import { ResultAsync } from 'neverthrow';
+import { Fault, ResultAsync } from '@thourum/fault';
 import React from 'react';
 import { InitialisingScreen } from './components/ConnectingScreen';
 import { FooterSlotProvider } from './components/FooterSlot';
@@ -87,10 +87,18 @@ export default function App(): React.ReactElement {
   const [ready, setReady] = React.useState(false);
 
   React.useEffect(() => {
-    void ResultAsync.fromPromise(initSettings(), (cause) => cause).match(
+    void ResultAsync.fromPromise(initSettings(), (cause) =>
+      new Fault(
+        cause instanceof Error
+          ? cause
+          : 'Could not load settings; using defaults.',
+      )
+        .withTag('SETTINGS_ERROR')
+        .withCause(cause),
+    ).match(
       () => setReady(true),
       (cause) => {
-        log.error({ cause }, 'failed to initialize settings');
+        log.error({ err: cause.message }, 'failed to initialize settings');
         addToast({
           type: 'error',
           message: 'Could not load settings; using defaults.',

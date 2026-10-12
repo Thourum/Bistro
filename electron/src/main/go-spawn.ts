@@ -1,15 +1,17 @@
 import { createRequire } from 'node:module';
-import type { Logger } from 'electron-log';
-import { execa, type ResultPromise } from 'execa';
 import {
   err,
   errAsync,
+  Fault,
   fromPromise,
   fromThrowable,
   ok,
   type Result,
   ResultAsync,
-} from 'neverthrow';
+  ServiceError,
+} from '@thourum/fault';
+import type { Logger } from 'electron-log';
+import { execa, type ResultPromise } from 'execa';
 import { z } from 'zod';
 import type { GoProcessConfig } from './types';
 
@@ -33,7 +35,7 @@ const readyLineSchema = z.object({
 function waitForPort(
   port: number,
   timeoutMs: number,
-): ResultAsync<void, Error> {
+): ResultAsync<void, Fault> {
   return fromPromise(
     waitOn({
       resources: [`tcp:127.0.0.1:${port}`],
@@ -42,8 +44,11 @@ function waitForPort(
       tcpTimeout: 300,
       window: 0,
     }),
-    () =>
-      new Error(`Timed out waiting for external Go process on port ${port}`),
+    (cause) =>
+      ServiceError(
+        'TIMEOUT_ERROR',
+        `Timed out waiting for external Go process on port ${port}`,
+      ).withCause(cause),
   );
 }
 
@@ -71,7 +76,10 @@ export function parseReadyLine(line: string): number | null {
 
   const parsedResult = fromThrowable(
     () => JSON.parse(trimmed) as unknown,
-    () => null,
+    (cause) =>
+      new Fault(cause instanceof Error ? cause : String(cause))
+        .withTag('PARSE_ERROR')
+        .withCause(cause),
   )();
 
   if (parsedResult.isErr()) {
@@ -91,9 +99,9 @@ export interface GoSpawnOptions {
 }
 
 export interface GoReadyWaiter {
-  wait: () => ResultAsync<number, Error>;
+  wait: () => ResultAsync<number, Fault>;
   markReady: (port: number) => void;
-  markFailed: (error: Error) => void;
+  markFailed: (error: Fault) => void;
 }
 
 /**
@@ -106,10 +114,10 @@ export function createGoReadyWaiter(
   onStillStarting: () => void,
 ): GoReadyWaiter {
   let isSettled = false;
-  let settleReady: (result: Result<number, Error>) => void = () => undefined;
+  let settleReady: (result: Result<number, Fault>) => void = () => undefined;
   // Never rejects: failures are carried as `err(...)` values.
   const readyResult = ResultAsync.fromSafePromise(
-    new Promise<Result<number, Error>>((resolve) => {
+    new Promise<Result<number, Fault>>((resolve) => {
       settleReady = resolve;
     }),
   ).andThen((result) => result);
@@ -119,7 +127,7 @@ export function createGoReadyWaiter(
     }
   }, timeoutMs);
 
-  const settle = (result: Result<number, Error>): void => {
+  const settle = (result: Result<number, Fault>): void => {
     if (isSettled) {
       return;
     }
@@ -137,7 +145,7 @@ export function createGoReadyWaiter(
 
 /** Bridges a readiness result to the Promise contract of `spawnGoProcess`. */
 async function toPortPromise(
-  ready: ResultAsync<number, Error>,
+  ready: ResultAsync<number, Fault>,
 ): Promise<number> {
   const result = await ready;
   if (result.isErr()) return Promise.reject(result.error);
@@ -215,8 +223,10 @@ function handleProcessExit(exit: ProcessExit, options: GoSpawnOptions): void {
       : { ...options, config: { ...options.config, wsPort: lastKnownPort } };
   setTimeout(() => {
     void ResultAsync.fromPromise(spawnGoProcess(restartOptions), (cause) =>
-      cause instanceof Error ? cause : new Error(String(cause)),
-    ).mapErr((error) =>
+      new Fault(cause instanceof Error ? cause : String(cause))
+        .withTag('GO_PROCESS_ERROR')
+        .withCause(cause),
+    ).orInspect((error) =>
       options.logger.error(`Failed to restart Go process: ${error.message}`),
     );
   }, RESTART_DELAY_MS);
@@ -226,9 +236,9 @@ function attachProcessLifecycle(
   processPromise: ResultPromise,
   options: GoSpawnOptions,
   wasStartupResolved: () => boolean,
-  onStartupExit: (error: Error) => void,
+  onStartupExit: (error: Fault) => void,
 ): void {
-  const onExit = (exit: ProcessExit): void => {
+  const onExit = (exit: ProcessExit, cause?: Fault): void => {
     // Intentional shutdown or an old process exiting after its replacement.
     if (goProcess !== processPromise) return;
     options.logger.warn(
@@ -237,22 +247,27 @@ function attachProcessLifecycle(
     goProcess = null;
     if (!wasStartupResolved()) {
       onStartupExit(
-        new Error(
+        ServiceError(
+          'GO_PROCESS_ERROR',
           `Go process exited prematurely: code=${exit.code}, signal=${exit.signal}`,
-        ),
+        ).withCause(cause),
       );
       return;
     }
     handleProcessExit(exit, options);
   };
 
-  void ResultAsync.fromPromise(processPromise, getExitDetails).match(
+  void ResultAsync.fromPromise(processPromise, (cause) =>
+    new Fault(cause instanceof Error ? cause : String(cause))
+      .withTag('GO_PROCESS_ERROR')
+      .withCause(cause),
+  ).match(
     (result) =>
       onExit({
         code: normalizeExitCode(result.exitCode),
         signal: normalizeSignal(result.signal),
       }),
-    (exit) => onExit(exit),
+    (error) => onExit(getExitDetails(error.cause), error),
   );
 }
 
@@ -312,14 +327,22 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
         cleanup: true,
         forceKillAfterDelay: 5000,
       }),
-    (error) => (error instanceof Error ? error : new Error(String(error))),
+    (cause) =>
+      new Fault(cause instanceof Error ? cause : String(cause))
+        .withTag('GO_PROCESS_ERROR')
+        .withCause(cause),
   )();
 
   if (processResult.isErr()) {
     const message = processResult.error.message;
     logger.error(`Failed to spawn Go process: ${message}`);
     return toPortPromise(
-      errAsync(new Error(`Failed to spawn Go process: ${message}`)),
+      errAsync(
+        ServiceError(
+          'GO_PROCESS_ERROR',
+          `Failed to spawn Go process: ${message}`,
+        ).withCause(processResult.error),
+      ),
     );
   }
 
@@ -393,7 +416,12 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
 
   spawnedProcess.once('error', (error: Error) => {
     logger.error(`Go process error: ${error.message}`);
-    readyWaiter.markFailed(new Error(`Go process error: ${error.message}`));
+    readyWaiter.markFailed(
+      ServiceError(
+        'GO_PROCESS_ERROR',
+        `Go process error: ${error.message}`,
+      ).withCause(error),
+    );
   });
 
   attachProcessLifecycle(

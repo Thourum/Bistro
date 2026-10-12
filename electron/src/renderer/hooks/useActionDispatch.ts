@@ -1,4 +1,4 @@
-import { ResultAsync } from 'neverthrow';
+import { Fault, ResultAsync } from '@thourum/fault';
 import { useCallback } from 'react';
 import { z } from 'zod';
 import { appStore } from '../store';
@@ -88,7 +88,10 @@ export function useActionDispatch(prId: string | undefined) {
           action: 'post_comment',
           body: trimmed,
         }),
-        (cause) => (cause instanceof Error ? cause.message : 'Comment failed'),
+        (cause) =>
+          new Fault(cause instanceof Error ? cause : 'Comment failed')
+            .withTag('NETWORK_ERROR')
+            .withCause(cause),
       ).match(
         (data) => {
           const parsed = actionResponseSchema.safeParse(data);
@@ -118,7 +121,7 @@ export function useActionDispatch(prId: string | undefined) {
               type: 'post_comment',
               prId,
               success: false,
-              message,
+              message: message.message,
             },
           }));
         },
@@ -147,7 +150,10 @@ export function useActionDispatch(prId: string | undefined) {
           thread_id: target.threadId ?? '',
           comment_id: target.commentId ?? '',
         }),
-        (cause) => (cause instanceof Error ? cause.message : 'Reply failed'),
+        (cause) =>
+          new Fault(cause instanceof Error ? cause : 'Reply failed')
+            .withTag('NETWORK_ERROR')
+            .withCause(cause),
       ).match(
         (data) => {
           const parsed = actionResponseSchema.safeParse(data);
@@ -180,7 +186,7 @@ export function useActionDispatch(prId: string | undefined) {
               type: 'reply_comment',
               prId,
               success: false,
-              message,
+              message: message.message,
             },
           }));
         },

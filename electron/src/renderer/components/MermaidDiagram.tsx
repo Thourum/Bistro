@@ -1,5 +1,5 @@
+import { Fault, ResultAsync } from '@thourum/fault';
 import mermaid from 'mermaid';
-import { ResultAsync } from 'neverthrow';
 import { useEffect, useState } from 'react';
 
 type MermaidThemeMode = 'light' | 'dark';
@@ -200,7 +200,6 @@ function mermaidConfig(colors: MermaidColors, mode: MermaidThemeMode) {
   };
 }
 
-type MermaidRenderError = { type: 'render' };
 interface MermaidRenderResult {
   svg: string;
   colors: MermaidColors;
@@ -215,7 +214,7 @@ const mermaidRenderQueue = (() => {
   function render(
     source: string,
     isCancelled: () => boolean,
-  ): ResultAsync<MermaidRenderResult | null, MermaidRenderError> {
+  ): ResultAsync<MermaidRenderResult | null, Fault> {
     const pending = lastRender.then(() => {
       if (isCancelled()) return null;
       const colors = readMermaidColors();
@@ -224,7 +223,10 @@ const mermaidRenderQueue = (() => {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       const timeout = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(
-          () => reject(new Error('Mermaid render timed out')),
+          () =>
+            reject(
+              new Fault('Mermaid render timed out').withTag('TIMEOUT_ERROR'),
+            ),
           MERMAID_RENDER_TIMEOUT_MS,
         );
       });
@@ -233,9 +235,12 @@ const mermaidRenderQueue = (() => {
         timeout,
       ]).finally(() => clearTimeout(timeoutId));
     });
-    const result = ResultAsync.fromPromise(
-      pending,
-      (): MermaidRenderError => ({ type: 'render' }),
+    const result = ResultAsync.fromPromise(pending, (cause) =>
+      cause instanceof Fault && cause.tag === 'TIMEOUT_ERROR'
+        ? cause
+        : new Fault(cause instanceof Error ? cause : 'Mermaid render failed')
+            .withTag('MERMAID_RENDER_ERROR')
+            .withCause(cause),
     );
     lastRender = Promise.resolve(result).then(() => undefined);
     return result;

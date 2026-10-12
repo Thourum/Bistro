@@ -185,8 +185,8 @@ function useFilesBrowserShortcut(
 }
 
 function openFilesInBrowser(url: string): void {
-  void openUrlInBrowser(url).mapErr((error) =>
-    log.error({ error }, 'failed to open diff in browser'),
+  void openUrlInBrowser(url).orInspect((error) =>
+    log.error({ error: error.message }, 'failed to open diff in browser'),
   );
 }
 

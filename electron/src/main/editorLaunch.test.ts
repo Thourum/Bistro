@@ -28,7 +28,10 @@ describe('launchEditor', () => {
     const result = await launchEditor('__bistro_missing_editor__', [], logger);
 
     expect(result.isErr()).toBe(true);
-    expect(result.isErr() && result.error).toMatch(/ENOENT|not found|spawn/i);
+    expect(result._unsafeUnwrapErr().tag).toBe('EDITOR_LAUNCH_ERROR');
+    expect(result.isErr() && result.error.message).toMatch(
+      /ENOENT|not found|spawn/i,
+    );
     expect(logger.error).toHaveBeenCalled();
   });
 
@@ -64,6 +67,7 @@ describe('launchEditor', () => {
     });
 
     expect(result.isErr()).toBe(true);
-    expect(result.isErr() && result.error).toMatch(/EMFILE/);
+    expect(result._unsafeUnwrapErr().tag).toBe('EDITOR_LAUNCH_ERROR');
+    expect(result.isErr() && result.error.message).toMatch(/EMFILE/);
   });
 });

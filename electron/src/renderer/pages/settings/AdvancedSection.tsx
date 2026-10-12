@@ -1,4 +1,4 @@
-import { ResultAsync } from 'neverthrow';
+import { Fault, ResultAsync } from '@thourum/fault';
 import { Button } from '../../components/ui/button';
 import { openSettingsFile, resetSettings } from '../../store/settings';
 import { Section, showSettingsError } from './SettingsComponents';
@@ -10,9 +10,10 @@ export function AdvancedSection() {
         <Button
           variant="secondary"
           onClick={() => {
-            void ResultAsync.fromPromise(
-              openSettingsFile(),
-              () => 'Unable to open settings.json.',
+            void ResultAsync.fromPromise(openSettingsFile(), (cause) =>
+              new Fault('Unable to open settings.json.')
+                .withTag('SETTINGS_ERROR')
+                .withCause(cause),
             ).match(() => undefined, showSettingsError);
           }}
           className="px-5 py-3"
@@ -23,9 +24,10 @@ export function AdvancedSection() {
           variant="destructive"
           onClick={() => {
             if (window.confirm('Reset all settings to defaults?') === true) {
-              void ResultAsync.fromPromise(
-                resetSettings(),
-                () => 'Unable to reset settings.',
+              void ResultAsync.fromPromise(resetSettings(), (cause) =>
+                new Fault('Unable to reset settings.')
+                  .withTag('SETTINGS_ERROR')
+                  .withCause(cause),
               ).match(() => undefined, showSettingsError);
             }
           }}

@@ -1,4 +1,4 @@
-import { fromPromise } from 'neverthrow';
+import { Fault, fromPromise } from '@thourum/fault';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { appStore } from '../store';
@@ -56,7 +56,10 @@ export function useReviewThreads(
     setState((s) => ({ ...s, loading: true, error: null }));
     void fromPromise(
       requestRef.current('GET_REVIEW_THREADS', { pr_id: prId }),
-      (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+      (cause) =>
+        new Fault(cause instanceof Error ? cause : 'Unknown error')
+          .withTag('NETWORK_ERROR')
+          .withCause(cause),
     )
       .andThen((data) => parseResponse(reviewThreadsResponseSchema, data))
       .match(
@@ -64,8 +67,8 @@ export function useReviewThreads(
           setState({ threads: payload.threads, loading: false, error: null });
         },
         (message) => {
-          log.warn({ err: message }, 'failed to load review threads');
-          setState({ threads: [], loading: false, error: message });
+          log.warn({ err: message.message }, 'failed to load review threads');
+          setState({ threads: [], loading: false, error: message.message });
         },
       );
   }, [prId]);

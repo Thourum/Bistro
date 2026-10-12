@@ -1,6 +1,13 @@
 import { EventEmitter } from 'node:events';
+import {
+  err,
+  Fault,
+  fromThrowable,
+  ok,
+  type Result,
+  ServiceError,
+} from '@thourum/fault';
 import type { Logger } from 'electron-log';
-import { err, fromThrowable, ok, type Result } from 'neverthrow';
 import WebSocket from 'ws';
 import { z } from 'zod';
 
@@ -32,9 +39,15 @@ export class WebSocketClient extends EventEmitter {
 
   connect(): void {
     if (this.stopped || this.ws !== null) return;
-    const socket = fromThrowable(() => new WebSocket(this.url))();
+    const socket = fromThrowable(
+      () => new WebSocket(this.url),
+      (cause) =>
+        new Fault(cause instanceof Error ? cause : String(cause))
+          .withTag('CONNECTION_ERROR')
+          .withCause(cause),
+    )();
     if (socket.isErr()) {
-      this.logger.error('Failed to create WebSocket:', socket.error);
+      this.logger.error('Failed to create WebSocket:', socket.error.message);
       this.scheduleReconnect();
       return;
     }
@@ -47,17 +60,30 @@ export class WebSocketClient extends EventEmitter {
     });
     socket.value.on('message', (data: WebSocket.Data) => {
       if (this.ws !== socket.value || this.stopped) return;
-      fromThrowable(() => JSON.parse(data.toString()) as unknown)()
+      fromThrowable(
+        () => JSON.parse(data.toString()) as unknown,
+        (cause) =>
+          ServiceError('PARSE_ERROR', 'Failed to parse sync event').withCause(
+            cause,
+          ),
+      )()
         .andThen((value) => {
           const parsed = syncEventSchema.safeParse(value);
-          return parsed.success ? ok(parsed.data) : err(parsed.error);
+          return parsed.success
+            ? ok(parsed.data)
+            : err(
+                ServiceError(
+                  'VALIDATION_ERROR',
+                  'Invalid sync event',
+                ).withCause(parsed.error),
+              );
         })
         .match(
           (event) => {
             this.emit('event', event);
           },
           (error) => {
-            this.logger.warn('Invalid sync event', error);
+            this.logger.warn('Invalid sync event', error.message);
           },
         );
     });
@@ -74,11 +100,15 @@ export class WebSocketClient extends EventEmitter {
     });
   }
 
-  send(message: Record<string, unknown>): Result<void, string> {
-    if (!this.ws || !this.isConnected()) return err('WebSocket not connected');
+  send(message: Record<string, unknown>): Result<void, Fault> {
+    if (!this.ws || !this.isConnected())
+      return err(ServiceError('CONNECTION_ERROR', 'WebSocket not connected'));
     return fromThrowable(
       () => this.ws?.send(JSON.stringify(message)),
-      (cause) => (cause instanceof Error ? cause.message : String(cause)),
+      (cause) =>
+        new Fault(cause instanceof Error ? cause : String(cause))
+          .withTag('CONNECTION_ERROR')
+          .withCause(cause),
     )().map(() => undefined);
   }
 

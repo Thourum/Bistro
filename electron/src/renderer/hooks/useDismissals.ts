@@ -1,4 +1,4 @@
-import { fromPromise } from 'neverthrow';
+import { Fault, fromPromise } from '@thourum/fault';
 import { useEffect } from 'react';
 import { z } from 'zod';
 import { addToast } from '../components/ToastContainer';
@@ -62,7 +62,10 @@ export function useDismissals(
       if (commentIds.length === 0) return;
       void fromPromise(
         request('DISMISS_COMMENTS', { pr_id: prId, comment_ids: commentIds }),
-        (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+        (cause) =>
+          new Fault(cause instanceof Error ? cause : 'Unknown error')
+            .withTag('NETWORK_ERROR')
+            .withCause(cause),
       )
         .andThen((data) => parseResponse(dismissBatchSchema, data))
         .match(
@@ -79,7 +82,7 @@ export function useDismissals(
             bumpCommentsRevision();
           },
           (err) => {
-            log.warn({ err }, 'dismiss failed');
+            log.warn({ err: err.message }, 'dismiss failed');
             addToast({
               type: 'error',
               message: 'Dismiss failed',
@@ -107,7 +110,10 @@ export function useDismissals(
           comment_ids: batch.dismissed_ids,
           unresolve_thread_ids: batch.resolved_thread_ids,
         }),
-        (err) => err,
+        (cause) =>
+          new Fault(cause instanceof Error ? cause : 'Unknown error')
+            .withTag('NETWORK_ERROR')
+            .withCause(cause),
       ).match(
         () => {
           addToast({
@@ -118,7 +124,7 @@ export function useDismissals(
           bumpCommentsRevision();
         },
         (err) => {
-          log.warn({ err }, 'undo failed');
+          log.warn({ err: err.message }, 'undo failed');
           // Put the batch back so `u` can retry.
           appStore.setState((s) => ({
             ...s,

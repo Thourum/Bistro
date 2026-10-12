@@ -35,7 +35,7 @@ Where things live: Go engine in `go/` (entry `go/cmd/bistro-sync/`, packages und
 
 ## Conventions
 
-- **Error handling: in repository TS/JS and Go code, use `neverthrow`. NEVER write `try`/`catch` for control flow or error handling.** Return and chain `Result` / `ResultAsync` instead. (The only `try/catch` allowed anywhere is inside throwaway context-mode MCP sandbox scripts — never in committed code.)
+- **Error handling: in Electron TS/JS code, use `@thourum/fault`. NEVER write `try`/`catch` for control flow or error handling.** Return and chain `Result<T, Fault>` / `ResultAsync<T, Fault>` with tagged faults; narrow errors with `fault.tag` and use `fault.message` at display/log boundaries. Go continues to use its existing error handling. (The only `try/catch` allowed anywhere is inside throwaway context-mode MCP sandbox scripts — never in committed code.)
 - Go owns all SQLite writes — the UI never writes the DB directly.
 - SQLite is a cache; the WebSocket is localhost-only (origin-enforced); migrations are versioned, idempotent, embedded.
 - Keyboard bindings are pure config (keys → `actionId`, no handlers) in `electron/src/renderer/utils/keybindings.ts`; handlers live in `utils/keybindingActions.ts`, enable/scope rules in `utils/keybindingActivation.ts`; registration in `hooks/useAppHotkeys.ts`. Don't register hotkeys outside `useAppHotkeys` (textarea-local submit uses `TEXTAREA_SUBMIT_HOTKEY` / `isTextareaSubmit` from the same file).

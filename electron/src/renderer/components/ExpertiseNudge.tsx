@@ -1,4 +1,4 @@
-import { ResultAsync } from 'neverthrow';
+import { Fault, ResultAsync } from '@thourum/fault';
 import { useCallback } from 'react';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -31,13 +31,16 @@ export function ExpertiseNudge({
   const handleEnable = (): void => {
     void ResultAsync.fromPromise(
       request('EXPERTISE_ENABLE', { repo_id: repoId }),
-      (err) => err,
+      (cause) =>
+        new Fault(cause instanceof Error ? cause : 'sync engine unreachable')
+          .withTag('CONNECTION_ERROR')
+          .withCause(cause),
     ).match(
       () => clearNudge(),
       (err) => {
         addToast({
           type: 'error',
-          message: `Enabling expertise failed: ${err instanceof Error ? err.message : 'sync engine unreachable'}`,
+          message: `Enabling expertise failed: ${err.message}`,
           dismissible: true,
         });
       },

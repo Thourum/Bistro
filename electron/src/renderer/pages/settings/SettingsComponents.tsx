@@ -1,3 +1,4 @@
+import type { Fault } from '@thourum/fault';
 import type { ReactNode } from 'react';
 import type { AppSettings } from '../../../types/settings';
 import { addToast } from '../../components/ToastContainer';
@@ -5,8 +6,8 @@ import { Button } from '../../components/ui/button';
 import { Switch } from '../../components/ui/switch';
 import { updateSettings } from '../../store/settings';
 
-export function showSettingsError(message: string): void {
-  addToast({ type: 'error', message, dismissible: true });
+export function showSettingsError(error: Fault): void {
+  addToast({ type: 'error', message: error.message, dismissible: true });
 }
 
 export function saveSettings(patch: Partial<AppSettings>): void {

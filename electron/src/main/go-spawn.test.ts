@@ -1,3 +1,4 @@
+import { ServiceError } from '@thourum/fault';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGoReadyWaiter, parseReadyLine } from './go-spawn';
 
@@ -32,10 +33,12 @@ describe('createGoReadyWaiter', () => {
     const waiter = createGoReadyWaiter(15_000, vi.fn());
     const readyPort = waiter.wait();
 
-    waiter.markFailed(new Error('Go process exited prematurely'));
-
-    expect((await readyPort)._unsafeUnwrapErr().message).toBe(
-      'Go process exited prematurely',
+    waiter.markFailed(
+      ServiceError('GO_PROCESS_ERROR', 'Go process exited prematurely'),
     );
+
+    const error = (await readyPort)._unsafeUnwrapErr();
+    expect(error.message).toBe('Go process exited prematurely');
+    expect(error.tag).toBe('GO_PROCESS_ERROR');
   });
 });

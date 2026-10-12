@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { ResultAsync } from 'neverthrow';
+import { Fault, ResultAsync } from '@thourum/fault';
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../hooks/useStore';
@@ -354,9 +354,10 @@ export function PRListTable({
       ...state,
       reposLoading: true,
     }));
-    void ResultAsync.fromPromise(
-      request('REQUEST_REPO_LIST', {}),
-      () => null,
+    void ResultAsync.fromPromise(request('REQUEST_REPO_LIST', {}), (cause) =>
+      new Fault(cause instanceof Error ? cause : 'Unknown error')
+        .withTag('CONNECTION_ERROR')
+        .withCause(cause),
     ).match(
       () => undefined,
       () => {
@@ -379,8 +380,7 @@ export function PRListTable({
   if (error !== null) {
     return (
       <div className="flex items-center justify-center py-16 text-error font-mono text-sm">
-        Failed to load PRs:{' '}
-        {error instanceof Error ? error.message : String(error)}
+        Failed to load PRs: {error.message}
       </div>
     );
   }

@@ -1,4 +1,4 @@
-import { err, ok, type Result, ResultAsync } from 'neverthrow';
+import { err, Fault, ok, type Result, ResultAsync } from '@thourum/fault';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -43,16 +43,14 @@ const ERROR_MESSAGES: Partial<Record<LocationErrorCode, string>> = {
   invalid_path: 'Choose a valid repository destination.',
 };
 
-function requestErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim() !== '') {
-    return error.message;
-  }
-
-  if (typeof error === 'string' && error.trim() !== '') {
-    return error;
-  }
-
-  return 'Bistro could not reach the sync engine. Try again.';
+function requestFault(error: unknown): Fault {
+  const message =
+    error instanceof Error && error.message.trim() !== ''
+      ? error.message
+      : typeof error === 'string' && error.trim() !== ''
+        ? error
+        : 'Bistro could not reach the sync engine. Try again.';
+  return new Fault(message).withTag('CONNECTION_ERROR').withCause(error);
 }
 
 function isRecord(data: unknown): data is Record<string, unknown> {
@@ -65,14 +63,22 @@ function isLocationErrorCode(code: unknown): code is LocationErrorCode {
   );
 }
 
-function parseAddRepoResponse(data: unknown): Result<AddRepoResponse, string> {
+function parseAddRepoResponse(data: unknown): Result<AddRepoResponse, Fault> {
   if (!isRecord(data)) {
-    return err('Add repository returned an invalid response.');
+    return err(
+      new Fault('Add repository returned an invalid response.').withTag(
+        'VALIDATION_ERROR',
+      ),
+    );
   }
 
   if (data.ok === true) {
     if (data.source !== undefined && typeof data.source !== 'string') {
-      return err('Add repository returned an invalid response.');
+      return err(
+        new Fault('Add repository returned an invalid response.').withTag(
+          'VALIDATION_ERROR',
+        ),
+      );
     }
 
     return ok(
@@ -99,7 +105,11 @@ function parseAddRepoResponse(data: unknown): Result<AddRepoResponse, string> {
     return ok(response);
   }
 
-  return err('Add repository returned an invalid response.');
+  return err(
+    new Fault('Add repository returned an invalid response.').withTag(
+      'VALIDATION_ERROR',
+    ),
+  );
 }
 
 interface AddRepoDialogProps {
@@ -224,7 +234,7 @@ export function AddRepoDialog({
         destination,
         dev_folder_path: devFolderPath,
       }),
-      requestErrorMessage,
+      requestFault,
     )
       .andThen(parseAddRepoResponse)
       .match(
@@ -233,10 +243,10 @@ export function AddRepoDialog({
           setIsSubmitting(false);
           handleResponse(response);
         },
-        (message) => {
+        (error) => {
           if (isClosedRef.current) return;
           setIsSubmitting(false);
-          setErrorMessage(message);
+          setErrorMessage(error.message);
         },
       );
   };

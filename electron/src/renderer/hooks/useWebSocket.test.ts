@@ -1,3 +1,4 @@
+import { Fault } from '@thourum/fault';
 import { describe, expect, it } from 'vitest';
 import { parseWsMessage } from './useWebSocket';
 
@@ -13,6 +14,18 @@ describe('parseWsMessage', () => {
     expect(parsed.isOk()).toBe(true);
     if (parsed.isOk())
       expect(parsed.value.data).toMatchObject({ providers: [] });
+
+    const invalid = parseWsMessage(
+      JSON.stringify({
+        type,
+        data: { authenticated: false, providers: false },
+      }),
+    );
+    expect(invalid.isErr()).toBe(true);
+    const fault = invalid._unsafeUnwrapErr();
+    expect(fault).toBeInstanceOf(Fault);
+    expect(fault.message).toBe(`Invalid ${type} payload`);
+    expect(fault.tag).toBe('VALIDATION_ERROR');
   });
 
   it.each([

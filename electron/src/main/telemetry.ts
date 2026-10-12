@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { Fault, fromPromise, fromThrowable, ResultAsync } from '@thourum/fault';
 import type { Logger } from 'electron-log';
-import { fromPromise, fromThrowable, ResultAsync } from 'neverthrow';
 import type { EventMessage, PostHogOptions } from 'posthog-node';
 import { PostHog } from 'posthog-node';
 
@@ -198,11 +198,14 @@ export class TelemetryService {
     this.installIdPath = join(options.storageDir, 'anonymous-install-id');
     this.client = fromThrowable(
       () => this.createClient(options),
-      String,
+      (cause) =>
+        new Fault(String(cause)).withTag('TELEMETRY_ERROR').withCause(cause),
     )().match(
       (client) => client,
       (error) => {
-        options.logger.warn(`telemetry initialization failed: ${error}`);
+        options.logger.warn(
+          `telemetry initialization failed: ${error.message}`,
+        );
         return null;
       },
     );
@@ -216,18 +219,26 @@ export class TelemetryService {
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    const updateConsent = fromThrowable(() =>
-      enabled ? this.client?.enable() : this.client?.disable(),
+    const updateConsent = fromThrowable(
+      () => (enabled ? this.client?.enable() : this.client?.disable()),
+      (cause) =>
+        new Fault(String(cause)).withTag('TELEMETRY_ERROR').withCause(cause),
     )();
     updateConsent.match(
       (promise) => {
         if (promise)
-          void fromPromise(promise, String).mapErr((error) =>
-            this.logger.warn(`telemetry consent update failed: ${error}`),
+          void fromPromise(promise, (cause) =>
+            new Fault(String(cause))
+              .withTag('TELEMETRY_ERROR')
+              .withCause(cause),
+          ).orInspect((error) =>
+            this.logger.warn(
+              `telemetry consent update failed: ${error.message}`,
+            ),
           );
       },
       (error) =>
-        this.logger.warn(`telemetry consent update failed: ${String(error)}`),
+        this.logger.warn(`telemetry consent update failed: ${error.message}`),
     );
   }
 
@@ -240,8 +251,12 @@ export class TelemetryService {
 
     const payload = await this.payloadFor(event);
     if (payload === null) return;
-    fromThrowable(() => this.capture(payload), String)().mapErr((error) =>
-      this.logger.warn(`telemetry capture failed: ${error}`),
+    fromThrowable(
+      () => this.capture(payload),
+      (cause) =>
+        new Fault(String(cause)).withTag('TELEMETRY_ERROR').withCause(cause),
+    )().orInspect((error) =>
+      this.logger.warn(`telemetry capture failed: ${error.message}`),
     );
   }
 
@@ -254,16 +269,24 @@ export class TelemetryService {
 
   flush(): Promise<void> {
     if (this.client === null) return Promise.resolve();
-    return fromThrowable(() => this.client?.flush(), String)()
+    return fromThrowable(
+      () => this.client?.flush(),
+      (cause) =>
+        new Fault(String(cause)).withTag('TELEMETRY_ERROR').withCause(cause),
+    )()
       .asyncAndThen((result) =>
         result
-          ? fromPromise(result, String)
+          ? fromPromise(result, (cause) =>
+              new Fault(String(cause))
+                .withTag('TELEMETRY_ERROR')
+                .withCause(cause),
+            )
           : ResultAsync.fromSafePromise(Promise.resolve()),
       )
       .match(
         () => undefined,
         (error) => {
-          this.logger.warn(`telemetry flush failed: ${error}`);
+          this.logger.warn(`telemetry flush failed: ${error.message}`);
         },
       );
   }
@@ -316,7 +339,7 @@ export class TelemetryService {
     this.installIdPromise ??= this.getOrCreateInstallId().match(
       (value) => value,
       (error) => {
-        this.logger.warn(`telemetry install id unavailable: ${error}`);
+        this.logger.warn(`telemetry install id unavailable: ${error.message}`);
         this.installIdPromise = null;
         return null;
       },
@@ -331,8 +354,10 @@ export class TelemetryService {
     };
   }
 
-  private getOrCreateInstallId(): ResultAsync<string, string> {
-    return fromPromise(readFile(this.installIdPath, 'utf-8'), String)
+  private getOrCreateInstallId(): ResultAsync<string, Fault> {
+    return fromPromise(readFile(this.installIdPath, 'utf-8'), (cause) =>
+      new Fault(String(cause)).withTag('FILE_SYSTEM_ERROR').withCause(cause),
+    )
       .andThen((content) =>
         content.trim() === ''
           ? this.createInstallId()
@@ -341,16 +366,20 @@ export class TelemetryService {
       .orElse(() => this.createInstallId());
   }
 
-  private createInstallId(): ResultAsync<string, string> {
+  private createInstallId(): ResultAsync<string, Fault> {
     const value = randomUUID();
     return fromPromise(
       mkdir(dirname(this.installIdPath), { recursive: true }),
-      String,
+      (cause) =>
+        new Fault(String(cause)).withTag('FILE_SYSTEM_ERROR').withCause(cause),
     )
       .andThen(() =>
         fromPromise(
           writeFile(this.installIdPath, `${value}\n`, 'utf-8'),
-          String,
+          (cause) =>
+            new Fault(String(cause))
+              .withTag('FILE_SYSTEM_ERROR')
+              .withCause(cause),
         ),
       )
       .map(() => value);

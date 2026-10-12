@@ -1,13 +1,15 @@
-import { err, ok, type Result } from 'neverthrow';
+import type { Fault, Result } from '@thourum/fault';
+import { safeZodParse } from '@thourum/fault/zod';
 import type { z } from 'zod';
 
 /** Validates a response before it reaches renderer state. */
 export function parseResponse<T>(
   schema: z.ZodType<T>,
   response: unknown,
-): Result<T, string> {
-  const parsed = schema.safeParse(response);
-  return parsed.success ? ok(parsed.data) : err('Invalid WebSocket response');
+): Result<T, Fault> {
+  return safeZodParse(schema, response).mapErr((fault) =>
+    fault.withDescription(fault.message, 'Invalid WebSocket response'),
+  );
 }
 
 /**
@@ -48,12 +50,17 @@ function sanitize(message: string): string {
 }
 
 /**
- * Map an error code or raw message to a user-friendly string.
- * Known codes get a curated message; unknown messages are sanitized and returned as-is.
+ * Map an error code, raw message, or Fault to a user-friendly string.
+ * Known codes/tags get a curated message; unknown messages are sanitized.
  */
-export function formatErrorMessage(codeOrMessage: string): string {
-  const friendly = Object.hasOwn(ERROR_MESSAGES, codeOrMessage)
-    ? ERROR_MESSAGES[codeOrMessage]
+export function formatErrorMessage(error: string | Fault): string {
+  const message = typeof error === 'string' ? error : error.message;
+  const code = typeof error === 'string' ? error : (error.tag ?? message);
+  const friendly = Object.hasOwn(ERROR_MESSAGES, code)
+    ? ERROR_MESSAGES[code]
     : undefined;
-  return friendly ?? sanitize(codeOrMessage);
+  const friendlyMessage = Object.hasOwn(ERROR_MESSAGES, message)
+    ? ERROR_MESSAGES[message]
+    : undefined;
+  return friendly ?? friendlyMessage ?? sanitize(message);
 }

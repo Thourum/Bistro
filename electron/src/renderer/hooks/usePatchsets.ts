@@ -1,4 +1,4 @@
-import { fromPromise } from 'neverthrow';
+import { Fault, fromPromise } from '@thourum/fault';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { type Patchset, patchsetSchema } from '../types';
@@ -48,7 +48,10 @@ export function usePatchsets(prId: string | undefined): PatchsetsState & {
     setState((s) => ({ ...s, loading: true, error: null }));
     void fromPromise(
       requestRef.current('GET_PATCHSETS', { pr_id: prId }),
-      (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+      (cause) =>
+        new Fault(cause instanceof Error ? cause : 'Unknown error')
+          .withTag('NETWORK_ERROR')
+          .withCause(cause),
     )
       .andThen((data) => parseResponse(patchsetsResponseSchema, data))
       .match(
@@ -60,8 +63,8 @@ export function usePatchsets(prId: string | undefined): PatchsetsState & {
           });
         },
         (message) => {
-          log.warn({ err: message }, 'failed to load patchsets');
-          setState({ patchsets: [], loading: false, error: message });
+          log.warn({ err: message.message }, 'failed to load patchsets');
+          setState({ patchsets: [], loading: false, error: message.message });
         },
       );
   }, [prId]);
