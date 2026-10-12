@@ -60,7 +60,7 @@ func NewListPatchsetsHandler(ps patchsetLister, log *slog.Logger) ws.MessageHand
 				"data": map[string]interface{}{
 					"pr_id":     req.PRID,
 					"patchsets": []store.Patchset{},
-					"error":     err.Error(),
+					"error":     "unable to load patchsets",
 				},
 			}, nil
 		}
@@ -123,7 +123,11 @@ func newMarkFileViewedHandler(db fileViewedMarker, cu currentUserReader, ds diff
 			return nil, fmt.Errorf("MARK_FILE_VIEWED requires pr_id, file_path, and content_hash")
 		}
 
-		login, ok, _ := cu.GetCurrentUser(ctx, "github")
+		login, ok, lookupErr := cu.GetCurrentUser(ctx, githubProvider)
+		if lookupErr != nil {
+			logger.Warn("MARK_FILE_VIEWED: failed to resolve current user", "error", lookupErr)
+			return fileViewedACK(msg.ID, req.PRID, req.FilePath, false, "unable to check authenticated user"), nil
+		}
 		if !ok || login == "" {
 			logger.Warn("MARK_FILE_VIEWED: no current user, skipping",
 				"pr_id", req.PRID, "file_path", req.FilePath)
@@ -132,7 +136,7 @@ func newMarkFileViewedHandler(db fileViewedMarker, cu currentUserReader, ds diff
 
 		// Server-side hash validation when DiffStore is available.
 		if ds != nil {
-			if valid, reason := validateFileHash(ctx, ds, req.PRID, req.FilePath, req.ContentHash); !valid {
+			if valid, reason := validateFileHash(logging.WithLogger(ctx, logger), ds, req.PRID, req.FilePath, req.ContentHash); !valid {
 				logger.Warn("MARK_FILE_VIEWED: hash validation failed",
 					"pr_id", req.PRID, "file_path", req.FilePath, "reason", reason)
 				return fileViewedACK(msg.ID, req.PRID, req.FilePath, false, reason), nil
@@ -142,7 +146,7 @@ func newMarkFileViewedHandler(db fileViewedMarker, cu currentUserReader, ds diff
 		if err := db.MarkFileViewed(ctx, req.PRID, req.FilePath, login, req.ContentHash); err != nil {
 			logger.Error("mark file viewed failed",
 				"pr_id", req.PRID, "file_path", req.FilePath, "error", err)
-			return fileViewedACK(msg.ID, req.PRID, req.FilePath, false, err.Error()), nil
+			return fileViewedACK(msg.ID, req.PRID, req.FilePath, false, "unable to mark file viewed"), nil
 		}
 
 		logger.Debug("file viewed marked",
@@ -156,10 +160,11 @@ func newMarkFileViewedHandler(db fileViewedMarker, cu currentUserReader, ds diff
 // stored diffs and checks it against the client-supplied hash.
 // Fails closed: returns (false, reason) when GetDiffs errors or the file is
 // not found in stored diffs, so stale hashes cannot be accepted silently.
-func validateFileHash(_ context.Context, ds diffReader, prID, filePath, clientHash string) (bool, string) {
+func validateFileHash(ctx context.Context, ds diffReader, prID, filePath, clientHash string) (bool, string) {
 	diffs, err := ds.GetDiffs(prID)
 	if err != nil {
-		return false, fmt.Sprintf("could not validate content_hash: GetDiffs failed: %v", err)
+		logging.FromContext(ctx).Warn("content hash validation diff lookup failed", "pr_id", prID, "error", err)
+		return false, "could not validate content_hash"
 	}
 	for _, f := range diffs {
 		if f.FilePath == filePath {

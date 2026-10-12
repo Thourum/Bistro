@@ -25,15 +25,19 @@ type ClassificationSettings struct {
 	Endpoint       string `json:"endpoint"`
 }
 
-var validClassificationModes = map[string]bool{
-	"rules": true, "rules+llm": true, "llm-all": true,
+func isValidClassificationMode(mode string) bool {
 	// server is a hidden Team-plan stub: accepted and stored, but the LLM
 	// tier treats it as "rules".
-	"server": true,
+	switch mode {
+	case "rules", "rules+llm", "llm-all", "server":
+		return true
+	default:
+		return false
+	}
 }
 
-var validDismissalScopes = map[string]bool{
-	"local": true, "local+provider": true,
+func isValidDismissalScope(scope string) bool {
+	return scope == "local" || scope == "local+provider"
 }
 
 // ClassificationState holds the live settings behind a mutex — the writer,
@@ -96,10 +100,10 @@ func NewSetClassificationSettingsHandler(state *ClassificationState, log *slog.L
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
 			return nil, fmt.Errorf("invalid SET_CLASSIFICATION_SETTINGS payload: %w", err)
 		}
-		if !validClassificationModes[req.Mode] {
+		if !isValidClassificationMode(req.Mode) {
 			return nil, fmt.Errorf("invalid classification mode %q", req.Mode)
 		}
-		if !validDismissalScopes[req.DismissalScope] {
+		if !isValidDismissalScope(req.DismissalScope) {
 			return nil, fmt.Errorf("invalid dismissal scope %q", req.DismissalScope)
 		}
 
@@ -156,7 +160,7 @@ func NewSetByokKeyHandler(store ByokKeyStore, onKeyChanged func(), log *slog.Log
 		}
 
 		if err := store.Store(byokKeyName(req.Provider), req.Key); err != nil {
-			// Deliberately no key material in the error path.
+			// Keychain errors may contain secret metadata; log once and return a safe message.
 			logger.Error("BYOK key store failed", "provider", req.Provider, "err", err)
 			return nil, fmt.Errorf("failed to store key for %s", req.Provider)
 		}

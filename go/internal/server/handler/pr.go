@@ -11,6 +11,12 @@ import (
 	"github.com/itterno/bistro/internal/ws"
 )
 
+const (
+	defaultPRListLimit = 100
+	maxPRListLimit     = 200
+	githubProvider     = "github"
+)
+
 type prListRequest struct {
 	Filter string `json:"filter"`
 	Limit  int    `json:"limit"`
@@ -75,7 +81,7 @@ func decodeReviewers(logger *slog.Logger, prID string, raw *string) []string {
 	return reviewers
 }
 
-func prListErrorResponse(requestID string, err error) map[string]interface{} {
+func prListErrorResponse(requestID string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":   requestID,
 		"type": "PR_LIST_READY",
@@ -83,15 +89,17 @@ func prListErrorResponse(requestID string, err error) map[string]interface{} {
 			"prs":      []interface{}{},
 			"count":    0,
 			"has_more": false,
-			"error":    err.Error(),
+			"error":    "unable to load pull requests",
 		},
 	}
 }
 
+// NewRequestPRListHandler serves PR lists without expertise enrichment.
 func NewRequestPRListHandler(db prLister, cu currentUserReader, log *slog.Logger) ws.MessageHandler {
 	return NewRequestPRListHandlerWithExpertise(db, nil, cu, log)
 }
 
+// NewRequestPRListHandlerWithExpertise includes optional touches-you enrichment.
 func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouResolver, cu currentUserReader, log *slog.Logger) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		logger := logging.FromContext(ctx)
@@ -104,8 +112,8 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 			return nil, fmt.Errorf("invalid REQUEST_PR_LIST payload: %w", err)
 		}
 
-		if req.Limit <= 0 || req.Limit > 200 {
-			req.Limit = 100
+		if req.Limit <= 0 || req.Limit > maxPRListLimit {
+			req.Limit = defaultPRListLimit
 		}
 		if req.Offset < 0 {
 			req.Offset = 0
@@ -119,8 +127,9 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 
 		login := ""
 		if cu != nil {
-			resolvedLogin, found, err := cu.GetCurrentUser(ctx, "github")
+			resolvedLogin, found, err := cu.GetCurrentUser(ctx, githubProvider)
 			if err != nil {
+				// Listing remains available without viewer-specific annotations.
 				logger.Warn("resolve current user for REQUEST_PR_LIST", "err", err)
 			} else if found && resolvedLogin != "" {
 				login = resolvedLogin
@@ -149,7 +158,7 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 		rows, err := db.Query(query, login, login, login, login, login, login, login, req.Limit, req.Offset)
 		if err != nil {
 			logger.Error("REQUEST_PR_LIST query failed", "err", err)
-			return prListErrorResponse(msg.ID, err), nil
+			return prListErrorResponse(msg.ID), nil
 		}
 		defer rows.Close()
 
@@ -169,7 +178,7 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 				&pr.ReviewedHeadStale, &pr.Hydrated,
 			); err != nil {
 				logger.Error("REQUEST_PR_LIST scan failed", "err", err)
-				return prListErrorResponse(msg.ID, err), nil
+				return prListErrorResponse(msg.ID), nil
 			}
 			pr.RequestedReviewers = decodeReviewers(logger, pr.ID, requestedReviewers)
 			prs = append(prs, pr)
@@ -177,12 +186,13 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 		}
 		if err := rows.Err(); err != nil {
 			logger.Error("REQUEST_PR_LIST iteration failed", "err", err)
-			return prListErrorResponse(msg.ID, err), nil
+			return prListErrorResponse(msg.ID), nil
 		}
 
 		if touchesYou != nil && len(prIDs) > 0 {
 			matches, err := touchesYou.TouchesYouForPRs(ctx, prIDs)
 			if err != nil {
+				// Expertise enrichment is optional; keep the PR list usable.
 				logger.Warn("touches_you resolution failed", "err", err)
 			} else {
 				for index, pr := range prs {

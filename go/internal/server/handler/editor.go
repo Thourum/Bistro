@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
 )
@@ -41,6 +42,7 @@ type prCheckoutChecker interface {
 // prCheckoutInspector so app.go can pass it without a wrapper type.
 type GitCheckoutInspector struct{}
 
+// InspectPRCheckout inspects a local checkout without changing it.
 func (GitCheckoutInspector) InspectPRCheckout(localPath, headSHA string) (git.CheckoutInspection, error) {
 	return git.InspectPRCheckout(localPath, headSHA)
 }
@@ -59,7 +61,8 @@ func resolvePRCheckoutTarget(
 ) (repoID, localPath, headSHA string, errReason string) {
 	info, err := prs.GetPRCheckoutInfo(ctx, prID)
 	if err != nil {
-		return "", "", "", fmt.Sprintf("failed to look up PR: %v", err)
+		logging.FromContext(ctx).Warn("PR checkout lookup failed", "error", err)
+		return "", "", "", "unable to look up PR"
 	}
 	if info == nil {
 		return "", "", "", "PR not found"
@@ -67,7 +70,8 @@ func resolvePRCheckoutTarget(
 
 	location, err := repos.Get(ctx, info.RepoID)
 	if err != nil {
-		return "", "", "", fmt.Sprintf("failed to look up repo location: %v", err)
+		logging.FromContext(ctx).Warn("PR checkout location lookup failed", "error", err)
+		return "", "", "", "unable to look up repo location"
 	}
 	if location == nil || location.LocalPath == "" {
 		return "", "", "", "no local path"
@@ -116,7 +120,7 @@ func NewCheckPRCheckoutHandler(
 		inspection, err := inspector.InspectPRCheckout(localPath, headSHA)
 		if err != nil {
 			logger.Warn("CHECK_PR_CHECKOUT inspection failed", "pr_id", req.PRID, "error", err)
-			return checkoutStatusResponse(msg.ID, req.PRID, localPath, headSHA, false, err.Error()), nil
+			return checkoutStatusResponse(msg.ID, req.PRID, localPath, headSHA, false, "unable to inspect checkout"), nil
 		}
 
 		return checkoutStatusResponse(msg.ID, req.PRID, localPath, headSHA, inspection.HeadMatches, ""), nil
@@ -165,11 +169,11 @@ func NewCheckoutPRHeadHandler(
 		}
 
 		if err := checker.CheckoutPRHead(ctx, repoID, localPath, headSHA); err != nil {
-			reason := err.Error()
+			reason := "unable to check out PR head"
 			if errors.Is(err, git.ErrWorktreeDirty) {
 				reason = "worktree dirty"
 			}
-			logger.Warn("CHECKOUT_PR_HEAD checkout failed", "pr_id", req.PRID, "reason", reason)
+			logger.Warn("CHECKOUT_PR_HEAD checkout failed", "pr_id", req.PRID, "error", err)
 			return checkoutResultResponse(msg.ID, req.PRID, localPath, false, reason), nil
 		}
 
