@@ -9,6 +9,11 @@ import (
 	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
+const (
+	defaultFileDiffStatus   = "modified"
+	defaultStoredDiffStatus = "ok"
+)
+
 // DiffFile represents a single file's diff entry for storage.
 type DiffFile struct {
 	FilePath    string
@@ -124,14 +129,14 @@ func (s *DiffStore) GetUnifiedDiff(prID string) (string, error) {
 
 func diffStatus(status string) string {
 	if status == "" {
-		return "modified"
+		return defaultFileDiffStatus
 	}
 	return status
 }
 
 func storedDiffStatus(status string) string {
 	if status == "" {
-		return "ok"
+		return defaultStoredDiffStatus
 	}
 	return status
 }

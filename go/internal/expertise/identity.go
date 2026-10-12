@@ -7,6 +7,7 @@ import (
 
 var numericNoreplyEmailPattern = regexp.MustCompile(`^\d+\+(.+)@users\.noreply\.github\.com$`)
 
+// Identity contains account names and email aliases used to match git authors.
 type Identity struct {
 	Login string
 	// AccountEmail should be the authenticated GitHub account email when the
@@ -16,6 +17,7 @@ type Identity struct {
 	AliasEmails  []string
 }
 
+// Matches checks a git author's name and email against the account identity.
 func (identity Identity) Matches(authorName, authorEmail string) bool {
 	login := strings.TrimSpace(identity.Login)
 	name := strings.TrimSpace(authorName)

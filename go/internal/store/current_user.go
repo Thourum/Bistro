@@ -58,8 +58,7 @@ func (s *CurrentUserStore) GetCurrentUser(ctx context.Context, providerName stri
 		return "", false, nil
 	}
 	if err != nil {
-		s.log.Error("get current user failed", "provider", providerName, "error", err)
-		return "", false, err
+		return "", false, fmt.Errorf("get current user %s: %w", providerName, err)
 	}
 	return login, true, nil
 }

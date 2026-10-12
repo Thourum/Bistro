@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"time"
 )
 
+// Updater refreshes expertise for files touched by a synced pull request.
 type Updater struct {
 	log      *slog.Logger
 	store    *Store
@@ -18,6 +18,7 @@ type Updater struct {
 	Now      func() time.Time
 }
 
+// NewUpdater configures a targeted expertise updater.
 func NewUpdater(log *slog.Logger, store *Store, git expertiseGit, identity func(ctx context.Context) Identity) *Updater {
 	if log == nil {
 		log = slog.Default()
@@ -34,6 +35,7 @@ func NewUpdater(log *slog.Logger, store *Store, git expertiseGit, identity func(
 	}
 }
 
+// Update refreshes touched tracked files when the repository index is ready.
 func (updater *Updater) Update(ctx context.Context, repoID, repoPath string, touchedFiles []string) error {
 	state, ok, err := updater.readyState(ctx, repoID)
 	if err != nil || !ok {
@@ -59,7 +61,7 @@ func (updater *Updater) Update(ctx context.Context, repoID, repoPath string, tou
 		return nil
 	}
 
-	signals, err := updater.signals(ctx, repoID, repoPath, headSHA, now)
+	signals, err := loadExpertiseSignals(ctx, updater.git, updater.identity, expertiseSignalInput{repoID: repoID, repoPath: repoPath, headSHA: headSHA, now: now})
 	if err != nil {
 		return err
 	}
@@ -98,7 +100,7 @@ func (updater *Updater) updateCandidates(ctx context.Context, repoID, repoPath s
 	if err != nil {
 		return nil, err
 	}
-	excluder, err := updater.excluder(ctx, repoID)
+	excluder, err := loadExcluder(ctx, updater.store, repoID)
 	if err != nil {
 		return nil, err
 	}
@@ -155,14 +157,6 @@ func (updater *Updater) existingFiles(ctx context.Context, repoPath string) (map
 	return existing, nil
 }
 
-func (updater *Updater) excluder(ctx context.Context, repoID string) (Excluder, error) {
-	var userGlobs []string
-	if err := updater.store.Setting(ctx, excludesSettingKey(repoID), &userGlobs); err != nil && !errors.Is(err, ErrSettingNotFound) {
-		return Excluder{}, fmt.Errorf("load expertise excludes for repo %s: %w", repoID, err)
-	}
-	return New(userGlobs), nil
-}
-
 func (updater *Updater) deleteStaleFileRows(ctx context.Context, repoID, filePath string) error {
 	if err := updater.store.DeleteFileRows(ctx, repoID, filePath); err != nil {
 		return fmt.Errorf("delete stale expertise rows %s %s: %w", repoID, filePath, err)
@@ -185,31 +179,6 @@ func (updater *Updater) fileFresh(ctx context.Context, repoID, filePath, headSHA
 		}
 	}
 	return true
-}
-
-func (updater *Updater) signals(ctx context.Context, repoID, repoPath, headSHA string, now time.Time) (expertiseSignals, error) {
-	logResult, err := updater.git.LogNumstat(ctx, repoPath, now.AddDate(0, -CommitWindowMonths, 0))
-	if err != nil {
-		return expertiseSignals{}, fmt.Errorf("expertise update log numstat: %w", err)
-	}
-	activeAuthors, err := updater.git.ActiveAuthors(ctx, repoPath, now.AddDate(0, 0, -DormantAfterDays))
-	if err != nil {
-		return expertiseSignals{}, fmt.Errorf("expertise update active authors: %w", err)
-	}
-	firstCommits, err := updater.git.LogFirstCommits(ctx, repoPath)
-	if err != nil {
-		return expertiseSignals{}, fmt.Errorf("expertise update first commits: %w", err)
-	}
-	return expertiseSignals{
-		repoID:        repoID,
-		headSHA:       headSHA,
-		now:           now,
-		identity:      updater.identity(ctx),
-		commitAges:    commitAgesByFileAndAuthor(logResult.Events, now),
-		lastCommitAt:  maps.Clone(logResult.LastCommitAt),
-		activeAuthors: maps.Clone(activeAuthors),
-		firstCommits:  maps.Clone(firstCommits),
-	}, nil
 }
 
 func (updater *Updater) updateFile(ctx context.Context, repoID, repoPath, filePath string, signals expertiseSignals) error {

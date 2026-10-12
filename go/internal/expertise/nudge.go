@@ -7,13 +7,16 @@ import (
 	"fmt"
 )
 
+// NudgeThreshold is the number of reviewed PRs before suggesting expertise.
 const NudgeThreshold int64 = 10
 
+// Account identifies the current provider account for review-history lookups.
 type Account struct {
 	Provider string
 	Login    string
 }
 
+// ShouldNudge suggests expertise when a local repo has sufficient review history.
 func ShouldNudge(ctx context.Context, store *Store, repoID string, account Account) (bool, error) {
 	if store == nil {
 		return false, errors.New("expertise store is nil")

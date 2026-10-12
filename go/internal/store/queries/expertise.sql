@@ -27,6 +27,19 @@ SELECT * FROM file_expertise
 WHERE repo_id = ? AND file_path = ?
 ORDER BY score DESC;
 
+-- name: ListExpertiseFilePathsForRepo :many
+SELECT DISTINCT file_path FROM file_expertise WHERE repo_id = ?;
+
+-- name: GetExpertiseRepoSource :one
+SELECT source FROM repos WHERE id = ?;
+
+-- name: ListReadyExpertisePRIDs :many
+SELECT p.id
+FROM prs p
+JOIN expertise_repo_state ers ON ers.repo_id = p.repo_id
+WHERE p.id IN (sqlc.slice('pr_ids'))
+  AND ers.enabled = 1 AND ers.status = 'ready';
+
 -- name: GetExpertiseRepoState :one
 SELECT * FROM expertise_repo_state WHERE repo_id = ?;
 
