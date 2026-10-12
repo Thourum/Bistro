@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { app, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import log from 'electron-log';
-import { ResultAsync } from 'neverthrow';
+import { err, fromThrowable, ok, type Result, ResultAsync } from 'neverthrow';
+import { z } from 'zod';
 import type { ClassificationSettings, SyncSettings } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import { killGoProcess, spawnGoProcess } from './go-spawn';
@@ -113,52 +114,82 @@ function resolveGoBinaryPath(): string {
   return join(process.resourcesPath, 'go-bin', 'bistro-sync');
 }
 
-function buildConfig(sync: SyncSettings = DEFAULT_SETTINGS.sync): AppConfig {
-  const normalisedSync = normaliseSyncForGo(sync);
+const DEFAULT_WINDOW_WIDTH = 1600;
+const DEFAULT_WINDOW_HEIGHT = 900;
+const MAX_WS_PORT = 65535;
+const goLogLevelSchema = z.enum(['debug', 'info', 'warn', 'error']);
+
+function normaliseLogLevel(
+  raw: string | undefined,
+): z.infer<typeof goLogLevelSchema> {
+  if (raw === undefined) return isDev ? 'debug' : 'info';
+  const parsed = goLogLevelSchema.safeParse(raw);
+  return parsed.success ? parsed.data : 'info';
+}
+
+function normaliseWindowDimension(
+  raw: string | undefined,
+  fallback: number,
+): number {
+  if (raw === undefined) return fallback;
+  const parsed = z.coerce.number().int().positive().safeParse(raw);
+  return parsed.success ? parsed.data : fallback;
+}
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+function isValidStartupPort(port: number): boolean {
+  return Number.isInteger(port) && port > 0 && port <= MAX_WS_PORT;
+}
+const startupEnvironmentSchema = z.object({
+  WS_PORT: z.coerce.number().int().min(0).max(MAX_WS_PORT).default(0),
+  APP_WINDOW_WIDTH: z.number().int().positive(),
+  APP_WINDOW_HEIGHT: z.number().int().positive(),
+  GO_LOG_LEVEL: goLogLevelSchema,
+});
+
+function buildConfig(
+  sync: SyncSettings = DEFAULT_SETTINGS.sync,
+): Result<AppConfig, string> {
+  const parsed = startupEnvironmentSchema.safeParse({
+    WS_PORT: process.env.WS_PORT ?? undefined,
+    APP_WINDOW_WIDTH: normaliseWindowDimension(
+      process.env.APP_WINDOW_WIDTH,
+      DEFAULT_WINDOW_WIDTH,
+    ),
+    APP_WINDOW_HEIGHT: normaliseWindowDimension(
+      process.env.APP_WINDOW_HEIGHT,
+      DEFAULT_WINDOW_HEIGHT,
+    ),
+    GO_LOG_LEVEL: normaliseLogLevel(process.env.GO_LOG_LEVEL),
+  });
+  if (!parsed.success) {
+    return err(
+      `Invalid startup configuration: ${parsed.error.issues.map((issue) => issue.path.join('.')).join(', ')}`,
+    );
+  }
   const dataDir = resolveDataDir();
   const logsDir = join(dataDir, 'logs');
-
-  // Ensure directories exist
-  if (!existsSync(dataDir)) {
-    mkdirSync(dataDir, { recursive: true });
-  }
-  if (!existsSync(logsDir)) {
-    mkdirSync(logsDir, { recursive: true });
-  }
-
-  // 0 = let Go pick a random available port (reported via its ready signal).
-  const wsPort = parseInt(process.env.WS_PORT || '0', 10);
-  if (Number.isNaN(wsPort) || wsPort < 0 || wsPort > 65535) {
-    throw new Error('WS_PORT must be a number between 0 and 65535');
-  }
-
-  const windowWidth = parseInt(process.env.APP_WINDOW_WIDTH || '1600', 10);
-  const windowHeight = parseInt(process.env.APP_WINDOW_HEIGHT || '900', 10);
-
-  const GO_LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
-  type GoLogLevel = (typeof GO_LOG_LEVELS)[number];
-  // Dev defaults to debug so per-PR sync steps are visible when things hang.
-  const rawLogLevel = process.env.GO_LOG_LEVEL ?? (isDev ? 'debug' : 'info');
-  const logLevel: GoLogLevel = (GO_LOG_LEVELS as readonly string[]).includes(
-    rawLogLevel,
-  )
-    ? (rawLogLevel as GoLogLevel)
-    : 'info';
-
-  return {
-    windowWidth: Number.isNaN(windowWidth) ? 1600 : windowWidth,
-    windowHeight: Number.isNaN(windowHeight) ? 900 : windowHeight,
-    goProcess: {
-      binaryPath: resolveGoBinaryPath(),
-      dbPath: join(dataDir, 'sync.db'),
-      wsPort,
-      logLevel,
-      logFile: join(logsDir, 'bistro-sync.log'),
-      replayQueue: true,
-      syncInterval: normalisedSync.syncInterval,
-      autoSync: normalisedSync.autoSync,
+  return fromThrowable(
+    () => {
+      mkdirSync(logsDir, { recursive: true });
+      return {
+        windowWidth: parsed.data.APP_WINDOW_WIDTH,
+        windowHeight: parsed.data.APP_WINDOW_HEIGHT,
+        goProcess: {
+          binaryPath: resolveGoBinaryPath(),
+          dbPath: join(dataDir, 'sync.db'),
+          wsPort: parsed.data.WS_PORT,
+          logLevel: parsed.data.GO_LOG_LEVEL,
+          logFile: join(logsDir, 'bistro-sync.log'),
+          replayQueue: true,
+          ...normaliseSyncForGo(sync),
+        },
+      } satisfies AppConfig;
     },
-  };
+    (cause) => (cause instanceof Error ? cause.message : String(cause)),
+  )();
 }
 
 log.info('Starting Bistro Electron app');
@@ -191,52 +222,70 @@ ipcMain.handle('open-external', (_event, url: unknown) => {
   );
 });
 
-app.on('ready', async () => {
-  startAutoUpdates(log);
+function initialiseMain(): Result<AppConfig, string> {
+  return fromThrowable(() => new SettingsService(log), errorMessage)()
+    .andThen((settings) => settings.loadResult().map(() => settings))
+    .andThen((settings) =>
+      buildConfig(settings.snapshot.sync).andThen((config) =>
+        fromThrowable(() => {
+          log.info(`Settings loaded from ${settings.path}`);
+          startAutoUpdates(log);
+          configureSentryConsent(settings.snapshot.privacy.telemetryEnabled);
+          log.info(
+            `Sentry crash reporting: ${isSentryEnabled() ? 'enabled' : 'disabled'}`,
+          );
+          telemetryService = new TelemetryService({
+            enabled: settings.snapshot.privacy.telemetryEnabled,
+            storageDir: join(app.getPath('userData'), 'telemetry'),
+            endpoint: resolveTelemetryEndpoint(
+              process.env.BISTRO_TELEMETRY_ENDPOINT,
+            ),
+            appVersion: app.getVersion(),
+            platform: process.platform,
+            logger: log,
+          });
+          void telemetryService.trackAppStarted();
+          settingsService = settings;
+          runtimeConfig = config;
+          setupIPC(
+            config.goProcess.dbPath,
+            log,
+            () => wsClient,
+            settings,
+            () => runtimeConfig?.goProcess.wsPort ?? null,
+            telemetryService,
+          );
+          return config;
+        }, errorMessage)(),
+      ),
+    );
+}
 
-  // Load settings first so we can pass sync config to the Go process.
-  settingsService = new SettingsService(log);
-  await settingsService.load();
-  log.info(`Settings loaded from ${settingsService.path}`);
-  configureSentryConsent(settingsService.snapshot.privacy.telemetryEnabled);
-  log.info(
-    `Sentry crash reporting: ${isSentryEnabled() ? 'enabled' : 'disabled'}`,
-  );
-  telemetryService = new TelemetryService({
-    enabled: settingsService.snapshot.privacy.telemetryEnabled,
-    storageDir: join(app.getPath('userData'), 'telemetry'),
-    endpoint: resolveTelemetryEndpoint(process.env.BISTRO_TELEMETRY_ENDPOINT),
-    appVersion: app.getVersion(),
-    platform: process.platform,
-    logger: log,
-  });
-  void telemetryService.trackAppStarted();
-
-  const appConfig = buildConfig(settingsService.snapshot.sync);
-  runtimeConfig = appConfig;
-
-  setupIPC(
-    appConfig.goProcess.dbPath,
-    log,
-    () => wsClient,
-    settingsService,
-    () => runtimeConfig?.goProcess.wsPort ?? null,
-    telemetryService,
-  );
-
+app.on('ready', () => {
+  const initialised = initialiseMain();
+  if (initialised.isErr()) {
+    log.error(`Failed to initialise app: ${initialised.error}`);
+    dialog.showErrorBox('Bistro could not start', initialised.error);
+    app.quit();
+    return;
+  }
+  const appConfig = initialised.value;
   log.info(`Go binary: ${appConfig.goProcess.binaryPath}`);
   log.info(`DB path: ${appConfig.goProcess.dbPath}`);
   log.info(`Log file: ${appConfig.goProcess.logFile}`);
   log.info(`WS port: ${appConfig.goProcess.wsPort}`);
 
-  try {
-    // 1. Spawn Go process and wait for readiness (resolves with actual port)
-    log.info('Spawning Go sync engine...');
-    const actualWsPort = await spawnGoProcess({
+  void ResultAsync.fromPromise(
+    spawnGoProcess({
       config: appConfig.goProcess,
       logger: log,
       onStillStarting: () => {
-        createWindow(runtimeConfig ?? appConfig, log);
+        fromThrowable(() =>
+          createWindow(runtimeConfig ?? appConfig, log),
+        )().mapErr((error) => {
+          log.error('Failed to show slow-start window', error);
+          app.quit();
+        });
       },
       onCrash: (code, signal) => {
         log.error(`Go process crashed: code=${code}, signal=${signal}`);
@@ -244,79 +293,101 @@ app.on('ready', async () => {
           tags: { component: 'go-sync-engine' },
           extra: { code, signal },
         });
-        const { BrowserWindow } = require('electron');
-        (BrowserWindow.getAllWindows() as Electron.BrowserWindow[]).forEach(
-          (win) => {
-            if (!win.isDestroyed()) {
-              win.webContents.send('go:crashed', { code, signal });
-            }
-          },
-        );
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('go:crashed', { code, signal });
+          }
+        });
       },
-    });
-    log.info(`Go sync engine is running on port ${actualWsPort}`);
+    }),
+    (cause) => (cause instanceof Error ? cause.message : String(cause)),
+  ).match(
+    (actualWsPort) => {
+      if (!isValidStartupPort(actualWsPort)) {
+        log.error(
+          `Go sync engine reported invalid WebSocket port: ${actualWsPort}`,
+        );
+        app.quit();
+        return;
+      }
+      log.info(`Go sync engine is running on port ${actualWsPort}`);
 
-    runtimeConfig = {
-      ...appConfig,
-      goProcess: { ...appConfig.goProcess, wsPort: actualWsPort },
-    };
+      runtimeConfig = {
+        ...appConfig,
+        goProcess: { ...appConfig.goProcess, wsPort: actualWsPort },
+      };
 
-    // 2. Create WebSocket client and connect (Go is now ready)
-    // 127.0.0.1, not localhost: the engine binds IPv4 loopback only and
-    // localhost may resolve to ::1 first.
-    const wsUrl = `ws://127.0.0.1:${actualWsPort}/ws`;
-    wsClient = new WebSocketClient(wsUrl, log);
-    const activeSettingsService = settingsService;
+      // 2. Create WebSocket client and connect (Go is now ready)
+      // 127.0.0.1, not localhost: the engine binds IPv4 loopback only and
+      // localhost may resolve to ::1 first.
+      const wsUrl = `ws://127.0.0.1:${actualWsPort}/ws`;
+      wsClient = new WebSocketClient(wsUrl, log);
+      const activeSettingsService = settingsService;
+      if (activeSettingsService === null) {
+        log.error('Settings unavailable after engine startup');
+        app.quit();
+        return;
+      }
 
-    const sendSyncSettingsToGo = (sync: SyncSettings) => {
-      if (!wsClient?.isConnected()) return;
-      wsClient.send({
-        type: 'SET_SYNC_SETTINGS',
-        data: syncSettingsPayload(sync),
+      const sendSyncSettingsToGo = (sync: SyncSettings) => {
+        if (!wsClient?.isConnected()) return;
+        wsClient
+          .send({
+            type: 'SET_SYNC_SETTINGS',
+            data: syncSettingsPayload(sync),
+          })
+          .mapErr((error) => log.warn(`Sync settings update failed: ${error}`));
+      };
+      const sendClassificationSettingsToGo = (c: ClassificationSettings) => {
+        if (!wsClient?.isConnected()) return;
+        wsClient
+          .send({
+            type: 'SET_CLASSIFICATION_SETTINGS',
+            data: classificationSettingsPayload(c),
+          })
+          .mapErr((error) =>
+            log.warn(`Classification settings update failed: ${error}`),
+          );
+      };
+      wsClient.on('connected', () => {
+        // Bootstrap-on-connect: Go starts with defaults; push live settings
+        // on every (re)connect per the Phase 3 wire contract.
+        sendSyncSettingsToGo(activeSettingsService.snapshot.sync);
+        sendClassificationSettingsToGo(
+          activeSettingsService.snapshot.classification,
+        );
       });
-    };
-    const sendClassificationSettingsToGo = (c: ClassificationSettings) => {
-      if (!wsClient?.isConnected()) return;
-      wsClient.send({
-        type: 'SET_CLASSIFICATION_SETTINGS',
-        data: classificationSettingsPayload(c),
+      wsClient.connect();
+
+      // 3. Forward runtime sync-settings changes to Go engine over WebSocket.
+      activeSettingsService.addChangeListener((s) => {
+        sendSyncSettingsToGo(s.sync);
+        sendClassificationSettingsToGo(s.classification);
+        telemetryService?.setEnabled(s.privacy.telemetryEnabled);
+        configureSentryConsent(s.privacy.telemetryEnabled);
       });
-    };
-    wsClient.on('connected', () => {
-      // Bootstrap-on-connect: Go starts with defaults; push live settings
-      // on every (re)connect per the Phase 3 wire contract.
-      sendSyncSettingsToGo(activeSettingsService.snapshot.sync);
-      sendClassificationSettingsToGo(
-        activeSettingsService.snapshot.classification,
-      );
-    });
-    wsClient.connect();
 
-    // 3. Forward runtime sync-settings changes to Go engine over WebSocket.
-    settingsService.addChangeListener((s) => {
-      sendSyncSettingsToGo(s.sync);
-      sendClassificationSettingsToGo(s.classification);
-      telemetryService?.setEnabled(s.privacy.telemetryEnabled);
-      configureSentryConsent(s.privacy.telemetryEnabled);
-    });
-
-    // 4. Create window (last — everything is ready)
-    createWindow(runtimeConfig, log);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    log.error(`Failed to start app: ${message}`);
-    captureSentryException(new Error('Electron main startup failed'), {
-      tags: { component: 'electron-main' },
-    });
-
-    // Still create window so the local settings surface remains available.
-    try {
-      createWindow(runtimeConfig ?? appConfig, log);
-    } catch {
-      // If even window creation fails, quit
-      app.quit();
-    }
-  }
+      // 4. Create window (last — everything is ready)
+      fromThrowable(() =>
+        createWindow(runtimeConfig ?? appConfig, log),
+      )().mapErr((error) => {
+        log.error('Failed to create window', error);
+        app.quit();
+      });
+    },
+    (message) => {
+      log.error(`Failed to start app: ${message}`);
+      captureSentryException(new Error('Electron main startup failed'), {
+        tags: { component: 'electron-main' },
+      });
+      fromThrowable(() =>
+        createWindow(runtimeConfig ?? appConfig, log),
+      )().mapErr((error) => {
+        log.error('Failed to create fallback window', error);
+        app.quit();
+      });
+    },
+  );
 });
 
 app.on('before-quit', () => {
@@ -334,9 +405,15 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  const { BrowserWindow } = require('electron');
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow(runtimeConfig ?? buildConfig(), log);
+    const config = runtimeConfig === null ? buildConfig() : ok(runtimeConfig);
+    config.match(
+      (value) =>
+        fromThrowable(() => createWindow(value, log))().mapErr((error) =>
+          log.error('Failed to activate window', error),
+        ),
+      (message) => log.error(`Failed to activate app: ${message}`),
+    );
   }
 });
 

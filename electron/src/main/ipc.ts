@@ -1,16 +1,17 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { dialog, ipcMain } from 'electron';
 import type { Logger } from 'electron-log';
+import { errAsync, fromPromise, fromThrowable } from 'neverthrow';
 import { buildEditorArgs, parseEditorCommand } from '../shared/editorArgs';
-import type {
-  FSReadPatchRequest,
-  GoCommandRequest,
-  OpenInEditorRequest,
-  SyncActionRequest,
+import {
+  fsReadPatchRequestSchema,
+  goCommandRequestSchema,
+  type OpenInEditorRequest,
+  syncActionRequestSchema,
 } from '../types/ipc';
-import type { AppSettings } from '../types/settings';
+import { type AppSettings, appSettingsSchema } from '../types/settings';
 import { launchEditor } from './editorLaunch';
 import { validateOpenInEditorRequest } from './editorRequest';
 import { resolveEditorTarget } from './editorTarget';
@@ -18,12 +19,18 @@ import type { SettingsService } from './settings';
 import type { TelemetryService } from './telemetry';
 import type { WebSocketClient } from './websocket-client';
 
-const ACTION_TYPE_MAP: Record<string, string> = {
+const ACTION_TYPE_MAP = {
   approve_pr: 'approve',
   request_changes: 'request_changes',
   post_comment: 'post_comment',
-  approve: 'approve',
-};
+} satisfies Record<
+  keyof (typeof goCommandRequestSchema.shape.type)['enum'],
+  string
+>;
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
 
 export function setupIPC(
   path: string,
@@ -45,33 +52,39 @@ export function setupIPC(
     return { ok: settings.snapshot };
   });
 
-  ipcMain.handle(
-    'settings:set',
-    async (_event, patch: Partial<AppSettings>) => {
-      try {
-        const next = await settings.set(patch);
-        telemetry?.setEnabled(next.privacy.telemetryEnabled);
-        trackSettingsPatch(telemetry, patch, next);
-        return { ok: next };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+  ipcMain.handle('settings:set', (_event, input: unknown) => {
+    const parsed = appSettingsSchema.partial().safeParse(input);
+    if (!parsed.success) return { err: 'Invalid settings patch' };
+    const patch = Object.fromEntries(
+      Object.entries(parsed.data).filter(([, value]) => value !== undefined),
+    ) as Partial<AppSettings>;
+    return fromThrowable(() => settings.setResult(patch), errorMessage)().match(
+      (result) => {
+        if ('err' in result) return result;
+        telemetry?.setEnabled(result.ok.privacy.telemetryEnabled);
+        trackSettingsPatch(telemetry, patch, result.ok);
+        return result;
+      },
+      (message) => {
         logger.error(`settings:set error: ${message}`);
         return { err: message };
-      }
-    },
-  );
-
-  ipcMain.handle('settings:reset', async () => {
-    try {
-      const next = await settings.reset();
-      telemetry?.setEnabled(next.privacy.telemetryEnabled);
-      return { ok: next };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error(`settings:reset error: ${message}`);
-      return { err: message };
-    }
+      },
+    );
   });
+
+  ipcMain.handle('settings:reset', () =>
+    fromThrowable(() => settings.resetResult(), errorMessage)().match(
+      (result) => {
+        if ('ok' in result)
+          telemetry?.setEnabled(result.ok.privacy.telemetryEnabled);
+        return result;
+      },
+      (message) => {
+        logger.error(`settings:reset error: ${message}`);
+        return { err: message };
+      },
+    ),
+  );
 
   ipcMain.handle('settings:open-file', async () => {
     return settings.openFile();
@@ -90,39 +103,45 @@ export function setupIPC(
   });
 
   // ---- fs:read-patch handler ----
-  ipcMain.handle(
-    'fs:read-patch',
-    async (_event, request: FSReadPatchRequest) => {
-      try {
-        // Mirror Go's os.UserCacheDir() per platform
-        const cacheBase =
-          process.env.XDG_CACHE_HOME ??
-          (process.platform === 'darwin'
-            ? join(homedir(), 'Library', 'Caches')
-            : process.platform === 'win32'
-              ? (process.env.LOCALAPPDATA ??
-                join(homedir(), 'AppData', 'Local'))
-              : join(homedir(), '.cache'));
-        const baseDir = resolve(join(cacheBase, 'bistro'));
-        const resolved = resolve(request.path);
-        if (!resolved.startsWith(baseDir + sep)) {
-          logger.warn(
-            `fs:read-patch: rejected path outside cache: ${resolved}`,
-          );
+  ipcMain.handle('fs:read-patch', async (_event, input: unknown) => {
+    const parsed = fsReadPatchRequestSchema.safeParse(input);
+    if (!parsed.success) return { err: 'Invalid patch path' };
+
+    // Mirror Go's os.UserCacheDir() per platform.
+    const cacheBase =
+      process.env.XDG_CACHE_HOME ??
+      (process.platform === 'darwin'
+        ? join(homedir(), 'Library', 'Caches')
+        : process.platform === 'win32'
+          ? (process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'))
+          : join(homedir(), '.cache'));
+    const baseDir = resolve(join(cacheBase, 'bistro'));
+    const resolved = resolve(parsed.data.path);
+    if (!resolved.startsWith(baseDir + sep)) {
+      void telemetry?.track('fs_patch_read', { allowed: false });
+      return { err: 'Access denied: path outside allowed directory' };
+    }
+    return fromPromise(realpath(baseDir), errorMessage)
+      .andThen((canonicalBase) =>
+        fromPromise(realpath(resolved), errorMessage).andThen(
+          (canonicalFile) =>
+            canonicalFile.startsWith(canonicalBase + sep)
+              ? fromPromise(readFile(canonicalFile, 'utf-8'), errorMessage)
+              : errAsync('Access denied: path outside allowed directory'),
+        ),
+      )
+      .match(
+        (content) => {
+          void telemetry?.track('fs_patch_read', { allowed: true });
+          return { ok: content };
+        },
+        (message) => {
           void telemetry?.track('fs_patch_read', { allowed: false });
-          return { err: 'Access denied: path outside allowed directory' };
-        }
-        const content = await readFile(resolved, 'utf-8');
-        void telemetry?.track('fs_patch_read', { allowed: true });
-        return { ok: content };
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'Unknown error';
-        logger.error(`fs:read-patch error: ${message}`);
-        return { err: message };
-      }
-    },
-  );
+          logger.warn(`fs:read-patch rejected: ${message}`);
+          return { err: message };
+        },
+      );
+  });
 
   // ---- open-in-editor handler ----
   // Canonicalises the checkout root and the target (following symlinks) and
@@ -162,78 +181,70 @@ export function setupIPC(
   );
 
   // ---- go:command handler ----
-  ipcMain.handle('go:command', async (_event, request: GoCommandRequest) => {
-    try {
-      const wsClient = getWsClient();
-      if (!wsClient?.isConnected()) {
-        void telemetry?.track('review_action_requested', {
-          action: ACTION_TYPE_MAP[request.type] ?? 'unknown',
-          online: false,
-        });
-        return { err: 'WebSocket not connected — action queued for retry' };
-      }
-
-      const action = ACTION_TYPE_MAP[request.type];
-      if (action === undefined) {
-        return { err: `Unknown action type: ${request.type}` };
-      }
-
-      logger.info(`Forwarding go:command: ${action} for PR ${request.pr_id}`);
+  ipcMain.handle('go:command', (_event, input: unknown) => {
+    const parsed = goCommandRequestSchema.safeParse(input);
+    if (!parsed.success) return { err: 'Invalid go command' };
+    const request = parsed.data;
+    const wsClient = getWsClient();
+    const action = ACTION_TYPE_MAP[request.type];
+    if (!wsClient?.isConnected()) {
       void telemetry?.track('review_action_requested', {
         action,
-        online: true,
+        online: false,
       });
-
-      wsClient.send({
+      return { err: 'WebSocket not connected — action queued for retry' };
+    }
+    logger.info(`Forwarding go:command: ${action} for PR ${request.pr_id}`);
+    void telemetry?.track('review_action_requested', { action, online: true });
+    return wsClient
+      .send({
         type: 'ACTION_REQUEST',
         action,
         pr_id: request.pr_id,
         body: request.comment ?? '',
         line: request.line ?? 0,
         file: request.file ?? '',
-      });
-
-      return { ok: true };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error(`go:command error: ${message}`);
-      return { err: message };
-    }
+      })
+      .match(
+        () => ({ ok: true }),
+        (message) => {
+          logger.error(`go:command error: ${message}`);
+          return { err: message };
+        },
+      );
   });
 
   // ---- sync:action handler ----
-  ipcMain.handle('sync:action', async (_event, request: SyncActionRequest) => {
-    try {
-      const wsClient = getWsClient();
-      if (!wsClient?.isConnected()) {
-        void telemetry?.track('review_action_requested', {
-          action: ACTION_TYPE_MAP[request.type] ?? request.type,
-          online: false,
-        });
-        return { err: 'WebSocket not connected' };
-      }
-
-      const syncAction = ACTION_TYPE_MAP[request.type] ?? request.type;
+  ipcMain.handle('sync:action', (_event, input: unknown) => {
+    const parsed = syncActionRequestSchema.safeParse(input);
+    if (!parsed.success) return { err: 'Invalid sync action' };
+    const request = parsed.data;
+    const wsClient = getWsClient();
+    const action = ACTION_TYPE_MAP[request.type];
+    if (!wsClient?.isConnected()) {
       void telemetry?.track('review_action_requested', {
-        action: syncAction,
-        online: true,
+        action,
+        online: false,
       });
-
-      wsClient.send({
+      return { err: 'WebSocket not connected' };
+    }
+    void telemetry?.track('review_action_requested', { action, online: true });
+    return wsClient
+      .send({
         type: 'ACTION_REQUEST',
-        action: syncAction,
+        action,
         pr_id: request.pr_id,
         body: request.comment ?? '',
         line: request.line ?? 0,
         file: '',
-      });
-
-      return { ok: { success: true } };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error(`sync:action error: ${message}`);
-      return { err: message };
-    }
+      })
+      .match(
+        () => ({ ok: { success: true } }),
+        (message) => {
+          logger.error(`sync:action error: ${message}`);
+          return { err: message };
+        },
+      );
   });
 
   logger.info('IPC handlers registered');

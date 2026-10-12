@@ -1,20 +1,20 @@
 import { EventEmitter } from 'node:events';
 import type { Logger } from 'electron-log';
+import { err, fromThrowable, ok, type Result } from 'neverthrow';
 import WebSocket from 'ws';
+import { z } from 'zod';
 
-export interface SyncEvent {
-  type:
-    | 'sync_started'
-    | 'progress'
-    | 'sync_complete'
-    | 'action_complete'
-    | 'action_failed';
-  data?: Record<string, unknown>;
-  timestamp: number;
-}
+const syncEventSchema = z.object({
+  type: z.string(),
+  data: z.record(z.string(), z.unknown()).optional(),
+  id: z.string().optional(),
+  timestamp: z.string().optional(),
+});
+export type SyncEvent = z.infer<typeof syncEventSchema>;
 
-const MAX_RECONNECT_ATTEMPTS = 5;
+const MAX_RECONNECT_DELAY_MS = 30_000;
 const BASE_RECONNECT_DELAY_MS = 1000;
+const MAX_RECONNECT_BACKOFF_STEPS = 5;
 
 export class WebSocketClient extends EventEmitter {
   private ws: WebSocket | null = null;
@@ -31,49 +31,55 @@ export class WebSocketClient extends EventEmitter {
   }
 
   connect(): void {
-    if (this.stopped) return;
-
-    try {
-      this.ws = new WebSocket(this.url);
-
-      this.ws.on('open', () => {
-        this.logger.info('WebSocket connected to Go sync engine');
-        this.reconnectAttempts = 0;
-        this.emit('connected');
-      });
-
-      this.ws.on('message', (data: WebSocket.Data) => {
-        try {
-          const syncEvent: SyncEvent = JSON.parse(data.toString());
-          this.emit('event', syncEvent);
-        } catch (error) {
-          this.logger.error('Failed to parse sync event', error);
-        }
-      });
-
-      this.ws.on('error', (error: Error) => {
-        this.logger.error('WebSocket error:', error.message);
-        this.emit('error', error);
-      });
-
-      this.ws.on('close', () => {
-        this.logger.info('WebSocket disconnected');
-        this.ws = null;
-        this.emit('disconnected');
-        this.scheduleReconnect();
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error('Failed to create WebSocket:', message);
+    if (this.stopped || this.ws !== null) return;
+    const socket = fromThrowable(() => new WebSocket(this.url))();
+    if (socket.isErr()) {
+      this.logger.error('Failed to create WebSocket:', socket.error);
       this.scheduleReconnect();
+      return;
     }
+    this.ws = socket.value;
+    socket.value.on('open', () => {
+      if (this.ws !== socket.value || this.stopped) return;
+      this.logger.info('WebSocket connected to Go sync engine');
+      this.reconnectAttempts = 0;
+      this.emit('connected');
+    });
+    socket.value.on('message', (data: WebSocket.Data) => {
+      if (this.ws !== socket.value || this.stopped) return;
+      fromThrowable(() => JSON.parse(data.toString()) as unknown)()
+        .andThen((value) => {
+          const parsed = syncEventSchema.safeParse(value);
+          return parsed.success ? ok(parsed.data) : err(parsed.error);
+        })
+        .match(
+          (event) => {
+            this.emit('event', event);
+          },
+          (error) => {
+            this.logger.warn('Invalid sync event', error);
+          },
+        );
+    });
+    socket.value.on('error', (error: Error) => {
+      // EventEmitter's reserved 'error' event throws without a listener.
+      this.logger.error('WebSocket error:', error.message);
+    });
+    socket.value.on('close', () => {
+      if (this.ws !== socket.value) return;
+      this.logger.info('WebSocket disconnected');
+      this.ws = null;
+      this.emit('disconnected');
+      this.scheduleReconnect();
+    });
   }
 
-  send(message: Record<string, unknown>): void {
-    if (!this.isConnected()) {
-      throw new Error('WebSocket not connected');
-    }
-    this.ws?.send(JSON.stringify(message));
+  send(message: Record<string, unknown>): Result<void, string> {
+    if (!this.ws || !this.isConnected()) return err('WebSocket not connected');
+    return fromThrowable(
+      () => this.ws?.send(JSON.stringify(message)),
+      (cause) => (cause instanceof Error ? cause.message : String(cause)),
+    )().map(() => undefined);
   }
 
   isConnected(): boolean {
@@ -93,20 +99,17 @@ export class WebSocketClient extends EventEmitter {
   }
 
   private scheduleReconnect(): void {
-    if (this.stopped) return;
-    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      this.logger.error(
-        `WebSocket max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached`,
-      );
-      this.emit('max_reconnect_exceeded');
-      return;
-    }
+    if (this.stopped || this.reconnectTimer !== null) return;
 
-    const delay = BASE_RECONNECT_DELAY_MS * 2 ** this.reconnectAttempts;
-    this.reconnectAttempts += 1;
-    this.logger.info(
-      `WebSocket reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`,
+    const delay = Math.min(
+      BASE_RECONNECT_DELAY_MS * 2 ** this.reconnectAttempts,
+      MAX_RECONNECT_DELAY_MS,
     );
+    this.reconnectAttempts = Math.min(
+      this.reconnectAttempts + 1,
+      MAX_RECONNECT_BACKOFF_STEPS,
+    );
+    this.logger.info(`WebSocket reconnecting in ${delay}ms`);
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

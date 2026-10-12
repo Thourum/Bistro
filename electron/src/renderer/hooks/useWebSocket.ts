@@ -1,141 +1,245 @@
-import { fromThrowable, type Result, ResultAsync } from 'neverthrow';
+import { err, fromThrowable, ok, type Result, ResultAsync } from 'neverthrow';
 import { useCallback, useEffect } from 'react';
+import { z } from 'zod';
 import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
-import type {
-  ExpertiseNudgePayload,
-  ExpertiseRepoStatus,
-  ExpertiseSettingsPayload,
-  RepoInfo,
-} from '../types';
-import type {
-  LegacyScanDevFolderResult,
-  LocationError,
-  ScanDevFolderResult,
-} from '../types/repoLocation';
+import type { ExpertiseRepoStatus } from '../types';
 import { formatErrorMessage } from '../utils/error';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('WebSocket');
 
-interface WSMessage {
-  id: string;
-  type: string;
-  data?: unknown;
-  timestamp: string;
-}
+const messageEnvelopeSchema = z.object({
+  id: z.string().optional(),
+  type: z.string(),
+  data: z.unknown().optional(),
+  timestamp: z.string().optional(),
+});
 
-interface SyncCompleteData {
-  pr_count: number;
-  new_prs: number;
-  updated_prs: number;
-  deleted_prs: number;
-  duration_ms: number;
-}
-
-interface PRApprovedData {
-  pr_id: string;
-  repo: string;
-  number: number;
-  approved_by: string;
-  timestamp: string;
-}
-
-interface CommentPostedData {
-  pr_id: string;
-  comment_id: string;
-  author: string;
-  body: string;
-  line?: number;
-  created_at: string;
-}
-
-interface SyncErrorData {
-  error_code: string;
-  message: string;
-}
-
-interface AuthExpiredData {
-  provider: string;
-  message: string;
-}
-
-interface RateLimitedData {
-  reset_at: string;
-}
-
-interface ActionCompleteData {
-  action_type: string;
-  pr_id: string;
-  message: string;
-}
-
-interface ActionFailedData {
-  action_type: string;
-  pr_id: string;
-  error: string;
-}
-
-interface ThreadStateChangedData {
-  pr_id: string;
-  thread_id: string;
-}
-
-interface PRsReadChangedData {
-  pr_ids: string[];
-}
+type WSMessage = z.infer<typeof messageEnvelopeSchema>;
 
 interface ScanDevFolderRequest {
   path: string;
   reason: 'startup';
 }
 
-type LocationErrorData = LocationError;
-type ScanDevFolderData = ScanDevFolderResult;
+const locationErrorSchema = z.object({
+  repo_id: z.string(),
+  operation: z.enum(['scan', 'fetch', 'diff', 'clone', 'prune', 'recover']),
+  code: z.enum([
+    'path_missing',
+    'remote_mismatch',
+    'permission_denied',
+    'invalid_url',
+    'invalid_path',
+    'destination_required',
+    'destination_conflict',
+    'clone_failed',
+    'auth_failed',
+    'cancelled',
+    'delete_failed',
+    'scan_partial',
+  ]),
+  message: z.string(),
+});
+const scanDevFolderResultSchema = z.union([
+  z.object({
+    path: z.string(),
+    repositories: z.array(
+      z.object({
+        repo_id: z.string(),
+        path: z.string(),
+        remote_url: z.string(),
+        source: z.literal('local'),
+      }),
+    ),
+    errors: z.array(locationErrorSchema),
+  }),
+  z.object({
+    ok: z.literal(true),
+    discovered: z.number(),
+    healthy: z.number(),
+    degraded: z.number(),
+    skipped: z.number(),
+    partial: z.boolean(),
+  }),
+]);
 
-interface ExpertiseProgressData {
-  repo_id: string;
-  files_done: number;
-  files_total: number;
+const dataSchemas = {
+  SYNC_COMPLETE: z.object({
+    pr_count: z.number().default(0),
+    new_prs: z.number().default(0),
+    updated_prs: z.number().default(0),
+    deleted_prs: z.number().default(0),
+    duration_ms: z.number().default(0),
+  }),
+  SYNC_TRIGGERED: z.object({ queued: z.boolean().optional() }).default({}),
+  PR_APPROVED: z.object({ timestamp: z.string() }),
+  COMMENT_POSTED: z.object({ pr_id: z.string() }),
+  SYNC_ERROR: z.object({ error_code: z.string(), message: z.string() }),
+  AUTH_TOKEN_EXPIRED: z.object({ provider: z.string(), message: z.string() }),
+  RATE_LIMITED: z.object({ reset_at: z.string() }),
+  ACTION_COMPLETE: z.object({
+    action_type: z.enum([
+      'approve',
+      'request_changes',
+      'post_comment',
+      'reply_comment',
+    ]),
+    pr_id: z.string(),
+    message: z.string(),
+  }),
+  ACTION_FAILED: z.object({
+    action_type: z.enum([
+      'approve',
+      'request_changes',
+      'post_comment',
+      'reply_comment',
+    ]),
+    pr_id: z.string(),
+    error: z.string(),
+  }),
+  THREAD_RESOLVED: z.object({ pr_id: z.string(), thread_id: z.string() }),
+  THREAD_REOPENED: z.object({ pr_id: z.string(), thread_id: z.string() }),
+  PR_METADATA_CHANGED: z.unknown(),
+  PRS_READ_CHANGED: z.object({ pr_ids: z.array(z.string()) }),
+  CI_STATUS_CHANGED: z.unknown(),
+  SCAN_DEV_FOLDER_RESULT: scanDevFolderResultSchema,
+  LOCATION_ERROR: locationErrorSchema,
+  EXPERTISE_INDEX_PROGRESS: z.object({
+    repo_id: z.string(),
+    files_done: z.number(),
+    files_total: z.number(),
+  }),
+  EXPERTISE_READY: z.object({
+    repo_id: z.string(),
+    indexed_sha: z.string(),
+    files_total: z.number(),
+    skipped_files: z.number(),
+  }),
+  EXPERTISE_ERROR: z.object({
+    repo_id: z.string(),
+    code: z.string(),
+    message: z.string(),
+  }),
+  EXPERTISE_NUDGE: z.object({
+    repo_id: z.string(),
+    reviewed_count: z.number(),
+  }),
+  EXPERTISE_DATA: z.unknown(),
+  EXPERTISE_ENABLE_ACCEPTED: z.unknown(),
+  EXPERTISE_DISABLE_ACCEPTED: z.unknown(),
+  EXPERTISE_NUDGE_DISMISSED: z.unknown(),
+  EXPERTISE_SETTINGS: z.object({
+    alias_emails: z.array(z.string()),
+    min_surviving_lines: z.number(),
+    excludes: z.record(z.string(), z.array(z.string())),
+  }),
+  EXPERTISE_SETTINGS_UPDATED: z.object({
+    alias_emails: z.array(z.string()),
+    min_surviving_lines: z.number(),
+    excludes: z.record(z.string(), z.array(z.string())),
+  }),
+  AUTH_REDIRECT: z.object({ provider: z.string(), url: z.string().url() }),
+  AUTH_CHECK_RESULT: z.object({
+    authenticated: z.boolean(),
+    providers: z
+      .array(z.object({ provider: z.string(), username: z.string() }))
+      .nullable()
+      .transform((providers) => providers ?? []),
+  }),
+  AUTH_DISCONNECT_RESULT: z.object({
+    authenticated: z.boolean(),
+    providers: z
+      .array(z.object({ provider: z.string(), username: z.string() }))
+      .nullable()
+      .transform((providers) => providers ?? []),
+  }),
+  AUTH_SUCCESS: z.object({ provider: z.string(), username: z.string() }),
+  AUTH_FAILED: z.object({ error: z.string() }),
+  COMMENTS_READY: z.unknown(),
+  BYOK_USAGE: z.object({
+    session_tokens: z.number().optional(),
+    est_cost: z.number().optional(),
+  }),
+  BYOK_AUTH_FAILED: z.unknown(),
+  PR_SYNCED: z.unknown(),
+  PRS_READ_ACK: z.unknown(),
+  DIFF_READY: z.unknown(),
+  PATCHSETS_READY: z.unknown(),
+  RANGE_DIFF_READY: z.unknown(),
+  FILE_VIEWED_ACK: z.unknown(),
+  REVIEW_THREADS_READY: z.unknown(),
+  ACTION_RESULT: z.unknown(),
+  PR_CHECKOUT_STATUS: z.unknown(),
+  PR_CHECKOUT_RESULT: z.unknown(),
+  VALIDATE_DEV_FOLDER_RESULT: z.unknown(),
+  ADD_REPO_BY_URL_RESULT: z.unknown(),
+  GET_CACHE_STATS_RESULT: z.unknown(),
+  SET_EXPERTISE_SETTINGS: z.unknown(),
+  PRUNE_CACHE_RESULT: z.unknown(),
+  CLEAR_CACHE_RESULT: z.unknown(),
+  DELETE_CACHE_REPO_RESULT: z.unknown(),
+  RECOVER_REPO_PATH_RESULT: z.unknown(),
+  RECOVER_REPO_TO_CACHE_RESULT: z.unknown(),
+  REMOVE_REPO_PREFLIGHT_RESULT: z.unknown(),
+  REMOVE_REPO_RESULT: z.unknown(),
+  CLASSIFICATION_SETTINGS_UPDATED: z.unknown(),
+  BYOK_KEY_UPDATED: z.unknown(),
+  DISMISS_RESULT: z.unknown(),
+  UNDISMISS_RESULT: z.unknown(),
+  PR_LIST_READY: z.unknown(),
+  REPO_LIST_READY: z.object({
+    repos: z
+      .array(
+        z.object({
+          id: z.string(),
+          provider: z.string(),
+          owner: z.string(),
+          repo: z.string(),
+          watched: z.boolean(),
+          source: z.enum(['local', 'cache']).nullable().optional(),
+          location_status: z.string().nullable().optional(),
+          location_error_code: z.string().nullable().optional(),
+          location_error: z.string().nullable().optional(),
+        }),
+      )
+      .optional(),
+    error: z.string().optional(),
+  }),
+  WATCH_REPO_RESULT: z.object({ repo_id: z.string(), watched: z.boolean() }),
+} satisfies Record<string, z.ZodType>;
+
+type WsEventType = keyof typeof dataSchemas;
+type WSInboundMessage = {
+  [Type in WsEventType]: {
+    type: Type;
+    id?: string;
+    timestamp?: string;
+    data: z.infer<(typeof dataSchemas)[Type]>;
+  };
+}[WsEventType];
+
+export function parseWsMessage(raw: string): Result<WSInboundMessage, string> {
+  return fromThrowable(
+    () => JSON.parse(raw) as unknown,
+    () => 'Invalid WebSocket JSON',
+  )().andThen((value) => {
+    const envelope = messageEnvelopeSchema.safeParse(value);
+    if (!envelope.success) return err('Invalid WebSocket envelope');
+    if (!(envelope.data.type in dataSchemas))
+      return err(`Unknown WebSocket event: ${envelope.data.type}`);
+    const type = envelope.data.type as WsEventType;
+    const payload = dataSchemas[type].safeParse(envelope.data.data);
+    if (!payload.success) return err(`Invalid ${type} payload`);
+    return ok({
+      ...envelope.data,
+      type,
+      data: payload.data,
+    } as WSInboundMessage);
+  });
 }
-
-interface ExpertiseReadyData {
-  repo_id: string;
-  indexed_sha: string;
-  files_total: number;
-  skipped_files: number;
-}
-
-interface ExpertiseErrorData {
-  repo_id: string;
-  code: string;
-  message: string;
-}
-
-const LOCATION_ERROR_CODES = [
-  'path_missing',
-  'remote_mismatch',
-  'permission_denied',
-  'invalid_url',
-  'invalid_path',
-  'destination_required',
-  'destination_conflict',
-  'clone_failed',
-  'auth_failed',
-  'cancelled',
-  'delete_failed',
-  'scan_partial',
-] as const;
-
-const LOCATION_ERROR_OPERATIONS = [
-  'scan',
-  'fetch',
-  'diff',
-  'clone',
-  'prune',
-  'recover',
-] as const;
 
 const ENGINE_PORT_POLL_INTERVAL_MS = 1000;
 
@@ -169,7 +273,8 @@ const PR_SYNC_REQUEST_TIMEOUT_MS = 2 * 60 * 1000 + PR_SYNC_RESPONSE_MARGIN_MS;
 const CHECKOUT_REQUEST_TIMEOUT_MS = 60 * 1000;
 const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
-const MAX_RECONNECT_ATTEMPTS = 10;
+const MAX_PORT_POLL_ATTEMPTS = 10;
+const MAX_RECONNECT_BACKOFF_STEPS = 5;
 
 // ── Singleton WebSocket manager ──────────────────────────────────────
 let singletonWs: WebSocket | null = null;
@@ -181,128 +286,98 @@ let resolvedWsPort: number | null = null;
 let hasSentStartupDevFolderScan = false;
 const messageHandlers = new Map<string, (data: unknown) => void>();
 
-function handleSyncComplete(data: SyncCompleteData): void {
-  try {
-    appStore.setState((s) => ({
-      ...s,
-      syncStatus: 'ready',
-      lastSyncAt: new Date().toISOString(),
-      prListRevision: s.prListRevision + 1,
-      syncStats: {
-        prCount: data.pr_count,
-        newPRs: data.new_prs,
-        updatedPRs: data.updated_prs,
-      },
-    }));
-  } catch {
-    // Store not available (test environment)
-  }
+function handleSyncComplete(
+  data: z.infer<typeof dataSchemas.SYNC_COMPLETE>,
+): void {
+  appStore.setState((s) => ({
+    ...s,
+    syncStatus: 'ready',
+    lastSyncAt: new Date().toISOString(),
+    prListRevision: s.prListRevision + 1,
+    syncStats: {
+      prCount: data.pr_count,
+      newPRs: data.new_prs,
+      updatedPRs: data.updated_prs,
+    },
+  }));
 }
 
-function handlePRApproved(data: PRApprovedData): void {
-  try {
-    appStore.setState((s) => ({
-      ...s,
-      lastSyncAt: data.timestamp,
-    }));
-  } catch {
-    // Store not available (test environment)
-  }
+function handlePRApproved(data: z.infer<typeof dataSchemas.PR_APPROVED>): void {
+  appStore.setState((s) => ({
+    ...s,
+    lastSyncAt: data.timestamp,
+  }));
 }
 
-function handleCommentPosted(_data: CommentPostedData): void {
-  try {
-    appStore.setState((s) => ({
-      ...s,
-      lastSyncAt: new Date().toISOString(),
-      commentsRevision: s.commentsRevision + 1,
-      threadsRevision: s.threadsRevision + 1,
-    }));
-  } catch {
-    // Store not available (test environment)
-  }
+function handleCommentPosted(): void {
+  appStore.setState((s) => ({
+    ...s,
+    lastSyncAt: new Date().toISOString(),
+    commentsRevision: s.commentsRevision + 1,
+    threadsRevision: s.threadsRevision + 1,
+  }));
 }
 
-function handleSyncError(data: SyncErrorData): void {
-  try {
-    appStore.setState((s) => ({
-      ...s,
-      syncStatus: 'error',
-      syncError: `${data.error_code}: ${data.message}`,
-    }));
-  } catch {
-    // Store not available (test environment)
-  }
+function handleSyncError(data: z.infer<typeof dataSchemas.SYNC_ERROR>): void {
+  appStore.setState((s) => ({
+    ...s,
+    syncStatus: 'error',
+    syncError: `${data.error_code}: ${data.message}`,
+  }));
 }
 
-function handleAuthExpired(data: AuthExpiredData): void {
-  try {
-    appStore.setState((s) => ({
-      ...s,
-      syncStatus: 'error',
-      syncError: `Auth expired (${data.provider}): ${data.message}`,
-      isAuthenticated: false,
-    }));
-  } catch {
-    // Store not available (test environment)
-  }
+function handleAuthExpired(
+  data: z.infer<typeof dataSchemas.AUTH_TOKEN_EXPIRED>,
+): void {
+  appStore.setState((s) => ({
+    ...s,
+    syncStatus: 'error',
+    syncError: `Auth expired (${data.provider}): ${data.message}`,
+    isAuthenticated: false,
+  }));
 }
 
-function handleRateLimited(data: RateLimitedData): void {
-  try {
-    appStore.setState((s) => ({
-      ...s,
-      syncStatus: 'rate_limited',
-      syncError: `Rate limited until ${data.reset_at}`,
-    }));
-  } catch {
-    // Store not available (test environment)
-  }
+function handleRateLimited(
+  data: z.infer<typeof dataSchemas.RATE_LIMITED>,
+): void {
+  appStore.setState((s) => ({
+    ...s,
+    syncStatus: 'rate_limited',
+    syncError: `Rate limited until ${data.reset_at}`,
+  }));
 }
 
-function handleActionComplete(data: ActionCompleteData): void {
-  try {
-    appStore.setState((s) => ({
-      ...s,
-      pendingAction: null,
-      actionResult: {
-        type: data.action_type as
-          | 'approve'
-          | 'request_changes'
-          | 'post_comment'
-          | 'reply_comment',
-        prId: data.pr_id,
-        success: true,
-        message: data.message,
-      },
-      confirmingAction: null,
-      lastSyncAt: new Date().toISOString(),
-    }));
-  } catch {
-    // Store not available (test environment)
-  }
+function handleActionComplete(
+  data: z.infer<typeof dataSchemas.ACTION_COMPLETE>,
+): void {
+  appStore.setState((s) => ({
+    ...s,
+    pendingAction: null,
+    actionResult: {
+      type: data.action_type,
+      prId: data.pr_id,
+      success: true,
+      message: data.message,
+    },
+    confirmingAction: null,
+    lastSyncAt: new Date().toISOString(),
+  }));
 }
 
-function handleActionFailed(data: ActionFailedData): void {
-  try {
-    appStore.setState((s) => ({
-      ...s,
-      pendingAction: null,
-      actionResult: {
-        type: data.action_type as
-          | 'approve'
-          | 'request_changes'
-          | 'post_comment'
-          | 'reply_comment',
-        prId: data.pr_id,
-        success: false,
-        message: data.error,
-      },
-      confirmingAction: null,
-    }));
-  } catch {
-    // Store not available (test environment)
-  }
+function handleActionFailed(
+  data: z.infer<typeof dataSchemas.ACTION_FAILED>,
+): void {
+  appStore.setState((s) => ({
+    ...s,
+    pendingAction: null,
+    actionResult: {
+      type: data.action_type,
+      prId: data.pr_id,
+      success: false,
+      message: data.error,
+    },
+    confirmingAction: null,
+  }));
 }
 
 /**
@@ -310,15 +385,13 @@ function handleActionFailed(data: ActionFailedData): void {
  * or a teammate changed it). Bump `threadsRevision` so the open threads view
  * and merge-readiness badge re-fetch — no full sync cycle needed.
  */
-function handleThreadStateChanged(_data: ThreadStateChangedData): void {
-  try {
-    appStore.setState((s) => ({
-      ...s,
-      threadsRevision: s.threadsRevision + 1,
-    }));
-  } catch {
-    // Store not available (test environment)
-  }
+function handleThreadStateChanged(
+  _data: z.infer<typeof dataSchemas.THREAD_RESOLVED>,
+): void {
+  appStore.setState((s) => ({
+    ...s,
+    threadsRevision: s.threadsRevision + 1,
+  }));
 }
 
 function bumpPRListRevision(): Result<void, unknown> {
@@ -336,21 +409,19 @@ function handlePRMetadataChanged(_data: unknown): void {
   );
 }
 
-function handlePRsReadChanged(_data: PRsReadChangedData): void {
+function handlePRsReadChanged(
+  _data: z.infer<typeof dataSchemas.PRS_READ_CHANGED>,
+): void {
   bumpPRListRevision().mapErr((error) =>
     log.error({ err: error }, 'failed to invalidate PR list'),
   );
 }
 
 function handleCIStatusChanged(_data: unknown): void {
-  try {
-    appStore.setState((s) => ({
-      ...s,
-      prListRevision: s.prListRevision + 1,
-    }));
-  } catch {
-    // Store not available (test environment)
-  }
+  appStore.setState((s) => ({
+    ...s,
+    prListRevision: s.prListRevision + 1,
+  }));
 }
 
 function mergeExpertiseStatus(status: ExpertiseRepoStatus): void {
@@ -366,7 +437,9 @@ function mergeExpertiseStatus(status: ExpertiseRepoStatus): void {
   }));
 }
 
-function handleExpertiseIndexProgress(data: ExpertiseProgressData): void {
+function handleExpertiseIndexProgress(
+  data: z.infer<typeof dataSchemas.EXPERTISE_INDEX_PROGRESS>,
+): void {
   mergeExpertiseStatus({
     repo_id: data.repo_id,
     status: 'indexing',
@@ -375,7 +448,9 @@ function handleExpertiseIndexProgress(data: ExpertiseProgressData): void {
   });
 }
 
-function handleExpertiseReady(data: ExpertiseReadyData): void {
+function handleExpertiseReady(
+  data: z.infer<typeof dataSchemas.EXPERTISE_READY>,
+): void {
   mergeExpertiseStatus({
     repo_id: data.repo_id,
     status: 'ready',
@@ -389,7 +464,9 @@ function handleExpertiseReady(data: ExpertiseReadyData): void {
   }));
 }
 
-function handleExpertiseError(data: ExpertiseErrorData): void {
+function handleExpertiseError(
+  data: z.infer<typeof dataSchemas.EXPERTISE_ERROR>,
+): void {
   mergeExpertiseStatus({
     repo_id: data.repo_id,
     status: 'error',
@@ -403,7 +480,9 @@ function handleExpertiseError(data: ExpertiseErrorData): void {
   });
 }
 
-function handleExpertiseNudge(data: ExpertiseNudgePayload): void {
+function handleExpertiseNudge(
+  data: z.infer<typeof dataSchemas.EXPERTISE_NUDGE>,
+): void {
   appStore.setState((s) => ({
     ...s,
     expertiseNudges: {
@@ -413,90 +492,26 @@ function handleExpertiseNudge(data: ExpertiseNudgePayload): void {
   }));
 }
 
-function handleExpertiseSettings(data: ExpertiseSettingsPayload): void {
+function handleExpertiseSettings(
+  data: z.infer<typeof dataSchemas.EXPERTISE_SETTINGS>,
+): void {
   appStore.setState((s) => ({
     ...s,
     expertiseSettings: data,
   }));
 }
 
-function isRecord(data: unknown): data is Record<string, unknown> {
-  return typeof data === 'object' && data !== null;
-}
-
-function isLocationError(data: unknown): data is LocationErrorData {
-  if (!isRecord(data)) {
-    return false;
-  }
-
-  return (
-    typeof data.repo_id === 'string' &&
-    LOCATION_ERROR_OPERATIONS.includes(
-      data.operation as (typeof LOCATION_ERROR_OPERATIONS)[number],
-    ) &&
-    LOCATION_ERROR_CODES.includes(
-      data.code as (typeof LOCATION_ERROR_CODES)[number],
-    ) &&
-    typeof data.message === 'string'
-  );
-}
-
-function isScannedRepository(data: unknown): boolean {
-  if (!isRecord(data)) {
-    return false;
-  }
-
-  return (
-    typeof data.repo_id === 'string' &&
-    typeof data.path === 'string' &&
-    typeof data.remote_url === 'string' &&
-    data.source === 'local'
-  );
-}
-
-function isLegacyScanDevFolderResult(
+function handleScanDevFolderResult(
   data: unknown,
-): data is LegacyScanDevFolderResult {
-  if (!isRecord(data)) {
-    return false;
-  }
-
-  return (
-    typeof data.path === 'string' &&
-    Array.isArray(data.repositories) &&
-    data.repositories.every(isScannedRepository) &&
-    Array.isArray(data.errors) &&
-    data.errors.every(isLocationError)
-  );
-}
-
-function isScanDevFolderResult(data: unknown): data is ScanDevFolderData {
-  if (isLegacyScanDevFolderResult(data)) {
-    return true;
-  }
-
-  if (!isRecord(data)) {
-    return false;
-  }
-
-  return (
-    data.ok === true &&
-    typeof data.discovered === 'number' &&
-    typeof data.healthy === 'number' &&
-    typeof data.degraded === 'number' &&
-    typeof data.skipped === 'number' &&
-    typeof data.partial === 'boolean'
-  );
-}
-
-function handleScanDevFolderResult(data: unknown): ScanDevFolderData | null {
-  if (!isScanDevFolderResult(data)) {
-    log.warn({ data }, 'invalid SCAN_DEV_FOLDER_RESULT payload');
+): z.infer<typeof scanDevFolderResultSchema> | null {
+  const parsed = scanDevFolderResultSchema.safeParse(data);
+  if (!parsed.success) {
+    log.warn('invalid SCAN_DEV_FOLDER_RESULT payload');
     return null;
   }
 
-  const payload = data;
-  if (!isLegacyScanDevFolderResult(payload)) {
+  const payload = parsed.data;
+  if (!('errors' in payload)) {
     return payload;
   }
 
@@ -512,61 +527,68 @@ function handleScanDevFolderResult(data: unknown): ScanDevFolderData | null {
 }
 
 function handleLocationError(data: unknown): void {
-  if (!isLocationError(data)) {
-    log.warn({ data }, 'invalid LOCATION_ERROR payload');
+  const parsed = locationErrorSchema.safeParse(data);
+  if (!parsed.success) {
+    log.warn('invalid LOCATION_ERROR payload');
     return;
   }
 
   log.warn(
-    { repoId: data.repo_id, operation: data.operation, code: data.code },
-    data.message,
+    {
+      repoId: parsed.data.repo_id,
+      operation: parsed.data.operation,
+      code: parsed.data.code,
+    },
+    parsed.data.message,
   );
 }
 
+function handleAuthRedirectError(message: string): void {
+  appStore.setState((state) => ({
+    ...state,
+    authLoading: false,
+    authError: message,
+  }));
+  addToast({ type: 'error', message, dismissible: true });
+}
+
 function onMessage(event: MessageEvent<string>): void {
-  let message: WSMessage;
-  try {
-    message = JSON.parse(event.data) as WSMessage;
-  } catch (error) {
-    log.error({ err: error }, 'message parse error');
+  const parsed = parseWsMessage(event.data);
+  if (parsed.isErr()) {
+    log.warn({ reason: parsed.error }, 'invalid WebSocket message');
     return;
   }
-
-  log.debug({ type: message.type, data: message.data }, 'received event');
+  const message = parsed.value;
+  log.debug({ type: message.type, id: message.id }, 'received event');
 
   switch (message.type) {
     case 'SYNC_COMPLETE':
-      handleSyncComplete(message.data as SyncCompleteData);
+      handleSyncComplete(message.data);
       break;
     case 'SYNC_TRIGGERED': {
-      const queued = (message.data as { queued?: boolean }).queued === true;
-      if (queued) {
-        try {
-          appStore.setState((s) => ({ ...s, syncStatus: 'syncing' }));
-        } catch {
-          // Store not available (test environment)
-        }
+      if (message.data.queued === true) {
+        appStore.setState((s) => ({ ...s, syncStatus: 'syncing' }));
       } else {
         log.warn('manual sync not queued — sync already in progress');
       }
       break;
     }
     case 'PR_APPROVED':
-      handlePRApproved(message.data as PRApprovedData);
+      handlePRApproved(message.data);
       break;
     case 'COMMENT_POSTED':
-      handleCommentPosted(message.data as CommentPostedData);
+      handleCommentPosted();
       break;
     case 'SYNC_ERROR':
-      handleSyncError(message.data as SyncErrorData);
+      handleSyncError(message.data);
       addToast({
         type: 'error',
-        message: formatErrorMessage((message.data as SyncErrorData).error_code),
+        message: formatErrorMessage(message.data.error_code),
         dismissible: true,
       });
       break;
     case 'AUTH_TOKEN_EXPIRED':
-      handleAuthExpired(message.data as AuthExpiredData);
+      handleAuthExpired(message.data);
       addToast({
         type: 'error',
         message: formatErrorMessage('AUTH_TOKEN_EXPIRED'),
@@ -574,28 +596,28 @@ function onMessage(event: MessageEvent<string>): void {
       });
       break;
     case 'RATE_LIMITED':
-      handleRateLimited(message.data as RateLimitedData);
+      handleRateLimited(message.data);
       break;
     case 'ACTION_COMPLETE':
-      handleActionComplete(message.data as ActionCompleteData);
+      handleActionComplete(message.data);
       break;
     case 'ACTION_FAILED':
-      handleActionFailed(message.data as ActionFailedData);
+      handleActionFailed(message.data);
       addToast({
         type: 'error',
-        message: formatErrorMessage((message.data as ActionFailedData).error),
+        message: formatErrorMessage(message.data.error),
         dismissible: true,
       });
       break;
     case 'THREAD_RESOLVED':
     case 'THREAD_REOPENED':
-      handleThreadStateChanged(message.data as ThreadStateChangedData);
+      handleThreadStateChanged(message.data);
       break;
     case 'PR_METADATA_CHANGED':
       handlePRMetadataChanged(message.data);
       break;
     case 'PRS_READ_CHANGED':
-      handlePRsReadChanged(message.data as PRsReadChangedData);
+      handlePRsReadChanged(message.data);
       break;
     case 'CI_STATUS_CHANGED':
       handleCIStatusChanged(message.data);
@@ -605,10 +627,11 @@ function onMessage(event: MessageEvent<string>): void {
       if (payload === null) {
         break;
       }
-      const scanHandler = messageHandlers.get(message.id);
+      const scanHandler =
+        message.id === undefined ? undefined : messageHandlers.get(message.id);
       if (scanHandler) {
         scanHandler(payload);
-        messageHandlers.delete(message.id);
+        if (message.id !== undefined) messageHandlers.delete(message.id);
       }
       break;
     }
@@ -616,156 +639,122 @@ function onMessage(event: MessageEvent<string>): void {
       handleLocationError(message.data);
       break;
     case 'EXPERTISE_INDEX_PROGRESS':
-      handleExpertiseIndexProgress(message.data as ExpertiseProgressData);
+      handleExpertiseIndexProgress(message.data);
       break;
     case 'EXPERTISE_READY':
-      handleExpertiseReady(message.data as ExpertiseReadyData);
+      handleExpertiseReady(message.data);
       break;
     case 'EXPERTISE_ERROR': {
-      const payload = message.data as ExpertiseErrorData;
+      const payload = message.data;
       handleExpertiseError(payload);
-      const handler = messageHandlers.get(message.id);
+      const handler =
+        message.id === undefined ? undefined : messageHandlers.get(message.id);
       if (handler) {
         handler({ error: payload.message || payload.code });
-        messageHandlers.delete(message.id);
+        if (message.id !== undefined) messageHandlers.delete(message.id);
       }
       break;
     }
     case 'EXPERTISE_NUDGE':
-      handleExpertiseNudge(message.data as ExpertiseNudgePayload);
+      handleExpertiseNudge(message.data);
       break;
     case 'EXPERTISE_DATA':
     case 'EXPERTISE_ENABLE_ACCEPTED':
     case 'EXPERTISE_DISABLE_ACCEPTED':
     case 'EXPERTISE_NUDGE_DISMISSED': {
       const payload = message.data;
-      const handler = messageHandlers.get(message.id);
+      const handler =
+        message.id === undefined ? undefined : messageHandlers.get(message.id);
       if (handler) {
         handler(payload);
-        messageHandlers.delete(message.id);
+        if (message.id !== undefined) messageHandlers.delete(message.id);
       }
       break;
     }
     case 'EXPERTISE_SETTINGS':
     case 'EXPERTISE_SETTINGS_UPDATED': {
-      const payload = message.data as ExpertiseSettingsPayload;
+      const payload = message.data;
       handleExpertiseSettings(payload);
-      const handler = messageHandlers.get(message.id);
+      const handler =
+        message.id === undefined ? undefined : messageHandlers.get(message.id);
       if (handler) {
         handler(payload);
-        messageHandlers.delete(message.id);
+        if (message.id !== undefined) messageHandlers.delete(message.id);
       }
       break;
     }
     case 'AUTH_REDIRECT': {
-      const payload = message.data as { provider: string; url: string };
-      try {
-        if (!window.electron?.openExternal) {
-          appStore.setState((s) => ({
-            ...s,
-            authLoading: false,
-            authError: 'Browser launch is unavailable.',
-          }));
-          break;
-        }
-
-        void window.electron.openExternal(payload.url).then((result) => {
-          if (result && 'err' in result) {
-            appStore.setState((s) => ({
-              ...s,
-              authLoading: false,
-              authError: (result as { err: string }).err,
-            }));
-            addToast({
-              type: 'error',
-              message: (result as { err: string }).err,
-              dismissible: true,
-            });
-            return;
-          }
-          appStore.setState((s) => ({
-            ...s,
-            authLoading: true,
-            authError: null,
-          }));
-        });
-      } catch {
-        /* test env */
+      const openExternal = window.electron?.openExternal;
+      if (!openExternal) {
+        appStore.setState((state) => ({
+          ...state,
+          authLoading: false,
+          authError: 'Browser launch is unavailable.',
+        }));
+        break;
       }
+      void ResultAsync.fromPromise(openExternal(message.data.url), (cause) =>
+        cause instanceof Error ? cause.message : String(cause),
+      ).match((result) => {
+        if (result && 'err' in result) {
+          handleAuthRedirectError(result.err);
+          return;
+        }
+        appStore.setState((state) => ({
+          ...state,
+          authLoading: true,
+          authError: null,
+        }));
+      }, handleAuthRedirectError);
       break;
     }
     case 'AUTH_CHECK_RESULT': {
-      const payload = message.data as {
-        authenticated: boolean;
-        providers: Array<{ provider: string; username: string }>;
-      };
-      try {
-        appStore.setState((s) => ({
-          ...s,
-          authChecked: true,
-          authLoading: false,
-          isAuthenticated: payload.authenticated,
-          connectedProviders: payload.providers ?? [],
-        }));
-      } catch {
-        /* test env */
-      }
+      const payload = message.data;
+      appStore.setState((s) => ({
+        ...s,
+        authChecked: true,
+        authLoading: false,
+        isAuthenticated: payload.authenticated,
+        connectedProviders: payload.providers ?? [],
+      }));
       break;
     }
     case 'AUTH_DISCONNECT_RESULT': {
-      const payload = message.data as {
-        authenticated: boolean;
-        providers: Array<{ provider: string; username: string }>;
-      };
-      try {
-        appStore.setState((s) => ({
-          ...s,
-          isAuthenticated: payload.authenticated,
-          connectedProviders: payload.providers ?? [],
-        }));
-      } catch {
-        /* test env */
-      }
+      const payload = message.data;
+      appStore.setState((s) => ({
+        ...s,
+        isAuthenticated: payload.authenticated,
+        connectedProviders: payload.providers ?? [],
+      }));
       break;
     }
     case 'AUTH_SUCCESS': {
-      const payload = message.data as {
-        provider: string;
-        username: string;
-      };
-      try {
-        appStore.setState((s) => ({
-          ...s,
-          isAuthenticated: true,
-          authChecked: true,
-          authLoading: false,
-          authError: null,
-          connectedProviders: [
-            ...s.connectedProviders.filter(
-              (p) => p.provider !== payload.provider,
-            ),
-            {
-              provider: payload.provider,
-              username: payload.username ?? '',
-            },
-          ],
-        }));
-      } catch {
-        /* test env */
-      }
+      const payload = message.data;
+      appStore.setState((s) => ({
+        ...s,
+        isAuthenticated: true,
+        authChecked: true,
+        authLoading: false,
+        authError: null,
+        connectedProviders: [
+          ...s.connectedProviders.filter(
+            (p) => p.provider !== payload.provider,
+          ),
+          {
+            provider: payload.provider,
+            username: payload.username ?? '',
+          },
+        ],
+      }));
       break;
     }
     case 'AUTH_FAILED': {
-      const payload = message.data as { error: string };
-      try {
-        appStore.setState((s) => ({
-          ...s,
-          authLoading: false,
-          authError: payload.error,
-        }));
-      } catch {
-        /* test env */
-      }
+      const payload = message.data;
+      appStore.setState((s) => ({
+        ...s,
+        authLoading: false,
+        authError: payload.error,
+      }));
       addToast({
         type: 'error',
         message: payload.error,
@@ -774,46 +763,32 @@ function onMessage(event: MessageEvent<string>): void {
       break;
     }
     case 'COMMENTS_READY': {
-      const handler = messageHandlers.get(message.id);
+      const handler =
+        message.id === undefined ? undefined : messageHandlers.get(message.id);
       if (handler) {
         handler(message.data);
-        messageHandlers.delete(message.id);
+        if (message.id !== undefined) messageHandlers.delete(message.id);
         break;
       }
       // Server-initiated push (async LLM tier upgraded classifications):
       // no matching request id — bump commentsRevision so open views refetch.
-      try {
-        appStore.setState((s) => ({
-          ...s,
-          commentsRevision: s.commentsRevision + 1,
-        }));
-      } catch {
-        /* test env */
-      }
+      appStore.setState((s) => ({
+        ...s,
+        commentsRevision: s.commentsRevision + 1,
+      }));
       break;
     }
     case 'BYOK_USAGE': {
-      const payload = message.data as {
-        session_tokens?: number;
-        est_cost?: number;
-      };
-      try {
-        appStore.setState((s) => ({
-          ...s,
-          byokSessionTokens: payload.session_tokens ?? 0,
-          byokEstCost: payload.est_cost ?? 0,
-        }));
-      } catch {
-        /* test env */
-      }
+      const payload = message.data;
+      appStore.setState((s) => ({
+        ...s,
+        byokSessionTokens: payload.session_tokens ?? 0,
+        byokEstCost: payload.est_cost ?? 0,
+      }));
       break;
     }
     case 'BYOK_AUTH_FAILED': {
-      try {
-        appStore.setState((s) => ({ ...s, byokAuthFailed: true }));
-      } catch {
-        /* test env */
-      }
+      appStore.setState((s) => ({ ...s, byokAuthFailed: true }));
       addToast({
         type: 'error',
         message: 'AI classification: API key rejected — check Settings',
@@ -829,6 +804,8 @@ function onMessage(event: MessageEvent<string>): void {
     case 'FILE_VIEWED_ACK':
     case 'REVIEW_THREADS_READY':
     case 'ACTION_RESULT':
+    case 'PR_CHECKOUT_STATUS':
+    case 'PR_CHECKOUT_RESULT':
     case 'VALIDATE_DEV_FOLDER_RESULT':
     case 'ADD_REPO_BY_URL_RESULT':
     case 'GET_CACHE_STATS_RESULT':
@@ -845,67 +822,70 @@ function onMessage(event: MessageEvent<string>): void {
     case 'DISMISS_RESULT':
     case 'UNDISMISS_RESULT':
     case 'PR_LIST_READY': {
-      const handler = messageHandlers.get(message.id);
+      const handler =
+        message.id === undefined ? undefined : messageHandlers.get(message.id);
       if (handler) {
         handler(message.data);
-        messageHandlers.delete(message.id);
+        if (message.id !== undefined) messageHandlers.delete(message.id);
       }
       break;
     }
     case 'REPO_LIST_READY': {
-      const payload = message.data as {
-        repos?: RepoInfo[];
-        error?: string;
-      };
-      try {
-        if (payload.error) {
-          appStore.setState((s) => ({
-            ...s,
-            reposLoading: false,
-          }));
-          addToast({
-            type: 'error',
-            message: `Failed to load repos: ${payload.error}`,
-            dismissible: true,
-          });
-        } else {
-          appStore.setState((s) => ({
-            ...s,
-            repos: payload.repos ?? [],
-            reposLoading: false,
-          }));
-        }
-      } catch {
-        /* test env */
+      const payload = message.data;
+      if (payload.error) {
+        appStore.setState((state) => ({ ...state, reposLoading: false }));
+        addToast({
+          type: 'error',
+          message: `Failed to load repos: ${payload.error}`,
+          dismissible: true,
+        });
+      } else {
+        appStore.setState((state) => ({
+          ...state,
+          repos: (payload.repos ?? []).map(
+            ({
+              source,
+              location_status,
+              location_error_code,
+              location_error,
+              ...repo
+            }) => ({
+              ...repo,
+              ...(source === undefined ? {} : { source }),
+              ...(location_status === undefined ? {} : { location_status }),
+              ...(location_error_code === undefined
+                ? {}
+                : { location_error_code }),
+              ...(location_error === undefined ? {} : { location_error }),
+            }),
+          ),
+          reposLoading: false,
+        }));
       }
-      const repoListHandler = messageHandlers.get(message.id);
+      const repoListHandler =
+        message.id === undefined ? undefined : messageHandlers.get(message.id);
       if (repoListHandler) {
         repoListHandler(message.data);
-        messageHandlers.delete(message.id);
+        if (message.id !== undefined) messageHandlers.delete(message.id);
       }
       break;
     }
     case 'WATCH_REPO_RESULT': {
-      const payload = message.data as { repo_id: string; watched: boolean };
-      try {
-        appStore.setState((s) => ({
-          ...s,
-          repos: s.repos.map((r) =>
-            r.id === payload.repo_id ? { ...r, watched: payload.watched } : r,
-          ),
-        }));
-      } catch {
-        /* test env */
-      }
-      const watchHandler = messageHandlers.get(message.id);
+      const payload = message.data;
+      appStore.setState((s) => ({
+        ...s,
+        repos: s.repos.map((r) =>
+          r.id === payload.repo_id ? { ...r, watched: payload.watched } : r,
+        ),
+      }));
+      const watchHandler =
+        message.id === undefined ? undefined : messageHandlers.get(message.id);
       if (watchHandler) {
         watchHandler(message.data);
-        messageHandlers.delete(message.id);
+        if (message.id !== undefined) messageHandlers.delete(message.id);
       }
       break;
     }
-    default:
-      log.warn({ type: message.type }, 'unhandled event type');
   }
 }
 
@@ -925,19 +905,25 @@ function sendStartupDevFolderScan(ws: WebSocket): void {
     timestamp: new Date().toISOString(),
   };
   log.info({ id: scanMsg.id }, 'sending SCAN_DEV_FOLDER');
-  ws.send(JSON.stringify(scanMsg));
+  fromThrowable(() => ws.send(JSON.stringify(scanMsg)))().mapErr((error) =>
+    log.warn({ err: error }, 'startup scan request failed'),
+  );
 }
 
 function connect(): void {
-  if (singletonWs && singletonWs.readyState <= WebSocket.OPEN) {
+  reconnectTimer = null;
+  if (
+    refCount === 0 ||
+    (singletonWs && singletonWs.readyState <= WebSocket.OPEN)
+  ) {
     return;
   }
 
   const wsUrl = getWsUrl();
   if (wsUrl === null) {
-    if (enginePortPollAttempt >= MAX_RECONNECT_ATTEMPTS) {
+    if (enginePortPollAttempt >= MAX_PORT_POLL_ATTEMPTS) {
       log.error(
-        { maxAttempts: MAX_RECONNECT_ATTEMPTS },
+        { maxAttempts: MAX_PORT_POLL_ATTEMPTS },
         'sync engine WebSocket port was not published',
       );
       appStore.setState((state) => ({
@@ -966,7 +952,7 @@ function connect(): void {
       );
     }
     log.info(
-      { attempt: enginePortPollAttempt, maxAttempts: MAX_RECONNECT_ATTEMPTS },
+      { attempt: enginePortPollAttempt, maxAttempts: MAX_PORT_POLL_ATTEMPTS },
       'Go sync engine is still starting — waiting for its WebSocket port',
     );
     reconnectTimer = setTimeout(connect, ENGINE_PORT_POLL_INTERVAL_MS);
@@ -976,30 +962,31 @@ function connect(): void {
   enginePortPollAttempt = 0;
 
   log.info({ url: wsUrl }, 'attempting connection');
-  try {
-    appStore.setState((s) => ({ ...s, syncStatus: 'connecting' }));
-  } catch {
-    log.warn('store not available — skipping connection');
+  appStore.setState((s) => ({ ...s, syncStatus: 'connecting' }));
+  const socket = fromThrowable(() => new WebSocket(wsUrl))();
+  if (socket.isErr()) {
+    log.error({ err: socket.error }, 'failed to create WebSocket');
+    appStore.setState((state) => ({
+      ...state,
+      syncStatus: 'error',
+      syncError: 'WebSocket connection failed',
+    }));
+    reconnectTimer = setTimeout(connect, MAX_RECONNECT_DELAY_MS);
     return;
   }
-
-  const ws = new WebSocket(wsUrl);
+  const ws = socket.value;
 
   ws.onopen = () => {
     log.info({ url: wsUrl }, 'connected');
     reconnectAttempt = 0;
-    try {
-      appStore.setState((s) => ({
-        ...s,
-        syncStatus: 'connected',
-        syncError: null,
-        lastSyncAt: new Date().toISOString(),
-        isOffline: false,
-        authChecked: false,
-      }));
-    } catch {
-      // Store not available (test environment)
-    }
+    appStore.setState((s) => ({
+      ...s,
+      syncStatus: 'connected',
+      syncError: null,
+      lastSyncAt: new Date().toISOString(),
+      isOffline: false,
+      authChecked: false,
+    }));
 
     const checkMsg: WSMessage = {
       id: `req-${Date.now()}-${Math.random()}`,
@@ -1008,7 +995,9 @@ function connect(): void {
       timestamp: new Date().toISOString(),
     };
     log.info({ id: checkMsg.id }, 'sending AUTH_CHECK');
-    ws.send(JSON.stringify(checkMsg));
+    fromThrowable(() => ws.send(JSON.stringify(checkMsg)))().mapErr((error) =>
+      log.warn({ err: error }, 'auth check request failed'),
+    );
     sendStartupDevFolderScan(ws);
   };
 
@@ -1016,66 +1005,39 @@ function connect(): void {
 
   ws.onerror = (error) => {
     log.error({ err: error }, 'connection error');
-    try {
-      appStore.setState((s) => ({
-        ...s,
-        syncStatus: 'error',
-        syncError: 'WebSocket connection failed',
-      }));
-    } catch {
-      // Store not available (test environment)
-    }
+    appStore.setState((s) => ({
+      ...s,
+      syncStatus: 'error',
+      syncError: 'WebSocket connection failed',
+    }));
   };
 
   ws.onclose = () => {
+    if (singletonWs !== ws) return;
     log.info('disconnected');
     singletonWs = null;
     // Each new connection should re-run the startup dev-folder scan;
     // disconnect() resets this too, but dropped sockets reconnect directly.
     hasSentStartupDevFolderScan = false;
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
-    try {
-      appStore.setState((s) => ({
-        ...s,
-        syncStatus: 'disconnected',
-        isOffline: !isOnline,
-        authLoading: false,
-      }));
-    } catch {
-      // Store not available (test environment)
-    }
+    appStore.setState((s) => ({
+      ...s,
+      syncStatus: 'disconnected',
+      isOffline: !isOnline,
+      authLoading: false,
+    }));
 
-    if (refCount > 0 && reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
+    if (refCount > 0) {
       const delay = Math.min(
         BASE_RECONNECT_DELAY_MS * 2 ** reconnectAttempt,
         MAX_RECONNECT_DELAY_MS,
       );
-      reconnectAttempt += 1;
-      log.info(
-        {
-          delay,
-          attempt: reconnectAttempt,
-          maxAttempts: MAX_RECONNECT_ATTEMPTS,
-        },
-        'scheduling reconnect',
+      reconnectAttempt = Math.min(
+        reconnectAttempt + 1,
+        MAX_RECONNECT_BACKOFF_STEPS,
       );
+      log.info({ delay }, 'scheduling reconnect');
       reconnectTimer = setTimeout(connect, delay);
-    } else if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-      log.error(
-        { maxAttempts: MAX_RECONNECT_ATTEMPTS },
-        'max reconnect attempts reached',
-      );
-      try {
-        appStore.setState((s) => ({
-          ...s,
-          syncStatus: 'error',
-          syncError: 'Connection lost. Please restart the app.',
-          authChecked: true,
-          isAuthenticated: false,
-        }));
-      } catch {
-        // Store not available (test environment)
-      }
     }
   };
 
@@ -1087,8 +1049,15 @@ function disconnect(): void {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
-  singletonWs?.close();
+  const socket = singletonWs;
   singletonWs = null;
+  if (socket) {
+    socket.onopen = null;
+    socket.onmessage = null;
+    socket.onerror = null;
+    socket.onclose = null;
+    socket.close();
+  }
   reconnectAttempt = 0;
   enginePortPollAttempt = 0;
   resolvedWsPort = null;
@@ -1108,7 +1077,7 @@ function sendMessage(type: string, data: unknown): string | undefined {
       },
       'send failed — not connected',
     );
-    log.error({ type, data }, 'dropped message');
+    log.warn({ type }, 'dropped message');
     return undefined;
   }
 
@@ -1121,7 +1090,14 @@ function sendMessage(type: string, data: unknown): string | undefined {
   };
 
   log.info({ type, id }, 'sending message');
-  ws.send(JSON.stringify(message));
+  const sent = fromThrowable(() => ws.send(JSON.stringify(message)))();
+  if (sent.isErr()) {
+    log.error(
+      { type, id, err: sent.error },
+      'failed to send WebSocket message',
+    );
+    return undefined;
+  }
   return id;
 }
 

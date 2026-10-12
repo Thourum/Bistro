@@ -1,6 +1,13 @@
+import { ResultAsync } from 'neverthrow';
 import { useCallback } from 'react';
+import { z } from 'zod';
 import { appStore } from '../store';
 import { useWebSocket } from './useWebSocket';
+
+const actionResponseSchema = z.object({
+  success: z.boolean(),
+  error: z.string().optional(),
+});
 
 /**
  * Hook that provides dispatch functions for PR actions (approve, request-changes).
@@ -19,7 +26,18 @@ export function useActionDispatch(prId: string | undefined) {
       confirmingAction: null,
     }));
 
-    send('APPROVE_PR', { pr_id: prId });
+    if (send('APPROVE_PR', { pr_id: prId }) === undefined) {
+      appStore.setState((s) => ({
+        ...s,
+        pendingAction: null,
+        actionResult: {
+          type: 'approve',
+          prId,
+          success: false,
+          message: 'WebSocket not connected',
+        },
+      }));
+    }
   }, [prId, send]);
 
   const dispatchRequestChanges = useCallback(
@@ -32,7 +50,18 @@ export function useActionDispatch(prId: string | undefined) {
         confirmingAction: null,
       }));
 
-      send('REQUEST_CHANGES', { pr_id: prId, comment });
+      if (send('REQUEST_CHANGES', { pr_id: prId, comment }) === undefined) {
+        appStore.setState((s) => ({
+          ...s,
+          pendingAction: null,
+          actionResult: {
+            type: 'request_changes',
+            prId,
+            success: false,
+            message: 'WebSocket not connected',
+          },
+        }));
+      }
     },
     [prId, send],
   );
@@ -53,14 +82,17 @@ export function useActionDispatch(prId: string | undefined) {
         confirmingAction: null,
       }));
 
-      void request('SUBMIT_ACTION', {
-        pr_id: prId,
-        action: 'post_comment',
-        body: trimmed,
-      })
-        .then((data) => {
-          const result = data as { success?: boolean; error?: string };
-          const success = result.success === true;
+      void ResultAsync.fromPromise(
+        request('SUBMIT_ACTION', {
+          pr_id: prId,
+          action: 'post_comment',
+          body: trimmed,
+        }),
+        (cause) => (cause instanceof Error ? cause.message : 'Comment failed'),
+      ).match(
+        (data) => {
+          const parsed = actionResponseSchema.safeParse(data);
+          const success = parsed.success && parsed.data.success;
           appStore.setState((s) => ({
             ...s,
             pendingAction: null,
@@ -70,14 +102,15 @@ export function useActionDispatch(prId: string | undefined) {
               success,
               message: success
                 ? 'Comment posted'
-                : (result.error ?? 'Comment failed'),
+                : ((parsed.success ? parsed.data.error : null) ??
+                  'Comment failed'),
             },
             commentsRevision: success
               ? s.commentsRevision + 1
               : s.commentsRevision,
           }));
-        })
-        .catch((error: unknown) => {
+        },
+        (message) => {
           appStore.setState((s) => ({
             ...s,
             pendingAction: null,
@@ -85,11 +118,11 @@ export function useActionDispatch(prId: string | undefined) {
               type: 'post_comment',
               prId,
               success: false,
-              message:
-                error instanceof Error ? error.message : 'Comment failed',
+              message,
             },
           }));
-        });
+        },
+      );
     },
     [prId, request],
   );
@@ -106,16 +139,19 @@ export function useActionDispatch(prId: string | undefined) {
         confirmingAction: null,
       }));
 
-      void request('SUBMIT_ACTION', {
-        pr_id: prId,
-        action: 'reply_comment',
-        body: trimmed,
-        thread_id: target.threadId ?? '',
-        comment_id: target.commentId ?? '',
-      })
-        .then((data) => {
-          const result = data as { success?: boolean; error?: string };
-          const success = result.success === true;
+      void ResultAsync.fromPromise(
+        request('SUBMIT_ACTION', {
+          pr_id: prId,
+          action: 'reply_comment',
+          body: trimmed,
+          thread_id: target.threadId ?? '',
+          comment_id: target.commentId ?? '',
+        }),
+        (cause) => (cause instanceof Error ? cause.message : 'Reply failed'),
+      ).match(
+        (data) => {
+          const parsed = actionResponseSchema.safeParse(data);
+          const success = parsed.success && parsed.data.success;
           appStore.setState((s) => ({
             ...s,
             pendingAction: null,
@@ -125,7 +161,8 @@ export function useActionDispatch(prId: string | undefined) {
               success,
               message: success
                 ? 'Reply posted'
-                : (result.error ?? 'Reply failed'),
+                : ((parsed.success ? parsed.data.error : null) ??
+                  'Reply failed'),
             },
             commentsRevision: success
               ? s.commentsRevision + 1
@@ -134,8 +171,8 @@ export function useActionDispatch(prId: string | undefined) {
               ? s.threadsRevision + 1
               : s.threadsRevision,
           }));
-        })
-        .catch((error: unknown) => {
+        },
+        (message) => {
           appStore.setState((s) => ({
             ...s,
             pendingAction: null,
@@ -143,10 +180,11 @@ export function useActionDispatch(prId: string | undefined) {
               type: 'reply_comment',
               prId,
               success: false,
-              message: error instanceof Error ? error.message : 'Reply failed',
+              message,
             },
           }));
-        });
+        },
+      );
     },
     [prId, request],
   );

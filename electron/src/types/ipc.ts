@@ -6,6 +6,8 @@
  * - Response: { ok: T } | { err: string }
  */
 
+import { z } from 'zod';
+
 export interface IPCError {
   err: string;
 }
@@ -23,9 +25,8 @@ export interface DBQueryResponse {
 
 // ---- File Read Channel ----
 
-export interface FSReadPatchRequest {
-  path: string;
-}
+export const fsReadPatchRequestSchema = z.object({ path: z.string().min(1) });
+export type FSReadPatchRequest = z.infer<typeof fsReadPatchRequestSchema>;
 
 export interface FSReadPatchResponse {
   ok: string;
@@ -52,13 +53,14 @@ export interface OpenInEditorResponse {
 // SUBMIT_ACTION payloads (`resolve_thread` / `unresolve_thread`) so they share
 // the same offline queue, retry, and ACTION_RESULT semantics as other PR writes.
 
-export interface GoCommandRequest {
-  type: 'approve_pr' | 'request_changes' | 'post_comment';
-  pr_id: string;
-  comment?: string;
-  line?: number;
-  file?: string;
-}
+export const goCommandRequestSchema = z.object({
+  type: z.enum(['approve_pr', 'request_changes', 'post_comment']),
+  pr_id: z.string().min(1),
+  comment: z.string().optional(),
+  line: z.number().int().optional(),
+  file: z.string().optional(),
+});
+export type GoCommandRequest = z.infer<typeof goCommandRequestSchema>;
 
 export interface GoCommandResponse {
   ok: boolean;
@@ -66,12 +68,13 @@ export interface GoCommandResponse {
 
 // ---- Sync Action Channel ----
 
-export interface SyncActionRequest {
-  type: 'approve_pr' | 'request_changes' | 'post_comment';
-  pr_id: string;
-  comment?: string;
-  line?: number;
-}
+export const syncActionRequestSchema = goCommandRequestSchema.pick({
+  type: true,
+  pr_id: true,
+  comment: true,
+  line: true,
+});
+export type SyncActionRequest = z.infer<typeof syncActionRequestSchema>;
 
 export interface SyncActionResponse {
   ok: { success: boolean; message?: string };

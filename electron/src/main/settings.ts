@@ -5,78 +5,54 @@ import type { Logger } from 'electron-log';
 import ElectronStore, {
   type Options as ElectronStoreOptions,
 } from 'electron-store';
-import { fromPromise, fromThrowable } from 'neverthrow';
-import { merge } from 'ts-deepmerge';
+import { fromPromise, fromThrowable, type Result } from 'neverthrow';
+import { z } from 'zod';
 import {
-  type AppearanceSettings,
   type AppSettings,
-  type ClassificationSettings,
+  appSettingsSchema,
   DEFAULT_SETTINGS,
-  type DiffSettings,
-  type KeybindingOverrides,
-  type PRListSettings,
-  type PrivacySettings,
-  type RepositoriesSettings,
   SETTINGS_SCHEMA_VERSION,
-  type SyncSettings,
 } from '../types/settings';
 
-/** Match prior behaviour: nested objects merge; arrays are replaced wholesale. */
-function mergeKnownFields<T extends object>(base: T, patch: unknown): T {
-  if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) {
-    return base;
-  }
-  const patchRecord = patch as Record<string, unknown>;
-  return Object.fromEntries(
-    Object.entries(base).map(([key, baseValue]) => {
-      const patchValue = patchRecord[key];
-      return [key, patchValue === undefined ? baseValue : patchValue];
-    }),
-  ) as T;
-}
-
-/** devFolderPath must be string | null; anything else keeps the base value. */
-function normaliseRepositories(
-  base: RepositoriesSettings,
-  merged: RepositoriesSettings,
-): RepositoriesSettings {
-  const { devFolderPath } = merged;
-  if (typeof devFolderPath === 'string' || devFolderPath === null) {
-    return merged;
-  }
-  return { ...merged, devFolderPath: base.devFolderPath };
-}
-
+/** Keep known fields; reject invalid leaf values without losing valid siblings. */
 function mergeSettings(base: AppSettings, patch: unknown): AppSettings {
-  const knownPatch = mergeKnownFields(base, patch);
-  const merged = merge.withOptions(
-    { mergeArrays: false, allowUndefinedOverrides: false },
-    base,
-    knownPatch,
-  ) as unknown as AppSettings;
-  return {
-    $schema: merged.$schema,
-    appearance: mergeKnownFields<AppearanceSettings>(
-      base.appearance,
-      merged.appearance,
-    ),
-    sync: mergeKnownFields<SyncSettings>(base.sync, merged.sync),
-    prList: mergeKnownFields<PRListSettings>(base.prList, merged.prList),
-    diff: mergeKnownFields<DiffSettings>(base.diff, merged.diff),
-    privacy: mergeKnownFields<PrivacySettings>(base.privacy, merged.privacy),
-    repositories: normaliseRepositories(
-      base.repositories,
-      mergeKnownFields<RepositoriesSettings>(
-        base.repositories,
-        merged.repositories,
-      ),
-    ),
-    classification: mergeKnownFields<ClassificationSettings>(
-      base.classification,
-      merged.classification,
-    ),
-    keybindings: merged.keybindings as KeybindingOverrides,
-  };
+  const shape = appSettingsSchema.shape;
+  const parsed = z.record(z.string(), z.unknown()).safeParse(patch);
+  if (!parsed.success) return base;
+
+  const merged = Object.fromEntries(
+    Object.entries(shape).map(([section, schema]) => {
+      const current = base[section as keyof AppSettings];
+      const incoming = parsed.data[section];
+      if (incoming === undefined || section === '$schema')
+        return [section, current];
+      if (section === 'keybindings') {
+        const validated = schema.safeParse(incoming);
+        return [section, validated.success ? validated.data : current];
+      }
+      const entries = z.record(z.string(), z.unknown()).safeParse(incoming);
+      if (!entries.success || typeof current !== 'object') {
+        return [section, current];
+      }
+      const sectionShape = (schema as typeof appSettingsSchema.shape.appearance)
+        .shape;
+      const known = Object.fromEntries(
+        Object.entries(sectionShape).map(([key, field]) => {
+          const value = entries.data[key];
+          const validated = field.safeParse(value);
+          return [
+            key,
+            validated.success
+              ? validated.data
+              : current[key as keyof typeof current],
+          ];
+        }),
+      );
+      return [section, known];
+    }),
+  );
+  const validated = appSettingsSchema.safeParse(merged);
+  return validated.success ? validated.data : base;
 }
 
 /**
@@ -130,16 +106,14 @@ export class SettingsService {
       clearInvalidConfig: true,
       serialize: (value: AppSettings) =>
         `${JSON.stringify(normalise(value), null, 2)}\n`,
-      deserialize: (value: string) => normalise(JSON.parse(value)),
+      deserialize: (value: string) =>
+        fromThrowable(
+          () => JSON.parse(value) as unknown,
+          () => null,
+        )().match(normalise, () => DEFAULT_SETTINGS),
       watch: true,
     };
-    this.store = new ElectronStore<AppSettings>({
-      ...storeOptions,
-      projectVersion: app.getVersion(),
-    } as unknown as ConstructorParameters<
-      typeof ElectronStore<AppSettings>
-    >[0]);
-    this.writeNormalisedStore();
+    this.store = new ElectronStore<AppSettings>(storeOptions);
     this.unsubscribeFromStore = this.store.onDidAnyChange((next) => {
       if (this.isLoading || this.isWriting) return;
       const normalised = normalise(next);
@@ -158,30 +132,57 @@ export class SettingsService {
   }
 
   /** Read settings from disk, or write defaults if missing/corrupt. */
-  async load(): Promise<AppSettings> {
-    this.writeNormalisedStore();
-    this.current = normalise(this.store.store);
-    return this.current;
+  load(): Promise<AppSettings> {
+    return this.loadResult().match(
+      (settings) => Promise.resolve(settings),
+      (message) => Promise.reject(new Error(message)),
+    );
   }
 
-  /**
-   * Replace the in-memory snapshot with a deep-merge of `patch` onto the
-   * current state, persist to disk, and broadcast to renderers.
-   */
-  async set(patch: Partial<AppSettings>): Promise<AppSettings> {
-    const next = normalise(mergeSettings(this.current, patch));
+  loadResult(): Result<AppSettings, string> {
+    return this.writeNormalisedStore()
+      .andThen(() =>
+        fromThrowable(() => normalise(this.store.store), errorMessage)(),
+      )
+      .map((settings) => {
+        this.current = settings;
+        return settings;
+      });
+  }
+
+  /** Persist a deep-merge of `patch`, then update and broadcast the snapshot. */
+  set(patch: Partial<AppSettings>): Promise<AppSettings> {
+    const result = this.setResult(patch);
+    return 'ok' in result
+      ? Promise.resolve(result.ok)
+      : Promise.reject(new Error(result.err));
+  }
+
+  setResult(
+    patch: Partial<AppSettings>,
+  ): { ok: AppSettings } | { err: string } {
+    const next = mergeSettings(this.current, patch);
+    const written = this.writeStore(next);
+    if (written.isErr()) return { err: errorMessage(written.error) };
     this.current = next;
-    this.writeStore(next);
     this.broadcast(next);
-    return next;
+    return { ok: next };
   }
 
   /** Reset to defaults. */
-  async reset(): Promise<AppSettings> {
+  reset(): Promise<AppSettings> {
+    const result = this.resetResult();
+    return 'ok' in result
+      ? Promise.resolve(result.ok)
+      : Promise.reject(new Error(result.err));
+  }
+
+  resetResult(): { ok: AppSettings } | { err: string } {
+    const written = this.writeStore(DEFAULT_SETTINGS);
+    if (written.isErr()) return { err: errorMessage(written.error) };
     this.current = DEFAULT_SETTINGS;
-    this.writeStore(DEFAULT_SETTINGS);
     this.broadcast(DEFAULT_SETTINGS);
-    return this.current;
+    return { ok: this.current };
   }
 
   /** Reveal settings.json in the system's default editor / file manager. */
@@ -195,10 +196,8 @@ export class SettingsService {
     );
     if (mkdirError !== null) return { err: mkdirError };
 
-    const writeResult = fromThrowable(() => {
-      this.writeStore(this.current);
-    }, errorMessage)();
-    if (writeResult.isErr()) return { err: writeResult.error };
+    const writeResult = this.writeStore(this.current);
+    if (writeResult.isErr()) return { err: errorMessage(writeResult.error) };
 
     const openResult = await fromPromise(
       shell.openPath(this.store.path),
@@ -223,27 +222,39 @@ export class SettingsService {
 
   // ─── internals ───────────────────────────────────────────────
 
-  private writeNormalisedStore(): void {
+  private writeNormalisedStore(): Result<void, string> {
     this.isLoading = true;
-    this.writeStore(normalise(this.store.store));
+    const result = fromThrowable(
+      () => normalise(this.store.store),
+      errorMessage,
+    )().andThen((state) => this.writeStore(state));
     this.isLoading = false;
+    return result;
   }
 
-  private writeStore(state: AppSettings): void {
+  private writeStore(state: AppSettings): Result<void, string> {
     this.isWriting = true;
-    this.store.store = state;
+    const result = fromThrowable(() => {
+      this.store.store = state;
+    }, errorMessage)();
     this.isWriting = false;
+    return result;
   }
 
   private broadcast(state: AppSettings): void {
-    const windows = BrowserWindow.getAllWindows();
-    for (const win of windows) {
+    for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
-        win.webContents.send('settings:changed', state);
+        fromThrowable(() =>
+          win.webContents.send('settings:changed', state),
+        )().mapErr((error) =>
+          this.logger.warn('Settings broadcast failed', error),
+        );
       }
     }
-    for (const fn of this.changeListeners) {
-      fn(state);
+    for (const listener of this.changeListeners) {
+      fromThrowable(() => listener(state))().mapErr((error) =>
+        this.logger.warn('Settings listener failed', error),
+      );
     }
   }
 }
