@@ -15,7 +15,7 @@ export interface TourScreen {
   /** actionIds resolved against the effective bindings at render time,
    *  paired with the label to show (a binding's own description is often
    *  too terse for a guided tour). */
-  keys: {
+  keys: readonly {
     actionId: string;
     /** Collapse a run of sibling bindings (lane1..lane6) into one hint whose
      *  final key is rendered as a range, e.g. "g 1–6". */
@@ -96,7 +96,7 @@ export const TOUR_SCREENS: readonly TourScreen[] = [
 /** Resolved screen: key hints carry their formatted label from live bindings. */
 export interface ResolvedTourScreen {
   title: string;
-  keys: TourKeyHint[];
+  keys: readonly TourKeyHint[];
 }
 
 /**
@@ -107,7 +107,7 @@ export interface ResolvedTourScreen {
 export function resolveTourScreens(
   bindings: readonly KeyBinding[],
 ): ResolvedTourScreen[] {
-  const byId = new Map(bindings.map((b) => [b.actionId, b]));
+  const byId = new Map(bindings.map((binding) => [binding.actionId, binding]));
   return TOUR_SCREENS.map((screen) => ({
     title: screen.title,
     keys: screen.keys.flatMap(
@@ -116,10 +116,12 @@ export function resolveTourScreens(
         if (binding === undefined) return [];
         const through =
           throughActionId === undefined ? undefined : byId.get(throughActionId);
+        const throughKeys =
+          through === undefined ? [] : formatBindingKeys(through).split(' ');
         const keys =
-          through === undefined
+          throughKeys.length === 0
             ? formatBindingKeys(binding)
-            : `${formatBindingKeys(binding)}–${formatBindingKeys(through).split(' ').at(-1)}`;
+            : `${formatBindingKeys(binding)}–${throughKeys[throughKeys.length - 1]}`;
         return [
           {
             keys,

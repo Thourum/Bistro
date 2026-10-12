@@ -12,39 +12,34 @@ import sql from 'highlight.js/lib/languages/sql';
 import typescript from 'highlight.js/lib/languages/typescript';
 import xml from 'highlight.js/lib/languages/xml';
 import yaml from 'highlight.js/lib/languages/yaml';
+import { Result } from 'neverthrow';
 
-hljs.registerLanguage('typescript', typescript);
-hljs.registerLanguage('javascript', javascript);
-hljs.registerLanguage('go', go);
-hljs.registerLanguage('python', python);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('css', css);
-hljs.registerLanguage('xml', xml);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('yaml', yaml);
-hljs.registerLanguage('sql', sql);
-hljs.registerLanguage('markdown', markdown);
-hljs.registerLanguage('rust', rust);
-hljs.registerLanguage('diff', diff);
+const GRAMMARS = {
+  typescript,
+  javascript,
+  go,
+  python,
+  json,
+  css,
+  xml,
+  bash,
+  yaml,
+  sql,
+  markdown,
+  rust,
+  diff,
+};
 
-/** Languages registered above — the single source of truth for the markdown overrides. */
-export const REGISTERED_LANGUAGES = new Set([
-  'typescript',
-  'javascript',
-  'go',
-  'python',
-  'json',
-  'css',
-  'xml',
-  'bash',
-  'yaml',
-  'sql',
-  'markdown',
-  'rust',
-  'diff',
-]);
+for (const [name, grammar] of Object.entries(GRAMMARS)) {
+  hljs.registerLanguage(name, grammar);
+}
 
-const EXTENSION_MAP: Record<string, string> = {
+/** The grammars allowed for inline highlighted code. */
+export const REGISTERED_LANGUAGES: ReadonlySet<string> = new Set(
+  Object.keys(GRAMMARS),
+);
+
+const EXTENSION_MAP: Readonly<Record<string, string>> = {
   '.ts': 'typescript',
   '.tsx': 'typescript',
   '.js': 'javascript',
@@ -70,22 +65,23 @@ const EXTENSION_MAP: Record<string, string> = {
 };
 
 export function detectLanguage(filePath: string): string | null {
-  const dotIndex = filePath.lastIndexOf('.');
+  const basename = filePath.slice(filePath.lastIndexOf('/') + 1);
+  const dotIndex = basename.lastIndexOf('.');
   if (dotIndex === -1) return null;
-  const ext = filePath.slice(dotIndex);
-  return EXTENSION_MAP[ext] ?? null;
+  return EXTENSION_MAP[basename.slice(dotIndex).toLowerCase()] ?? null;
 }
+
+const highlight = Result.fromThrowable((code: string, language: string) =>
+  hljs.highlight(code, { language }),
+);
 
 export function highlightCode(code: string, language: string | null): string {
   if (!code) return '';
   if (language === null) return escapeHtml(code);
-
-  try {
-    const result = hljs.highlight(code, { language });
-    return result.value;
-  } catch {
-    return escapeHtml(code);
-  }
+  return highlight(code, language).match(
+    (result) => result.value,
+    () => escapeHtml(code),
+  );
 }
 
 function escapeHtml(text: string): string {

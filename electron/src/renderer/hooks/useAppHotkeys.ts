@@ -11,10 +11,13 @@ import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import {
+  getBindingAction,
+  type KeyActionContext,
+} from '../utils/keybindingActions';
+import {
   getEffectiveBindings,
   isActive,
   isSequenceBinding,
-  type KeyActionContext,
   routeBaseFromPath,
 } from '../utils/keybindings';
 import { useStore } from './useStore';
@@ -111,7 +114,7 @@ export function useAppHotkeys(): void {
             // calls preventDefault() itself before every callback, which would
             // make this flag always true.
             if (isEscape(binding) && event.defaultPrevented) return;
-            binding.action(makeCtx());
+            getBindingAction(binding.actionId)?.(makeCtx());
           },
           options: {
             enabled: isActive(binding, { routeBase, activeOverlay }),
@@ -128,7 +131,7 @@ export function useAppHotkeys(): void {
     () =>
       bindings.filter(isSequenceBinding).map((binding) => ({
         sequence: [...binding.keys] as HotkeySequence,
-        callback: () => binding.action(makeCtx()),
+        callback: () => getBindingAction(binding.actionId)?.(makeCtx()),
         options: {
           enabled: isActive(binding, { routeBase, activeOverlay }),
           ignoreInputs: true,
