@@ -19,15 +19,20 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
+import { ResultAsync } from 'neverthrow';
 import React from 'react';
 import { InitialisingScreen } from './components/ConnectingScreen';
 import { FooterSlotProvider } from './components/FooterSlot';
+import { addToast } from './components/ToastContainer';
 import { useSettingsEffect } from './hooks/useSettingsEffect';
 import { useStore } from './hooks/useStore';
 import { useWebSocket } from './hooks/useWebSocket';
 import { router } from './router';
 import { appStore } from './store';
 import { initSettings, settingsStore } from './store/settings';
+import { createLogger } from './utils/logger';
+
+const log = createLogger('App');
 
 const queryClient = new QueryClient();
 
@@ -82,7 +87,18 @@ export default function App(): React.ReactElement {
   const [ready, setReady] = React.useState(false);
 
   React.useEffect(() => {
-    void initSettings().finally(() => setReady(true));
+    void ResultAsync.fromPromise(initSettings(), (cause) => cause).match(
+      () => setReady(true),
+      (cause) => {
+        log.error({ cause }, 'failed to initialize settings');
+        addToast({
+          type: 'error',
+          message: 'Could not load settings; using defaults.',
+          dismissible: true,
+        });
+        setReady(true);
+      },
+    );
   }, []);
 
   if (!ready) return <InitialisingScreen />;

@@ -7,41 +7,28 @@
 // diffFileKeys are cleared when prId changes to prevent stale key carryover.
 
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { DiffView } from '../components/diff/DiffView';
-import { hasCurrentInlineAnchor } from '../components/diff/diffAnnotations';
-import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
 import { OpenInEditorDialog } from '../components/OpenInEditorDialog';
-import { RangeDiffView } from '../components/RangeDiffView';
-import { StatusSquare } from '../components/StatusSquare';
-import { addToast } from '../components/ToastContainer';
 import { useActionDispatch } from '../hooks/useActionDispatch';
 import { useExpertise } from '../hooks/useExpertise';
-import { useMarkFileViewed } from '../hooks/useMarkFileViewed';
-import { useOpenInEditor } from '../hooks/useOpenInEditor';
 import { usePRHydration } from '../hooks/usePRHydration';
 import { type RangeDiffRequest, useRangeDiff } from '../hooks/useRangeDiff';
 import { useReviewThreads } from '../hooks/useReviewThreads';
 import { useStore } from '../hooks/useStore';
-import { useWebSocket } from '../hooks/useWebSocket';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
-import { settingsStore, updateSettings } from '../store/settings';
+import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
-import type { Comment, DiffFile } from '../types';
 import { repoIdForPR } from '../utils/expertise';
-import { firstHunkAdditionLine } from '../utils/firstHunkLine';
-import { createLogger } from '../utils/logger';
 import { prBrowserUrl } from '../utils/triage';
-
-const log = createLogger('DiffPage');
+import {
+  DiffPageBody,
+  DiffPageStatusBar,
+  DiffPageToolbar,
+} from './DiffPageChrome';
+import { useDiffPageActions } from './useDiffPageActions';
+import { useDiffPageData } from './useDiffPageData';
 
 /**
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
@@ -90,28 +77,15 @@ export function DiffPage() {
   const { isHydrating, error: hydrationError, retry } = usePRHydration(pr);
   const isAwaitingHydration = pr?.hydrated === 0;
 
-  const { request } = useWebSocket();
   const { dispatchReplyComment } = useActionDispatch(pr?.id);
-  const { markViewed } = useMarkFileViewed();
-  const {
-    state: openInEditorState,
-    requestOpen: requestOpenInEditor,
-    checkoutAndOpen,
-    openCurrentVersion,
-    cancel: cancelOpenInEditor,
-    pending: openInEditorPending,
-  } = useOpenInEditor();
   const { expertise } = useExpertise(pr?.id);
   const expertiseStatus = useStore(appStore, (s: UIState) =>
     pr !== undefined ? s.expertiseRepoStatuses?.[repoIdForPR(pr)] : undefined,
   );
 
-  const [diff, setDiff] = useState<string>('');
-  const [files, setFiles] = useState<DiffFile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [diffError, setDiffError] = useState<string | null>(null);
   const [findQuery, setFindQuery] = useState('');
-  const [comments, setComments] = useState<Comment[]>([]);
+  const { diff, files, setFiles, loading, diffError, comments } =
+    useDiffPageData({ pr, isAwaitingHydration, commentsRevision });
 
   // Review threads for inline annotations (full diff path only).
   const { threads } = useReviewThreads(pr?.id);
@@ -138,40 +112,6 @@ export function DiffPage() {
 
   const showRangeDiff = rangeReq !== null;
 
-  // ── Full diff (default surface) ────────────────────────────────────
-  useEffect(() => {
-    if (pr === undefined || isAwaitingHydration) return;
-    setLoading(true);
-    setDiffError(null);
-    request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` })
-      .then((data) => {
-        const payload = data as { diff?: string; files?: DiffFile[] };
-        setDiff(payload.diff ?? '');
-        setFiles(payload.files ?? []);
-        setLoading(false);
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        log.error({ err: msg }, 'failed to fetch diff');
-        setDiffError(msg);
-        setLoading(false);
-      });
-  }, [isAwaitingHydration, pr, request]);
-
-  // Fetch comments for inline thread annotations (full diff surface only).
-  useEffect(() => {
-    if (pr === undefined) return;
-    log.debug({ commentsRevision }, 'fetching comments for diff annotations');
-    request('REQUEST_COMMENTS', { pr_id: pr.id })
-      .then((data) => {
-        const payload = data as { comments?: Comment[] };
-        setComments(payload.comments ?? []);
-      })
-      .catch((err: unknown) => {
-        log.warn({ err }, 'failed to fetch comments for diff annotations');
-      });
-  }, [pr, request, commentsRevision]);
-
   // Clear stale diffFileKeys whenever the target PR changes.
   // This prevents keybindings from using keys from a previous PR's diff.
   useLayoutEffect(() => {
@@ -185,110 +125,21 @@ export function DiffPage() {
     appStore.setState((s) => ({ ...s, diffFileKeys: canonicalKeys }));
   };
 
-  // ── Mark-file-viewed (triggered by `v`) ────────────────────────────
   const currentFile = files[selectedFileIndex];
-  const markInFlight = useRef(false);
-
-  const doMarkViewed = useCallback(() => {
-    if (pr === undefined || currentFile === undefined) return;
-    if (markInFlight.current) return;
-    markInFlight.current = true;
-    const { path, content_hash } = currentFile;
-    void markViewed(pr.id, path, content_hash)
-      .then((ack) => {
-        if (ack?.ok) {
-          setFiles((prev) =>
-            prev.map((f) => (f.path === path ? { ...f, viewed: true } : f)),
-          );
-        } else if (ack?.reason) {
-          addToast({
-            type: 'warning',
-            message: `Could not mark viewed: ${ack.reason}`,
-            dismissible: true,
-          });
-        } else {
-          addToast({
-            type: 'warning',
-            message: 'Could not mark viewed: network or communication error',
-            dismissible: true,
-          });
-        }
-      })
-      .finally(() => {
-        markInFlight.current = false;
-      });
-  }, [pr, currentFile, markViewed]);
-
-  useEffect(() => {
-    if (confirmingAction !== 'mark-viewed') return;
-    doMarkViewed();
-    appStore.setState((s) => ({ ...s, confirmingAction: null }));
-  }, [confirmingAction, doMarkViewed]);
-
-  // ── Open in editor (`:open in editor` palette command) ─────────────
-  // Current file/line model (spec §5.3): file = n/p focus target; line =
-  // selected inline comment's line, else the first new-side line of the
-  // file's first hunk, else 1.
-  useEffect(() => {
-    if (confirmingAction !== 'open-in-editor') return;
-    appStore.setState((s) => ({ ...s, confirmingAction: null }));
-    if (pr === undefined || currentFile === undefined) {
-      addToast({
-        type: 'warning',
-        message: 'Could not open in editor: no file focused',
-        dismissible: true,
-      });
-      return;
-    }
-    const activeThread = threads.find(
-      (t) =>
-        t.id === appStore.state.activeInlineCommentThreadId &&
-        t.file_path === currentFile.path &&
-        hasCurrentInlineAnchor(t),
-    );
-    const filePatch = splitUnifiedDiff(diff).find(
-      (f) => f.path === currentFile.path,
-    )?.patch;
-    const line =
-      activeThread?.line ??
-      (filePatch !== undefined ? firstHunkAdditionLine(filePatch) : 1);
-    void requestOpenInEditor(pr.id, currentFile.path, line);
-  }, [confirmingAction, pr, currentFile, threads, diff, requestOpenInEditor]);
-
-  // Surface a failure toast for open-in-editor errors that have no dialog.
-  useEffect(() => {
-    if (openInEditorState.error === null) return;
-    addToast({
-      type: 'warning',
-      message: `Could not open in editor: ${openInEditorState.error}`,
-      dismissible: true,
-    });
-  }, [openInEditorState.error]);
-
-  // Persist the keybinding's diff-style toggle intent from the route owner so
-  // failures can be surfaced to the user instead of being discarded.
-  useEffect(() => {
-    if (confirmingAction !== 'toggle-diff-style') return;
-    const nextStyle = diffStyle === 'split' ? 'unified' : 'split';
-    appStore.setState((s) => ({ ...s, confirmingAction: null }));
-    updateSettings({ diff: { style: nextStyle } }).match(
-      () => undefined,
-      (message) => {
-        addToast({ type: 'error', message, dismissible: true });
-      },
-    );
-  }, [confirmingAction, diffStyle]);
-
-  // Clear range-diff intent when leaving the diff view.
-  useEffect(() => {
-    return () => {
-      appStore.setState((s) =>
-        s.confirmingAction === 'since-last-review'
-          ? { ...s, confirmingAction: null }
-          : s,
-      );
-    };
-  }, []);
+  const {
+    state: openInEditorState,
+    checkoutAndOpen,
+    openCurrentVersion,
+    cancel: cancelOpenInEditor,
+    pending: openInEditorPending,
+  } = useDiffPageActions({
+    pr,
+    diff,
+    currentFile,
+    threads,
+    confirmingAction,
+    setFiles,
+  });
 
   const handleBack = (): void => {
     void navigate({ to: '/prs/$prId', params: { prId } });
@@ -307,137 +158,60 @@ export function DiffPage() {
     );
   }
 
-  const viewedCount = files.filter((f) => f.viewed).length;
-
   return (
     <main className="flex-1 flex flex-col overflow-hidden bg-surface text-on-surface">
-      {/* Top bar */}
-      <div className="shrink-0 h-10 flex items-center justify-between px-4 border-b border-outline-variant/30 bg-surface-container-lowest">
-        <div className="flex items-center gap-4 min-w-0">
-          <button
-            type="button"
-            onClick={handleBack}
-            className="font-mono text-[10px] uppercase tracking-widest text-outline hover:text-on-surface transition-colors"
-          >
-            ← Back
-          </button>
-          {pr !== undefined && (
-            <>
-              <span className="font-mono text-[11px] font-bold tracking-widest text-primary">
-                PR-{pr.number}
-              </span>
-              <span className="font-mono text-[10px] text-outline truncate">
-                {pr.head_branch}
-                <span className="text-outline-variant"> → </span>
-                {pr.base_branch}
-              </span>
-              {showRangeDiff && (
-                <span className="font-mono text-[10px] uppercase tracking-widest text-primary border border-primary/40 px-2 py-0.5">
-                  {sinceLastReview
-                    ? 'Since last review'
-                    : `P${selectedPatchsetPair?.[0]} → P${selectedPatchsetPair?.[1]}`}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          {!showRangeDiff && (
-            <input
-              type="text"
-              value={findQuery}
-              onChange={(e) => setFindQuery(e.target.value)}
-              placeholder="Find in diff…"
-              className="font-mono text-[11px] px-3 py-1 w-64 bg-surface border border-outline-variant/40 placeholder:text-outline-variant"
-            />
-          )}
-          <span className="font-mono text-[10px] uppercase tracking-widest text-outline">
-            ESC to exit
-          </span>
-        </div>
-      </div>
+      <DiffPageToolbar
+        pr={pr}
+        showRangeDiff={showRangeDiff}
+        sinceLastReview={sinceLastReview}
+        selectedPatchsetPair={selectedPatchsetPair}
+        findQuery={findQuery}
+        onFindQueryChange={setFindQuery}
+        onBack={handleBack}
+      />
 
-      {/* Body */}
-      <div className="flex-1 min-h-0">
-        {isAwaitingHydration ? (
-          <HydrationState
-            error={hydrationError}
-            isHydrating={isHydrating}
-            onRetry={retry}
-          />
-        ) : showRangeDiff ? (
-          rangeLoading ? (
-            <LoadingState label="Loading range diff…" />
-          ) : rangeError !== null ? (
-            <ErrorState message={`Failed to load range diff: ${rangeError}`} />
-          ) : rangeResult !== null ? (
-            <RangeDiffView result={rangeResult} />
-          ) : (
-            <LoadingState label="Loading range diff…" />
-          )
-        ) : loading ? (
-          <LoadingState label="Loading diff…" />
-        ) : diffError !== null ? (
-          <ErrorState message={`Failed to load diff: ${diffError}`} />
-        ) : (
-          <DiffView
-            diff={diff}
-            theme={theme}
-            diffStyle={diffStyle}
-            findQuery={findQuery}
-            selectedFileKey={fileKey}
-            onFilesResolved={handleFilesResolved}
-            threads={threads}
-            comments={comments}
-            onThreadReply={(threadId, body) => {
-              dispatchReplyComment(body, { threadId });
-            }}
-            prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
-            expertiseFiles={expertise?.files ?? []}
-            expertiseError={
-              expertiseStatus?.status === 'error'
-                ? (expertiseStatus.message ?? expertiseStatus.code ?? 'unknown')
-                : null
-            }
-            viewedPaths={viewedPaths}
-          />
-        )}
-      </div>
+      <DiffPageBody
+        isAwaitingHydration={isAwaitingHydration}
+        hydrationError={hydrationError}
+        isHydrating={isHydrating}
+        onRetry={retry}
+        showRangeDiff={showRangeDiff}
+        rangeLoading={rangeLoading}
+        rangeError={rangeError}
+        rangeResult={rangeResult}
+        fullDiffLoading={loading}
+        fullDiffError={diffError}
+      >
+        <DiffView
+          diff={diff}
+          theme={theme}
+          diffStyle={diffStyle}
+          findQuery={findQuery}
+          selectedFileKey={fileKey}
+          onFilesResolved={handleFilesResolved}
+          threads={threads}
+          comments={comments}
+          onThreadReply={(threadId, body) => {
+            dispatchReplyComment(body, { threadId });
+          }}
+          prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
+          expertiseFiles={expertise?.files ?? []}
+          expertiseError={
+            expertiseStatus?.status === 'error'
+              ? (expertiseStatus.message ?? expertiseStatus.code ?? 'unknown')
+              : null
+          }
+          viewedPaths={viewedPaths}
+        />
+      </DiffPageBody>
 
-      {/* Status bar (LOC / encoding / viewed) */}
-      <div className="shrink-0 h-6 px-4 flex items-center justify-between border-t border-outline-variant/30 bg-surface-container-low">
-        <div className="flex items-center gap-4 font-mono text-[10px] uppercase tracking-widest text-outline">
-          <span>
-            {showRangeDiff && rangeResult !== null
-              ? `${rangeResult.raw.split('\n').length} lines`
-              : `${diff.split('\n').length} lines`}
-          </span>
-          {currentFile !== undefined && (
-            <span className="flex items-center gap-1.5">
-              <StatusSquare
-                status={currentFile.viewed ? 'success' : 'neutral'}
-                size="w-2 h-2"
-                label={currentFile.viewed ? 'VIEWED' : 'NOT VIEWED'}
-              />
-              <span
-                className={currentFile.viewed ? 'text-primary' : 'text-outline'}
-              >
-                {currentFile.viewed ? 'viewed' : 'press v to mark viewed'}
-              </span>
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-6 font-mono text-[10px] uppercase tracking-widest text-outline">
-          {files.length > 0 && (
-            <span>
-              {viewedCount}/{files.length} viewed
-            </span>
-          )}
-          <span>UTF-8</span>
-          <span>LF</span>
-          <span>DIFF</span>
-        </div>
-      </div>
+      <DiffPageStatusBar
+        diff={diff}
+        files={files}
+        currentFile={currentFile}
+        showRangeDiff={showRangeDiff}
+        rangeResult={rangeResult}
+      />
 
       <OpenInEditorDialog
         dialog={openInEditorState.dialog}
@@ -447,48 +221,5 @@ export function DiffPage() {
         pending={openInEditorPending}
       />
     </main>
-  );
-}
-
-function HydrationState({
-  error,
-  isHydrating,
-  onRetry,
-}: {
-  error: string | null;
-  isHydrating: boolean;
-  onRetry: () => void;
-}): React.ReactElement {
-  if (isHydrating || error === null) {
-    return <LoadingState label="Preparing pull request details…" />;
-  }
-
-  return (
-    <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-error text-sm">
-      <span>Failed to prepare pull request details: {error}</span>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="font-mono text-[10px] uppercase tracking-widest border border-error/60 px-3 py-1 text-error hover:bg-error/10"
-      >
-        Retry hydration
-      </button>
-    </div>
-  );
-}
-
-function LoadingState({ label }: { label: string }): React.ReactElement {
-  return (
-    <div className="w-full h-full flex items-center justify-center text-on-surface-variant font-mono uppercase tracking-widest text-xs">
-      {label}
-    </div>
-  );
-}
-
-function ErrorState({ message }: { message: string }): React.ReactElement {
-  return (
-    <div className="w-full h-full flex items-center justify-center text-error text-sm">
-      {message}
-    </div>
   );
 }

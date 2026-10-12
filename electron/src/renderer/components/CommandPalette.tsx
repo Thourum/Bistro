@@ -1,4 +1,4 @@
-import { useMatchRoute, useNavigate, useParams } from '@tanstack/react-router';
+import { useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -157,8 +157,8 @@ export function CommandPalette(): React.ReactElement | null {
   const prefetchedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
-  const params = useParams({ strict: false }) as { prId?: string };
   const matchRoute = useMatchRoute();
+  const routedPR = matchRoute({ to: '/prs/$prId', fuzzy: true });
   const isDiffRoute = matchRoute({ to: '/prs/$prId/diff' }) !== false;
 
   // Use the shared visible-PR source so palette results match the list route.
@@ -226,8 +226,13 @@ export function CommandPalette(): React.ReactElement | null {
   };
 
   const focusedPR = useMemo(
-    () => focusedExpertisePR(prs, params.prId, selectedPRId),
-    [params.prId, prs, selectedPRId],
+    () =>
+      focusedExpertisePR(
+        prs,
+        routedPR === false ? undefined : routedPR.prId,
+        selectedPRId,
+      ),
+    [routedPR, prs, selectedPRId],
   );
 
   const sendExpertiseCommand = (
@@ -372,7 +377,7 @@ export function CommandPalette(): React.ReactElement | null {
             handleClose();
           }
         }}
-        className="w-full max-w-2xl mx-4 bg-surface-container-lowest border border-primary shadow-[0_10px_30px_rgba(25,28,29,0.04)] flex flex-col overflow-hidden"
+        className="w-full max-w-2xl mx-4 bg-surface-container-lowest border border-primary shadow-ambient flex flex-col overflow-hidden"
       >
         {/* Search input header */}
         <div className="flex items-center gap-3 px-4 h-14 border-b border-outline-variant/20">

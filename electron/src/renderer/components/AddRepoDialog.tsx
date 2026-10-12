@@ -254,7 +254,7 @@ export function AddRepoDialog({
     >
       <div
         ref={dialogRef}
-        className="w-full max-w-xl mx-4 bg-surface-container-lowest border border-primary shadow-[0_10px_30px_rgba(25,28,29,0.04)] p-4"
+        className="w-full max-w-xl mx-4 bg-surface-container-lowest border border-primary shadow-ambient p-4"
       >
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
