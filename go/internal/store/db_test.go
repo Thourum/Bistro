@@ -419,7 +419,10 @@ func TestMigrationRunnerDoesNotReconcilePre31Schema(t *testing.T) {
 func assertAllEmbeddedVersionsApplied(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
 
-	versions := schemaMigrationVersions()
+	versions, err := schemaMigrationVersions()
+	if err != nil {
+		t.Fatalf("schemaMigrationVersions() error = %v", err)
+	}
 	if len(versions) != 33 {
 		t.Fatalf("embedded migration count = %d, want 33 through version 34 excluding version 13", len(versions))
 	}

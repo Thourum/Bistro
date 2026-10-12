@@ -147,6 +147,17 @@ func (q *Queries) GetExpertiseForPRs(ctx context.Context, prIds []string) ([]Get
 	return items, nil
 }
 
+const getExpertiseRepoSource = `-- name: GetExpertiseRepoSource :one
+SELECT source FROM repos WHERE id = ?
+`
+
+func (q *Queries) GetExpertiseRepoSource(ctx context.Context, id string) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, getExpertiseRepoSource, id)
+	var source sql.NullString
+	err := row.Scan(&source)
+	return source, err
+}
+
 const getExpertiseRepoState = `-- name: GetExpertiseRepoState :one
 SELECT repo_id, enabled, status, indexed_sha, indexed_at, error_code, error, files_total, files_done, nudge_dismissed_at FROM expertise_repo_state WHERE repo_id = ?
 `
@@ -228,6 +239,33 @@ func (q *Queries) GetFileExpertise(ctx context.Context, arg GetFileExpertisePara
 	return items, nil
 }
 
+const listExpertiseFilePathsForRepo = `-- name: ListExpertiseFilePathsForRepo :many
+SELECT DISTINCT file_path FROM file_expertise WHERE repo_id = ?
+`
+
+func (q *Queries) ListExpertiseFilePathsForRepo(ctx context.Context, repoID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listExpertiseFilePathsForRepo, repoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var file_path string
+		if err := rows.Scan(&file_path); err != nil {
+			return nil, err
+		}
+		items = append(items, file_path)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInterruptedExpertiseRepos = `-- name: ListInterruptedExpertiseRepos :many
 SELECT repo_id FROM expertise_repo_state WHERE enabled = 1 AND status = 'indexing'
 `
@@ -245,6 +283,47 @@ func (q *Queries) ListInterruptedExpertiseRepos(ctx context.Context) ([]string, 
 			return nil, err
 		}
 		items = append(items, repo_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReadyExpertisePRIDs = `-- name: ListReadyExpertisePRIDs :many
+SELECT p.id
+FROM prs p
+JOIN expertise_repo_state ers ON ers.repo_id = p.repo_id
+WHERE p.id IN (/*SLICE:pr_ids*/?)
+  AND ers.enabled = 1 AND ers.status = 'ready'
+`
+
+func (q *Queries) ListReadyExpertisePRIDs(ctx context.Context, prIds []string) ([]string, error) {
+	query := listReadyExpertisePRIDs
+	var queryParams []interface{}
+	if len(prIds) > 0 {
+		for _, v := range prIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:pr_ids*/?", strings.Repeat(",?", len(prIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:pr_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

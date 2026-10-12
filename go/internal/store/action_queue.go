@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -10,13 +11,18 @@ import (
 	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
-// parseCreatedAt tries RFC 3339 first (ISO 8601, used by SQLite's strftime default),
-// then falls back to the space-separated format.
+// SQLite's strftime default uses RFC3339; older actions used a space separator.
+const actionQueueTimeLayout = "2006-01-02 15:04:05"
+
+// ErrActionNotFound indicates an action ID is missing from the queue.
+var ErrActionNotFound = errors.New("action not found")
+
+// parseCreatedAt tries RFC3339 first, then the legacy space-separated format.
 func parseCreatedAt(s string) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil
 	}
-	return time.Parse("2006-01-02 15:04:05", s)
+	return time.Parse(actionQueueTimeLayout, s)
 }
 
 // QueuedAction represents an offline action waiting to be replayed against the provider.
@@ -87,17 +93,17 @@ func (q *ActionQueue) Enqueue(ctx context.Context, action *QueuedAction) error {
 	return nil
 }
 
-// GetByID retrieves a single action by its ID. Returns an error if not found.
+// GetByID retrieves a single action by its ID, returning ErrActionNotFound if absent.
 func (q *ActionQueue) GetByID(ctx context.Context, id string) (*QueuedAction, error) {
 	row, err := q.queries.GetQueuedActionByID(ctx, id)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("action %q not found", id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("get action %q: %w", id, ErrActionNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get action %s: %w", id, err)
 	}
 
-	action, err := queuedActionFromGetRow(row)
+	action, err := queuedActionFromRow(queuedActionDBRow(row))
 	if err != nil {
 		return nil, fmt.Errorf("parse created_at for action %s: %w", row.ID, err)
 	}
@@ -116,7 +122,7 @@ func (q *ActionQueue) GetPending(ctx context.Context, limit int) ([]*QueuedActio
 
 	actions := make([]*QueuedAction, 0, len(rows))
 	for _, row := range rows {
-		action, err := queuedActionFromPendingRow(row)
+		action, err := queuedActionFromRow(queuedActionDBRow(row))
 		if err != nil {
 			return nil, fmt.Errorf("parse created_at for action %s: %w", row.ID, err)
 		}
@@ -146,7 +152,7 @@ func (q *ActionQueue) GetPendingForAccount(ctx context.Context, providerName, ac
 
 	actions := make([]*QueuedAction, 0, len(rows))
 	for _, row := range rows {
-		action, err := queuedActionFromPendingAccountRow(row)
+		action, err := queuedActionFromRow(queuedActionDBRow(row))
 		if err != nil {
 			return nil, fmt.Errorf("parse created_at for action %s: %w", row.ID, err)
 		}
@@ -255,48 +261,15 @@ func (q *ActionQueue) DeleteFailed(ctx context.Context, olderThan time.Duration)
 }
 
 func actionQueueCutoff(olderThan time.Duration) string {
-	return time.Now().Add(-olderThan).UTC().Format("2006-01-02 15:04:05")
+	return time.Now().Add(-olderThan).UTC().Format(actionQueueTimeLayout)
 }
 
-func queuedActionFromGetRow(row storedb.GetQueuedActionByIDRow) (*QueuedAction, error) {
-	createdAt, err := parseCreatedAt(row.CreatedAt)
-	if err != nil {
-		return nil, err
-	}
-	return &QueuedAction{
-		ID:              row.ID,
-		ActionType:      row.ActionType,
-		PRID:            row.PrID,
-		Payload:         row.Payload,
-		AccountProvider: row.AccountProvider,
-		AccountLogin:    row.AccountLogin,
-		CreatedAt:       createdAt,
-		RetryCount:      int(row.RetryCount.Int64),
-		LastError:       row.LastError,
-		Status:          row.Status.String,
-	}, nil
-}
+// All three sqlc queries select the same columns in the same order; named
+// conversion avoids duplicating the mapping without changing generated code.
+// Keep these fields in sync with the action-queue SELECT statements.
+type queuedActionDBRow storedb.GetQueuedActionByIDRow
 
-func queuedActionFromPendingRow(row storedb.ListPendingQueuedActionsRow) (*QueuedAction, error) {
-	createdAt, err := parseCreatedAt(row.CreatedAt)
-	if err != nil {
-		return nil, err
-	}
-	return &QueuedAction{
-		ID:              row.ID,
-		ActionType:      row.ActionType,
-		PRID:            row.PrID,
-		Payload:         row.Payload,
-		AccountProvider: row.AccountProvider,
-		AccountLogin:    row.AccountLogin,
-		CreatedAt:       createdAt,
-		RetryCount:      int(row.RetryCount.Int64),
-		LastError:       row.LastError,
-		Status:          row.Status.String,
-	}, nil
-}
-
-func queuedActionFromPendingAccountRow(row storedb.ListPendingQueuedActionsForAccountRow) (*QueuedAction, error) {
+func queuedActionFromRow(row queuedActionDBRow) (*QueuedAction, error) {
 	createdAt, err := parseCreatedAt(row.CreatedAt)
 	if err != nil {
 		return nil, err

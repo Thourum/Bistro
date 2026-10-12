@@ -29,11 +29,13 @@ const (
 
 var gitSHAPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
+// AuthorKey uniquely identifies a git author by name and email.
 type AuthorKey struct {
 	Name  string
 	Email string
 }
 
+// LogEvent records an author's changed lines for a file in one commit.
 type LogEvent struct {
 	Author       AuthorKey
 	FilePath     string
@@ -41,17 +43,20 @@ type LogEvent struct {
 	CommittedAt  time.Time
 }
 
+// LogResult contains parsed git-log events and each author's latest commit time.
 type LogResult struct {
 	Events       []LogEvent
 	LastCommitAt map[string]time.Time
 }
 
+// GitCLI reads local git history used to calculate file expertise.
 type GitCLI struct {
 	log               *slog.Logger
 	available         bool
 	unavailableReason string
 }
 
+// NewGitCLI probes system git and returns an expertise history reader.
 func NewGitCLI(log *slog.Logger) *GitCLI {
 	if log == nil {
 		log = slog.Default()
@@ -61,8 +66,10 @@ func NewGitCLI(log *slog.Logger) *GitCLI {
 	return cli
 }
 
+// Available reports whether the system git executable passed the probe.
 func (cli *GitCLI) Available() bool { return cli.available }
 
+// UnavailableReason describes a failed git probe, or is empty when available.
 func (cli *GitCLI) UnavailableReason() string { return cli.unavailableReason }
 
 func (cli *GitCLI) probeGit() {
@@ -89,6 +96,7 @@ func (cli *GitCLI) probeGit() {
 	cli.log.Info("git available for expertise", "version", version)
 }
 
+// HeadSHA reads and validates the repository's current HEAD commit hash.
 func (cli *GitCLI) HeadSHA(ctx context.Context, repoPath string) (string, error) {
 	out, err := cli.runGit(ctx, repoPath, gitDefaultTimeout, "rev-parse", "HEAD")
 	if err != nil {
@@ -102,6 +110,7 @@ func (cli *GitCLI) HeadSHA(ctx context.Context, repoPath string) (string, error)
 	return sha, nil
 }
 
+// LsFiles returns paths tracked by git in the repository.
 func (cli *GitCLI) LsFiles(ctx context.Context, repoPath string) ([]string, error) {
 	out, err := cli.runGit(ctx, repoPath, gitDefaultTimeout, "ls-files", "-z")
 	if err != nil {
@@ -110,6 +119,7 @@ func (cli *GitCLI) LsFiles(ctx context.Context, repoPath string) ([]string, erro
 	return parseNULSeparated(string(out)), nil
 }
 
+// BlameFile counts each author's surviving lines and total lines for a file.
 func (cli *GitCLI) BlameFile(ctx context.Context, repoPath, path string) (map[AuthorKey]int, int, error) {
 	out, err := cli.runGit(ctx, repoPath, gitBlameTimeout, "blame", "--line-porcelain", "HEAD", "--", path)
 	if err != nil {
@@ -118,6 +128,7 @@ func (cli *GitCLI) BlameFile(ctx context.Context, repoPath, path string) (map[Au
 	return parseBlamePorcelain(string(out))
 }
 
+// LogNumstat reads recent per-file line changes and latest author commit times.
 func (cli *GitCLI) LogNumstat(ctx context.Context, repoPath string, since time.Time) (*LogResult, error) {
 	out, err := cli.runGit(ctx, repoPath, gitLogTimeout,
 		"log", "-z", "--numstat", "--no-renames", "--pretty=format:%H%x1f%ae%x1f%an%x1f%aI%x00", "--since="+since.Format(time.RFC3339))
@@ -127,6 +138,7 @@ func (cli *GitCLI) LogNumstat(ctx context.Context, repoPath string, since time.T
 	return parseLogNumstat(string(out))
 }
 
+// ActiveAuthors reports which author emails have a commit since the cutoff.
 func (cli *GitCLI) ActiveAuthors(ctx context.Context, repoPath string, since time.Time) (map[string]bool, error) {
 	out, err := cli.runGit(ctx, repoPath, gitLogTimeout, "log", "--pretty=format:%ae", "--since="+since.Format(time.RFC3339))
 	if err != nil {
@@ -135,6 +147,7 @@ func (cli *GitCLI) ActiveAuthors(ctx context.Context, repoPath string, since tim
 	return parseActiveAuthors(string(out)), nil
 }
 
+// LogFirstCommits maps file paths to the author emails of their first commits.
 func (cli *GitCLI) LogFirstCommits(ctx context.Context, repoPath string) (map[string]string, error) {
 	out, err := cli.runGit(ctx, repoPath, gitLogTimeout, "log", "-z", "--reverse", "--diff-filter=A", "--name-only", "--no-renames", "--pretty=format:%x00%ae%x00")
 	if err != nil {
@@ -143,6 +156,7 @@ func (cli *GitCLI) LogFirstCommits(ctx context.Context, repoPath string) (map[st
 	return parseFirstCommits(string(out)), nil
 }
 
+// GeneratedFiles reports which paths git marks with linguist-generated.
 func (cli *GitCLI) GeneratedFiles(ctx context.Context, repoPath string, paths []string) (map[string]bool, error) {
 	generated := make(map[string]bool)
 	if len(paths) == 0 {
