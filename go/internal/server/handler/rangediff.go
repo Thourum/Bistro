@@ -106,9 +106,9 @@ func NewRangeDiffHandlerWithDeps(deps RangeDiffHandlerDeps, log *slog.Logger) ws
 			var err error
 			patchsets, err = deps.Patchsets.ListPatchsets(ctx, req.PRID)
 			if err != nil {
-				logger.Error("list patchsets failed", "pr_id", req.PRID, "error", err)
+				logger.Warn("list patchsets failed", "pr_id", req.PRID, "error", err)
 				return emptyDegraded(msg.ID, req.PRID, 0, 0, "", "",
-					fmt.Sprintf("could not load patchsets: %v", err)), nil
+					"could not load patchsets"), nil
 			}
 		}
 
@@ -126,15 +126,19 @@ func NewRangeDiffHandlerWithDeps(deps RangeDiffHandlerDeps, log *slog.Logger) ws
 		// Resolve from_patchset.
 		from := req.FromPatchset
 		if req.SinceLastReview && deps.LastReviewed != nil && deps.CurrentUser != nil {
-			login, ok, _ := deps.CurrentUser.GetCurrentUser(ctx, "github")
+			login, ok, err := deps.CurrentUser.GetCurrentUser(ctx, githubProvider)
+			if err != nil {
+				logger.Warn("range-diff current user lookup failed", "error", err)
+				return emptyDegraded(msg.ID, req.PRID, 0, to, "", "", "since_last_review: unable to check authenticated user"), nil
+			}
 			if !ok || login == "" {
 				return emptyDegraded(msg.ID, req.PRID, 0, to, "", "",
 					"since_last_review: no authenticated user"), nil
 			}
 			rec, found, err := deps.LastReviewed.GetLastReviewedPatchset(ctx, req.PRID, login)
 			if err != nil {
-				return emptyDegraded(msg.ID, req.PRID, 0, to, "", "",
-					fmt.Sprintf("since_last_review: GetLastReviewedPatchset failed: %v", err)), nil
+				logger.Warn("range-diff last reviewed lookup failed", "error", err)
+				return emptyDegraded(msg.ID, req.PRID, 0, to, "", "", "since_last_review: unable to load previous review"), nil
 			}
 			if !found || rec.SHA == "" {
 				return emptyDegraded(msg.ID, req.PRID, 0, to, "", "",
@@ -213,6 +217,9 @@ func NewRangeDiffHandlerWithDeps(deps RangeDiffHandlerDeps, log *slog.Logger) ws
 		latest := patchsets[len(patchsets)-1].Number
 		if deps.PlainDiff != nil && to == latest && from == latest-1 {
 			unified, err := deps.PlainDiff.GetUnifiedDiff(req.PRID)
+			if err != nil {
+				logger.Warn("range-diff stored diff lookup failed", "error", err)
+			}
 			if err == nil && unified != "" {
 				return labeledDegraded(msg.ID, req.PRID, from, to, fromSHA, toSHA,
 					"using stored plain diff for current pair"+
@@ -273,28 +280,35 @@ func min7(s string) int {
 // Use for identical pairs, non-current pairs, or error conditions where returning
 // the stored diff would be misleading.
 func emptyDegraded(msgID, prID string, fromPS, toPS int, fromSHA, toSHA, reason string) interface{} {
-	return buildRangeDiffReady(msgID, prID, fromPS, toPS, fromSHA, toSHA, "", true, reason)
+	return buildRangeDiffReady(rangeDiffResponse{msgID: msgID, prID: prID, fromPS: fromPS, toPS: toPS, fromSHA: fromSHA, toSHA: toSHA, reason: reason})
 }
 
 // labeledDegraded builds a RANGE_DIFF_READY response with degraded=true and
 // a non-empty raw from the stored plain diff — only for the current sequential pair.
 func labeledDegraded(msgID, prID string, fromPS, toPS int, fromSHA, toSHA, reason, raw string) interface{} {
-	return buildRangeDiffReady(msgID, prID, fromPS, toPS, fromSHA, toSHA, raw, true, reason)
+	return buildRangeDiffReady(rangeDiffResponse{msgID: msgID, prID: prID, fromPS: fromPS, toPS: toPS, fromSHA: fromSHA, toSHA: toSHA, raw: raw, reason: reason})
 }
 
-func buildRangeDiffReady(msgID, prID string, fromPS, toPS int, fromSHA, toSHA, raw string, degraded bool, reason string) interface{} {
+type rangeDiffResponse struct {
+	msgID, prID    string
+	fromPS, toPS   int
+	fromSHA, toSHA string
+	raw, reason    string
+}
+
+func buildRangeDiffReady(response rangeDiffResponse) interface{} {
 	return map[string]interface{}{
-		"id":   msgID,
+		"id":   response.msgID,
 		"type": "RANGE_DIFF_READY",
 		"data": map[string]interface{}{
-			"pr_id":           prID,
-			"from_patchset":   fromPS,
-			"to_patchset":     toPS,
-			"from_sha":        fromSHA,
-			"to_sha":          toSHA,
-			"raw":             raw,
-			"degraded":        degraded,
-			"fallback_reason": reason,
+			"pr_id":           response.prID,
+			"from_patchset":   response.fromPS,
+			"to_patchset":     response.toPS,
+			"from_sha":        response.fromSHA,
+			"to_sha":          response.toSHA,
+			"raw":             response.raw,
+			"degraded":        true,
+			"fallback_reason": response.reason,
 		},
 	}
 }

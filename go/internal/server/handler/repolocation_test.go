@@ -678,7 +678,7 @@ func TestRepoLocationClearCacheOrphanSweepFailureKeepsPartialResults(t *testing.
 		t.Fatalf("expected one failed entry for the sweep, got %#v", data)
 	}
 	failure := failed[0].(map[string]any)
-	if failure["code"] != "delete_failed" || !strings.Contains(failure["message"].(string), "sweep failed") {
+	if failure["code"] != "delete_failed" || failure["message"] != "unable to sweep cache orphans" {
 		t.Fatalf("unexpected sweep failure entry %#v", failure)
 	}
 }

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -30,7 +31,7 @@ type UsernameCache interface {
 	Delete(provider string)
 }
 
-var knownProviders = []string{"github", "gitlab", "gitea"}
+func knownProviders() []string { return []string{githubProvider, "gitlab", "gitea"} }
 
 // CurrentUserWriter is the narrow persistence interface used by auth handlers.
 type CurrentUserWriter interface {
@@ -47,11 +48,16 @@ const (
 	authStatusUnauthenticated = "unauthenticated"
 	authReasonStoredToken     = "stored_token"
 	authReasonNoStoredToken   = "no_stored_token"
+	githubOAuthAuthorizeURL   = "https://github.com/login/oauth/authorize"
+	githubOAuthTokenURL       = "https://github.com/login/oauth/access_token"
+	usernameLookupTimeout     = 10 * time.Second
+	callbackShutdownTimeout   = 5 * time.Second
 )
 
 // CurrentUserWriterFunc adapts a function to CurrentUserWriter.
 type CurrentUserWriterFunc func(ctx context.Context, provider, login string) error
 
+// SetCurrentUser persists the authenticated login through the wrapped function.
 func (f CurrentUserWriterFunc) SetCurrentUser(ctx context.Context, prov, login string) error {
 	return f(ctx, prov, login)
 }
@@ -70,11 +76,11 @@ type AuthDeps struct {
 }
 
 func fetchUsername(providerName, token string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), usernameLookupTimeout)
 	defer cancel()
 
 	switch providerName {
-	case "github":
+	case githubProvider:
 		client := github.NewClient(token)
 		return client.GetUsername(ctx)
 	default:
@@ -94,18 +100,21 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 	runAuthCodeFlow := func(providerName string, resultCh <-chan auth.CallbackResult) {
 		serverErrCh := make(chan error, 1)
 		go func() {
-			if err := callbackServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := callbackServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				serverErrCh <- err
 			}
 			close(serverErrCh)
 		}()
 
 		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), callbackShutdownTimeout)
 			defer cancel()
 			mu.Lock()
 			if callbackServer != nil {
-				_ = callbackServer.Shutdown(ctx)
+				// Shutdown is best-effort after an auth outcome has already been broadcast.
+				if err := callbackServer.Shutdown(ctx); err != nil {
+					deps.Log.Warn("callback server shutdown failed", "error", err)
+				}
 			}
 			callbackServer = nil
 			mu.Unlock()
@@ -117,7 +126,7 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 				deps.Log.Error("auth callback failed", "error", result.Err)
 				deps.Broadcast(map[string]interface{}{
 					"type": "AUTH_FAILED",
-					"data": map[string]string{"error": result.Err.Error()},
+					"data": map[string]string{"error": "authentication failed"},
 				})
 				return
 			}
@@ -158,7 +167,7 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 			deps.Log.Error("callback server error", "error", err)
 			deps.Broadcast(map[string]interface{}{
 				"type": "AUTH_FAILED",
-				"data": map[string]string{"error": err.Error()},
+				"data": map[string]string{"error": "authentication callback unavailable"},
 			})
 
 		case <-time.After(auth.CallbackTimeout):
@@ -185,7 +194,7 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 
 		logger.Debug("auth start requested", "provider", data.Provider)
 
-		if data.Provider != "github" {
+		if data.Provider != githubProvider {
 			logger.Warn("unsupported auth provider", "provider", data.Provider)
 			return map[string]interface{}{
 				"id":   msg.ID,
@@ -221,8 +230,8 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 		}
 
 		cfg := auth.ProviderConfig{
-			AuthURL:      "https://github.com/login/oauth/authorize",
-			TokenURL:     "https://github.com/login/oauth/access_token",
+			AuthURL:      githubOAuthAuthorizeURL,
+			TokenURL:     githubOAuthTokenURL,
 			Scopes:       []string{"repo", "read:user"},
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
@@ -231,7 +240,6 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 		authURL, state, err := auth.BuildAuthURL(cfg, auth.RedirectURI)
 		if err != nil {
 			mu.Unlock()
-			logger.Error("building auth URL failed", "error", err)
 			return nil, fmt.Errorf("building auth URL: %w", err)
 		}
 
@@ -272,7 +280,7 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 		authenticated := false
 		authReason := authReasonNoStoredToken
 
-		for _, p := range knownProviders {
+		for _, p := range knownProviders() {
 			token, err := deps.Tokens.Get(p)
 			if err != nil || token == "" {
 				logger.Debug("no token for provider", "provider", p)
@@ -351,7 +359,7 @@ func NewAuthDisconnectHandler(deps AuthDeps, checkHandler ws.MessageHandler) ws.
 		logger.Info("disconnecting provider", "provider", data.Provider)
 
 		if err := deps.Tokens.Delete(data.Provider); err != nil {
-			deps.Log.Warn("failed to delete token from keychain", "provider", data.Provider, "error", err)
+			logger.Warn("failed to delete token from keychain", "provider", data.Provider, "error", err)
 		}
 		deps.Cache.Delete(data.Provider)
 		if deps.CurrentUserClearer != nil {
@@ -365,7 +373,10 @@ func NewAuthDisconnectHandler(deps AuthDeps, checkHandler ws.MessageHandler) ws.
 		if err != nil {
 			return nil, err
 		}
-		respMap := checkResp.(map[string]interface{})
+		respMap, ok := checkResp.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("AUTH_DISCONNECT: unexpected auth check response type %T", checkResp)
+		}
 		respMap["type"] = "AUTH_DISCONNECT_RESULT"
 		return respMap, nil
 	}

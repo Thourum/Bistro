@@ -81,7 +81,7 @@ func NewGetReviewThreadsHandler(db threadLister, log *slog.Logger) ws.MessageHan
 				"data": map[string]interface{}{
 					"pr_id":   req.PRID,
 					"threads": []store.ReviewThreadRow{},
-					"error":   err.Error(),
+					"error":   "unable to load review threads",
 				},
 			}, nil
 		}

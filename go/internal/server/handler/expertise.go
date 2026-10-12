@@ -47,6 +47,7 @@ type expertiseIdentityReader interface {
 	GetCurrentUser(ctx context.Context, provider string) (string, bool, error)
 }
 
+// ExpertiseHandlerDeps bundles the optional engine, stores, identity reader, and logger.
 type ExpertiseHandlerDeps struct {
 	Engine      expertiseEngine
 	Repos       expertiseRepoStore
@@ -107,9 +108,9 @@ type expertiseExpert struct {
 	Dormant        bool    `json:"dormant"`
 }
 
+// NewExpertiseEnableHandler starts expertise indexing for a local repository.
 func NewExpertiseEnableHandler(deps ExpertiseHandlerDeps) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		logger := expertiseLogger(ctx, msg, deps.Log)
 		req, err := decodeExpertiseRepoRequest(msg, "EXPERTISE_ENABLE")
 		if err != nil {
 			return nil, err
@@ -132,13 +133,13 @@ func NewExpertiseEnableHandler(deps ExpertiseHandlerDeps) ws.MessageHandler {
 			return nil, errors.New("expertise engine is nil")
 		}
 		if err := deps.Engine.Enable(ctx, req.RepoID, repo.LocalPath); err != nil {
-			logger.Warn("expertise enable failed", "repo_id", req.RepoID, "error", err)
-			return nil, err
+			return nil, fmt.Errorf("enable expertise for %s: %w", req.RepoID, err)
 		}
 		return expertiseEnvelope(msg.ID, "EXPERTISE_ENABLE_ACCEPTED", map[string]interface{}{"repo_id": req.RepoID}), nil
 	}
 }
 
+// NewExpertiseDisableHandler stops expertise indexing for a repository.
 func NewExpertiseDisableHandler(deps ExpertiseHandlerDeps) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		req, err := decodeExpertiseRepoRequest(msg, "EXPERTISE_DISABLE")
@@ -155,6 +156,7 @@ func NewExpertiseDisableHandler(deps ExpertiseHandlerDeps) ws.MessageHandler {
 	}
 }
 
+// NewGetExpertiseHandler serves per-file expertise for a PR.
 func NewGetExpertiseHandler(deps ExpertiseHandlerDeps) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		var req expertisePRRequest
@@ -203,6 +205,7 @@ func NewGetExpertiseHandler(deps ExpertiseHandlerDeps) ws.MessageHandler {
 	}
 }
 
+// NewExpertiseNudgeDismissHandler records the repository nudge dismissal.
 func NewExpertiseNudgeDismissHandler(deps ExpertiseHandlerDeps) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		req, err := decodeExpertiseRepoRequest(msg, "EXPERTISE_NUDGE_DISMISS")
@@ -219,6 +222,7 @@ func NewExpertiseNudgeDismissHandler(deps ExpertiseHandlerDeps) ws.MessageHandle
 	}
 }
 
+// NewGetExpertiseSettingsHandler returns current expertise settings.
 func NewGetExpertiseSettingsHandler(deps ExpertiseHandlerDeps) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		if deps.Settings == nil {
@@ -236,6 +240,7 @@ func NewGetExpertiseSettingsHandler(deps ExpertiseHandlerDeps) ws.MessageHandler
 	}
 }
 
+// NewSetExpertiseSettingsHandler validates and stores expertise settings.
 func NewSetExpertiseSettingsHandler(deps ExpertiseHandlerDeps) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		var settings expertiseSettings
@@ -265,18 +270,22 @@ func NewSetExpertiseSettingsHandler(deps ExpertiseHandlerDeps) ws.MessageHandler
 	}
 }
 
+// NewExpertiseSQLRepoStore supplies SQL-backed repository lookups.
 func NewExpertiseSQLRepoStore(db *sql.DB) *expertiseRepoSQLStore {
 	return &expertiseRepoSQLStore{db: db}
 }
 
+// NewExpertiseSQLDataStore supplies SQL-backed PR and expertise lookups.
 func NewExpertiseSQLDataStore(db *sql.DB, store *expertise.Store) *expertiseDataSQLStore {
 	return &expertiseDataSQLStore{db: db, store: store}
 }
 
+// NewExpertiseSQLSettingsStore supplies SQL-backed settings storage.
 func NewExpertiseSQLSettingsStore(db *sql.DB, store *expertise.Store) *expertiseSettingsSQLStore {
 	return &expertiseSettingsSQLStore{db: db, store: store}
 }
 
+// ExpertiseRepo retrieves local checkout information for a repository.
 func (s *expertiseRepoSQLStore) ExpertiseRepo(ctx context.Context, repoID string) (expertiseRepo, bool, error) {
 	var repo expertiseRepo
 	err := s.db.QueryRowContext(ctx, `SELECT id, COALESCE(source, ''), COALESCE(local_path, '') FROM repos WHERE id = ?`, repoID).Scan(&repo.RepoID, &repo.Source, &repo.LocalPath)
@@ -289,6 +298,7 @@ func (s *expertiseRepoSQLStore) ExpertiseRepo(ctx context.Context, repoID string
 	return repo, true, nil
 }
 
+// ExpertisePRRepo resolves the owning repository for a PR.
 func (s *expertiseDataSQLStore) ExpertisePRRepo(ctx context.Context, prID string) (string, bool, error) {
 	var repoID string
 	err := s.db.QueryRowContext(ctx, `SELECT repo_id FROM prs WHERE id = ?`, prID).Scan(&repoID)
@@ -301,6 +311,7 @@ func (s *expertiseDataSQLStore) ExpertisePRRepo(ctx context.Context, prID string
 	return repoID, true, nil
 }
 
+// ExpertisePRFiles lists the paths with stored PR diffs.
 func (s *expertiseDataSQLStore) ExpertisePRFiles(ctx context.Context, prID string) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT file_path FROM pr_diffs WHERE pr_id = ? ORDER BY file_path`, prID)
 	if err != nil {
@@ -321,10 +332,12 @@ func (s *expertiseDataSQLStore) ExpertisePRFiles(ctx context.Context, prID strin
 	return files, nil
 }
 
+// FileExpertise returns indexed expertise for one path.
 func (s *expertiseDataSQLStore) FileExpertise(ctx context.Context, repoID, filePath string) ([]expertise.FileExpertiseRow, error) {
 	return s.store.GetFileExpertise(ctx, repoID, filePath)
 }
 
+// RepoState reports whether expertise indexing is ready.
 func (s *expertiseDataSQLStore) RepoState(ctx context.Context, repoID string) (expertise.ExpertiseRepoState, bool, error) {
 	state, err := s.store.RepoState(ctx, repoID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -336,6 +349,7 @@ func (s *expertiseDataSQLStore) RepoState(ctx context.Context, repoID string) (e
 	return state, true, nil
 }
 
+// ExpertiseSettings loads stored settings with defaults for unset values.
 func (s *expertiseSettingsSQLStore) ExpertiseSettings(ctx context.Context) (expertiseSettings, error) {
 	settings := expertiseSettings{
 		AliasEmails:       []string{},
@@ -362,10 +376,12 @@ func (s *expertiseSettingsSQLStore) ExpertiseSettings(ctx context.Context) (expe
 	return settings, nil
 }
 
+// DismissExpertiseNudge persists the dismissed nudge for a repository.
 func (s *expertiseSettingsSQLStore) DismissExpertiseNudge(ctx context.Context, repoID string) error {
 	return s.store.DismissNudge(ctx, repoID)
 }
 
+// SetExpertiseSettings stores settings and removes excluded expertise rows.
 func (s *expertiseSettingsSQLStore) SetExpertiseSettings(ctx context.Context, settings expertiseSettings) error {
 	values := map[string]any{
 		expertiseSettingsAliasEmailsKey:       settings.AliasEmails,
@@ -425,14 +441,18 @@ func decodeExpertiseRepoRequest(msg ws.InboundMessage, messageType string) (expe
 func expertiseIdentityAndMinLines(ctx context.Context, deps ExpertiseHandlerDeps) (expertise.Identity, int) {
 	identity := expertise.Identity{}
 	if deps.CurrentUser != nil {
-		if login, ok, err := deps.CurrentUser.GetCurrentUser(ctx, "github"); err == nil && ok {
+		if login, ok, err := deps.CurrentUser.GetCurrentUser(ctx, githubProvider); err != nil {
+			logging.FromContext(ctx).Warn("expertise identity lookup failed", "error", err)
+		} else if ok {
 			identity.Login = login
 		}
 	}
 	minLines := expertise.DefaultMinSurvivingLines
 	if deps.Settings != nil {
 		settings, err := deps.Settings.ExpertiseSettings(ctx)
-		if err == nil {
+		if err != nil {
+			logging.FromContext(ctx).Warn("expertise settings lookup failed", "error", err)
+		} else {
 			identity.AliasEmails = settings.AliasEmails
 			if settings.MinSurvivingLines > 0 {
 				minLines = settings.MinSurvivingLines
