@@ -58,18 +58,6 @@ func TestCacheClearAll(t *testing.T) {
 	}
 }
 
-func TestCacheGetAll(t *testing.T) {
-	cache := NewCache()
-
-	cache.Set("url1", "b1", "h1", &RepoEntry{URL: "url1", BaseSHA: "b1", HeadSHA: "h1"})
-	cache.Set("url2", "b2", "h2", &RepoEntry{URL: "url2", BaseSHA: "b2", HeadSHA: "h2"})
-
-	all := cache.GetAll()
-	if len(all) != 2 {
-		t.Errorf("expected 2 entries, got %d", len(all))
-	}
-}
-
 func TestAllTypesAvailable(t *testing.T) {
 	// Verify all types are accessible
 	var _ *RepoEntry

@@ -36,6 +36,32 @@ func TestCacheSetGet(t *testing.T) {
 	}
 }
 
+func TestCacheEntriesAreNotShared(t *testing.T) {
+	cache := NewCache()
+	entry := &RepoEntry{URL: "https://github.com/org/repo", BaseSHA: "base", HeadSHA: "head", LocalPath: "/original"}
+	cache.Set(entry.URL, entry.BaseSHA, entry.HeadSHA, entry)
+	entry.LocalPath = "/changed-after-set"
+
+	first, ok := cache.Get(entry.URL, entry.BaseSHA, entry.HeadSHA)
+	if !ok || first.LocalPath != "/original" {
+		t.Fatalf("cache.Set retained caller's pointer: %+v", first)
+	}
+	first.LocalPath = "/changed-after-get"
+	second, ok := cache.Get(entry.URL, entry.BaseSHA, entry.HeadSHA)
+	if !ok || second.LocalPath != "/original" {
+		t.Fatalf("cache.Get exposed internal pointer: %+v", second)
+	}
+}
+
+func TestCacheSetNilEvictsEntry(t *testing.T) {
+	cache := NewCache()
+	cache.Set("url", "base", "head", &RepoEntry{LocalPath: "/clone"})
+	cache.Set("url", "base", "head", nil)
+	if entry, ok := cache.Get("url", "base", "head"); ok || entry != nil || cache.Size() != 0 {
+		t.Fatalf("nil cache entry must be treated as absent, got entry=%v present=%v size=%d", entry, ok, cache.Size())
+	}
+}
+
 func TestCacheClear(t *testing.T) {
 	cache := NewCache()
 	entry := &RepoEntry{

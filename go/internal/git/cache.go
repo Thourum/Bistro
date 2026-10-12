@@ -35,7 +35,11 @@ func (c *Cache) Get(repoURL, baseSHA, headSHA string) (*RepoEntry, bool) {
 
 	key := cacheKey(repoURL, baseSHA, headSHA)
 	entry, ok := c.repos[key]
-	return entry, ok
+	if !ok || entry == nil {
+		return nil, false
+	}
+	entryCopy := *entry
+	return &entryCopy, true
 }
 
 // Set caches a repo entry under the composite URL+SHA key.
@@ -44,7 +48,12 @@ func (c *Cache) Set(repoURL, baseSHA, headSHA string, entry *RepoEntry) {
 	defer c.mu.Unlock()
 
 	key := cacheKey(repoURL, baseSHA, headSHA)
-	c.repos[key] = entry
+	if entry == nil {
+		delete(c.repos, key)
+		return
+	}
+	entryCopy := *entry
+	c.repos[key] = &entryCopy
 }
 
 // Clear removes an entry from cache by composite key.
@@ -70,16 +79,4 @@ func (c *Cache) ClearAll() {
 	defer c.mu.Unlock()
 
 	c.repos = make(map[string]*RepoEntry)
-}
-
-// GetAll returns all cached entries (for testing)
-func (c *Cache) GetAll() []*RepoEntry {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	entries := make([]*RepoEntry, 0, len(c.repos))
-	for _, entry := range c.repos {
-		entries = append(entries, entry)
-	}
-	return entries
 }

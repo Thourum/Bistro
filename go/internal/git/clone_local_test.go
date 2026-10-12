@@ -333,7 +333,7 @@ func TestPrepareCacheCloneDirRejectsSymlinkedOwner(t *testing.T) {
 	}
 
 	// Act
-	clonePath, err := prepareCacheCloneDir(localFetchRemoteURL)
+	clonePath, _, err := stageCacheCloneDir(localFetchRemoteURL)
 
 	// Assert
 	if err == nil {
@@ -364,7 +364,7 @@ func TestPrepareCacheCloneDirRejectsSymlinkedRepo(t *testing.T) {
 	}
 
 	// Act
-	clonePath, err := prepareCacheCloneDir(localFetchRemoteURL)
+	clonePath, _, err := stageCacheCloneDir(localFetchRemoteURL)
 
 	// Assert
 	if err == nil {
@@ -383,11 +383,11 @@ func TestPrepareCacheCloneDirCreatesNonSymlinkRepoDir(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
 
 	// Act
-	clonePath, err := prepareCacheCloneDir(localFetchRemoteURL)
+	clonePath, _, err := stageCacheCloneDir(localFetchRemoteURL)
 
 	// Assert
 	if err != nil {
-		t.Fatalf("prepareCacheCloneDir: %v", err)
+		t.Fatalf("stageCacheCloneDir: %v", err)
 	}
 	info, err := os.Lstat(clonePath)
 	if err != nil {
@@ -450,9 +450,12 @@ func TestCloneLocalTargetedFailureDoesNotRemoveExistingCacheClone(t *testing.T) 
 	cancel()
 
 	// Act
-	_, ok := client.targetedClone(ctx, logging.FromContext(context.Background()), url, "base", "head", &CloneOptions{PRNumber: 17})
+	_, ok, err := client.targetedClone(ctx, logging.FromContext(context.Background()), url, "base", "head", &CloneOptions{PRNumber: 17})
 
 	// Assert
+	if err != nil {
+		t.Fatalf("targeted clone fallback: %v", err)
+	}
 	if ok {
 		t.Fatal("expected targeted clone failure")
 	}
@@ -526,11 +529,11 @@ func TestPrepareCacheCloneDirUsesOwnerRepoLayout(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", cacheRoot)
 
 	// Act
-	clonePath, err := prepareCacheCloneDir(localFetchRemoteURL)
+	clonePath, _, err := stageCacheCloneDir(localFetchRemoteURL)
 
 	// Assert
 	if err != nil {
-		t.Fatalf("prepareCacheCloneDir: %v", err)
+		t.Fatalf("stageCacheCloneDir: %v", err)
 	}
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
