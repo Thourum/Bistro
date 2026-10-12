@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 /**
  * PR domain model — matches Go `prs` table schema exactly.
  */
@@ -65,11 +67,35 @@ export interface ExpertiseRepoStatus {
 }
 
 export interface ExpertiseDataPayload {
-  pr_id?: string;
-  status?: 'ready' | 'unavailable';
-  reason?: string;
+  pr_id?: string | undefined;
+  status?: 'ready' | 'unavailable' | undefined;
+  reason?: string | undefined;
   files: ExpertiseFileData[];
 }
+
+export const expertiseDataSchema = z.object({
+  pr_id: z.string().optional(),
+  status: z.enum(['ready', 'unavailable']).optional(),
+  reason: z.string().optional(),
+  files: z.array(
+    z.object({
+      file_path: z.string(),
+      experts: z.array(
+        z.object({
+          author_email: z.string(),
+          author_login: z.string().nullable(),
+          surviving_lines: z.number(),
+          total_lines: z.number(),
+          commit_score: z.number(),
+          is_original: z.boolean(),
+          score: z.number(),
+          dormant: z.boolean(),
+        }),
+      ),
+      your_rank: z.number().nullable(),
+    }),
+  ),
+}) satisfies z.ZodType<ExpertiseDataPayload>;
 
 export interface ExpertiseNudgePayload {
   repo_id: string;
@@ -101,28 +127,58 @@ export interface Comment {
   body: string;
   created_at: string;
   updated_at: string;
-  line?: number;
-  file?: string;
-  is_reply_to?: string;
+  line?: number | undefined;
+  file?: string | undefined;
+  is_reply_to?: string | undefined;
   // Classification (Phase 3, migration 026) — absent on unclassified/legacy rows.
-  author_type?: CommentAuthorType;
-  bot_vendor?: string;
-  severity?: CommentSeverity;
-  classification_source?: string;
-  dismissed?: boolean;
-  dedup_group_id?: string;
+  author_type?: CommentAuthorType | undefined;
+  bot_vendor?: string | undefined;
+  severity?: CommentSeverity | undefined;
+  classification_source?: string | undefined;
+  dismissed?: boolean | undefined;
+  dedup_group_id?: string | undefined;
   /**
    * Review-thread this comment belongs to, when it is a thread reply. Already
    * present in the `COMMENTS_READY` payload (comments.thread_id FK); the
    * threads view joins on it to show each thread's discussion inline.
    */
-  thread_id?: string;
+  thread_id?: string | undefined;
   /**
    * Raw diff hunk from GitHub for inline review comments. Present only for
    * kind='review'; undefined for issue comments.
    */
-  diff_hunk?: string;
+  diff_hunk?: string | undefined;
 }
+
+// The engine also sends anchor metadata not represented by the shared Comment type.
+export const commentSchema = z.looseObject({
+  id: z.string(),
+  pr_id: z.string(),
+  author: z.string(),
+  body: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  line: z.number().optional(),
+  file: z.string().optional(),
+  is_reply_to: z.string().optional(),
+  author_type: z.enum(['human', 'bot', 'unknown']).optional(),
+  bot_vendor: z.string().optional(),
+  severity: z
+    .enum(['critical', 'warning', 'suggestion', 'nit', 'info'])
+    .optional(),
+  classification_source: z.string().optional(),
+  dismissed: z.boolean().optional(),
+  dedup_group_id: z.string().optional(),
+  thread_id: z.string().optional(),
+  diff_hunk: z.string().optional(),
+}) satisfies z.ZodType<Comment>;
+
+export const commentsResponseSchema = z.object({
+  comments: z
+    .array(commentSchema)
+    .nullish()
+    .transform((comments) => comments ?? []),
+});
 
 /**
  * File model for PR changed files.
@@ -138,7 +194,7 @@ export interface Comment {
 export interface DiffFile {
   path: string;
   status: 'added' | 'modified' | 'deleted' | 'renamed' | 'binary';
-  old_path?: string;
+  old_path?: string | undefined;
   is_binary: boolean;
   is_truncated: boolean;
   diff_status: 'ok' | 'truncated' | 'too_large';
@@ -149,6 +205,31 @@ export interface DiffFile {
   content_hash: string;
   viewed: boolean;
 }
+
+export const diffFileSchema = z.object({
+  path: z.string(),
+  status: z.enum(['added', 'modified', 'deleted', 'renamed', 'binary']),
+  old_path: z.string().optional(),
+  is_binary: z.boolean(),
+  is_truncated: z.boolean(),
+  diff_status: z.enum(['ok', 'truncated', 'too_large']),
+  patch_bytes: z.number(),
+  hunk_count: z.number(),
+  additions: z.number(),
+  deletions: z.number(),
+  content_hash: z.string(),
+  viewed: z.boolean(),
+}) satisfies z.ZodType<DiffFile>;
+
+export const diffResponseSchema = z.object({
+  diff: z.string().optional(),
+  files: z
+    .array(diffFileSchema)
+    .nullish()
+    .transform((files) => files ?? []),
+  additions: z.number().nullish(),
+  deletions: z.number().nullish(),
+});
 
 /**
  * An observed patchset snapshot — one row of the `patchsets` table, surfaced
@@ -164,6 +245,14 @@ export interface Patchset {
   base_sha: string;
   pushed_at: string; // ISO 8601
 }
+
+export const patchsetSchema = z.object({
+  pr_id: z.string(),
+  number: z.number(),
+  head_sha: z.string(),
+  base_sha: z.string(),
+  pushed_at: z.string(),
+}) satisfies z.ZodType<Patchset>;
 
 /**
  * Result of a `REQUEST_RANGE_DIFF` → `RANGE_DIFF_READY` round-trip.
@@ -185,23 +274,36 @@ export interface RangeDiffResult {
   fallback_reason: string;
 }
 
+export const rangeDiffSchema = z.object({
+  pr_id: z.string(),
+  from_patchset: z.number(),
+  to_patchset: z.number(),
+  from_sha: z.string(),
+  to_sha: z.string(),
+  raw: z.string(),
+  degraded: z.boolean(),
+  fallback_reason: z.string(),
+}) satisfies z.ZodType<RangeDiffResult>;
+
 /**
  * Acknowledgement of a `MARK_FILE_VIEWED` request.
  * `ok` is false when the engine declined the write; `reason` explains it.
  */
-export interface FileViewedAck {
-  pr_id: string;
-  file_path: string;
-  ok: boolean;
-  reason?: string;
-}
+export const fileViewedAckSchema = z.object({
+  pr_id: z.string(),
+  file_path: z.string(),
+  ok: z.boolean(),
+  reason: z.string().optional(),
+});
+export type FileViewedAck = z.infer<typeof fileViewedAckSchema>;
 
 /** Acknowledgement of a `MARK_PRS_READ` request. */
-export interface PRsReadAck {
-  ok: boolean;
-  marked: number;
-  reason?: string;
-}
+export const prsReadAckSchema = z.object({
+  ok: z.boolean(),
+  marked: z.number(),
+  reason: z.string().optional(),
+});
+export type PRsReadAck = z.infer<typeof prsReadAckSchema>;
 
 /**
  * A review thread on a PR — one row of the `review_threads` table, surfaced
@@ -222,6 +324,16 @@ export interface ReviewThread {
   outdated: boolean;
   state_known: boolean;
 }
+
+export const reviewThreadSchema = z.object({
+  id: z.string(),
+  pr_id: z.string(),
+  file_path: z.string(),
+  line: z.number(),
+  resolved: z.boolean(),
+  outdated: z.boolean(),
+  state_known: z.boolean(),
+}) satisfies z.ZodType<ReviewThread>;
 
 /** Lifecycle bucket derived from a {@link ReviewThread}'s flags. */
 export type ThreadLifecycle = 'open' | 'resolved' | 'outdated' | 'unknown';
@@ -244,9 +356,16 @@ export function threadLifecycle(thread: ReviewThread): ThreadLifecycle {
 export interface CICheck {
   name: string;
   state: 'pending' | 'success' | 'failure';
-  description?: string;
-  url?: string;
+  description?: string | undefined;
+  url?: string | undefined;
 }
+
+export const ciCheckSchema = z.object({
+  name: z.string(),
+  state: z.enum(['pending', 'success', 'failure']),
+  description: z.string().optional(),
+  url: z.string().optional(),
+}) satisfies z.ZodType<CICheck>;
 
 /**
  * Extended PR with detail data (fetched via WebSocket).

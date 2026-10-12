@@ -1,97 +1,26 @@
-import { err, ok, type Result, ResultAsync } from 'neverthrow';
+import { err, ok, ResultAsync } from 'neverthrow';
 import React from 'react';
 import { useStore } from '../hooks/useStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
+import {
+  parseScanDevFolderResult,
+  parseValidateDevFolderResult,
+  type ValidateDevFolderResult,
+} from './onboardingResults';
 
 /**
  * One-time onboarding — structure and classes match
  * `stitch_terminal_authentic_prd/onboarding/code.html` (body main + footer).
  * Global `AppFooter` renders below this component in `App.tsx`.
  */
-interface ValidateDevFolderResult {
-  canonicalPath: string;
-}
-
-interface ScanDevFolderResult {
-  discovered: number;
-}
-
 function validationErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
   return 'Unable to validate that folder.';
-}
-
-function sendResultErrorMessage(result: unknown, fallback: string): string {
-  if (typeof result !== 'object' || result === null) {
-    return fallback;
-  }
-
-  const error = (result as { error?: unknown }).error;
-  if (typeof error === 'string') {
-    return error;
-  }
-
-  const message = (result as { message?: unknown }).message;
-  if (typeof message === 'string') {
-    return message;
-  }
-
-  return fallback;
-}
-
-function parseValidateDevFolderResult(
-  data: unknown,
-): Result<ValidateDevFolderResult, string> {
-  if (
-    typeof data === 'object' &&
-    data !== null &&
-    (data as { ok?: unknown }).ok === false
-  ) {
-    return err(sendResultErrorMessage(data, 'Unable to validate that folder.'));
-  }
-
-  if (
-    typeof data === 'object' &&
-    data !== null &&
-    (data as { ok?: unknown }).ok === true &&
-    typeof (data as { canonical_path?: unknown }).canonical_path === 'string'
-  ) {
-    return ok({
-      canonicalPath: (data as { canonical_path: string }).canonical_path,
-    });
-  }
-  return err('Dev folder validation returned an invalid response.');
-}
-
-function parseScanDevFolderResult(
-  data: unknown,
-): Result<ScanDevFolderResult, string> {
-  if (
-    typeof data === 'object' &&
-    data !== null &&
-    Array.isArray((data as { repositories?: unknown }).repositories)
-  ) {
-    return ok({
-      discovered: (data as { repositories: unknown[] }).repositories.length,
-    });
-  }
-
-  if (
-    typeof data === 'object' &&
-    data !== null &&
-    (data as { ok?: unknown }).ok === true &&
-    typeof (data as { discovered?: unknown }).discovered === 'number'
-  ) {
-    return ok({
-      discovered: (data as { discovered: number }).discovered,
-    });
-  }
-  return err('Dev folder scan returned an invalid response.');
 }
 
 function persistDevFolderPath(

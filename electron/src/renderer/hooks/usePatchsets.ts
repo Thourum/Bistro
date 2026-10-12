@@ -1,9 +1,18 @@
+import { fromPromise } from 'neverthrow';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Patchset } from '../types';
+import { z } from 'zod';
+import { type Patchset, patchsetSchema } from '../types';
+import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
 import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('usePatchsets');
+const patchsetsResponseSchema = z.object({
+  patchsets: z
+    .array(patchsetSchema)
+    .nullish()
+    .transform((patchsets) => patchsets ?? []),
+});
 
 interface PatchsetsState {
   patchsets: Patchset[];
@@ -37,21 +46,24 @@ export function usePatchsets(prId: string | undefined): PatchsetsState & {
   const load = useCallback(() => {
     if (prId === undefined) return;
     setState((s) => ({ ...s, loading: true, error: null }));
-    requestRef
-      .current('GET_PATCHSETS', { pr_id: prId })
-      .then((data) => {
-        const payload = data as { patchsets?: Patchset[] };
-        setState({
-          patchsets: payload.patchsets ?? [],
-          loading: false,
-          error: null,
-        });
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        log.warn({ err: msg }, 'failed to load patchsets');
-        setState({ patchsets: [], loading: false, error: msg });
-      });
+    void fromPromise(
+      requestRef.current('GET_PATCHSETS', { pr_id: prId }),
+      (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+    )
+      .andThen((data) => parseResponse(patchsetsResponseSchema, data))
+      .match(
+        (payload) => {
+          setState({
+            patchsets: payload.patchsets,
+            loading: false,
+            error: null,
+          });
+        },
+        (message) => {
+          log.warn({ err: message }, 'failed to load patchsets');
+          setState({ patchsets: [], loading: false, error: message });
+        },
+      );
   }, [prId]);
 
   useEffect(() => {

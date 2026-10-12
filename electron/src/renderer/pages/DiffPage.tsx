@@ -46,8 +46,8 @@ import { useDiffPageData } from './useDiffPageData';
  */
 export function DiffPage() {
   // Resolve PR by stable id from route params — NEVER by selectedPRIndex.
-  const { prId } = useParams({ strict: false }) as { prId: string };
-  const { file: fileKey } = useSearch({ strict: false }) as { file: string };
+  const { prId } = useParams({ from: '/authed/prs/$prId/diff' });
+  const { file: fileKey } = useSearch({ from: '/authed/prs/$prId/diff' });
   const navigate = useNavigate();
 
   // Phase 2 store reads: range-diff intent and file-viewed tracking.

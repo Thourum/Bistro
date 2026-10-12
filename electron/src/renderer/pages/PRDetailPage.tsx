@@ -39,7 +39,7 @@ import { usePRDetailData } from './usePRDetailData';
  */
 export function PRDetailPage() {
   // Resolve PR by stable id from route params — NEVER by selectedPRIndex.
-  const { prId } = useParams({ strict: false }) as { prId: string };
+  const { prId } = useParams({ from: '/authed/prs/$prId' });
   const { activeOverlay } = useOverlays();
   const confirmingAction = useStore(
     appStore,

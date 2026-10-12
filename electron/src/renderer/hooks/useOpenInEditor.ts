@@ -1,22 +1,24 @@
 import { fromPromise } from 'neverthrow';
 import { useCallback, useRef, useState } from 'react';
+import { z } from 'zod';
+import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
 import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('useOpenInEditor');
 
-interface CheckPRCheckoutData {
-  local_path?: string;
-  head_sha?: string;
-  head_matches?: boolean;
-  error?: string;
-}
+const checkPRCheckoutSchema = z.object({
+  local_path: z.string().optional(),
+  head_sha: z.string().optional(),
+  head_matches: z.boolean().optional(),
+  error: z.string().optional(),
+});
 
-interface CheckoutPRHeadData {
-  ok?: boolean;
-  local_path?: string;
-  reason?: string;
-}
+const checkoutPRHeadSchema = z.object({
+  ok: z.boolean().optional(),
+  local_path: z.string().optional(),
+  reason: z.string().optional(),
+});
 
 /**
  * Dialog state surfaced when the local checkout doesn't match the PR head.
@@ -120,39 +122,40 @@ export function useOpenInEditor(): {
         fromPromise(
           requestRef.current('CHECK_PR_CHECKOUT', { pr_id: prId }),
           (err) => (err instanceof Error ? err.message : 'Unknown error'),
-        ).match(
-          async (raw) => {
-            const data = raw as CheckPRCheckoutData;
-            if (data.error !== undefined) {
-              setState({ dialog: null, error: data.error });
-              return;
-            }
-            const repoRoot = data.local_path;
-            if (repoRoot === undefined || repoRoot === '') {
-              setState({ dialog: null, error: 'no local path' });
-              return;
-            }
-            if (data.head_matches === true) {
-              await openViaIPC(repoRoot, relativePath, line);
-              return;
-            }
-            setState({
-              dialog: {
-                kind: 'checkout-mismatch',
-                prId,
-                repoRoot,
-                headSha: data.head_sha ?? '',
-                relativePath,
-                line,
-              },
-              error: null,
-            });
-          },
-          (err) => {
-            log.warn({ err, prId }, 'CHECK_PR_CHECKOUT failed');
-            setState({ dialog: null, error: err });
-          },
-        ),
+        )
+          .andThen((data) => parseResponse(checkPRCheckoutSchema, data))
+          .match(
+            async (data) => {
+              if (data.error !== undefined) {
+                setState({ dialog: null, error: data.error });
+                return;
+              }
+              const repoRoot = data.local_path;
+              if (repoRoot === undefined || repoRoot === '') {
+                setState({ dialog: null, error: 'no local path' });
+                return;
+              }
+              if (data.head_matches === true) {
+                await openViaIPC(repoRoot, relativePath, line);
+                return;
+              }
+              setState({
+                dialog: {
+                  kind: 'checkout-mismatch',
+                  prId,
+                  repoRoot,
+                  headSha: data.head_sha ?? '',
+                  relativePath,
+                  line,
+                },
+                error: null,
+              });
+            },
+            (err) => {
+              log.warn({ err, prId }, 'CHECK_PR_CHECKOUT failed');
+              setState({ dialog: null, error: err });
+            },
+          ),
       ),
     [openViaIPC],
   );
@@ -168,24 +171,25 @@ export function useOpenInEditor(): {
             expected_head_sha: dialog.headSha,
           }),
           (err) => (err instanceof Error ? err.message : 'Unknown error'),
-        ).match(
-          async (raw) => {
-            const data = raw as CheckoutPRHeadData;
-            if (data.ok !== true) {
-              setState({
-                dialog: null,
-                error: `Checkout failed: ${data.reason ?? 'unknown error'}`,
-              });
-              return;
-            }
-            const repoRoot = data.local_path ?? dialog.repoRoot;
-            await openViaIPC(repoRoot, dialog.relativePath, dialog.line);
-          },
-          (err) => {
-            log.warn({ err, prId: dialog.prId }, 'CHECKOUT_PR_HEAD failed');
-            setState({ dialog: null, error: err });
-          },
-        ),
+        )
+          .andThen((data) => parseResponse(checkoutPRHeadSchema, data))
+          .match(
+            async (data) => {
+              if (data.ok !== true) {
+                setState({
+                  dialog: null,
+                  error: `Checkout failed: ${data.reason ?? 'unknown error'}`,
+                });
+                return;
+              }
+              const repoRoot = data.local_path ?? dialog.repoRoot;
+              await openViaIPC(repoRoot, dialog.relativePath, dialog.line);
+            },
+            (err) => {
+              log.warn({ err, prId: dialog.prId }, 'CHECKOUT_PR_HEAD failed');
+              setState({ dialog: null, error: err });
+            },
+          ),
       ),
     );
   }, [state, openViaIPC, runExclusive]);

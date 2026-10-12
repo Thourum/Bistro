@@ -1,3 +1,15 @@
+import { err, ok, type Result } from 'neverthrow';
+import type { z } from 'zod';
+
+/** Validates a response before it reaches renderer state. */
+export function parseResponse<T>(
+  schema: z.ZodType<T>,
+  response: unknown,
+): Result<T, string> {
+  const parsed = schema.safeParse(response);
+  return parsed.success ? ok(parsed.data) : err('Invalid WebSocket response');
+}
+
 /**
  * Known error codes from Go sync engine and IPC layer.
  */

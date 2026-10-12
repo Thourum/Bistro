@@ -1,6 +1,7 @@
 import { fromPromise } from 'neverthrow';
 import { useCallback, useRef } from 'react';
-import type { PRsReadAck } from '../types';
+import { type PRsReadAck, prsReadAckSchema } from '../types';
+import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
 import { useWebSocket } from './useWebSocket';
 
@@ -18,14 +19,16 @@ export function useMarkPRsRead(): {
     (prIds: readonly string[]): Promise<PRsReadAck | null> =>
       fromPromise(
         requestRef.current('MARK_PRS_READ', { pr_ids: [...prIds] }),
-        (err) => err,
-      ).match(
-        (data) => data as PRsReadAck,
-        (err) => {
-          log.warn({ err, prIds }, 'failed to mark PRs read');
-          return null;
-        },
-      ),
+        (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+      )
+        .andThen((data) => parseResponse(prsReadAckSchema, data))
+        .match(
+          (data) => data,
+          (err) => {
+            log.warn({ err, prIds }, 'failed to mark PRs read');
+            return null;
+          },
+        ),
     [],
   );
 

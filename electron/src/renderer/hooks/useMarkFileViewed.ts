@@ -1,5 +1,7 @@
+import { fromPromise } from 'neverthrow';
 import { useCallback, useRef } from 'react';
-import type { FileViewedAck } from '../types';
+import { type FileViewedAck, fileViewedAckSchema } from '../types';
+import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
 import { useWebSocket } from './useWebSocket';
 
@@ -34,18 +36,22 @@ export function useMarkFileViewed(): {
       filePath: string,
       contentHash: string,
     ): Promise<FileViewedAck | null> =>
-      requestRef
-        .current('MARK_FILE_VIEWED', {
+      fromPromise(
+        requestRef.current('MARK_FILE_VIEWED', {
           pr_id: prId,
           file_path: filePath,
           content_hash: contentHash,
-        })
-        .then((data) => data as FileViewedAck)
-        .catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : 'Unknown error';
-          log.warn({ err: msg, filePath }, 'failed to mark file viewed');
-          return null;
         }),
+        (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+      )
+        .andThen((data) => parseResponse(fileViewedAckSchema, data))
+        .match(
+          (data) => data,
+          (message) => {
+            log.warn({ err: message, filePath }, 'failed to mark file viewed');
+            return null;
+          },
+        ),
     [],
   );
 

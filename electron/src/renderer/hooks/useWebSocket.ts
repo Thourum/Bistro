@@ -1106,12 +1106,13 @@ function sendMessage(type: string, data: unknown): string | undefined {
  * Go handlers report recoverable failures (e.g. "diff not synced yet") as
  * an `error` field inside otherwise-successful *_READY envelopes.
  */
+const responseErrorSchema = z.object({ error: z.unknown().optional() });
+
 export function extractResponseError(data: unknown): string | null {
-  if (typeof data !== 'object' || data === null) {
-    return null;
-  }
-  const err = (data as { error?: unknown }).error;
-  return typeof err === 'string' && err.length > 0 ? err : null;
+  const parsed = responseErrorSchema.safeParse(data);
+  if (!parsed.success) return null;
+  const error = parsed.data.error;
+  return typeof error === 'string' && error.length > 0 ? error : null;
 }
 
 const CONNECT_WAIT_INTERVAL_MS = 250;

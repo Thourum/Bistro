@@ -1,6 +1,8 @@
+import { fromPromise } from 'neverthrow';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { appStore } from '../store';
-import type { ExpertiseDataPayload } from '../types';
+import { type ExpertiseDataPayload, expertiseDataSchema } from '../types';
+import { parseResponse } from '../utils/error';
 import {
   expertisePayloadForPR,
   isExpertisePayloadForPR,
@@ -48,30 +50,23 @@ export function useExpertise(prId: string | undefined): ExpertiseState & {
     const requestId = latestRequestIdRef.current + 1;
     latestRequestIdRef.current = requestId;
     setState({ expertise: null, loading: true, error: null });
-    requestRef
-      .current('GET_EXPERTISE', { pr_id: prId })
-      .then((data) => {
-        if (latestRequestIdRef.current !== requestId) {
-          return;
-        }
-        const payload = expertisePayloadForPR(
-          data as ExpertiseDataPayload,
-          prId,
-        );
-        setState({
-          expertise: payload,
-          loading: false,
-          error: null,
-        });
-      })
-      .catch((err: unknown) => {
-        if (latestRequestIdRef.current !== requestId) {
-          return;
-        }
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        log.warn({ err: msg }, 'failed to load expertise');
-        setState({ expertise: null, loading: false, error: msg });
-      });
+    void fromPromise(
+      requestRef.current('GET_EXPERTISE', { pr_id: prId }),
+      (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+    )
+      .andThen((data) => parseResponse(expertiseDataSchema, data))
+      .match(
+        (data) => {
+          if (latestRequestIdRef.current !== requestId) return;
+          const payload = expertisePayloadForPR(data, prId);
+          setState({ expertise: payload, loading: false, error: null });
+        },
+        (message) => {
+          if (latestRequestIdRef.current !== requestId) return;
+          log.warn({ err: message }, 'failed to load expertise');
+          setState({ expertise: null, loading: false, error: message });
+        },
+      );
   }, [prId]);
 
   useEffect(() => {

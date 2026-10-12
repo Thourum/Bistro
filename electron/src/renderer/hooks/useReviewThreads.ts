@@ -1,12 +1,21 @@
+import { fromPromise } from 'neverthrow';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { z } from 'zod';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
-import type { ReviewThread } from '../types';
+import { type ReviewThread, reviewThreadSchema } from '../types';
+import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
 import { useStore } from './useStore';
 import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('useReviewThreads');
+const reviewThreadsResponseSchema = z.object({
+  threads: z
+    .array(reviewThreadSchema)
+    .nullish()
+    .transform((threads) => threads ?? []),
+});
 
 interface ReviewThreadsState {
   threads: ReviewThread[];
@@ -45,21 +54,20 @@ export function useReviewThreads(
   const load = useCallback(() => {
     if (prId === undefined) return;
     setState((s) => ({ ...s, loading: true, error: null }));
-    requestRef
-      .current('GET_REVIEW_THREADS', { pr_id: prId })
-      .then((data) => {
-        const payload = data as { threads?: ReviewThread[] };
-        setState({
-          threads: payload.threads ?? [],
-          loading: false,
-          error: null,
-        });
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        log.warn({ err: msg }, 'failed to load review threads');
-        setState({ threads: [], loading: false, error: msg });
-      });
+    void fromPromise(
+      requestRef.current('GET_REVIEW_THREADS', { pr_id: prId }),
+      (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+    )
+      .andThen((data) => parseResponse(reviewThreadsResponseSchema, data))
+      .match(
+        (payload) => {
+          setState({ threads: payload.threads, loading: false, error: null });
+        },
+        (message) => {
+          log.warn({ err: message }, 'failed to load review threads');
+          setState({ threads: [], loading: false, error: message });
+        },
+      );
   }, [prId]);
 
   // `threadsRevision` is intentionally a dependency: a push event bumps it and

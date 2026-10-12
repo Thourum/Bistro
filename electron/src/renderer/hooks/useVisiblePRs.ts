@@ -116,5 +116,5 @@ export function useVisiblePRs(
     return result;
   }, [rawPRs, repoFilter, q, sort, view, viewerLogin]);
 
-  return { prs, isLoading, error: error as Error | null };
+  return { prs, isLoading, error };
 }

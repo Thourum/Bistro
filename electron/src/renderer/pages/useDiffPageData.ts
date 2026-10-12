@@ -1,7 +1,14 @@
 import { ResultAsync } from 'neverthrow';
 import { useEffect, useState } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
-import type { Comment, DiffFile, PR } from '../types';
+import {
+  type Comment,
+  commentsResponseSchema,
+  type DiffFile,
+  diffResponseSchema,
+  type PR,
+} from '../types';
+import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('DiffPage');
@@ -45,38 +52,40 @@ export function useDiffPageData({
     void ResultAsync.fromPromise(
       request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` }),
       errorMessage,
-    ).match(
-      (data) => {
-        const payload = data as { diff?: string; files?: DiffFile[] };
-        setDiff(payload.diff ?? '');
-        setFiles(payload.files ?? []);
-        setLoading(false);
-      },
-      (message) => {
-        log.error({ err: message }, 'failed to fetch diff');
-        setDiffError(message);
-        setLoading(false);
-      },
-    );
+    )
+      .andThen((data) => parseResponse(diffResponseSchema, data))
+      .match(
+        (payload) => {
+          setDiff(payload.diff ?? '');
+          setFiles(payload.files);
+          setLoading(false);
+        },
+        (message) => {
+          log.error({ err: message }, 'failed to fetch diff');
+          setDiffError(message);
+          setLoading(false);
+        },
+      );
   }, [isAwaitingHydration, pr, request]);
 
   useEffect(() => {
     if (pr === undefined) return;
-    log.debug({ commentsRevision }, 'fetching comments for diff annotations');
+    void commentsRevision;
     void ResultAsync.fromPromise(
       request('REQUEST_COMMENTS', { pr_id: pr.id }),
       errorMessage,
-    ).match(
-      (data) => {
-        const payload = data as { comments?: Comment[] };
-        setComments(payload.comments ?? []);
-      },
-      (message) =>
-        log.warn(
-          { err: message },
-          'failed to fetch comments for diff annotations',
-        ),
-    );
+    )
+      .andThen((data) => parseResponse(commentsResponseSchema, data))
+      .match(
+        (payload) => {
+          setComments(payload.comments);
+        },
+        (message) =>
+          log.warn(
+            { err: message },
+            'failed to fetch comments for diff annotations',
+          ),
+      );
   }, [pr, request, commentsRevision]);
 
   return { diff, files, setFiles, loading, diffError, comments };

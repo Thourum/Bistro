@@ -1,5 +1,6 @@
 import { fromPromise } from 'neverthrow';
 import { useEffect } from 'react';
+import { z } from 'zod';
 import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
 import type { Comment } from '../types';
@@ -11,6 +12,7 @@ import {
   selectBotIds,
   selectNitIds,
 } from '../utils/dismissals';
+import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
 import { useWebSocket } from './useWebSocket';
 
@@ -28,15 +30,17 @@ function bumpCommentsRevision(): void {
   }));
 }
 
-function parseDismissBatch(data: unknown): DismissBatch | null {
-  const payload = data as Partial<DismissBatch> | null;
-  if (!payload || typeof payload.batch_id !== 'string') return null;
-  return {
-    batch_id: payload.batch_id,
-    dismissed_ids: payload.dismissed_ids ?? [],
-    resolved_thread_ids: payload.resolved_thread_ids ?? [],
-  };
-}
+const dismissBatchSchema = z.object({
+  batch_id: z.string(),
+  dismissed_ids: z
+    .array(z.string())
+    .nullish()
+    .transform((ids) => ids ?? []),
+  resolved_thread_ids: z
+    .array(z.string())
+    .nullish()
+    .transform((ids) => ids ?? []),
+}) satisfies z.ZodType<DismissBatch>;
 
 /**
  * Bulk-dismiss wiring for the PR detail view (Phase 3.5): listens for the
@@ -58,34 +62,31 @@ export function useDismissals(
       if (commentIds.length === 0) return;
       void fromPromise(
         request('DISMISS_COMMENTS', { pr_id: prId, comment_ids: commentIds }),
-        (err) => err,
-      ).match(
-        (data) => {
-          const batch = parseDismissBatch(data);
-          if (batch === null) {
-            log.warn({ data }, 'unparseable DISMISS_RESULT');
-            return;
-          }
-          appStore.setState((s) => ({
-            ...s,
-            dismissBatches: pushBatch(s.dismissBatches, batch),
-          }));
-          addToast({
-            type: 'info',
-            message: dismissReport(batch),
-            dismissible: true,
-          });
-          bumpCommentsRevision();
-        },
-        (err) => {
-          log.warn({ err }, 'dismiss failed');
-          addToast({
-            type: 'error',
-            message: 'Dismiss failed',
-            dismissible: true,
-          });
-        },
-      );
+        (cause) => (cause instanceof Error ? cause.message : 'Unknown error'),
+      )
+        .andThen((data) => parseResponse(dismissBatchSchema, data))
+        .match(
+          (batch) => {
+            appStore.setState((s) => ({
+              ...s,
+              dismissBatches: pushBatch(s.dismissBatches, batch),
+            }));
+            addToast({
+              type: 'info',
+              message: dismissReport(batch),
+              dismissible: true,
+            });
+            bumpCommentsRevision();
+          },
+          (err) => {
+            log.warn({ err }, 'dismiss failed');
+            addToast({
+              type: 'error',
+              message: 'Dismiss failed',
+              dismissible: true,
+            });
+          },
+        );
     };
 
     const onDismissNits = (): void => {
