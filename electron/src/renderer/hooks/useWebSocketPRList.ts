@@ -1,4 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
+import { err, ok, type Result, ResultAsync } from 'neverthrow';
+import { z } from 'zod';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { PR } from '../types';
@@ -14,19 +16,62 @@ interface RequestPRListData {
   offset: number;
 }
 
-interface PRListReadyData {
-  prs: PR[];
-  total: number;
-  has_more: boolean;
-  viewer_login?: string;
+const PR_LIST_LIMIT = 100;
+const PR_LIST_STALE_TIME_MS = 30 * 1000;
+const PR_LIST_GC_TIME_MS = 5 * 60 * 1000;
+
+const prSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  owner: z.string(),
+  repo: z.string(),
+  number: z.number(),
+  title: z.string(),
+  body: z.string().nullable(),
+  author: z.string(),
+  state: z.enum(['open', 'closed', 'merged']),
+  created_at: z.string(),
+  updated_at: z.string(),
+  merged_at: z.string().nullable(),
+  base_branch: z.string(),
+  head_branch: z.string(),
+  base_sha: z.string(),
+  head_sha: z.string(),
+  comment_count: z.number(),
+  ci_status: z.string().nullable(),
+  draft: z.number(),
+  review_status: z.string().nullable(),
+  approved_by: z.string().nullable(),
+  changes_requested_by: z.string().nullable(),
+  requested_reviewers: z.array(z.string()),
+  touches_you: z.boolean(),
+  mentioned: z.boolean(),
+  viewer_commented: z.boolean(),
+  unread: z.boolean(),
+  reviewed_head_stale: z.boolean(),
+  hydrated: z.number(),
+}) satisfies z.ZodType<PR>;
+
+const prListReadySchema = z.object({
+  prs: z.array(prSchema),
+  count: z.number(),
+  has_more: z.boolean(),
+  viewer_login: z.string().optional(),
+  error: z.string().optional(),
+});
+
+function parsePRList(
+  value: unknown,
+): Result<z.infer<typeof prListReadySchema>, string> {
+  const parsed = prListReadySchema.safeParse(value);
+  if (!parsed.success) return err('Invalid PR list response');
+  if (parsed.data.error) return err(parsed.data.error);
+  return ok(parsed.data);
 }
 
 /**
- * Fetches PR list from sync engine via WebSocket
- * Replaces SQLite-based queries with live sync engine data
- *
- * 'needs_action' and 'touches_you' are client-side lanes: the backend serves
- * open PRs and the list is narrowed locally.
+ * Fetches PR list from sync engine via WebSocket.
+ * 'needs_action' and 'touches_you' are client-side lanes narrowed locally.
  */
 export function useWebSocketPRList(filterState: FilterState = 'open') {
   const { request } = useWebSocket();
@@ -43,35 +88,33 @@ export function useWebSocketPRList(filterState: FilterState = 'open') {
         filterState === 'needs_action' || filterState === 'touches_you'
           ? 'open'
           : filterState;
-      try {
-        const data = await request('REQUEST_PR_LIST', {
+      const response = await ResultAsync.fromPromise(
+        request('REQUEST_PR_LIST', {
           filter: backendFilter,
-          limit: 100,
+          limit: PR_LIST_LIMIT,
           offset: 0,
-        } as RequestPRListData);
+        } satisfies RequestPRListData),
+        (cause) => (cause instanceof Error ? cause.message : String(cause)),
+      ).andThen(parsePRList);
+      if (response.isErr()) return Promise.reject(new Error(response.error));
 
-        const payload = data as PRListReadyData;
-        const viewerLogin = payload.viewer_login ?? '';
-        if (appStore.state.viewerLogin !== viewerLogin) {
-          appStore.setState((state) => ({ ...state, viewerLogin }));
-        }
-        if (filterState === 'needs_action') {
-          return payload.prs.filter(
-            (pr) => classifyPR(pr, username) === 'needs_action',
-          );
-        }
-        if (filterState === 'touches_you') {
-          return payload.prs.filter((pr) => pr.touches_you);
-        }
-        return payload.prs;
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : 'Failed to fetch PR list';
-        throw new Error(message);
+      const payload = response.value;
+      const viewerLogin = payload.viewer_login ?? '';
+      if (appStore.state.viewerLogin !== viewerLogin) {
+        appStore.setState((state) => ({ ...state, viewerLogin }));
       }
+      if (filterState === 'needs_action') {
+        return payload.prs.filter(
+          (pr) => classifyPR(pr, username) === 'needs_action',
+        );
+      }
+      if (filterState === 'touches_you') {
+        return payload.prs.filter((pr) => pr.touches_you);
+      }
+      return payload.prs;
     },
-    staleTime: 30 * 1000, // 30s
-    gcTime: 5 * 60 * 1000, // 5m
+    staleTime: PR_LIST_STALE_TIME_MS,
+    gcTime: PR_LIST_GC_TIME_MS,
     retry: 1,
   });
 }

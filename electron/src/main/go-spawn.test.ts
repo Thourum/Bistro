@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createGoReadyWaiter } from './go-spawn';
+import { createGoReadyWaiter, parseReadyLine } from './go-spawn';
+
+describe('parseReadyLine', () => {
+  it('accepts the Go ready signal and rejects an invalid port', () => {
+    expect(parseReadyLine('{"event":"ready","wsPort":64568}')).toBe(64568);
+    expect(parseReadyLine('{"event":"ready","wsPort":65536}')).toBeNull();
+    expect(parseReadyLine('{"event":"ready","wsPort":"64568"}')).toBeNull();
+  });
+});
 
 describe('createGoReadyWaiter', () => {
   afterEach(() => {

@@ -10,6 +10,7 @@ import {
   type Result,
   ResultAsync,
 } from 'neverthrow';
+import { z } from 'zod';
 import type { GoProcessConfig } from './types';
 
 const require = createRequire(__filename);
@@ -23,6 +24,11 @@ type WaitOnOptions = {
 };
 
 const waitOn = require('wait-on') as (options: WaitOnOptions) => Promise<void>;
+const MAX_WS_PORT = 65535;
+const readyLineSchema = z.object({
+  event: z.literal('ready'),
+  wsPort: z.number().int().min(1).max(MAX_WS_PORT),
+});
 
 function waitForPort(
   port: number,
@@ -51,7 +57,6 @@ const FALLBACK_EXTERNAL_PORT = 8080;
 let restartCount = 0;
 let lastKnownPort: number | null = null;
 let exitHandlerRegistered = false;
-let intentionalShutdownCount = 0;
 
 /**
  * Parses the machine-readable ready signal the Go process prints to stdout:
@@ -73,24 +78,8 @@ export function parseReadyLine(line: string): number | null {
     return null;
   }
 
-  const parsed = parsedResult.value;
-  if (typeof parsed !== 'object' || parsed === null) {
-    return null;
-  }
-  const record = parsed as Record<string, unknown>;
-  if (record.event !== 'ready') {
-    return null;
-  }
-  const port = record.wsPort;
-  if (
-    typeof port !== 'number' ||
-    !Number.isInteger(port) ||
-    port < 1 ||
-    port > 65535
-  ) {
-    return null;
-  }
-  return port;
+  const parsed = readyLineSchema.safeParse(parsedResult.value);
+  return parsed.success ? parsed.data.wsPort : null;
 }
 
 export interface GoSpawnOptions {
@@ -147,15 +136,13 @@ export function createGoReadyWaiter(
 }
 
 /** Bridges a readiness result to the Promise contract of `spawnGoProcess`. */
-const toPortPromise = (ready: ResultAsync<number, Error>): Promise<number> =>
-  ready
-    .match(
-      (port) => ({ ok: true, port }) as const,
-      (error) => ({ ok: false, error }) as const,
-    )
-    .then((result) =>
-      result.ok ? Promise.resolve(result.port) : Promise.reject(result.error),
-    );
+async function toPortPromise(
+  ready: ResultAsync<number, Error>,
+): Promise<number> {
+  const result = await ready;
+  if (result.isErr()) return Promise.reject(result.error);
+  return result.value;
+}
 
 const createGoArgs = (config: GoProcessConfig): string[] => {
   const args = [
@@ -204,114 +191,70 @@ const getExitDetails = (
   return { code: null, signal: null, message: String(error) };
 };
 
-const handleProcessExit = (
-  code: number | null,
-  signal: string | null,
-  logger: Logger,
-  onCrash: GoSpawnOptions['onCrash'],
-  maxRestarts: number,
-  options: GoSpawnOptions,
-  wasStartupResolved: boolean,
-): void => {
-  if (!wasStartupResolved) {
-    return;
-  }
+type ProcessExit = { code: number | null; signal: string | null };
 
-  if (intentionalShutdownCount > 0) {
-    intentionalShutdownCount -= 1;
-    return;
-  }
+function handleProcessExit(exit: ProcessExit, options: GoSpawnOptions): void {
+  options.onCrash?.(exit.code, exit.signal);
 
-  if (onCrash != null) {
-    onCrash(code, signal);
-  }
-
-  // Auto-restart if under limit. Reuse the last known port so the main
-  // process and renderer reconnect logic keep working after a crash.
-  if (restartCount < maxRestarts) {
-    restartCount += 1;
-    logger.info(
-      `Auto-restarting Go process (attempt ${restartCount}/${maxRestarts}) in ${RESTART_DELAY_MS}ms`,
+  // Keep the port stable so the renderer can reconnect to a restarted engine.
+  const maxRestarts = options.maxRestarts ?? MAX_RESTARTS;
+  if (restartCount >= maxRestarts) {
+    options.logger.error(
+      `Go process crashed ${restartCount} times — not restarting`,
     );
-    const restartOptions: GoSpawnOptions =
-      lastKnownPort !== null
-        ? {
-            ...options,
-            config: { ...options.config, wsPort: lastKnownPort },
-          }
-        : options;
-    setTimeout(() => {
-      spawnGoProcess(restartOptions).catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.error(`Failed to restart Go process: ${message}`);
-      });
-    }, RESTART_DELAY_MS);
     return;
   }
 
-  logger.error(`Go process crashed ${restartCount} times — not restarting`);
-};
+  restartCount += 1;
+  options.logger.info(
+    `Auto-restarting Go process (attempt ${restartCount}/${maxRestarts}) in ${RESTART_DELAY_MS}ms`,
+  );
+  const restartOptions: GoSpawnOptions =
+    lastKnownPort === null
+      ? options
+      : { ...options, config: { ...options.config, wsPort: lastKnownPort } };
+  setTimeout(() => {
+    void ResultAsync.fromPromise(spawnGoProcess(restartOptions), (cause) =>
+      cause instanceof Error ? cause : new Error(String(cause)),
+    ).mapErr((error) =>
+      options.logger.error(`Failed to restart Go process: ${error.message}`),
+    );
+  }, RESTART_DELAY_MS);
+}
 
-const attachProcessLifecycle = (
+function attachProcessLifecycle(
   processPromise: ResultPromise,
   options: GoSpawnOptions,
   wasStartupResolved: () => boolean,
   onStartupExit: (error: Error) => void,
-): void => {
-  const { logger, onCrash, maxRestarts = MAX_RESTARTS } = options;
+): void {
+  const onExit = (exit: ProcessExit): void => {
+    // Intentional shutdown or an old process exiting after its replacement.
+    if (goProcess !== processPromise) return;
+    options.logger.warn(
+      `Go process exited: code=${exit.code}, signal=${exit.signal}`,
+    );
+    goProcess = null;
+    if (!wasStartupResolved()) {
+      onStartupExit(
+        new Error(
+          `Go process exited prematurely: code=${exit.code}, signal=${exit.signal}`,
+        ),
+      );
+      return;
+    }
+    handleProcessExit(exit, options);
+  };
 
-  processPromise.then(
-    (result) => {
-      logger.warn(
-        `Go process exited: code=${result.exitCode ?? null}, signal=${result.signal ?? null}`,
-      );
-      goProcess = null;
-      const startupResolved = wasStartupResolved();
-      if (!startupResolved) {
-        onStartupExit(
-          new Error(
-            `Go process exited prematurely: code=${result.exitCode ?? null}, signal=${result.signal ?? null}`,
-          ),
-        );
-        return;
-      }
-      handleProcessExit(
-        normalizeExitCode(result.exitCode),
-        normalizeSignal(result.signal),
-        logger,
-        onCrash,
-        maxRestarts,
-        options,
-        startupResolved,
-      );
-    },
-    (error: unknown) => {
-      const exitDetails = getExitDetails(error);
-      logger.warn(
-        `Go process exited: code=${exitDetails.code}, signal=${exitDetails.signal}`,
-      );
-      goProcess = null;
-      const startupResolved = wasStartupResolved();
-      if (!startupResolved) {
-        onStartupExit(
-          new Error(
-            `Go process exited prematurely: code=${exitDetails.code}, signal=${exitDetails.signal}`,
-          ),
-        );
-        return;
-      }
-      handleProcessExit(
-        exitDetails.code,
-        exitDetails.signal,
-        logger,
-        onCrash,
-        maxRestarts,
-        options,
-        startupResolved,
-      );
-    },
+  void ResultAsync.fromPromise(processPromise, getExitDetails).match(
+    (result) =>
+      onExit({
+        code: normalizeExitCode(result.exitCode),
+        signal: normalizeSignal(result.signal),
+      }),
+    (exit) => onExit(exit),
   );
-};
+}
 
 const registerExitHandler = (): void => {
   if (exitHandlerRegistered) {
@@ -469,8 +412,8 @@ export function isGoProcessRunning(): boolean {
 
 export function killGoProcess(): void {
   if (goProcess && !goProcess.killed) {
-    intentionalShutdownCount += 1;
-    goProcess.kill('SIGTERM');
+    const processToStop = goProcess;
     goProcess = null;
+    processToStop.kill('SIGTERM');
   }
 }

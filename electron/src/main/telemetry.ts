@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { Logger } from 'electron-log';
+import { fromPromise, fromThrowable, ResultAsync } from 'neverthrow';
 import type { EventMessage, PostHogOptions } from 'posthog-node';
 import { PostHog } from 'posthog-node';
 
@@ -195,22 +196,39 @@ export class TelemetryService {
     this.platform = options.platform;
     this.logger = options.logger;
     this.installIdPath = join(options.storageDir, 'anonymous-install-id');
-    this.client = this.createClient(options);
+    this.client = fromThrowable(
+      () => this.createClient(options),
+      String,
+    )().match(
+      (client) => client,
+      (error) => {
+        options.logger.warn(`telemetry initialization failed: ${error}`);
+        return null;
+      },
+    );
   }
 
   private readonly appVersion: string;
   private readonly platform: NodeJS.Platform;
   private readonly logger: Logger;
   private readonly client: TelemetryClient | null;
+  private installIdPromise: Promise<string | null> | null = null;
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    const updateConsent = enabled
-      ? this.client?.enable()
-      : this.client?.disable();
-    void updateConsent?.catch((error: unknown) => {
-      this.logger.warn(`telemetry consent update failed: ${String(error)}`);
-    });
+    const updateConsent = fromThrowable(() =>
+      enabled ? this.client?.enable() : this.client?.disable(),
+    )();
+    updateConsent.match(
+      (promise) => {
+        if (promise)
+          void fromPromise(promise, String).mapErr((error) =>
+            this.logger.warn(`telemetry consent update failed: ${error}`),
+          );
+      },
+      (error) =>
+        this.logger.warn(`telemetry consent update failed: ${String(error)}`),
+    );
   }
 
   async track(
@@ -218,17 +236,13 @@ export class TelemetryService {
     properties: Record<string, unknown> = {},
   ): Promise<void> {
     const event = sanitizeTelemetryEvent(name, properties);
-    if (!this.enabled || event === null) return;
+    if (!this.enabled || event === null || this.client === null) return;
 
-    if (this.client === null) return;
-
-    const payload = await this.payloadFor(event).catch((error: unknown) => {
-      this.logger.warn(`telemetry payload skipped: ${String(error)}`);
-      return null;
-    });
+    const payload = await this.payloadFor(event);
     if (payload === null) return;
-
-    this.capture(payload);
+    fromThrowable(() => this.capture(payload), String)().mapErr((error) =>
+      this.logger.warn(`telemetry capture failed: ${error}`),
+    );
   }
 
   trackAppStarted(): Promise<void> {
@@ -239,11 +253,19 @@ export class TelemetryService {
   }
 
   flush(): Promise<void> {
-    return (
-      this.client?.flush().catch((error: unknown) => {
-        this.logger.warn(`telemetry flush failed: ${String(error)}`);
-      }) ?? Promise.resolve()
-    );
+    if (this.client === null) return Promise.resolve();
+    return fromThrowable(() => this.client?.flush(), String)()
+      .asyncAndThen((result) =>
+        result
+          ? fromPromise(result, String)
+          : ResultAsync.fromSafePromise(Promise.resolve()),
+      )
+      .match(
+        () => undefined,
+        (error) => {
+          this.logger.warn(`telemetry flush failed: ${error}`);
+        },
+      );
   }
 
   private createClient(options: {
@@ -290,8 +312,17 @@ export class TelemetryService {
 
   private async payloadFor(
     event: SanitizedTelemetryEvent,
-  ): Promise<TelemetryPayload> {
-    const anonymousInstallId = await this.getOrCreateInstallId();
+  ): Promise<TelemetryPayload | null> {
+    this.installIdPromise ??= this.getOrCreateInstallId().match(
+      (value) => value,
+      (error) => {
+        this.logger.warn(`telemetry install id unavailable: ${error}`);
+        this.installIdPromise = null;
+        return null;
+      },
+    );
+    const anonymousInstallId = await this.installIdPromise;
+    if (anonymousInstallId === null) return null;
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
       anonymousInstallId,
@@ -300,17 +331,28 @@ export class TelemetryService {
     };
   }
 
-  private async getOrCreateInstallId(): Promise<string> {
-    return readFile(this.installIdPath, 'utf-8')
-      .then((value) => value.trim())
-      .then((value) => (value.length > 0 ? value : this.createInstallId()))
-      .catch(() => this.createInstallId());
+  private getOrCreateInstallId(): ResultAsync<string, string> {
+    return fromPromise(readFile(this.installIdPath, 'utf-8'), String)
+      .andThen((content) =>
+        content.trim() === ''
+          ? this.createInstallId()
+          : ResultAsync.fromSafePromise(Promise.resolve(content.trim())),
+      )
+      .orElse(() => this.createInstallId());
   }
 
-  private async createInstallId(): Promise<string> {
+  private createInstallId(): ResultAsync<string, string> {
     const value = randomUUID();
-    await mkdir(join(this.installIdPath, '..'), { recursive: true });
-    await writeFile(this.installIdPath, `${value}\n`, 'utf-8');
-    return value;
+    return fromPromise(
+      mkdir(dirname(this.installIdPath), { recursive: true }),
+      String,
+    )
+      .andThen(() =>
+        fromPromise(
+          writeFile(this.installIdPath, `${value}\n`, 'utf-8'),
+          String,
+        ),
+      )
+      .map(() => value);
   }
 }
