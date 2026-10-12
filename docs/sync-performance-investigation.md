@@ -2,6 +2,8 @@
 
 Date: 2026-06-25
 
+> Note: the in-memory diff path (`GenerateDiffForPRInMemory` and `BenchmarkGenerateDiffForPRInMemoryT3Code`) referenced below was unused in production and has since been removed. Benchmark commands that name it will no longer match it.
+
 ## Baseline reported by user
 
 - Add one watched repo → sync → display PRs in Electron: **45.78 s** on macOS.

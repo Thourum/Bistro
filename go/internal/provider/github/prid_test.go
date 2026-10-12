@@ -7,10 +7,10 @@ import (
 // TestParsePRID_Valid covers the happy path of parsePRID.
 func TestParsePRID_Valid(t *testing.T) {
 	cases := []struct {
-		id             string
-		wantOwner      string
-		wantRepo       string
-		wantNumber     int
+		id         string
+		wantOwner  string
+		wantRepo   string
+		wantNumber int
 	}{
 		{"github:myorg/myrepo:42", "myorg", "myrepo", 42},
 		{"github:a/b:1", "a", "b", 1},

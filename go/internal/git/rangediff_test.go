@@ -74,7 +74,7 @@ func TestRangeDiffer_InjectionGuard_SHA(t *testing.T) {
 	badSHAs := []string{
 		"",
 		"abc",
-		"00000000000000000000000000000000000000GG", // non-hex
+		"00000000000000000000000000000000000000GG",    // non-hex
 		"0000000000000000000000000000000000000000000", // 41 chars
 		"' ; rm -rf /",
 	}

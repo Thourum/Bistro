@@ -261,9 +261,9 @@ func TestRepoLocationScanDevFolderReconcilesHealthAndTriggersSync(t *testing.T) 
 
 func TestRepoLocationAddRepoByURL(t *testing.T) {
 	tests := []struct {
-		name              string
-		payload           func(root string) map[string]any
-		arrange           func(t *testing.T, db *store.DB, root string, cloner *fakeRepoLocationCloner)
+		name             string
+		payload          func(root string) map[string]any
+		arrange          func(t *testing.T, db *store.DB, root string, cloner *fakeRepoLocationCloner)
 		wantOK           bool
 		wantCode         string
 		wantSource       string

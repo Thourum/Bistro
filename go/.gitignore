@@ -1,5 +1,5 @@
 # Binaries
-bistro-sync
+/bistro-sync
 *.exe
 *.dll
 *.dylib

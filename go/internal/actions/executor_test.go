@@ -381,7 +381,7 @@ func TestExecute_ContextCancelledAfterProviderCall(t *testing.T) {
 
 	// Drain all buffered events.
 	var types []string
-	drainLoop:
+drainLoop:
 	for {
 		select {
 		case ev := <-eventCh:
@@ -493,7 +493,7 @@ func TestExecute_GuardsBeforeEverySuccessSideEffect(t *testing.T) {
 	}
 
 	var gotTypes []string
-	drain:
+drain:
 	for {
 		select {
 		case ev := <-eventCh:

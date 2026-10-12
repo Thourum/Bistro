@@ -55,7 +55,7 @@ func TestPositionToLine_RootCommit(t *testing.T) {
 	content := "line1\nline2\nline3\nline4\nline5\n"
 	// commit B slightly different (must avoid empty-commit error)
 	_, sha_A, _ := buildTwoCommitRepo(t, dir, content, content+"extra\n")
-	r := NewAnchorResolver(newSilentLogger())
+	r := NewAnchorResolver()
 
 	// Root commit: all lines are additions; position == line number.
 	for wantLine := 1; wantLine <= 5; wantLine++ {
@@ -77,7 +77,7 @@ func TestPositionToLine_ChangedLine(t *testing.T) {
 		"line1\nline2\nline3\nline4\nline5\n",
 		"line1\nline2\nline3\nLINE4_CHANGED\nline5\n",
 	)
-	r := NewAnchorResolver(newSilentLogger())
+	r := NewAnchorResolver()
 
 	// The diff baseSHA..headSHA for 5-line file changing line4:
 	// 3 context lines (1,2,3), 1 delete (line4), 1 add (LINE4_CHANGED), 1 context (line5)
@@ -103,7 +103,7 @@ func TestPositionToLine_ChangedLine(t *testing.T) {
 func TestPositionToLine_OutOfRange(t *testing.T) {
 	dir := t.TempDir()
 	_, sha_A, _ := buildTwoCommitRepo(t, dir, "a\nb\nc\n", "a\nb\nc\nd\n")
-	r := NewAnchorResolver(newSilentLogger())
+	r := NewAnchorResolver()
 	_, err := r.PositionToLine(dir, plumbing.ZeroHash.String(), sha_A, "foo.go", "RIGHT", 9999)
 	if err == nil {
 		t.Error("expected error for out-of-range position")
@@ -116,7 +116,7 @@ func TestFileLineHash_Basic(t *testing.T) {
 	dir := t.TempDir()
 	content := "alpha\nbeta\ngamma\ndelta\nepsilon\n"
 	_, sha_A, _ := buildTwoCommitRepo(t, dir, content, content+"zeta\n")
-	r := NewAnchorResolver(newSilentLogger())
+	r := NewAnchorResolver()
 
 	lh, ch, err := r.FileLineHash(dir, sha_A, "foo.go", 3) // "gamma"
 	if err != nil {
@@ -143,7 +143,7 @@ func TestFileLineHash_ContextWindow(t *testing.T) {
 	content2b := "x\ny\ntarget\nw\nz\nv\n"
 	_, sha1, _ := buildTwoCommitRepo(t, dir1, content1, content1b)
 	_, sha2, _ := buildTwoCommitRepo(t, dir2, content2, content2b)
-	r := NewAnchorResolver(newSilentLogger())
+	r := NewAnchorResolver()
 
 	lh1, ch1, _ := r.FileLineHash(dir1, sha1, "foo.go", 3)
 	lh2, ch2, _ := r.FileLineHash(dir2, sha2, "foo.go", 3)
@@ -218,7 +218,7 @@ func TestAnchorResolver_Resolve(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			_, commitSHA, headSHA := buildTwoCommitRepo(t, dir, tc.contentA, tc.contentB)
-			r := NewAnchorResolver(newSilentLogger())
+			r := NewAnchorResolver()
 
 			// Root commit: position == line number (all additions, no parent).
 			pos := tc.commentLine
@@ -270,7 +270,7 @@ func TestAnchorResolver_FileDeleted(t *testing.T) {
 
 	// Commit A: foo.go with content.
 	os.WriteFile(dir+"/foo.go", []byte("a\nb\ntarget\nd\ne\n"), 0644) //nolint:errcheck
-	wt.Add("foo.go")                                                   //nolint:errcheck
+	wt.Add("foo.go")                                                  //nolint:errcheck
 	hashA, _ := wt.Commit("A", &gogit.CommitOptions{Author: sig})
 
 	// Commit B: remove foo.go, add bar.go so the commit is non-empty.
@@ -280,7 +280,7 @@ func TestAnchorResolver_FileDeleted(t *testing.T) {
 	wt.Remove("foo.go")                                  //nolint:errcheck
 	hashB, _ := wt.Commit("B", &gogit.CommitOptions{Author: sig, All: true})
 
-	r := NewAnchorResolver(newSilentLogger())
+	r := NewAnchorResolver()
 	res, _ := r.Resolve(ResolveRequest{
 		LocalPath:   dir,
 		CommitSHA:   hashA.String(),
@@ -310,7 +310,7 @@ func TestAnchorResolver_SamePatchset_FastPath(t *testing.T) {
 		"a\nb\ntarget\nd\ne\n",
 		"x\ny\nz\nd\ne\n", // contentB entirely different; fast path never reads it
 	)
-	r := NewAnchorResolver(newSilentLogger())
+	r := NewAnchorResolver()
 	res, err := r.Resolve(ResolveRequest{
 		LocalPath:   dir,
 		CommitSHA:   commitSHA,
@@ -334,7 +334,7 @@ func TestAnchorResolver_SamePatchset_FastPath(t *testing.T) {
 }
 
 func TestAnchorResolver_CloneMissing(t *testing.T) {
-	r := NewAnchorResolver(newSilentLogger())
+	r := NewAnchorResolver()
 	res, err := r.Resolve(ResolveRequest{
 		LocalPath:   "/tmp/bistro-nonexistent-clone-99999",
 		CommitSHA:   fmt.Sprintf("%040d", 1),
@@ -366,7 +366,7 @@ func TestAnchorResolver_IdenticalContentDifferentContext(t *testing.T) {
 	contentB := "a\nb\nc\ntarget\nd\ne\nf\ntarget\ng\nh\ni\n"
 	dir := t.TempDir()
 	_, commitSHA, headSHA := buildTwoCommitRepo(t, dir, contentA, contentB)
-	r := NewAnchorResolver(newSilentLogger())
+	r := NewAnchorResolver()
 
 	res, err := r.Resolve(ResolveRequest{
 		LocalPath:   dir,
@@ -413,7 +413,7 @@ func TestPositionToLine_HunkFarFromStart(t *testing.T) {
 	}
 	dir := t.TempDir()
 	_, baseSHA, headSHA := buildTwoCommitRepo(t, dir, orig.String(), changed.String())
-	r := NewAnchorResolver(newSilentLogger())
+	r := NewAnchorResolver()
 
 	// The hunk rendered by go-git with 3 context lines:
 	//   @@ -12,7 +12,7 @@
@@ -448,7 +448,9 @@ func TestPositionToLine_HunkFarFromStart(t *testing.T) {
 }
 
 // buildThreeCommitRepo creates a repo with three commits on "foo.go":
-//   A → B → C
+//
+//	A → B → C
+//
 // Returns (sha_A, sha_B, sha_C).
 func buildThreeCommitRepo(t *testing.T, dir, contentA, contentB, contentC string) (string, string, string) {
 	t.Helper()
@@ -513,7 +515,7 @@ func TestPositionToLine_MultiCommitPR_CorrectGeometry(t *testing.T) {
 
 	dir := t.TempDir()
 	shaA, _, shaC := buildThreeCommitRepo(t, dir, contentA, contentB, contentC)
-	r := NewAnchorResolver(newSilentLogger())
+	r := NewAnchorResolver()
 
 	// With correct geometry (DiffBaseSHA=A): pos 4 RIGHT = new line 4 in C ("INSERTED").
 	t.Run("correct_base_A_pos4_right", func(t *testing.T) {
@@ -556,7 +558,7 @@ func TestResolve_WithDiffBaseSHA_CorrectGeometry(t *testing.T) {
 
 	dir := t.TempDir()
 	shaA, _, shaC := buildThreeCommitRepo(t, dir, contentA, contentB, contentC)
-	r := NewAnchorResolver(newSilentLogger())
+	r := NewAnchorResolver()
 
 	// CommitSHA = HeadSHA = C: fast path returns originalLine directly.
 	// This lets us verify the position→line mapping without needing the hash scan.
@@ -595,7 +597,7 @@ func TestParseHunkHeader(t *testing.T) {
 		{"@@ -1,5 +1,5 @@", 1, 1, false},
 		{"@@ -0,0 +1,3 @@", 0, 1, false}, // new file
 		{"@@ -12,7 +12,7 @@ func foo() {", 12, 12, false},
-		{"@@ -3 +3 @@", 3, 3, false},   // no count
+		{"@@ -3 +3 @@", 3, 3, false}, // no count
 		{"not a hunk header", 0, 0, true},
 	}
 	for _, tc := range cases {

@@ -506,7 +506,7 @@ func (a *App) prepareStores() runStores {
 		rangeDiffer:  git.NewRangeDiffer(a.log, a.gitClient),
 	}
 	a.log.Info("range-diff probe", "available", stores.rangeDiffer.Available(), "reason", stores.rangeDiffer.FallbackReason())
-	a.anchorResolver = git.NewAnchorResolver(a.log)
+	a.anchorResolver = git.NewAnchorResolver()
 	a.currentUserStore = stores.currentUser
 	a.configureRepoLocationStore(stores.repoLocation)
 	a.resolveRepoPath = func(repoID string) (string, bool) {

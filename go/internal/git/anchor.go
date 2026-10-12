@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	gogit "github.com/go-git/go-git/v5"
@@ -65,9 +64,9 @@ type ResolveRequest struct {
 // and never clones; gracefully degrades when the clone is absent.
 type AnchorResolver struct{}
 
-// NewAnchorResolver creates an AnchorResolver. Its logger argument remains for
-// existing callers; errors are returned rather than logged inside the resolver.
-func NewAnchorResolver(_ *slog.Logger) *AnchorResolver {
+// NewAnchorResolver creates an AnchorResolver. Errors are returned to the
+// caller rather than logged inside the resolver.
+func NewAnchorResolver() *AnchorResolver {
 	return &AnchorResolver{}
 }
 

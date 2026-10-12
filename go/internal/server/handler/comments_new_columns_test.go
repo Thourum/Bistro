@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // newHandlerTestDB opens an :memory: SQLite DB with all migrations applied.
@@ -740,11 +740,11 @@ func TestRequestComments_NullAnchorPatchsetNumber_AlwaysStale(t *testing.T) {
 
 // TestRequestComments_OriginalPositionAnchor_BeforeRetarget_Stale is the primary
 // regression test for migration 019:
-// - Comment from P1 (patchset_number=1).
-// - Anchor was resolved before retarget with anchor_current_patchset_number=1
-//   (anchor_head_sha=sha-H, anchor_patchset_number=1, anchor_current_ps=1).
-// - PR retargeted: same head sha-H, new base → P2 is now current.
-// - Anchor must be STALE because anchor_current_patchset_number=1 != current=2.
+//   - Comment from P1 (patchset_number=1).
+//   - Anchor was resolved before retarget with anchor_current_patchset_number=1
+//     (anchor_head_sha=sha-H, anchor_patchset_number=1, anchor_current_ps=1).
+//   - PR retargeted: same head sha-H, new base → P2 is now current.
+//   - Anchor must be STALE because anchor_current_patchset_number=1 != current=2.
 func TestRequestComments_OriginalPositionAnchor_BeforeRetarget_Stale(t *testing.T) {
 	db := newHandlerTestDB(t)
 

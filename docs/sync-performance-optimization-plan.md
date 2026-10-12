@@ -2,6 +2,8 @@
 
 Date: 2026-06-25
 
+> Note: the in-memory diff path (`GenerateDiffForPRInMemory` and `BenchmarkGenerateDiffForPRInMemoryT3Code`) referenced below was unused in production and has since been removed. Benchmark commands that name it will no longer match it.
+
 ## Goal
 
 Reduce first-time PR sync latency caused by cold git clone/fetch on macOS APFS while preserving Bistro's local-first, provider-portable sync model.
