@@ -33,6 +33,17 @@ export function isSequenceBinding(
   return Array.isArray(binding.keys);
 }
 
+/** Submits a focused comment textarea; handled locally, not via useAppHotkeys. */
+export const TEXTAREA_SUBMIT_HOTKEY = 'Mod+Enter';
+
+export function isTextareaSubmit(event: {
+  metaKey: boolean;
+  ctrlKey: boolean;
+  key: string;
+}): boolean {
+  return (event.metaKey || event.ctrlKey) && event.key === 'Enter';
+}
+
 const ALL_ROUTES: readonly RouteBase[] = [
   'list',
   'detail',
@@ -112,6 +123,15 @@ const LOGIN_BINDINGS: readonly KeyBinding[] = PROVIDERS.map((provider) => ({
   description: `Login with ${provider.label}`,
   activation: { routes: ['login'] },
 }));
+
+const ONBOARDING_BINDINGS: readonly KeyBinding[] = [
+  {
+    actionId: 'onboarding.finish',
+    keys: 'Space',
+    description: 'Finish onboarding',
+    activation: { routes: ['onboarding'] },
+  },
+];
 
 const JUMP_BINDINGS: readonly KeyBinding[] = Array.from(
   { length: 9 },
@@ -551,6 +571,7 @@ const THREAD_BINDINGS: readonly KeyBinding[] = [
 export const DEFAULT_KEYBINDINGS: readonly KeyBinding[] = [
   ...GLOBAL_BINDINGS,
   ...LOGIN_BINDINGS,
+  ...ONBOARDING_BINDINGS,
   ...LIST_BINDINGS,
   ...DETAIL_BINDINGS,
   ...SCROLL_BINDINGS,

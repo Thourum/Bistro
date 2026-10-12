@@ -7,6 +7,10 @@ import type {
 } from '../../types';
 import { threadLifecycle } from '../../types';
 import { humanizeSource } from '../../utils/classification';
+import {
+  isTextareaSubmit,
+  TEXTAREA_SUBMIT_HOTKEY,
+} from '../../utils/keybindings';
 import { Markdown } from '../Markdown';
 import { type StatusKind, StatusSquare } from '../StatusSquare';
 import { Badge } from '../ui/badge';
@@ -207,7 +211,7 @@ function ReplyComposer({
         aria-label="Reply to thread"
         onKeyDown={(event) => {
           event.stopPropagation();
-          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+          if (isTextareaSubmit(event)) {
             event.preventDefault();
             submit();
           }
@@ -228,7 +232,7 @@ function ReplyComposer({
           disabled={trimmed.length === 0 || onSubmit === undefined}
         >
           Reply
-          <ShortcutBadge hotkey="Mod+Enter" />
+          <ShortcutBadge hotkey={TEXTAREA_SUBMIT_HOTKEY} />
         </Button>
       </div>
     </div>

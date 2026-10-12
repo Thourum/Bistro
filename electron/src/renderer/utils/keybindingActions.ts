@@ -261,6 +261,11 @@ function scrollDiffToBottom(): void {
 const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'global.help': openHelp,
   'global.escape': handleEscape,
+  'onboarding.finish': (context) =>
+    context.store.setState((state) => ({
+      ...state,
+      confirmingAction: 'onboarding_finish',
+    })),
   'global.command': (context) => context.overlays.openCommand(),
   'global.settings': () => {
     void router.navigate({ to: '/settings' });

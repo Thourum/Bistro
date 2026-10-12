@@ -12,9 +12,12 @@ import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
+import { createLogger } from '../utils/logger';
 import { openUrlInBrowser } from '../utils/openUrl';
 import { prBrowserUrl } from '../utils/triage';
 import { addToast } from './ToastContainer';
+
+const log = createLogger('CommandPalette');
 
 type Icon = string;
 
@@ -303,7 +306,10 @@ export function CommandPalette(): React.ReactElement | null {
         return;
       case 'open-browser': {
         const url = focusedPR === undefined ? null : prBrowserUrl(focusedPR);
-        if (url !== null) openUrlInBrowser(url);
+        if (url !== null)
+          void openUrlInBrowser(url).mapErr((error) =>
+            log.error({ error }, 'failed to open PR in browser'),
+          );
         closeOverlay();
         setQuery('');
         return;

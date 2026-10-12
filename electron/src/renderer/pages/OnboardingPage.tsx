@@ -1,4 +1,3 @@
-import { useHotkey } from '@tanstack/react-hotkeys';
 import { err, ok, type Result, ResultAsync } from 'neverthrow';
 import React from 'react';
 import { useStore } from '../hooks/useStore';
@@ -191,8 +190,6 @@ export function OnboardingPage(): React.ReactElement {
       finish();
     }
   }, [confirmingAction, finish]);
-
-  useHotkey('Space', finish);
 
   return (
     <div className="flex flex-col flex-1 min-h-0 h-full w-full bg-background text-on-surface">

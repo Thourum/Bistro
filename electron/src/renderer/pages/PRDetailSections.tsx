@@ -15,6 +15,7 @@ import {
   sortBySeverity,
 } from '../utils/classification';
 import { formatWhy } from '../utils/expertise';
+import { isTextareaSubmit, TEXTAREA_SUBMIT_HOTKEY } from '../utils/keybindings';
 
 function formatTimestamp(iso: string): string {
   return iso
@@ -78,7 +79,7 @@ export function PRCommentComposer({
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+          if (isTextareaSubmit(e)) {
             e.preventDefault();
             submit();
           }
@@ -102,7 +103,7 @@ export function PRCommentComposer({
           disabled={trimmed.length === 0}
         >
           {submitLabel}
-          <ShortcutBadge hotkey="Mod+Enter" />
+          <ShortcutBadge hotkey={TEXTAREA_SUBMIT_HOTKEY} />
         </Button>
       </div>
     </section>
