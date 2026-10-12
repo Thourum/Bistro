@@ -64,7 +64,8 @@ export function LoginPage() {
     if (parsed === null) return;
     if (authLoading) return;
 
-    handleProviderClick(parsed.id as ProviderId);
+    const provider = PROVIDERS.find((entry) => entry.id === parsed.id);
+    if (provider !== undefined) handleProviderClick(provider.id);
   }, [confirmingAction, authLoading, handleProviderClick]);
 
   return (

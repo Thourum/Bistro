@@ -101,11 +101,11 @@ function waitForAuthChecked(): Promise<void> {
  * Validates a redirect param: must be a string, must start with '/',
  * must not redirect back to /login or /onboarding (loop prevention).
  */
-function safeRedirect(v: unknown): string | undefined {
-  if (typeof v !== 'string') return undefined;
-  if (!v.startsWith('/')) return undefined;
-  if (v.startsWith('/login') || v.startsWith('/onboarding')) return undefined;
-  return v;
+function safeRedirect(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.startsWith('/')) return undefined;
+  if (value.startsWith('//') || value.includes('\\')) return undefined;
+  if (/^\/(login|onboarding)(\/|\?|#|$)/.test(value)) return undefined;
+  return value;
 }
 
 /**

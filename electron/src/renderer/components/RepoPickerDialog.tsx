@@ -32,7 +32,7 @@ export function RepoPickerDialog(): React.ReactElement {
             if (e.target === e.currentTarget) closeOverlay();
           }}
         >
-          <div className="w-full max-w-2xl mx-4 bg-surface-container-lowest border border-primary shadow-[0_10px_30px_rgba(25,28,29,0.04)] overflow-hidden p-4">
+          <div className="w-full max-w-2xl mx-4 bg-surface-container-lowest border border-primary shadow-ambient overflow-hidden p-4">
             <RepoPicker onClose={closeOverlay} />
           </div>
         </Dialog.Content>

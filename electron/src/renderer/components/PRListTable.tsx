@@ -379,7 +379,8 @@ export function PRListTable({
   if (error !== null) {
     return (
       <div className="flex items-center justify-center py-16 text-error font-mono text-sm">
-        Failed to load PRs: {(error as Error).message}
+        Failed to load PRs:{' '}
+        {error instanceof Error ? error.message : String(error)}
       </div>
     );
   }

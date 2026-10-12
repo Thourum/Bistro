@@ -34,9 +34,9 @@ export function PatchsetTimeline({
   const lastIdx = Math.max(patchsets.length - 1, 0);
   const [fromIdx, setFromIdx] = React.useState(0);
   const [toIdx, setToIdx] = React.useState(lastIdx);
+  const seededPairRef = React.useRef<string | null>(null);
 
-  // Re-seed the default pair whenever the patchset list changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: onSelectPair is a render-stable callback from the parent
+  // A refetch may replace the array without adding a patchset; keep the user's pair.
   React.useEffect(() => {
     if (patchsets.length < 2) return;
     const nextFrom = patchsets.length - 2;
@@ -44,10 +44,13 @@ export function PatchsetTimeline({
     const from = patchsets[nextFrom];
     const to = patchsets[nextTo];
     if (from === undefined || to === undefined) return;
+    const pairKey = `${from.number}:${from.head_sha}/${to.number}:${to.head_sha}`;
+    if (seededPairRef.current === pairKey) return;
+    seededPairRef.current = pairKey;
     setFromIdx(nextFrom);
     setToIdx(nextTo);
     onSelectPair(from, to);
-  }, [patchsets]);
+  }, [patchsets, onSelectPair]);
 
   const emit = React.useCallback(
     (f: number, t: number) => {

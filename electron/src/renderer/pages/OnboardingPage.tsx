@@ -136,7 +136,11 @@ export function OnboardingPage(): React.ReactElement {
         ...settingsStore.state.appearance,
         onboardingComplete: true,
       },
-    });
+    }).match(
+      () => undefined,
+      (message) =>
+        setDevFolderError(`Onboarding could not be completed: ${message}`),
+    );
   }, []);
 
   const chooseDevFolder = React.useCallback(() => {
