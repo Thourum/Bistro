@@ -6,8 +6,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { OverlayContextValue } from '../../src/renderer/overlays/OverlayContext';
 import type { UIState } from '../../src/renderer/store/ui';
 import { initialUIState } from '../../src/renderer/store/ui';
+import {
+  getBindingAction,
+  type KeyActionContext,
+} from '../../src/renderer/utils/keybindingActions';
 import type {
-  KeyActionContext,
   KeyBinding,
   RouteBase,
 } from '../../src/renderer/utils/keybindings';
@@ -73,11 +76,19 @@ function makeCtx(
 }
 
 function byId(actionId: string): KeyBinding {
-  const binding = DEFAULT_KEYBINDINGS.find((b) => b.actionId === actionId);
-  if (binding === undefined) {
+  const binding = DEFAULT_KEYBINDINGS.find(
+    (candidate) => candidate.actionId === actionId,
+  );
+  if (binding === undefined)
     throw new Error(`no binding with actionId ${actionId}`);
-  }
   return binding;
+}
+
+function invokeAction(actionId: string, context: KeyActionContext): void {
+  const action = getBindingAction(actionId);
+  if (action === undefined)
+    throw new Error(`no action for binding ${actionId}`);
+  action(context);
 }
 
 // ---------------------------------------------------------------------------
@@ -89,15 +100,12 @@ describe('DEFAULT_KEYBINDINGS', () => {
     expect(DEFAULT_KEYBINDINGS.length).toBeGreaterThanOrEqual(35);
   });
 
-  it('every binding has keys, description, activation, and action', () => {
-    for (const b of DEFAULT_KEYBINDINGS) {
-      expect(typeof b.actionId).toBe('string');
-      expect(b.actionId.length).toBeGreaterThan(0);
-      expect(b.keys.length).toBeGreaterThanOrEqual(1);
-      expect(typeof b.description).toBe('string');
-      expect(b.description.length).toBeGreaterThan(0);
-      expect(typeof b.activation).toBe('object');
-      expect(typeof b.action).toBe('function');
+  it('every configured binding resolves to a runtime action', () => {
+    for (const binding of DEFAULT_KEYBINDINGS) {
+      expect(binding.keys.length).toBeGreaterThanOrEqual(1);
+      expect(getBindingAction(binding.actionId), binding.actionId).toBeTypeOf(
+        'function',
+      );
     }
   });
 
@@ -226,21 +234,21 @@ describe('DEFAULT_KEYBINDINGS', () => {
 
   it('s toggles the since-last-review intent flag', () => {
     const store = makeStore({ confirmingAction: null });
-    byId('diff.sinceLastReview').action(makeCtx(store, 'diff'));
+    invokeAction('diff.sinceLastReview', makeCtx(store, 'diff'));
     expect(store.state.confirmingAction).toBe('since-last-review');
-    byId('diff.sinceLastReview').action(makeCtx(store, 'diff'));
+    invokeAction('diff.sinceLastReview', makeCtx(store, 'diff'));
     expect(store.state.confirmingAction).toBeNull();
   });
 
   it('v sets the mark-viewed intent flag', () => {
     const store = makeStore({ confirmingAction: null });
-    byId('diff.markViewed').action(makeCtx(store, 'diff'));
+    invokeAction('diff.markViewed', makeCtx(store, 'diff'));
     expect(store.state.confirmingAction).toBe('mark-viewed');
   });
 
   it('Shift+S sets a diff-style toggle intent without persisting directly', () => {
     const store = makeStore({ confirmingAction: null });
-    byId('diff.toggleStyle').action(makeCtx(store, 'diff'));
+    invokeAction('diff.toggleStyle', makeCtx(store, 'diff'));
     expect(store.state.confirmingAction).toBe('toggle-diff-style');
   });
 
@@ -250,7 +258,7 @@ describe('DEFAULT_KEYBINDINGS', () => {
     expect(b.activation.routes).toContain('detail');
     const openHelpMock = vi.fn();
     const ctx = makeCtx(makeStore(), 'detail', { openHelp: openHelpMock });
-    b.action(ctx);
+    invokeAction(b.actionId, ctx);
     expect(openHelpMock).toHaveBeenCalledWith('detail');
   });
 
@@ -262,7 +270,8 @@ describe('DEFAULT_KEYBINDINGS', () => {
   it('escape with an overlay open closes it and does not navigate', () => {
     mockNavigate.mockClear();
     const closeOverlay = vi.fn();
-    byId('global.escape').action(
+    invokeAction(
+      'global.escape',
       makeCtx(makeStore(), 'diff', { activeOverlay: 'help', closeOverlay }),
     );
     expect(closeOverlay).toHaveBeenCalledTimes(1);
@@ -271,7 +280,7 @@ describe('DEFAULT_KEYBINDINGS', () => {
 
   it('escape on the diff route with no overlay navigates back to the PR', () => {
     mockNavigate.mockClear();
-    byId('global.escape').action(makeCtx(makeStore(), 'diff'));
+    invokeAction('global.escape', makeCtx(makeStore(), 'diff'));
     expect(mockNavigate).toHaveBeenCalledWith(
       expect.objectContaining({ to: '/prs/$prId' }),
     );
@@ -286,9 +295,9 @@ describe('DEFAULT_KEYBINDINGS', () => {
       selectedFileIndex: 1,
       diffCollapseOverrides: [],
     });
-    byId('diff.toggleCollapse').action(makeCtx(store, 'diff'));
+    invokeAction('diff.toggleCollapse', makeCtx(store, 'diff'));
     expect(store.state.diffCollapseOverrides).toEqual(['second.ts']);
-    byId('diff.toggleCollapse').action(makeCtx(store, 'diff'));
+    invokeAction('diff.toggleCollapse', makeCtx(store, 'diff'));
     expect(store.state.diffCollapseOverrides).toEqual([]);
   });
 
@@ -298,7 +307,7 @@ describe('DEFAULT_KEYBINDINGS', () => {
       selectedFileIndex: 0,
       diffCollapseOverrides: [],
     });
-    byId('diff.toggleCollapse').action(makeCtx(store, 'diff'));
+    invokeAction('diff.toggleCollapse', makeCtx(store, 'diff'));
     expect(store.state.diffCollapseOverrides).toEqual([]);
   });
 
@@ -314,7 +323,7 @@ describe('DEFAULT_KEYBINDINGS', () => {
 describe('binding actions', () => {
   it('j moves to the next PR', () => {
     const store = makeStore({ selectedPRIndex: 2 });
-    byId('list.down').action(makeCtx(store));
+    invokeAction('list.down', makeCtx(store));
     expect(store.state.selectedPRIndex).toBe(3);
   });
 
@@ -323,7 +332,7 @@ describe('binding actions', () => {
       selectedPRIndex: 2,
       visiblePRIds: ['a', 'b', 'c'],
     });
-    byId('list.down').action(makeCtx(store));
+    invokeAction('list.down', makeCtx(store));
     expect(store.state.selectedPRIndex).toBe(2);
   });
 
@@ -332,7 +341,7 @@ describe('binding actions', () => {
       selectedPRIndex: 1,
       visiblePRIds: ['a', 'b', 'c'],
     });
-    byId('list.pageDown').action(makeCtx(store));
+    invokeAction('list.pageDown', makeCtx(store));
     expect(store.state.selectedPRIndex).toBe(2);
   });
 
@@ -342,7 +351,7 @@ describe('binding actions', () => {
       visiblePRIds: ['pr-1', 'pr-2', 'pr-3'],
       visiblePRRepoKeys: ['acme/widgets', 'acme/widgets', 'acme/api'],
     });
-    byId('list.toggleGroup').action(makeCtx(store));
+    invokeAction('list.toggleGroup', makeCtx(store));
     expect(store.state.collapsedRepoKeys).toEqual(['acme/widgets']);
     // Cursor moves to the group's first row (the header once collapsed).
     expect(store.state.selectedPRIndex).toBe(0);
@@ -355,7 +364,7 @@ describe('binding actions', () => {
       visiblePRIds: ['', 'pr-3'],
       visiblePRRepoKeys: ['acme/widgets', 'acme/api'],
     });
-    byId('list.toggleGroup').action(makeCtx(store));
+    invokeAction('list.toggleGroup', makeCtx(store));
     expect(store.state.collapsedRepoKeys).toEqual([]);
     expect(store.state.selectedPRIndex).toBe(0);
   });
@@ -368,31 +377,31 @@ describe('binding actions', () => {
       visiblePRIds: ['', 'pr-3'],
       visiblePRRepoKeys: ['acme/widgets', 'acme/api'],
     });
-    byId('list.open').action(makeCtx(store));
+    invokeAction('list.open', makeCtx(store));
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(store.state.collapsedRepoKeys).toEqual([]);
   });
 
   it('k moves to the previous PR and clamps at 0', () => {
     const store = makeStore({ selectedPRIndex: 0 });
-    byId('list.up').action(makeCtx(store));
+    invokeAction('list.up', makeCtx(store));
     expect(store.state.selectedPRIndex).toBe(0);
   });
 
   it('gg jumps to the top', () => {
     const store = makeStore({ selectedPRIndex: 7 });
-    byId('list.top').action(makeCtx(store));
+    invokeAction('list.top', makeCtx(store));
     expect(store.state.selectedPRIndex).toBe(0);
   });
 
   it('Shift+G jumps to the last visible PR (not MAX_SAFE_INTEGER)', () => {
     // With 3 visible PRs, cursor should jump to index 2.
     const store = makeStore({ visiblePRIds: ['a', 'b', 'c'] });
-    byId('list.bottom').action(makeCtx(store));
+    invokeAction('list.bottom', makeCtx(store));
     expect(store.state.selectedPRIndex).toBe(2);
     // With empty list, clamps to 0.
     const emptyStore = makeStore({ visiblePRIds: [] });
-    byId('list.bottom').action(makeCtx(emptyStore));
+    invokeAction('list.bottom', makeCtx(emptyStore));
     expect(emptyStore.state.selectedPRIndex).toBe(0);
   });
 
@@ -400,14 +409,14 @@ describe('binding actions', () => {
     mockNavigate.mockClear();
     // With a visible PR at index 0, Enter should call router.navigate.
     const store = makeStore({ visiblePRIds: ['pr-abc'], selectedPRIndex: 0 });
-    byId('list.open').action(makeCtx(store));
+    invokeAction('list.open', makeCtx(store));
     expect(mockNavigate).toHaveBeenCalledWith(
       expect.objectContaining({ to: '/prs/$prId', params: { prId: 'pr-abc' } }),
     );
     // When list is empty, Enter is a no-op.
     mockNavigate.mockClear();
     const emptyStore = makeStore({ visiblePRIds: [], selectedPRIndex: 0 });
-    byId('list.open').action(makeCtx(emptyStore));
+    invokeAction('list.open', makeCtx(emptyStore));
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
@@ -426,7 +435,7 @@ describe('binding actions', () => {
       ],
     });
 
-    byId('list.openBrowser').action(makeCtx(store));
+    invokeAction('list.openBrowser', makeCtx(store));
 
     expect(openExternal).toHaveBeenCalledWith(
       'https://github.com/acme/api/pull/2',
@@ -436,33 +445,33 @@ describe('binding actions', () => {
 
   it('/ opens search overlay', () => {
     const openSearch = vi.fn();
-    byId('list.search').action(makeCtx({}, 'list', { openSearch }));
+    invokeAction('list.search', makeCtx({}, 'list', { openSearch }));
     expect(openSearch).toHaveBeenCalled();
   });
 
   it('f toggles the filter overlay', () => {
     const toggleFilter = vi.fn();
-    byId('list.filter').action(makeCtx({}, 'list', { toggleFilter }));
+    invokeAction('list.filter', makeCtx({}, 'list', { toggleFilter }));
     expect(toggleFilter).toHaveBeenCalled();
   });
 
   it('digit bindings jump to the Nth PR', () => {
     const store = makeStore({ selectedPRIndex: 0 });
-    byId('list.jumpTo5').action(makeCtx(store));
+    invokeAction('list.jumpTo5', makeCtx(store));
     expect(store.state.selectedPRIndex).toBe(4);
   });
 
   it('aa requires a double tap to confirm approve', () => {
     const store = makeStore({});
-    byId('detail.approve').action(makeCtx(store, 'detail'));
+    invokeAction('detail.approve', makeCtx(store, 'detail'));
     expect(store.state.confirmingAction).toBe('approve');
-    byId('detail.approve').action(makeCtx(store, 'detail'));
+    invokeAction('detail.approve', makeCtx(store, 'detail'));
     expect(store.state.confirmingAction).toBe('approve_confirmed');
   });
 
   it('Shift+R opens the request-changes composer on detail', () => {
     const store = makeStore({});
-    byId('detail.requestChanges').action(makeCtx(store, 'detail'));
+    invokeAction('detail.requestChanges', makeCtx(store, 'detail'));
     expect(store.state.confirmingAction).toBe('request_changes');
   });
 
@@ -471,7 +480,7 @@ describe('binding actions', () => {
     const { router } = await import('../../src/renderer/router');
     (router.state.location as { pathname: string }).pathname =
       '/prs/pr-test-id';
-    byId('detail.viewDiff').action(makeCtx(store, 'detail'));
+    invokeAction('detail.viewDiff', makeCtx(store, 'detail'));
     // Router navigates; mode is no longer written.
     expect(router.navigate).toHaveBeenCalledWith(
       expect.objectContaining({ to: '/prs/$prId/diff' }),
@@ -487,7 +496,7 @@ describe('binding actions', () => {
       });
       // activeOverlay must match ctx.activeOverlay too
       Object.assign(ctx, { activeOverlay: 'command' });
-      byId('global.escape').action(ctx);
+      invokeAction('global.escape', ctx);
       expect(closeOverlay).toHaveBeenCalled();
     });
 
@@ -495,7 +504,7 @@ describe('binding actions', () => {
       const closeSearch = vi.fn();
       const ctx = makeCtx({}, 'list', { closeSearch });
       Object.assign(ctx, { activeOverlay: 'search' });
-      byId('global.escape').action(ctx);
+      invokeAction('global.escape', ctx);
       expect(closeSearch).toHaveBeenCalledWith({ clearQuery: true });
     });
 
@@ -504,7 +513,7 @@ describe('binding actions', () => {
       (router.state.location as { pathname: string }).pathname =
         '/prs/pr-test-id';
       const store = makeStore({});
-      byId('global.escape').action(makeCtx(store, 'detail'));
+      invokeAction('global.escape', makeCtx(store, 'detail'));
       expect(router.navigate).toHaveBeenCalledWith(
         expect.objectContaining({ to: '/prs' }),
       );
@@ -515,7 +524,7 @@ describe('binding actions', () => {
       (router.state.location as { pathname: string }).pathname =
         '/prs/pr-test-id/diff';
       const store = makeStore({});
-      byId('global.escape').action(makeCtx(store, 'diff'));
+      invokeAction('global.escape', makeCtx(store, 'diff'));
       expect(router.navigate).toHaveBeenCalledWith(
         expect.objectContaining({ to: '/prs/$prId' }),
       );
@@ -529,7 +538,7 @@ describe('binding actions', () => {
         activeInlineCommentThreadId: 'T1',
         replyingInlineCommentThreadId: 'T1',
       });
-      byId('global.escape').action(makeCtx(store, 'diff'));
+      invokeAction('global.escape', makeCtx(store, 'diff'));
       expect(store.state.replyingInlineCommentThreadId).toBeNull();
       expect(router.navigate).not.toHaveBeenCalled();
     });
@@ -538,7 +547,7 @@ describe('binding actions', () => {
       const { router } = await import('../../src/renderer/router');
       (router.state.location as { pathname: string }).pathname = '/settings';
       const store = makeStore({});
-      byId('global.escape').action(makeCtx(store, 'settings'));
+      invokeAction('global.escape', makeCtx(store, 'settings'));
       expect(router.navigate).toHaveBeenCalledWith(
         expect.objectContaining({ to: '/prs' }),
       );
@@ -548,7 +557,7 @@ describe('binding actions', () => {
       const store = makeStore({
         confirmingAction: 'approve',
       });
-      byId('global.escape').action(makeCtx(store, 'list'));
+      invokeAction('global.escape', makeCtx(store, 'list'));
       expect(store.state.confirmingAction).toBeNull();
     });
   });
@@ -562,7 +571,7 @@ describe('binding actions', () => {
       document.body.appendChild(viewport);
       const store = makeStore({ inlineCommentThreadIds: ['T1', 'T2'] });
 
-      byId('detail.scrollDown').action(makeCtx(store, 'diff'));
+      invokeAction('detail.scrollDown', makeCtx(store, 'diff'));
 
       expect(store.state.activeInlineCommentThreadId).toBeNull();
       expect(scrollBy).toHaveBeenCalledWith({ top: 40 });
@@ -577,7 +586,7 @@ describe('binding actions', () => {
       document.body.appendChild(viewport);
       const store = makeStore({ inlineCommentThreadIds: ['T1', 'T2'] });
 
-      byId('detail.scrollUp').action(makeCtx(store, 'diff'));
+      invokeAction('detail.scrollUp', makeCtx(store, 'diff'));
 
       expect(store.state.activeInlineCommentThreadId).toBeNull();
       expect(scrollBy).toHaveBeenCalledWith({ top: -40 });
@@ -587,7 +596,7 @@ describe('binding actions', () => {
     it('n (diff.nextComment) selects the first inline comment', () => {
       const store = makeStore({ inlineCommentThreadIds: ['T1', 'T2'] });
 
-      byId('diff.nextComment').action(makeCtx(store, 'diff'));
+      invokeAction('diff.nextComment', makeCtx(store, 'diff'));
 
       expect(store.state.activeInlineCommentThreadId).toBe('T1');
     });
@@ -598,7 +607,7 @@ describe('binding actions', () => {
         activeInlineCommentThreadId: 'T2',
       });
 
-      byId('diff.prevComment').action(makeCtx(store, 'diff'));
+      invokeAction('diff.prevComment', makeCtx(store, 'diff'));
 
       expect(store.state.activeInlineCommentThreadId).toBe('T1');
     });
@@ -606,7 +615,7 @@ describe('binding actions', () => {
     it('n/p are no-ops when there are no inline comments', () => {
       const store = makeStore({ inlineCommentThreadIds: [] });
 
-      byId('diff.nextComment').action(makeCtx(store, 'diff'));
+      invokeAction('diff.nextComment', makeCtx(store, 'diff'));
 
       expect(store.state.activeInlineCommentThreadId).toBeNull();
     });
@@ -617,7 +626,7 @@ describe('binding actions', () => {
         activeInlineCommentThreadId: 'T1',
       });
 
-      byId('detail.inlineReply').action(makeCtx(store, 'diff'));
+      invokeAction('detail.inlineReply', makeCtx(store, 'diff'));
 
       expect(store.state.replyingInlineCommentThreadId).toBe('T1');
     });
@@ -634,7 +643,8 @@ describe('binding actions', () => {
       it(`${actionId} sets filterState=${expected} and closes overlay`, () => {
         const closeOverlay = vi.fn();
         const store = makeStore();
-        byId(actionId).action(
+        invokeAction(
+          actionId,
           makeCtx(store, 'list', {
             closeOverlay,
             activeOverlay: 'filter' as const,
@@ -813,7 +823,7 @@ describe('review-threads bindings', () => {
     const ctx = makeCtx(makeStore(), 'detail', {
       openThreads: openThreadsMock,
     });
-    byId('detail.threads').action(ctx);
+    invokeAction('detail.threads', ctx);
     expect(openThreadsMock).toHaveBeenCalled();
   });
 
@@ -823,7 +833,7 @@ describe('review-threads bindings', () => {
       closeOverlay: closeOverlayMock,
       activeOverlay: 'threads',
     });
-    byId('global.escape').action(ctx);
+    invokeAction('global.escape', ctx);
     expect(closeOverlayMock).toHaveBeenCalled();
   });
 
@@ -851,7 +861,7 @@ describe('review-threads bindings', () => {
         seen.push(eventName);
       };
       document.addEventListener(eventName, listener);
-      byId(id).action(makeCtx(makeStore(), null));
+      invokeAction(id, makeCtx(makeStore(), null));
       document.removeEventListener(eventName, listener);
       expect(seen).toEqual([eventName]);
     }

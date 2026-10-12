@@ -1,3 +1,4 @@
+import { Result } from 'neverthrow';
 import pino from 'pino';
 
 /**
@@ -13,16 +14,21 @@ import pino from 'pino';
  *   log.error({ type, readyState }, 'send failed — not connected');
  */
 
-const ROOT_LEVEL = ((): pino.LevelWithSilent => {
-  try {
-    const stored = localStorage.getItem('bistro-log-level');
-    if (stored !== null) return stored as pino.LevelWithSilent;
-  } catch {
-    // localStorage not available
-  }
-  // Default: debug in dev, info in prod
-  return process.env.NODE_ENV === 'development' ? 'debug' : 'info';
-})();
+const DEFAULT_LEVEL: pino.LevelWithSilent = import.meta.env.DEV
+  ? 'debug'
+  : 'info';
+const readStoredLevel = Result.fromThrowable(() =>
+  localStorage.getItem('bistro-log-level'),
+);
+
+function isLogLevel(level: string): level is pino.LevelWithSilent {
+  return level === 'silent' || Object.hasOwn(pino.levels.values, level);
+}
+
+const ROOT_LEVEL = readStoredLevel().match(
+  (stored) => (stored !== null && isLogLevel(stored) ? stored : DEFAULT_LEVEL),
+  () => DEFAULT_LEVEL,
+);
 
 const rootLogger = pino({
   level: ROOT_LEVEL,

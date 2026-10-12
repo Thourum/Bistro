@@ -83,8 +83,7 @@ export function extractFileIdentity(patch: string): DiffFileIdentity {
 export function splitUnifiedDiff(raw: string): ParsedDiffFile[] {
   if (raw.trim().length === 0) return [];
 
-  const GIT_HEADER = /^diff --git /m;
-  if (!GIT_HEADER.test(raw)) {
+  if (!/^diff --git /m.test(raw)) {
     const { additions, deletions } = countChanges(raw);
     // Non-git diff: treat as a single unnamed file.
     const identity: DiffFileIdentity = { oldFile: '', newFile: 'patch' };
@@ -108,16 +107,16 @@ export function splitUnifiedDiff(raw: string): ParsedDiffFile[] {
 
   const lines = raw.split('\n');
   const chunks: string[] = [];
-  let buf: string[] = [];
+  let currentChunk: string[] = [];
   for (const line of lines) {
     if (line.startsWith('diff --git ')) {
-      if (buf.length > 0) chunks.push(buf.join('\n'));
-      buf = [line];
+      if (currentChunk.length > 0) chunks.push(currentChunk.join('\n'));
+      currentChunk = [line];
     } else {
-      buf.push(line);
+      currentChunk.push(line);
     }
   }
-  if (buf.length > 0) chunks.push(buf.join('\n'));
+  if (currentChunk.length > 0) chunks.push(currentChunk.join('\n'));
 
   // Extract DiffFileIdentity for each chunk, then compute canonical keys via
   // the single authority: buildFileKeys from diffFileKey.ts.
@@ -150,8 +149,8 @@ export function splitUnifiedDiff(raw: string): ParsedDiffFile[] {
 
 function countLines(patch: string): number {
   let count = 1;
-  for (let i = 0; i < patch.length; i++) {
-    if (patch.charCodeAt(i) === 10) count++;
+  for (let index = 0; index < patch.length; index++) {
+    if (patch[index] === '\n') count++;
   }
   return count;
 }
@@ -168,13 +167,6 @@ function countLines(patch: string): number {
  *  - Fallback:             `+++ b/<path>` line
  */
 export function extractFilePath(patch: string): string | null {
-  // Match `diff --git` header, supporting optional double-quoted paths (git
-  // quotes filenames that contain spaces or special characters).
-  //
-  // Strategy: capture everything after `a/` up to the ` b/` boundary,
-  // then everything after `b/` to end-of-line.  The boundary approach
-  // works for both quoted (`"a/..." "b/..."`) and unquoted forms.
-
   // Quoted form: diff --git "a/..." "b/..."
   const quotedMatch = /^diff --git "a\/(.+)" "b\/(.+)"/m.exec(patch);
   if (quotedMatch !== null) {
@@ -182,9 +174,8 @@ export function extractFilePath(patch: string): string | null {
   }
 
   // Unquoted form: diff --git a/<oldPath> b/<newPath>
-  // We look for the last ` b/` occurrence on the header line to split the
-  // two paths, which handles spaces in paths correctly as long as the old
-  // and new paths are distinct enough to locate the boundary.
+  // The last ` b/` splits paths containing spaces, but embedded ` b/`
+  // in a filename remains ambiguous without quoted git headers.
   const headerLineMatch = /^diff --git a\/.+ b\/.+$/m.exec(patch);
   if (headerLineMatch !== null) {
     const headerLine = headerLineMatch[0];

@@ -16,6 +16,7 @@ import type { ParsedDiffFile } from './diffPathUtils';
 export interface ParsedCodeViewFile {
   file: ParsedDiffFile;
   fileDiff: NonNullable<ReturnType<typeof processFile>>;
+  patchVersion: number;
 }
 
 export interface UnrenderableDiffFile {
@@ -41,36 +42,46 @@ export interface CodeViewFileParseResult {
 export function parseCodeViewFiles(
   files: readonly ParsedDiffFile[],
 ): CodeViewFileParseResult {
-  const parsed = files.map((file) => ({
-    file,
-    // Binary patches parse "successfully" into zero hunks, so they are
-    // classified before the parse result is consulted.
-    fileDiff: isBinaryPatch(file.patch) ? undefined : processFile(file.patch),
-    reason: isBinaryPatch(file.patch)
-      ? ('binary' as const)
-      : ('parse-failed' as const),
-  }));
-  return {
-    parsedFiles: parsed.flatMap(({ file, fileDiff }) =>
-      fileDiff === undefined ? [] : [{ file, fileDiff }],
-    ),
-    unrenderableFiles: parsed.flatMap(({ file, fileDiff, reason }) =>
-      fileDiff === undefined ? [{ file, reason }] : [],
-    ),
-  };
+  const parsedFiles: ParsedCodeViewFile[] = [];
+  const unrenderableFiles: UnrenderableDiffFile[] = [];
+  for (const file of files) {
+    // Binary patches parse "successfully" into zero hunks, so classify first.
+    const isBinary = isBinaryPatch(file.patch);
+    const fileDiff = isBinary ? undefined : processFile(file.patch);
+    if (fileDiff === undefined) {
+      unrenderableFiles.push({
+        file,
+        reason: isBinary ? 'binary' : 'parse-failed',
+      });
+      continue;
+    }
+    parsedFiles.push({ file, fileDiff, patchVersion: hashString(file.patch) });
+  }
+  return { parsedFiles, unrenderableFiles };
 }
 
-export function buildCodeViewItems(
-  parsedCodeViewFiles: readonly ParsedCodeViewFile[],
-  threads: readonly ReviewThread[],
-  commentsByThread: ReadonlyMap<string, readonly Comment[]>,
-  activeAnnotationKey: string | null,
-  replyingToThreadId: string | null,
-  expertiseByPath: ReadonlyMap<string, ExpertiseFileData>,
-  expertiseError: string | null,
-  collapseOverrides: readonly string[] = [],
-): CodeViewItem<ReviewThread>[] {
-  return parsedCodeViewFiles.map(({ file, fileDiff }) => {
+export interface CodeViewItemsOptions {
+  parsedCodeViewFiles: readonly ParsedCodeViewFile[];
+  threads: readonly ReviewThread[];
+  commentsByThread: ReadonlyMap<string, readonly Comment[]>;
+  activeAnnotationKey: string | null;
+  replyingToThreadId: string | null;
+  expertiseByPath: ReadonlyMap<string, ExpertiseFileData>;
+  expertiseError: string | null;
+  collapseOverrides?: readonly string[];
+}
+
+export function buildCodeViewItems({
+  parsedCodeViewFiles,
+  threads,
+  commentsByThread,
+  activeAnnotationKey,
+  replyingToThreadId,
+  expertiseByPath,
+  expertiseError,
+  collapseOverrides = [],
+}: CodeViewItemsOptions): CodeViewItem<ReviewThread>[] {
+  return parsedCodeViewFiles.map(({ file, fileDiff, patchVersion }) => {
     const annotations = buildFileAnnotations(file, threads);
     const collapsed = isFileCollapsed(file, collapseOverrides);
     return {
@@ -79,16 +90,16 @@ export function buildCodeViewItems(
       fileDiff,
       annotations,
       collapsed,
-      version: buildItemVersion(
-        file,
+      version: buildItemVersion({
+        patchVersion,
         annotations,
         commentsByThread,
         activeAnnotationKey,
         replyingToThreadId,
-        expertiseByPath.get(file.path),
+        expertise: expertiseByPath.get(file.path),
         expertiseError,
         collapsed,
-      ),
+      }),
     };
   });
 }
@@ -128,18 +139,28 @@ export function groupCommentsByThread(
   return grouped;
 }
 
-function buildItemVersion(
-  file: ParsedDiffFile,
-  annotations: readonly DiffLineAnnotation<ReviewThread>[],
-  commentsByThread: ReadonlyMap<string, readonly Comment[]>,
-  activeAnnotationKey: string | null,
-  replyingToThreadId: string | null,
-  expertise: ExpertiseFileData | undefined,
-  expertiseError: string | null,
-  collapsed: boolean,
-): number {
+interface ItemVersionOptions {
+  patchVersion: number;
+  annotations: readonly DiffLineAnnotation<ReviewThread>[];
+  commentsByThread: ReadonlyMap<string, readonly Comment[]>;
+  activeAnnotationKey: string | null;
+  replyingToThreadId: string | null;
+  expertise: ExpertiseFileData | undefined;
+  expertiseError: string | null;
+  collapsed: boolean;
+}
+
+function buildItemVersion({
+  patchVersion,
+  annotations,
+  commentsByThread,
+  activeAnnotationKey,
+  replyingToThreadId,
+  expertise,
+  expertiseError,
+  collapsed,
+}: ItemVersionOptions): number {
   const content = [
-    file.patch,
     serializeExpertise(expertise),
     expertiseError ?? '',
     String(collapsed),
@@ -170,7 +191,7 @@ function buildItemVersion(
       ].join(':');
     }),
   ].join('|');
-  return hashString(content);
+  return hashString(`|${content}`, patchVersion);
 }
 
 function serializeExpertise(expertise: ExpertiseFileData | undefined): string {
@@ -195,8 +216,8 @@ function serializeExpertiseExpert(expert: ExpertiseExpert): string {
   ].join(':');
 }
 
-function hashString(value: string): number {
-  let hash = 0;
+function hashString(value: string, initialHash = 0): number {
+  let hash = initialHash;
   for (let index = 0; index < value.length; index += 1) {
     hash = (hash * 31 + value.charCodeAt(index)) | 0;
   }

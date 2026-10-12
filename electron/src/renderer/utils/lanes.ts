@@ -11,6 +11,15 @@ export const LANES = [
 
 export type LaneId = (typeof LANES)[number]['id'];
 
+const LANE_ID = {
+  needsAction: 1,
+  waitingOnAuthor: 2,
+  yourPRs: 3,
+  yourCode: 4,
+  mentioned: 5,
+  fyi: 6,
+} as const satisfies Record<string, LaneId>;
+
 /** First-match-wins lane assignment. Spec: 2026-07-18 Phase 5 design §5.1. */
 export function laneForPR(pr: PR, viewerLogin: string): LaneId {
   const hasViewerLogin = viewerLogin !== '';
@@ -22,18 +31,22 @@ export function laneForPR(pr: PR, viewerLogin: string): LaneId {
       pr.approved_by === viewerLogin || pr.changes_requested_by === viewerLogin;
 
     if (isOpen) {
-      if (isAuthor && pr.review_status === 'changes_requested') return 1;
-      if ((pr.requested_reviewers ?? []).includes(viewerLogin)) return 1;
-      if (!isAuthor && reviewed && pr.reviewed_head_stale) return 1;
+      if (isAuthor && pr.review_status === 'changes_requested')
+        return LANE_ID.needsAction;
+      if ((pr.requested_reviewers ?? []).includes(viewerLogin))
+        return LANE_ID.needsAction;
+      if (!isAuthor && reviewed && pr.reviewed_head_stale)
+        return LANE_ID.needsAction;
     }
 
-    if (!isAuthor && isOpen && (reviewed || pr.viewer_commented)) return 2;
-    if (isAuthor) return 3;
+    if (!isAuthor && isOpen && (reviewed || pr.viewer_commented))
+      return LANE_ID.waitingOnAuthor;
+    if (isAuthor) return LANE_ID.yourPRs;
   }
 
-  if (pr.touches_you) return 4;
-  if (pr.mentioned) return 5;
-  return 6;
+  if (pr.touches_you) return LANE_ID.yourCode;
+  if (pr.mentioned) return LANE_ID.mentioned;
+  return LANE_ID.fyi;
 }
 
 export interface LaneSection {
@@ -62,7 +75,10 @@ export function sectionContaining(
  * Positions in a lane-sorted PR list where each lane's header renders.
  * Empty lanes start at the next lane's first PR, or the list end.
  */
-export function laneSections(prs: PR[], viewerLogin: string): LaneSection[] {
+export function laneSections(
+  prs: readonly PR[],
+  viewerLogin: string,
+): LaneSection[] {
   const counts = new Map<LaneId, number>();
   for (const lane of LANES) counts.set(lane.id, 0);
   for (const pr of prs) {

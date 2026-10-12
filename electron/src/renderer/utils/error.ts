@@ -1,7 +1,7 @@
 /**
  * Known error codes from Go sync engine and IPC layer.
  */
-export const ERROR_MESSAGES: Record<string, string> = {
+export const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   AUTH_TOKEN_EXPIRED: 'Your authentication expired. Please re-login.',
   RATE_LIMITED: 'Too many requests. Try again in a few minutes.',
   WEBSOCKET_DISCONNECTED: 'Connection lost. Reconnecting...',
@@ -16,7 +16,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
 /**
  * Patterns that indicate sensitive data — must be stripped from user-facing messages.
  */
-const SENSITIVE_PATTERNS: RegExp[] = [
+const SENSITIVE_PATTERNS: readonly RegExp[] = [
   /ghp_[a-zA-Z0-9]+/g,
   /gho_[a-zA-Z0-9]+/g,
   /Bearer\s+eyJ[a-zA-Z0-9._-]+/g,
@@ -40,9 +40,8 @@ function sanitize(message: string): string {
  * Known codes get a curated message; unknown messages are sanitized and returned as-is.
  */
 export function formatErrorMessage(codeOrMessage: string): string {
-  const friendly = ERROR_MESSAGES[codeOrMessage];
-  if (friendly !== undefined) {
-    return friendly;
-  }
-  return sanitize(codeOrMessage);
+  const friendly = Object.hasOwn(ERROR_MESSAGES, codeOrMessage)
+    ? ERROR_MESSAGES[codeOrMessage]
+    : undefined;
+  return friendly ?? sanitize(codeOrMessage);
 }

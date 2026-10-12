@@ -60,16 +60,16 @@ function buildItems(
   collapseOverrides: readonly string[] = [],
 ) {
   const { parsedFiles } = parseCodeViewFiles(splitUnifiedDiff(patch));
-  return buildCodeViewItems(
-    parsedFiles,
-    [],
-    new Map(),
-    null,
-    null,
+  return buildCodeViewItems({
+    parsedCodeViewFiles: parsedFiles,
+    threads: [],
+    commentsByThread: new Map(),
+    activeAnnotationKey: null,
+    replyingToThreadId: null,
     expertiseByPath,
     expertiseError,
     collapseOverrides,
-  );
+  });
 }
 
 describe('buildCodeViewItems', () => {
@@ -98,6 +98,45 @@ describe('buildCodeViewItems', () => {
 
     expect(after[0]?.version).not.toBe(before[0]?.version);
     expect(after[1]?.version).toBe(before[1]?.version);
+  });
+
+  it('retains the version for an unchanged patch and changes it for a changed patch', () => {
+    const files = splitUnifiedDiff(TWO_FILE_PATCH);
+    const before = parseCodeViewFiles(files).parsedFiles;
+    const same = parseCodeViewFiles(files).parsedFiles;
+    const firstFile = files[0];
+    if (firstFile === undefined) throw new Error('missing first file');
+    const changed = parseCodeViewFiles([
+      { ...firstFile, patch: firstFile.patch.replace('+new', '+updated') },
+      ...files.slice(1),
+    ]).parsedFiles;
+    const options = {
+      threads: [],
+      commentsByThread: new Map(),
+      activeAnnotationKey: null,
+      replyingToThreadId: null,
+      expertiseByPath: new Map(),
+      expertiseError: null,
+    };
+
+    const beforeVersions = buildCodeViewItems({
+      ...options,
+      parsedCodeViewFiles: before,
+    });
+    const sameVersions = buildCodeViewItems({
+      ...options,
+      parsedCodeViewFiles: same,
+    });
+    const changedVersions = buildCodeViewItems({
+      ...options,
+      parsedCodeViewFiles: changed,
+    });
+
+    expect(sameVersions.map((item) => item.version)).toEqual(
+      beforeVersions.map((item) => item.version),
+    );
+    expect(changedVersions[0]?.version).not.toBe(beforeVersions[0]?.version);
+    expect(changedVersions[1]?.version).toBe(beforeVersions[1]?.version);
   });
 
   it('changes all item versions when the rendered expertise error changes', () => {
