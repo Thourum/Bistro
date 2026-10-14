@@ -69,6 +69,48 @@ export interface FooterLegendEntry {
 }
 
 /**
+ * US-layout character each shifted punctuation key produces. Shift is
+ * dropped in the label because the character already implies it.
+ */
+const SHIFTED_PUNCTUATION_CHARS: Readonly<Record<string, string>> = {
+  '`': '~',
+  '1': '!',
+  '2': '@',
+  '3': '#',
+  '4': '$',
+  '5': '%',
+  '6': '^',
+  '7': '&',
+  '8': '*',
+  '9': '(',
+  '0': ')',
+  '-': '_',
+  '=': '+',
+  '[': '{',
+  ']': '}',
+  '\\': '|',
+  ';': ':',
+  "'": '"',
+  ',': '<',
+  '.': '>',
+  '/': '?',
+};
+
+/** Rewrites `Shift+/` as `?`; other hotkeys pass through unchanged. */
+function toShiftedCharacterHotkey(hotkey: string): string {
+  const parts = hotkey.split('+');
+  const key = parts[parts.length - 1] ?? '';
+  const modifiers = parts.slice(0, -1);
+  const shiftedChar = SHIFTED_PUNCTUATION_CHARS[key];
+  const hasShift = modifiers.some((m) => m.toLowerCase() === 'shift');
+  if (shiftedChar === undefined || !hasShift) return hotkey;
+  return [
+    ...modifiers.filter((m) => m.toLowerCase() !== 'shift'),
+    shiftedChar,
+  ].join('+');
+}
+
+/**
  * Pretty-print a binding's keys via TanStack Hotkeys' platform-aware
  * formatter. Sequences render their formatted steps joined by a space.
  */
@@ -78,10 +120,10 @@ export function formatBindingKeys(
 ): string {
   if (typeof binding.keys !== 'string') {
     return binding.keys
-      .map((step) => formatForDisplay(step, options))
+      .map((step) => formatForDisplay(toShiftedCharacterHotkey(step), options))
       .join(' ');
   }
-  return formatForDisplay(binding.keys, options);
+  return formatForDisplay(toShiftedCharacterHotkey(binding.keys), options);
 }
 
 /**

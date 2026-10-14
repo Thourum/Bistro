@@ -12,6 +12,7 @@ import (
 const (
 	defaultFileDiffStatus   = "modified"
 	defaultStoredDiffStatus = "ok"
+	diffHeaderPrefix        = "diff --git "
 )
 
 // DiffFile represents a single file's diff entry for storage.
@@ -111,12 +112,16 @@ func (s *DiffStore) GetUnifiedDiff(prID string) (string, error) {
 
 	var b strings.Builder
 	for _, d := range diffs {
-		// Emit a git diff header so consumers can identify file boundaries.
-		oldPath := d.FilePath
-		if d.OldPath != "" {
-			oldPath = d.OldPath
+		// Stored patches from go-git already start with their own header. Empty
+		// patches (binary, truncated, too large) have none, so add one to keep
+		// the file identifiable; otherwise the header would appear twice.
+		if !strings.HasPrefix(d.Patch, diffHeaderPrefix) {
+			oldPath := d.FilePath
+			if d.OldPath != "" {
+				oldPath = d.OldPath
+			}
+			fmt.Fprintf(&b, "diff --git a/%s b/%s\n", oldPath, d.FilePath)
 		}
-		fmt.Fprintf(&b, "diff --git a/%s b/%s\n", oldPath, d.FilePath)
 		b.WriteString(d.Patch)
 		// Ensure each file patch ends with a newline before the next header.
 		if len(d.Patch) > 0 && d.Patch[len(d.Patch)-1] != '\n' {

@@ -107,6 +107,8 @@ interface PRRowProps {
   selectedIndex: number;
   degradedRepo: RepoInfo | null;
   onRecover: (repo: RepoInfo) => void;
+  /** Lanes mix repos, so the row names its repo; grouped rows already sit under a repo header. */
+  showRepo?: boolean;
 }
 
 function PRRow({
@@ -115,6 +117,7 @@ function PRRow({
   selectedIndex,
   degradedRepo,
   onRecover,
+  showRepo = false,
 }: PRRowProps): React.ReactElement {
   const isSelected = selectedIndex === globalIndex;
   const isDegraded = degradedRepo !== null;
@@ -134,7 +137,10 @@ function PRRow({
         onClick={open}
         aria-label={`Open PR #${pr.number} in ${pr.owner}/${pr.repo}`}
         className={[
-          'grid grid-cols-[24px_60px_1fr_120px_100px] items-center gap-4 py-3 px-4 w-full text-left',
+          showRepo
+            ? 'grid grid-cols-[24px_minmax(0,max-content)_1fr_120px_100px]'
+            : 'grid grid-cols-[24px_60px_1fr_120px_100px]',
+          'items-center gap-4 py-3 px-4 w-full text-left',
           'cursor-crosshair transition-colors border-l-2',
           isSelected
             ? 'bg-surface-container-low border-primary'
@@ -147,7 +153,9 @@ function PRRow({
           role="img"
           aria-label={ciTitle(pr)}
         />
-        <div className="font-mono text-[11px] text-outline">#{pr.number}</div>
+        <div className="font-mono text-[11px] text-outline truncate">
+          {showRepo ? `${pr.owner}/${pr.repo}#${pr.number}` : `#${pr.number}`}
+        </div>
         <div
           className={`text-[14px] text-on-surface truncate ${
             pr.unread ? 'font-semibold' : 'font-medium'
@@ -235,6 +243,7 @@ function PRLaneSection({
               selectedIndex={selectedIndex}
               degradedRepo={degradedRepo}
               onRecover={onRecover}
+              showRepo
             />
           );
         })

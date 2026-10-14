@@ -1,5 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { err, Fault, ok, type Result, ServiceError } from '@thourum/fault';
+import {
+  err,
+  Fault,
+  ok,
+  okAsync,
+  type Result,
+  type ResultAsync,
+  ServiceError,
+} from '@thourum/fault';
 import { z } from 'zod';
 import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
@@ -16,7 +24,9 @@ interface RequestPRListData {
   offset: number;
 }
 
-const PR_LIST_LIMIT = 100;
+// Matches the engine's maxPRListLimit (go/internal/server/handler/pr.go); the
+// engine clamps larger pages back down to its default of 100.
+const PR_LIST_PAGE_SIZE = 200;
 const PR_LIST_STALE_TIME_MS = 30 * 1000;
 const PR_LIST_GC_TIME_MS = 5 * 60 * 1000;
 
@@ -73,6 +83,39 @@ function parsePRList(
   return ok(parsed.data);
 }
 
+type PRListPage = z.infer<typeof prListReadySchema>;
+
+function requestPRPage(
+  backendFilter: RequestPRListData['filter'],
+  offset: number,
+): ResultAsync<PRListPage, Fault> {
+  return wsClient
+    .request('REQUEST_PR_LIST', {
+      filter: backendFilter,
+      limit: PR_LIST_PAGE_SIZE,
+      offset,
+    } satisfies RequestPRListData)
+    .mapErr((cause) =>
+      new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+    )
+    .andThen(parsePRList);
+}
+
+/** Walks engine pages until `has_more` is false so the list is never truncated. */
+function requestAllPRPages(
+  backendFilter: RequestPRListData['filter'],
+  offset: number,
+  collectedPRs: PR[],
+): ResultAsync<PRListPage, Fault> {
+  return requestPRPage(backendFilter, offset).andThen(
+    (page): ResultAsync<PRListPage, Fault> => {
+      const prs = [...collectedPRs, ...page.prs];
+      if (!page.has_more) return okAsync({ ...page, prs });
+      return requestAllPRPages(backendFilter, offset + PR_LIST_PAGE_SIZE, prs);
+    },
+  );
+}
+
 /**
  * Fetches PR list from sync engine via WebSocket.
  * 'needs_action' and 'touches_you' are client-side lanes narrowed locally.
@@ -91,16 +134,7 @@ export function useWebSocketPRList(filterState: FilterState = 'open') {
         filterState === 'needs_action' || filterState === 'touches_you'
           ? 'open'
           : filterState;
-      const response = await wsClient
-        .request('REQUEST_PR_LIST', {
-          filter: backendFilter,
-          limit: PR_LIST_LIMIT,
-          offset: 0,
-        } satisfies RequestPRListData)
-        .mapErr((cause) =>
-          new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
-        )
-        .andThen(parsePRList);
+      const response = await requestAllPRPages(backendFilter, 0, []);
       if (response.isErr()) return Promise.reject(response.error);
 
       const payload = response.value;
