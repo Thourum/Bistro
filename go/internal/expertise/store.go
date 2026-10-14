@@ -11,13 +11,18 @@ import (
 	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
+const expertiseLocalRepoSource = "local"
+
+// ErrSettingNotFound indicates an expertise setting has no stored value.
 var ErrSettingNotFound = errors.New("expertise setting not found")
 
+// Store persists expertise rows and indexing state in SQLite.
 type Store struct {
 	db      *sql.DB
 	queries *storedb.Queries
 }
 
+// FileExpertiseRow stores an author's computed expertise for one repository file.
 type FileExpertiseRow struct {
 	RepoID         string
 	FilePath       string
@@ -34,6 +39,7 @@ type FileExpertiseRow struct {
 	ComputedAtSHA  string
 }
 
+// ExpertiseRepoState records a repository's indexing progress and availability.
 type ExpertiseRepoState struct {
 	RepoID           string
 	Enabled          bool
@@ -47,6 +53,7 @@ type ExpertiseRepoState struct {
 	NudgeDismissedAt sql.NullTime
 }
 
+// Expert is an author's persisted expertise for a repository file.
 type Expert struct {
 	RepoID         string
 	FilePath       string
@@ -60,11 +67,13 @@ type Expert struct {
 	Dormant        bool
 }
 
+// PRExpert associates a file expert with a pull request.
 type PRExpert struct {
 	PRID string
 	Expert
 }
 
+// NewStore creates an expertise store backed by db.
 func NewStore(db *sql.DB) *Store {
 	return &Store{
 		db:      db,
@@ -72,6 +81,7 @@ func NewStore(db *sql.DB) *Store {
 	}
 }
 
+// UpsertFileRows writes expertise rows without deleting existing authors.
 func (s *Store) UpsertFileRows(ctx context.Context, rows []FileExpertiseRow) error {
 	if len(rows) == 0 {
 		return nil
@@ -82,6 +92,7 @@ func (s *Store) UpsertFileRows(ctx context.Context, rows []FileExpertiseRow) err
 	})
 }
 
+// ReplaceFileRows atomically replaces all expertise rows for a file.
 func (s *Store) ReplaceFileRows(ctx context.Context, repoID, filePath string, rows []FileExpertiseRow) error {
 	return s.withTx(ctx, func(queries *storedb.Queries) error {
 		if err := deleteFileExpertise(ctx, queries, repoID, filePath); err != nil {
@@ -92,6 +103,7 @@ func (s *Store) ReplaceFileRows(ctx context.Context, repoID, filePath string, ro
 	})
 }
 
+// ReplaceRepoRows atomically replaces all file expertise rows for a repository.
 func (s *Store) ReplaceRepoRows(ctx context.Context, repoID string, rows []FileExpertiseRow) error {
 	return s.withTx(ctx, func(queries *storedb.Queries) error {
 		if err := queries.DeleteFileExpertiseForRepo(ctx, repoID); err != nil {
@@ -101,40 +113,31 @@ func (s *Store) ReplaceRepoRows(ctx context.Context, repoID string, rows []FileE
 	})
 }
 
+// DeleteFileRows removes expertise rows for one repository file.
 func (s *Store) DeleteFileRows(ctx context.Context, repoID, filePath string) error {
 	return s.withTx(ctx, func(queries *storedb.Queries) error {
 		return deleteFileExpertise(ctx, queries, repoID, filePath)
 	})
 }
 
+// DeleteRepoRows removes all file expertise rows for a repository.
 func (s *Store) DeleteRepoRows(ctx context.Context, repoID string) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM file_expertise WHERE repo_id = ?`, repoID); err != nil {
+	if err := s.queries.DeleteFileExpertiseForRepo(ctx, repoID); err != nil {
 		return fmt.Errorf("delete repo expertise %s: %w", repoID, err)
 	}
 	return nil
 }
 
+// DeleteExcludedRows removes rows for paths matched by excluder.
 func (s *Store) DeleteExcludedRows(ctx context.Context, repoID string, excluder Excluder) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT file_path FROM file_expertise WHERE repo_id = ?`, repoID)
+	paths, err := s.queries.ListExpertiseFilePathsForRepo(ctx, repoID)
 	if err != nil {
 		return fmt.Errorf("list expertise rows for exclude pruning %s: %w", repoID, err)
 	}
-	defer rows.Close()
-
-	pathsToDelete := []string{}
-	for rows.Next() {
-		var filePath string
-		if err := rows.Scan(&filePath); err != nil {
-			return fmt.Errorf("scan expertise row for exclude pruning %s: %w", repoID, err)
+	for _, filePath := range paths {
+		if !excluder.Excluded(filePath) {
+			continue
 		}
-		if excluder.Excluded(filePath) {
-			pathsToDelete = append(pathsToDelete, filePath)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate expertise rows for exclude pruning %s: %w", repoID, err)
-	}
-	for _, filePath := range pathsToDelete {
 		if err := s.DeleteFileRows(ctx, repoID, filePath); err != nil {
 			return err
 		}
@@ -142,6 +145,7 @@ func (s *Store) DeleteExcludedRows(ctx context.Context, repoID string, excluder 
 	return nil
 }
 
+// GetFileExpertise returns a file's experts ordered by descending score.
 func (s *Store) GetFileExpertise(ctx context.Context, repoID, filePath string) ([]FileExpertiseRow, error) {
 	rows, err := s.queries.GetFileExpertise(ctx, storedb.GetFileExpertiseParams{RepoID: repoID, FilePath: filePath})
 	if err != nil {
@@ -155,6 +159,7 @@ func (s *Store) GetFileExpertise(ctx context.Context, repoID, filePath string) (
 	return mapped, nil
 }
 
+// RepoState returns persisted indexing state for a repository.
 func (s *Store) RepoState(ctx context.Context, repoID string) (ExpertiseRepoState, error) {
 	state, err := s.queries.GetExpertiseRepoState(ctx, repoID)
 	if err != nil {
@@ -163,6 +168,7 @@ func (s *Store) RepoState(ctx context.Context, repoID string) (ExpertiseRepoStat
 	return repoStateFromDB(state), nil
 }
 
+// SetRepoState persists a repository's indexing state.
 func (s *Store) SetRepoState(ctx context.Context, state ExpertiseRepoState) error {
 	if err := s.queries.UpsertExpertiseRepoState(ctx, upsertRepoStateParams(state)); err != nil {
 		return fmt.Errorf("set expertise repo state %s: %w", state.RepoID, err)
@@ -170,6 +176,7 @@ func (s *Store) SetRepoState(ctx context.Context, state ExpertiseRepoState) erro
 	return nil
 }
 
+// DismissNudge records a user's decision not to enable expertise for a repository.
 func (s *Store) DismissNudge(ctx context.Context, repoID string) error {
 	state := ExpertiseRepoState{
 		RepoID:           repoID,
@@ -180,6 +187,7 @@ func (s *Store) DismissNudge(ctx context.Context, repoID string) error {
 	return s.SetRepoState(ctx, state)
 }
 
+// SetProgress records how many repository files have finished indexing.
 func (s *Store) SetProgress(ctx context.Context, repoID string, filesDone, filesTotal int) error {
 	if err := s.queries.UpdateExpertiseIndexProgress(ctx, storedb.UpdateExpertiseIndexProgressParams{
 		RepoID:     repoID,
@@ -191,6 +199,7 @@ func (s *Store) SetProgress(ctx context.Context, repoID string, filesDone, files
 	return nil
 }
 
+// InterruptedRepos lists repositories whose indexing was interrupted.
 func (s *Store) InterruptedRepos(ctx context.Context) ([]string, error) {
 	repos, err := s.queries.ListInterruptedExpertiseRepos(ctx)
 	if err != nil {
@@ -199,6 +208,7 @@ func (s *Store) InterruptedRepos(ctx context.Context) ([]string, error) {
 	return repos, nil
 }
 
+// Setting decodes a stored JSON setting into value, or returns ErrSettingNotFound.
 func (s *Store) Setting(ctx context.Context, key string, value any) error {
 	raw, err := s.queries.GetExpertiseSetting(ctx, key)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -213,6 +223,7 @@ func (s *Store) Setting(ctx context.Context, key string, value any) error {
 	return nil
 }
 
+// SetSetting encodes and persists one JSON setting.
 func (s *Store) SetSetting(ctx context.Context, key string, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
@@ -224,6 +235,7 @@ func (s *Store) SetSetting(ctx context.Context, key string, value any) error {
 	return nil
 }
 
+// SetSettings atomically persists JSON settings under their keys.
 func (s *Store) SetSettings(ctx context.Context, settings map[string]any) error {
 	return s.withTx(ctx, func(queries *storedb.Queries) error {
 		for key, value := range settings {
@@ -239,6 +251,7 @@ func (s *Store) SetSettings(ctx context.Context, settings map[string]any) error 
 	})
 }
 
+// ReviewedPRCount counts a login's reviewed PRs for one account and repository.
 func (s *Store) ReviewedPRCount(ctx context.Context, repoID, accountProvider, accountLogin, login string) (int64, error) {
 	count, err := s.queries.CountReviewedPRsForRepo(ctx, storedb.CountReviewedPRsForRepoParams{
 		RepoID:          repoID,
@@ -252,16 +265,19 @@ func (s *Store) ReviewedPRCount(ctx context.Context, repoID, accountProvider, ac
 	return count, nil
 }
 
+// IsLocalRepo reports whether a repository exists in the local checkout cache.
 func (s *Store) IsLocalRepo(ctx context.Context, repoID string) (bool, error) {
-	var source sql.NullString
-	if err := s.db.QueryRowContext(ctx, `SELECT source FROM repos WHERE id = ?`, repoID).Scan(&source); errors.Is(err, sql.ErrNoRows) {
+	source, err := s.queries.GetExpertiseRepoSource(ctx, repoID)
+	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
-	} else if err != nil {
+	}
+	if err != nil {
 		return false, fmt.Errorf("get expertise repo source %s: %w", repoID, err)
 	}
-	return source.Valid && source.String == "local", nil
+	return source.Valid && source.String == expertiseLocalRepoSource, nil
 }
 
+// ExpertiseForPRs returns active file experts only for PRs with ready expertise indexes.
 func (s *Store) ExpertiseForPRs(ctx context.Context, prIDs []string) ([]PRExpert, error) {
 	if len(prIDs) == 0 {
 		return []PRExpert{}, nil
@@ -300,21 +316,17 @@ func (s *Store) ExpertiseForPRs(ctx context.Context, prIDs []string) ([]PRExpert
 }
 
 func (s *Store) readyPRIDs(ctx context.Context, prIDs []string) ([]string, error) {
-	ready := make([]string, 0, len(prIDs))
+	readyIDs, err := s.queries.ListReadyExpertisePRIDs(ctx, prIDs)
+	if err != nil {
+		return nil, fmt.Errorf("get expertise repo readiness for PRs: %w", err)
+	}
+	readySet := make(map[string]bool, len(readyIDs))
+	for _, prID := range readyIDs {
+		readySet[prID] = true
+	}
+	ready := make([]string, 0, len(readyIDs))
 	for _, prID := range prIDs {
-		var enabled int
-		var status string
-		err := s.db.QueryRowContext(ctx, `SELECT ers.enabled, ers.status
-			FROM prs p
-			JOIN expertise_repo_state ers ON ers.repo_id = p.repo_id
-			WHERE p.id = ?`, prID).Scan(&enabled, &status)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("get expertise repo readiness for PR %s: %w", prID, err)
-		}
-		if enabled == 1 && status == ExpertiseStatusReady {
+		if readySet[prID] {
 			ready = append(ready, prID)
 		}
 	}

@@ -176,7 +176,7 @@ func setupLogging(level, logFile string) (io.Closer, error) {
 	}
 
 	opts := &slog.HandlerOptions{
-		Level: logLevel,
+		Level:     logLevel,
 		AddSource: logLevel <= slog.LevelDebug, // Include source file:line for debug and below
 	}
 
@@ -194,10 +194,15 @@ func setupLogging(level, logFile string) (io.Closer, error) {
 			}
 		}
 
-		// Open log file for appending
-		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		// Logs may contain private PR metadata and operational errors.
+		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open log file: %w", err)
+		}
+		// The create mode does not change an existing file's permissions.
+		if err := f.Chmod(0o600); err != nil {
+			_ = f.Close() // The file cannot be used after permission hardening fails.
+			return nil, fmt.Errorf("restrict log file permissions: %w", err)
 		}
 
 		// Log to both stderr and file

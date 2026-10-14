@@ -1,15 +1,24 @@
 package provider
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+	"net/http"
+)
 
 // ErrorType classifies provider errors for retry and recovery logic.
 type ErrorType int
 
 const (
-	ErrorTypeUnknown    ErrorType = iota
-	ErrorTypeNotFound             // HTTP 404
-	ErrorTypeUnauthorized         // HTTP 401
-	ErrorTypeRateLimit            // HTTP 429
+	// ErrorTypeUnknown identifies an unclassified provider error.
+	ErrorTypeUnknown ErrorType = iota
+	// ErrorTypeNotFound identifies an HTTP 404 response.
+	ErrorTypeNotFound
+	// ErrorTypeUnauthorized identifies an HTTP 401 response.
+	ErrorTypeUnauthorized
+	// ErrorTypeRateLimit identifies an HTTP 429 response.
+	ErrorTypeRateLimit
+	// ErrorTypeNetworkError identifies a transport failure.
 	ErrorTypeNetworkError
 )
 
@@ -22,23 +31,24 @@ type ProviderError struct {
 	Status  int // HTTP status code if applicable, 0 otherwise
 }
 
+// Error returns the provider's error message.
 func (pe *ProviderError) Error() string {
 	return pe.Message
 }
 
 // NewNotFoundError returns a ProviderError for HTTP 404 conditions.
 func NewNotFoundError(msg string) *ProviderError {
-	return &ProviderError{Type: ErrorTypeNotFound, Message: msg, Status: 404}
+	return &ProviderError{Type: ErrorTypeNotFound, Message: msg, Status: http.StatusNotFound}
 }
 
 // NewUnauthorizedError returns a ProviderError for HTTP 401 conditions.
 func NewUnauthorizedError(msg string) *ProviderError {
-	return &ProviderError{Type: ErrorTypeUnauthorized, Message: msg, Status: 401}
+	return &ProviderError{Type: ErrorTypeUnauthorized, Message: msg, Status: http.StatusUnauthorized}
 }
 
 // NewRateLimitError returns a ProviderError for HTTP 429 conditions.
 func NewRateLimitError(msg string) *ProviderError {
-	return &ProviderError{Type: ErrorTypeRateLimit, Message: msg, Status: 429}
+	return &ProviderError{Type: ErrorTypeRateLimit, Message: msg, Status: http.StatusTooManyRequests}
 }
 
 // NewNetworkError returns a ProviderError for network-level failures.
@@ -49,25 +59,25 @@ func NewNetworkError(msg string) *ProviderError {
 // IsRecoverable reports whether the error is worth retrying.
 // Rate-limit and network errors are recoverable; auth and not-found errors are not.
 func IsRecoverable(err error) bool {
-	pe, ok := err.(*ProviderError)
-	if !ok {
+	var pe *ProviderError
+	if !errors.As(err, &pe) {
 		return false
 	}
 	return pe.Type == ErrorTypeRateLimit || pe.Type == ErrorTypeNetworkError
 }
 
 // WrapHTTPError converts an HTTP status code into the appropriate typed ProviderError.
-// If the status code is not recognised the original error is wrapped as-is.
+// Unrecognised statuses return the formatted message as a plain error.
 func WrapHTTPError(status int, format string, args ...any) error {
 	msg := fmt.Sprintf(format, args...)
 	switch status {
-	case 401:
+	case http.StatusUnauthorized:
 		return NewUnauthorizedError(msg)
-	case 404:
+	case http.StatusNotFound:
 		return NewNotFoundError(msg)
-	case 429:
+	case http.StatusTooManyRequests:
 		return NewRateLimitError(msg)
 	default:
-		return fmt.Errorf("%s", msg)
+		return errors.New(msg)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -107,6 +108,43 @@ func TestStoreFileExpertiseRepoStateAndReviewedPRCount(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("ReviewedPRCount = %d, want 0", count)
+	}
+}
+
+func TestReadyPRIDsKeepsOnlyReadyRepositoriesInInputOrder(t *testing.T) {
+	db := newTestDB(t)
+	store := NewStore(db.DB)
+	ctx := context.Background()
+	readyRepos := []struct{ repoID, prID string }{
+		{repoID: "github:owner/first", prID: "pr-first"},
+		{repoID: "github:owner/second", prID: "pr-second"},
+	}
+	for index, ready := range readyRepos {
+		insertTouchPR(t, db.DB, ready.prID, ready.repoID, "main.go", index+1)
+		if err := store.SetRepoState(ctx, ExpertiseRepoState{RepoID: ready.repoID, Enabled: true, Status: ExpertiseStatusReady}); err != nil {
+			t.Fatalf("SetRepoState ready %s: %v", ready.repoID, err)
+		}
+	}
+
+	insertTouchPR(t, db.DB, "pr-disabled", "github:owner/disabled", "main.go", 3)
+	insertTouchPR(t, db.DB, "pr-indexing", "github:owner/indexing", "main.go", 4)
+	for _, state := range []ExpertiseRepoState{
+		{RepoID: "github:owner/disabled", Enabled: false, Status: ExpertiseStatusReady},
+		{RepoID: "github:owner/indexing", Enabled: true, Status: ExpertiseStatusIndexing},
+	} {
+		if err := store.SetRepoState(ctx, state); err != nil {
+			t.Fatalf("SetRepoState %s: %v", state.RepoID, err)
+		}
+	}
+
+	input := []string{"pr-second", "pr-disabled", "pr-first", "missing", "pr-indexing", "pr-second"}
+	got, err := store.readyPRIDs(ctx, input)
+	if err != nil {
+		t.Fatalf("readyPRIDs: %v", err)
+	}
+	want := []string{"pr-second", "pr-first", "pr-second"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("readyPRIDs = %v, want %v", got, want)
 	}
 }
 

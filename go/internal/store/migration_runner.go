@@ -137,7 +137,11 @@ func (mr *MigrationRunner) reconcileGooseFromCurrentSchema(ctx context.Context, 
 	if err != nil {
 		return fmt.Errorf("check current schema: %w", err)
 	}
-	for _, version := range schemaMigrationVersions() {
+	versions, err := schemaMigrationVersions()
+	if err != nil {
+		return err
+	}
+	for _, version := range versions {
 		if version > reconciledVersion {
 			continue
 		}
@@ -360,10 +364,10 @@ func indexColumns(ctx context.Context, db *sql.DB, indexName string) ([]string, 
 	return columns, nil
 }
 
-func schemaMigrationVersions() []int64 {
+func schemaMigrationVersions() ([]int64, error) {
 	migrationFiles, err := fs.Glob(migrationsFS, migrationsDir+"/[0-9][0-9][0-9][0-9][0-9]_*.sql")
 	if err != nil {
-		return []int64{}
+		return nil, fmt.Errorf("list embedded migrations: %w", err)
 	}
 
 	versions := make([]int64, 0, len(migrationFiles))
@@ -371,12 +375,14 @@ func schemaMigrationVersions() []int64 {
 		fileName := filepath.Base(migrationFile)
 		versionText := fileName[:5]
 		version, err := strconv.ParseInt(versionText, 10, 64)
-		if err != nil || version == 0 {
-			continue
+		if err != nil {
+			return nil, fmt.Errorf("parse migration version %s: %w", fileName, err)
 		}
-		versions = append(versions, version)
+		if version != 0 {
+			versions = append(versions, version)
+		}
 	}
-	return versions
+	return versions, nil
 }
 
 func (mr *MigrationRunner) ensureGooseVersionTable(ctx context.Context) error {
@@ -400,10 +406,6 @@ func (mr *MigrationRunner) ensureGooseVersionTable(ctx context.Context) error {
 }
 
 func (mr *MigrationRunner) markGooseVersionApplied(ctx context.Context, version int64) error {
-	if err := mr.ensureGooseVersionTable(ctx); err != nil {
-		return err
-	}
-
 	insertVersion := fmt.Sprintf(`INSERT INTO %s (version_id, is_applied)
 		SELECT ?, 1
 		WHERE NOT EXISTS (

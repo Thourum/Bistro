@@ -43,17 +43,19 @@ export function countTriageLanes(
   prs: readonly PR[],
   username: string,
 ): TriageCounts {
-  return prs.reduce<TriageCounts>(
-    (counts, pr) => {
-      switch (classifyPR(pr, username)) {
-        case 'needs_action':
-          return { ...counts, needsAction: counts.needsAction + 1 };
-        case 'waiting_author':
-          return { ...counts, waitingAuthor: counts.waitingAuthor + 1 };
-        default:
-          return { ...counts, fyi: counts.fyi + 1 };
-      }
-    },
-    { needsAction: 0, waitingAuthor: 0, fyi: 0 },
-  );
+  const counts: TriageCounts = { needsAction: 0, waitingAuthor: 0, fyi: 0 };
+  for (const pr of prs) {
+    switch (classifyPR(pr, username)) {
+      case 'needs_action':
+        counts.needsAction += 1;
+        break;
+      case 'waiting_author':
+        counts.waitingAuthor += 1;
+        break;
+      case 'fyi':
+        counts.fyi += 1;
+        break;
+    }
+  }
+  return counts;
 }

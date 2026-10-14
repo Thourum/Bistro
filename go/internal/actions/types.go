@@ -10,11 +10,17 @@ import (
 type ActionCommand string
 
 const (
-	ApproveCommand         ActionCommand = "approve"
-	RequestChangesCommand  ActionCommand = "request_changes"
-	PostCommentCommand     ActionCommand = "post_comment"
-	ReplyCommentCommand    ActionCommand = "reply_comment"
-	ResolveThreadCommand   ActionCommand = "resolve_thread"
+	// ApproveCommand submits a PR approval.
+	ApproveCommand ActionCommand = "approve"
+	// RequestChangesCommand submits a request-changes review.
+	RequestChangesCommand ActionCommand = "request_changes"
+	// PostCommentCommand posts a new PR comment.
+	PostCommentCommand ActionCommand = "post_comment"
+	// ReplyCommentCommand replies to an existing review comment.
+	ReplyCommentCommand ActionCommand = "reply_comment"
+	// ResolveThreadCommand resolves a review thread.
+	ResolveThreadCommand ActionCommand = "resolve_thread"
+	// UnresolveThreadCommand reopens a review thread.
 	UnresolveThreadCommand ActionCommand = "unresolve_thread"
 )
 
@@ -69,7 +75,7 @@ type ReplyCommentPayload struct {
 // Validate checks if ActionRequest has all required fields
 func (ar *ActionRequest) Validate() error {
 	if ar.PRID == "" {
-		return fmt.Errorf("PRID is required")
+		return fmt.Errorf("pr id is required")
 	}
 
 	switch ar.Action {
@@ -131,7 +137,7 @@ func (ar *ActionResult) IsAmbiguousRemoteSuccess() bool {
 
 // permanentErrorKeywords are substrings that indicate a permanent failure
 // which should not be retried.
-var permanentErrorKeywords = []string{
+var permanentErrorKeywords = [...]string{
 	"status 401", "status: 401", "http 401", "401 unauthorized", "unauthorized",
 	"status 403", "status: 403", "http 403", "403 forbidden", "forbidden",
 	"status 404", "status: 404", "http 404", "404 not found", "not found",
@@ -142,7 +148,7 @@ var permanentErrorKeywords = []string{
 
 // transientErrorKeywords are substrings that indicate a transient failure
 // which is worth retrying.
-var transientErrorKeywords = []string{
+var transientErrorKeywords = [...]string{
 	// Rate-limit: explicit HTTP-status patterns avoid matching PR numbers like
 	// owner/repo#429 in composed provider error messages.
 	"status 429", "status: 429", "http 429", "429 too many", "429 rate", "rate limit",
@@ -192,7 +198,7 @@ func (ar *ActionResult) IsRecoverable() bool {
 // "429" to avoid false-positives when the error message contains a PR number
 // like "owner/repo#429" or "PR #429".
 // ": 429" matches go-github ErrorResponse format ("POST ...: 429  []").
-var rateLimitKeywords = []string{
+var rateLimitKeywords = [...]string{
 	"status 429", "status: 429", "http 429", "429 too many", "429 rate", ": 429", "rate limit",
 }
 

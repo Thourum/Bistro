@@ -70,6 +70,44 @@ func TestSeedOverwritesPresent(t *testing.T) {
 	}
 }
 
+func TestSeedPreservesRuleLinkAndPermissions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "rules")
+	if err := SeedAndUpdate(dir); err != nil {
+		t.Fatalf("initial seed: %v", err)
+	}
+	link := filepath.Join(dir, "greptile.yml")
+	target := filepath.Join(t.TempDir(), "rule.yml")
+	if err := os.Rename(link, target); err != nil {
+		t.Fatalf("move rule: %v", err)
+	}
+	if err := os.Chmod(target, 0o600); err != nil {
+		t.Fatalf("chmod rule: %v", err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("corrupted: [broken"), 0o600); err != nil {
+		t.Fatalf("corrupt rule: %v", err)
+	}
+
+	if err := SeedAndUpdate(dir); err != nil {
+		t.Fatalf("re-seed: %v", err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("rule link lost: info=%v, err=%v", info, err)
+	}
+	if info, err := os.Stat(target); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("rule permissions changed: info=%v, err=%v", info, err)
+	}
+	want, err := builtinFS.ReadFile("builtin/greptile.yml")
+	if err != nil {
+		t.Fatalf("read embedded rule: %v", err)
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != string(want) {
+		t.Fatalf("linked rule not updated: err=%v", err)
+	}
+}
+
 func TestSeedNeverTouchesUserFiles(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "rules")
 	if err := SeedAndUpdate(dir); err != nil {

@@ -1,114 +1,45 @@
-import { useHotkey } from '@tanstack/react-hotkeys';
-import { err, ok, type Result, ResultAsync } from 'neverthrow';
+import { err, Fault, ok, ResultAsync } from '@thourum/fault';
 import React from 'react';
 import { useStore } from '../hooks/useStore';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
+import {
+  parseScanDevFolderResult,
+  parseValidateDevFolderResult,
+  type ValidateDevFolderResult,
+} from './onboardingResults';
 
 /**
  * One-time onboarding — structure and classes match
  * `stitch_terminal_authentic_prd/onboarding/code.html` (body main + footer).
  * Global `AppFooter` renders below this component in `App.tsx`.
  */
-interface ValidateDevFolderResult {
-  canonicalPath: string;
-}
-
-interface ScanDevFolderResult {
-  discovered: number;
-}
-
-function validationErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return 'Unable to validate that folder.';
-}
-
-function sendResultErrorMessage(result: unknown, fallback: string): string {
-  if (typeof result !== 'object' || result === null) {
-    return fallback;
-  }
-
-  const error = (result as { error?: unknown }).error;
-  if (typeof error === 'string') {
-    return error;
-  }
-
-  const message = (result as { message?: unknown }).message;
-  if (typeof message === 'string') {
-    return message;
-  }
-
-  return fallback;
-}
-
-function parseValidateDevFolderResult(
-  data: unknown,
-): Result<ValidateDevFolderResult, string> {
-  if (
-    typeof data === 'object' &&
-    data !== null &&
-    (data as { ok?: unknown }).ok === false
-  ) {
-    return err(sendResultErrorMessage(data, 'Unable to validate that folder.'));
-  }
-
-  if (
-    typeof data === 'object' &&
-    data !== null &&
-    (data as { ok?: unknown }).ok === true &&
-    typeof (data as { canonical_path?: unknown }).canonical_path === 'string'
-  ) {
-    return ok({
-      canonicalPath: (data as { canonical_path: string }).canonical_path,
-    });
-  }
-  return err('Dev folder validation returned an invalid response.');
-}
-
-function parseScanDevFolderResult(
-  data: unknown,
-): Result<ScanDevFolderResult, string> {
-  if (
-    typeof data === 'object' &&
-    data !== null &&
-    Array.isArray((data as { repositories?: unknown }).repositories)
-  ) {
-    return ok({
-      discovered: (data as { repositories: unknown[] }).repositories.length,
-    });
-  }
-
-  if (
-    typeof data === 'object' &&
-    data !== null &&
-    (data as { ok?: unknown }).ok === true &&
-    typeof (data as { discovered?: unknown }).discovered === 'number'
-  ) {
-    return ok({
-      discovered: (data as { discovered: number }).discovered,
-    });
-  }
-  return err('Dev folder scan returned an invalid response.');
+function validationFault(error: unknown): Fault {
+  return new Fault(
+    error instanceof Error ? error.message : 'Unable to validate that folder.',
+  )
+    .withTag('VALIDATION_ERROR')
+    .withCause(error);
 }
 
 function persistDevFolderPath(
   result: ValidateDevFolderResult,
-): ResultAsync<ValidateDevFolderResult, string> {
+): ResultAsync<ValidateDevFolderResult, Fault> {
   return ResultAsync.fromPromise(
     window.electron.settings.set({
       repositories: { devFolderPath: result.canonicalPath },
     }),
-    validationErrorMessage,
+    validationFault,
   ).andThen((settingsResult) => {
     if ('err' in settingsResult) {
       return err(
-        settingsResult.err.trim() === ''
-          ? 'Unable to write settings.'
-          : settingsResult.err,
+        new Fault(
+          settingsResult.err.trim() === ''
+            ? 'Unable to write settings.'
+            : settingsResult.err,
+        ).withTag('SETTINGS_ERROR'),
       );
     }
 
@@ -122,7 +53,6 @@ export function OnboardingPage(): React.ReactElement {
     appStore,
     (s: UIState) => s.confirmingAction,
   );
-  const { request } = useWebSocket();
   const [devFolderError, setDevFolderError] = React.useState<string | null>(
     null,
   );
@@ -136,50 +66,55 @@ export function OnboardingPage(): React.ReactElement {
         ...settingsStore.state.appearance,
         onboardingComplete: true,
       },
-    });
+    }).match(
+      () => undefined,
+      (error) =>
+        setDevFolderError(
+          `Onboarding could not be completed: ${error.message}`,
+        ),
+    );
   }, []);
 
   const chooseDevFolder = React.useCallback(() => {
     setDevFolderError(null);
     setDiscoveredCount(null);
 
-    ResultAsync.fromPromise(
-      window.electron.pickFolder(),
-      validationErrorMessage,
-    )
+    ResultAsync.fromPromise(window.electron.pickFolder(), validationFault)
       .andThen((path) => {
         if (path === null) {
-          return err('Folder selection cancelled.');
+          return err(
+            new Fault('Folder selection cancelled.').withTag('CANCELLED'),
+          );
         }
         return ok(path);
       })
       .andThen((path) =>
-        ResultAsync.fromPromise(
-          request('VALIDATE_DEV_FOLDER', { path }),
-          validationErrorMessage,
-        ).andThen(parseValidateDevFolderResult),
+        wsClient
+          .request('VALIDATE_DEV_FOLDER', { path })
+          .mapErr(validationFault)
+          .andThen(parseValidateDevFolderResult),
       )
       .andThen(persistDevFolderPath)
       .andThen((result) =>
-        ResultAsync.fromPromise(
-          request('SCAN_DEV_FOLDER', {
+        wsClient
+          .request('SCAN_DEV_FOLDER', {
             path: result.canonicalPath,
             reason: 'settings-change',
-          }),
-          validationErrorMessage,
-        ).andThen(parseScanDevFolderResult),
+          })
+          .mapErr(validationFault)
+          .andThen(parseScanDevFolderResult),
       )
       .match(
         (result) => {
           setDiscoveredCount(result.discovered);
         },
-        (message) => {
-          if (message !== 'Folder selection cancelled.') {
-            setDevFolderError(message);
+        (error) => {
+          if (error.tag !== 'CANCELLED') {
+            setDevFolderError(error.message);
           }
         },
       );
-  }, [request]);
+  }, []);
 
   React.useEffect(() => {
     if (confirmingAction === 'onboarding_finish') {
@@ -187,8 +122,6 @@ export function OnboardingPage(): React.ReactElement {
       finish();
     }
   }, [confirmingAction, finish]);
-
-  useHotkey('Space', finish);
 
   return (
     <div className="flex flex-col flex-1 min-h-0 h-full w-full bg-background text-on-surface">

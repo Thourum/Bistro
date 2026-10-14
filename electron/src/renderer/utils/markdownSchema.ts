@@ -13,20 +13,17 @@ import type { Options as RehypeSanitizeOptions } from 'rehype-sanitize';
 import { defaultSchema } from 'rehype-sanitize';
 
 type MarkdownSchema = NonNullable<RehypeSanitizeOptions>;
-type SchemaAttributes = NonNullable<MarkdownSchema['attributes']>;
-type SchemaProtocols = NonNullable<MarkdownSchema['protocols']>;
-
-// Build a clean copy of the default attributes without any image-related keys.
-const { img: _img, ...attributesWithoutImg } = (defaultSchema.attributes ??
-  {}) as SchemaAttributes;
-
-// Protocols: keep only https for hrefs; remove src/longDesc entirely.
-const {
-  src: _src,
-  longDesc: _longDesc,
-  href: _href,
-  ...otherProtocols
-} = (defaultSchema.protocols ?? {}) as SchemaProtocols;
+// Remove image-related fields without changing the default schema.
+const attributesWithoutImg = Object.fromEntries(
+  Object.entries(defaultSchema.attributes ?? {}).filter(
+    ([tag]) => tag !== 'img',
+  ),
+);
+const otherProtocols = Object.fromEntries(
+  Object.entries(defaultSchema.protocols ?? {}).filter(
+    ([attribute]) => !['src', 'longDesc', 'href'].includes(attribute),
+  ),
+);
 
 // Tag names: exclude img / picture / source.
 const cleanTagNames = (defaultSchema.tagNames ?? []).filter(

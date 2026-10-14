@@ -1,4 +1,4 @@
-import { err, ok, type Result } from 'neverthrow';
+import { err, type Fault, ok, type Result, ServiceError } from '@thourum/fault';
 
 /** `$EDITOR` split into the executable and any leading arguments it carries. */
 export interface EditorCommand {
@@ -17,10 +17,10 @@ export interface EditorCommand {
  */
 export function parseEditorCommand(
   editorCommand: string,
-): Result<EditorCommand, string> {
+): Result<EditorCommand, Fault> {
   const [bin, ...leadingArgs] = tokenize(editorCommand);
   if (bin === undefined || bin === '') {
-    return err('$EDITOR is not set');
+    return err(ServiceError('CONFIGURATION_ERROR', '$EDITOR is not set'));
   }
   return ok({ bin, leadingArgs });
 }
@@ -80,7 +80,7 @@ export function buildEditorArgs(
   editorCommand: string,
   file: string,
   line: number | undefined,
-): Result<string[], string> {
+): Result<string[], Fault> {
   return parseEditorCommand(editorCommand).map(({ bin, leadingArgs }) => [
     ...leadingArgs,
     ...targetArgs(editorBinaryName(bin), file, line),

@@ -1,10 +1,10 @@
 import React, { useCallback } from 'react';
 import { ProviderButton } from '../components/ProviderButton';
 import { useStore } from '../hooks/useStore';
-import { useWebSocket } from '../hooks/useWebSocket';
 import { AuthLayout } from '../layouts/AuthLayout';
 import type { ProviderId } from '../providers';
 import { PROVIDERS, parseAuthAction } from '../providers';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import { createLogger } from '../utils/logger';
@@ -12,7 +12,6 @@ import { createLogger } from '../utils/logger';
 const log = createLogger('LoginPage');
 
 export function LoginPage() {
-  const { send } = useWebSocket();
   const syncStatus = useStore(appStore, (s: UIState) => s.syncStatus);
   const syncError = useStore(appStore, (s: UIState) => s.syncError);
   const lastSyncAt = useStore(appStore, (s: UIState) => s.lastSyncAt);
@@ -30,7 +29,7 @@ export function LoginPage() {
 
       log.info({ provider, syncStatus }, 'provider clicked');
 
-      const msgId = send('AUTH_START', { provider });
+      const msgId = wsClient.send('AUTH_START', { provider });
 
       if (msgId === undefined) {
         log.error(
@@ -47,7 +46,7 @@ export function LoginPage() {
 
       log.info({ provider, msgId }, 'AUTH_START sent');
     },
-    [send, syncStatus],
+    [syncStatus],
   );
 
   const confirmingAction = useStore(
@@ -64,7 +63,8 @@ export function LoginPage() {
     if (parsed === null) return;
     if (authLoading) return;
 
-    handleProviderClick(parsed.id as ProviderId);
+    const provider = PROVIDERS.find((entry) => entry.id === parsed.id);
+    if (provider !== undefined) handleProviderClick(provider.id);
   }, [confirmingAction, authLoading, handleProviderClick]);
 
   return (

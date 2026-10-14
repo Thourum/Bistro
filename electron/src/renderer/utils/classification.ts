@@ -1,12 +1,12 @@
 import type { Comment, CommentSeverity } from '../types';
 
-export const SEVERITY_RANK: Record<CommentSeverity, number> = {
+export const SEVERITY_RANK = {
   critical: 5,
   warning: 4,
   suggestion: 3,
   nit: 2,
   info: 1,
-};
+} as const satisfies Record<CommentSeverity, number>;
 
 const UNCLASSIFIED_RANK = 0;
 const AUTO_COLLAPSED_SEVERITIES = new Set<CommentSeverity>(['nit', 'info']);
@@ -14,8 +14,8 @@ const KNOWN_BOT_VENDORS = new Set(['coderabbit', 'greptile']);
 
 export interface ClassificationCounts {
   human: number;
-  bySeverity: Record<CommentSeverity | 'unclassified', number>;
-  byVendor: Record<string, number>;
+  bySeverity: Readonly<Record<CommentSeverity | 'unclassified', number>>;
+  byVendor: Readonly<Record<string, number>>;
 }
 
 export interface SeverityFilterOptions {
@@ -42,16 +42,6 @@ function emptySeverityCounts(): Record<
   };
 }
 
-function incrementCount(
-  counts: Record<string, number>,
-  key: string,
-): Record<string, number> {
-  return {
-    ...counts,
-    [key]: (counts[key] ?? 0) + 1,
-  };
-}
-
 export function sortBySeverity(comments: readonly Comment[]): Comment[] {
   return [...comments].sort((firstComment, secondComment) => {
     const rankDifference =
@@ -72,35 +62,24 @@ export function isAutoCollapsed(comment: Comment): boolean {
 export function aggregateCounts(
   comments: readonly Comment[],
 ): ClassificationCounts {
-  return comments.reduce<ClassificationCounts>(
-    (counts, comment) => {
-      const severityKey = comment.severity ?? 'unclassified';
-      const isKnownBotVendor =
-        comment.author_type === 'bot' && comment.bot_vendor;
-      const vendorKey = isKnownBotVendor
-        ? KNOWN_BOT_VENDORS.has(comment.bot_vendor as string)
-          ? (comment.bot_vendor as string)
-          : 'other'
-        : undefined;
+  const bySeverity = emptySeverityCounts();
+  const byVendor: Record<string, number> = {};
+  let human = 0;
 
-      return {
-        human:
-          comment.author_type === 'human' ? counts.human + 1 : counts.human,
-        bySeverity: incrementCount(counts.bySeverity, severityKey) as Record<
-          CommentSeverity | 'unclassified',
-          number
-        >,
-        byVendor: vendorKey
-          ? incrementCount(counts.byVendor, vendorKey)
-          : counts.byVendor,
-      };
-    },
-    {
-      human: 0,
-      bySeverity: emptySeverityCounts(),
-      byVendor: {},
-    },
-  );
+  for (const comment of comments) {
+    if (comment.author_type === 'human') human += 1;
+    const severityKey = comment.severity ?? 'unclassified';
+    bySeverity[severityKey] = (bySeverity[severityKey] ?? 0) + 1;
+
+    if (comment.author_type === 'bot' && comment.bot_vendor) {
+      const vendorKey = KNOWN_BOT_VENDORS.has(comment.bot_vendor)
+        ? comment.bot_vendor
+        : 'other';
+      byVendor[vendorKey] = (byVendor[vendorKey] ?? 0) + 1;
+    }
+  }
+
+  return { human, bySeverity, byVendor };
 }
 
 export function humanizeSource(source: string | undefined): string {
@@ -144,11 +123,11 @@ export interface MergedFinding {
   /** Anchor member (first visible, in input order). */
   anchor: Comment;
   /** All visible members, anchor first. Length 1 = plain comment. */
-  members: Comment[];
+  members: readonly Comment[];
   /** Max severity among visible members; undefined when none classified. */
   severity: CommentSeverity | undefined;
   /** Distinct vendor labels of visible members, e.g. ["coderabbit","greptile"]. */
-  vendors: string[];
+  vendors: readonly string[];
 }
 
 /**
@@ -160,21 +139,19 @@ export function groupVisibleFindings(
 ): MergedFinding[] {
   const byGroup = new Map<string, Comment[]>();
   for (const comment of comments) {
-    if (!comment.dedup_group_id) continue;
-    byGroup.set(comment.dedup_group_id, [
-      ...(byGroup.get(comment.dedup_group_id) ?? []),
-      comment,
-    ]);
+    const groupId = comment.dedup_group_id;
+    if (!groupId) continue;
+    const members = byGroup.get(groupId);
+    if (members === undefined) byGroup.set(groupId, [comment]);
+    else members.push(comment);
   }
 
   const emitted = new Set<string>();
   const findings: MergedFinding[] = [];
   for (const comment of comments) {
     const groupId = comment.dedup_group_id;
-    const members =
-      groupId && (byGroup.get(groupId)?.length ?? 0) >= 2
-        ? (byGroup.get(groupId) as Comment[])
-        : [comment];
+    const grouped = groupId ? byGroup.get(groupId) : undefined;
+    const members = grouped && grouped.length >= 2 ? grouped : [comment];
 
     if (groupId && members.length >= 2) {
       if (emitted.has(groupId)) continue;
@@ -196,7 +173,7 @@ export function groupVisibleFindings(
       ),
     ];
     findings.push({
-      anchor: members[0] as Comment,
+      anchor: comment,
       members,
       severity,
       vendors,

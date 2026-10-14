@@ -15,32 +15,36 @@ import (
 
 const defaultBatchConcurrency = int32(4)
 
+// SettingsSnapshot identifies the provider and model used for classification.
 type SettingsSnapshot struct {
 	Provider string
 	Model    string
 }
 
+// Logger records LLM classification failures without logging comment bodies.
 type Logger interface {
-	Printf(format string, v ...interface{})
+	Printf(format string, v ...any)
 }
 
+// TierConfig supplies local storage, client, and notifications for the LLM tier.
 type TierConfig struct {
 	DB            *sql.DB
 	Client        ClassifierClient
 	Mode          func() string
 	Settings      func() SettingsSnapshot
-	Emit          func(eventType string, data map[string]interface{})
-	ServeComments func(prID string) (interface{}, error)
+	Emit          func(eventType string, data map[string]any)
+	ServeComments func(prID string) (any, error)
 	Log           Logger
 }
 
+// Tier runs optional BYOK classification for unclassified PR comments.
 type Tier struct {
 	db            *sql.DB
 	client        ClassifierClient
 	mode          func() string
 	settings      func() SettingsSnapshot
-	emit          func(eventType string, data map[string]interface{})
-	serveComments func(prID string) (interface{}, error)
+	emit          func(eventType string, data map[string]any)
+	serveComments func(prID string) (any, error)
 	log           Logger
 
 	authDisabled  atomic.Bool
@@ -64,6 +68,7 @@ type cachedClassification struct {
 	Model    string
 }
 
+// NewTier constructs the optional classifier with no-op notification defaults.
 func NewTier(config TierConfig) *Tier {
 	mode := config.Mode
 	if mode == nil {
@@ -75,7 +80,7 @@ func NewTier(config TierConfig) *Tier {
 	}
 	emit := config.Emit
 	if emit == nil {
-		emit = func(string, map[string]interface{}) {}
+		emit = func(string, map[string]any) {}
 	}
 	logger := config.Log
 	if logger == nil {
@@ -94,6 +99,7 @@ func NewTier(config TierConfig) *Tier {
 	}
 }
 
+// KickPR schedules one classification batch, coalescing concurrent calls per PR.
 func (t *Tier) KickPR(ctx context.Context, prID string) {
 	if t == nil || t.db == nil || t.client == nil || prID == "" {
 		return
@@ -131,6 +137,7 @@ func (t *Tier) KickPR(ctx context.Context, prID string) {
 	}()
 }
 
+// Wait blocks until all scheduled classification batches finish.
 func (t *Tier) Wait() {
 	if t == nil {
 		return
@@ -138,6 +145,7 @@ func (t *Tier) Wait() {
 	t.wg.Wait()
 }
 
+// ResetAuth re-enables classification after credentials are updated.
 func (t *Tier) ResetAuth() {
 	if t == nil {
 		return
@@ -176,7 +184,6 @@ func (t *Tier) runBatch(ctx context.Context, prID string, mode string) {
 			break
 		}
 
-		comment := comment
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
@@ -189,7 +196,7 @@ func (t *Tier) runBatch(ctx context.Context, prID string, mode string) {
 			}
 			if errors.Is(err, ErrAuth) {
 				if t.authDisabled.CompareAndSwap(false, true) {
-					t.emit("BYOK_AUTH_FAILED", map[string]interface{}{})
+					t.emit("BYOK_AUTH_FAILED", map[string]any{})
 				}
 				cancelBatch()
 				return
@@ -206,7 +213,7 @@ func (t *Tier) runBatch(ctx context.Context, prID string, mode string) {
 	}
 
 	workers.Wait()
-	if shouldAbandon.Load() || errors.Is(batchCtx.Err(), context.Canceled) && ctx.Err() != nil || t.authDisabled.Load() {
+	if shouldAbandon.Load() || (errors.Is(batchCtx.Err(), context.Canceled) && ctx.Err() != nil) || t.authDisabled.Load() {
 		return
 	}
 
@@ -228,12 +235,11 @@ func (t *Tier) selectComments(ctx context.Context, prID string, mode string) ([]
 		COALESCE(line_number, 0), COALESCE(diff_hunk, '') FROM comments WHERE pr_id = ?`
 	query := selectColumns + `
 		AND (classification_source IS NULL OR classification_source NOT LIKE 'byok:%') ORDER BY id`
-	args := []interface{}{prID}
 	if mode == "rules+llm" {
 		query = selectColumns + ` AND classification_source = 'unclassified' ORDER BY id`
 	}
 
-	rows, err := t.db.QueryContext(ctx, query, args...)
+	rows, err := t.db.QueryContext(ctx, query, prID)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +339,7 @@ func (t *Tier) upsertCache(ctx context.Context, bodyHash string, severity string
 }
 
 func (t *Tier) emitCommentsReady(prID string) {
-	data := map[string]interface{}{"pr_id": prID}
+	data := map[string]any{"pr_id": prID}
 	if t.serveComments != nil {
 		comments, err := t.serveComments(prID)
 		if err != nil {
@@ -347,7 +353,7 @@ func (t *Tier) emitCommentsReady(prID string) {
 
 func (t *Tier) emitUsage() {
 	sessionTokens := t.sessionTokens.Load()
-	t.emit("BYOK_USAGE", map[string]interface{}{
+	t.emit("BYOK_USAGE", map[string]any{
 		"session_tokens": sessionTokens,
 		"est_cost":       estimateCostUSD(sessionTokens, t.settings()),
 	})
@@ -373,15 +379,19 @@ func estimateCostUSD(tokens int64, settings SettingsSnapshot) float64 {
 }
 
 func estimatedCostPerTokenUSD(settings SettingsSnapshot) float64 {
-	// Rough blended estimates for UI-only session counters. Actual billing varies by model and provider.
-	switch strings.ToLower(settings.Provider) {
-	case "anthropic":
-		return 0.000003
-	case "openrouter":
-		return 0.0000015
-	case "ollama":
-		return 0
-	default:
-		return 0.000002
+	// Rough blended USD/token estimates for UI-only counters, not billing rates.
+	const (
+		anthropicUSDPerToken  = 0.000003
+		openRouterUSDPerToken = 0.0000015
+		defaultUSDPerToken    = 0.000002
+	)
+	costs := map[string]float64{
+		"anthropic":  anthropicUSDPerToken,
+		"openrouter": openRouterUSDPerToken,
+		"ollama":     0,
 	}
+	if cost, ok := costs[strings.ToLower(settings.Provider)]; ok {
+		return cost
+	}
+	return defaultUSDPerToken
 }

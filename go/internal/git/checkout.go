@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,10 +26,10 @@ type CheckoutInspection struct {
 // working tree. (CheckoutPRHead probes commit presence itself before fetching.)
 func InspectPRCheckout(localPath, headSHA string) (CheckoutInspection, error) {
 	if localPath == "" {
-		return CheckoutInspection{}, fmt.Errorf("local path cannot be empty")
+		return CheckoutInspection{}, errors.New("local path cannot be empty")
 	}
 	if headSHA == "" {
-		return CheckoutInspection{}, fmt.Errorf("headSHA cannot be empty")
+		return CheckoutInspection{}, errors.New("headSHA cannot be empty")
 	}
 
 	repo, err := gitlib.PlainOpen(localPath)
@@ -46,7 +47,7 @@ func InspectPRCheckout(localPath, headSHA string) (CheckoutInspection, error) {
 
 // ErrWorktreeDirty is returned by CheckoutPRHead when the worktree has
 // uncommitted changes. Checkout refuses to run rather than discard them.
-var ErrWorktreeDirty = fmt.Errorf("worktree dirty")
+var ErrWorktreeDirty = errors.New("worktree dirty")
 
 // CheckoutPRHead moves the repository at localPath's HEAD to headSHA,
 // detaching it. Fetches first only when the commit isn't already present
@@ -62,10 +63,10 @@ var ErrWorktreeDirty = fmt.Errorf("worktree dirty")
 // if nothing else can mutate the repo between the check and the checkout.
 func (c *Client) CheckoutPRHead(ctx context.Context, repoID, localPath, headSHA string) error {
 	if localPath == "" {
-		return fmt.Errorf("local path cannot be empty")
+		return errors.New("local path cannot be empty")
 	}
 	if headSHA == "" {
-		return fmt.Errorf("headSHA cannot be empty")
+		return errors.New("headSHA cannot be empty")
 	}
 
 	operation := func() error {
@@ -117,7 +118,7 @@ func (c *Client) checkoutPRHeadLocked(ctx context.Context, repoID, localPath, he
 			},
 			Tags: gitlib.NoTags,
 		}
-		if err := repo.FetchContext(ctx, fetchOpts); err != nil && err != gitlib.NoErrAlreadyUpToDate {
+		if err := repo.FetchContext(ctx, fetchOpts); err != nil && !errors.Is(err, gitlib.NoErrAlreadyUpToDate) {
 			return fmt.Errorf("failed to fetch refs before checkout: %w", err)
 		}
 		if _, err := repo.CommitObject(targetHash); err != nil {

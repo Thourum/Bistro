@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	gogit "github.com/go-git/go-git/v5"
@@ -63,16 +62,12 @@ type ResolveRequest struct {
 // AnchorResolver re-anchors GitHub inline review comments across rebases.
 // It uses the local go-git clone (already fetched by the sync worker for diffs)
 // and never clones; gracefully degrades when the clone is absent.
-type AnchorResolver struct {
-	log *slog.Logger
-}
+type AnchorResolver struct{}
 
-// NewAnchorResolver creates an AnchorResolver. Pass nil to use slog.Default().
-func NewAnchorResolver(log *slog.Logger) *AnchorResolver {
-	if log == nil {
-		log = slog.Default()
-	}
-	return &AnchorResolver{log: log}
+// NewAnchorResolver creates an AnchorResolver. Errors are returned to the
+// caller rather than logged inside the resolver.
+func NewAnchorResolver() *AnchorResolver {
+	return &AnchorResolver{}
 }
 
 // Resolve re-anchors a single review comment against the current head.
@@ -93,36 +88,18 @@ func (r *AnchorResolver) Resolve(req ResolveRequest) (AnchorResult, error) {
 
 	repo, err := gogit.PlainOpen(req.LocalPath)
 	if err != nil {
-		r.log.Debug("anchor: clone unavailable", "path", req.LocalPath, "err", err)
-		return fallback, err
+		return fallback, fmt.Errorf("open anchor repository %q: %w", req.LocalPath, err)
 	}
 
-	// Determine the diff base for position→line conversion.
-	// DiffBaseSHA is preferred (correct PR geometry); fall back to firstParent
-	// only when not provided (backward-compat / graceful degradation).
-	diffBase := req.DiffBaseSHA
-	if diffBase == "" {
-		commitObj, cerr := repo.CommitObject(plumbing.NewHash(req.CommitSHA))
-		if cerr != nil {
-			r.log.Warn("anchor: commit not found", "sha", req.CommitSHA, "err", cerr)
-			return fallback, cerr
-		}
-		if commitObj.NumParents() > 0 {
-			parent, perr := commitObj.Parent(0)
-			if perr != nil {
-				return fallback, fmt.Errorf("parent commit: %w", perr)
-			}
-			diffBase = parent.Hash.String()
-		} else {
-			diffBase = plumbing.ZeroHash.String()
-		}
+	diffBase, err := anchorDiffBase(repo, req)
+	if err != nil {
+		return fallback, err
 	}
 
 	// Step 1: GitHub diff position → original file line in CommitSHA.
-	originalLine, err := r.PositionToLine(req.LocalPath, diffBase, req.CommitSHA, req.FilePath, req.Side, req.Position)
+	originalLine, err := positionToLine(repo, diffBase, req.CommitSHA, req.FilePath, req.Side, req.Position)
 	if err != nil {
-		r.log.Warn("anchor: position out of range", "comment_id", req.CommentID, "err", err)
-		return fallback, err
+		return fallback, fmt.Errorf("anchor comment %s position: %w", req.CommentID, err)
 	}
 
 	// Fast path: comment is on the current head — no re-resolution needed.
@@ -136,69 +113,91 @@ func (r *AnchorResolver) Resolve(req ResolveRequest) (AnchorResult, error) {
 	}
 
 	// Step 2: compute content hash at original line in CommitSHA.
-	lineHash, ctxHash, err := r.FileLineHash(req.LocalPath, req.CommitSHA, req.FilePath, originalLine)
+	lineHash, ctxHash, err := fileLineHash(repo, req.CommitSHA, req.FilePath, originalLine)
 	if err != nil {
-		r.log.Warn("anchor: could not hash original line", "err", err)
-		return fallback, err
+		return fallback, fmt.Errorf("hash original anchor line: %w", err)
 	}
 
-	// Step 3: scan HeadSHA file for matching hash pair.
+	return resolveAgainstHead(repo, req, diffBase, originalLine, anchorHashes{line: lineHash, context: ctxHash})
+}
+
+// anchorDiffBase prefers the PR's actual diff base, with a first-parent
+// fallback for older callers that do not supply one.
+func anchorDiffBase(repo *gogit.Repository, req ResolveRequest) (string, error) {
+	if req.DiffBaseSHA != "" {
+		return req.DiffBaseSHA, nil
+	}
+	commit, err := repo.CommitObject(plumbing.NewHash(req.CommitSHA))
+	if err != nil {
+		return "", fmt.Errorf("anchor commit %s: %w", req.CommitSHA, err)
+	}
+	if commit.NumParents() == 0 {
+		return plumbing.ZeroHash.String(), nil
+	}
+	parent, err := commit.Parent(0)
+	if err != nil {
+		return "", fmt.Errorf("parent commit: %w", err)
+	}
+	return parent.Hash.String(), nil
+}
+
+type anchorHashes struct {
+	line    string
+	context string
+}
+
+func resolveAgainstHead(repo *gogit.Repository, req ResolveRequest, diffBase string, originalLine int, hashes anchorHashes) (AnchorResult, error) {
+	fallback := AnchorResult{CommentID: req.CommentID, HeadSHA: req.HeadSHA}
 	headCommit, err := repo.CommitObject(plumbing.NewHash(req.HeadSHA))
 	if err != nil {
-		r.log.Warn("anchor: head commit not found", "sha", req.HeadSHA, "err", err)
-		return fallback, err
+		return fallback, fmt.Errorf("anchor head commit %s: %w", req.HeadSHA, err)
 	}
 	headFile, err := headCommit.File(req.FilePath)
 	if err != nil {
-		// File deleted entirely in the current head.
-		nearLine := r.nearestHunkLine(repo, diffBase, req.HeadSHA, req.FilePath, originalLine)
-		return AnchorResult{
-			CommentID:        req.CommentID,
-			Outdated:         true,
-			OutdatedNearLine: nearLine,
-			Anchored:         false,
-			HeadSHA:          req.HeadSHA,
-		}, nil
+		return outdatedAnchor(repo, req, diffBase, originalLine), nil
 	}
 	headContents, err := headFile.Contents()
 	if err != nil {
 		return fallback, fmt.Errorf("read head file: %w", err)
 	}
-
 	headLines := splitFileLines(headContents)
 	if len(headLines) > maxFileLinesForAnchor {
 		return fallback, fmt.Errorf("file too large to anchor (%d lines)", len(headLines))
 	}
+	if line := matchingHeadLine(headLines, hashes); line != 0 {
+		return AnchorResult{CommentID: req.CommentID, AnchoredLine: line, Anchored: true, HeadSHA: req.HeadSHA}, nil
+	}
+	return outdatedAnchor(repo, req, diffBase, originalLine), nil
+}
 
-	// Scan for content hash match, then verify context hash.
-	for i, line := range headLines {
-		if sha256hex(strings.TrimSpace(line)) != lineHash {
+func matchingHeadLine(lines []string, hashes anchorHashes) int {
+	for index, line := range lines {
+		if sha256hex(strings.TrimSpace(line)) != hashes.line {
 			continue
 		}
-		lo, hi := contextBounds(len(headLines), i)
-		ctxParts := make([]string, 0, hi-lo)
-		for _, l := range headLines[lo:hi] {
-			ctxParts = append(ctxParts, strings.TrimSpace(l))
-		}
-		if sha256hex(strings.Join(ctxParts, "\n")) == ctxHash {
-			return AnchorResult{
-				CommentID:    req.CommentID,
-				AnchoredLine: i + 1,
-				Anchored:     true,
-				HeadSHA:      req.HeadSHA,
-			}, nil
+		lo, hi := contextBounds(len(lines), index)
+		if contextHash(lines[lo:hi]) == hashes.context {
+			return index + 1
 		}
 	}
+	return 0
+}
 
-	// Step 4: content not found → outdated; find nearest surviving hunk line.
-	nearLine := r.nearestHunkLine(repo, diffBase, req.HeadSHA, req.FilePath, originalLine)
+func outdatedAnchor(repo *gogit.Repository, req ResolveRequest, diffBase string, originalLine int) AnchorResult {
 	return AnchorResult{
 		CommentID:        req.CommentID,
 		Outdated:         true,
-		OutdatedNearLine: nearLine,
-		Anchored:         false,
+		OutdatedNearLine: nearestHunkLine(repo, diffBase, req.HeadSHA, req.FilePath, originalLine),
 		HeadSHA:          req.HeadSHA,
-	}, nil
+	}
+}
+
+func contextHash(lines []string) string {
+	parts := make([]string, 0, len(lines))
+	for _, line := range lines {
+		parts = append(parts, strings.TrimSpace(line))
+	}
+	return sha256hex(strings.Join(parts, "\n"))
 }
 
 // PositionToLine converts a GitHub unified-diff position value (1-based,
@@ -209,18 +208,20 @@ func (r *AnchorResolver) Resolve(req ResolveRequest) (AnchorResult, error) {
 // diff range), not parent(CommitSHA)..CommitSHA, to match GitHub's position
 // numbering for multi-commit PRs.
 func (r *AnchorResolver) PositionToLine(localPath, baseSHA, headSHA, filePath, side string, position int) (int, error) {
-	if position < 1 {
-		return 0, fmt.Errorf("position must be >= 1, got %d", position)
-	}
-
-	// Root-commit base (zero hash): entire file is one Add chunk; position == line.
-	if baseSHA == plumbing.ZeroHash.String() {
-		return r.positionInRootCommit(localPath, headSHA, filePath, side, position)
-	}
-
 	repo, err := gogit.PlainOpen(localPath)
 	if err != nil {
 		return 0, fmt.Errorf("open repo: %w", err)
+	}
+	return positionToLine(repo, baseSHA, headSHA, filePath, side, position)
+}
+
+func positionToLine(repo *gogit.Repository, baseSHA, headSHA, filePath, side string, position int) (int, error) {
+	if position < 1 {
+		return 0, fmt.Errorf("position must be >= 1, got %d", position)
+	}
+	// Root-commit base (zero hash): entire file is one Add chunk; position == line.
+	if baseSHA == plumbing.ZeroHash.String() {
+		return positionInRootCommit(repo, headSHA, filePath, side, position)
 	}
 
 	baseCommit, err := repo.CommitObject(plumbing.NewHash(baseSHA))
@@ -242,32 +243,18 @@ func (r *AnchorResolver) PositionToLine(localPath, baseSHA, headSHA, filePath, s
 
 	patch, err := baseTree.Patch(headTree)
 	if err != nil {
-		return 0, fmt.Errorf("patch %s..%s: %w", baseSHA[:7], headSHA[:7], err)
+		return 0, fmt.Errorf("patch %s..%s: %w", truncateSHAForLog(baseSHA), truncateSHAForLog(headSHA), err)
 	}
 
-	for _, fp := range patch.FilePatches() {
-		from, to := fp.Files()
-		var fpPath string
-		if to != nil {
-			fpPath = to.Path()
-		} else if from != nil {
-			fpPath = from.Path()
-		}
-		if fpPath != filePath {
-			continue
-		}
-		return positionToLineInPatch(fp, side, position)
+	if filePatch := patchForPath(patch, filePath); filePatch != nil {
+		return positionToLineInPatch(filePatch, side, position)
 	}
-	return 0, fmt.Errorf("file %q not found in diff %s..%s", filePath, baseSHA[:7], headSHA[:7])
+	return 0, fmt.Errorf("file %q not found in diff %s..%s", filePath, truncateSHAForLog(baseSHA), truncateSHAForLog(headSHA))
 }
 
 // positionInRootCommit handles the zero-hash base case (new file, all additions).
 // Position == line number for RIGHT side.
-func (r *AnchorResolver) positionInRootCommit(localPath, commitSHA, filePath, side string, position int) (int, error) {
-	repo, err := gogit.PlainOpen(localPath)
-	if err != nil {
-		return 0, fmt.Errorf("open repo: %w", err)
-	}
+func positionInRootCommit(repo *gogit.Repository, commitSHA, filePath, side string, position int) (int, error) {
 	commit, err := repo.CommitObject(plumbing.NewHash(commitSHA))
 	if err != nil {
 		return 0, fmt.Errorf("commit %s: %w", commitSHA, err)
@@ -406,21 +393,25 @@ func hunkHeaderOnly(header string) string {
 // FileLineHash returns (lineContentHash, contextHash) for the 1-based lineNo
 // in filePath at commitSHA. Both are hex-encoded SHA-256 values.
 func (r *AnchorResolver) FileLineHash(localPath, commitSHA, filePath string, lineNo int) (lineHash, ctxHash string, err error) {
-	repo, rerr := gogit.PlainOpen(localPath)
-	if rerr != nil {
-		return "", "", fmt.Errorf("open repo: %w", rerr)
+	repo, err := gogit.PlainOpen(localPath)
+	if err != nil {
+		return "", "", fmt.Errorf("open repo: %w", err)
 	}
-	commit, cerr := repo.CommitObject(plumbing.NewHash(commitSHA))
-	if cerr != nil {
-		return "", "", fmt.Errorf("commit %s: %w", commitSHA, cerr)
+	return fileLineHash(repo, commitSHA, filePath, lineNo)
+}
+
+func fileLineHash(repo *gogit.Repository, commitSHA, filePath string, lineNo int) (lineHash, ctxHash string, err error) {
+	commit, err := repo.CommitObject(plumbing.NewHash(commitSHA))
+	if err != nil {
+		return "", "", fmt.Errorf("commit %s: %w", commitSHA, err)
 	}
-	f, ferr := commit.File(filePath)
-	if ferr != nil {
-		return "", "", fmt.Errorf("file %s@%s: %w", filePath, commitSHA[:7], ferr)
+	file, err := commit.File(filePath)
+	if err != nil {
+		return "", "", fmt.Errorf("file %s@%s: %w", filePath, truncateSHAForLog(commitSHA), err)
 	}
-	contents, ierr := f.Contents()
-	if ierr != nil {
-		return "", "", fmt.Errorf("read contents: %w", ierr)
+	contents, err := file.Contents()
+	if err != nil {
+		return "", "", fmt.Errorf("read contents: %w", err)
 	}
 	lines := splitFileLines(contents)
 	if lineNo < 1 || lineNo > len(lines) {
@@ -431,17 +422,13 @@ func (r *AnchorResolver) FileLineHash(localPath, commitSHA, filePath string, lin
 	lineHash = sha256hex(targetLine)
 
 	lo, hi := contextBounds(len(lines), lineNo-1)
-	ctxParts := make([]string, 0, hi-lo)
-	for _, l := range lines[lo:hi] {
-		ctxParts = append(ctxParts, strings.TrimSpace(l))
-	}
-	ctxHash = sha256hex(strings.Join(ctxParts, "\n"))
+	ctxHash = contextHash(lines[lo:hi])
 	return lineHash, ctxHash, nil
 }
 
 // nearestHunkLine returns the RIGHT-side line number closest to originalLine
 // among all added and context lines in the diff baseSHA..headSHA for filePath.
-func (r *AnchorResolver) nearestHunkLine(repo *gogit.Repository, baseSHA, headSHA, filePath string, originalLine int) int {
+func nearestHunkLine(repo *gogit.Repository, baseSHA, headSHA, filePath string, originalLine int) int {
 	var baseTree *object.Tree
 	if baseSHA != plumbing.ZeroHash.String() {
 		baseCommit, err := repo.CommitObject(plumbing.NewHash(baseSHA))
@@ -486,20 +473,23 @@ func (r *AnchorResolver) nearestHunkLine(repo *gogit.Repository, baseSHA, headSH
 		return 0
 	}
 
-	for _, fp := range patch.FilePatches() {
-		from, to := fp.Files()
-		var fpPath string
-		if to != nil {
-			fpPath = to.Path()
-		} else if from != nil {
-			fpPath = from.Path()
-		}
-		if fpPath != filePath {
-			continue
-		}
-		return nearestHunkLineInPatch(fp, originalLine)
+	if filePatch := patchForPath(patch, filePath); filePatch != nil {
+		return nearestHunkLineInPatch(filePatch, originalLine)
 	}
 	return 0
+}
+
+func patchForPath(patch fdiff.Patch, filePath string) fdiff.FilePatch {
+	for _, filePatch := range patch.FilePatches() {
+		from, to := filePatch.Files()
+		if to != nil && to.Path() == filePath {
+			return filePatch
+		}
+		if to == nil && from != nil && from.Path() == filePath {
+			return filePatch
+		}
+	}
+	return nil
 }
 
 // nearestHunkLineInPatch collects all RIGHT-side (Equal + Add) lines and

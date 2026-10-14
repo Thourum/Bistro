@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path';
-import { err, ok, type Result } from 'neverthrow';
+import { err, type Fault, ok, type Result, ServiceError } from '@thourum/fault';
 
 export interface ValidOpenInEditorRequest {
   repoRoot: string;
@@ -15,9 +15,11 @@ export interface ValidOpenInEditorRequest {
  */
 export function validateOpenInEditorRequest(
   request: unknown,
-): Result<ValidOpenInEditorRequest, string> {
+): Result<ValidOpenInEditorRequest, Fault> {
   if (typeof request !== 'object' || request === null) {
-    return err('Invalid open-in-editor request');
+    return err(
+      ServiceError('VALIDATION_ERROR', 'Invalid open-in-editor request'),
+    );
   }
   const { repoRoot, relativePath, line } = request as Record<string, unknown>;
   if (
@@ -26,20 +28,20 @@ export function validateOpenInEditorRequest(
     !isAbsolute(repoRoot) ||
     repoRoot.includes('\0')
   ) {
-    return err('Invalid repository root');
+    return err(ServiceError('VALIDATION_ERROR', 'Invalid repository root'));
   }
   if (
     typeof relativePath !== 'string' ||
     relativePath === '' ||
     relativePath.includes('\0')
   ) {
-    return err('Invalid file path');
+    return err(ServiceError('VALIDATION_ERROR', 'Invalid file path'));
   }
   if (
     line !== undefined &&
     !(typeof line === 'number' && Number.isSafeInteger(line) && line >= 1)
   ) {
-    return err('Invalid line number');
+    return err(ServiceError('VALIDATION_ERROR', 'Invalid line number'));
   }
   return ok({ repoRoot, relativePath, line });
 }

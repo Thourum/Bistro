@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -137,7 +138,7 @@ func (rd *RangeDiffer) RunRangeDiff(
 
 	// repoPath validation: must be non-empty and must exist.
 	if repoPath == "" {
-		return RangeDiffResult{}, fmt.Errorf("range-diff: repoPath is empty (would fall back to process cwd)")
+		return RangeDiffResult{}, errors.New("range-diff: repoPath is empty (would fall back to process cwd)")
 	}
 	if _, err := os.Stat(repoPath); err != nil {
 		return RangeDiffResult{}, fmt.Errorf("range-diff: repoPath %q is not accessible: %w", repoPath, err)

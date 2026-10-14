@@ -1,5 +1,6 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
+import { isTextareaSubmit } from '../utils/keybindings';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 
@@ -24,7 +25,7 @@ export function CommentInput({
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    if (isTextareaSubmit(e)) {
       e.preventDefault();
       const trimmed = text.trim();
       if (trimmed) onSubmit(trimmed);

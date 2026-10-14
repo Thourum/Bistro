@@ -1,7 +1,9 @@
+import { Fault } from '@thourum/fault';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { RangeDiffResult } from '../types';
+import { wsClient } from '../services/ws/connection';
+import { type RangeDiffResult, rangeDiffSchema } from '../types';
+import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
-import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('useRangeDiff');
 
@@ -32,10 +34,6 @@ export function useRangeDiff(
   prId: string | undefined,
   req: RangeDiffRequest | null,
 ): RangeDiffState {
-  const { request } = useWebSocket();
-  const requestRef = useRef(request);
-  requestRef.current = request;
-
   const [state, setState] = useState<RangeDiffState>({
     result: null,
     loading: false,
@@ -71,20 +69,21 @@ export function useRangeDiff(
             since_last_review: false,
           };
 
-    requestRef
-      .current('REQUEST_RANGE_DIFF', payload)
-      .then((data) => {
-        setState({
-          result: data as RangeDiffResult,
-          loading: false,
-          error: null,
-        });
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        log.warn({ err: msg }, 'failed to load range diff');
-        setState({ result: null, loading: false, error: msg });
-      });
+    void wsClient
+      .request('REQUEST_RANGE_DIFF', payload)
+      .mapErr((cause) =>
+        new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+      )
+      .andThen((data) => parseResponse(rangeDiffSchema, data))
+      .match(
+        (result) => {
+          setState({ result, loading: false, error: null });
+        },
+        (message) => {
+          log.warn({ err: message.message }, 'failed to load range diff');
+          setState({ result: null, loading: false, error: message.message });
+        },
+      );
   }, [prId, reqKey]);
 
   useEffect(() => {

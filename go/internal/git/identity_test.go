@@ -1,9 +1,18 @@
 package git
 
 import (
+	"errors"
 	"regexp"
 	"testing"
 )
+
+func TestLocationErrorPreservesCause(t *testing.T) {
+	cause := errors.New("fetch failed")
+	locationErr := &LocationError{RepoID: "github:owner/repo", Operation: "fetch", Code: "clone_failed", Message: "fetch failed", Err: cause}
+	if !errors.Is(locationErr, cause) {
+		t.Fatalf("LocationError lost the underlying cause: %v", locationErr)
+	}
+}
 
 func TestParseRemoteURL_AcceptedGitHubForms(t *testing.T) {
 	t.Parallel()

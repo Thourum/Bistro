@@ -134,7 +134,8 @@ func (s *RepoLocationStore) Get(ctx context.Context, repoID string) (*RepoLocati
 	if err != nil {
 		return nil, fmt.Errorf("get repo location %s: %w", repoID, err)
 	}
-	return repoLocationFromGetRow(row), nil
+	location := repoLocationFromRow(repoLocationDBRow(row))
+	return &location, nil
 }
 
 // ListBySource returns all rows with the given source ("local"/"cache").
@@ -146,27 +147,15 @@ func (s *RepoLocationStore) ListBySource(ctx context.Context, source string) ([]
 
 	locations := make([]RepoLocation, 0, len(rows))
 	for _, row := range rows {
-		locations = append(locations, repoLocationFromListRow(row))
+		locations = append(locations, repoLocationFromRow(repoLocationDBRow(row)))
 	}
 	return locations, nil
 }
 
-func repoLocationFromGetRow(row storedb.GetRepoLocationRow) *RepoLocation {
-	return &RepoLocation{
-		RepoID:            row.ID,
-		Provider:          row.Provider,
-		Owner:             row.Owner,
-		Repo:              row.Repo,
-		LocalPath:         row.LocalPath,
-		Source:            row.Source,
-		LastUsedAt:        nullTimeValue(row.LastUsedAt),
-		LocationStatus:    row.LocationStatus,
-		LocationErrorCode: row.LocationErrorCode,
-		LocationError:     row.LocationError,
-	}
-}
+// Both sqlc queries select the same columns, so their row structs are convertible.
+type repoLocationDBRow storedb.GetRepoLocationRow
 
-func repoLocationFromListRow(row storedb.ListRepoLocationsBySourceRow) RepoLocation {
+func repoLocationFromRow(row repoLocationDBRow) RepoLocation {
 	return RepoLocation{
 		RepoID:            row.ID,
 		Provider:          row.Provider,
@@ -181,8 +170,13 @@ func repoLocationFromListRow(row storedb.ListRepoLocationsBySourceRow) RepoLocat
 	}
 }
 
+const (
+	repoLocationSourceLocal = "local"
+	repoLocationStatusOK    = "ok"
+)
+
 func shouldPreserveLocalPath(existing *RepoLocation, canonicalPath string) bool {
-	if existing == nil || existing.Source != "local" || existing.LocationStatus != "ok" {
+	if existing == nil || existing.Source != repoLocationSourceLocal || existing.LocationStatus != repoLocationStatusOK {
 		return false
 	}
 	if existing.LocalPath == "" || existing.LocalPath == canonicalPath {

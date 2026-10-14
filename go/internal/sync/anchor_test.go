@@ -50,7 +50,7 @@ func TestSelectDiffBaseSHA_CurrentPosition(t *testing.T) {
 	patchsets := []store.Patchset{
 		{Number: 1, HeadSHA: "sha-HEAD", BaseSHA: "sha-BASE"},
 	}
-	base, psNum, skip := selectDiffBaseSHA(patchsets, 0, true, "sha-BASE", "sha-HEAD")
+	base, psNum, skip := selectDiffBaseSHA(diffBaseSelection{patchsets: patchsets, isCurrentPosition: true, prBaseSHA: "sha-BASE", prHeadSHA: "sha-HEAD"})
 	if skip {
 		t.Error("current-position must not be skipped")
 	}
@@ -65,7 +65,7 @@ func TestSelectDiffBaseSHA_CurrentPosition(t *testing.T) {
 // TestSelectDiffBaseSHA_CurrentPosition_NoPatchsetYet verifies that a current-position
 // comment is NOT skipped even when no matching patchset row exists yet (first sync).
 func TestSelectDiffBaseSHA_CurrentPosition_NoPatchsetYet(t *testing.T) {
-	base, psNum, skip := selectDiffBaseSHA(nil, 0, true, "sha-BASE", "sha-HEAD")
+	base, psNum, skip := selectDiffBaseSHA(diffBaseSelection{isCurrentPosition: true, prBaseSHA: "sha-BASE", prHeadSHA: "sha-HEAD"})
 	if skip {
 		t.Error("current-position: must not skip when patchset not yet recorded")
 	}
@@ -85,7 +85,7 @@ func TestSelectDiffBaseSHA_OriginalPosition_ByNumber_Found(t *testing.T) {
 		{Number: 2, HeadSHA: "sha-P2", BaseSHA: "sha-P2-BASE"},
 	}
 	// patchsetNum=1 → must select P1's BaseSHA
-	base, _, skip := selectDiffBaseSHA(patchsets, 1, false, "WRONG-CURRENT-BASE", "sha-head")
+	base, _, skip := selectDiffBaseSHA(diffBaseSelection{patchsets: patchsets, patchsetNum: 1, prBaseSHA: "WRONG-CURRENT-BASE", prHeadSHA: "sha-head"})
 	if skip {
 		t.Error("original-position with matching patchset_number must not be skipped")
 	}
@@ -106,7 +106,7 @@ func TestSelectDiffBaseSHA_SameHead_DifferentBases(t *testing.T) {
 	}
 
 	// Comment was made on patchset 1 → must use sha-BASE-ORIGINAL, not sha-BASE-RETARGETED.
-	base, _, skip := selectDiffBaseSHA(patchsets, 1, false, "sha-BASE-RETARGETED", "sha-head")
+	base, _, skip := selectDiffBaseSHA(diffBaseSelection{patchsets: patchsets, patchsetNum: 1, prBaseSHA: "sha-BASE-RETARGETED", prHeadSHA: "sha-head"})
 	if skip {
 		t.Error("patchsetNum=1 found → must not skip")
 	}
@@ -115,7 +115,7 @@ func TestSelectDiffBaseSHA_SameHead_DifferentBases(t *testing.T) {
 	}
 
 	// Comment was made on patchset 2 → must use sha-BASE-RETARGETED.
-	base, _, skip = selectDiffBaseSHA(patchsets, 2, false, "sha-BASE-RETARGETED", "sha-head")
+	base, _, skip = selectDiffBaseSHA(diffBaseSelection{patchsets: patchsets, patchsetNum: 2, prBaseSHA: "sha-BASE-RETARGETED", prHeadSHA: "sha-head"})
 	if skip {
 		t.Error("patchsetNum=2 found → must not skip")
 	}
@@ -131,7 +131,7 @@ func TestSelectDiffBaseSHA_OriginalPosition_NoPatchsetNumber(t *testing.T) {
 		{Number: 1, HeadSHA: "sha-HEAD", BaseSHA: "sha-BASE"},
 	}
 	// patchsetNum=0 → no identity → must skip even though head matches.
-	_, _, skip := selectDiffBaseSHA(patchsets, 0, false, "some-base", "sha-head")
+	_, _, skip := selectDiffBaseSHA(diffBaseSelection{patchsets: patchsets, prBaseSHA: "some-base", prHeadSHA: "sha-head"})
 	if !skip {
 		t.Error("patchsetNum=0: must skip, never approximate")
 	}
@@ -144,7 +144,7 @@ func TestSelectDiffBaseSHA_OriginalPosition_PatchsetNumberNotInDB(t *testing.T) 
 		{Number: 1, HeadSHA: "sha-HEAD", BaseSHA: "sha-BASE"},
 	}
 	// patchsetNum=99 is not in the list → skip.
-	_, _, skip := selectDiffBaseSHA(patchsets, 99, false, "some-base", "sha-head")
+	_, _, skip := selectDiffBaseSHA(diffBaseSelection{patchsets: patchsets, patchsetNum: 99, prBaseSHA: "some-base", prHeadSHA: "sha-head"})
 	if !skip {
 		t.Error("patchsetNum not in DB: must skip")
 	}
@@ -153,7 +153,7 @@ func TestSelectDiffBaseSHA_OriginalPosition_PatchsetNumberNotInDB(t *testing.T) 
 // TestSelectDiffBaseSHA_OriginalPosition_EmptyPatchsets verifies skipping
 // when no patchsets are available.
 func TestSelectDiffBaseSHA_OriginalPosition_EmptyPatchsets(t *testing.T) {
-	_, _, skip := selectDiffBaseSHA(nil, 1, false, "current-base", "sha-head")
+	_, _, skip := selectDiffBaseSHA(diffBaseSelection{patchsetNum: 1, prBaseSHA: "current-base", prHeadSHA: "sha-head"})
 	if !skip {
 		t.Error("empty patchsets: must skip even with non-zero patchset_number")
 	}
@@ -199,7 +199,7 @@ func TestResolveAnchors_OutdatedCommentIsCandidate(t *testing.T) {
 func TestResolveAnchors_OriginalPosition_NoPatchsetNumber_Skipped(t *testing.T) {
 	origPos := 4
 	o := &Orchestrator{
-		anchorResolver: git.NewAnchorResolver(silentLog()),
+		anchorResolver: git.NewAnchorResolver(),
 		// store is nil → no patchset lookup → patchsetNum stays 0 → skipped
 	}
 	comments := []*provider.Comment{{
@@ -211,12 +211,10 @@ func TestResolveAnchors_OriginalPosition_NoPatchsetNumber_Skipped(t *testing.T) 
 		Side:             "RIGHT",
 		// PatchsetNumber: nil — not set
 	}}
-	results := o.resolveAnchors(
-		context.Background(), comments, nil,
-		"pr-test", "/tmp/bistro-nonexistent-clone",
-		"sha-head", "sha-base",
-		silentLog(),
-	)
+	results := o.resolveAnchors(context.Background(), anchorResolutionOptions{
+		comments: comments, prID: "pr-test", localPath: "/tmp/bistro-nonexistent-clone",
+		headSHA: "sha-head", prBaseSHA: "sha-base", log: silentLog(),
+	})
 	if len(results) != 0 {
 		t.Errorf("original-position with no patchset_number must be skipped; got %d results", len(results))
 	}
@@ -228,7 +226,7 @@ func TestResolveAnchors_OriginalPosition_PatchsetNumberSetButNotInDB_Skipped(t *
 	origPos := 4
 	psNum := 5 // will not match any patchset in DB
 	o := &Orchestrator{
-		anchorResolver: git.NewAnchorResolver(silentLog()),
+		anchorResolver: git.NewAnchorResolver(),
 		// store nil → patchsets empty, so patchset 5 not found
 	}
 	comments := []*provider.Comment{{
@@ -240,12 +238,10 @@ func TestResolveAnchors_OriginalPosition_PatchsetNumberSetButNotInDB_Skipped(t *
 		PatchsetNumber:   &psNum, // set, but not in DB
 		Side:             "RIGHT",
 	}}
-	results := o.resolveAnchors(
-		context.Background(), comments, nil,
-		"pr-test", "/tmp/bistro-nonexistent-clone",
-		"sha-head", "sha-base",
-		silentLog(),
-	)
+	results := o.resolveAnchors(context.Background(), anchorResolutionOptions{
+		comments: comments, prID: "pr-test", localPath: "/tmp/bistro-nonexistent-clone",
+		headSHA: "sha-head", prBaseSHA: "sha-base", log: silentLog(),
+	})
 	if len(results) != 0 {
 		t.Errorf("patchset_number not in DB must skip; got %d results", len(results))
 	}
@@ -266,7 +262,7 @@ func TestResolveAnchors_OriginalPosition_WithDB_PatchsetFound_AttemptedNotSkippe
 	}
 
 	o := &Orchestrator{
-		anchorResolver: git.NewAnchorResolver(silentLog()),
+		anchorResolver: git.NewAnchorResolver(),
 		store:          db,
 	}
 	comments := []*provider.Comment{{
@@ -280,12 +276,10 @@ func TestResolveAnchors_OriginalPosition_WithDB_PatchsetFound_AttemptedNotSkippe
 	}}
 	// Clone missing → 0 results (graceful), but NOT because patchset was skipped.
 	// The patchset guard passes because Number==1 is in DB.
-	results := o.resolveAnchors(
-		context.Background(), comments, nil,
-		"pr-anc-2", "/tmp/bistro-nonexistent-clone-456",
-		"sha-current-head", "sha-WRONG-base",
-		silentLog(),
-	)
+	results := o.resolveAnchors(context.Background(), anchorResolutionOptions{
+		comments: comments, prID: "pr-anc-2", localPath: "/tmp/bistro-nonexistent-clone-456",
+		headSHA: "sha-current-head", prBaseSHA: "sha-WRONG-base", log: silentLog(),
+	})
 	if len(results) != 0 {
 		t.Errorf("missing clone: expected 0 (graceful), got %d", len(results))
 	}
@@ -306,7 +300,7 @@ func TestResolveAnchors_OriginalPosition_DBLookup_AttemptedNotSkipped(t *testing
 		VALUES ('c-db-lookup', 'pr-anc-3', 'alice', 'body', '2026-01-01', '2026-01-01', 'review', 2)`) //nolint:errcheck
 
 	o := &Orchestrator{
-		anchorResolver: git.NewAnchorResolver(silentLog()),
+		anchorResolver: git.NewAnchorResolver(),
 		store:          db,
 	}
 	comments := []*provider.Comment{{
@@ -318,12 +312,10 @@ func TestResolveAnchors_OriginalPosition_DBLookup_AttemptedNotSkipped(t *testing
 		PatchsetNumber:   nil, // NOT set on the comment — must be loaded from DB
 		Side:             "RIGHT",
 	}}
-	results := o.resolveAnchors(
-		context.Background(), comments, nil,
-		"pr-anc-3", "/tmp/bistro-nonexistent-clone-789",
-		"sha-current", "sha-WRONG-base",
-		silentLog(),
-	)
+	results := o.resolveAnchors(context.Background(), anchorResolutionOptions{
+		comments: comments, prID: "pr-anc-3", localPath: "/tmp/bistro-nonexistent-clone-789",
+		headSHA: "sha-current", prBaseSHA: "sha-WRONG-base", log: silentLog(),
+	})
 	// Clone missing → 0 results, but not because of patchset skipping.
 	if len(results) != 0 {
 		t.Errorf("missing clone: expected 0 (graceful), got %d", len(results))
@@ -335,7 +327,7 @@ func TestResolveAnchors_OriginalPosition_DBLookup_AttemptedNotSkipped(t *testing
 func TestResolveAnchors_CurrentPosition_NotSkipped(t *testing.T) {
 	pos := 3
 	o := &Orchestrator{
-		anchorResolver: git.NewAnchorResolver(silentLog()),
+		anchorResolver: git.NewAnchorResolver(),
 	}
 	comments := []*provider.Comment{{
 		ID:        "c-current",
@@ -345,12 +337,10 @@ func TestResolveAnchors_CurrentPosition_NotSkipped(t *testing.T) {
 		Position:  &pos,
 		Side:      "RIGHT",
 	}}
-	results := o.resolveAnchors(
-		context.Background(), comments, nil,
-		"pr-test", "/tmp/bistro-nonexistent-clone-xyz",
-		"sha-head", "sha-base",
-		silentLog(),
-	)
+	results := o.resolveAnchors(context.Background(), anchorResolutionOptions{
+		comments: comments, prID: "pr-test", localPath: "/tmp/bistro-nonexistent-clone-xyz",
+		headSHA: "sha-head", prBaseSHA: "sha-base", log: silentLog(),
+	})
 	if len(results) != 0 {
 		t.Errorf("expected 0 (graceful clone failure), got %d", len(results))
 	}
@@ -359,7 +349,7 @@ func TestResolveAnchors_CurrentPosition_NotSkipped(t *testing.T) {
 // TestResolveAnchors_NoPositionSkipped verifies a comment with no position is excluded.
 func TestResolveAnchors_NoPositionSkipped(t *testing.T) {
 	o := &Orchestrator{
-		anchorResolver: git.NewAnchorResolver(silentLog()),
+		anchorResolver: git.NewAnchorResolver(),
 	}
 	comments := []*provider.Comment{{
 		ID:          "c-nopos",
@@ -368,12 +358,10 @@ func TestResolveAnchors_NoPositionSkipped(t *testing.T) {
 		CommitSHA:   "some-sha",
 		OriginalSHA: "orig-sha",
 	}}
-	results := o.resolveAnchors(
-		context.Background(), comments, nil,
-		"pr-test", "/tmp/bistro-nonexistent-clone",
-		"sha-head", "sha-base",
-		silentLog(),
-	)
+	results := o.resolveAnchors(context.Background(), anchorResolutionOptions{
+		comments: comments, prID: "pr-test", localPath: "/tmp/bistro-nonexistent-clone",
+		headSHA: "sha-head", prBaseSHA: "sha-base", log: silentLog(),
+	})
 	if len(results) != 0 {
 		t.Errorf("expected 0 results for comment with no position, got %d", len(results))
 	}

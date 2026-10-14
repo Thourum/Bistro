@@ -136,9 +136,12 @@ html.dark {
 
   --color-inverse-surface: #f0f1f2;
   --color-inverse-on-surface: #191c1d;
+  --color-mermaid-shadow: var(--color-on-surface);
 }
 
 :root {
+  --color-mermaid-shadow: var(--color-on-surface);
+
   /* Runtime-tunable app font stack. Settings updates these directly. */
   --app-ui-font: "Geist Variable", "Geist", "Inter", system-ui, sans-serif;
   --app-code-font:

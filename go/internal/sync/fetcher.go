@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	gosync "sync"
+	"strings"
 	"time"
 
 	"github.com/itterno/bistro/internal/git"
@@ -73,15 +73,9 @@ type PRFetchResult struct {
 	Error    error
 }
 
-// FetchPRDetails fetches comments, CI status, and diff size for each PR
-// using a pool of DefaultWorkers concurrent workers. Results are returned in the same
-// order as the input prs slice. Per-PR errors are captured in PRFetchResult.Error
-// and do not abort fetching of other PRs. The returned error is non-nil only for
-// fatal pool failures; individual PR errors are stored in PRFetchResult.Error.
-//
-// Each PR's fetch emits Debug records at every sub-step (start/comments/ci/diff
-// clone/diff generate) so a stuck or dropped PR can be diagnosed from the logs
-// alone.
+// FetchPRDetails fetches comments, reviews, threads, CI, and diffs concurrently.
+// Results preserve input order; per-PR errors are stored in PRFetchResult.Error.
+// Only a worker-pool failure is returned as an error.
 func (o *Orchestrator) FetchPRDetails(
 	ctx context.Context,
 	prs []*provider.PR,
@@ -96,282 +90,15 @@ func (o *Orchestrator) FetchPRDetails(
 		"include_diff", includeDiff,
 	)
 
+	options := prFetchOptions{comments: includeComments, ci: includeCI, diff: includeDiff}
 	results := make([]*PRFetchResult, len(prs))
-	var mu gosync.Mutex
-
 	pool := NewWorkerPool(DefaultWorkers, o.log)
-
 	for i, pr := range prs {
-		idx := i
-		prCopy := pr
-
-		task := func() {
-			taskStart := time.Now()
-			prLog := log.With(
-				"pr_number", prCopy.Number,
-				"pr_id", prCopy.ID,
-				"pr_state", prCopy.State,
-				"pr_base_sha", truncateSHA(prCopy.BaseSHA),
-				"pr_head_sha", truncateSHA(prCopy.HeadSHA),
-			)
-			// Hard ceiling per PR so one stuck fetch can never wedge the
-			// whole sync pass — it becomes a logged per-PR error instead.
-			boundedCtx, cancel := context.WithTimeout(ctx, perPRFetchTimeout)
-			defer cancel()
-			taskCtx := logging.WithLogger(boundedCtx, prLog)
-
-			prLog.Debug("pr fetch start", "title", prCopy.Title)
-
-			result := &PRFetchResult{PR: prCopy}
-
-			var errs []string
-
-			if includeComments && o.provider != nil {
-				subStart := time.Now()
-				comments, err := o.provider.GetComments(taskCtx, prCopy.ID)
-				subDur := time.Since(subStart).Milliseconds()
-				if err != nil {
-					errs = append(errs, fmt.Sprintf("comments: %v", err))
-					prLog.Error("comment fetch failed",
-						"duration_ms", subDur,
-						"error", err,
-					)
-				} else {
-					result.Comments = comments
-					result.CommentsFetched = true
-					logSubstep(prLog, "pr comments fetched", subDur,
-						"count", len(comments),
-					)
-				}
-			}
-
-			// Reviews ride along with the details pass: triage (Needs Action /
-			// FYI) needs review_status refreshed on the same cadence as comments.
-			if includeComments && o.provider != nil {
-				subStart := time.Now()
-				reviews, err := o.provider.ListReviews(taskCtx, prCopy.ID)
-				subDur := time.Since(subStart).Milliseconds()
-				if err != nil {
-					errs = append(errs, fmt.Sprintf("reviews: %v", err))
-					prLog.Error("review fetch failed",
-						"duration_ms", subDur,
-						"error", err,
-					)
-				} else {
-					status, approvedBy, changesBy := provider.DeriveReviewStatus(reviews)
-					prCopy.ReviewStatus = status
-					prCopy.ApprovedBy = approvedBy
-					prCopy.ChangesRequestedBy = changesBy
-					logSubstep(prLog, "pr reviews fetched", subDur,
-						"count", len(reviews),
-						"review_status", status,
-					)
-				}
-			}
-
-			// GetReviewThreads: optional capability — graceful skip if not implemented.
-			// Errors here are NOT added to `errs`: thread data is best-effort and must
-			// never prevent the PR row, comments, CI, or diff from being persisted.
-			if includeComments && o.provider != nil {
-				if tp, ok := o.provider.(provider.ThreadProvider); ok {
-					subStart := time.Now()
-					threads, threadErr := tp.GetReviewThreads(taskCtx, prCopy.ID)
-					subDur := time.Since(subStart).Milliseconds()
-					if threadErr != nil {
-						// Log at warn; do NOT append to errs so result.Error stays nil.
-						prLog.Warn("review thread fetch failed (non-fatal)",
-							"duration_ms", subDur, "error", threadErr)
-					} else {
-						result.Threads = threads
-						result.ThreadsFetched = true
-						logSubstep(prLog, "pr review threads fetched", subDur,
-							"count", len(threads))
-					}
-				} else {
-					result.ThreadsFetched = true
-				}
-			}
-
-			if includeCI && o.provider != nil {
-				subStart := time.Now()
-				ci, err := o.provider.GetCIStatus(taskCtx, prCopy.ID)
-				subDur := time.Since(subStart).Milliseconds()
-				if err != nil {
-					errs = append(errs, fmt.Sprintf("ci: %v", err))
-					prLog.Error("ci fetch failed",
-						"duration_ms", subDur,
-						"error", err,
-					)
-				} else {
-					result.CI = ci
-					status := ""
-					if ci != nil {
-						status = ci.Status
-					}
-					logSubstep(prLog, "pr ci fetched", subDur,
-						"status", status,
-					)
-				}
-			}
-
-			// Phase 6 production path: the diff clone is BASE/HEAD-ONLY.
-			//
-			// This CloneForPR is on the diff critical path — its only job is to
-			// make the PR's current base and head commits available so the diff
-			// can be generated and persisted quickly. It therefore passes only
-			// PRNumber + BaseBranch (targeted shallow fetch) and NO RequiredSHAs.
-			//
-			// Why no anchor/historical RequiredSHAs here: folding per-comment
-			// CommitSHA/OriginalSHA and historical patchset BaseSHAs into this
-			// clone's RequiredSHAs could force a broad full clone (~50s) whenever
-			// any of those commits sits outside the shallow window — penalizing
-			// every PR's diff readiness for the sake of anchoring. Anchors are
-			// best-effort metadata; they must not gate or slow the diff.
-			//
-			// Anchor handling (see below): anchor resolution runs opportunistically
-			// against this same fast clone. If a comment's historical/commit SHA
-			// is not present in the shallow fetch, that specific anchor is skipped
-			// (resolveAnchors is already best-effort) — it does NOT trigger a broad
-			// fallback. Backfilling anchors that need deeper history is future work
-			// (a separate anchor-specific job). collectAnchorSHAs /
-			// collectPatchsetBaseSHAs and the git RequiredSHAs primitive are
-			// retained for that future job; they intentionally no longer feed this
-			// initial diff clone.
-			if includeDiff && o.git != nil {
-				cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", prCopy.Owner, prCopy.Repo)
-				subStart := time.Now()
-				cloneResult, cloneErr := o.git.CloneForPR(taskCtx, cloneURL, prCopy.BaseSHA, prCopy.HeadSHA,
-					diffCloneOptions(prCopy))
-				cloneDur := time.Since(subStart).Milliseconds()
-				if cloneErr != nil {
-					errs = append(errs, fmt.Sprintf("diff clone: %v", cloneErr))
-					prLog.Error("repo clone failed",
-						"clone_url", cloneURL,
-						"duration_ms", cloneDur,
-						"error", cloneErr,
-					)
-				} else {
-					if cloneDur >= slowSubstepThresholdMs {
-						prLog.Warn("repo clone slow", "duration_ms", cloneDur)
-					} else {
-						prLog.Debug("repo cloned",
-							"local_path", cloneResult.LocalPath,
-							"duration_ms", cloneDur,
-						)
-					}
-					// NOTE: do NOT remove cloneResult.LocalPath here. The git
-					// Client owns this directory via its process-lifetime cache
-					// (keyed on base+head SHA) and reuses it across sync cycles
-					// and for range-diff. Deleting it leaves a live cache entry
-					// pointing at a missing dir, which surfaces as the misleading
-					// "repository does not exist" on the next diff.
-
-					diffStart := time.Now()
-					diffResult, err := o.git.GenerateDiff(cloneResult.LocalPath, prCopy.BaseSHA, prCopy.HeadSHA, git.DefaultDiffOptions())
-					diffDur := time.Since(diffStart).Milliseconds()
-					if err != nil {
-						errs = append(errs, fmt.Sprintf("diff: %v", err))
-						prLog.Error("diff generation failed",
-							"duration_ms", diffDur,
-							"error", err,
-						)
-					} else if diffResult != nil {
-						result.DiffSize = diffResult.Size
-						logSubstep(prLog, "pr diff generated", diffDur,
-							"bytes", diffResult.Size,
-							"files", len(diffResult.Files),
-							"binary_files", diffResult.Profile.BinaryFileCount,
-							"duration_ms", diffDur,
-							"profile_total_ms", diffResult.Profile.TotalDuration.Milliseconds(),
-							"profile_open_repo_ms", diffResult.Profile.OpenRepository.Milliseconds(),
-							"profile_load_commits_ms", diffResult.Profile.LoadCommits.Milliseconds(),
-							"profile_load_trees_ms", diffResult.Profile.LoadTrees.Milliseconds(),
-							"profile_build_patch_ms", diffResult.Profile.BuildPatch.Milliseconds(),
-							"profile_render_patches_ms", diffResult.Profile.RenderFilePatches.Milliseconds(),
-						)
-
-						// Build DiffFiles to be persisted atomically with the PR row
-						// and patchset in WriteSyncResultsContext. Do NOT call SaveDiffs
-						// here — at this point the PR row may not yet exist (new PR
-						// initial sync) and the write must be transactional with PR/patchset.
-						diffFiles := make([]store.DiffFile, 0, len(diffResult.Files))
-						for _, f := range diffResult.Files {
-							diffFiles = append(diffFiles, store.DiffFile{
-								FilePath:    f.Path,
-								Status:      f.Status,
-								DiffStatus:  f.DiffStatus,
-								OldPath:     f.OldPath,
-								IsBinary:    f.Binary,
-								IsTruncated: f.Truncated,
-								PatchBytes:  f.PatchBytes,
-								HunkCount:   f.HunkCount,
-								Patch:       f.Patch,
-								Additions:   f.AddedLines,
-								Deletions:   f.RemovedLines,
-							})
-						}
-						result.DiffFiles = diffFiles
-						result.DiffComputed = true
-						o.notifyExpertiseHook(taskCtx, prCopy, diffFiles)
-
-						// Anchor resolution is OPPORTUNISTIC against the fast
-						// base/head-only clone above. Comments whose historical or
-						// commit SHA is absent from this shallow fetch are skipped
-						// by resolveAnchors (best-effort) rather than forcing a
-						// broad re-clone — an anchor-only miss must never slow the
-						// diff critical path. Results are carried in AnchorUpdates
-						// and written back to the DB by the writer (best-effort,
-						// outside the savepoint).
-						if o.anchorResolver != nil {
-							anchorStart := time.Now()
-							result.AnchorUpdates = o.resolveAnchors(
-								taskCtx, result.Comments, result.Threads,
-								prCopy.ID, cloneResult.LocalPath, prCopy.HeadSHA, prCopy.BaseSHA,
-								prLog,
-							)
-							logSubstep(prLog, "anchor resolution complete",
-								time.Since(anchorStart).Milliseconds(),
-								"anchored", len(result.AnchorUpdates),
-							)
-						}
-					}
-				}
-			}
-
-			if len(errs) > 0 {
-				combined := ""
-				for i, e := range errs {
-					if i > 0 {
-						combined += "; "
-					}
-					combined += e
-				}
-				result.Error = fmt.Errorf("%s", combined)
-				prLog.Warn("pr fetch finished with errors",
-					"errors", len(errs),
-					"duration_ms", time.Since(taskStart).Milliseconds(),
-					"error", result.Error,
-				)
-			} else {
-				prLog.Debug("pr fetch finished",
-					"duration_ms", time.Since(taskStart).Milliseconds(),
-				)
-			}
-
-			mu.Lock()
-			results[idx] = result
-			mu.Unlock()
-		}
-
-		if err := pool.Submit(ctx, task); err != nil {
-			log.Warn("task submission cancelled",
-				"pr_number", prCopy.Number,
-				"pr_id", prCopy.ID,
-				"error", err,
-			)
-			mu.Lock()
-			results[idx] = &PRFetchResult{PR: prCopy, Error: fmt.Errorf("task submission cancelled: %w", err)}
-			mu.Unlock()
+		if err := pool.Submit(ctx, func() {
+			results[i] = o.fetchPR(ctx, pr, options)
+		}); err != nil {
+			log.Warn("task submission cancelled", "pr_number", pr.Number, "pr_id", pr.ID, "error", err)
+			results[i] = &PRFetchResult{PR: pr, Error: fmt.Errorf("task submission cancelled: %w", err)}
 			break
 		}
 	}
@@ -382,6 +109,228 @@ func (o *Orchestrator) FetchPRDetails(
 	}
 	log.Debug("FetchPRDetails complete", "pr_count", len(prs))
 	return results, nil
+}
+
+type prFetchOptions struct {
+	comments bool
+	ci       bool
+	diff     bool
+}
+
+func (o *Orchestrator) fetchPR(ctx context.Context, pr *provider.PR, options prFetchOptions) *PRFetchResult {
+	started := time.Now()
+	log := logging.FromContext(ctx).With(
+		"pr_number", pr.Number,
+		"pr_id", pr.ID,
+		"pr_state", pr.State,
+		"pr_base_sha", truncateSHA(pr.BaseSHA),
+		"pr_head_sha", truncateSHA(pr.HeadSHA),
+	)
+	boundedCtx, cancel := context.WithTimeout(ctx, perPRFetchTimeout)
+	defer cancel()
+	taskCtx := logging.WithLogger(boundedCtx, log)
+	log.Debug("pr fetch start", "title", pr.Title)
+
+	result := &PRFetchResult{PR: pr}
+	var fetchErrors []error
+	if options.comments && o.provider != nil {
+		if err := o.fetchComments(taskCtx, result, log); err != nil {
+			fetchErrors = append(fetchErrors, err)
+		}
+		if err := o.fetchReviews(taskCtx, result, log); err != nil {
+			fetchErrors = append(fetchErrors, err)
+		}
+		o.fetchThreads(taskCtx, result, log)
+	}
+	if options.ci && o.provider != nil {
+		if err := o.fetchCI(taskCtx, result, log); err != nil {
+			fetchErrors = append(fetchErrors, err)
+		}
+	}
+	if options.diff && o.git != nil {
+		if err := o.fetchDiff(taskCtx, result, log); err != nil {
+			fetchErrors = append(fetchErrors, err)
+		}
+	}
+
+	result.Error = joinFetchErrors(fetchErrors)
+	if len(fetchErrors) != 0 {
+		log.Warn("pr fetch finished with errors", "errors", len(fetchErrors),
+			"duration_ms", time.Since(started).Milliseconds(), "error", result.Error)
+	} else {
+		log.Debug("pr fetch finished", "duration_ms", time.Since(started).Milliseconds())
+	}
+	return result
+}
+
+func joinFetchErrors(substepErrors []error) error {
+	if len(substepErrors) == 0 {
+		return nil
+	}
+	messages := make([]string, 0, len(substepErrors))
+	for _, err := range substepErrors {
+		messages = append(messages, err.Error())
+	}
+	return &fetchErrors{message: strings.Join(messages, "; "), causes: substepErrors}
+}
+
+type fetchErrors struct {
+	message string
+	causes  []error
+}
+
+func (errs *fetchErrors) Error() string   { return errs.message }
+func (errs *fetchErrors) Unwrap() []error { return errs.causes }
+
+func (o *Orchestrator) fetchComments(ctx context.Context, result *PRFetchResult, log *slog.Logger) error {
+	started := time.Now()
+	comments, err := o.provider.GetComments(ctx, result.PR.ID)
+	if err != nil {
+		return fmt.Errorf("comments: %w", err)
+	}
+	result.Comments = comments
+	result.CommentsFetched = true
+	logSubstep(log, "pr comments fetched", time.Since(started).Milliseconds(), "count", len(comments))
+	return nil
+}
+
+func (o *Orchestrator) fetchReviews(ctx context.Context, result *PRFetchResult, log *slog.Logger) error {
+	started := time.Now()
+	reviews, err := o.provider.ListReviews(ctx, result.PR.ID)
+	if err != nil {
+		return fmt.Errorf("reviews: %w", err)
+	}
+	status, approvedBy, changesBy := provider.DeriveReviewStatus(reviews)
+	result.PR.ReviewStatus = status
+	result.PR.ApprovedBy = approvedBy
+	result.PR.ChangesRequestedBy = changesBy
+	logSubstep(log, "pr reviews fetched", time.Since(started).Milliseconds(),
+		"count", len(reviews), "review_status", status)
+	return nil
+}
+
+func (o *Orchestrator) fetchThreads(ctx context.Context, result *PRFetchResult, log *slog.Logger) {
+	threadProvider, ok := o.provider.(provider.ThreadProvider)
+	if !ok {
+		result.ThreadsFetched = true
+		return
+	}
+	started := time.Now()
+	threads, err := threadProvider.GetReviewThreads(ctx, result.PR.ID)
+	if err != nil {
+		// Thread data is best-effort and must not prevent other details being persisted.
+		log.Warn("review thread fetch failed (non-fatal)",
+			"duration_ms", time.Since(started).Milliseconds(), "error", err)
+		return
+	}
+	result.Threads = threads
+	result.ThreadsFetched = true
+	logSubstep(log, "pr review threads fetched", time.Since(started).Milliseconds(), "count", len(threads))
+}
+
+func (o *Orchestrator) fetchCI(ctx context.Context, result *PRFetchResult, log *slog.Logger) error {
+	started := time.Now()
+	ci, err := o.provider.GetCIStatus(ctx, result.PR.ID)
+	if err != nil {
+		return fmt.Errorf("ci: %w", err)
+	}
+	result.CI = ci
+	status := ""
+	if ci != nil {
+		status = ci.Status
+	}
+	logSubstep(log, "pr ci fetched", time.Since(started).Milliseconds(), "status", status)
+	return nil
+}
+
+func (o *Orchestrator) fetchDiff(ctx context.Context, result *PRFetchResult, log *slog.Logger) error {
+	pr := result.PR
+	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", pr.Owner, pr.Repo)
+	started := time.Now()
+	clone, err := o.git.CloneForPR(ctx, cloneURL, pr.BaseSHA, pr.HeadSHA, diffCloneOptions(pr))
+	if err != nil {
+		return fmt.Errorf("diff clone: %w", err)
+	}
+	cloneDuration := time.Since(started).Milliseconds()
+	if cloneDuration >= slowSubstepThresholdMs {
+		log.Warn("repo clone slow", "duration_ms", cloneDuration)
+	} else {
+		log.Debug("repo cloned", "local_path", clone.LocalPath, "duration_ms", cloneDuration)
+	}
+	// The git client owns the clone directory and reuses it across sync cycles.
+	return o.generateDiff(ctx, result, clone, log)
+}
+
+func (o *Orchestrator) generateDiff(ctx context.Context, result *PRFetchResult, clone *git.CloneResult, log *slog.Logger) error {
+	pr := result.PR
+	started := time.Now()
+	diff, err := o.git.GenerateDiff(clone.LocalPath, pr.BaseSHA, pr.HeadSHA, git.DefaultDiffOptions())
+	if err != nil {
+		return fmt.Errorf("diff: %w", err)
+	}
+	if diff == nil {
+		return nil
+	}
+	result.DiffSize = diff.Size
+	logSubstep(log, "pr diff generated", time.Since(started).Milliseconds(),
+		"bytes", diff.Size,
+		"files", len(diff.Files),
+		"binary_files", diff.Profile.BinaryFileCount,
+		"profile_total_ms", diff.Profile.TotalDuration.Milliseconds(),
+		"profile_open_repo_ms", diff.Profile.OpenRepository.Milliseconds(),
+		"profile_load_commits_ms", diff.Profile.LoadCommits.Milliseconds(),
+		"profile_load_trees_ms", diff.Profile.LoadTrees.Milliseconds(),
+		"profile_build_patch_ms", diff.Profile.BuildPatch.Milliseconds(),
+		"profile_render_patches_ms", diff.Profile.RenderFilePatches.Milliseconds(),
+	)
+
+	// Diffs must be written atomically with the PR row and patchset by the writer.
+	result.DiffFiles = storeDiffFiles(diff)
+	result.DiffComputed = true
+	o.notifyExpertiseHook(ctx, pr, result.DiffFiles)
+	o.resolveDiffAnchors(ctx, result, clone, log)
+	return nil
+}
+
+func storeDiffFiles(diff *git.DiffResult) []store.DiffFile {
+	files := make([]store.DiffFile, 0, len(diff.Files))
+	for _, file := range diff.Files {
+		files = append(files, store.DiffFile{
+			FilePath:    file.Path,
+			Status:      file.Status,
+			DiffStatus:  file.DiffStatus,
+			OldPath:     file.OldPath,
+			IsBinary:    file.Binary,
+			IsTruncated: file.Truncated,
+			PatchBytes:  file.PatchBytes,
+			HunkCount:   file.HunkCount,
+			Patch:       file.Patch,
+			Additions:   file.AddedLines,
+			Deletions:   file.RemovedLines,
+		})
+	}
+	return files
+}
+
+func (o *Orchestrator) resolveDiffAnchors(ctx context.Context, result *PRFetchResult, clone *git.CloneResult, log *slog.Logger) {
+	if o.anchorResolver == nil {
+		return
+	}
+	// Anchors are best-effort against the same shallow clone; missing historical
+	// commits must not force a broader clone before the diff is persisted.
+	started := time.Now()
+	pr := result.PR
+	result.AnchorUpdates = o.resolveAnchors(ctx, anchorResolutionOptions{
+		comments:  result.Comments,
+		threads:   result.Threads,
+		prID:      pr.ID,
+		localPath: clone.LocalPath,
+		headSHA:   pr.HeadSHA,
+		prBaseSHA: pr.BaseSHA,
+		log:       log,
+	})
+	logSubstep(log, "anchor resolution complete", time.Since(started).Milliseconds(),
+		"anchored", len(result.AnchorUpdates))
 }
 
 func (o *Orchestrator) notifyExpertiseHook(ctx context.Context, pr *provider.PR, diffFiles []store.DiffFile) {
@@ -400,155 +349,19 @@ func (o *Orchestrator) notifyExpertiseHook(ctx context.Context, pr *provider.PR,
 	o.expertise.OnPRSynced(ctx, repoID, repoPath, files)
 }
 
-// truncateSHA returns a short 7-char prefix of a git SHA for log readability.
+const shaLogPrefixLength = 7 // Git's conventional abbreviated SHA length.
+
 func truncateSHA(sha string) string {
-	if len(sha) > 7 {
-		return sha[:7]
+	if len(sha) > shaLogPrefixLength {
+		return sha[:shaLogPrefixLength]
 	}
 	return sha
 }
 
-// diffCloneOptions builds the CloneOptions for the Phase 6 diff critical path.
-// It is intentionally BASE/HEAD-ONLY: it carries the PR number and base branch
-// (to drive the targeted shallow fetch of the current base/head) and never sets
-// RequiredSHAs. Anchor/historical SHAs are deliberately excluded so an anchor-
-// only miss can never force a broad full clone before the diff is persisted.
-// This is the single source of truth for the diff clone's options.
+// diffCloneOptions excludes anchor-only historical commits from the shallow diff clone.
 func diffCloneOptions(pr *provider.PR) *git.CloneOptions {
 	if pr == nil {
 		return &git.CloneOptions{}
 	}
-	return &git.CloneOptions{
-		PRNumber:   pr.Number,
-		BaseBranch: pr.BaseBranch,
-		// RequiredSHAs intentionally left nil — see comment above.
-	}
-}
-
-// collectAnchorSHAs returns the unique, non-empty commit SHAs referenced by the
-// given comments and review threads that anchor resolution depends on
-// (per-comment CommitSHA and OriginalSHA).
-//
-// As of Phase 6 this is NOT used by the initial diff clone (the diff clone is
-// base/head-only — see diffCloneOptions). It is retained for a future
-// anchor-specific backfill job that may pre-fetch the commits needed to resolve
-// anchors that the fast shallow diff clone did not include.
-func collectAnchorSHAs(comments []*provider.Comment, threads []*provider.ReviewThread) []string {
-	seen := make(map[string]struct{})
-	var out []string
-	add := func(sha string) {
-		if sha == "" {
-			return
-		}
-		if _, ok := seen[sha]; ok {
-			return
-		}
-		seen[sha] = struct{}{}
-		out = append(out, sha)
-	}
-	addComment := func(c *provider.Comment) {
-		if c == nil || c.Kind != "review" {
-			return
-		}
-		add(c.CommitSHA)
-		add(c.OriginalSHA)
-	}
-	for _, c := range comments {
-		addComment(c)
-	}
-	for _, th := range threads {
-		if th == nil {
-			continue
-		}
-		for _, c := range th.Comments {
-			addComment(c)
-		}
-	}
-	return out
-}
-
-// hasAnchorableOriginalPosition reports whether any review comment in the given
-// comments/threads is an anchorable original-position comment — i.e. anchorable
-// but lacking a current position, so anchor resolution would route through
-// selectDiffBaseSHA and need a historical patchset BaseSHA. Mirrors the
-// isCurrentPos test in resolveAnchors.
-func hasAnchorableOriginalPosition(comments []*provider.Comment, threads []*provider.ReviewThread) bool {
-	check := func(c *provider.Comment) bool {
-		if c == nil || c.Kind != "review" || c.FilePath == "" || !isAnchorable(c) {
-			return false
-		}
-		isCurrentPos := c.Position != nil && *c.Position > 0
-		return !isCurrentPos
-	}
-	for _, c := range comments {
-		if check(c) {
-			return true
-		}
-	}
-	for _, th := range threads {
-		if th == nil {
-			continue
-		}
-		for _, c := range th.Comments {
-			if check(c) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// collectPatchsetBaseSHAs returns the unique non-empty patchset BaseSHA values
-// for the PR that anchor resolution may need beyond the PR's current BaseSHA.
-//
-// Original-position comments resolve their diff geometry against a historical
-// patchset's BaseSHA (see selectDiffBaseSHA), which can differ from
-// prCopy.BaseSHA after a retarget/rebase.
-//
-// As of Phase 6 this is NOT used by the initial diff clone (the diff clone is
-// base/head-only — see diffCloneOptions); folding these deep historical bases
-// into the diff clone's RequiredSHAs could force a broad full clone and slow
-// every PR's diff. It is retained for a future anchor-specific backfill job.
-// Safe over-approximation when called: when anchoring is enabled, there is at
-// least one anchorable original-position comment, and the store has patchsets
-// for the PR, include every non-empty patchset BaseSHA. SHAs already present in
-// `existing` (the per-comment anchor SHAs) are skipped to avoid duplicates.
-func (o *Orchestrator) collectPatchsetBaseSHAs(
-	ctx context.Context,
-	prID string,
-	comments []*provider.Comment,
-	threads []*provider.ReviewThread,
-	existing []string,
-) []string {
-	if o.anchorResolver == nil || o.store == nil || prID == "" {
-		return nil
-	}
-	if !hasAnchorableOriginalPosition(comments, threads) {
-		return nil
-	}
-	patchsets, err := o.store.ListPatchsets(ctx, prID)
-	if err != nil {
-		logging.FromContext(ctx).Warn(
-			"collectPatchsetBaseSHAs: could not load patchsets; anchor base SHAs may be missing from targeted clone",
-			"pr_id", prID, "error", err)
-		return nil
-	}
-	seen := make(map[string]struct{}, len(existing))
-	for _, s := range existing {
-		if s != "" {
-			seen[s] = struct{}{}
-		}
-	}
-	var out []string
-	for _, ps := range patchsets {
-		if ps.BaseSHA == "" {
-			continue
-		}
-		if _, ok := seen[ps.BaseSHA]; ok {
-			continue
-		}
-		seen[ps.BaseSHA] = struct{}{}
-		out = append(out, ps.BaseSHA)
-	}
-	return out
+	return &git.CloneOptions{PRNumber: pr.Number, BaseBranch: pr.BaseBranch}
 }

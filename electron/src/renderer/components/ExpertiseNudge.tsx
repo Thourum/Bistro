@@ -1,7 +1,7 @@
-import { ResultAsync } from 'neverthrow';
+import { Fault } from '@thourum/fault';
 import { useCallback } from 'react';
 import { useStore } from '../hooks/useStore';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import { addToast } from './ToastContainer';
@@ -18,7 +18,6 @@ export function ExpertiseNudge({
     appStore,
     (s: UIState) => s.expertiseNudges?.[repoId] ?? null,
   );
-  const { request, send } = useWebSocket();
 
   const clearNudge = useCallback(() => {
     appStore.setState((s) => {
@@ -29,23 +28,25 @@ export function ExpertiseNudge({
   }, [repoId]);
 
   const handleEnable = (): void => {
-    void ResultAsync.fromPromise(
-      request('EXPERTISE_ENABLE', { repo_id: repoId }),
-      (err) => err,
-    ).match(
-      () => clearNudge(),
-      (err) => {
-        addToast({
-          type: 'error',
-          message: `Enabling expertise failed: ${err instanceof Error ? err.message : 'sync engine unreachable'}`,
-          dismissible: true,
-        });
-      },
-    );
+    void wsClient
+      .request('EXPERTISE_ENABLE', { repo_id: repoId })
+      .mapErr((cause) =>
+        new Fault(cause).withTag('CONNECTION_ERROR').withCause(cause),
+      )
+      .match(
+        () => clearNudge(),
+        (err) => {
+          addToast({
+            type: 'error',
+            message: `Enabling expertise failed: ${err.message}`,
+            dismissible: true,
+          });
+        },
+      );
   };
 
   const handleDismiss = (): void => {
-    send('EXPERTISE_NUDGE_DISMISS', { repo_id: repoId });
+    wsClient.send('EXPERTISE_NUDGE_DISMISS', { repo_id: repoId });
     clearNudge();
   };
 

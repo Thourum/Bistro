@@ -29,7 +29,7 @@ func (db *DB) GetSyncCursor(ctx context.Context, scope string) (*SyncCursor, err
 		return nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get sync cursor %s: %w", scope, err)
 	}
 
 	return syncCursorFromRow(row), nil
@@ -38,11 +38,14 @@ func (db *DB) GetSyncCursor(ctx context.Context, scope string) (*SyncCursor, err
 // SaveSyncCursorSuccess atomically advances a scope after the corresponding
 // endpoint pages and local hydration/write have completed successfully.
 func (db *DB) SaveSyncCursorSuccess(ctx context.Context, scope, cursorValue, etag string) error {
-	return storedb.New(db).SaveSyncCursorSuccess(ctx, storedb.SaveSyncCursorSuccessParams{
+	if err := storedb.New(db).SaveSyncCursorSuccess(ctx, storedb.SaveSyncCursorSuccessParams{
 		Scope:       scope,
 		CursorValue: nonNullString(cursorValue),
 		Etag:        nonNullString(etag),
-	})
+	}); err != nil {
+		return fmt.Errorf("save sync cursor %s: %w", scope, err)
+	}
+	return nil
 }
 
 // MarkSyncCursorError records a failed attempt without advancing cursor_value.
@@ -51,19 +54,24 @@ func (db *DB) MarkSyncCursorError(ctx context.Context, scope string, syncErr err
 		"error": fmt.Sprint(syncErr),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("encode sync cursor error %s: %w", scope, err)
 	}
 
-	return storedb.New(db).MarkSyncCursorError(ctx, storedb.MarkSyncCursorErrorParams{
+	if err := storedb.New(db).MarkSyncCursorError(ctx, storedb.MarkSyncCursorErrorParams{
 		Scope:     scope,
 		ErrorJson: nonNullString(string(payload)),
-	})
+	}); err != nil {
+		return fmt.Errorf("mark sync cursor error %s: %w", scope, err)
+	}
+	return nil
 }
 
+// FormatSyncCursorTime formats a cursor timestamp in UTC using RFC3339Nano.
 func FormatSyncCursorTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
+// ParseSyncCursorTime parses a timestamp produced by FormatSyncCursorTime.
 func ParseSyncCursorTime(value string) (time.Time, error) {
 	return time.Parse(time.RFC3339Nano, value)
 }

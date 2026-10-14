@@ -7,74 +7,51 @@
  * renderer. Bumping `$schema` requires a migration.
  */
 
+import { z } from 'zod';
+
 export const SETTINGS_SCHEMA_VERSION = 1 as const;
 
-type ThemeMode = 'light' | 'dark';
-export type ClassificationMode = 'rules' | 'rules+llm' | 'llm-all' | 'server';
-export type DismissalScope = 'local' | 'local+provider';
-type ClassificationProvider =
-  | 'anthropic'
-  | 'openai'
-  | 'openrouter'
-  | 'ollama'
-  | 'custom';
+const classificationSchema = z.object({
+  mode: z.enum(['rules', 'rules+llm', 'llm-all', 'server']),
+  dismissalScope: z.enum(['local', 'local+provider']),
+  provider: z.enum(['anthropic', 'openai', 'openrouter', 'ollama', 'custom']),
+  model: z.string(),
+  endpoint: z.string(),
+});
 
-export interface ClassificationSettings {
-  mode: ClassificationMode;
-  dismissalScope: DismissalScope;
-  provider: ClassificationProvider;
-  model: string;
-  endpoint: string;
-}
+const appearanceSchema = z.object({
+  theme: z.enum(['light', 'dark']),
+  uiFont: z.string(),
+  codeFont: z.string(),
+  uiFontSize: z.number().finite().positive(),
+  codeFontSize: z.number().finite().positive(),
+  highDensity: z.boolean(),
+  onboardingComplete: z.boolean(),
+  tourComplete: z.boolean(),
+});
 
-export interface AppearanceSettings {
-  theme: ThemeMode;
-  /** CSS font-family stack for all UI (not code). */
-  uiFont: string;
-  /** CSS font-family stack for code, diffs, kbd, metadata. */
-  codeFont: string;
-  /** Base UI font size in px. */
-  uiFontSize: number;
-  /** Monospace / code font size in px. */
-  codeFontSize: number;
-  /** Tightens vertical rhythm on list rows and cards. */
-  highDensity: boolean;
-  /** Set to true after the user completes (or skips) onboarding. */
-  onboardingComplete: boolean;
-  /**
-   * Set to true on any tour exit — finishing screen 5 or Esc mid-tour both
-   * count. Re-runnable any time via the `:tour` palette command.
-   */
-  tourComplete: boolean;
-}
+const syncSchema = z.object({
+  autoSync: z.boolean(),
+  syncInterval: z.number().finite().positive(),
+  notifications: z.boolean(),
+});
 
-export interface SyncSettings {
-  autoSync: boolean;
-  /** Seconds between auto-sync ticks. */
-  syncInterval: number;
-  notifications: boolean;
-}
+const prListSchema = z.object({ view: z.enum(['flat', 'grouped']) });
+const diffSchema = z.object({ style: z.enum(['unified', 'split']) });
+const privacySchema = z.object({ telemetryEnabled: z.boolean() });
+const repositoriesSchema = z.object({ devFolderPath: z.string().nullable() });
 
-export interface PRListSettings {
-  view: 'flat' | 'grouped';
-}
-
-export interface DiffSettings {
-  /** Unified (single column) or split (side-by-side) diff rendering. */
-  style: 'unified' | 'split';
-}
-
-export interface PrivacySettings {
-  /**
-   * Explicit opt-in for v0.1 usage telemetry. Defaults false and must stay
-   * disabled unless the user turns it on in Settings → Privacy.
-   */
-  telemetryEnabled: boolean;
-}
-
-export interface RepositoriesSettings {
-  devFolderPath: string | null;
-}
+export type ClassificationMode = z.infer<typeof classificationSchema>['mode'];
+export type DismissalScope = z.infer<
+  typeof classificationSchema
+>['dismissalScope'];
+export type ClassificationSettings = z.infer<typeof classificationSchema>;
+export type AppearanceSettings = z.infer<typeof appearanceSchema>;
+export type SyncSettings = z.infer<typeof syncSchema>;
+export type PRListSettings = z.infer<typeof prListSchema>;
+export type DiffSettings = z.infer<typeof diffSchema>;
+export type PrivacySettings = z.infer<typeof privacySchema>;
+export type RepositoriesSettings = z.infer<typeof repositoriesSchema>;
 
 /**
  * Overrides for keyboard bindings.
@@ -90,19 +67,22 @@ export interface RepositoriesSettings {
  *   { "list.search": ["Meta+/"] }   // modifier combo
  *   { "list.mute": [] }             // unbind
  */
-export type KeybindingOverrides = Record<string, string[]>;
+export const appSettingsSchema = z.object({
+  $schema: z.literal(SETTINGS_SCHEMA_VERSION),
+  appearance: appearanceSchema,
+  sync: syncSchema,
+  prList: prListSchema,
+  diff: diffSchema,
+  privacy: privacySchema,
+  repositories: repositoriesSchema,
+  classification: classificationSchema,
+  keybindings: z.record(z.string(), z.array(z.string())),
+});
 
-export interface AppSettings {
-  $schema: typeof SETTINGS_SCHEMA_VERSION;
-  appearance: AppearanceSettings;
-  sync: SyncSettings;
-  prList: PRListSettings;
-  diff: DiffSettings;
-  privacy: PrivacySettings;
-  repositories: RepositoriesSettings;
-  classification: ClassificationSettings;
-  keybindings: KeybindingOverrides;
-}
+export type KeybindingOverrides = z.infer<
+  typeof appSettingsSchema
+>['keybindings'];
+export type AppSettings = z.infer<typeof appSettingsSchema>;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   $schema: SETTINGS_SCHEMA_VERSION,

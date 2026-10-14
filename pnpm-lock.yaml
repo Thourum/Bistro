@@ -61,6 +61,9 @@ importers:
       '@tanstack/store':
         specifier: ^0.9.3
         version: 0.9.3
+      '@thourum/fault':
+        specifier: ^0.1.0
+        version: 0.1.0(zod@4.4.3)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -88,9 +91,6 @@ importers:
       mermaid:
         specifier: ^11.15.0
         version: 11.15.0
-      neverthrow:
-        specifier: ^8.2.0
-        version: 8.2.0
       pino:
         specifier: ^10.3.1
         version: 10.3.1
@@ -2779,6 +2779,20 @@ packages:
     resolution: {integrity: sha512-wZMEoSf852jQqaf3Ika1J7PiBae6341LNy/2CxmIyn0XKDQXMuK41wVX+xp6G0yx8jyR95Ef+Tdr13DK7mbJtQ==}
     peerDependencies:
       vue: ^2.7.0 || ^3.0.0
+
+  '@thourum/fault@0.1.0':
+    resolution: {integrity: sha512-6wL0VEHGfos4b8eU6jDfmg/uUJXO6C55EpajFiu32TQg9qM9zCw8d0K2q16U9SyptSjWE7KF4AasjATL9NmE5Q==}
+    peerDependencies:
+      drizzle-orm: '>=0.44.0'
+      pg: '>=8.0.0'
+      zod: '>=4.0.0'
+    peerDependenciesMeta:
+      drizzle-orm:
+        optional: true
+      pg:
+        optional: true
+      zod:
+        optional: true
 
   '@tootallnate/once@2.0.1':
     resolution: {integrity: sha512-HqmEUIGRJ5fSXchkVgR5F7qn48bDBzv0kWj/Kfu5e6uci4UlEeng4331LnBkWffb++Ei3FOVLxo8JJWMFBDMeQ==}
@@ -5498,10 +5512,6 @@ packages:
 
   neo-async@2.6.2:
     resolution: {integrity: sha512-Yd3UES5mWCSqR+qNT93S3UoYUkqAZ9lLg8a7g9rimsWmYGK8cVToA4/sF3RrshdyV3sAGMXVUmpMYOw+dLpOuw==}
-
-  neverthrow@8.2.0:
-    resolution: {integrity: sha512-kOCT/1MCPAxY5iUV3wytNFUMUolzuwd/VF/1KCx7kf6CutrOsTie+84zTGTpgQycjvfLdBBdvBvFLqFD2c0wkQ==}
-    engines: {node: '>=18'}
 
   next-tick@1.1.0:
     resolution: {integrity: sha512-CXdUiJembsNjuToQvxayPZF9Vqht7hewsvy2sOWafLvi2awflj9mOC6bHIg50orX8IJvWKY9wYQ/zB2kogPslQ==}
@@ -10123,6 +10133,10 @@ snapshots:
       '@tanstack/virtual-core': 3.17.3
       vue: 3.5.39(typescript@6.0.3)
 
+  '@thourum/fault@0.1.0(zod@4.4.3)':
+    optionalDependencies:
+      zod: 4.4.3
+
   '@tootallnate/once@2.0.1': {}
 
   '@tybys/wasm-util@0.10.3':
@@ -13425,10 +13439,6 @@ snapshots:
   negotiator@1.0.0: {}
 
   neo-async@2.6.2: {}
-
-  neverthrow@8.2.0:
-    optionalDependencies:
-      '@rollup/rollup-linux-x64-gnu': 4.62.2
 
   next-tick@1.1.0: {}
 

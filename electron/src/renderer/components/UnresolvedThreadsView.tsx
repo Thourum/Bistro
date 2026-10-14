@@ -128,6 +128,8 @@ export function UnresolvedThreadsView({
 
   const [focusedIndex, setFocusedIndex] = useState(0);
   const rowRefs = useRef<Array<HTMLLIElement | null>>([]);
+  const focusedThreadRef = useRef<ReviewThread | undefined>(undefined);
+  focusedThreadRef.current = sorted[focusedIndex];
 
   // Keep focus in range as the list changes length (e.g. a thread resolves and
   // re-sorts to the bottom, or the count shrinks).
@@ -157,14 +159,14 @@ export function UnresolvedThreadsView({
   // Bridge threads-mode keybindings (which dispatch DOM custom events) into the
   // focused-row actions and movement.
   useEffect(() => {
-    const focused = sorted[focusedIndex];
-
     const onResolve = (): void => {
+      const focused = focusedThreadRef.current;
       if (focused && !focused.resolved) {
         dispatchAction('resolve_thread', focused);
       }
     };
     const onUnresolve = (): void => {
+      const focused = focusedThreadRef.current;
       if (focused?.resolved) dispatchAction('unresolve_thread', focused);
     };
     const onNext = (): void =>
@@ -181,7 +183,7 @@ export function UnresolvedThreadsView({
       document.removeEventListener('bistro:threads:next', onNext);
       document.removeEventListener('bistro:threads:prev', onPrev);
     };
-  }, [sorted, focusedIndex, dispatchAction]);
+  }, [sorted.length, dispatchAction]);
 
   const openCount = sorted.filter((t) => threadLifecycle(t) === 'open').length;
 

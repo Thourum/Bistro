@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// CacheRepoStat describes a cached repository's size, age, and safety checks.
 type CacheRepoStat struct {
 	RepoID     string
 	Path       string
@@ -20,14 +21,17 @@ type CacheRepoStat struct {
 	Error      string
 }
 
+// CacheEntryInput identifies a registered cache directory for maintenance.
 type CacheEntryInput struct {
 	RepoID     string
 	Path       string
 	LastUsedAt *time.Time
 }
 
+// StaleAfter is the age at which an unused cache entry becomes eligible for pruning.
 const StaleAfter = 30 * 24 * time.Hour
 
+// CacheStats measures registered cache entries without deleting them.
 func CacheStats(repos []CacheEntryInput) ([]CacheRepoStat, error) {
 	root, err := canonicalCacheRoot()
 	if err != nil {
@@ -63,6 +67,8 @@ func CacheStats(repos []CacheEntryInput) ([]CacheRepoStat, error) {
 	return stats, nil
 }
 
+// DeleteCacheDir removes a safe cache directory under CacheRoot.
+// Registered legacy directories can be supplied when they lack owner/repo depth.
 func DeleteCacheDir(path string, registeredLegacyPaths ...map[string]bool) error {
 	root, err := canonicalCacheRoot()
 	if err != nil {
@@ -83,6 +89,8 @@ func DeleteCacheDir(path string, registeredLegacyPaths ...map[string]bool) error
 	return nil
 }
 
+// SweepOrphans removes owner/repo cache directories absent from known.
+// Callers must hold the maintenance lock while sweeping live cache entries.
 func SweepOrphans(known map[string]bool) ([]string, error) {
 	root, err := canonicalCacheRoot()
 	if err != nil {

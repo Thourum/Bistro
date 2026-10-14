@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
+import { markPRsRead } from '../services/readState';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { PR } from '../types';
 import { sectionContaining } from '../utils/lanes';
-import { useMarkPRsRead } from './useMarkPRsRead';
 import { useStore } from './useStore';
 
 const MARK_LANE_READ_EVENT = 'bistro:inbox:mark-lane-read';
@@ -16,7 +16,6 @@ export function useInboxReadActions(prs: readonly PR[]): void {
     appStore,
     (state) => state.laneSectionsSnapshot,
   );
-  const { markPRsRead } = useMarkPRsRead();
 
   useEffect(() => {
     const markLaneRead = (): void => {
@@ -36,5 +35,5 @@ export function useInboxReadActions(prs: readonly PR[]): void {
     return () => {
       document.removeEventListener(MARK_LANE_READ_EVENT, markLaneRead);
     };
-  }, [laneSections, markPRsRead, prs, selectedPRIndex, view]);
+  }, [laneSections, prs, selectedPRIndex, view]);
 }

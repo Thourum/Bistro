@@ -2,6 +2,7 @@ import type React from 'react';
 import { useState } from 'react';
 import type { Comment, CommentSeverity } from '../types';
 import { humanizeSource } from '../utils/classification';
+import { isTextareaSubmit } from '../utils/keybindings';
 import { Markdown } from './Markdown';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -202,7 +203,7 @@ export function CommentThread({
                     className="text-xs"
                     rows={2}
                     onKeyDown={(e) => {
-                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                      if (isTextareaSubmit(e)) {
                         e.preventDefault();
                         handleReplySubmit();
                       }

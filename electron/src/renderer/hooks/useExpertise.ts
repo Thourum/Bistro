@@ -1,13 +1,15 @@
+import { Fault } from '@thourum/fault';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
-import type { ExpertiseDataPayload } from '../types';
+import { type ExpertiseDataPayload, expertiseDataSchema } from '../types';
+import { parseResponse } from '../utils/error';
 import {
   expertisePayloadForPR,
   isExpertisePayloadForPR,
 } from '../utils/expertise';
 import { createLogger } from '../utils/logger';
 import { useStore } from './useStore';
-import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('useExpertise');
 
@@ -26,12 +28,9 @@ interface ExpertiseState {
 export function useExpertise(prId: string | undefined): ExpertiseState & {
   refetch: () => void;
 } {
-  const { request } = useWebSocket();
   const prListRevision = useStore(appStore, (s) => s.prListRevision);
   const latestRequestIdRef = useRef(0);
   const lastReadyRevisionRef = useRef(prListRevision);
-  const requestRef = useRef(request);
-  requestRef.current = request;
 
   const [state, setState] = useState<ExpertiseState>({
     expertise: null,
@@ -48,30 +47,24 @@ export function useExpertise(prId: string | undefined): ExpertiseState & {
     const requestId = latestRequestIdRef.current + 1;
     latestRequestIdRef.current = requestId;
     setState({ expertise: null, loading: true, error: null });
-    requestRef
-      .current('GET_EXPERTISE', { pr_id: prId })
-      .then((data) => {
-        if (latestRequestIdRef.current !== requestId) {
-          return;
-        }
-        const payload = expertisePayloadForPR(
-          data as ExpertiseDataPayload,
-          prId,
-        );
-        setState({
-          expertise: payload,
-          loading: false,
-          error: null,
-        });
-      })
-      .catch((err: unknown) => {
-        if (latestRequestIdRef.current !== requestId) {
-          return;
-        }
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        log.warn({ err: msg }, 'failed to load expertise');
-        setState({ expertise: null, loading: false, error: msg });
-      });
+    void wsClient
+      .request('GET_EXPERTISE', { pr_id: prId })
+      .mapErr((cause) =>
+        new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+      )
+      .andThen((data) => parseResponse(expertiseDataSchema, data))
+      .match(
+        (data) => {
+          if (latestRequestIdRef.current !== requestId) return;
+          const payload = expertisePayloadForPR(data, prId);
+          setState({ expertise: payload, loading: false, error: null });
+        },
+        (message) => {
+          if (latestRequestIdRef.current !== requestId) return;
+          log.warn({ err: message.message }, 'failed to load expertise');
+          setState({ expertise: null, loading: false, error: message.message });
+        },
+      );
   }, [prId]);
 
   useEffect(() => {

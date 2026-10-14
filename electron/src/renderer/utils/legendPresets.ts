@@ -1,10 +1,6 @@
 import { formatForDisplay } from '@tanstack/react-hotkeys';
 import type { OverlayKind } from '../overlays/OverlayContext';
-import {
-  isSequenceBinding,
-  type KeyBinding,
-  type RouteBase,
-} from './keybindings';
+import type { KeyBinding, RouteBase } from './keybindings';
 
 /**
  * Per-route footer legend preset.
@@ -17,7 +13,7 @@ import {
  * in the 32px-tall footer. Less common bindings are reachable via the `?`
  * help overlay.
  */
-const FOOTER_LEGEND_PRESETS_BY_ROUTE: Record<RouteBase, string[]> = {
+const FOOTER_LEGEND_PRESETS_BY_ROUTE = {
   list: ['list.down', 'list.up', 'list.open', 'list.filter', 'list.search'],
   detail: [
     'detail.nextFile',
@@ -38,10 +34,10 @@ const FOOTER_LEGEND_PRESETS_BY_ROUTE: Record<RouteBase, string[]> = {
   // Login and onboarding footers show no legend (empty chrome).
   login: [],
   onboarding: [],
-};
+} as const satisfies Record<RouteBase, readonly string[]>;
 
 /** Per-overlay footer legend preset. */
-const FOOTER_LEGEND_PRESETS_BY_OVERLAY: Record<OverlayKind, string[]> = {
+const FOOTER_LEGEND_PRESETS_BY_OVERLAY = {
   threads: [
     'threads.next',
     'threads.prev',
@@ -63,7 +59,7 @@ const FOOTER_LEGEND_PRESETS_BY_OVERLAY: Record<OverlayKind, string[]> = {
   repoPicker: ['global.escape'],
   addRepo: ['global.escape'],
   tour: ['global.escape'],
-};
+} as const satisfies Record<OverlayKind, readonly string[]>;
 
 export interface FooterLegendEntry {
   actionId: string;
@@ -80,12 +76,12 @@ export function formatBindingKeys(
   binding: KeyBinding,
   options?: Parameters<typeof formatForDisplay>[1],
 ): string {
-  if (isSequenceBinding(binding)) {
+  if (typeof binding.keys !== 'string') {
     return binding.keys
       .map((step) => formatForDisplay(step, options))
       .join(' ');
   }
-  return formatForDisplay(binding.keys as string, options);
+  return formatForDisplay(binding.keys, options);
 }
 
 /**
@@ -95,41 +91,27 @@ export function formatBindingKeys(
 export function buildLegendForRouteBase(
   routeBase: RouteBase | null,
   activeOverlay: OverlayKind | null,
-  bindings: KeyBinding[],
+  bindings: readonly KeyBinding[],
 ): FooterLegendEntry[] {
-  // When an overlay is active, show overlay-specific legend.
-  if (activeOverlay !== null) {
-    const preset = FOOTER_LEGEND_PRESETS_BY_OVERLAY[activeOverlay];
-    if (!preset || preset.length === 0) return [];
-    const byId = new Map(bindings.map((b) => [b.actionId, b]));
-    const entries: FooterLegendEntry[] = [];
-    for (const id of preset) {
-      const binding = byId.get(id);
-      if (!binding) continue;
-      if (binding.keys.length === 0) continue;
-      entries.push({
-        actionId: id,
-        label: formatBindingKeys(binding),
-        description: binding.description,
-      });
-    }
-    return entries;
-  }
+  const preset =
+    activeOverlay !== null
+      ? FOOTER_LEGEND_PRESETS_BY_OVERLAY[activeOverlay]
+      : routeBase !== null
+        ? FOOTER_LEGEND_PRESETS_BY_ROUTE[routeBase]
+        : [];
+  if (preset.length === 0) return [];
 
-  if (routeBase === null) return [];
-  const preset = FOOTER_LEGEND_PRESETS_BY_ROUTE[routeBase];
-  if (!preset || preset.length === 0) return [];
-  const byId = new Map(bindings.map((b) => [b.actionId, b]));
-  const entries: FooterLegendEntry[] = [];
-  for (const id of preset) {
-    const binding = byId.get(id);
-    if (!binding) continue;
-    if (binding.keys.length === 0) continue;
-    entries.push({
-      actionId: id,
-      label: formatBindingKeys(binding),
-      description: binding.description,
-    });
-  }
-  return entries;
+  const byId = new Map(bindings.map((binding) => [binding.actionId, binding]));
+  return preset.flatMap((actionId) => {
+    const binding = byId.get(actionId);
+    return binding === undefined || binding.keys.length === 0
+      ? []
+      : [
+          {
+            actionId,
+            label: formatBindingKeys(binding),
+            description: binding.description,
+          },
+        ];
+  });
 }

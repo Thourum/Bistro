@@ -168,7 +168,7 @@ In addition to the events below, the following are already implemented (not orig
 | `AUTH_TOKEN_EXPIRED`, `RATE_LIMITED` | done | |
 | `DIFF_READY`, `COMMENTS_READY` | done | |
 | **PR description / labels / assignees / reviewers changed** | partial (2026-07-11) | Writer now diffs before/after and emits `PR_METADATA_CHANGED` — but only for state/title/draft. Description, labels, assignees, reviewers still uncovered |
-| **CI status changed** | done (2026-07-11) | `CI_STATUS_CHANGED` emitted from the writer path, consumed in `useWebSocket.ts` |
+| **CI status changed** | done (2026-07-11) | `CI_STATUS_CHANGED` emitted from the writer path, consumed in `services/ws/events/review.ts` |
 | **Conversation resolved/reopened** | partial (2026-07-11) | Events fire when *this client* resolves/unresolves (local actions); remote resolutions by others are only picked up on the next sync, with no event |
 
 ### 1.6 "Needs my action" vs "FYI" classification — **superseded by Phase 5's six-lane inbox (done 2026-08-09)**

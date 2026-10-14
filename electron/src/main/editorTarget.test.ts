@@ -52,7 +52,10 @@ describe('resolveEditorTarget', () => {
     });
 
     expect(result.isErr()).toBe(true);
-    expect(result.isErr() && result.error).toMatch(/outside repository/);
+    expect(result._unsafeUnwrapErr().tag).toBe('AUTHORIZATION_ERROR');
+    expect(result.isErr() && result.error.message).toMatch(
+      /outside repository/,
+    );
   });
 
   it('rejects a file reached through an in-repo symlinked directory', async () => {
@@ -65,7 +68,10 @@ describe('resolveEditorTarget', () => {
     });
 
     expect(result.isErr()).toBe(true);
-    expect(result.isErr() && result.error).toMatch(/outside repository/);
+    expect(result._unsafeUnwrapErr().tag).toBe('AUTHORIZATION_ERROR');
+    expect(result.isErr() && result.error.message).toMatch(
+      /outside repository/,
+    );
   });
 
   it.each([
@@ -78,6 +84,7 @@ describe('resolveEditorTarget', () => {
     const result = await resolveEditorTarget({ repoRoot, relativePath });
 
     expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().tag).toBe('AUTHORIZATION_ERROR');
   });
 
   it('rejects a sibling directory that merely shares the root prefix', async () => {
@@ -92,6 +99,7 @@ describe('resolveEditorTarget', () => {
     });
 
     expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().tag).toBe('AUTHORIZATION_ERROR');
   });
 
   it('rejects a repoRoot that is not a git checkout', async () => {
@@ -103,7 +111,10 @@ describe('resolveEditorTarget', () => {
     });
 
     expect(result.isErr()).toBe(true);
-    expect(result.isErr() && result.error).toMatch(/not a git checkout/);
+    expect(result._unsafeUnwrapErr().tag).toBe('AUTHORIZATION_ERROR');
+    expect(result.isErr() && result.error.message).toMatch(
+      /not a git checkout/,
+    );
   });
 
   it('rejects a relative repoRoot instead of resolving it against cwd', async () => {
@@ -113,7 +124,8 @@ describe('resolveEditorTarget', () => {
     });
 
     expect(result.isErr()).toBe(true);
-    expect(result.isErr() && result.error).toMatch(/absolute/);
+    expect(result._unsafeUnwrapErr().tag).toBe('AUTHORIZATION_ERROR');
+    expect(result.isErr() && result.error.message).toMatch(/absolute/);
   });
 
   it('rejects a repoRoot that does not exist', async () => {
@@ -125,6 +137,7 @@ describe('resolveEditorTarget', () => {
     });
 
     expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().tag).toBe('AUTHORIZATION_ERROR');
   });
 
   it('rejects a target that does not exist inside the checkout', async () => {
@@ -136,5 +149,6 @@ describe('resolveEditorTarget', () => {
     });
 
     expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().tag).toBe('AUTHORIZATION_ERROR');
   });
 });

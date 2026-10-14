@@ -253,4 +253,3 @@ func TestReplayQueuedActions_NilOrchestratorIsNoop(t *testing.T) {
 		t.Errorf("ReplayQueuedActions with nil orchestrator must return nil, got: %v", err)
 	}
 }
-

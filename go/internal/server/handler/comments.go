@@ -144,7 +144,7 @@ func refreshIfStale(db commentsStore, provider *classify.EngineProvider, prID st
 	}
 }
 
-func nullIfEmpty(s string) interface{} {
+func nullIfEmpty(s string) any {
 	if s == "" {
 		return nil
 	}
@@ -157,6 +157,43 @@ func nullIfEmpty(s string) interface{} {
 // serving. Nil provider = no refresh.
 func NewRequestCommentsHandlerWithClassifier(db commentsStore, log *slog.Logger, provider *classify.EngineProvider) ws.MessageHandler {
 	return NewRequestCommentsHandlerWithLLMKick(db, log, provider, nil)
+}
+
+func withFreshAnchor(comment commentRow, currentHeadSHA *string, currentPatchsetNumber *int) commentRow {
+	// Anchor validity ties the head and current (base, head) patchset together:
+	// a retarget with the same head still invalidates old anchor geometry.
+	fresh := comment.AnchorHeadSHA != nil && currentHeadSHA != nil &&
+		*comment.AnchorHeadSHA == *currentHeadSHA &&
+		comment.AnchorCurrentPatchsetNumber != nil && currentPatchsetNumber != nil &&
+		*comment.AnchorCurrentPatchsetNumber == *currentPatchsetNumber
+	if fresh && comment.PatchsetNumber != nil && *comment.PatchsetNumber != *currentPatchsetNumber {
+		// Historical positions must have been calculated from their own patchset.
+		fresh = comment.AnchorPatchsetNumber != nil && *comment.AnchorPatchsetNumber == *comment.PatchsetNumber
+	}
+	if fresh {
+		comment.Anchored = comment.AnchoredLine != nil
+		return comment
+	}
+	comment.AnchoredLine = nil
+	comment.AnchorHeadSHA = nil
+	comment.AnchorPatchsetNumber = nil
+	comment.AnchorCurrentPatchsetNumber = nil
+	comment.Outdated = false
+	comment.OutdatedNearLine = nil
+	comment.Anchored = false
+	return comment
+}
+
+func commentsErrorResponse(requestID, prID string) map[string]interface{} {
+	return map[string]interface{}{
+		"id":   requestID,
+		"type": "COMMENTS_READY",
+		"data": map[string]interface{}{
+			"pr_id":    prID,
+			"comments": []commentRow{},
+			"error":    "unable to load comments",
+		},
+	}
 }
 
 // NewRequestCommentsHandlerWithLLMKick additionally kicks the async BYOK LLM
@@ -220,15 +257,7 @@ func NewRequestCommentsHandlerWithLLMKick(db commentsStore, log *slog.Logger, pr
 		)
 		if err != nil {
 			logger.Error("REQUEST_COMMENTS query failed", "pr_id", req.PRID, "err", err)
-			return map[string]interface{}{
-				"id":   msg.ID,
-				"type": "COMMENTS_READY",
-				"data": map[string]interface{}{
-					"pr_id":    req.PRID,
-					"comments": []commentRow{},
-					"error":    err.Error(),
-				},
-			}, nil
+			return commentsErrorResponse(msg.ID, req.PRID), nil
 		}
 		defer rows.Close()
 
@@ -258,56 +287,7 @@ func NewRequestCommentsHandlerWithLLMKick(db commentsStore, log *slog.Logger, pr
 				continue
 			}
 
-			// ── Anchor cache freshness ────────────────────────────────────────
-			//
-			// A fresh anchor requires ALL of:
-			//   1. anchor_head_sha == prs.head_sha
-			//   2. anchor_current_patchset_number IS NOT NULL AND
-			//      anchor_current_patchset_number == current_patchset_number
-			//      (ensures anchor is for the current (base_sha, head_sha) patchset;
-			//       a retarget with same head advances the current patchset number,
-			//       making anchors from before the retarget stale)
-			//   3. For original-position (historical) comments additionally:
-			//      anchor_patchset_number IS NOT NULL AND
-			//      anchor_patchset_number == comments.patchset_number
-			//      (ensures correct source geometry was used for the diff position)
-			//
-			// For current-position comments (patchset_number == current), condition 3
-			// is implicitly satisfied because source == current, so we skip it.
-			//
-			// NULL anchor_current_patchset_number is always stale
-			// (pre-migration 019 data; will be recomputed on next sync).
-			anchorFresh := false
-			if c.AnchorHeadSHA != nil && currentHeadSHA != nil &&
-				*c.AnchorHeadSHA == *currentHeadSHA &&
-				c.AnchorCurrentPatchsetNumber != nil && currentPatchsetNumber != nil &&
-				*c.AnchorCurrentPatchsetNumber == *currentPatchsetNumber {
-
-				isOriginalPosition := c.PatchsetNumber != nil && currentPatchsetNumber != nil &&
-					*c.PatchsetNumber != *currentPatchsetNumber
-
-				if isOriginalPosition {
-					// Condition 3: source patchset matches comment's recorded patchset.
-					anchorFresh = c.AnchorPatchsetNumber != nil &&
-						*c.AnchorPatchsetNumber == *c.PatchsetNumber
-				} else {
-					// Current-position: conditions 1+2 sufficient.
-					anchorFresh = true
-				}
-			}
-
-			if anchorFresh {
-				c.Anchored = c.AnchoredLine != nil
-			} else {
-				// Stale or missing: suppress all anchor-derived fields.
-				c.AnchoredLine = nil
-				c.AnchorHeadSHA = nil
-				c.AnchorPatchsetNumber = nil
-				c.AnchorCurrentPatchsetNumber = nil
-				c.Outdated = false
-				c.OutdatedNearLine = nil
-				c.Anchored = false
-			}
+			c = withFreshAnchor(c, currentHeadSHA, currentPatchsetNumber)
 			comments = append(comments, c)
 		}
 

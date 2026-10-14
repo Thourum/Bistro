@@ -31,14 +31,18 @@ Where things live: Go engine in `go/` (entry `go/cmd/bistro-sync/`, packages und
 
 - **Go 1.26** — go-git, go-github, gorilla/websocket, mattn/go-sqlite3, go-keyring, x/oauth2.
 - **Electron + Electron Forge + Vite** — React 19, TypeScript, TanStack (React Query / Hotkeys / Virtual / Store), Radix UI, Tailwind, Biome (lint+format), Vitest (test).
-- **Package manager: pnpm** for the Electron app. Run pnpm commands from `electron/`; the lockfile is `electron/pnpm-lock.yaml`. Versions live in `go/go.mod` and `electron/package.json` — check there, don't assume.
+- **Package manager: pnpm** for the Electron app. Run pnpm commands from `electron/`; the lockfile is the repo-root `pnpm-lock.yaml` (workspace defined in `pnpm-workspace.yaml`, covering `electron/` and `website/`). Versions live in `go/go.mod` and `electron/package.json` — check there, don't assume.
 
 ## Conventions
 
-- **Error handling: in repository TS/JS and Go code, use `neverthrow`. NEVER write `try`/`catch` for control flow or error handling.** Return and chain `Result` / `ResultAsync` instead. (The only `try/catch` allowed anywhere is inside throwaway context-mode MCP sandbox scripts — never in committed code.)
+- **Error handling: in Electron TS/JS code, use `@thourum/fault`. NEVER write `try`/`catch` for control flow or error handling.** Return and chain `Result<T, Fault>` / `ResultAsync<T, Fault>` with tagged faults; narrow errors with `fault.tag` and use `fault.message` at display/log boundaries. Go continues to use its existing error handling. (The only `try/catch` allowed anywhere is inside throwaway context-mode MCP sandbox scripts — never in committed code.)
 - Go owns all SQLite writes — the UI never writes the DB directly.
 - SQLite is a cache; the WebSocket is localhost-only (origin-enforced); migrations are versioned, idempotent, embedded.
-- Keyboard bindings are pure config in `electron/src/renderer/utils/keybindings.ts`; registration in `hooks/useAppHotkeys.ts`.
+- Keyboard bindings are pure config (keys → `actionId`, no handlers) in `electron/src/renderer/utils/keybindings.ts`; handlers live in `utils/keybindingActions.ts`, enable/scope rules in `utils/keybindingActivation.ts`; registration in `hooks/useAppHotkeys.ts`. Don't register hotkeys outside `useAppHotkeys` (textarea-local submit uses `TEXTAREA_SUBMIT_HOTKEY` / `isTextareaSubmit` from the same file).
+- Validate external data with zod at the edge, never `as` casts: WS envelopes and push events via `dataSchemas`/`parseWsMessage` in `types/wsSchemas.ts`; `wsClient.request()` responses via schemas in `types/index.ts` + `parseResponse` (`utils/error.ts`).
+- WebSocket transport lives in `services/ws/connection.ts`: use `wsClient.send` / `wsClient.request` directly, with tagged `ResultAsync` request errors. Only App's Bootstrap calls `hooks/useWebSocketConnection.ts` to own connect/disconnect. Push-event side effects live in `services/ws/events/<domain>.ts`, with an exhaustive handler table in `services/ws/events/index.ts`.
+- Renderer hooks own React state/effects and data-fetching lifecycles; plain WS/IPC requests and appStore writes live in `services/` (`readState.ts`, `prActions.ts`, `dismissals.ts`, `editor.ts`). Call services directly; don't wrap them in hooks solely for `useCallback`.
+- Large renderer pages keep feature-local pieces beside them: `pages/settings/*Section.tsx` for Settings, `use<Page>Data.ts` / `use<Page>Actions.ts` hooks and `*Sections.tsx` / `*Chrome.tsx` for PR detail and diff pages.
 - Do not assert a Go module path from memory — read it from `go/go.mod`.
 
 ## How to work

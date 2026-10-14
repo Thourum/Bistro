@@ -2,6 +2,7 @@ package provider
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -84,6 +85,12 @@ func TestIsRecoverable_NonProviderError(t *testing.T) {
 	err := errors.New("generic error")
 	if IsRecoverable(err) {
 		t.Error("generic error should not be recoverable")
+	}
+}
+
+func TestIsRecoverableWrappedError(t *testing.T) {
+	if !IsRecoverable(fmt.Errorf("github request: %w", NewRateLimitError("rate limited"))) {
+		t.Fatal("wrapped rate-limit error should be recoverable")
 	}
 }
 

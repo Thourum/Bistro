@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	gitlib "github.com/go-git/go-git/v5"
@@ -45,6 +43,9 @@ type Client struct {
 
 // NewClient creates a new git client with cache
 func NewClient(cache *Cache) *Client {
+	if cache == nil {
+		cache = NewCache()
+	}
 	return &Client{cache: cache, locks: NewRepoLocks()}
 }
 
@@ -85,8 +86,16 @@ func (c *Client) auth() *http.BasicAuth {
 // (the merge-base at PR creation / last sync), not the tip itself. A modest
 // depth gives the targeted fetch a reasonable chance of pulling the base SHA
 // along the base branch's first-parent history before falling back to a broad
-// fetch. The verify-both-commits-exist gate keeps this safe regardless of depth.
-const defaultTargetedFetchDepth = 50
+// fetch. Required-commit verification keeps this safe regardless of depth.
+const (
+	defaultTargetedFetchDepth    = 50
+	locationFetchOperation       = "fetch"
+	locationInvalidURLCode       = "invalid_url"
+	locationMissingStatus        = "missing"
+	locationPathMissingCode      = "path_missing"
+	locationPermissionDeniedCode = "permission_denied"
+	locationCloneFailedCode      = "clone_failed"
+)
 
 // CloneOptions carries PR-specific hints that enable a targeted shallow fetch.
 // All fields are optional; a zero value disables the targeted path and behaves
@@ -150,264 +159,6 @@ func (c *Client) CloneForPR(ctx context.Context, repoURL, baseSHA, headSHA strin
 	return c.cloneWithOptions(ctx, repoURL, baseSHA, headSHA, opts)
 }
 
-func repoCacheDir(repoURL string) (string, error) {
-	root, err := CacheRoot()
-	if err != nil {
-		return "", err
-	}
-	if os.Getenv("BISTRO_REPO_DIR") != "" {
-		return root, nil
-	}
-	identity, err := ParseRemoteURL(repoURL)
-	if err != nil {
-		return root, nil
-	}
-	return safeRepoCacheDir(root, identity)
-}
-
-func safeRepoCacheDir(root string, identity Identity) (string, error) {
-	canonicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return "", fmt.Errorf("resolve cache root %s: %w", root, err)
-	}
-	ownerDir := filepath.Join(canonicalRoot, identity.Owner)
-	if err := rejectSymlink(ownerDir); err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(ownerDir, 0755); err != nil {
-		return "", err
-	}
-	if err := rejectSymlink(ownerDir); err != nil {
-		return "", err
-	}
-	repoDir := filepath.Join(ownerDir, identity.Repo)
-	if err := rejectSymlink(repoDir); err != nil {
-		return "", err
-	}
-	if err := ensureContainedPath(canonicalRoot, repoDir); err != nil {
-		return "", err
-	}
-	return repoDir, nil
-}
-
-func rejectSymlink(path string) error {
-	info, err := os.Lstat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("inspect cache path %s: %w", path, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("cache path %s is a symlink", path)
-	}
-	return nil
-}
-
-func ensureContainedPath(root, child string) error {
-	relative, err := filepath.Rel(root, child)
-	if err != nil {
-		return fmt.Errorf("compare cache path %s to root %s: %w", child, root, err)
-	}
-	if relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) || filepath.IsAbs(relative) {
-		return fmt.Errorf("cache path %s escapes cache root %s", child, root)
-	}
-	return nil
-}
-
-func prepareCacheCloneDir(repoURL string) (string, error) {
-	repoDir, cleanup, err := stageCacheCloneDir(repoURL)
-	if err != nil {
-		return "", err
-	}
-	cleanup(true)
-	return repoDir, nil
-}
-
-func prepareTargetedCloneDir(repoURL string) (string, error) {
-	return prepareCacheCloneDirWithMode(repoURL, false)
-}
-
-// needsFreshTempDir reports whether a clone must go into a throwaway temp dir
-// instead of the canonical cache dir: either the BISTRO_REPO_DIR override is
-// active, or the URL cannot be parsed into a stable identity.
-func needsFreshTempDir(repoURL string) bool {
-	if os.Getenv("BISTRO_REPO_DIR") != "" {
-		return true
-	}
-	_, err := ParseRemoteURL(repoURL)
-	return err != nil
-}
-
-func prepareCacheCloneDirWithMode(repoURL string, shouldReplace bool) (string, error) {
-	repoDir, err := repoCacheDir(repoURL)
-	if err != nil {
-		return "", err
-	}
-	if needsFreshTempDir(repoURL) {
-		return os.MkdirTemp(repoDir, "repo-*")
-	}
-	if !shouldReplace {
-		return repoDir, nil
-	}
-	repoDir, cleanup, err := createFreshCacheCloneDir(repoDir)
-	if err != nil {
-		return "", err
-	}
-	cleanup(true)
-	return repoDir, nil
-}
-
-func stageCacheCloneDir(repoURL string) (string, func(bool), error) {
-	repoDir, err := repoCacheDir(repoURL)
-	if err != nil {
-		return "", nil, err
-	}
-	if needsFreshTempDir(repoURL) {
-		return makeTemporaryCloneDir(repoDir)
-	}
-	return createFreshCacheCloneDir(repoDir)
-}
-
-func makeTemporaryCloneDir(parentDir string) (string, func(bool), error) {
-	tmpDir, err := os.MkdirTemp(parentDir, "repo-*")
-	if err != nil {
-		return "", nil, err
-	}
-	return tmpDir, func(success bool) {
-		if !success {
-			_ = os.RemoveAll(tmpDir)
-		}
-	}, nil
-}
-
-func createFreshCacheCloneDir(repoDir string) (string, func(bool), error) {
-	parentDir := filepath.Dir(repoDir)
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		return "", nil, err
-	}
-	if err := rejectSymlink(parentDir); err != nil {
-		return "", nil, err
-	}
-
-	stagingDir, err := os.MkdirTemp(parentDir, filepath.Base(repoDir)+"-staging-*")
-	if err != nil {
-		return "", nil, err
-	}
-	shouldRemoveStaging := true
-	defer func() {
-		if shouldRemoveStaging {
-			_ = os.RemoveAll(stagingDir)
-		}
-	}()
-	if err := ensureNonSymlinkDir(stagingDir); err != nil {
-		return "", nil, err
-	}
-
-	backupDir, shouldRestore, err := moveExistingCacheDirAside(repoDir)
-	if err != nil {
-		return "", nil, err
-	}
-	cleanup := func(success bool) {
-		if success {
-			if backupDir != "" {
-				_ = os.RemoveAll(backupDir)
-			}
-			return
-		}
-		_ = os.RemoveAll(repoDir)
-		if shouldRestore && backupDir != "" {
-			_ = os.Rename(backupDir, repoDir)
-		}
-	}
-
-	if err := os.Rename(stagingDir, repoDir); err != nil {
-		cleanup(false)
-		return "", nil, err
-	}
-	shouldRemoveStaging = false
-	if err := ensureNonSymlinkDir(repoDir); err != nil {
-		cleanup(false)
-		return "", nil, err
-	}
-	return repoDir, cleanup, nil
-}
-
-func moveExistingCacheDirAside(repoDir string) (string, bool, error) {
-	info, err := os.Lstat(repoDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", false, nil
-		}
-		return "", false, err
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "", false, fmt.Errorf("cache path %s is a symlink", repoDir)
-	}
-	backupDir, err := os.MkdirTemp(filepath.Dir(repoDir), filepath.Base(repoDir)+"-backup-*")
-	if err != nil {
-		return "", false, err
-	}
-	if err := os.RemoveAll(backupDir); err != nil {
-		return "", false, err
-	}
-	if err := os.Rename(repoDir, backupDir); err != nil {
-		return "", false, err
-	}
-	return backupDir, true, nil
-}
-
-func ensureNonSymlinkDir(path string) error {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("cache path %s is a symlink", path)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("cache path %s is not a directory", path)
-	}
-	return nil
-}
-
-func stageTargetedCloneDir(repoURL, repoDir string) (func(bool), error) {
-	removeOnFailure := func(success bool) {
-		if !success {
-			_ = os.RemoveAll(repoDir)
-		}
-	}
-	if needsFreshTempDir(repoURL) {
-		return removeOnFailure, nil
-	}
-	if _, err := os.Stat(repoDir); err != nil {
-		if os.IsNotExist(err) {
-			return removeOnFailure, nil
-		}
-		return nil, err
-	}
-
-	backupDir, err := os.MkdirTemp(filepath.Dir(repoDir), filepath.Base(repoDir)+"-backup-*")
-	if err != nil {
-		return nil, err
-	}
-	if err := os.RemoveAll(backupDir); err != nil {
-		return nil, err
-	}
-	if err := os.Rename(repoDir, backupDir); err != nil {
-		return nil, err
-	}
-
-	return func(success bool) {
-		if success {
-			_ = os.RemoveAll(backupDir)
-			return
-		}
-		_ = os.RemoveAll(repoDir)
-		_ = os.Rename(backupDir, repoDir)
-	}, nil
-}
-
 func (c *Client) recordCacheCloned(repoURL, path string) {
 	if os.Getenv("BISTRO_REPO_DIR") != "" || c.localResolver == nil {
 		return
@@ -415,46 +166,44 @@ func (c *Client) recordCacheCloned(repoURL, path string) {
 	c.localResolver.OnCacheCloned(repoURL, path)
 }
 
-func (c *Client) resolveLocal(ctx context.Context, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, error, bool) {
+func (c *Client) resolveLocal(ctx context.Context, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, bool, error) {
 	if os.Getenv("BISTRO_REPO_DIR") != "" || c.localResolver == nil {
-		return nil, nil, false
+		return nil, false, nil
 	}
 	localPath, ok := c.localResolver.LocalPath(repoURL)
 	if !ok {
-		return nil, nil, false
+		return nil, false, nil
 	}
 	identity, err := ParseRemoteURL(repoURL)
 	if err != nil {
-		locationErr := &LocationError{RepoID: repoURL, Operation: "fetch", Code: "invalid_url", Message: err.Error()}
-		return nil, locationErr, true
+		return nil, true, &LocationError{RepoID: repoURL, Operation: locationFetchOperation, Code: locationInvalidURLCode, Message: err.Error(), Err: err}
 	}
 	if !localRepoExists(localPath) {
 		msg := fmt.Sprintf("folder not found: %s", localPath)
-		c.localResolver.OnLocalDegraded(repoURL, "missing", "path_missing", msg)
-		return nil, &LocationError{RepoID: identity.ID(), Operation: "fetch", Code: "path_missing", Message: msg}, true
+		c.localResolver.OnLocalDegraded(repoURL, locationMissingStatus, locationPathMissingCode, msg)
+		return nil, true, &LocationError{RepoID: identity.ID(), Operation: locationFetchOperation, Code: locationPathMissingCode, Message: msg}
 	}
 	if err := c.FetchIntoLocal(ctx, localPath, identity, baseSHA, headSHA, opts); err != nil {
 		msg := err.Error()
 		var fetchErr *LocalFetchError
 		if errors.As(err, &fetchErr) && fetchErr.Code == remoteMismatchCode {
 			c.localResolver.OnLocalDegraded(repoURL, remoteMismatchCode, remoteMismatchCode, msg)
-			return nil, &LocationError{RepoID: identity.ID(), Operation: "fetch", Code: remoteMismatchCode, Message: msg}, true
+			return nil, true, &LocationError{RepoID: identity.ID(), Operation: locationFetchOperation, Code: remoteMismatchCode, Message: msg, Err: err}
 		}
 		if errors.Is(err, os.ErrPermission) {
-			c.localResolver.OnLocalDegraded(repoURL, "permission_denied", "permission_denied", msg)
-			return nil, &LocationError{RepoID: identity.ID(), Operation: "fetch", Code: "permission_denied", Message: msg}, true
+			c.localResolver.OnLocalDegraded(repoURL, locationPermissionDeniedCode, locationPermissionDeniedCode, msg)
+			return nil, true, &LocationError{RepoID: identity.ID(), Operation: locationFetchOperation, Code: locationPermissionDeniedCode, Message: msg, Err: err}
 		}
-		// Context cancellation stays bare so callers can still detect it
-		// with errors.Is; LocationError does not unwrap.
+		// Context cancellation stays bare so callers can detect it directly.
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, err, true
+			return nil, true, err
 		}
 		// Transient failures (network, missing commits) are surfaced as a
 		// structured LocationError without marking the repo degraded.
-		return nil, &LocationError{RepoID: identity.ID(), Operation: "fetch", Code: "clone_failed", Message: msg}, true
+		return nil, true, &LocationError{RepoID: identity.ID(), Operation: locationFetchOperation, Code: locationCloneFailedCode, Message: msg, Err: err}
 	}
 	c.localResolver.OnUsed(repoURL)
-	return &CloneResult{LocalPath: localPath, BaseSHA: baseSHA, HeadSHA: headSHA}, nil, true
+	return &CloneResult{LocalPath: localPath, BaseSHA: baseSHA, HeadSHA: headSHA}, true, nil
 }
 
 func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, error) {
@@ -464,13 +213,13 @@ func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA
 		"head_sha", truncateSHAForLog(headSHA),
 	)
 	if repoURL == "" {
-		return nil, fmt.Errorf("repository URL cannot be empty")
+		return nil, errors.New("repository URL cannot be empty")
 	}
 	if baseSHA == "" {
-		return nil, fmt.Errorf("baseSHA cannot be empty")
+		return nil, errors.New("baseSHA cannot be empty")
 	}
 	if headSHA == "" {
-		return nil, fmt.Errorf("headSHA cannot be empty")
+		return nil, errors.New("headSHA cannot be empty")
 	}
 
 	var result *CloneResult
@@ -501,7 +250,7 @@ func repoLockKey(repoURL string) string {
 }
 
 func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, error) {
-	if result, err, ok := c.resolveLocal(ctx, repoURL, baseSHA, headSHA, opts); ok {
+	if result, handled, err := c.resolveLocal(ctx, repoURL, baseSHA, headSHA, opts); handled {
 		return result, err
 	}
 
@@ -525,22 +274,38 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 	// or base branch. On success it caches and returns directly; on any failure
 	// it logs the reason and falls through to the broad clone below.
 	if opts != nil && (opts.PRNumber > 0 || opts.BaseBranch != "") {
-		if result, ok := c.targetedClone(ctx, log, repoURL, baseSHA, headSHA, opts); ok {
+		result, ok, err := c.targetedClone(ctx, log, repoURL, baseSHA, headSHA, opts)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
 			return result, nil
 		}
 	}
 
+	return c.broadClone(ctx, log, repoURL, baseSHA, headSHA)
+}
+
+func (c *Client) broadClone(ctx context.Context, log *slog.Logger, repoURL, baseSHA, headSHA string) (result *CloneResult, err error) {
 	log.Debug("git clone start")
 	overallStart := time.Now()
 
 	tmpDir, cleanupCloneDir, err := stageCacheCloneDir(repoURL)
 	if err != nil {
-		log.Error("failed to prepare clone dir", "error", err)
 		return nil, fmt.Errorf("failed to prepare clone directory: %w", err)
 	}
 	cloneSucceeded := false
 	defer func() {
-		cleanupCloneDir(cloneSucceeded)
+		if cloneSucceeded {
+			if cleanupErr := cleanupCloneDir.commit(); cleanupErr != nil {
+				log.Warn("failed to remove previous clone backup", "error", cleanupErr)
+			}
+			return
+		}
+		if cleanupErr := cleanupCloneDir.rollback(); cleanupErr != nil {
+			result = nil
+			err = errors.Join(err, fmt.Errorf("restore previous clone after failure: %w", cleanupErr))
+		}
 	}()
 
 	cloneOpts := &gitlib.CloneOptions{
@@ -556,10 +321,6 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 	repo, err := gitlib.PlainCloneContext(ctx, tmpDir, true, cloneOpts)
 	cloneDur := time.Since(cloneStart).Milliseconds()
 	if err != nil {
-		log.Error("git clone failed",
-			"duration_ms", cloneDur,
-			"error", err,
-		)
 		return nil, fmt.Errorf("failed to clone repository %s: %w", repoURL, err)
 	}
 	log.Debug("git clone done", "duration_ms", cloneDur, "local_path", tmpDir)
@@ -574,26 +335,20 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 	}
 
 	fetchStart := time.Now()
-	if err := repo.FetchContext(ctx, fetchOpts); err != nil && err != gitlib.NoErrAlreadyUpToDate {
-		log.Error("git fetch refs failed",
-			"duration_ms", time.Since(fetchStart).Milliseconds(),
-			"error", err,
-		)
+	if err := repo.FetchContext(ctx, fetchOpts); err != nil && !errors.Is(err, gitlib.NoErrAlreadyUpToDate) {
 		return nil, fmt.Errorf("failed to fetch refs: %w", err)
 	}
 	log.Debug("git fetch refs done", "duration_ms", time.Since(fetchStart).Milliseconds())
 
 	// Verify both commits are present — fail fast before writing to cache
 	if _, err := repo.CommitObject(plumbing.NewHash(baseSHA)); err != nil {
-		log.Warn("base commit missing after fetch", "error", err)
 		return nil, fmt.Errorf("base commit %s not found after fetch: %w", baseSHA, err)
 	}
 	if _, err := repo.CommitObject(plumbing.NewHash(headSHA)); err != nil {
-		log.Warn("head commit missing after fetch", "error", err)
 		return nil, fmt.Errorf("head commit %s not found after fetch: %w", headSHA, err)
 	}
 
-	result := &CloneResult{
+	result = &CloneResult{
 		LocalPath: tmpDir,
 		BaseSHA:   baseSHA,
 		HeadSHA:   headSHA,
@@ -631,7 +386,7 @@ func (c *Client) validateCacheHit(
 		return false
 	}
 
-	required := cacheHitRequiredSHAs(baseSHA, headSHA, opts)
+	required := requiredSHAs(baseSHA, headSHA, opts)
 	missing, err := firstMissingCommit(cached.LocalPath, required)
 	if err != nil {
 		log.Warn("git clone cache hit unverifiable; re-cloning",
@@ -651,9 +406,8 @@ func (c *Client) validateCacheHit(
 	return true
 }
 
-func cacheHitRequiredSHAs(baseSHA, headSHA string, opts *CloneOptions) []string {
-	required := make([]string, 0, 2)
-	required = append(required, baseSHA, headSHA)
+func requiredSHAs(baseSHA, headSHA string, opts *CloneOptions) []string {
+	required := []string{baseSHA, headSHA}
 	if opts != nil {
 		required = append(required, opts.RequiredSHAs...)
 	}
@@ -666,57 +420,37 @@ func cacheHitRequiredSHAs(baseSHA, headSHA string, opts *CloneOptions) []string 
 // exist locally after the fetch. On any failure — fetch error, or either commit
 // missing (e.g. base SHA deeper than the shallow window) — it cleans up, logs
 // the fallback reason, and returns (nil, false) so the caller proceeds with the
-// broad clone path. This keeps fallback correctness regardless of fetch depth.
-func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, bool) {
+// broad clone path. A rollback failure is returned instead of falling through
+// and potentially replacing a clone that could not be restored.
+func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, bool, error) {
 	start := time.Now()
 
 	tmpDir, err := prepareTargetedCloneDir(repoURL)
 	if err != nil {
 		log.Warn("targeted fetch fallback: cannot prepare clone dir", "error", err)
-		return nil, false
+		return nil, false, nil
 	}
 	cleanup, err := stageTargetedCloneDir(repoURL, tmpDir)
 	if err != nil {
 		log.Warn("targeted fetch fallback: cannot stage clone dir", "error", err)
-		return nil, false
+		return nil, false, nil
 	}
 
-	// PlainInit (bare) + CreateRemote, rather than PlainClone, so we never
-	// download the default branch up front — PlainClone always fetches it
-	// before any extra refspec, which is exactly the broad cost we want to
-	// avoid on the targeted path.
-	repo, err := gitlib.PlainInit(tmpDir, true)
+	// Avoid PlainClone's default-branch download before fetching targeted refs.
+	repo, err := initTargetedRepo(tmpDir, repoURL)
 	if err != nil {
-		cleanup(false)
-		log.Warn("targeted fetch fallback: plain init failed", "error", err)
-		return nil, false
-	}
-	if _, err := repo.CreateRemote(&config.RemoteConfig{
-		Name: "origin",
-		URLs: []string{repoURL},
-	}); err != nil {
-		cleanup(false)
-		log.Warn("targeted fetch fallback: create remote failed", "error", err)
-		return nil, false
-	}
-
-	refSpecs := targetedRefSpecs(opts)
-	if len(refSpecs) == 0 {
-		cleanup(false)
-		return nil, false
+		if cleanupErr := cleanup.rollback(); cleanupErr != nil {
+			return nil, false, errors.Join(err, fmt.Errorf("restore previous clone: %w", cleanupErr))
+		}
+		log.Warn("targeted fetch fallback: cannot initialize repository", "error", err)
+		return nil, false, nil
 	}
 
 	depth := targetedDepth(opts)
-
-	fetchOpts := &gitlib.FetchOptions{
-		Auth:     c.auth(),
-		RefSpecs: refSpecs,
-		Depth:    depth,
-		Tags:     gitlib.NoTags,
-	}
-
-	if err := repo.FetchContext(ctx, fetchOpts); err != nil && err != gitlib.NoErrAlreadyUpToDate {
-		cleanup(false)
+	if err := c.fetchTargetedRefs(ctx, repo, opts, depth); err != nil {
+		if cleanupErr := cleanup.rollback(); cleanupErr != nil {
+			return nil, false, errors.Join(err, fmt.Errorf("restore previous clone: %w", cleanupErr))
+		}
 		log.Debug("targeted fetch fallback: fetch failed",
 			"pr_number", opts.PRNumber,
 			"base_branch", opts.BaseBranch,
@@ -724,7 +458,7 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 			"duration_ms", time.Since(start).Milliseconds(),
 			"error", err,
 		)
-		return nil, false
+		return nil, false, nil
 	}
 
 	// Verify every commit the caller depends on exists before trusting the
@@ -736,13 +470,17 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 	// comment commit; when any required commit is missing we fall back to the
 	// broad clone rather than cache an incomplete repo.
 	if missing := verifyRequiredCommits(repo, baseSHA, headSHA, opts); missing != "" {
-		cleanup(false)
+		if cleanupErr := cleanup.rollback(); cleanupErr != nil {
+			return nil, false, fmt.Errorf("restore previous clone after missing commit %s: %w", missing, cleanupErr)
+		}
 		log.Debug("targeted fetch fallback: required commit missing in shallow fetch",
 			"missing_sha", truncateSHAForLog(missing), "depth", depth)
-		return nil, false
+		return nil, false, nil
 	}
 
-	cleanup(true)
+	if err := cleanup.commit(); err != nil {
+		log.Warn("failed to remove previous clone backup", "error", err)
+	}
 
 	c.cache.Set(repoURL, baseSHA, headSHA, &RepoEntry{
 		URL:       repoURL,
@@ -764,7 +502,35 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 		LocalPath: tmpDir,
 		BaseSHA:   baseSHA,
 		HeadSHA:   headSHA,
-	}, true
+	}, true, nil
+}
+
+func initTargetedRepo(path, repoURL string) (*gitlib.Repository, error) {
+	repo, err := gitlib.PlainInit(path, true)
+	if err != nil {
+		return nil, fmt.Errorf("initialize targeted repository: %w", err)
+	}
+	if _, err := repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{repoURL}}); err != nil {
+		return nil, fmt.Errorf("create targeted remote: %w", err)
+	}
+	return repo, nil
+}
+
+func (c *Client) fetchTargetedRefs(ctx context.Context, repo *gitlib.Repository, opts *CloneOptions, depth int) error {
+	refSpecs := targetedRefSpecs(opts)
+	if len(refSpecs) == 0 {
+		return errors.New("targeted fetch requires a PR number or base branch")
+	}
+	fetchOpts := &gitlib.FetchOptions{
+		Auth:     c.auth(),
+		RefSpecs: refSpecs,
+		Depth:    depth,
+		Tags:     gitlib.NoTags,
+	}
+	if err := repo.FetchContext(ctx, fetchOpts); err != nil && !errors.Is(err, gitlib.NoErrAlreadyUpToDate) {
+		return fmt.Errorf("fetch targeted refs: %w", err)
+	}
+	return nil
 }
 
 // targetedRefSpecs builds the PR-specific refspecs for a targeted fetch.
@@ -773,8 +539,8 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 // refs written by the broad clone path (which owns refs/remotes/origin/*). The
 // destination ref is irrelevant to commit reachability — commits are resolved
 // by SHA, not by ref — so the isolated namespace is purely defensive. Shared by
-// the disk targeted path and the in-memory PR-specific path. Returns an empty
-// slice when opts supplies neither a PR number nor a base branch.
+// the targeted path. Returns an empty slice when opts supplies neither a PR
+// number nor a base branch.
 func targetedRefSpecs(opts *CloneOptions) []config.RefSpec {
 	refSpecs := make([]config.RefSpec, 0, 2)
 	if opts == nil {
@@ -802,24 +568,10 @@ func targetedDepth(opts *CloneOptions) int {
 
 // verifyRequiredCommits checks that baseSHA, headSHA, and every non-empty
 // opts.RequiredSHA resolve to a commit object in repo. It returns the first
-// missing SHA, or "" when all required commits are present. Shared by the disk
-// targeted path and the in-memory path so both enforce identical commit
-// availability before trusting a shallow fetch.
+// missing SHA, or "" when all required commits are present. The targeted
+// clone checks this before trusting a shallow fetch.
 func verifyRequiredCommits(repo *gitlib.Repository, baseSHA, headSHA string, opts *CloneOptions) string {
-	required := make([]string, 0, 2)
-	required = append(required, baseSHA, headSHA)
-	if opts != nil {
-		required = append(required, opts.RequiredSHAs...)
-	}
-	for _, sha := range required {
-		if sha == "" {
-			continue
-		}
-		if _, err := repo.CommitObject(plumbing.NewHash(sha)); err != nil {
-			return sha
-		}
-	}
-	return ""
+	return firstMissingCommitInRepo(repo, requiredSHAs(baseSHA, headSHA, opts))
 }
 
 // firstMissingCommit opens the repository at localPath and returns the first
@@ -832,15 +584,19 @@ func firstMissingCommit(localPath string, shas []string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open repository at %s: %w", localPath, err)
 	}
+	return firstMissingCommitInRepo(repo, shas), nil
+}
+
+func firstMissingCommitInRepo(repo *gitlib.Repository, shas []string) string {
 	for _, sha := range shas {
 		if sha == "" {
 			continue
 		}
 		if _, err := repo.CommitObject(plumbing.NewHash(sha)); err != nil {
-			return sha, nil
+			return sha
 		}
 	}
-	return "", nil
+	return ""
 }
 
 // localRepoExists reports whether path is a non-empty string naming an existing
@@ -865,13 +621,13 @@ func truncateSHAForLog(s string) string {
 // refs, then verifies both baseSHA and headSHA are locally available.
 func (c *Client) FetchRefs(ctx context.Context, localPath, baseSHA, headSHA string) error {
 	if localPath == "" {
-		return fmt.Errorf("local path cannot be empty")
+		return errors.New("local path cannot be empty")
 	}
 	if baseSHA == "" {
-		return fmt.Errorf("baseSHA cannot be empty")
+		return errors.New("baseSHA cannot be empty")
 	}
 	if headSHA == "" {
-		return fmt.Errorf("headSHA cannot be empty")
+		return errors.New("headSHA cannot be empty")
 	}
 
 	repo, err := gitlib.PlainOpen(localPath)
@@ -887,7 +643,7 @@ func (c *Client) FetchRefs(ctx context.Context, localPath, baseSHA, headSHA stri
 		},
 	}
 
-	if err := repo.FetchContext(ctx, fetchOpts); err != nil && err != gitlib.NoErrAlreadyUpToDate {
+	if err := repo.FetchContext(ctx, fetchOpts); err != nil && !errors.Is(err, gitlib.NoErrAlreadyUpToDate) {
 		return fmt.Errorf("failed to fetch refs: %w", err)
 	}
 

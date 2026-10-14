@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -73,7 +74,7 @@ func (cs *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request)
 			"expected_state_len", len(cs.state),
 		)
 		http.Error(w, "Invalid state parameter", http.StatusForbidden)
-		cs.sendResult(CallbackResult{Err: fmt.Errorf("state mismatch")})
+		cs.sendResult(CallbackResult{Err: errors.New("state mismatch")})
 		return
 	}
 
@@ -84,7 +85,7 @@ func (cs *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request)
 			"error", r.URL.Query().Get("error"),
 		)
 		http.Error(w, "Missing code parameter", http.StatusBadRequest)
-		cs.sendResult(CallbackResult{Err: fmt.Errorf("missing code")})
+		cs.sendResult(CallbackResult{Err: errors.New("missing code")})
 		return
 	}
 
@@ -159,12 +160,7 @@ func ExchangeToken(ctx context.Context, cfg ProviderConfig, code, redirectURI st
 	resp, err := http.DefaultClient.Do(req)
 	dur := time.Since(start).Milliseconds()
 	if err != nil {
-		log.Error("oauth token exchange http failed",
-			"token_url", cfg.TokenURL,
-			"duration_ms", dur,
-			"error", err,
-		)
-		return "", fmt.Errorf("token request failed: %w", err)
+		return "", fmt.Errorf("token request to %s failed after %dms: %w", cfg.TokenURL, dur, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
@@ -198,12 +194,7 @@ func ExchangeToken(ctx context.Context, cfg ProviderConfig, code, redirectURI st
 	}
 
 	if err := validateScopes(cfg.Scopes, tr.Scope); err != nil {
-		log.Warn("oauth scope validation failed",
-			"requested", cfg.Scopes,
-			"returned", tr.Scope,
-			"error", err,
-		)
-		return "", err
+		return "", fmt.Errorf("validate oauth scopes: %w", err)
 	}
 
 	return tr.AccessToken, nil

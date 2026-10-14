@@ -2,7 +2,7 @@ import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../hooks/useStore';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { RepoInfo } from '../types';
@@ -21,14 +21,13 @@ interface RepoPickerProps {
 export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
   const repos = useStore(appStore, (s: UIState) => s.repos);
   const reposLoading = useStore(appStore, (s: UIState) => s.reposLoading);
-  const { send } = useWebSocket();
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     appStore.setState((s) => ({ ...s, reposLoading: true }));
-    send('REQUEST_REPO_LIST', {});
-  }, [send]);
+    wsClient.send('REQUEST_REPO_LIST', {});
+  }, []);
 
   useEffect(() => {
     if (repos.length === 0) return;
@@ -52,7 +51,10 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
   const otherRepos = filteredRepos.filter((repo) => !repo.watched);
 
   const toggleWatch = (repo: RepoInfo): void => {
-    send('TOGGLE_WATCH_REPO', { repo_id: repo.id, watched: !repo.watched });
+    wsClient.send('TOGGLE_WATCH_REPO', {
+      repo_id: repo.id,
+      watched: !repo.watched,
+    });
   };
 
   if (reposLoading && repos.length === 0) {

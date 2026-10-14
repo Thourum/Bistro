@@ -322,7 +322,7 @@ func TestRangeDiffHandler_SinceLastReview_ResolvesFromPatchset(t *testing.T) {
 			record: store.LastReviewedRecord{SHA: sha1, PatchsetNum: 1},
 			found:  true,
 		},
-		CurrentUser:  &mockCurrentUserReader{login: "alice", found: true},
+		CurrentUser: &mockCurrentUserReader{login: "alice", found: true},
 	}
 	h := NewRangeDiffHandlerWithDeps(deps, testRepoLogger())
 	data, _ := json.Marshal(map[string]interface{}{

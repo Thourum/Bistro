@@ -1,20 +1,23 @@
-import { useMatchRoute, useNavigate, useParams } from '@tanstack/react-router';
+import { useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
-import { useWebSocket } from '../hooks/useWebSocket';
 import { useOverlays } from '../overlays/OverlayContext';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
+import { createLogger } from '../utils/logger';
 import { openUrlInBrowser } from '../utils/openUrl';
 import { prBrowserUrl } from '../utils/triage';
 import { addToast } from './ToastContainer';
+
+const log = createLogger('CommandPalette');
 
 type Icon = string;
 
@@ -153,12 +156,11 @@ export function CommandPalette(): React.ReactElement | null {
   } = useOverlays();
   const isOpen = activeOverlay === 'command';
   const [query, setQuery] = useState('');
-  const { send } = useWebSocket();
   const prefetchedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
-  const params = useParams({ strict: false }) as { prId?: string };
   const matchRoute = useMatchRoute();
+  const routedPR = matchRoute({ to: '/prs/$prId', fuzzy: true });
   const isDiffRoute = matchRoute({ to: '/prs/$prId/diff' }) !== false;
 
   // Use the shared visible-PR source so palette results match the list route.
@@ -204,13 +206,13 @@ export function CommandPalette(): React.ReactElement | null {
     if (query.toLowerCase().startsWith('repo') && !prefetchedRef.current) {
       prefetchedRef.current = true;
       appStore.setState((s) => ({ ...s, reposLoading: true }));
-      const requestId = send('REQUEST_REPO_LIST', {});
+      const requestId = wsClient.send('REQUEST_REPO_LIST', {});
       if (requestId === undefined) {
         appStore.setState((s) => ({ ...s, reposLoading: false }));
         prefetchedRef.current = false;
       }
     }
-  }, [query, send]);
+  }, [query]);
 
   const handleClose = (): void => {
     closeOverlay();
@@ -226,8 +228,13 @@ export function CommandPalette(): React.ReactElement | null {
   };
 
   const focusedPR = useMemo(
-    () => focusedExpertisePR(prs, params.prId, selectedPRId),
-    [params.prId, prs, selectedPRId],
+    () =>
+      focusedExpertisePR(
+        prs,
+        routedPR === false ? undefined : routedPR.prId,
+        selectedPRId,
+      ),
+    [routedPR, prs, selectedPRId],
   );
 
   const sendExpertiseCommand = (
@@ -239,7 +246,7 @@ export function CommandPalette(): React.ReactElement | null {
       return;
     }
 
-    send(type, { repo_id: repoIdForPR(focusedPR) });
+    wsClient.send(type, { repo_id: repoIdForPR(focusedPR) });
     closeOverlay();
     setQuery('');
   };
@@ -247,8 +254,8 @@ export function CommandPalette(): React.ReactElement | null {
   const updateSettingsFromCommand = (
     patch: Parameters<typeof updateSettings>[0],
   ): void => {
-    updateSettings(patch).match(handleClose, (message) => {
-      addToast({ type: 'error', message, dismissible: true });
+    updateSettings(patch).match(handleClose, (error) => {
+      addToast({ type: 'error', message: error.message, dismissible: true });
     });
   };
 
@@ -298,7 +305,10 @@ export function CommandPalette(): React.ReactElement | null {
         return;
       case 'open-browser': {
         const url = focusedPR === undefined ? null : prBrowserUrl(focusedPR);
-        if (url !== null) openUrlInBrowser(url);
+        if (url !== null)
+          void openUrlInBrowser(url).orInspect((error) =>
+            log.error({ error: error.message }, 'failed to open PR in browser'),
+          );
         closeOverlay();
         setQuery('');
         return;
@@ -334,7 +344,7 @@ export function CommandPalette(): React.ReactElement | null {
         sendExpertiseCommand('EXPERTISE_DISABLE');
         return;
       case 'sync':
-        send('FORCE_SYNC', {});
+        wsClient.send('FORCE_SYNC', {});
         appStore.setState((s) => ({
           ...s,
           syncStatus: 'syncing',
@@ -372,7 +382,7 @@ export function CommandPalette(): React.ReactElement | null {
             handleClose();
           }
         }}
-        className="w-full max-w-2xl mx-4 bg-surface-container-lowest border border-primary shadow-[0_10px_30px_rgba(25,28,29,0.04)] flex flex-col overflow-hidden"
+        className="w-full max-w-2xl mx-4 bg-surface-container-lowest border border-primary shadow-ambient flex flex-col overflow-hidden"
       >
         {/* Search input header */}
         <div className="flex items-center gap-3 px-4 h-14 border-b border-outline-variant/20">

@@ -155,6 +155,29 @@ func TestRequestRepoListHandler_ReturnsRepoLocationFields(t *testing.T) {
 	}
 }
 
+func TestRequestRepoListHandler_DatabaseErrorDoesNotExposeSQL(t *testing.T) {
+	db := setupRepoTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`DROP TABLE repos`); err != nil {
+		t.Fatalf("drop repos table: %v", err)
+	}
+
+	prov := mock.NewMockProvider().WithRepos([]*provider.Repo{
+		{Owner: "acme", Name: "api", FullName: "acme/api"},
+	})
+	handler := NewRequestRepoListHandler(func() provider.Provider { return prov }, db, testRepoLogger())
+
+	resp, err := handler(context.Background(), ws.InboundMessage{ID: "req-db-error", Type: "REQUEST_REPO_LIST"})
+	if err != nil {
+		t.Fatalf("unexpected transport error: %v", err)
+	}
+	message := resp.(map[string]interface{})
+	data := message["data"].(map[string]interface{})
+	if data["error"] != "unable to load repositories" {
+		t.Fatalf("expected safe repository-list error, got %v", data["error"])
+	}
+}
+
 func TestRequestRepoListHandler_ProviderError(t *testing.T) {
 	db := setupRepoTestDB(t)
 	defer db.Close()

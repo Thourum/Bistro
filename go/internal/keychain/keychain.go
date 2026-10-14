@@ -6,6 +6,7 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
+// BistroService namespaces credentials in the OS keychain.
 const BistroService = "bistro-sync"
 
 // TokenManager provides a simplified interface for token storage.

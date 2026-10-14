@@ -1,124 +1,104 @@
+import { Fault, ResultAsync } from '@thourum/fault';
 import mermaid from 'mermaid';
-import { ResultAsync } from 'neverthrow';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type MermaidThemeMode = 'light' | 'dark';
 
 const MAX_MERMAID_SOURCE_CHARS = 8000;
-const MAX_CONCURRENT_MERMAID_RENDERS = 2;
 const MERMAID_RENDER_TIMEOUT_MS = 2500;
 
-const MERMAID_THEME_CSS = `
-  .node rect, .node polygon, .cluster rect { rx: 0 !important; ry: 0 !important; }
-  .edgePath path { stroke-width: 2px; }
-  .label, .nodeLabel, .edgeLabel, .messageText, .loopText, .labelText, .actor, .actor > tspan {
-    font-family: "JetBrains Mono", monospace !important;
-  }
-  .actor, .actor-man line, .actor-line, .messageLine0, .messageLine1, .loopLine, .note, .labelBox {
-    stroke-width: 2px !important;
-  }
-  rect.actor, .actor-man rect, .labelBox, .note, .activation0, .activation1, .activation2 {
-    rx: 0 !important;
-    ry: 0 !important;
-  }
-  rect.rect, .rect {
-    fill: transparent !important;
-    stroke: #c3c6d7 !important;
-    stroke-width: 2px !important;
-  }
-`;
-
-const LIGHT_THEME_VARIABLES = {
-  darkMode: false,
-  background: '#f8f9fa',
-  primaryColor: '#ffffff',
-  primaryBorderColor: '#c3c6d7',
-  primaryTextColor: '#191c1d',
-  textColor: '#191c1d',
-  lineColor: '#737686',
-  secondaryColor: '#f1f3f4',
-  tertiaryColor: '#f1f3f4',
-  fontFamily: '"JetBrains Mono", monospace',
-  fontSize: '12px',
-  actorBkg: '#ffffff',
-  actorBorder: '#c3c6d7',
-  actorTextColor: '#191c1d',
-  actorLineColor: '#c3c6d7',
-  signalColor: '#737686',
-  signalTextColor: '#191c1d',
-  labelBoxBkgColor: '#ffffff',
-  labelBoxBorderColor: '#c3c6d7',
-  labelTextColor: '#191c1d',
-  loopTextColor: '#191c1d',
-  activationBkgColor: '#f1f3f4',
-  activationBorderColor: '#c3c6d7',
-  noteBkgColor: '#ffffff',
-  noteTextColor: '#191c1d',
-  noteBorderColor: '#c3c6d7',
-  errorBkgColor: '#ffeef0',
-  errorTextColor: '#ba1a1a',
-};
-
-const DARK_THEME_VARIABLES = {
-  darkMode: true,
-  background: '#191c1d',
-  primaryColor: '#1f2223',
-  primaryBorderColor: '#4d5357',
-  primaryTextColor: '#e1e3e4',
-  textColor: '#e1e3e4',
-  lineColor: '#8d9199',
-  secondaryColor: '#25292b',
-  tertiaryColor: '#25292b',
-  fontFamily: '"JetBrains Mono", monospace',
-  fontSize: '12px',
-  actorBkg: '#1f2223',
-  actorBorder: '#4d5357',
-  actorTextColor: '#e1e3e4',
-  actorLineColor: '#4d5357',
-  signalColor: '#8d9199',
-  signalTextColor: '#e1e3e4',
-  labelBoxBkgColor: '#1f2223',
-  labelBoxBorderColor: '#4d5357',
-  labelTextColor: '#e1e3e4',
-  loopTextColor: '#e1e3e4',
-  activationBkgColor: '#25292b',
-  activationBorderColor: '#4d5357',
-  noteBkgColor: '#1f2223',
-  noteTextColor: '#e1e3e4',
-  noteBorderColor: '#4d5357',
-  errorBkgColor: '#67060c',
-  errorTextColor: '#ffdcd7',
-};
-
-const LIGHT_RUNTIME_COLORS = {
-  surface: '#ffffff',
-  surfaceLow: '#f1f3f4',
-  outline: '#c3c6d7',
-  shadow: '#000000',
-  text: '#191c1d',
-  metadata: '#737686',
-};
-
-const DARK_RUNTIME_COLORS = {
-  surface: '#1f2223',
-  surfaceLow: '#25292b',
-  outline: '#4d5357',
-  shadow: '#ffffff',
-  text: '#e1e3e4',
-  metadata: '#8d9199',
-};
-
-function runtimeColors(mode: MermaidThemeMode): typeof LIGHT_RUNTIME_COLORS {
-  return mode === 'dark' ? DARK_RUNTIME_COLORS : LIGHT_RUNTIME_COLORS;
+interface MermaidColors {
+  readonly background: string;
+  readonly surface: string;
+  readonly surfaceLow: string;
+  readonly outline: string;
+  readonly shadow: string;
+  readonly text: string;
+  readonly metadata: string;
+  readonly errorText: string;
+  readonly errorContainer: string;
+  readonly fontFamily: string;
 }
 
-function runtimeCss(mode: MermaidThemeMode): string {
-  const colors = runtimeColors(mode);
+function readMermaidColors(): MermaidColors {
+  const styles = getComputedStyle(document.documentElement);
+  const color = (token: string) =>
+    styles.getPropertyValue(`--color-${token}`).trim();
 
+  return {
+    background: color('surface'),
+    surface: color('surface-container-lowest'),
+    surfaceLow: color('surface-container-low'),
+    outline: color('outline-variant'),
+    shadow: styles.getPropertyValue('--color-mermaid-shadow').trim(),
+    text: color('on-surface'),
+    metadata: color('outline'),
+    errorText: color('on-error-container') || color('on-error'),
+    errorContainer: color('error-container') || color('surface-container-low'),
+    fontFamily: styles.getPropertyValue('--app-code-font').trim(),
+  };
+}
+
+function mermaidThemeCss(colors: MermaidColors): string {
+  return `
+    .node rect, .node polygon, .cluster rect { rx: 0 !important; ry: 0 !important; }
+    .edgePath path { stroke-width: 2px; }
+    .label, .nodeLabel, .edgeLabel, .messageText, .loopText, .labelText, .actor, .actor > tspan {
+      font-family: ${colors.fontFamily} !important;
+    }
+    .actor, .actor-man line, .actor-line, .messageLine0, .messageLine1, .loopLine, .note, .labelBox {
+      stroke-width: 2px !important;
+    }
+    rect.actor, .actor-man rect, .labelBox, .note, .activation0, .activation1, .activation2 {
+      rx: 0 !important;
+      ry: 0 !important;
+    }
+    rect.rect, .rect {
+      fill: transparent !important;
+      stroke: ${colors.outline} !important;
+      stroke-width: 2px !important;
+    }
+  `;
+}
+
+function mermaidThemeVariables(colors: MermaidColors, mode: MermaidThemeMode) {
+  return {
+    darkMode: mode === 'dark',
+    background: colors.background,
+    primaryColor: colors.surface,
+    primaryBorderColor: colors.outline,
+    primaryTextColor: colors.text,
+    textColor: colors.text,
+    lineColor: colors.metadata,
+    secondaryColor: colors.surfaceLow,
+    tertiaryColor: colors.surfaceLow,
+    fontFamily: colors.fontFamily,
+    fontSize: '12px',
+    actorBkg: colors.surface,
+    actorBorder: colors.outline,
+    actorTextColor: colors.text,
+    actorLineColor: colors.outline,
+    signalColor: colors.metadata,
+    signalTextColor: colors.text,
+    labelBoxBkgColor: colors.surface,
+    labelBoxBorderColor: colors.outline,
+    labelTextColor: colors.text,
+    loopTextColor: colors.text,
+    activationBkgColor: colors.surfaceLow,
+    activationBorderColor: colors.outline,
+    noteBkgColor: colors.surface,
+    noteTextColor: colors.text,
+    noteBorderColor: colors.outline,
+    errorBkgColor: colors.errorContainer,
+    errorTextColor: colors.errorText,
+  };
+}
+
+function runtimeCss(colors: MermaidColors): string {
   return `
     [data-bistro-mermaid] svg {
       background: transparent !important;
-      font-family: "JetBrains Mono", monospace !important;
+      font-family: ${colors.fontFamily} !important;
     }
     [data-bistro-mermaid] rect.actor,
     [data-bistro-mermaid] .actor-man rect,
@@ -177,7 +157,7 @@ function runtimeCss(mode: MermaidThemeMode): string {
     [data-bistro-mermaid] .actor > tspan {
       fill: ${colors.text} !important;
       color: ${colors.text} !important;
-      font-family: "JetBrains Mono", monospace !important;
+      font-family: ${colors.fontFamily} !important;
       font-size: 12px !important;
     }
   `;
@@ -185,10 +165,8 @@ function runtimeCss(mode: MermaidThemeMode): string {
 
 function neutralizeDecorativeRectFills(
   svg: string,
-  mode: MermaidThemeMode,
+  colors: MermaidColors,
 ): string {
-  const colors = runtimeColors(mode);
-
   return svg.replace(/<rect\b[^>]*>/g, (tag) => {
     if (!/fill\s*=\s*"rgb\(/i.test(tag) && !/fill\s*:\s*rgb\(/i.test(tag)) {
       return tag;
@@ -208,73 +186,68 @@ function neutralizeDecorativeRectFills(
   });
 }
 
-function mermaidConfig(mode: MermaidThemeMode) {
+function mermaidConfig(colors: MermaidColors, mode: MermaidThemeMode) {
   return {
     startOnLoad: false,
     securityLevel: 'strict' as const,
     look: 'classic' as const,
     theme: 'base' as const,
-    fontFamily: '"JetBrains Mono", monospace',
+    fontFamily: colors.fontFamily,
     fontSize: 12,
     logLevel: 'error' as const,
-    themeVariables:
-      mode === 'dark' ? DARK_THEME_VARIABLES : LIGHT_THEME_VARIABLES,
-    themeCSS: MERMAID_THEME_CSS,
+    themeVariables: mermaidThemeVariables(colors, mode),
+    themeCSS: mermaidThemeCss(colors),
   };
 }
 
-mermaid.initialize(mermaidConfig('light'));
-
-let componentCounter = 0;
-let renderCounter = 0;
-let activeRenderCount = 0;
-const pendingRenderSlots: Array<() => void> = [];
-
-function nextComponentId(): string {
-  componentCounter += 1;
-  return `bistro-mermaid-${componentCounter}`;
+interface MermaidRenderResult {
+  svg: string;
+  colors: MermaidColors;
 }
 
-function nextRenderId(componentId: string): string {
-  renderCounter += 1;
-  return `${componentId}-${renderCounter}`;
-}
+// Mermaid configuration is global, so begin each render after the prior one
+// finishes. A timed-out render releases the queue, as the previous semaphore did.
+const mermaidRenderQueue = (() => {
+  let nextId = 0;
+  let lastRender: Promise<void> = Promise.resolve();
 
-function acquireMermaidRenderSlot(): Promise<void> {
-  if (activeRenderCount < MAX_CONCURRENT_MERMAID_RENDERS) {
-    activeRenderCount += 1;
-    return Promise.resolve();
+  function render(
+    source: string,
+    isCancelled: () => boolean,
+  ): ResultAsync<MermaidRenderResult | null, Fault> {
+    const pending = lastRender.then(() => {
+      if (isCancelled()) return null;
+      const colors = readMermaidColors();
+      const renderId = `bistro-mermaid-${++nextId}`;
+      mermaid.initialize(mermaidConfig(colors, currentThemeMode()));
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
+          () =>
+            reject(
+              new Fault('Mermaid render timed out').withTag('TIMEOUT_ERROR'),
+            ),
+          MERMAID_RENDER_TIMEOUT_MS,
+        );
+      });
+      return Promise.race([
+        mermaid.render(renderId, source).then(({ svg }) => ({ svg, colors })),
+        timeout,
+      ]).finally(() => clearTimeout(timeoutId));
+    });
+    const result = ResultAsync.fromPromise(pending, (cause) =>
+      cause instanceof Fault && cause.tag === 'TIMEOUT_ERROR'
+        ? cause
+        : new Fault(cause instanceof Error ? cause : 'Mermaid render failed')
+            .withTag('MERMAID_RENDER_ERROR')
+            .withCause(cause),
+    );
+    lastRender = Promise.resolve(result).then(() => undefined);
+    return result;
   }
 
-  return new Promise((resolve) => {
-    pendingRenderSlots.push(() => {
-      activeRenderCount += 1;
-      resolve();
-    });
-  });
-}
-
-function releaseMermaidRenderSlot(): void {
-  activeRenderCount = Math.max(0, activeRenderCount - 1);
-  const next = pendingRenderSlots.shift();
-  if (next !== undefined) next();
-}
-
-function renderMermaidWithTimeout(renderId: string, source: string) {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(
-      () => reject(new Error('Mermaid render timed out')),
-      MERMAID_RENDER_TIMEOUT_MS,
-    );
-  });
-
-  return Promise.race([mermaid.render(renderId, source), timeout]).finally(
-    () => {
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
-    },
-  );
-}
+  return { render };
+})();
 
 function currentThemeMode(): MermaidThemeMode {
   return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
@@ -309,42 +282,30 @@ interface MermaidDiagramProps {
 export function MermaidDiagram({
   source,
 }: MermaidDiagramProps): React.JSX.Element {
-  const componentId = useRef<string>(nextComponentId());
   const mode = useMermaidThemeMode();
-  const [svg, setSvg] = useState<string | null>(null);
+  const [rendered, setRendered] = useState<MermaidRenderResult | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setSvg(null);
+    setRendered(null);
     setFailed(false);
     if (source.length > MAX_MERMAID_SOURCE_CHARS) {
       setFailed(true);
-      return () => {
-        cancelled = true;
-      };
+      return;
     }
 
-    mermaid.initialize(mermaidConfig(mode));
-    const renderId = nextRenderId(componentId.current);
-    const renderTask = acquireMermaidRenderSlot().then(() => {
-      if (cancelled) {
-        releaseMermaidRenderSlot();
-        return Promise.reject(new Error('Mermaid render cancelled'));
-      }
-      return renderMermaidWithTimeout(renderId, source).finally(
-        releaseMermaidRenderSlot,
+    // Mode invalidates this render; the queue reads the current theme on start.
+    void mermaidRenderQueue
+      .render(source, () => cancelled || mode !== currentThemeMode())
+      .match(
+        (result) => {
+          if (!cancelled && result !== null) setRendered(result);
+        },
+        () => {
+          if (!cancelled) setFailed(true);
+        },
       );
-    });
-
-    void ResultAsync.fromPromise(renderTask, () => null).match(
-      (result) => {
-        if (!cancelled) setSvg(neutralizeDecorativeRectFills(result.svg, mode));
-      },
-      () => {
-        if (!cancelled) setFailed(true);
-      },
-    );
 
     return () => {
       cancelled = true;
@@ -359,7 +320,7 @@ export function MermaidDiagram({
     );
   }
 
-  if (svg === null) {
+  if (rendered === null) {
     return (
       <div className="my-3 border border-outline-variant/40 bg-surface-container-low p-3 font-mono text-[10px] uppercase tracking-widest text-outline">
         RENDERING_DIAGRAM…
@@ -369,12 +330,16 @@ export function MermaidDiagram({
 
   return (
     <div
-      className="my-3 overflow-x-auto border-2 border-outline-variant/60 bg-surface-container-low p-3 shadow-[4px_4px_0_#000000] dark:shadow-[4px_4px_0_#ffffff] [&_svg]:mx-auto [&_svg]:max-w-full"
+      className="my-3 overflow-x-auto border-2 border-outline-variant/60 bg-surface-container-low p-3 shadow-[4px_4px_0_var(--color-mermaid-shadow)] [&_svg]:mx-auto [&_svg]:max-w-full"
       data-bistro-mermaid
     >
-      <style>{runtimeCss(mode)}</style>
-      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: Mermaid SVG output with securityLevel strict */}
-      <div dangerouslySetInnerHTML={{ __html: svg }} />
+      <style>{runtimeCss(rendered.colors)}</style>
+      <div
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: Mermaid SVG output with securityLevel strict
+        dangerouslySetInnerHTML={{
+          __html: neutralizeDecorativeRectFills(rendered.svg, rendered.colors),
+        }}
+      />
     </div>
   );
 }

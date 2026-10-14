@@ -1,22 +1,12 @@
-import { fromPromise } from 'neverthrow';
 import { useCallback, useRef, useState } from 'react';
+import {
+  checkoutPRHead,
+  checkPRCheckout,
+  openInEditor,
+} from '../services/editor';
 import { createLogger } from '../utils/logger';
-import { useWebSocket } from './useWebSocket';
 
 const log = createLogger('useOpenInEditor');
-
-interface CheckPRCheckoutData {
-  local_path?: string;
-  head_sha?: string;
-  head_matches?: boolean;
-  error?: string;
-}
-
-interface CheckoutPRHeadData {
-  ok?: boolean;
-  local_path?: string;
-  reason?: string;
-}
 
 /**
  * Dialog state surfaced when the local checkout doesn't match the PR head.
@@ -67,9 +57,6 @@ export function useOpenInEditor(): {
   /** True while a dialog action is in flight; the dialog disables its buttons. */
   pending: boolean;
 } {
-  const { request } = useWebSocket();
-  const requestRef = useRef(request);
-  requestRef.current = request;
   const [state, setState] = useState<OpenInEditorState>({
     dialog: null,
     error: null,
@@ -95,20 +82,13 @@ export function useOpenInEditor(): {
 
   const openViaIPC = useCallback(
     (repoRoot: string, relativePath: string, line: number): Promise<void> =>
-      fromPromise(
-        window.electron.openInEditor({ repoRoot, relativePath, line }),
-        (err) => (err instanceof Error ? err.message : 'Unknown error'),
-      ).match(
-        (response) => {
-          if ('err' in response) {
-            setState({ dialog: null, error: response.err });
-            return;
-          }
-          setState({ dialog: null, error: null });
-        },
+      openInEditor({ repoRoot, relativePath, line }).match(
+        () => setState({ dialog: null, error: null }),
         (err) => {
-          log.warn({ err }, 'openInEditor IPC failed');
-          setState({ dialog: null, error: err });
+          if (err.tag !== 'EDITOR_ERROR') {
+            log.warn({ err: err.message }, 'openInEditor IPC failed');
+          }
+          setState({ dialog: null, error: err.message });
         },
       ),
     [],
@@ -117,12 +97,8 @@ export function useOpenInEditor(): {
   const requestOpen = useCallback(
     (prId: string, relativePath: string, line: number): Promise<void> =>
       Promise.resolve(
-        fromPromise(
-          requestRef.current('CHECK_PR_CHECKOUT', { pr_id: prId }),
-          (err) => (err instanceof Error ? err.message : 'Unknown error'),
-        ).match(
-          async (raw) => {
-            const data = raw as CheckPRCheckoutData;
+        checkPRCheckout(prId).match(
+          async (data) => {
             if (data.error !== undefined) {
               setState({ dialog: null, error: data.error });
               return;
@@ -149,8 +125,8 @@ export function useOpenInEditor(): {
             });
           },
           (err) => {
-            log.warn({ err, prId }, 'CHECK_PR_CHECKOUT failed');
-            setState({ dialog: null, error: err });
+            log.warn({ err: err.message, prId }, 'CHECK_PR_CHECKOUT failed');
+            setState({ dialog: null, error: err.message });
           },
         ),
       ),
@@ -162,15 +138,8 @@ export function useOpenInEditor(): {
     if (dialog === null) return Promise.resolve();
     return runExclusive(() =>
       Promise.resolve(
-        fromPromise(
-          requestRef.current('CHECKOUT_PR_HEAD', {
-            pr_id: dialog.prId,
-            expected_head_sha: dialog.headSha,
-          }),
-          (err) => (err instanceof Error ? err.message : 'Unknown error'),
-        ).match(
-          async (raw) => {
-            const data = raw as CheckoutPRHeadData;
+        checkoutPRHead(dialog.prId, dialog.headSha).match(
+          async (data) => {
             if (data.ok !== true) {
               setState({
                 dialog: null,
@@ -182,8 +151,11 @@ export function useOpenInEditor(): {
             await openViaIPC(repoRoot, dialog.relativePath, dialog.line);
           },
           (err) => {
-            log.warn({ err, prId: dialog.prId }, 'CHECKOUT_PR_HEAD failed');
-            setState({ dialog: null, error: err });
+            log.warn(
+              { err: err.message, prId: dialog.prId },
+              'CHECKOUT_PR_HEAD failed',
+            );
+            setState({ dialog: null, error: err.message });
           },
         ),
       ),

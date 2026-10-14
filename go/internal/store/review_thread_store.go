@@ -21,8 +21,7 @@ type ReviewThreadRow struct {
 }
 
 // ListReviewThreads returns all review threads for a PR, ordered by file_path, line.
-// Only threads for which state_known=true are included in the default read path;
-// the WS handler may choose to return all and let the UI filter.
+// Callers can inspect StateKnown to distinguish known thread state from unavailable state.
 func (db *DB) ListReviewThreads(ctx context.Context, prID string) ([]ReviewThreadRow, error) {
 	rows, err := storedb.New(db).ListReviewThreads(ctx, prID)
 	if err != nil {
@@ -31,7 +30,7 @@ func (db *DB) ListReviewThreads(ctx context.Context, prID string) ([]ReviewThrea
 
 	out := make([]ReviewThreadRow, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, reviewThreadFromListRow(row))
+		out = append(out, reviewThreadFromRow(reviewThreadDBRow(row)))
 	}
 	return out, nil
 }
@@ -51,7 +50,7 @@ func (db *DB) GetReviewThread(ctx context.Context, prID, threadID string) (*Revi
 		return nil, fmt.Errorf("get review thread (%s, %s): %w", prID, threadID, err)
 	}
 
-	thread := reviewThreadFromGetRow(row)
+	thread := reviewThreadFromRow(reviewThreadDBRow(row))
 	return &thread, nil
 }
 
@@ -93,19 +92,10 @@ func (db *DB) ReplyTargetCommentIDForThread(ctx context.Context, prID, threadID 
 	return id, nil
 }
 
-func reviewThreadFromListRow(row storedb.ListReviewThreadsRow) ReviewThreadRow {
-	return ReviewThreadRow{
-		ID:         row.ID,
-		PRID:       row.PrID,
-		FilePath:   row.FilePath,
-		Line:       int(row.Line),
-		Resolved:   row.Resolved != 0,
-		Outdated:   row.Outdated != 0,
-		StateKnown: row.StateKnown != 0,
-	}
-}
+// Both sqlc queries select the same columns, so their row structs are convertible.
+type reviewThreadDBRow storedb.GetReviewThreadRow
 
-func reviewThreadFromGetRow(row storedb.GetReviewThreadRow) ReviewThreadRow {
+func reviewThreadFromRow(row reviewThreadDBRow) ReviewThreadRow {
 	return ReviewThreadRow{
 		ID:         row.ID,
 		PRID:       row.PrID,

@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	gogit "github.com/go-git/go-git/v5"
 
@@ -32,6 +31,8 @@ const (
 	operationRecoverRepoToCache = "recover_repo_to_cache"
 )
 
+const githubRepoURLFormat = "https://github.com/%s/%s.git"
+
 // LocationErrorPayload is the structured error envelope consumed by Electron.
 type LocationErrorPayload struct {
 	OK        bool   `json:"ok"`
@@ -41,6 +42,7 @@ type LocationErrorPayload struct {
 	Message   string `json:"message"`
 }
 
+// AddRepoByURLDeps supplies repository persistence, cloning, and logging.
 type AddRepoByURLDeps struct {
 	DB        *sql.DB
 	Store     *store.RepoLocationStore
@@ -49,22 +51,7 @@ type AddRepoByURLDeps struct {
 	Log       *slog.Logger
 }
 
-type RemoveRepoDeps struct {
-	DB             *sql.DB
-	Store          *store.RepoLocationStore
-	Locks          *git.RepoLocks
-	DeleteCacheDir func(path string) error
-	Log            *slog.Logger
-}
-
-type CacheMaintenanceDeps struct {
-	Store          *store.RepoLocationStore
-	Locks          *git.RepoLocks
-	DeleteCacheDir func(path string) error
-	SweepOrphans   func(known map[string]bool) ([]string, error)
-	Log            *slog.Logger
-}
-
+// RecoverRepoToCacheDeps supplies repository persistence and cache cloning.
 type RecoverRepoToCacheDeps struct {
 	DB        *sql.DB
 	Store     *store.RepoLocationStore
@@ -73,27 +60,7 @@ type RecoverRepoToCacheDeps struct {
 	Log       *slog.Logger
 }
 
-type cacheFailurePayload struct {
-	RepoID  string `json:"repo_id"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-type cacheRepoStatPayload struct {
-	RepoID     string     `json:"repo_id"`
-	SizeBytes  int64      `json:"size_bytes"`
-	LastUsedAt *time.Time `json:"last_used_at"`
-	Stale      bool       `json:"stale"`
-}
-
-type removeCounts struct {
-	PRs       int `json:"prs"`
-	Comments  int `json:"comments"`
-	Threads   int `json:"threads"`
-	Patchsets int `json:"patchsets"`
-	Actions   int `json:"actions"`
-}
-
+// NewValidateDevFolderHandler checks whether a development folder can be scanned.
 func NewValidateDevFolderHandler(log *slog.Logger) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		var data struct {
@@ -104,7 +71,8 @@ func NewValidateDevFolderHandler(log *slog.Logger) ws.MessageHandler {
 		}
 		canonicalPath, err := scan.ValidateDevFolder(data.Path)
 		if err != nil {
-			return locationResponse(msg, locationError("", operationValidateDevFolder, "invalid_path", err.Error())), nil
+			repoLocationLogger(ctx, log, msg).Warn("validate dev folder failed", "error", err)
+			return locationResponse(msg, locationError("", operationValidateDevFolder, "invalid_path", "invalid development folder path")), nil
 		}
 		return locationResponse(msg, struct {
 			OK            bool   `json:"ok"`
@@ -113,6 +81,7 @@ func NewValidateDevFolderHandler(log *slog.Logger) ws.MessageHandler {
 	}
 }
 
+// NewScanDevFolderHandler discovers checkouts and updates their location status.
 func NewScanDevFolderHandler(locations *store.RepoLocationStore, syncTrigger chan<- string, log *slog.Logger) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		logger := repoLocationLogger(ctx, log, msg)
@@ -124,46 +93,55 @@ func NewScanDevFolderHandler(locations *store.RepoLocationStore, syncTrigger cha
 			return nil, fmt.Errorf("invalid SCAN_DEV_FOLDER payload: %w", err)
 		}
 		if isBistroRepoDirOverrideSet() {
-			return locationResponse(msg, scanDevFolderPayload(true, 0, 0, 0, 0, false)), nil
+			return locationResponse(msg, scanDevFolderPayload{OK: true}), nil
 		}
 		canonicalPath, err := scan.ValidateDevFolder(data.Path)
 		if err != nil {
-			return locationResponse(msg, locationError("", operationScanDevFolder, "invalid_path", err.Error())), nil
+			repoLocationLogger(ctx, log, msg).Warn("scan dev folder validation failed", "error", err)
+			return locationResponse(msg, locationError("", operationScanDevFolder, "invalid_path", "invalid development folder path")), nil
 		}
 		result, err := scan.Scan(ctx, canonicalPath)
 		if err != nil {
 			return nil, fmt.Errorf("scan dev folder %q: %w", canonicalPath, err)
 		}
-		for _, found := range result.Found {
-			if err := locations.UpsertLocal(ctx, found.Identity.Provider, found.Identity.Owner, found.Identity.Repo, found.Path, false); err != nil {
-				return nil, fmt.Errorf("upsert scanned repo %s: %w", found.Identity.ID(), err)
-			}
-		}
-		localRows, err := locations.ListBySource(ctx, "local")
+		healthy, degraded, err := updateScannedRepoLocations(ctx, locations, result.Found)
 		if err != nil {
-			return nil, fmt.Errorf("list local repo locations: %w", err)
-		}
-		healthy := 0
-		degraded := 0
-		for _, row := range localRows {
-			status, code, message := healthCheckLocalRepo(row)
-			if status == "ok" {
-				if err := locations.ClearDegraded(ctx, row.RepoID); err != nil {
-					return nil, fmt.Errorf("clear degraded %s: %w", row.RepoID, err)
-				}
-				healthy++
-				continue
-			}
-			if err := locations.MarkDegraded(ctx, row.RepoID, status, code, message); err != nil {
-				return nil, fmt.Errorf("mark degraded %s: %w", row.RepoID, err)
-			}
-			degraded++
+			return nil, err
 		}
 		triggerSync(syncTrigger, logger)
-		return locationResponse(msg, scanDevFolderPayload(true, len(result.Found), healthy, degraded, result.Skipped, result.Partial)), nil
+		return locationResponse(msg, scanDevFolderPayload{OK: true, Discovered: len(result.Found), Healthy: healthy, Degraded: degraded, Skipped: result.Skipped, Partial: result.Partial}), nil
 	}
 }
 
+func updateScannedRepoLocations(ctx context.Context, locations *store.RepoLocationStore, found []scan.Found) (int, int, error) {
+	for _, repo := range found {
+		if err := locations.UpsertLocal(ctx, repo.Identity.Provider, repo.Identity.Owner, repo.Identity.Repo, repo.Path, false); err != nil {
+			return 0, 0, fmt.Errorf("upsert scanned repo %s: %w", repo.Identity.ID(), err)
+		}
+	}
+	localRows, err := locations.ListBySource(ctx, "local")
+	if err != nil {
+		return 0, 0, fmt.Errorf("list local repo locations: %w", err)
+	}
+	var healthy, degraded int
+	for _, row := range localRows {
+		status, code, message := healthCheckLocalRepo(ctx, row)
+		if status == "ok" {
+			if err := locations.ClearDegraded(ctx, row.RepoID); err != nil {
+				return 0, 0, fmt.Errorf("clear degraded %s: %w", row.RepoID, err)
+			}
+			healthy++
+			continue
+		}
+		if err := locations.MarkDegraded(ctx, row.RepoID, status, code, message); err != nil {
+			return 0, 0, fmt.Errorf("mark degraded %s: %w", row.RepoID, err)
+		}
+		degraded++
+	}
+	return healthy, degraded, nil
+}
+
+// NewAddRepoByURLHandler links an existing checkout or clones the requested repository.
 func NewAddRepoByURLHandler(deps AddRepoByURLDeps) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		var data struct {
@@ -176,11 +154,12 @@ func NewAddRepoByURLHandler(deps AddRepoByURLDeps) ws.MessageHandler {
 		}
 		identity, err := git.ParseRemoteURL(data.URL)
 		if err != nil {
-			return locationResponse(msg, locationError("", operationAddRepoByURL, "invalid_url", err.Error())), nil
+			repoLocationLogger(ctx, deps.Log, msg).Warn("parse repository URL failed", "error", err)
+			return locationResponse(msg, locationError("", operationAddRepoByURL, "invalid_url", "invalid repository URL")), nil
 		}
 		repoID := identity.ID()
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, cloneErrorCode(ctxErr), ctxErr.Error())), nil
+			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, cloneErrorCode(ctxErr), "repository add cancelled")), nil
 		}
 		isRepoDirOverrideSet := isBistroRepoDirOverrideSet()
 		if !isRepoDirOverrideSet {
@@ -208,12 +187,14 @@ func NewAddRepoByURLHandler(deps AddRepoByURLDeps) ws.MessageHandler {
 		}
 		rootPath, source, err := destinationRoot(identity, destination, valueOrEmpty(data.DevFolderPath), deps.CacheRoot)
 		if err != nil {
-			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, destinationRootErrorCode(err), err.Error())), nil
+			repoLocationLogger(ctx, deps.Log, msg).Warn("resolve repo destination failed", "error", err)
+			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, destinationRootErrorCode(err), "invalid repository destination")), nil
 		}
 		destinationPath := filepath.Join(rootPath, identity.Owner, identity.Repo)
 		state, err := inspectDestination(destinationPath, identity)
 		if err != nil {
-			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, "destination_conflict", err.Error())), nil
+			repoLocationLogger(ctx, deps.Log, msg).Warn("inspect repo destination failed", "error", err)
+			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, "destination_conflict", "unable to inspect destination")), nil
 		}
 		if state.Matches {
 			if err := setRepoSource(ctx, deps.DB, deps.Store, identity, destinationPath, source); err != nil {
@@ -232,16 +213,20 @@ func NewAddRepoByURLHandler(deps AddRepoByURLDeps) ws.MessageHandler {
 			return nil, err
 		}
 		if err := cloneRepo(ctx, deps.Clone, data.URL, destinationPath, source == "cache"); err != nil {
-			message := err.Error()
+			logger := repoLocationLogger(ctx, deps.Log, msg)
+			logger.Warn("clone repository failed", "error", err)
+			message := "unable to clone repository"
 			if cleanupErr := cleanupBistroCreated(destinationPath, createdByBistro, source, rootPath); cleanupErr != nil {
-				message = fmt.Sprintf("%s; %s", message, cleanupErr.Error())
+				logger.Warn("clone cleanup failed", "error", cleanupErr)
+				message += "; manual cleanup may be required"
 			}
 			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, cloneErrorCode(err), message)), nil
 		}
 		if !repoPathMatches(destinationPath, identity) {
 			message := "cloned repository remote does not match requested URL"
 			if cleanupErr := cleanupBistroCreated(destinationPath, createdByBistro, source, rootPath); cleanupErr != nil {
-				message = fmt.Sprintf("%s; %s", message, cleanupErr.Error())
+				repoLocationLogger(ctx, deps.Log, msg).Warn("clone cleanup failed", "error", cleanupErr)
+				message += "; manual cleanup may be required"
 			}
 			return locationResponse(msg, locationError(repoID, operationAddRepoByURL, "remote_mismatch", message)), nil
 		}
@@ -252,172 +237,7 @@ func NewAddRepoByURLHandler(deps AddRepoByURLDeps) ws.MessageHandler {
 	}
 }
 
-func NewRemoveRepoPreflightHandler(db *sql.DB, log *slog.Logger) ws.MessageHandler {
-	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		repoID, err := repoIDFromMessage(msg, "REMOVE_REPO_PREFLIGHT")
-		if err != nil {
-			return nil, err
-		}
-		counts, err := countRepoRows(ctx, db, repoID)
-		if err != nil {
-			return nil, err
-		}
-		return locationResponse(msg, struct {
-			OK     bool         `json:"ok"`
-			Counts removeCounts `json:"counts"`
-		}{OK: true, Counts: counts}), nil
-	}
-}
-
-func NewRemoveRepoHandler(deps RemoveRepoDeps) ws.MessageHandler {
-	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		repoID, err := repoIDFromMessage(msg, "REMOVE_REPO")
-		if err != nil {
-			return nil, err
-		}
-		// Read location, delete rows, and delete the cache dir under the repo
-		// lock so a concurrent clone/recovery cannot race us into deleting a
-		// stale path.
-		var counts removeCounts
-		operation := func() error {
-			location, err := deps.Store.Get(ctx, repoID)
-			if err != nil {
-				return err
-			}
-			counts, err = removeRepoTx(ctx, deps.DB, repoID)
-			if err != nil {
-				return err
-			}
-			if location != nil && location.Source == "cache" && location.LocalPath != "" && deps.DeleteCacheDir != nil {
-				if err := deps.DeleteCacheDir(location.LocalPath); err != nil && deps.Log != nil {
-					deps.Log.Warn("delete cache dir after remove repo failed", "repo_id", repoID, "error", err)
-				}
-			}
-			return nil
-		}
-		if deps.Locks != nil {
-			err = deps.Locks.WithRepo(repoID, operation)
-		} else {
-			err = operation()
-		}
-		if err != nil {
-			return nil, err
-		}
-		return locationResponse(msg, struct {
-			OK      bool         `json:"ok"`
-			Deleted removeCounts `json:"deleted"`
-		}{OK: true, Deleted: counts}), nil
-	}
-}
-
-func NewGetCacheStatsHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
-	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		stats, err := cacheStats(ctx, deps.Store)
-		if err != nil {
-			return nil, err
-		}
-		repos := make([]cacheRepoStatPayload, 0, len(stats))
-		var total, active, stale int64
-		for _, stat := range stats {
-			if stat.Skipped {
-				continue
-			}
-			total += stat.SizeBytes
-			if stat.Stale {
-				stale += stat.SizeBytes
-			} else {
-				active += stat.SizeBytes
-			}
-			repos = append(repos, cacheRepoStatPayload{RepoID: stat.RepoID, SizeBytes: stat.SizeBytes, LastUsedAt: stat.LastUsedAt, Stale: stat.Stale})
-		}
-		return locationResponse(msg, struct {
-			OK          bool                   `json:"ok"`
-			TotalBytes  int64                  `json:"total_bytes"`
-			ActiveBytes int64                  `json:"active_bytes"`
-			StaleBytes  int64                  `json:"stale_bytes"`
-			Repos       []cacheRepoStatPayload `json:"repos"`
-		}{OK: true, TotalBytes: total, ActiveBytes: active, StaleBytes: stale, Repos: repos}), nil
-	}
-}
-
-func NewPruneCacheHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
-	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		var payload any
-		operation := func() error {
-			removed, failed, err := pruneCache(ctx, deps.Store, requireDeleteCacheDir(deps.DeleteCacheDir))
-			if err != nil {
-				return err
-			}
-			payload = cacheMutationPayload(true, removed, failed, 0)
-			return nil
-		}
-		if err := runCacheMaintenance(deps.Locks, operation); err != nil {
-			return locationResponse(msg, locationError("", operationPruneCache, "delete_failed", err.Error())), nil
-		}
-		return locationResponse(msg, payload), nil
-	}
-}
-
-func NewClearCacheHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
-	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		var payload any
-		operation := func() error {
-			removed, failed, orphansRemoved, err := clearCache(ctx, deps.Store, requireDeleteCacheDir(deps.DeleteCacheDir), deps.SweepOrphans)
-			if err != nil {
-				return err
-			}
-			payload = cacheMutationPayload(true, removed, failed, orphansRemoved)
-			return nil
-		}
-		if err := runCacheMaintenance(deps.Locks, operation); err != nil {
-			return locationResponse(msg, locationError("", operationClearCache, "delete_failed", err.Error())), nil
-		}
-		return locationResponse(msg, payload), nil
-	}
-}
-
-func NewDeleteCacheRepoHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
-	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		repoID, err := repoIDFromMessage(msg, "DELETE_CACHE_REPO")
-		if err != nil {
-			return nil, err
-		}
-		location, err := deps.Store.Get(ctx, repoID)
-		if err != nil {
-			return nil, err
-		}
-		if location == nil || location.Source != "cache" {
-			return locationResponse(msg, locationError(repoID, operationDeleteCacheRepo, "delete_failed", "repo is not a cache repo")), nil
-		}
-		operation := func() error {
-			lockedLocation, err := deps.Store.Get(ctx, repoID)
-			if err != nil {
-				return err
-			}
-			if lockedLocation == nil || lockedLocation.Source != "cache" || lockedLocation.LocalPath == "" {
-				return errors.New("repo is no longer a cache repo")
-			}
-			if err := validateCacheRepoPathInsideRoot(lockedLocation.LocalPath); err != nil {
-				return err
-			}
-			if err := requireDeleteCacheDir(deps.DeleteCacheDir)(lockedLocation.LocalPath); err != nil {
-				return err
-			}
-			return deps.Store.ClearCacheLocation(ctx, repoID)
-		}
-		if deps.Locks != nil {
-			if err := deps.Locks.WithRepo(repoID, operation); err != nil {
-				return locationResponse(msg, locationError(repoID, operationDeleteCacheRepo, "delete_failed", err.Error())), nil
-			}
-		} else if err := operation(); err != nil {
-			return locationResponse(msg, locationError(repoID, operationDeleteCacheRepo, "delete_failed", err.Error())), nil
-		}
-		return locationResponse(msg, struct {
-			OK bool `json:"ok"`
-		}{OK: true}), nil
-	}
-}
-
+// NewRecoverRepoPathHandler re-links a repository to a matching local checkout.
 func NewRecoverRepoPathHandler(locations *store.RepoLocationStore, log *slog.Logger) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		var data struct {
@@ -436,11 +256,13 @@ func NewRecoverRepoPathHandler(locations *store.RepoLocationStore, log *slog.Log
 		}
 		canonical, err := filepath.EvalSymlinks(data.Path)
 		if err != nil {
-			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, recoverPathErrorCode(err), err.Error())), nil
+			repoLocationLogger(ctx, log, msg).Warn("recover repository path failed", "error", err)
+			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, recoverPathErrorCode(err), "unable to read repository path")), nil
 		}
 		matches, err := repoPathRemoteMatches(canonical, git.Identity{Provider: location.Provider, Owner: location.Owner, Repo: location.Repo})
 		if err != nil {
-			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, recoverPathErrorCode(err), err.Error())), nil
+			repoLocationLogger(ctx, log, msg).Warn("recover repository path failed", "error", err)
+			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, recoverPathErrorCode(err), "unable to read repository path")), nil
 		}
 		if !matches {
 			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, "remote_mismatch", "path remote does not match repo")), nil
@@ -454,6 +276,7 @@ func NewRecoverRepoPathHandler(locations *store.RepoLocationStore, log *slog.Log
 	}
 }
 
+// NewRecoverRepoToCacheHandler clones a repository into the managed cache.
 func NewRecoverRepoToCacheHandler(deps RecoverRepoToCacheDeps) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		repoID, err := repoIDFromMessage(msg, "RECOVER_REPO_TO_CACHE")
@@ -475,7 +298,8 @@ func NewRecoverRepoToCacheHandler(deps RecoverRepoToCacheDeps) ws.MessageHandler
 		destination := filepath.Join(root, identity.Owner, identity.Repo)
 		state, err := inspectDestination(destination, identity)
 		if err != nil {
-			return locationResponse(msg, locationError(repoID, operationRecoverRepoToCache, "clone_failed", err.Error())), nil
+			repoLocationLogger(ctx, deps.Log, msg).Warn("inspect cache destination failed", "error", err)
+			return locationResponse(msg, locationError(repoID, operationRecoverRepoToCache, "clone_failed", "unable to prepare cache repository")), nil
 		}
 		if state.Matches {
 			if err := deps.Store.SetCache(ctx, repoID, destination); err != nil {
@@ -495,18 +319,22 @@ func NewRecoverRepoToCacheHandler(deps RecoverRepoToCacheDeps) ws.MessageHandler
 		if err != nil {
 			return nil, err
 		}
-		repoURL := fmt.Sprintf("https://github.com/%s/%s.git", identity.Owner, identity.Repo)
+		repoURL := fmt.Sprintf(githubRepoURLFormat, identity.Owner, identity.Repo)
 		if err := cloneRepo(ctx, deps.Clone, repoURL, destination, true); err != nil {
-			message := err.Error()
+			logger := repoLocationLogger(ctx, deps.Log, msg)
+			logger.Warn("recover cache clone failed", "error", err)
+			message := "unable to clone repository"
 			if cleanupErr := cleanupBistroCreated(destination, createdByBistro, "cache", root); cleanupErr != nil {
-				message = fmt.Sprintf("%s; %s", message, cleanupErr.Error())
+				logger.Warn("clone cleanup failed", "error", cleanupErr)
+				message += "; manual cleanup may be required"
 			}
 			return locationResponse(msg, locationError(repoID, operationRecoverRepoToCache, cloneErrorCode(err), message)), nil
 		}
 		if !repoPathMatches(destination, identity) {
 			message := "cloned repository remote does not match repo"
 			if cleanupErr := cleanupBistroCreated(destination, createdByBistro, "cache", root); cleanupErr != nil {
-				message = fmt.Sprintf("%s; %s", message, cleanupErr.Error())
+				repoLocationLogger(ctx, deps.Log, msg).Warn("clone cleanup failed", "error", cleanupErr)
+				message += "; manual cleanup may be required"
 			}
 			return locationResponse(msg, locationError(repoID, operationRecoverRepoToCache, "clone_failed", message)), nil
 		}
@@ -527,22 +355,13 @@ func locationError(repoID, operation, code, message string) LocationErrorPayload
 	return LocationErrorPayload{OK: false, RepoID: repoID, Operation: operation, Code: code, Message: message}
 }
 
-func scanDevFolderPayload(ok bool, discovered, healthy, degraded, skipped int, partial bool) struct {
+type scanDevFolderPayload struct {
 	OK         bool `json:"ok"`
 	Discovered int  `json:"discovered"`
 	Healthy    int  `json:"healthy"`
 	Degraded   int  `json:"degraded"`
 	Skipped    int  `json:"skipped"`
 	Partial    bool `json:"partial"`
-} {
-	return struct {
-		OK         bool `json:"ok"`
-		Discovered int  `json:"discovered"`
-		Healthy    int  `json:"healthy"`
-		Degraded   int  `json:"degraded"`
-		Skipped    int  `json:"skipped"`
-		Partial    bool `json:"partial"`
-	}{OK: ok, Discovered: discovered, Healthy: healthy, Degraded: degraded, Skipped: skipped, Partial: partial}
 }
 
 func repoSourcePayload(repoID, source string) struct {
@@ -565,13 +384,6 @@ func repoLocationLogger(ctx context.Context, log *slog.Logger, msg ws.InboundMes
 	return logger
 }
 
-func runCacheMaintenance(locks *git.RepoLocks, operation func() error) error {
-	if locks != nil {
-		return locks.WithMaintenance(operation)
-	}
-	return operation()
-}
-
 func isBistroRepoDirOverrideSet() bool {
 	return os.Getenv("BISTRO_REPO_DIR") != ""
 }
@@ -589,22 +401,24 @@ func triggerSync(syncTrigger chan<- string, logger *slog.Logger) {
 	}
 }
 
-func healthCheckLocalRepo(row store.RepoLocation) (string, string, string) {
+func healthCheckLocalRepo(ctx context.Context, row store.RepoLocation) (string, string, string) {
 	info, err := os.Stat(row.LocalPath)
 	if err != nil {
+		logging.FromContext(ctx).Warn("local repo path stat failed", "error", err)
 		if os.IsNotExist(err) {
-			return "missing", "path_missing", err.Error()
+			return "missing", "path_missing", "repository path not found"
 		}
 		if os.IsPermission(err) {
-			return "permission_denied", "permission_denied", err.Error()
+			return "permission_denied", "permission_denied", "repository path is not readable"
 		}
-		return "missing", "path_missing", err.Error()
+		return "missing", "path_missing", "repository path not found"
 	}
 	if !info.IsDir() {
 		return "missing", "path_missing", "path is not a directory"
 	}
 	if ok, err := canReadDir(row.LocalPath); !ok {
-		return "permission_denied", "permission_denied", err.Error()
+		logging.FromContext(ctx).Warn("local repo path unreadable", "error", err)
+		return "permission_denied", "permission_denied", "repository path is not readable"
 	}
 	identity := git.Identity{Provider: row.Provider, Owner: row.Owner, Repo: row.Repo}
 	if !repoPathMatches(row.LocalPath, identity) {
@@ -621,6 +435,7 @@ func canReadDir(path string) (bool, error) {
 		}
 		return true, err
 	}
+	// A read-only directory handle has no pending writes to flush on close.
 	defer func() { _ = dir.Close() }()
 
 	_, err = dir.Readdirnames(1)
@@ -894,170 +709,4 @@ func repoIDFromMessage(msg ws.InboundMessage, messageType string) (string, error
 		return "", fmt.Errorf("%s: repo_id is required", messageType)
 	}
 	return data.RepoID, nil
-}
-
-func countRepoRows(ctx context.Context, db *sql.DB, repoID string) (removeCounts, error) {
-	var counts removeCounts
-	queries := []struct {
-		dest  *int
-		query string
-	}{
-		{&counts.PRs, `SELECT COUNT(*) FROM prs WHERE repo_id = ?`},
-		{&counts.Comments, `SELECT COUNT(*) FROM comments WHERE pr_id IN (SELECT id FROM prs WHERE repo_id = ?)`},
-		{&counts.Threads, `SELECT COUNT(*) FROM review_threads WHERE pr_id IN (SELECT id FROM prs WHERE repo_id = ?)`},
-		{&counts.Patchsets, `SELECT COUNT(*) FROM patchsets WHERE pr_id IN (SELECT id FROM prs WHERE repo_id = ?)`},
-		{&counts.Actions, `SELECT COUNT(*) FROM action_queue WHERE pr_id IN (SELECT id FROM prs WHERE repo_id = ?)`},
-	}
-	for _, query := range queries {
-		if err := db.QueryRowContext(ctx, query.query, repoID).Scan(query.dest); err != nil {
-			return removeCounts{}, fmt.Errorf("count repo rows %s: %w", repoID, err)
-		}
-	}
-	return counts, nil
-}
-
-func removeRepoTx(ctx context.Context, db *sql.DB, repoID string) (removeCounts, error) {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return removeCounts{}, fmt.Errorf("begin remove repo tx: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
-	counts, err := countRepoRowsTx(ctx, tx, repoID)
-	if err != nil {
-		return removeCounts{}, err
-	}
-	prSubquery := `SELECT id FROM prs WHERE repo_id = ?`
-	deleteStatements := []string{
-		`DELETE FROM action_queue WHERE pr_id IN (` + prSubquery + `)`,
-		`DELETE FROM patchsets WHERE pr_id IN (` + prSubquery + `)`,
-		`DELETE FROM last_reviewed_sha WHERE pr_id IN (` + prSubquery + `)`,
-		`DELETE FROM files_viewed WHERE pr_id IN (` + prSubquery + `)`,
-		`DELETE FROM prs WHERE repo_id = ?`,
-		`DELETE FROM repos WHERE id = ?`,
-	}
-	for _, statement := range deleteStatements {
-		if _, err := tx.ExecContext(ctx, statement, repoID); err != nil {
-			return removeCounts{}, fmt.Errorf("remove repo %s: %w", repoID, err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return removeCounts{}, fmt.Errorf("commit remove repo %s: %w", repoID, err)
-	}
-	committed = true
-	return counts, nil
-}
-
-func countRepoRowsTx(ctx context.Context, tx *sql.Tx, repoID string) (removeCounts, error) {
-	var counts removeCounts
-	queries := []struct {
-		dest  *int
-		query string
-	}{
-		{&counts.PRs, `SELECT COUNT(*) FROM prs WHERE repo_id = ?`},
-		{&counts.Comments, `SELECT COUNT(*) FROM comments WHERE pr_id IN (SELECT id FROM prs WHERE repo_id = ?)`},
-		{&counts.Threads, `SELECT COUNT(*) FROM review_threads WHERE pr_id IN (SELECT id FROM prs WHERE repo_id = ?)`},
-		{&counts.Patchsets, `SELECT COUNT(*) FROM patchsets WHERE pr_id IN (SELECT id FROM prs WHERE repo_id = ?)`},
-		{&counts.Actions, `SELECT COUNT(*) FROM action_queue WHERE pr_id IN (SELECT id FROM prs WHERE repo_id = ?)`},
-	}
-	for _, query := range queries {
-		if err := tx.QueryRowContext(ctx, query.query, repoID).Scan(query.dest); err != nil {
-			return removeCounts{}, fmt.Errorf("count repo rows %s: %w", repoID, err)
-		}
-	}
-	return counts, nil
-}
-
-func cacheStats(ctx context.Context, locations *store.RepoLocationStore) ([]git.CacheRepoStat, error) {
-	cacheRows, err := locations.ListBySource(ctx, "cache")
-	if err != nil {
-		return nil, err
-	}
-	inputs := make([]git.CacheEntryInput, 0, len(cacheRows))
-	for _, row := range cacheRows {
-		inputs = append(inputs, git.CacheEntryInput{RepoID: row.RepoID, Path: row.LocalPath, LastUsedAt: row.LastUsedAt})
-	}
-	return git.CacheStats(inputs)
-}
-
-func requireDeleteCacheDir(deleteCacheDir func(path string) error) func(path string) error {
-	if deleteCacheDir != nil {
-		return deleteCacheDir
-	}
-	return func(string) error {
-		return errors.New("delete cache dir dependency is not configured")
-	}
-}
-
-func pruneCache(ctx context.Context, locations *store.RepoLocationStore, deleteCacheDir func(path string) error) ([]string, []cacheFailurePayload, error) {
-	stats, err := cacheStats(ctx, locations)
-	if err != nil {
-		return nil, nil, err
-	}
-	removed := []string{}
-	failed := []cacheFailurePayload{}
-	for _, stat := range stats {
-		if !stat.Stale {
-			continue
-		}
-		if err := deleteCacheDir(stat.Path); err != nil {
-			failed = append(failed, cacheFailurePayload{RepoID: stat.RepoID, Code: "delete_failed", Message: err.Error()})
-			continue
-		}
-		if err := locations.ClearCacheLocation(ctx, stat.RepoID); err != nil {
-			return nil, nil, err
-		}
-		removed = append(removed, stat.RepoID)
-	}
-	return removed, failed, nil
-}
-
-func clearCache(ctx context.Context, locations *store.RepoLocationStore, deleteCacheDir func(path string) error, sweepOrphans func(known map[string]bool) ([]string, error)) ([]string, []cacheFailurePayload, int, error) {
-	cacheRows, err := locations.ListBySource(ctx, "cache")
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	known := make(map[string]bool, len(cacheRows))
-	removed := []string{}
-	failed := []cacheFailurePayload{}
-	for _, row := range cacheRows {
-		known[row.LocalPath] = true
-		if err := deleteCacheDir(row.LocalPath); err != nil {
-			failed = append(failed, cacheFailurePayload{RepoID: row.RepoID, Code: "delete_failed", Message: err.Error()})
-			continue
-		}
-		if err := locations.ClearCacheLocation(ctx, row.RepoID); err != nil {
-			return nil, nil, 0, err
-		}
-		removed = append(removed, row.RepoID)
-	}
-	orphansRemoved := 0
-	if sweepOrphans != nil {
-		// A sweep failure must not discard the cache-row deletions that already
-		// succeeded above; report it as a failure entry instead of an error.
-		orphans, err := sweepOrphans(known)
-		orphansRemoved = len(orphans)
-		if err != nil {
-			failed = append(failed, cacheFailurePayload{Code: "delete_failed", Message: fmt.Sprintf("sweep orphans: %s", err)})
-		}
-	}
-	return removed, failed, orphansRemoved, nil
-}
-
-func cacheMutationPayload(ok bool, removed []string, failed []cacheFailurePayload, orphansRemoved int) struct {
-	OK             bool                  `json:"ok"`
-	Removed        []string              `json:"removed"`
-	Failed         []cacheFailurePayload `json:"failed"`
-	OrphansRemoved int                   `json:"orphans_removed"`
-} {
-	return struct {
-		OK             bool                  `json:"ok"`
-		Removed        []string              `json:"removed"`
-		Failed         []cacheFailurePayload `json:"failed"`
-		OrphansRemoved int                   `json:"orphans_removed"`
-	}{OK: ok, Removed: removed, Failed: failed, OrphansRemoved: orphansRemoved}
 }

@@ -1,9 +1,20 @@
 import { Store } from '@tanstack/store';
-import { err, ok, okAsync, ResultAsync } from 'neverthrow';
+import {
+  err,
+  errAsync,
+  Fault,
+  fromThrowable,
+  ok,
+  okAsync,
+  type Result,
+  ResultAsync,
+  ServiceError,
+} from '@thourum/fault';
+import { z } from 'zod';
 import {
   type AppSettings,
+  appSettingsSchema,
   DEFAULT_SETTINGS,
-  SETTINGS_SCHEMA_VERSION,
 } from '../../types/settings';
 
 /**
@@ -28,125 +39,184 @@ function hasElectron(): boolean {
   return typeof window !== 'undefined' && window.electron !== undefined;
 }
 
-function deepMerge<T>(base: T, patch: unknown): T {
-  if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) {
-    return base;
-  }
-  const out = { ...(base as Record<string, unknown>) } as Record<
-    string,
-    unknown
-  >;
-  for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
-    const current = out[k];
-    if (
-      current !== null &&
-      typeof current === 'object' &&
-      !Array.isArray(current) &&
-      v !== null &&
-      typeof v === 'object' &&
-      !Array.isArray(v)
-    ) {
-      out[k] = deepMerge(current, v);
-    } else if (v !== undefined) {
-      out[k] = v;
-    }
-  }
-  return out as T;
+const legacySettingsSchema = z.object({
+  darkMode: z.boolean().optional(),
+  autoSync: z.boolean().optional(),
+  syncInterval: z.number().finite().positive().optional(),
+  notifications: z.boolean().optional(),
+  prListView: z.enum(['flat', 'grouped']).optional(),
+});
+
+function readLocalJson(key: string): Result<unknown | null, Fault> {
+  return fromThrowable(
+    () => localStorage.getItem(key),
+    (cause) =>
+      new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
+  )().andThen((raw) =>
+    raw === null
+      ? ok(null)
+      : fromThrowable(
+          () => JSON.parse(raw) as unknown,
+          (cause) =>
+            new Fault(String(cause)).withTag('PARSE_ERROR').withCause(cause),
+        )(),
+  );
 }
 
-/**
- * Read-legacy `bistro-settings` localStorage key and translate its fields
- * into the new AppSettings shape. Returns a partial patch (missing keys
- * fall back to defaults).
- */
-function migrateLegacyLocalStorage(): Partial<AppSettings> | null {
-  try {
-    const raw = localStorage.getItem(LEGACY_LOCAL_KEY);
-    if (raw === null) return null;
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    localStorage.removeItem(LEGACY_LOCAL_KEY);
+function migrateLegacyLocalStorage(): Result<
+  Partial<AppSettings> | null,
+  Fault
+> {
+  return readLocalJson(LEGACY_LOCAL_KEY).andThen((value) => {
+    if (value === null) return ok(null);
+    const parsed = legacySettingsSchema.safeParse(value);
+    if (!parsed.success)
+      return err(ServiceError('VALIDATION_ERROR', 'Invalid legacy settings'));
+    const legacy = parsed.data;
     const patch: Partial<AppSettings> = {
       appearance: {
         ...DEFAULT_SETTINGS.appearance,
-        theme:
-          parsed.darkMode === true ? ('dark' as const) : ('light' as const),
+        theme: legacy.darkMode === true ? 'dark' : 'light',
       },
       sync: {
-        autoSync:
-          typeof parsed.autoSync === 'boolean'
-            ? parsed.autoSync
-            : DEFAULT_SETTINGS.sync.autoSync,
-        syncInterval:
-          typeof parsed.syncInterval === 'number'
-            ? parsed.syncInterval
-            : DEFAULT_SETTINGS.sync.syncInterval,
+        autoSync: legacy.autoSync ?? DEFAULT_SETTINGS.sync.autoSync,
+        syncInterval: legacy.syncInterval ?? DEFAULT_SETTINGS.sync.syncInterval,
         notifications:
-          typeof parsed.notifications === 'boolean'
-            ? parsed.notifications
-            : DEFAULT_SETTINGS.sync.notifications,
+          legacy.notifications ?? DEFAULT_SETTINGS.sync.notifications,
       },
-      prList: {
-        view: parsed.prListView === 'grouped' ? 'grouped' : 'flat',
-      },
+      prList: { view: legacy.prListView ?? DEFAULT_SETTINGS.prList.view },
     };
-    return patch;
-  } catch {
-    return null;
-  }
+    return ok(patch);
+  });
 }
 
-function persistLocal(state: AppSettings): void {
-  try {
-    localStorage.setItem(LOCAL_FALLBACK_KEY, JSON.stringify(state));
-  } catch {
-    // quota or serialisation error — ignore
-  }
+function persistLocal(state: AppSettings): Result<void, Fault> {
+  return fromThrowable(
+    () => localStorage.setItem(LOCAL_FALLBACK_KEY, JSON.stringify(state)),
+    (cause) =>
+      new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
+  )();
 }
 
-function loadLocal(): AppSettings {
-  try {
-    const raw = localStorage.getItem(LOCAL_FALLBACK_KEY);
-    if (raw === null) return DEFAULT_SETTINGS;
-    const parsed = JSON.parse(raw) as Partial<AppSettings>;
-    return {
-      ...deepMerge(DEFAULT_SETTINGS, parsed),
-      $schema: SETTINGS_SCHEMA_VERSION,
-    };
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
+function loadLocal(): Result<AppSettings, Fault> {
+  return readLocalJson(LOCAL_FALLBACK_KEY).andThen((value) => {
+    if (value === null) return ok(DEFAULT_SETTINGS);
+    const parsed = appSettingsSchema.safeParse(value);
+    return parsed.success
+      ? ok(parsed.data)
+      : err(ServiceError('VALIDATION_ERROR', 'Invalid local settings'));
+  });
+}
+
+function reportSettingsError(error: Fault | string): void {
+  console.warn(
+    `Settings: ${typeof error === 'string' ? error : error.message}`,
+  );
+}
+
+function mergeLocalSettings(
+  base: AppSettings,
+  patch: Partial<AppSettings>,
+): Result<AppSettings, Fault> {
+  const merged = Object.fromEntries(
+    Object.entries(patch).map(([section, value]) => {
+      if (section === '$schema' || value === undefined)
+        return [section, base[section as keyof AppSettings]];
+      if (section === 'keybindings') return [section, value];
+      const current = base[section as keyof AppSettings];
+      return [
+        section,
+        typeof value === 'object' &&
+        value !== null &&
+        typeof current === 'object'
+          ? { ...current, ...value }
+          : value,
+      ];
+    }),
+  );
+  const parsed = appSettingsSchema.safeParse({ ...base, ...merged });
+  return parsed.success
+    ? ok(parsed.data)
+    : err(ServiceError('VALIDATION_ERROR', 'Invalid settings patch'));
 }
 
 /**
  * Bootstrap the store. Call once from the app entry (before first render).
  */
 export async function initSettings(): Promise<void> {
+  const legacy = migrateLegacyLocalStorage().match(
+    (value) => value,
+    (message) => {
+      reportSettingsError(message);
+      return null;
+    },
+  );
   if (hasElectron()) {
-    // Run legacy localStorage migration once, then push result to main.
-    const legacy = migrateLegacyLocalStorage();
     if (legacy !== null) {
-      try {
-        await window.electron.settings.set(legacy);
-      } catch {
-        // ignore — main will keep defaults
+      const migrated = await ResultAsync.fromPromise(
+        window.electron.settings.set(legacy),
+        (cause) =>
+          new Fault(String(cause)).withTag('SETTINGS_ERROR').withCause(cause),
+      ).match(
+        (response) => response,
+        (message) => ({ err: message }),
+      );
+      if ('ok' in migrated) {
+        fromThrowable(
+          () => localStorage.removeItem(LEGACY_LOCAL_KEY),
+          (cause) =>
+            new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
+        )().orInspect(reportSettingsError);
+      } else {
+        reportSettingsError(migrated.err);
       }
     }
-    const initial = await window.electron.settings.get();
-    if ('ok' in initial) {
-      settingsStore.setState(() => initial.ok);
-    }
-    // Subscribe to main-process changes (external edits, other windows).
+    await ResultAsync.fromPromise(window.electron.settings.get(), (cause) =>
+      new Fault(String(cause)).withTag('SETTINGS_ERROR').withCause(cause),
+    ).match((initial) => {
+      if ('ok' in initial) {
+        const validated = appSettingsSchema.safeParse(initial.ok);
+        if (validated.success) settingsStore.setState(() => validated.data);
+        else reportSettingsError('Invalid settings from main process');
+      } else {
+        reportSettingsError(initial.err);
+      }
+    }, reportSettingsError);
     window.electron.on('settings:changed', (data) => {
-      settingsStore.setState(() => data as AppSettings);
+      const validated = appSettingsSchema.safeParse(data);
+      if (validated.success) settingsStore.setState(() => validated.data);
+      else reportSettingsError('Invalid settings update from main process');
     });
     return;
   }
 
-  // Web / dev fallback: localStorage.
-  const legacy = migrateLegacyLocalStorage();
-  const next = legacy ? deepMerge(loadLocal(), legacy) : loadLocal();
+  const current = loadLocal().match(
+    (settings) => settings,
+    (message) => {
+      reportSettingsError(message);
+      return DEFAULT_SETTINGS;
+    },
+  );
+  const next =
+    legacy === null
+      ? current
+      : mergeLocalSettings(current, legacy).match(
+          (settings) => settings,
+          (message) => {
+            reportSettingsError(message);
+            return current;
+          },
+        );
   settingsStore.setState(() => next);
-  persistLocal(next);
+  const persisted = persistLocal(next);
+  persisted.orInspect(reportSettingsError);
+  if (legacy !== null && persisted.isOk()) {
+    fromThrowable(
+      () => localStorage.removeItem(LEGACY_LOCAL_KEY),
+      (cause) =>
+        new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
+    )().orInspect(reportSettingsError);
+  }
 }
 
 /**
@@ -156,40 +226,73 @@ export async function initSettings(): Promise<void> {
  */
 export function updateSettings(
   patch: Partial<AppSettings>,
-): ResultAsync<void, string> {
+): ResultAsync<void, Fault> {
   if (hasElectron()) {
-    return ResultAsync.fromPromise(window.electron.settings.set(patch), (e) =>
-      e instanceof Error && e.message.trim() !== ''
-        ? e.message
-        : 'Unable to write settings.',
+    return ResultAsync.fromPromise(
+      window.electron.settings.set(patch),
+      (cause) =>
+        new Fault(
+          cause instanceof Error && cause.message.trim() !== ''
+            ? cause.message
+            : 'Unable to write settings.',
+        )
+          .withTag('SETTINGS_ERROR')
+          .withCause(cause),
     ).andThen((res) => {
       if ('ok' in res) {
-        settingsStore.setState(() => res.ok);
+        const parsed = appSettingsSchema.safeParse(res.ok);
+        if (!parsed.success)
+          return err(
+            ServiceError('VALIDATION_ERROR', 'Invalid settings response'),
+          );
+        settingsStore.setState(() => parsed.data);
         return ok(undefined);
       }
-      return err(res.err.trim() === '' ? 'Unable to write settings.' : res.err);
+      return err(
+        ServiceError(
+          'SETTINGS_ERROR',
+          res.err.trim() === '' ? 'Unable to write settings.' : res.err,
+        ),
+      );
     });
   }
-  const next = deepMerge(settingsStore.state, patch);
-  settingsStore.setState(() => next);
-  persistLocal(next);
-  return okAsync(undefined);
+  return mergeLocalSettings(settingsStore.state, patch)
+    .andThen((next) => persistLocal(next).map(() => next))
+    .match(
+      (next) => {
+        settingsStore.setState(() => next);
+        return okAsync(undefined);
+      },
+      (message) => errAsync(message),
+    );
 }
 
 export async function resetSettings(): Promise<void> {
   if (hasElectron()) {
-    const res = await window.electron.settings.reset();
-    if ('ok' in res) {
-      settingsStore.setState(() => res.ok);
-    }
+    await ResultAsync.fromPromise(window.electron.settings.reset(), (cause) =>
+      new Fault(String(cause)).withTag('SETTINGS_ERROR').withCause(cause),
+    ).match((response) => {
+      if ('err' in response) {
+        reportSettingsError(response.err);
+        return;
+      }
+      const parsed = appSettingsSchema.safeParse(response.ok);
+      if (parsed.success) settingsStore.setState(() => parsed.data);
+      else reportSettingsError('Invalid settings reset from main process');
+    }, reportSettingsError);
     return;
   }
-  settingsStore.setState(() => DEFAULT_SETTINGS);
-  persistLocal(DEFAULT_SETTINGS);
+  persistLocal(DEFAULT_SETTINGS).match(
+    () => settingsStore.setState(() => DEFAULT_SETTINGS),
+    reportSettingsError,
+  );
 }
 
 export async function openSettingsFile(): Promise<void> {
-  if (hasElectron()) {
-    await window.electron.settings.openFile();
-  }
+  if (!hasElectron()) return;
+  await ResultAsync.fromPromise(window.electron.settings.openFile(), (cause) =>
+    new Fault(String(cause)).withTag('SETTINGS_ERROR').withCause(cause),
+  ).match((response) => {
+    if ('err' in response) reportSettingsError(response.err);
+  }, reportSettingsError);
 }

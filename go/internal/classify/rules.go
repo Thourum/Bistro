@@ -11,9 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Severity values, ranked. ValidSeverities is the write contract for the
-// comments.severity column (migration 026).
-var ValidSeverities = map[string]int{
+// severityRanks define the comments.severity write contract (migration 026).
+var severityRanks = map[string]int{
 	"critical": 5, "warning": 4, "suggestion": 3, "nit": 2, "info": 1,
 }
 
@@ -33,6 +32,7 @@ type Classifier struct {
 	bodyRe *regexp.Regexp // compiled at parse; nil when BodyPattern empty
 }
 
+// Match identifies review authors associated with a rule file.
 type Match struct {
 	Author []string `yaml:"author"`
 }
@@ -45,6 +45,12 @@ type RuleFile struct {
 	Match       Match        `yaml:"match"`
 	Classifiers []Classifier `yaml:"classifiers"`
 	FileName    string       `yaml:"-"`
+}
+
+// IsValidSeverity reports whether severity can be stored in comments.severity.
+func IsValidSeverity(severity string) bool {
+	_, ok := severityRanks[severity]
+	return ok
 }
 
 // Parse decodes and validates one rule file. Regexes are compiled here so a
@@ -76,12 +82,12 @@ func Parse(data []byte, fileName string) (*RuleFile, error) {
 			return nil, fmt.Errorf("%s/%s: no severity or severity_map", fileName, c.Name)
 		}
 		if c.Severity != "" {
-			if _, ok := ValidSeverities[c.Severity]; !ok {
+			if !IsValidSeverity(c.Severity) {
 				return nil, fmt.Errorf("%s/%s: invalid severity %q", fileName, c.Name, c.Severity)
 			}
 		}
 		for k, v := range c.SeverityMap {
-			if _, ok := ValidSeverities[v]; !ok {
+			if !IsValidSeverity(v) {
 				return nil, fmt.Errorf("%s/%s: severity_map[%s]: invalid severity %q", fileName, c.Name, k, v)
 			}
 		}

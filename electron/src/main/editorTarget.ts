@@ -1,6 +1,13 @@
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, join, resolve, sep } from 'node:path';
-import { errAsync, fromPromise, okAsync, type ResultAsync } from 'neverthrow';
+import {
+  errAsync,
+  type Fault,
+  fromPromise,
+  okAsync,
+  type ResultAsync,
+  ServiceError,
+} from '@thourum/fault';
 
 export interface EditorTargetRequest {
   /** Absolute checkout root. Must be a git checkout the engine reported. */
@@ -29,20 +36,22 @@ const NOT_ABSOLUTE = 'Access denied: repo root must be an absolute path';
  */
 export function resolveEditorTarget(
   request: EditorTargetRequest,
-): ResultAsync<string, string> {
+): ResultAsync<string, Fault> {
   const { repoRoot, relativePath } = request;
 
   if (repoRoot === '' || !isAbsolute(repoRoot)) {
-    return errAsync(NOT_ABSOLUTE);
+    return errAsync(ServiceError('AUTHORIZATION_ERROR', NOT_ABSOLUTE));
   }
   if (relativePath === '' || isAbsolute(relativePath)) {
-    return errAsync(OUTSIDE_REPO);
+    return errAsync(ServiceError('AUTHORIZATION_ERROR', OUTSIDE_REPO));
   }
 
   return canonicalise(repoRoot, NOT_A_CHECKOUT)
     .andThen((canonicalRoot) =>
       isGitCheckout(canonicalRoot).andThen((isCheckout) =>
-        isCheckout ? okAsync(canonicalRoot) : errAsync(NOT_A_CHECKOUT),
+        isCheckout
+          ? okAsync(canonicalRoot)
+          : errAsync(ServiceError('AUTHORIZATION_ERROR', NOT_A_CHECKOUT)),
       ),
     )
     .andThen((canonicalRoot) =>
@@ -50,7 +59,7 @@ export function resolveEditorTarget(
         (canonicalTarget) =>
           contains(canonicalRoot, canonicalTarget)
             ? okAsync(canonicalTarget)
-            : errAsync(OUTSIDE_REPO),
+            : errAsync(ServiceError('AUTHORIZATION_ERROR', OUTSIDE_REPO)),
       ),
     );
 }
@@ -59,12 +68,16 @@ export function resolveEditorTarget(
 function canonicalise(
   path: string,
   reason: string,
-): ResultAsync<string, string> {
-  return fromPromise(realpath(path), () => reason);
+): ResultAsync<string, Fault> {
+  return fromPromise(realpath(path), (cause) =>
+    ServiceError('AUTHORIZATION_ERROR', reason).withCause(cause),
+  );
 }
 
-function isGitCheckout(canonicalRoot: string): ResultAsync<boolean, string> {
-  return fromPromise(stat(join(canonicalRoot, '.git')), () => NOT_A_CHECKOUT)
+function isGitCheckout(canonicalRoot: string): ResultAsync<boolean, Fault> {
+  return fromPromise(stat(join(canonicalRoot, '.git')), (cause) =>
+    ServiceError('AUTHORIZATION_ERROR', NOT_A_CHECKOUT).withCause(cause),
+  )
     .map(() => true)
     .orElse(() => okAsync(false));
 }

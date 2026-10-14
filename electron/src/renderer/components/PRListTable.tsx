@@ -1,9 +1,9 @@
 import { useNavigate } from '@tanstack/react-router';
-import { ResultAsync } from 'neverthrow';
+import { Fault } from '@thourum/fault';
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../hooks/useStore';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -342,7 +342,6 @@ export function PRListTable({
   const repos = useStore(appStore, (state: UIState) => state.repos);
   const viewerLogin = useStore(appStore, (state: UIState) => state.viewerLogin);
   const view = useStore(settingsStore, (state) => state.prList.view);
-  const { request } = useWebSocket();
   const [recoveryRepo, setRecoveryRepo] = useState<RepoInfo | null>(null);
   const sections = useMemo(
     () => laneSections(visiblePRs, viewerLogin),
@@ -354,19 +353,21 @@ export function PRListTable({
       ...state,
       reposLoading: true,
     }));
-    void ResultAsync.fromPromise(
-      request('REQUEST_REPO_LIST', {}),
-      () => null,
-    ).match(
-      () => undefined,
-      () => {
-        appStore.setState((state) => ({
-          ...state,
-          reposLoading: false,
-        }));
-      },
-    );
-  }, [request]);
+    void wsClient
+      .request('REQUEST_REPO_LIST', {})
+      .mapErr((cause) =>
+        new Fault(cause).withTag('CONNECTION_ERROR').withCause(cause),
+      )
+      .match(
+        () => undefined,
+        () => {
+          appStore.setState((state) => ({
+            ...state,
+            reposLoading: false,
+          }));
+        },
+      );
+  }, []);
 
   if (isLoading) {
     return (
@@ -379,7 +380,7 @@ export function PRListTable({
   if (error !== null) {
     return (
       <div className="flex items-center justify-center py-16 text-error font-mono text-sm">
-        Failed to load PRs: {(error as Error).message}
+        Failed to load PRs: {error.message}
       </div>
     );
   }

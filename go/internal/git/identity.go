@@ -27,13 +27,23 @@ type LocationError struct {
 	Operation string
 	Code      string
 	Message   string
+	Err       error
 }
 
+// Error returns the user-facing location failure message.
 func (e *LocationError) Error() string {
 	if e == nil {
 		return ""
 	}
 	return e.Message
+}
+
+// Unwrap preserves the underlying cause for errors.Is and errors.As.
+func (e *LocationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
 }
 
 // ID returns the canonical lowercased repo identity.

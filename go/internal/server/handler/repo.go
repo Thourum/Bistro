@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -23,6 +24,19 @@ type repoRow struct {
 	LocationStatus    *string `json:"location_status,omitempty"`
 	LocationErrorCode *string `json:"location_error_code,omitempty"`
 	LocationError     *string `json:"location_error,omitempty"`
+}
+
+const repoListTimeout = 30 * time.Second
+
+func repoListErrorResponse(requestID string) map[string]interface{} {
+	return map[string]interface{}{
+		"id":   requestID,
+		"type": "REPO_LIST_READY",
+		"data": map[string]interface{}{
+			"repos": []repoRow{},
+			"error": "unable to load repositories",
+		},
+	}
 }
 
 // NewRequestRepoListHandler handles REQUEST_REPO_LIST messages.
@@ -52,7 +66,7 @@ func NewRequestRepoListHandler(
 			}, nil
 		}
 
-		reqCtx, cancel := context.WithTimeout(logging.WithLogger(ctx, logger), 30*time.Second)
+		reqCtx, cancel := context.WithTimeout(logging.WithLogger(ctx, logger), repoListTimeout)
 		defer cancel()
 
 		logger.Debug("listing user repos from provider")
@@ -63,22 +77,14 @@ func NewRequestRepoListHandler(
 				"duration_ms", time.Since(start).Milliseconds(),
 				"err", err,
 			)
-			return map[string]interface{}{
-				"id":   msg.ID,
-				"type": "REPO_LIST_READY",
-				"data": map[string]interface{}{
-					"repos": []interface{}{},
-					"error": err.Error(),
-				},
-			}, nil
+			return repoListErrorResponse(msg.ID), nil
 		}
 		logger.Debug("provider returned repos",
 			"count", len(repos),
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
 
-		const provName = "github"
-		upserts := 0
+		const provName = githubProvider
 		for _, r := range repos {
 			id := provName + ":" + r.FullName
 			_, upsertErr := db.ExecContext(reqCtx,
@@ -87,12 +93,11 @@ func NewRequestRepoListHandler(
 				id, provName, r.Owner, r.Name,
 			)
 			if upsertErr != nil {
-				logger.Error("upsert repo failed", "id", id, "err", upsertErr)
-				continue
+				logger.Error("upsert repo failed", "repo_id", id, "err", upsertErr)
+				return repoListErrorResponse(msg.ID), nil
 			}
-			upserts++
 		}
-		logger.Debug("repos upserted", "attempted", len(repos), "succeeded", upserts)
+		logger.Debug("repos upserted", "count", len(repos))
 
 		rows, err := db.QueryContext(reqCtx,
 			`SELECT id, provider, owner, repo, watched, source, location_status, location_error_code, location_error
@@ -101,7 +106,7 @@ func NewRequestRepoListHandler(
 		)
 		if err != nil {
 			logger.Error("query repos failed", "err", err)
-			return nil, fmt.Errorf("query repos: %w", err)
+			return repoListErrorResponse(msg.ID), nil
 		}
 		defer rows.Close()
 
@@ -125,7 +130,7 @@ func NewRequestRepoListHandler(
 				&locationError,
 			); scanErr != nil {
 				logger.Error("scan repo row failed", "err", scanErr)
-				continue
+				return repoListErrorResponse(msg.ID), nil
 			}
 			r.Watched = watched == 1
 			r.Source = nullableStringPtr(source)
@@ -136,7 +141,7 @@ func NewRequestRepoListHandler(
 		}
 		if err := rows.Err(); err != nil {
 			logger.Error("iterate repos failed", "err", err)
-			return nil, fmt.Errorf("iterate repos: %w", err)
+			return repoListErrorResponse(msg.ID), nil
 		}
 		if result == nil {
 			result = []repoRow{}
@@ -190,12 +195,10 @@ func NewToggleWatchHandler(
 
 		var currentWatched int
 		err := db.QueryRow("SELECT watched FROM repos WHERE id = ?", data.RepoID).Scan(&currentWatched)
-		if err == sql.ErrNoRows {
-			logger.Warn("toggle watch repo not found", "repo_id", data.RepoID)
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("repo not found: %s", data.RepoID)
 		}
 		if err != nil {
-			logger.Error("read watch state failed", "repo_id", data.RepoID, "err", err)
 			return nil, fmt.Errorf("read watch state for %s: %w", data.RepoID, err)
 		}
 
@@ -211,7 +214,6 @@ func NewToggleWatchHandler(
 		}
 
 		if _, err := db.Exec("UPDATE repos SET watched = ? WHERE id = ?", watchedValue, data.RepoID); err != nil {
-			logger.Error("toggle watch failed", "repo_id", data.RepoID, "err", err)
 			return nil, fmt.Errorf("toggle watch for %s: %w", data.RepoID, err)
 		}
 

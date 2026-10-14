@@ -1,6 +1,6 @@
-import { err, ok, type Result, ResultAsync } from 'neverthrow';
+import { err, Fault, ok, type Result } from '@thourum/fault';
 import { useCallback, useEffect, useState } from 'react';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import type { LocationErrorCode } from '../types/repoLocation';
 import { addToast } from './ToastContainer';
 
@@ -92,9 +92,13 @@ function parseRepoStat(data: unknown): CacheRepoStat | null {
   return null;
 }
 
-function parseCacheStats(data: unknown): Result<CacheStats, string> {
+function parseCacheStats(data: unknown): Result<CacheStats, Fault> {
   if (!isRecord(data) || data.ok !== true || !Array.isArray(data.repos)) {
-    return err('Cache stats returned an invalid response.');
+    return err(
+      new Fault('Cache stats returned an invalid response.').withTag(
+        'VALIDATION_ERROR',
+      ),
+    );
   }
 
   const repos = data.repos.map(parseRepoStat);
@@ -104,7 +108,11 @@ function parseCacheStats(data: unknown): Result<CacheStats, string> {
     typeof data.stale_bytes !== 'number' ||
     repos.some((repo) => repo === null)
   ) {
-    return err('Cache stats returned an invalid response.');
+    return err(
+      new Fault('Cache stats returned an invalid response.').withTag(
+        'VALIDATION_ERROR',
+      ),
+    );
   }
 
   return ok({
@@ -138,9 +146,13 @@ function parseCacheFailure(data: unknown): CacheFailure | null {
 
 function parseCacheActionResponse(
   data: unknown,
-): Result<CacheActionResponse, string> {
+): Result<CacheActionResponse, Fault> {
   if (!isRecord(data)) {
-    return err('Cache action returned an invalid response.');
+    return err(
+      new Fault('Cache action returned an invalid response.').withTag(
+        'VALIDATION_ERROR',
+      ),
+    );
   }
 
   if (data.ok === true) {
@@ -149,7 +161,11 @@ function parseCacheActionResponse(
       : [];
 
     if (failed.some((failure) => failure === null)) {
-      return err('Cache action returned an invalid response.');
+      return err(
+        new Fault('Cache action returned an invalid response.').withTag(
+          'VALIDATION_ERROR',
+        ),
+      );
     }
 
     const validFailed = failed.filter(
@@ -188,23 +204,21 @@ function parseCacheActionResponse(
     });
   }
 
-  return err('Cache action returned an invalid response.');
+  return err(
+    new Fault('Cache action returned an invalid response.').withTag(
+      'VALIDATION_ERROR',
+    ),
+  );
 }
 
-function ensurePromise(value: Promise<unknown> | unknown): Promise<unknown> {
-  return value instanceof Promise ? value : Promise.resolve(value);
-}
-
-function requestErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim() !== '') {
-    return error.message;
-  }
-
-  if (typeof error === 'string' && error.trim() !== '') {
-    return error;
-  }
-
-  return 'Bistro could not reach the sync engine. Try again.';
+function requestFault(error: unknown): Fault {
+  const message =
+    error instanceof Error && error.message.trim() !== ''
+      ? error.message
+      : typeof error === 'string' && error.trim() !== ''
+        ? error
+        : 'Bistro could not reach the sync engine. Try again.';
+  return new Fault(message).withTag('CONNECTION_ERROR').withCause(error);
 }
 
 function formatBytes(bytes: number): string {
@@ -252,26 +266,24 @@ function formatLastUsed(value: string | null): string {
 }
 
 export function CacheUsageCard(): React.ReactElement {
-  const { request } = useWebSocket();
   const [stats, setStats] = useState<CacheStats | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   const loadStats = useCallback((): void => {
-    ResultAsync.fromPromise(
-      ensurePromise(request('GET_CACHE_STATS', {})),
-      requestErrorMessage,
-    )
+    wsClient
+      .request('GET_CACHE_STATS', {})
+      .mapErr(requestFault)
       .andThen(parseCacheStats)
       .match(
         (nextStats) => {
           setStats(nextStats);
           setErrorMessage(null);
         },
-        (message) => setErrorMessage(message),
+        (error) => setErrorMessage(error.message),
       );
-  }, [request]);
+  }, []);
 
   useEffect(() => {
     loadStats();
@@ -283,10 +295,9 @@ export function CacheUsageCard(): React.ReactElement {
     actionKey: string,
   ): void => {
     setPendingAction(actionKey);
-    ResultAsync.fromPromise(
-      ensurePromise(request(type, payload)),
-      requestErrorMessage,
-    )
+    wsClient
+      .request(type, payload)
+      .mapErr(requestFault)
       .andThen(parseCacheActionResponse)
       .match(
         (response) => {

@@ -254,8 +254,8 @@ func TestCloneForPR_DepthMissFallsBackToBroad(t *testing.T) {
 	// White-box: the targeted shallow fetch at Depth:1 must miss the deep base
 	// commit and report failure (nil, false) so the broad fallback engages.
 	opts := &CloneOptions{PRNumber: prNumber, BaseBranch: baseBranch, Depth: 1}
-	if _, ok := client.targetedClone(context.Background(), log, url, baseSHA, headSHA, opts); ok {
-		t.Fatal("expected targeted Depth:1 fetch to miss the deep base commit, but it succeeded")
+	if _, ok, err := client.targetedClone(context.Background(), log, url, baseSHA, headSHA, opts); err != nil || ok {
+		t.Fatalf("expected targeted Depth:1 fetch to miss the deep base commit, got ok=%v err=%v", ok, err)
 	}
 
 	// Black-box: CloneForPR must still succeed by falling back to a broad clone.
@@ -308,8 +308,8 @@ func TestCloneForPR_RequiredSHAMissingFallsBack(t *testing.T) {
 	// White-box: base+head are present, but the bogus required SHA is not, so
 	// the targeted path must report failure rather than caching a clone that
 	// would silently degrade anchor resolution.
-	if _, ok := client.targetedClone(context.Background(), log, url, baseSHA, headSHA, opts); ok {
-		t.Fatal("expected targeted fetch to fail when a RequiredSHA is absent")
+	if _, ok, err := client.targetedClone(context.Background(), log, url, baseSHA, headSHA, opts); err != nil || ok {
+		t.Fatalf("expected targeted fetch to miss an absent RequiredSHA, got ok=%v err=%v", ok, err)
 	}
 
 	// Black-box: CloneForPR still succeeds via the broad fallback — base and
@@ -357,9 +357,9 @@ func TestCloneForPR_RequiredSHAPresentTargetedSucceeds(t *testing.T) {
 		RequiredSHAs: []string{baseSHA, ""}, // empty entry must be tolerated
 	}
 
-	result, ok := client.targetedClone(context.Background(), log, url, baseSHA, headSHA, opts)
-	if !ok {
-		t.Fatal("expected targeted fetch to succeed when all RequiredSHAs are present")
+	result, ok, err := client.targetedClone(context.Background(), log, url, baseSHA, headSHA, opts)
+	if err != nil || !ok {
+		t.Fatalf("expected targeted fetch to succeed when all RequiredSHAs are present, got ok=%v err=%v", ok, err)
 	}
 	if result.BaseSHA != baseSHA || result.HeadSHA != headSHA {
 		t.Errorf("SHA mismatch: got base=%s head=%s", result.BaseSHA, result.HeadSHA)

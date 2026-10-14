@@ -2,7 +2,7 @@
 // The old auth-branching gate is replaced by:
 //
 //   Bootstrap — non-visual component that:
-//     • runs useSettingsEffect() + useWebSocket() BESIDE RouterProvider so the
+//     • runs useSettingsEffect() + useWebSocketConnection() BESIDE RouterProvider so the
 //       WS is NEVER unmounted by navigation
 //     • subscribes to authChecked / isAuthenticated / onboardingComplete and
 //       calls router.invalidate() so route guards re-evaluate on auth changes
@@ -19,15 +19,20 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
+import { Fault, ResultAsync } from '@thourum/fault';
 import React from 'react';
 import { InitialisingScreen } from './components/ConnectingScreen';
 import { FooterSlotProvider } from './components/FooterSlot';
+import { addToast } from './components/ToastContainer';
 import { useSettingsEffect } from './hooks/useSettingsEffect';
 import { useStore } from './hooks/useStore';
-import { useWebSocket } from './hooks/useWebSocket';
+import { useWebSocketConnection } from './hooks/useWebSocketConnection';
 import { router } from './router';
 import { appStore } from './store';
 import { initSettings, settingsStore } from './store/settings';
+import { createLogger } from './utils/logger';
+
+const log = createLogger('App');
 
 const queryClient = new QueryClient();
 
@@ -42,7 +47,7 @@ const queryClient = new QueryClient();
  */
 function Bootstrap(): null {
   useSettingsEffect();
-  useWebSocket();
+  useWebSocketConnection();
 
   const authChecked = useStore(appStore, (s) => s.authChecked);
   const isAuthenticated = useStore(appStore, (s) => s.isAuthenticated);
@@ -82,7 +87,26 @@ export default function App(): React.ReactElement {
   const [ready, setReady] = React.useState(false);
 
   React.useEffect(() => {
-    void initSettings().finally(() => setReady(true));
+    void ResultAsync.fromPromise(initSettings(), (cause) =>
+      new Fault(
+        cause instanceof Error
+          ? cause
+          : 'Could not load settings; using defaults.',
+      )
+        .withTag('SETTINGS_ERROR')
+        .withCause(cause),
+    ).match(
+      () => setReady(true),
+      (cause) => {
+        log.error({ err: cause.message }, 'failed to initialize settings');
+        addToast({
+          type: 'error',
+          message: 'Could not load settings; using defaults.',
+          dismissible: true,
+        });
+        setReady(true);
+      },
+    );
   }, []);
 
   if (!ready) return <InitialisingScreen />;

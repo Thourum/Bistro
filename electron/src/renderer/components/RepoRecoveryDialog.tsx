@@ -1,7 +1,7 @@
-import { err, ok, type Result, ResultAsync } from 'neverthrow';
+import { err, Fault, ok, type Result, ResultAsync } from '@thourum/fault';
 import type React from 'react';
 import { useState } from 'react';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import type { RepoInfo } from '../types';
 import type { LocationErrorCode } from '../types/repoLocation';
 
@@ -77,9 +77,13 @@ function parseCounts(data: unknown): RemoveCounts | null {
   return null;
 }
 
-function parseActionResponse(data: unknown): Result<ActionResponse, string> {
+function parseActionResponse(data: unknown): Result<ActionResponse, Fault> {
   if (!isRecord(data)) {
-    return err('Recovery action returned an invalid response.');
+    return err(
+      new Fault('Recovery action returned an invalid response.').withTag(
+        'VALIDATION_ERROR',
+      ),
+    );
   }
 
   if (data.ok === true) {
@@ -100,19 +104,21 @@ function parseActionResponse(data: unknown): Result<ActionResponse, string> {
     return ok({ ok: false, code: data.code, message: data.message });
   }
 
-  return err('Recovery action returned an invalid response.');
+  return err(
+    new Fault('Recovery action returned an invalid response.').withTag(
+      'VALIDATION_ERROR',
+    ),
+  );
 }
 
-function requestErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim() !== '') {
-    return error.message;
-  }
-
-  if (typeof error === 'string' && error.trim() !== '') {
-    return error;
-  }
-
-  return 'Bistro could not reach the sync engine. Try again.';
+function requestFault(error: unknown): Fault {
+  const message =
+    error instanceof Error && error.message.trim() !== ''
+      ? error.message
+      : typeof error === 'string' && error.trim() !== ''
+        ? error
+        : 'Bistro could not reach the sync engine. Try again.';
+  return new Fault(message).withTag('CONNECTION_ERROR').withCause(error);
 }
 
 function userFacingCodeMessage(code: LocationErrorCode): string {
@@ -138,21 +144,19 @@ function countsCopy(counts: RemoveCounts): string {
 }
 
 function runRequest(
-  request: (type: string, data: unknown) => Promise<unknown>,
   type: string,
   payload: unknown,
-): ResultAsync<ActionResponse, string> {
-  return ResultAsync.fromPromise(
-    request(type, payload),
-    requestErrorMessage,
-  ).andThen(parseActionResponse);
+): ResultAsync<ActionResponse, Fault> {
+  return wsClient
+    .request(type, payload)
+    .mapErr(requestFault)
+    .andThen(parseActionResponse);
 }
 
 export function RepoRecoveryDialog({
   repo,
   onClose,
 }: RepoRecoveryDialogProps): React.ReactElement {
-  const { request } = useWebSocket();
   const [mode, setMode] = useState<DialogMode>('actions');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -174,17 +178,17 @@ export function RepoRecoveryDialog({
   const chooseNewPath = (): void => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    ResultAsync.fromPromise(window.electron.pickFolder(), requestErrorMessage)
+    ResultAsync.fromPromise(window.electron.pickFolder(), requestFault)
       .andThen((path) => {
         if (path === null) {
-          return ok<ActionResponse, string>({
+          return ok<ActionResponse, Fault>({
             ok: false,
             code: 'cancelled',
             message: '',
           });
         }
 
-        return runRequest(request, 'RECOVER_REPO_PATH', {
+        return runRequest('RECOVER_REPO_PATH', {
           repo_id: repo.id,
           path,
         });
@@ -200,9 +204,9 @@ export function RepoRecoveryDialog({
             handleResponse(response);
           }
         },
-        (message) => {
+        (error) => {
           setIsSubmitting(false);
-          setErrorMessage(message);
+          setErrorMessage(error.message);
         },
       );
   };
@@ -210,16 +214,16 @@ export function RepoRecoveryDialog({
   const confirmMoveToCache = (): void => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    runRequest(request, 'RECOVER_REPO_TO_CACHE', { repo_id: repo.id }).match(
+    runRequest('RECOVER_REPO_TO_CACHE', { repo_id: repo.id }).match(
       (response) => {
         setIsSubmitting(false);
         if (handleResponse(response)) {
           onClose();
         }
       },
-      (message) => {
+      (error) => {
         setIsSubmitting(false);
-        setErrorMessage(message);
+        setErrorMessage(error.message);
       },
     );
   };
@@ -227,7 +231,7 @@ export function RepoRecoveryDialog({
   const preflightRemove = (): void => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    runRequest(request, 'REMOVE_REPO_PREFLIGHT', { repo_id: repo.id }).match(
+    runRequest('REMOVE_REPO_PREFLIGHT', { repo_id: repo.id }).match(
       (response) => {
         setIsSubmitting(false);
         if (!response.ok) {
@@ -241,9 +245,9 @@ export function RepoRecoveryDialog({
         setRemoveCounts(response.counts);
         setMode('removeConfirm');
       },
-      (message) => {
+      (error) => {
         setIsSubmitting(false);
-        setErrorMessage(message);
+        setErrorMessage(error.message);
       },
     );
   };
@@ -251,16 +255,16 @@ export function RepoRecoveryDialog({
   const confirmRemove = (): void => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    runRequest(request, 'REMOVE_REPO', { repo_id: repo.id }).match(
+    runRequest('REMOVE_REPO', { repo_id: repo.id }).match(
       (response) => {
         setIsSubmitting(false);
         if (handleResponse(response)) {
           onClose();
         }
       },
-      (message) => {
+      (error) => {
         setIsSubmitting(false);
-        setErrorMessage(message);
+        setErrorMessage(error.message);
       },
     );
   };
@@ -275,7 +279,7 @@ export function RepoRecoveryDialog({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-xl mx-4 bg-surface-container-lowest border border-primary shadow-[0_10px_30px_rgba(25,28,29,0.04)] p-4">
+      <div className="w-full max-w-xl mx-4 bg-surface-container-lowest border border-primary shadow-ambient p-4">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h2 className="text-lg font-semibold text-on-surface">

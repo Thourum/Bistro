@@ -7,6 +7,10 @@ import type {
 } from '../../types';
 import { threadLifecycle } from '../../types';
 import { humanizeSource } from '../../utils/classification';
+import {
+  isTextareaSubmit,
+  TEXTAREA_SUBMIT_HOTKEY,
+} from '../../utils/keybindings';
 import { Markdown } from '../Markdown';
 import { type StatusKind, StatusSquare } from '../StatusSquare';
 import { Badge } from '../ui/badge';
@@ -14,45 +18,42 @@ import { Button } from '../ui/button';
 import { ShortcutBadge } from '../ui/shortcut-badge';
 import { Textarea } from '../ui/textarea';
 
-const LIFECYCLE_VARIANT: Record<
-  ThreadLifecycle,
-  'open' | 'resolved' | 'outdated' | 'unknown'
-> = {
-  open: 'open',
-  resolved: 'resolved',
-  outdated: 'outdated',
-  unknown: 'unknown',
-};
-
-const LIFECYCLE_SQUARE: Record<ThreadLifecycle, StatusKind> = {
+const LIFECYCLE_SQUARE = {
   open: 'running',
   resolved: 'success',
   outdated: 'neutral',
   unknown: 'neutral',
-};
+} satisfies Record<ThreadLifecycle, StatusKind>;
 
-const LIFECYCLE_LABEL: Record<ThreadLifecycle, string> = {
+const LIFECYCLE_LABEL = {
   open: 'Open',
   resolved: 'Resolved',
   outdated: 'Outdated',
   unknown: 'Unknown',
-};
+} satisfies Record<ThreadLifecycle, string>;
 
-const COMMENT_SEVERITY_STRIPE_CLASSES: Record<
-  CommentSeverity | 'none',
-  string
-> = {
+const COMMENT_SEVERITY_STRIPE_CLASSES = {
   critical: 'border-l-error',
   warning: 'border-l-tertiary',
   suggestion: 'border-l-primary',
   nit: 'border-l-secondary',
   info: 'border-l-outline',
   none: 'border-l-outline-variant/30',
-};
+} satisfies Record<CommentSeverity | 'none', string>;
 
 function formatClassificationLabel(value: string | undefined): string {
   if (value === undefined || value.trim().length === 0) return 'unclassified';
   return value;
+}
+
+interface ThreadAnnotationCardProps {
+  thread: ReviewThread | undefined;
+  comments: readonly Comment[];
+  isActive?: boolean;
+  isReplying?: boolean;
+  onActivate?: () => void;
+  onReplyClose?: () => void;
+  onThreadReply?: (threadId: string, body: string) => void;
 }
 
 export function ThreadAnnotationCard({
@@ -63,50 +64,33 @@ export function ThreadAnnotationCard({
   onActivate,
   onReplyClose,
   onThreadReply,
-}: {
-  thread: ReviewThread | undefined;
-  comments: Comment[];
-  isActive?: boolean;
-  isReplying?: boolean;
-  onActivate?: () => void;
-  onReplyClose?: () => void;
-  onThreadReply?: (threadId: string, body: string) => void;
-}): React.ReactElement | null {
+}: ThreadAnnotationCardProps): React.ReactElement | null {
   if (thread === undefined) return null;
   const lifecycle = threadLifecycle(thread);
   const isDimmed =
     !isActive && (lifecycle === 'resolved' || lifecycle === 'outdated');
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a nested reply form cannot be valid inside a button.
     <div
       data-annotation-key={thread.id}
       data-testid="thread-annotation-card"
       data-thread-id={thread.id}
       data-active={isActive ? 'true' : 'false'}
       data-replying={isReplying ? 'true' : 'false'}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onActivate?.();
-      }}
-      onKeyDown={(event) => {
-        if (
-          event.target === event.currentTarget &&
-          (event.key === 'Enter' || event.key === ' ')
-        ) {
-          event.preventDefault();
-          onActivate?.();
-        }
-      }}
-      role="button"
-      tabIndex={0}
       className={`border-l-2 bg-surface-container-low px-3 py-2 space-y-2 text-[11px] transition-colors duration-150 ${
         isActive
           ? 'border-primary bg-surface-container'
           : 'border-outline-variant/30'
-      } ${isDimmed ? 'opacity-50' : ''} ${onActivate !== undefined ? 'cursor-crosshair' : ''}`}
+      } ${isDimmed ? 'opacity-50' : ''}`}
     >
-      <div className="flex items-center gap-2">
-        <Badge variant={LIFECYCLE_VARIANT[lifecycle]}>
+      <button
+        type="button"
+        onClick={onActivate}
+        disabled={onActivate === undefined}
+        aria-label={`Focus review thread at ${thread.file_path}:${thread.line}`}
+        className="flex w-full items-center gap-2 text-left cursor-crosshair disabled:cursor-default"
+      >
+        <Badge variant={lifecycle}>
           <StatusSquare
             status={LIFECYCLE_SQUARE[lifecycle]}
             size="w-2 h-2"
@@ -118,7 +102,7 @@ export function ThreadAnnotationCard({
           {thread.file_path}
           <span className="text-outline-variant">:{thread.line}</span>
         </span>
-      </div>
+      </button>
 
       {comments.length > 0 ? (
         <ol className="space-y-2 pl-2 border-l border-outline-variant/20">
@@ -173,15 +157,17 @@ export function ThreadAnnotationCard({
   );
 }
 
+interface ReplyComposerProps {
+  threadId: string;
+  onSubmit?: (threadId: string, body: string) => void;
+  onClose?: () => void;
+}
+
 function ReplyComposer({
   threadId,
   onSubmit,
   onClose,
-}: {
-  threadId: string;
-  onSubmit?: (threadId: string, body: string) => void;
-  onClose?: () => void;
-}): React.ReactElement {
+}: ReplyComposerProps): React.ReactElement {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [body, setBody] = useState('');
   const trimmed = body.trim();
@@ -225,7 +211,7 @@ function ReplyComposer({
         aria-label="Reply to thread"
         onKeyDown={(event) => {
           event.stopPropagation();
-          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+          if (isTextareaSubmit(event)) {
             event.preventDefault();
             submit();
           }
@@ -246,7 +232,7 @@ function ReplyComposer({
           disabled={trimmed.length === 0 || onSubmit === undefined}
         >
           Reply
-          <ShortcutBadge hotkey="Mod+Enter" />
+          <ShortcutBadge hotkey={TEXTAREA_SUBMIT_HOTKEY} />
         </Button>
       </div>
     </div>

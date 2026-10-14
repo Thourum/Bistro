@@ -3,23 +3,28 @@ package expertise
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"sync"
 	"time"
 )
 
 const (
-	ExpertiseStatusIdle     = "idle"
+	// ExpertiseStatusIdle indicates indexing is not running for a repository.
+	ExpertiseStatusIdle = "idle"
+	// ExpertiseStatusIndexing indicates indexing is underway or interrupted.
 	ExpertiseStatusIndexing = "indexing"
-	ExpertiseStatusReady    = "ready"
-	ExpertiseStatusError    = "error"
+	// ExpertiseStatusReady indicates expertise results are available.
+	ExpertiseStatusReady = "ready"
+	// ExpertiseStatusError indicates indexing failed.
+	ExpertiseStatusError = "error"
 
+	// ExpertiseIndexProgressEvent reports how many files have been indexed.
 	ExpertiseIndexProgressEvent = "EXPERTISE_INDEX_PROGRESS"
-	ExpertiseReadyEvent         = "EXPERTISE_READY"
-	ExpertiseErrorEvent         = "EXPERTISE_ERROR"
+	// ExpertiseReadyEvent reports that a repository index is ready.
+	ExpertiseReadyEvent = "EXPERTISE_READY"
+	// ExpertiseErrorEvent reports that repository indexing failed.
+	ExpertiseErrorEvent = "EXPERTISE_ERROR"
 
 	expertiseErrorCodeIndexError     = "index_error"
 	expertiseErrorCodeGitUnavailable = "git_unavailable"
@@ -39,6 +44,7 @@ type expertiseGit interface {
 	BlameFile(context.Context, string, string) (map[AuthorKey]int, int, error)
 }
 
+// Indexer builds a repository-wide snapshot of file expertise from git history.
 type Indexer struct {
 	log      *slog.Logger
 	store    *Store
@@ -91,6 +97,7 @@ type expertiseSignals struct {
 	firstCommits  map[string]string
 }
 
+// NewIndexer configures an indexer with store, git, and the current identity.
 func NewIndexer(log *slog.Logger, store *Store, git expertiseGit, identity func(ctx context.Context) Identity) *Indexer {
 	if log == nil {
 		log = slog.Default()
@@ -108,11 +115,13 @@ func NewIndexer(log *slog.Logger, store *Store, git expertiseGit, identity func(
 	}
 }
 
+// WithEmitter configures notifications; call it before starting an index.
 func (indexer *Indexer) WithEmitter(emit func(eventType string, payload any)) *Indexer {
 	indexer.emit = emit
 	return indexer
 }
 
+// Index scans tracked files and atomically replaces a repository's expertise rows.
 func (indexer *Indexer) Index(ctx context.Context, repoID, repoPath string) error {
 	if err := indexer.setIndexing(ctx, repoID); err != nil {
 		return err
@@ -177,28 +186,9 @@ func (indexer *Indexer) prepareIndex(ctx context.Context, repoID, repoPath strin
 		return "", nil, expertiseSignals{}, err
 	}
 
-	logResult, err := indexer.git.LogNumstat(ctx, repoPath, now.AddDate(0, -CommitWindowMonths, 0))
+	signals, err := loadExpertiseSignals(ctx, indexer.git, indexer.identity, expertiseSignalInput{repoID: repoID, repoPath: repoPath, headSHA: headSHA, now: now})
 	if err != nil {
-		return "", nil, expertiseSignals{}, fmt.Errorf("expertise index log numstat: %w", err)
-	}
-	activeAuthors, err := indexer.git.ActiveAuthors(ctx, repoPath, now.AddDate(0, 0, -DormantAfterDays))
-	if err != nil {
-		return "", nil, expertiseSignals{}, fmt.Errorf("expertise index active authors: %w", err)
-	}
-	firstCommits, err := indexer.git.LogFirstCommits(ctx, repoPath)
-	if err != nil {
-		return "", nil, expertiseSignals{}, fmt.Errorf("expertise index first commits: %w", err)
-	}
-
-	signals := expertiseSignals{
-		repoID:        repoID,
-		headSHA:       headSHA,
-		now:           now,
-		identity:      indexer.identity(ctx),
-		commitAges:    commitAgesByFileAndAuthor(logResult.Events, now),
-		lastCommitAt:  maps.Clone(logResult.LastCommitAt),
-		activeAuthors: maps.Clone(activeAuthors),
-		firstCommits:  maps.Clone(firstCommits),
+		return "", nil, expertiseSignals{}, fmt.Errorf("expertise index signals: %w", err)
 	}
 	return headSHA, files, signals, nil
 }
@@ -209,7 +199,7 @@ func (indexer *Indexer) indexableFiles(ctx context.Context, repoID, repoPath str
 		return nil, fmt.Errorf("expertise index ls-files: %w", err)
 	}
 
-	excluder, err := indexer.excluder(ctx, repoID)
+	excluder, err := loadExcluder(ctx, indexer.store, repoID)
 	if err != nil {
 		return nil, err
 	}
@@ -231,14 +221,6 @@ func (indexer *Indexer) indexableFiles(ctx context.Context, repoID, repoPath str
 		}
 	}
 	return filtered, nil
-}
-
-func (indexer *Indexer) excluder(ctx context.Context, repoID string) (Excluder, error) {
-	var userGlobs []string
-	if err := indexer.store.Setting(ctx, excludesSettingKey(repoID), &userGlobs); err != nil && !errors.Is(err, ErrSettingNotFound) {
-		return Excluder{}, fmt.Errorf("load expertise excludes for repo %s: %w", repoID, err)
-	}
-	return New(userGlobs), nil
 }
 
 func (indexer *Indexer) indexFiles(ctx context.Context, repoID, repoPath string, files []string, signals expertiseSignals) (indexFilesResult, error) {
@@ -401,6 +383,38 @@ func buildFileExpertiseRows(filePath string, blame map[AuthorKey]int, total int,
 		})
 	}
 	return rows
+}
+
+type expertiseSignalInput struct {
+	repoID   string
+	repoPath string
+	headSHA  string
+	now      time.Time
+}
+
+func loadExpertiseSignals(ctx context.Context, git expertiseGit, identity func(context.Context) Identity, input expertiseSignalInput) (expertiseSignals, error) {
+	logResult, err := git.LogNumstat(ctx, input.repoPath, input.now.AddDate(0, -CommitWindowMonths, 0))
+	if err != nil {
+		return expertiseSignals{}, fmt.Errorf("expertise log numstat: %w", err)
+	}
+	activeAuthors, err := git.ActiveAuthors(ctx, input.repoPath, input.now.AddDate(0, 0, -DormantAfterDays))
+	if err != nil {
+		return expertiseSignals{}, fmt.Errorf("expertise active authors: %w", err)
+	}
+	firstCommits, err := git.LogFirstCommits(ctx, input.repoPath)
+	if err != nil {
+		return expertiseSignals{}, fmt.Errorf("expertise first commits: %w", err)
+	}
+	return expertiseSignals{
+		repoID:        input.repoID,
+		headSHA:       input.headSHA,
+		now:           input.now,
+		identity:      identity(ctx),
+		commitAges:    commitAgesByFileAndAuthor(logResult.Events, input.now),
+		lastCommitAt:  logResult.LastCommitAt,
+		activeAuthors: activeAuthors,
+		firstCommits:  firstCommits,
+	}, nil
 }
 
 func commitAgesByFileAndAuthor(events []LogEvent, now time.Time) map[string]map[string][]time.Duration {

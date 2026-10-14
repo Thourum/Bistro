@@ -1,7 +1,21 @@
+import type { Fault, Result } from '@thourum/fault';
+import { safeZodParse } from '@thourum/fault/zod';
+import type { z } from 'zod';
+
+/** Validates a response before it reaches renderer state. */
+export function parseResponse<T>(
+  schema: z.ZodType<T>,
+  response: unknown,
+): Result<T, Fault> {
+  return safeZodParse(schema, response).mapErr((fault) =>
+    fault.withDescription(fault.message, 'Invalid WebSocket response'),
+  );
+}
+
 /**
  * Known error codes from Go sync engine and IPC layer.
  */
-export const ERROR_MESSAGES: Record<string, string> = {
+export const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   AUTH_TOKEN_EXPIRED: 'Your authentication expired. Please re-login.',
   RATE_LIMITED: 'Too many requests. Try again in a few minutes.',
   WEBSOCKET_DISCONNECTED: 'Connection lost. Reconnecting...',
@@ -16,7 +30,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
 /**
  * Patterns that indicate sensitive data — must be stripped from user-facing messages.
  */
-const SENSITIVE_PATTERNS: RegExp[] = [
+const SENSITIVE_PATTERNS: readonly RegExp[] = [
   /ghp_[a-zA-Z0-9]+/g,
   /gho_[a-zA-Z0-9]+/g,
   /Bearer\s+eyJ[a-zA-Z0-9._-]+/g,
@@ -36,13 +50,17 @@ function sanitize(message: string): string {
 }
 
 /**
- * Map an error code or raw message to a user-friendly string.
- * Known codes get a curated message; unknown messages are sanitized and returned as-is.
+ * Map an error code, raw message, or Fault to a user-friendly string.
+ * Known codes/tags get a curated message; unknown messages are sanitized.
  */
-export function formatErrorMessage(codeOrMessage: string): string {
-  const friendly = ERROR_MESSAGES[codeOrMessage];
-  if (friendly !== undefined) {
-    return friendly;
-  }
-  return sanitize(codeOrMessage);
+export function formatErrorMessage(error: string | Fault): string {
+  const message = typeof error === 'string' ? error : error.message;
+  const code = typeof error === 'string' ? error : (error.tag ?? message);
+  const friendly = Object.hasOwn(ERROR_MESSAGES, code)
+    ? ERROR_MESSAGES[code]
+    : undefined;
+  const friendlyMessage = Object.hasOwn(ERROR_MESSAGES, message)
+    ? ERROR_MESSAGES[message]
+    : undefined;
+  return friendly ?? friendlyMessage ?? sanitize(message);
 }

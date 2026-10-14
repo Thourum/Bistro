@@ -17,10 +17,10 @@ function persistTourComplete(): void {
     appearance: { ...appearance, tourComplete: true },
   }).match(
     () => undefined,
-    (message) =>
+    (error) =>
       addToast({
         type: 'error',
-        message: `Tour completion could not be saved: ${message}`,
+        message: `Tour completion could not be saved: ${error.message}`,
         dismissible: true,
       }),
   );

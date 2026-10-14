@@ -1,7 +1,7 @@
-import { err, ok, type Result, ResultAsync } from 'neverthrow';
+import { err, Fault, ok, type Result } from '@thourum/fault';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsClient } from '../services/ws/connection';
 import { settingsStore } from '../store/settings';
 import type { LocationErrorCode } from '../types/repoLocation';
 import { addToast } from './ToastContainer';
@@ -43,16 +43,14 @@ const ERROR_MESSAGES: Partial<Record<LocationErrorCode, string>> = {
   invalid_path: 'Choose a valid repository destination.',
 };
 
-function requestErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim() !== '') {
-    return error.message;
-  }
-
-  if (typeof error === 'string' && error.trim() !== '') {
-    return error;
-  }
-
-  return 'Bistro could not reach the sync engine. Try again.';
+function requestFault(error: unknown): Fault {
+  const message =
+    error instanceof Error && error.message.trim() !== ''
+      ? error.message
+      : typeof error === 'string' && error.trim() !== ''
+        ? error
+        : 'Bistro could not reach the sync engine. Try again.';
+  return new Fault(message).withTag('CONNECTION_ERROR').withCause(error);
 }
 
 function isRecord(data: unknown): data is Record<string, unknown> {
@@ -65,14 +63,22 @@ function isLocationErrorCode(code: unknown): code is LocationErrorCode {
   );
 }
 
-function parseAddRepoResponse(data: unknown): Result<AddRepoResponse, string> {
+function parseAddRepoResponse(data: unknown): Result<AddRepoResponse, Fault> {
   if (!isRecord(data)) {
-    return err('Add repository returned an invalid response.');
+    return err(
+      new Fault('Add repository returned an invalid response.').withTag(
+        'VALIDATION_ERROR',
+      ),
+    );
   }
 
   if (data.ok === true) {
     if (data.source !== undefined && typeof data.source !== 'string') {
-      return err('Add repository returned an invalid response.');
+      return err(
+        new Fault('Add repository returned an invalid response.').withTag(
+          'VALIDATION_ERROR',
+        ),
+      );
     }
 
     return ok(
@@ -99,7 +105,11 @@ function parseAddRepoResponse(data: unknown): Result<AddRepoResponse, string> {
     return ok(response);
   }
 
-  return err('Add repository returned an invalid response.');
+  return err(
+    new Fault('Add repository returned an invalid response.').withTag(
+      'VALIDATION_ERROR',
+    ),
+  );
 }
 
 interface AddRepoDialogProps {
@@ -112,7 +122,6 @@ const FOCUSABLE_SELECTOR =
 export function AddRepoDialog({
   onClose,
 }: AddRepoDialogProps): React.ReactElement {
-  const { request } = useWebSocket();
   const [url, setUrl] = useState('');
   const [step, setStep] = useState<Step>('url');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -218,14 +227,13 @@ export function AddRepoDialog({
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    ResultAsync.fromPromise(
-      request('ADD_REPO_BY_URL', {
+    wsClient
+      .request('ADD_REPO_BY_URL', {
         url: trimmedUrl,
         destination,
         dev_folder_path: devFolderPath,
-      }),
-      requestErrorMessage,
-    )
+      })
+      .mapErr(requestFault)
       .andThen(parseAddRepoResponse)
       .match(
         (response) => {
@@ -233,10 +241,10 @@ export function AddRepoDialog({
           setIsSubmitting(false);
           handleResponse(response);
         },
-        (message) => {
+        (error) => {
           if (isClosedRef.current) return;
           setIsSubmitting(false);
-          setErrorMessage(message);
+          setErrorMessage(error.message);
         },
       );
   };
@@ -254,7 +262,7 @@ export function AddRepoDialog({
     >
       <div
         ref={dialogRef}
-        className="w-full max-w-xl mx-4 bg-surface-container-lowest border border-primary shadow-[0_10px_30px_rgba(25,28,29,0.04)] p-4"
+        className="w-full max-w-xl mx-4 bg-surface-container-lowest border border-primary shadow-ambient p-4"
       >
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>

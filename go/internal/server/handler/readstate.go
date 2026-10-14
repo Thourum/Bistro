@@ -60,10 +60,10 @@ func NewMarkPRsReadHandler(db readStateDB, cu currentUserReader, bc broadcaster,
 			return nil, err
 		}
 
-		login, ok, err := cu.GetCurrentUser(ctx, "github")
+		login, ok, err := cu.GetCurrentUser(ctx, githubProvider)
 		if err != nil {
 			logger.Error("resolve current user for MARK_PRS_READ", "error", err)
-			return markPRsReadACK(msg.ID, false, 0, err.Error()), nil
+			return markPRsReadACK(msg.ID, false, 0, "unable to update read state"), nil
 		}
 		if !ok || login == "" {
 			logger.Warn("MARK_PRS_READ: no current user, skipping", "pr_count", len(prIDs))
@@ -72,7 +72,7 @@ func NewMarkPRsReadHandler(db readStateDB, cu currentUserReader, bc broadcaster,
 
 		if err := markPRsRead(ctx, db, prIDs, login, time.Now().UTC()); err != nil {
 			logger.Error("mark PRs read failed", "pr_count", len(prIDs), "error", err)
-			return markPRsReadACK(msg.ID, false, 0, err.Error()), nil
+			return markPRsReadACK(msg.ID, false, 0, "unable to update read state"), nil
 		}
 
 		bc.Broadcast(prsReadChangedMessage{

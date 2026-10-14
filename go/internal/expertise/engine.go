@@ -13,6 +13,7 @@ import (
 
 const maxExpertsPerFile = 3
 
+// Engine coordinates repository indexing, updates, and expertise lookups.
 type Engine struct {
 	log     *slog.Logger
 	store   *Store
@@ -29,6 +30,7 @@ type runningIndex struct {
 	done       chan struct{}
 }
 
+// NewEngine configures an expertise engine with a repository indexer and updater.
 func NewEngine(log *slog.Logger, store *Store, git expertiseGit, indexer *Indexer, updater *Updater) *Engine {
 	if log == nil {
 		log = slog.Default()
@@ -43,6 +45,7 @@ func NewEngine(log *slog.Logger, store *Store, git expertiseGit, indexer *Indexe
 	}
 }
 
+// Enable starts indexing a repository for expertise suggestions.
 func (engine *Engine) Enable(ctx context.Context, repoID, repoPath string) error {
 	if err := engine.validateEnable(repoID, repoPath); err != nil {
 		return err
@@ -55,6 +58,7 @@ func (engine *Engine) Enable(ctx context.Context, repoID, repoPath string) error
 	return nil
 }
 
+// Disable cancels indexing and records that the repository should not be indexed.
 func (engine *Engine) Disable(ctx context.Context, repoID string) error {
 	engine.cancel(repoID)
 	if err := engine.store.SetRepoState(ctx, ExpertiseRepoState{RepoID: repoID, Enabled: false, Status: ExpertiseStatusIdle, NudgeDismissedAt: sql.NullTime{Time: time.Now().UTC(), Valid: true}}); err != nil {
@@ -63,6 +67,7 @@ func (engine *Engine) Disable(ctx context.Context, repoID string) error {
 	return nil
 }
 
+// OnPRSynced refreshes expertise for files touched by a synced PR.
 func (engine *Engine) OnPRSynced(ctx context.Context, repoID, repoPath string, files []string) {
 	if engine == nil || engine.updater == nil {
 		return
@@ -72,6 +77,7 @@ func (engine *Engine) OnPRSynced(ctx context.Context, repoID, repoPath string, f
 	}
 }
 
+// RestartInterrupted resumes enabled repositories left in indexing state.
 func (engine *Engine) RestartInterrupted(ctx context.Context, resolvePath func(repoID string) (string, bool)) error {
 	if engine == nil || engine.store == nil {
 		return errors.New("expertise engine is nil")
@@ -94,14 +100,17 @@ func (engine *Engine) RestartInterrupted(ctx context.Context, resolvePath func(r
 	return nil
 }
 
+// ShouldNudge reports whether an account has reviewed enough PRs to suggest expertise.
 func (engine *Engine) ShouldNudge(ctx context.Context, repoID string, account Account) (bool, error) {
 	return ShouldNudge(ctx, engine.store, repoID, account)
 }
 
+// GitAvailable reports whether the system git executable can index repositories.
 func (engine *Engine) GitAvailable() bool {
 	return engine != nil && engine.git != nil && engine.git.Available()
 }
 
+// GitUnavailableReason describes why git indexing is unavailable, if any.
 func (engine *Engine) GitUnavailableReason() string {
 	if engine == nil || engine.git == nil {
 		return "system git is unavailable"
@@ -112,6 +121,7 @@ func (engine *Engine) GitUnavailableReason() string {
 	return engine.git.UnavailableReason()
 }
 
+// TouchesYou reports whether the current identity ranks among the experts for any PR file.
 func (engine *Engine) TouchesYou(ctx context.Context, repoID string, prFiles []string, identity Identity, minLines int) (bool, error) {
 	if engine == nil || engine.store == nil {
 		return false, errors.New("expertise engine is nil")
@@ -128,6 +138,7 @@ func (engine *Engine) TouchesYou(ctx context.Context, repoID string, prFiles []s
 	return false, nil
 }
 
+// TouchesYouForPRs reports expertise matches for ready repositories' pull requests.
 func (engine *Engine) TouchesYouForPRs(ctx context.Context, prIDs []string) (map[string]bool, error) {
 	result := make(map[string]bool, len(prIDs))
 	for _, prID := range prIDs {
@@ -170,6 +181,7 @@ func (engine *Engine) TouchesYouForPRs(ctx context.Context, prIDs []string) (map
 	return result, nil
 }
 
+// Shutdown cancels and waits for repository indexing jobs to stop.
 func (engine *Engine) Shutdown() {
 	if engine == nil {
 		return
