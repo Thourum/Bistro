@@ -95,6 +95,18 @@ export function PRDetailPage() {
     appStore.setState((s) => ({ ...s, selectedPatchsetPair: null }));
   }, [selectedPrId]);
 
+  // Keep the file cursor when returning from this PR's diff; start at the
+  // first file for any other PR.
+  useEffect(() => {
+    if (selectedPrId === undefined) return;
+    if (appStore.state.selectedFilePrId === selectedPrId) return;
+    appStore.setState((s) => ({
+      ...s,
+      selectedFileIndex: 0,
+      selectedFilePrId: selectedPrId,
+    }));
+  }, [selectedPrId]);
+
   useEffect(() => {
     // Read state is local-only and silently drops when the WebSocket is down.
     void markPRsRead([prId]);

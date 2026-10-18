@@ -43,6 +43,8 @@ export type ConfirmingAction =
 export interface UIState {
   selectedPRIndex: number;
   selectedFileIndex: number;
+  /** PR whose file list `selectedFileIndex` points into; a different PR resets it. */
+  selectedFilePrId: string | null;
   searchQuery: string;
   isAuthenticated: boolean;
   showFileTree: boolean;
@@ -171,6 +173,7 @@ export interface UIState {
 export const initialUIState: UIState = {
   selectedPRIndex: 0,
   selectedFileIndex: 0,
+  selectedFilePrId: null,
   searchQuery: '',
   paneLayout: 'split',
   sortBy: 'updated',

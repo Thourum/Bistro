@@ -101,7 +101,12 @@ function requestPRPage(
     .andThen(parsePRList);
 }
 
-/** Walks engine pages until `has_more` is false so the list is never truncated. */
+/**
+ * Walks engine pages until `has_more` is false so the list is never truncated.
+ * A PR updated mid-walk shifts the offsets and can appear on two pages, so the
+ * result keeps one entry per id. Skipped PRs heal on the next fetch,
+ * since the update that moved them also bumps `prListRevision`.
+ */
 function requestAllPRPages(
   backendFilter: RequestPRListData['filter'],
   offset: number,
@@ -110,7 +115,11 @@ function requestAllPRPages(
   return requestPRPage(backendFilter, offset).andThen(
     (page): ResultAsync<PRListPage, Fault> => {
       const prs = [...collectedPRs, ...page.prs];
-      if (!page.has_more) return okAsync({ ...page, prs });
+      if (!page.has_more)
+        return okAsync({
+          ...page,
+          prs: [...new Map(prs.map((pr) => [pr.id, pr])).values()],
+        });
       return requestAllPRPages(backendFilter, offset + PR_LIST_PAGE_SIZE, prs);
     },
   );

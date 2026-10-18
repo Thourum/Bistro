@@ -138,7 +138,7 @@ function PRRow({
         aria-label={`Open PR #${pr.number} in ${pr.owner}/${pr.repo}`}
         className={[
           showRepo
-            ? 'grid grid-cols-[24px_minmax(0,max-content)_1fr_120px_100px]'
+            ? 'grid grid-cols-[24px_minmax(0,220px)_1fr_120px_100px]'
             : 'grid grid-cols-[24px_60px_1fr_120px_100px]',
           'items-center gap-4 py-3 px-4 w-full text-left',
           'cursor-crosshair transition-colors border-l-2',
