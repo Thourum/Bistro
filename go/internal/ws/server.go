@@ -11,9 +11,19 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+// clientSendBufferSize bounds the messages queued for one client. A client
+// whose buffer is full is not draining its socket, so it is dropped rather
+// than allowed to stall broadcasts for everyone else.
+const clientSendBufferSize = 256
+
+// clientWriteTimeout ends the writer of a client whose peer stopped reading.
+// Without it a full TCP send buffer blocks the writer goroutine forever.
+const clientWriteTimeout = 10 * time.Second
 
 // Server manages a WebSocket HTTP server and its lifecycle.
 type Server struct {
@@ -22,13 +32,67 @@ type Server struct {
 	mu         sync.Mutex
 	stopChan   chan struct{}
 	httpServer *http.Server
-	// conns maps each connection to its write mutex. gorilla/websocket
-	// allows only ONE concurrent writer per connection; the dispatch loop
-	// (responses) and Broadcast (async pushes: sync events, LLM tier) write
-	// from different goroutines, so every WriteMessage must hold the
-	// connection's mutex.
-	conns      map[*websocket.Conn]*sync.Mutex
+	conns      map[*websocket.Conn]*client
 	dispatcher *Dispatcher
+}
+
+// client is one WebSocket connection. Only its writePump goroutine writes to
+// conn, which satisfies gorilla/websocket's one-writer rule without a mutex.
+// Everything else enqueues onto send and never blocks.
+type client struct {
+	conn      *websocket.Conn
+	send      chan []byte
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func newClient(conn *websocket.Conn) *client {
+	return &client{
+		conn: conn,
+		send: make(chan []byte, clientSendBufferSize),
+		done: make(chan struct{}),
+	}
+}
+
+// enqueue queues msg for the writer without blocking. It reports false when
+// the buffer is full, meaning the client is not keeping up.
+func (c *client) enqueue(msg []byte) bool {
+	select {
+	case c.send <- msg:
+		return true
+	default:
+		return false
+	}
+}
+
+// close stops the writer and closes the socket. Safe to call repeatedly.
+// send is deliberately never closed, so a concurrent enqueue cannot panic.
+func (c *client) close() {
+	c.closeOnce.Do(func() {
+		close(c.done)
+		c.conn.Close() //nolint:errcheck
+	})
+}
+
+// writePump is the only goroutine that writes to conn. It exits, and closes
+// the client, on shutdown or on a failed or timed-out write.
+func (c *client) writePump(logger *slog.Logger, remoteAddr string) {
+	defer c.close()
+	for {
+		select {
+		case <-c.done:
+			return
+		case msg := <-c.send:
+			if err := c.conn.SetWriteDeadline(time.Now().Add(clientWriteTimeout)); err != nil {
+				logger.Warn("ws set write deadline failed", "remote_addr", remoteAddr, "error", err)
+				return
+			}
+			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				logger.Warn("ws write failed", "remote_addr", remoteAddr, "error", err)
+				return
+			}
+		}
+	}
 }
 
 // localOriginSchemes are the URL schemes a local Bistro renderer may present.
@@ -98,7 +162,7 @@ func NewServerWithLogger(logger *slog.Logger) *Server {
 			CheckOrigin: isLocalOrigin,
 		},
 		stopChan:   make(chan struct{}),
-		conns:      make(map[*websocket.Conn]*sync.Mutex),
+		conns:      make(map[*websocket.Conn]*client),
 		dispatcher: NewDispatcher(logger),
 	}
 }
@@ -115,18 +179,16 @@ func (s *Server) Broadcast(msg any) {
 		s.dispatcher.logger.Error("broadcast marshal failed", "error", err)
 		return
 	}
-	// Snapshot under s.mu, write under each connection's own write mutex —
-	// never hold s.mu across network writes, and never write a connection
-	// concurrently with its dispatch-loop response writer.
+	// Enqueueing never blocks, so holding s.mu here is safe. A client whose
+	// buffer is full is dropped so one stalled peer cannot delay the rest.
 	s.mu.Lock()
 	clientCount := len(s.conns)
-	type connWriter struct {
-		conn *websocket.Conn
-		wmu  *sync.Mutex
-	}
-	writers := make([]connWriter, 0, clientCount)
-	for conn, wmu := range s.conns {
-		writers = append(writers, connWriter{conn, wmu})
+	var dropped int
+	for conn, c := range s.conns {
+		if !c.enqueue(data) {
+			dropped++
+			s.deregisterConn(conn)
+		}
 	}
 	s.mu.Unlock()
 
@@ -135,23 +197,10 @@ func (s *Server) Broadcast(msg any) {
 		"clients", clientCount,
 		"payload_bytes", len(data),
 	)
-	var writeErrs int
-	for _, w := range writers {
-		w.wmu.Lock()
-		err := w.conn.WriteMessage(websocket.TextMessage, data)
-		w.wmu.Unlock()
-		if err != nil {
-			writeErrs++
-			s.dispatcher.logger.Warn("broadcast write failed",
-				"error", err,
-				"remote_addr", w.conn.RemoteAddr().String(),
-			)
-		}
-	}
-	if writeErrs > 0 {
-		s.dispatcher.logger.Error("broadcast had write errors",
+	if dropped > 0 {
+		s.dispatcher.logger.Warn("broadcast dropped slow clients",
 			"clients", clientCount,
-			"failed", writeErrs,
+			"dropped", dropped,
 		)
 	}
 }
@@ -210,9 +259,10 @@ func (s *Server) Stop() error {
 		close(s.stopChan)
 	}
 
-	// Close every tracked connection so goroutines blocked on ReadJSON unblock.
-	for conn := range s.conns {
-		conn.Close()
+	// Close every tracked client so writers exit and readers blocked on
+	// ReadMessage unblock.
+	for _, c := range s.conns {
+		c.close()
 	}
 
 	if s.httpServer != nil {
@@ -221,17 +271,23 @@ func (s *Server) Stop() error {
 	return nil
 }
 
-// registerConn adds conn to the tracked set and returns its write mutex.
+// registerConn adds conn to the tracked set and returns its client.
 // Must be called with s.mu held.
-func (s *Server) registerConn(conn *websocket.Conn) *sync.Mutex {
-	wmu := &sync.Mutex{}
-	s.conns[conn] = wmu
-	return wmu
+func (s *Server) registerConn(conn *websocket.Conn) *client {
+	c := newClient(conn)
+	s.conns[conn] = c
+	return c
 }
 
-// deregisterConn removes conn from the tracked set. Must be called with s.mu held.
+// deregisterConn removes conn from the tracked set and closes it. Must be
+// called with s.mu held; it is a no-op for connections already removed.
 func (s *Server) deregisterConn(conn *websocket.Conn) {
+	c, ok := s.conns[conn]
+	if !ok {
+		return
+	}
 	delete(s.conns, conn)
+	c.close()
 }
 
 // handleWebSocket upgrades an HTTP connection to WebSocket and keeps it open
@@ -253,9 +309,10 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	)
 
 	s.mu.Lock()
-	wmu := s.registerConn(conn)
+	c := s.registerConn(conn)
 	clientCount := len(s.conns)
 	s.mu.Unlock()
+	go c.writePump(s.dispatcher.logger, remoteAddr)
 	s.dispatcher.logger.Debug("ws client registered",
 		"remote_addr", remoteAddr,
 		"total_clients", clientCount,
@@ -266,7 +323,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.deregisterConn(conn)
 		remaining := len(s.conns)
 		s.mu.Unlock()
-		conn.Close()
 		s.dispatcher.logger.Info("ws disconnect",
 			"remote_addr", remoteAddr,
 			"total_clients", remaining,
@@ -307,13 +363,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 					)
 					continue
 				}
-				wmu.Lock()
-				writeErr := conn.WriteMessage(websocket.TextMessage, responseBytes)
-				wmu.Unlock()
-				if writeErr != nil {
-					s.dispatcher.logger.Warn("ws write failed",
+				if !c.enqueue(responseBytes) {
+					s.dispatcher.logger.Warn("ws client not draining responses, dropping",
 						"remote_addr", remoteAddr,
-						"error", writeErr,
 					)
 					return
 				}

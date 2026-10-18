@@ -7,6 +7,10 @@ import { laneForPR } from '../utils/lanes';
 import { useStore } from './useStore';
 import { useWebSocketPRList } from './useWebSocketPRList';
 
+// A fresh `[]` default per render would change `prs` identity every render,
+// which re-fires the page's layout effect and loops the store update forever.
+const EMPTY_PRS: PR[] = [];
+
 /**
  * Optional overrides that let callers feed filter/sort/q/repoFilter from route
  * search params instead of the store. Any omitted field falls back
@@ -69,7 +73,8 @@ export function useVisiblePRs(
       ? (overrides.repoFilter ?? null)
       : storeRepoFilter;
 
-  const { data: rawPRs = [], isLoading, error } = useWebSocketPRList(filter);
+  const { data, isLoading, error } = useWebSocketPRList(filter);
+  const rawPRs = data ?? EMPTY_PRS;
 
   const prs = useMemo(() => {
     let result: PR[] = rawPRs;

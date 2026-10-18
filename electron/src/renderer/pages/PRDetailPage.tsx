@@ -54,6 +54,10 @@ export function PRDetailPage() {
     appStore,
     (s: UIState) => s.commentsRevision,
   );
+  const selectedFileIndex = useStore(
+    appStore,
+    (s: UIState) => s.selectedFileIndex,
+  );
   const pendingAction = useStore(appStore, (s: UIState) => s.pendingAction);
   const actionResult = useStore(appStore, (s: UIState) => s.actionResult);
   const filterState = useStore(appStore, (s: UIState) => s.filterState);
@@ -91,6 +95,18 @@ export function PRDetailPage() {
     appStore.setState((s) => ({ ...s, selectedPatchsetPair: null }));
   }, [selectedPrId]);
 
+  // Keep the file cursor when returning from this PR's diff; start at the
+  // first file for any other PR.
+  useEffect(() => {
+    if (selectedPrId === undefined) return;
+    if (appStore.state.selectedFilePrId === selectedPrId) return;
+    appStore.setState((s) => ({
+      ...s,
+      selectedFileIndex: 0,
+      selectedFilePrId: selectedPrId,
+    }));
+  }, [selectedPrId]);
+
   useEffect(() => {
     // Read state is local-only and silently drops when the WebSocket is down.
     void markPRsRead([prId]);
@@ -107,6 +123,13 @@ export function PRDetailPage() {
     isAwaitingHydration,
     commentsRevision,
   );
+
+  // n/p and Space read the file list from the store, so publish this page's
+  // file paths there (the diff route replaces them with its parsed keys).
+  useEffect(() => {
+    const fileKeys = files.map((file) => file.path);
+    appStore.setState((s) => ({ ...s, diffFileKeys: fileKeys }));
+  }, [files]);
 
   // d n / d b / u bulk-dismiss keystrokes act on the loaded comment list.
   useDismissals(pr?.id, comments);
@@ -160,7 +183,10 @@ export function PRDetailPage() {
         <MergeReadinessBadge prId={pr.id} />
       </FooterCenterSlot>
 
-      <article className="w-[90%] overflow-y-auto p-12 lg:p-16 flex flex-col space-y-12 bg-surface">
+      <article
+        data-diff-viewport
+        className="w-[90%] overflow-y-auto p-12 lg:p-16 flex flex-col space-y-12 bg-surface"
+      >
         <Header pr={pr} stats={stats} />
         <Description pr={pr} />
 
@@ -208,6 +234,7 @@ export function PRDetailPage() {
         {files.length > 0 && (
           <FileList
             files={files}
+            selectedIndex={selectedFileIndex}
             expertiseFiles={expertise?.files ?? []}
             expertiseError={
               expertiseStatus?.status === 'error'

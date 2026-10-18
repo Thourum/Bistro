@@ -378,17 +378,27 @@ interface FileListProps {
   files: Array<{ path: string; additions: number; deletions: number }>;
   expertiseFiles: ExpertiseFileData[];
   expertiseError: string | null;
+  /** Index of the file that n/p keybindings select. */
+  selectedIndex: number;
 }
 
 export function FileList({
   files,
   expertiseFiles,
   expertiseError,
+  selectedIndex,
 }: FileListProps): React.ReactElement {
   const expertiseByPath = useMemo(
     () => new Map(expertiseFiles.map((file) => [file.file_path, file])),
     [expertiseFiles],
   );
+  const rowsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    rowsRef.current?.children[selectedIndex]?.scrollIntoView({
+      block: 'nearest',
+    });
+  }, [selectedIndex]);
 
   return (
     <section className="space-y-4">
@@ -405,13 +415,19 @@ export function FileList({
           Expertise unavailable: {expertiseError}
         </p>
       )}
-      <div className="space-y-1">
-        {files.map((f) => {
+      <div ref={rowsRef} className="space-y-1">
+        {files.map((f, index) => {
           const expertise = expertiseByPath.get(f.path);
+          const isSelected = index === selectedIndex;
           return (
             <div
               key={f.path}
-              className="border-l-2 border-transparent hover:border-primary hover:bg-surface-container-low transition-colors duration-150"
+              data-selected={isSelected ? '' : undefined}
+              className={`border-l-2 hover:border-primary hover:bg-surface-container-low transition-colors duration-150 ${
+                isSelected
+                  ? 'border-primary bg-surface-container-low'
+                  : 'border-transparent'
+              }`}
             >
               <div className="grid grid-cols-[1fr_auto_auto] gap-4 items-center py-2 px-3 cursor-crosshair font-mono text-xs">
                 <span className="truncate text-on-surface">{f.path}</span>

@@ -246,19 +246,16 @@ func (o *Orchestrator) fetchCI(ctx context.Context, result *PRFetchResult, log *
 func (o *Orchestrator) fetchDiff(ctx context.Context, result *PRFetchResult, log *slog.Logger) error {
 	pr := result.PR
 	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", pr.Owner, pr.Repo)
-	started := time.Now()
-	clone, err := o.git.CloneForPR(ctx, cloneURL, pr.BaseSHA, pr.HeadSHA, diffCloneOptions(pr))
+	// The diff and anchor reads must happen while the repo lock is held: another
+	// PR's clone of the same repo replaces the shared cache directory.
+	err := o.git.WithPRClone(ctx, cloneURL, pr.BaseSHA, pr.HeadSHA, diffCloneOptions(pr),
+		func(clone *git.CloneResult) error {
+			return o.generateDiff(ctx, result, clone, log)
+		})
 	if err != nil {
-		return fmt.Errorf("diff clone: %w", err)
+		return fmt.Errorf("diff: %w", err)
 	}
-	cloneDuration := time.Since(started).Milliseconds()
-	if cloneDuration >= slowSubstepThresholdMs {
-		log.Warn("repo clone slow", "duration_ms", cloneDuration)
-	} else {
-		log.Debug("repo cloned", "local_path", clone.LocalPath, "duration_ms", cloneDuration)
-	}
-	// The git client owns the clone directory and reuses it across sync cycles.
-	return o.generateDiff(ctx, result, clone, log)
+	return nil
 }
 
 func (o *Orchestrator) generateDiff(ctx context.Context, result *PRFetchResult, clone *git.CloneResult, log *slog.Logger) error {

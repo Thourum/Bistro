@@ -1,3 +1,4 @@
+import { detectPlatform } from '@tanstack/react-hotkeys';
 import type React from 'react';
 import { useStore } from '../hooks/useStore';
 import { useOverlays } from '../overlays/OverlayContext';
@@ -99,12 +100,16 @@ function buildSections(
   bindings: KeyBinding[],
   sourceRoute: RouteBase,
 ): ShortcutSection[] {
+  // Cmd+Q is the macOS quit key; Alt+F4 is the Windows/Linux one.
+  const platformQuitId =
+    detectPlatform() === 'mac' ? 'global.quit.win' : 'global.quit.mac';
   // Only show route-active bindings usable from where the user opened the
   // overlay. Skip bindings that are exclusively overlay-only (they have
   // overlays but no routes) — these are for the filter/command menus.
   const visible = bindings.filter(
     (b) =>
       b.hidden !== true &&
+      b.actionId !== platformQuitId &&
       // Overlay-only bindings (have overlays but no routes) are excluded.
       !(
         b.activation.overlays !== undefined && b.activation.routes === undefined
@@ -155,12 +160,13 @@ export function HelpOverlay(): React.ReactElement | null {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh]">
+      {/* Grid rows: header takes its height, body gets the rest and scrolls. */}
+      <DialogContent className="max-w-2xl max-h-[80vh] grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
         <DialogHeader>
           <DialogTitle>Keyboard Shortcuts</DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="h-full pr-4">
+        <ScrollArea className="min-h-0 overflow-y-auto pr-4">
           <div className="space-y-6">
             {sections.map((section) => (
               <section key={section.title}>

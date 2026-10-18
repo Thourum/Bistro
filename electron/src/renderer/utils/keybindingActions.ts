@@ -203,10 +203,11 @@ function selectDiffFile(context: KeyActionContext, delta: 1 | -1): void {
 
 function viewDiff(context: KeyActionContext): void {
   if (context.prId === undefined) return;
+  const { diffFileKeys, selectedFileIndex } = context.store.state;
   void router.navigate({
     to: '/prs/$prId/diff',
     params: { prId: context.prId },
-    search: { file: '', side: 'right' },
+    search: { file: diffFileKeys[selectedFileIndex] ?? '', side: 'right' },
   });
 }
 

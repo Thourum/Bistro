@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -168,6 +169,28 @@ func TestDiffStore_GetUnifiedDiff(t *testing.T) {
 		if !containsString(unified, want) {
 			t.Errorf("expected unified diff to contain %q\ngot:\n%s", want, unified)
 		}
+	}
+}
+
+func TestDiffStore_GetUnifiedDiff_PatchWithOwnHeaderNotDuplicated(t *testing.T) {
+	db := setupTestDB(t)
+	seedPR(t, db, "pr-header")
+	store := NewDiffStore(db.DB)
+
+	if err := store.SaveDiffs("pr-header", []DiffFile{{
+		FilePath: "main.go",
+		Patch:    "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1 +1 @@\n-old\n+new\n",
+	}}); err != nil {
+		t.Fatalf("SaveDiffs: %v", err)
+	}
+
+	unified, err := store.GetUnifiedDiff("pr-header")
+	if err != nil {
+		t.Fatalf("GetUnifiedDiff: %v", err)
+	}
+
+	if got := strings.Count(unified, "diff --git "); got != 1 {
+		t.Errorf("expected exactly one diff --git header, got %d\ngot:\n%s", got, unified)
 	}
 }
 

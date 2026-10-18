@@ -207,35 +207,48 @@ func (c *Client) resolveLocal(ctx context.Context, repoURL, baseSHA, headSHA str
 }
 
 func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, error) {
+	var result *CloneResult
+	err := c.WithPRClone(ctx, repoURL, baseSHA, headSHA, opts, func(clone *CloneResult) error {
+		result = clone
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// WithPRClone resolves the repo clone for the SHAs and passes it to use while
+// still holding the repo's exclusive lock. Clones replace the shared cache
+// directory, so anything that reads it (diffs, anchor lookups) must run inside
+// use, not after WithPRClone returns.
+func (c *Client) WithPRClone(ctx context.Context, repoURL, baseSHA, headSHA string, opts *CloneOptions, use func(*CloneResult) error) error {
 	log := logging.FromContext(ctx).With(
 		"repo_url", repoURL,
 		"base_sha", truncateSHAForLog(baseSHA),
 		"head_sha", truncateSHAForLog(headSHA),
 	)
 	if repoURL == "" {
-		return nil, errors.New("repository URL cannot be empty")
+		return errors.New("repository URL cannot be empty")
 	}
 	if baseSHA == "" {
-		return nil, errors.New("baseSHA cannot be empty")
+		return errors.New("baseSHA cannot be empty")
 	}
 	if headSHA == "" {
-		return nil, errors.New("headSHA cannot be empty")
+		return errors.New("headSHA cannot be empty")
 	}
 
-	var result *CloneResult
 	operation := func() error {
-		var err error
-		result, err = c.cloneWithOptionsLocked(ctx, log, repoURL, baseSHA, headSHA, opts)
-		return err
+		clone, err := c.cloneWithOptionsLocked(ctx, log, repoURL, baseSHA, headSHA, opts)
+		if err != nil {
+			return err
+		}
+		return use(clone)
 	}
 	if c.locks == nil {
-		err := operation()
-		return result, err
+		return operation()
 	}
-	if err := c.locks.WithRepo(repoLockKey(repoURL), operation); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return c.locks.WithRepo(repoLockKey(repoURL), operation)
 }
 
 func repoLockKey(repoURL string) string {
@@ -268,6 +281,10 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 				HeadSHA:   cached.HeadSHA,
 			}, nil
 		}
+	}
+
+	if result, ok := c.reuseOnDiskClone(log, repoURL, baseSHA, headSHA, opts); ok {
+		return result, nil
 	}
 
 	// Targeted shallow fetch: only attempted when caller supplied a PR number
@@ -369,6 +386,41 @@ func (c *Client) broadClone(ctx context.Context, log *slog.Logger, repoURL, base
 		"local_path", tmpDir,
 	)
 	return result, nil
+}
+
+// reuseOnDiskClone adopts the repo's shared cache directory when it already
+// holds every required commit. Every PR of a repo shares that directory, so a
+// PR whose commits an earlier clone already fetched must not trigger a re-clone.
+// Temp-dir clones are never reused because they are not shared.
+func (c *Client) reuseOnDiskClone(
+	log *slog.Logger,
+	repoURL string,
+	baseSHA string,
+	headSHA string,
+	opts *CloneOptions,
+) (*CloneResult, bool) {
+	if needsFreshTempDir(repoURL) {
+		return nil, false
+	}
+	repoDir, err := repoCacheDir(repoURL)
+	if err != nil || !localRepoExists(repoDir) {
+		return nil, false
+	}
+	missing, err := firstMissingCommit(repoDir, requiredSHAs(baseSHA, headSHA, opts))
+	if err != nil || missing != "" {
+		return nil, false
+	}
+
+	log.Debug("git clone reusing on-disk repo (commits verified)", "local_path", repoDir)
+	c.cache.Set(repoURL, baseSHA, headSHA, &RepoEntry{
+		URL:       repoURL,
+		LocalPath: repoDir,
+		BaseSHA:   baseSHA,
+		HeadSHA:   headSHA,
+		FetchedAt: time.Now(),
+	})
+	c.recordCacheCloned(repoURL, repoDir)
+	return &CloneResult{LocalPath: repoDir, BaseSHA: baseSHA, HeadSHA: headSHA}, true
 }
 
 func (c *Client) validateCacheHit(
