@@ -16,7 +16,7 @@ where noted:
 - **Apache-2.0**: compatible with GPLv3 (FSF list). Includes `@pierre/diffs` and `@pierre/theming`.
 - **MPL-2.0** (`lightningcss`, `lightningcss-darwin-arm64`, `dompurify` as an OR choice with Apache-2.0): file-level weak copyleft; compatible with GPLv3 via MPL 2.0 section 3.3 (secondary license).
 - **OFL-1.1** (`@fontsource/*` font files bundled into the renderer): **needs human review.** The OFL is a separate font license that the FSF does not consider GPL-compatible. The fonts are bundled as separate works, not linked into Bistro code, so this is aggregation, not a combined work. The alternative is to drop or replace the fonts before a non-alpha release.
-- **Electron** (MIT) bundles Chromium and Node.js, which are permissive (BSD/MIT-style) licensed.
+- **Electron** itself is MIT. The Chromium and Node.js it bundles carry their own (mostly BSD/MIT-style) licenses. Electron's license is in `Bistro.app/Contents/Resources/LICENSE`, and the Chromium and Node.js notices are in `Bistro.app/Contents/Resources/LICENSES.chromium.html`. Both ship in the DMG and ZIP.
 
 No GPL-incompatible *code* dependency (proprietary, SSPL, BUSL, CC-BY-NC, etc.) was found.
 
