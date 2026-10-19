@@ -1,6 +1,7 @@
 {
   "name": "bistro-electron",
-  "version": "0.1.0",
+  "productName": "Bistro",
+  "version": "0.1.0-alpha.1",
   "private": true,
   "repository": {
     "type": "git",
@@ -11,8 +12,9 @@
     "start": "pnpm exec electron-forge start",
     "start:debug": "pnpm exec electron-forge start --inspect-electron",
     "build": "cd ../go && go build -o bistro-sync ./cmd/bistro-sync",
+    "build:engine": "node --env-file-if-exists=.env.local scripts/build-engine.mjs",
     "package": "pnpm run build && pnpm exec electron-forge package",
-    "release:macos": "pnpm run build && pnpm exec electron-forge make --platform=darwin",
+    "release:macos": "pnpm run build:engine && pnpm exec electron-forge make --platform=darwin --arch=arm64",
     "release:win": "pnpm run build && pnpm exec electron-forge make --platform=win32 --targets=@electron-forge/maker-zip",
     "publish:github": "pnpm run build && pnpm exec electron-forge publish",
     "dev:web": "pnpm exec vite --config vite.renderer.config.ts",
@@ -83,7 +85,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "^4.1.9",
-    "electron": "42.0.0-alpha.5",
+    "electron": "44.9.0",
     "jsdom": "^29.1.1",
     "knip": "^6.26.0",
     "typescript": "^6.0.3",

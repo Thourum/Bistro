@@ -4,6 +4,8 @@ node_modules/
 # Build output
 dist/
 build/
+# Electron macOS packaging config (entitlements) lives in electron/build/ and must be tracked
+!electron/build/
 
 # IDE
 .idea/*
