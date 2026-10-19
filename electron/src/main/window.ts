@@ -45,6 +45,19 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
+  // A missing renderer bundle otherwise shows only a white window.
+  mainWindow.webContents.on('did-finish-load', () => {
+    logger.info('Renderer loaded');
+  });
+  mainWindow.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedURL) => {
+      logger.error(
+        `Renderer failed to load ${validatedURL}: ${errorDescription} (${errorCode})`,
+      );
+    },
+  );
+
   mainWindow.webContents.on('before-input-event', (event, input) => {
     const key = input.key.toLowerCase();
     const isMacQuit =

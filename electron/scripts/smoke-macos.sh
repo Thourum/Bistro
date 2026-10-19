@@ -104,8 +104,8 @@ PORT="$(node -e "const net = require('node:net'); const s = net.createServer().l
 log "launching $APP_BIN on WS_PORT=$PORT"
 # main.log is appended across launches; only lines after this offset count.
 LOG_START_LINE="$(wc -l <"$ELECTRON_LOG" 2>/dev/null || echo 0)"
-window_created() {
-  tail -n "+$((LOG_START_LINE + 1))" "$ELECTRON_LOG" 2>/dev/null | grep -q "Main window created"
+renderer_loaded() {
+  tail -n "+$((LOG_START_LINE + 1))" "$ELECTRON_LOG" 2>/dev/null | grep -q "Renderer loaded"
 }
 
 # env -i keeps ELECTRON_RUN_AS_NODE (set by some parent shells) out of the app.
@@ -115,12 +115,12 @@ APP_PID=$!
 deadline=$((SECONDS + READY_TIMEOUT_SECONDS))
 while (( SECONDS < deadline )); do
   kill -0 "$APP_PID" 2>/dev/null || fail "Bistro exited before the engine became ready"
-  if pgrep -P "$APP_PID" -f "$ENGINE_BIN" >/dev/null && ws_upgrade_ok && window_created; then
-    log "engine child running, ws://127.0.0.1:$PORT/ws accepted the upgrade, main window created"
+  if pgrep -P "$APP_PID" -f "$ENGINE_BIN" >/dev/null && ws_upgrade_ok && renderer_loaded; then
+    log "engine child running, ws://127.0.0.1:$PORT/ws accepted the upgrade, renderer loaded"
     log "PASS"
     exit 0
   fi
   sleep 1
 done
 
-fail "engine, ws://127.0.0.1:$PORT/ws, or main window not ready after ${READY_TIMEOUT_SECONDS}s"
+fail "engine, ws://127.0.0.1:$PORT/ws, or renderer not loaded after ${READY_TIMEOUT_SECONDS}s"
