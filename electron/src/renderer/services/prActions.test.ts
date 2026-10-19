@@ -17,15 +17,18 @@ describe('PR actions', () => {
   it.each([
     ['approve', () => approvePR('pr-1')],
     ['request_changes', () => requestChanges('pr-1', 'Please revise')],
-  ] as const)('clears pending %s when the WebSocket cannot send', (type, dispatch) => {
-    dispatch();
+  ] as const)(
+    'clears pending %s when the WebSocket cannot send',
+    (type, dispatch) => {
+      dispatch();
 
-    expect(appStore.state.pendingAction).toBeNull();
-    expect(appStore.state.actionResult).toMatchObject({
-      type,
-      prId: 'pr-1',
-      success: false,
-      message: 'WebSocket not connected',
-    });
-  });
+      expect(appStore.state.pendingAction).toBeNull();
+      expect(appStore.state.actionResult).toMatchObject({
+        type,
+        prId: 'pr-1',
+        success: false,
+        message: 'WebSocket not connected',
+      });
+    },
+  );
 });

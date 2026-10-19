@@ -23,7 +23,6 @@ type MockLogger = Pick<Logger, 'info' | 'warn' | 'error'>;
 type MockProcess = ResultPromise & {
   stdout: PassThrough;
   stderr: PassThrough;
-  killed: boolean;
   kill: ReturnType<typeof vi.fn>;
   resolveExit: (exitCode?: number, signal?: string) => void;
   rejectExit: (error: Error & { exitCode?: number; signal?: string }) => void;
@@ -53,15 +52,15 @@ const createMockProcess = (): MockProcess => {
     },
   );
 
+  // execa 10 exposes Node's ChildProcess events/state via nodeChildProcess.
+  const nodeChildProcess = Object.assign(emitter, { killed: false });
   const processPromise = Object.assign(exitPromise, {
     stdout,
     stderr,
-    killed: false,
-    on: emitter.on.bind(emitter),
-    once: emitter.once.bind(emitter),
+    nodeChildProcess,
     emit: emitter.emit.bind(emitter),
-    kill: vi.fn(function kill(this: MockProcess, signal?: string) {
-      this.killed = true;
+    kill: vi.fn(function kill(signal?: string) {
+      nodeChildProcess.killed = true;
       resolveExit(createExitResult(undefined, signal));
       return true;
     }),

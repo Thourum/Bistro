@@ -1,4 +1,3 @@
-import { createRequire } from 'node:module';
 import {
   err,
   errAsync,
@@ -12,20 +11,10 @@ import {
 } from '@thourum/fault';
 import type { Logger } from 'electron-log';
 import { execa, type ResultPromise } from 'execa';
+import waitOn from 'wait-on';
 import { z } from 'zod';
 import type { GoProcessConfig } from './types';
 
-const require = createRequire(__filename);
-
-type WaitOnOptions = {
-  resources: string[];
-  timeout: number;
-  interval?: number;
-  tcpTimeout?: number;
-  window?: number;
-};
-
-const waitOn = require('wait-on') as (options: WaitOnOptions) => Promise<void>;
 const MAX_WS_PORT = 65535;
 const readyLineSchema = z.object({
   event: z.literal('ready'),
@@ -410,11 +399,11 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
     }),
   );
 
-  spawnedProcess.once('spawn', () => {
+  spawnedProcess.nodeChildProcess.once('spawn', () => {
     logger.info('Go process spawned');
   });
 
-  spawnedProcess.once('error', (error: Error) => {
+  spawnedProcess.nodeChildProcess.once('error', (error: Error) => {
     logger.error(`Go process error: ${error.message}`);
     readyWaiter.markFailed(
       ServiceError(
@@ -435,11 +424,11 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
 }
 
 export function isGoProcessRunning(): boolean {
-  return goProcess !== null && !goProcess.killed;
+  return goProcess !== null && !goProcess.nodeChildProcess.killed;
 }
 
 export function killGoProcess(): void {
-  if (goProcess && !goProcess.killed) {
+  if (goProcess && !goProcess.nodeChildProcess.killed) {
     const processToStop = goProcess;
     goProcess = null;
     processToStop.kill('SIGTERM');

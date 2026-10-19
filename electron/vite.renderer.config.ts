@@ -7,6 +7,13 @@ import { version } from './package.json';
 export default defineConfig({
   root: resolve(__dirname, 'src/renderer'),
   base: './',
+  // Forge 8 passes a relative outDir, which Vite resolves against `root`
+  // (src/renderer) and the packaged asar then lacks the renderer. Pin it to
+  // the path main/window.ts loads.
+  build: {
+    outDir: resolve(__dirname, '.vite/renderer/main_window'),
+    emptyOutDir: true,
+  },
   plugins: [react(), tailwindcss()],
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(version),

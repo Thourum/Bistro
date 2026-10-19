@@ -17,6 +17,11 @@ import (
 	"github.com/itterno/bistro/internal/server"
 )
 
+// embeddedGitHubClientID is set at build time with
+// -ldflags "-X main.embeddedGitHubClientID=...". The OAuth client ID is public,
+// so it can ship in the binary. The client secret must not be embedded.
+var embeddedGitHubClientID string
+
 func main() {
 	wsPort := flag.Int("ws-port", 8080, "WebSocket server port (0 = random available port, reported via ready signal on stdout)")
 	dbPath := flag.String("db-path", "./data/sync.db", "SQLite database path")
@@ -96,16 +101,20 @@ func main() {
 	}
 	app.SetRulesDir(resolvedRulesDir)
 
-	// Read GitHub OAuth credentials from environment.
+	// The OAuth client ID is per-app: env overrides the build-time value.
 	clientID := os.Getenv("GITHUB_CLIENT_ID")
 	if clientID == "" {
-		log.Warn("GITHUB_CLIENT_ID not set — OAuth will fail until configured")
+		clientID = embeddedGitHubClientID
+	}
+	if clientID == "" {
+		log.Warn("GitHub OAuth client ID not configured — OAuth will fail until configured")
 	}
 	app.SetGitHubClientID(clientID)
 
+	// Packaged builds have no secret: sign-in then exchanges the code through get-bistro.com.
 	clientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
 	if clientSecret == "" {
-		log.Warn("GITHUB_CLIENT_SECRET not set — OAuth will fail until configured")
+		log.Info("GITHUB_CLIENT_SECRET not set — OAuth code exchange goes through get-bistro.com")
 	}
 	app.SetGitHubClientSecret(clientSecret)
 

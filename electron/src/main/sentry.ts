@@ -65,7 +65,6 @@ export function configureSentryConsent(enabled: boolean): boolean {
       process.env.SENTRY_ENVIRONMENT ??
       process.env.VITE_SENTRY_ENVIRONMENT ??
       (app.isPackaged ? 'production' : 'development'),
-    sendDefaultPii: false,
     attachScreenshot: false,
     tracesSampleRate: 0,
     denyUrls: [/^file:\/\//i],

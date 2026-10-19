@@ -12,3 +12,6 @@ allowBuilds:
   vue-demi: false
 
 blockExoticSubdeps: false
+
+# Only install versions published at least 7 days ago (minutes).
+minimumReleaseAge: 10080

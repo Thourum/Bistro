@@ -4,7 +4,7 @@
 
 **Bistro** is the keyboard-first code review client for the AI-PR era: a local-first desktop GitHub PR review app. Review PRs at the speed of thought — no browser, no mouse.
 
-There is no server. Everything runs locally. SQLite is a local cache, not a shared database.
+There is no server. Everything runs locally. SQLite is a local cache, not a shared database. The one remote call besides GitHub is the OAuth code exchange: when no `GITHUB_CLIENT_SECRET` is configured (packaged builds), the engine posts the code to `https://get-bistro.com/api/oauth/token`, which holds the secret.
 
 Authoritative references (read when relevant, don't duplicate here):
 
@@ -31,7 +31,7 @@ Where things live: Go engine in `go/` (entry `go/cmd/bistro-sync/`, packages und
 
 - **Go 1.26** — go-git, go-github, gorilla/websocket, mattn/go-sqlite3, go-keyring, x/oauth2.
 - **Electron + Electron Forge + Vite** — React 19, TypeScript, TanStack (React Query / Hotkeys / Virtual / Store), Radix UI, Tailwind, Biome (lint+format), Vitest (test).
-- **Package manager: pnpm** for the Electron app. Run pnpm commands from `electron/`; the lockfile is the repo-root `pnpm-lock.yaml` (workspace defined in `pnpm-workspace.yaml`, covering `electron/` and `website/`). Versions live in `go/go.mod` and `electron/package.json` — check there, don't assume.
+- **Package manager: pnpm** for the Electron app. Run pnpm commands from `electron/`; the lockfile is the repo-root `pnpm-lock.yaml` (workspace defined in `pnpm-workspace.yaml`, covering `electron/` and `website/`). `minimumReleaseAge` in `pnpm-workspace.yaml` blocks package versions younger than 7 days, so a just-published release won't resolve yet. Versions live in `go/go.mod` and `electron/package.json` — check there, don't assume.
 
 ## Conventions
 
@@ -183,3 +183,15 @@ If search returns 0 results, proceed as a fresh session.
 | `ctx purge` | Call `ctx_purge` MCP tool with confirm: true. Warns before wiping knowledge base. |
 
 After /clear or /compact: knowledge base and session stats preserved. Use `ctx purge` to start fresh.
+
+## Release
+
+Alpha install and release details: `docs/ALPHA.md`. Commands, run from `electron/`:
+
+```bash
+pnpm run release:macos                      # engine build + Forge make (DMG/ZIP)
+scripts/smoke-macos.sh out/Bistro-darwin-arm64/Bistro.app   # launch and check the engine's /ws
+pnpm run release:win                        # Windows ZIP; run on Windows (the CGO engine builds for the host only)
+```
+
+Tagging `vX.Y.Z` (matching `electron/package.json`) runs `.github/workflows/release.yml`: security gates, then build, smoke, and a draft pre-release. Signing runs only when the `MACOS_*` / `APPLE_*` secrets exist.

@@ -256,7 +256,7 @@ Orchestrates the full sync cycle (list PRs, fetch details concurrently, write to
 Handles approve/request-changes/post-comment actions through a `Handler` interface pattern with exponential backoff retry.
 
 ### `internal/auth` -- OAuth Flow
-`BuildAuthURL` constructs the authorization URL; `CallbackServer` is a temporary localhost HTTP server that receives the redirect, exchanges the code for a token, and validates scopes.
+`BuildAuthURL` constructs the authorization URL; `CallbackServer` is a temporary localhost HTTP server that receives the redirect, exchanges the code for a token, and validates scopes. `ExchangeToken` has two paths: with a client secret (dev builds) it form-posts to GitHub's token URL; without one (packaged builds) it posts JSON `{code, redirect_uri}` to `https://get-bistro.com/api/oauth/token`, which holds the secret.
 
 ### `internal/events` -- Event System
 Simple pub/sub `EventEmitter` with buffered channels. Used by both sync and actions packages.

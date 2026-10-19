@@ -762,7 +762,7 @@ A focused phase on quality, docs, distribution.
 
 ### 7.2 Distribution
 
-- macOS DMG (signed + notarised). *(2026-07-11: ZIP + DMG makers + GitHub publisher exist in `forge.config.ts`; signing/notarization config missing)*
+- macOS DMG (signed + notarised). *(2026-10-19: ZIP + DMG makers and the release workflow `.github/workflows/release.yml` exist; the workflow signs and notarizes only when the `MACOS_*` / `APPLE_*` secrets are set, otherwise the alpha is unsigned. Alpha install steps: `docs/ALPHA.md`.)*
 - Windows MSI (signed). *(not started)*
 - Linux AppImage and `.deb`. *(not started)*
 - Auto-update via the standard Electron updater. *(code exists in `main/updater.ts` via `update-electron-app`, env-gated / disabled by default)*
@@ -805,7 +805,7 @@ To keep the line clean, these are *not* in the FOSS scope:
 
 ## Open questions to resolve before v1.0
 
-1. **`@pierre/diffs` license.** Verify before public release.
+1. ~~**`@pierre/diffs` license.**~~ **Resolved (2026-10-19):** `@pierre/diffs` and `@pierre/theming` are Apache-2.0, which is GPLv3-compatible. Electron and its bundled deps are permissive. Bundled `@fontsource/*` fonts are OFL-1.1, which needs human review before a non-alpha release (see `THIRD_PARTY_NOTICES.md`).
 2. ~~**Bot list update mechanism.**~~ **Resolved (2026-06-19):** bundled via `go:embed`,
    distributed through the app's normal auto-update — no runtime fetch, no network
    dependency. Built-ins seed to `~/.config/bistro/rules/` on first launch and are
@@ -825,8 +825,9 @@ To keep the line clean, these are *not* in the FOSS scope:
 Everything left between here and FOSS v1.0, in rough dependency order. Done work is omitted — see the phase sections above.
 
 **Blockers (release-gating)**
-- [ ] `@pierre/diffs` license review (open question #1 — the last unresolved one besides infra)
-- [ ] macOS signing + notarization; decide auto-update hosting (open question #5)
+- [x] `@pierre/diffs` license review (open question #1). OFL-1.1 font review still open in `THIRD_PARTY_NOTICES.md`
+- [ ] Security gates pass: `govulncheck` and `pnpm audit --prod` currently fail (reachable Go vulns in `go/`; 1 critical in `electron/` via `seroval`). Fix and raise `PNPM_AUDIT_LEVEL` to `high` in the release workflow
+- [ ] macOS signing + notarization (secrets not yet configured; alpha ships unsigned); decide auto-update hosting (open question #5)
 - [ ] Windows MSI, Linux AppImage/`.deb`, Homebrew cask (7.2)
 - [ ] Post *new* line-level review comments (`PostReviewComment` with path/commitSHA/side) — replies already work (1.3)
 - [ ] Wire a local repo path into the range-diff handler so 2.1/2.2 stop always degrading

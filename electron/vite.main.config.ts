@@ -7,7 +7,9 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      external: ['electron', 'electron-log', 'pino'],
+      // Only Electron itself is provided at runtime. Everything else must be bundled:
+      // Forge ships only .vite/ in the asar, with no node_modules to resolve from.
+      external: ['electron'],
     },
   },
 });

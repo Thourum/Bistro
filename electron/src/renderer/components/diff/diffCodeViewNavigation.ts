@@ -10,7 +10,7 @@ export interface PendingScrollFileId {
 }
 
 export function scrollToCodeViewFile(
-  handle: CodeViewHandle<ReviewThread> | null,
+  handle: CodeViewHandle<ReviewThread, unknown> | null,
   id: string,
   align: 'start' | 'nearest' = 'start',
 ): void {
@@ -18,7 +18,7 @@ export function scrollToCodeViewFile(
 }
 
 export function requestSelectedFileScroll(
-  handle: CodeViewHandle<ReviewThread> | null,
+  handle: CodeViewHandle<ReviewThread, unknown> | null,
   pendingScrollFileIdRef: PendingScrollFileId,
   id: string,
   unrenderableFiles: readonly UnrenderableDiffFile[],

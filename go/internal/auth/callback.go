@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -135,11 +136,33 @@ type tokenResponse struct {
 	ErrorDesc   string `json:"error_description"`
 }
 
-// ExchangeToken exchanges an authorization code for an access token.
-// It validates that the token_type is "bearer" and that the returned scopes
-// contain all the requested scopes.
-func ExchangeToken(ctx context.Context, cfg ProviderConfig, code, redirectURI string) (string, error) {
-	log := logging.FromContext(ctx)
+// exchangeRequestBody is the JSON body sent to the get-bistro.com exchange
+// endpoint when no client secret is configured.
+type exchangeRequestBody struct {
+	Code        string `json:"code"`
+	RedirectURI string `json:"redirect_uri"`
+}
+
+// buildTokenRequest builds the token exchange request. With a client secret
+// (dev builds) it posts GitHub's form encoding directly to cfg.TokenURL. Without
+// one (packaged builds) it posts JSON {code, redirect_uri} to cfg.TokenURL, which
+// is the get-bistro.com endpoint that holds the secret. The JSON path sends no
+// client_id or secret.
+func buildTokenRequest(ctx context.Context, cfg ProviderConfig, code, redirectURI string) (*http.Request, error) {
+	if cfg.ClientSecret == "" {
+		body, err := json.Marshal(exchangeRequestBody{Code: code, RedirectURI: redirectURI})
+		if err != nil {
+			return nil, fmt.Errorf("encoding token exchange body: %w", err)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.TokenURL, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		return req, nil
+	}
+
 	params := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
@@ -147,15 +170,29 @@ func ExchangeToken(ctx context.Context, cfg ProviderConfig, code, redirectURI st
 		"client_id":     {cfg.ClientID},
 		"client_secret": {cfg.ClientSecret},
 	}
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.TokenURL, strings.NewReader(params.Encode()))
 	if err != nil {
-		return "", fmt.Errorf("creating token request: %w", err)
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
 
-	log.Debug("oauth token exchange request", "token_url", cfg.TokenURL)
+// ExchangeToken exchanges an authorization code for an access token.
+// It validates that the token_type is "bearer" and that the returned scopes
+// contain all the requested scopes. See buildTokenRequest for the two request
+// shapes: the direct GitHub form post when a client secret is set, and the JSON
+// post to the get-bistro.com exchange when it is not.
+func ExchangeToken(ctx context.Context, cfg ProviderConfig, code, redirectURI string) (string, error) {
+	log := logging.FromContext(ctx)
+
+	req, err := buildTokenRequest(ctx, cfg, code, redirectURI)
+	if err != nil {
+		return "", fmt.Errorf("creating token request: %w", err)
+	}
+
+	log.Debug("oauth token exchange request", "token_url", cfg.TokenURL, "via_exchange", cfg.ClientSecret == "")
 	start := time.Now()
 	resp, err := http.DefaultClient.Do(req)
 	dur := time.Since(start).Milliseconds()
