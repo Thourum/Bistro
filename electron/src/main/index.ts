@@ -119,7 +119,9 @@ function resolveGoBinaryPath(): string {
     return join(PROJECT_ROOT, 'go', 'bistro-sync');
   }
   // In prod, binary is bundled alongside the app
-  return join(process.resourcesPath, 'go-bin', 'bistro-sync');
+  const binaryName =
+    process.platform === 'win32' ? 'bistro-sync.exe' : 'bistro-sync';
+  return join(process.resourcesPath, 'go-bin', binaryName);
 }
 
 const DEFAULT_WINDOW_WIDTH = 1600;

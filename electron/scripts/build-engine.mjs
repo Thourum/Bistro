@@ -9,12 +9,18 @@ import { fileURLToPath } from 'node:url';
 const electronRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const goRoot = join(electronRoot, '..', 'go');
 const outputDir = join(goRoot, 'dist', 'go-bin');
-const outputBinary = join(outputDir, 'bistro-sync');
+// Builds for the host OS/arch (the engine needs CGO), so run release:win on Windows.
+const outputBinary = join(
+  outputDir,
+  process.platform === 'win32' ? 'bistro-sync.exe' : 'bistro-sync',
+);
 
 // Only the OAuth client id is embedded. The client secret must never be compiled into a binary.
 const githubClientId = process.env.GITHUB_CLIENT_ID ?? '';
 if (githubClientId === '') {
-  console.warn('build:engine: GITHUB_CLIENT_ID is empty; the packaged engine will have no OAuth client id.');
+  console.warn(
+    'build:engine: GITHUB_CLIENT_ID is empty; the packaged engine will have no OAuth client id.',
+  );
 }
 
 mkdirSync(outputDir, { recursive: true });

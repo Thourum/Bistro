@@ -185,6 +185,7 @@ Alpha install and release details: `docs/ALPHA.md`. Commands, run from `electron
 ```bash
 pnpm run release:macos                      # engine build + Forge make (DMG/ZIP)
 scripts/smoke-macos.sh out/Bistro-darwin-arm64/Bistro.app   # launch and check the engine's /ws
+pnpm run release:win                        # Windows ZIP; run on Windows (the CGO engine builds for the host only)
 ```
 
 Tagging `vX.Y.Z` (matching `electron/package.json`) runs `.github/workflows/release.yml`: security gates, then build, smoke, and a draft pre-release. Signing runs only when the `MACOS_*` / `APPLE_*` secrets exist.
