@@ -1,5 +1,8 @@
-import { copyFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { copyFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { createGzip } from 'node:zlib';
 import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
@@ -39,9 +42,40 @@ const macNotarizeOptions =
 
 // Electron's MIT LICENSE and the Chromium/Node notices sit beside Electron.app
 // in the extracted prebuilt, and the DMG/ZIP makers ship only the .app. Copy
-// them into Contents/Resources before signing seals the bundle.
-const ELECTRON_LICENSE_FILES = ['LICENSE', 'LICENSES.chromium.html'];
-const copyElectronLicenses = async ({
+// them into Contents/Resources before signing seals the bundle. The 20 MB
+// Chromium notices ship gzipped (2 MB): still included, as their BSD-style
+// licenses require, without the installed-size cost.
+const ELECTRON_LICENSE = 'LICENSE';
+const CHROMIUM_NOTICES = 'LICENSES.chromium.html';
+const copyElectronLicenses = async (
+  resourcesDir: string,
+  buildPath: string,
+) => {
+  await copyFile(
+    join(buildPath, ELECTRON_LICENSE),
+    join(resourcesDir, ELECTRON_LICENSE),
+  );
+  await pipeline(
+    createReadStream(join(buildPath, CHROMIUM_NOTICES)),
+    createGzip(),
+    createWriteStream(join(resourcesDir, `${CHROMIUM_NOTICES}.gz`)),
+  );
+};
+
+// Bistro's UI is English-only, so Chromium's 54 other locale packs (49 MB
+// installed, 12 MB in the DMG) are dead weight. Removing the app-level .lproj
+// stubs too keeps macOS from advertising those languages for the app.
+const KEPT_LOCALES = new Set(['en.lproj', 'en_GB.lproj']);
+const removeUnusedLocales = async (resourcesDir: string) => {
+  const entries = await readdir(resourcesDir);
+  await Promise.all(
+    entries
+      .filter((name) => name.endsWith('.lproj') && !KEPT_LOCALES.has(name))
+      .map((name) => rm(join(resourcesDir, name), { recursive: true })),
+  );
+};
+
+const prepareMacBundle = async ({
   buildPath,
   platform,
 }: {
@@ -49,12 +83,21 @@ const copyElectronLicenses = async ({
   platform: string;
 }) => {
   if (platform !== 'darwin') return;
-  const resourcesDir = join(buildPath, 'Electron.app', 'Contents', 'Resources');
-  await Promise.all(
-    ELECTRON_LICENSE_FILES.map((name) =>
-      copyFile(join(buildPath, name), join(resourcesDir, name)),
-    ),
+  const contentsDir = join(buildPath, 'Electron.app', 'Contents');
+  const appResourcesDir = join(contentsDir, 'Resources');
+  const frameworkResourcesDir = join(
+    contentsDir,
+    'Frameworks',
+    'Electron Framework.framework',
+    'Versions',
+    'A',
+    'Resources',
   );
+  await Promise.all([
+    copyElectronLicenses(appResourcesDir, buildPath),
+    removeUnusedLocales(appResourcesDir),
+    removeUnusedLocales(frameworkResourcesDir),
+  ]);
 };
 
 const config: ForgeConfig = {
@@ -68,12 +111,13 @@ const config: ForgeConfig = {
     extraResource: ['../go/dist/go-bin', 'assets/icon.png'],
     osxSign: macSignOptions,
     osxNotarize: macNotarizeOptions,
-    afterExtract: [copyElectronLicenses],
+    afterExtract: [prepareMacBundle],
   },
   rebuildConfig: {},
   makers: [
     new MakerZIP({}, ['darwin', 'linux', 'win32']),
-    new MakerDMG({ icon: 'assets/icon.icns' }),
+    // LZMA (ULMO, macOS 10.15+) instead of the zlib default: about 33 MB smaller.
+    new MakerDMG({ icon: 'assets/icon.icns', format: 'ULMO' }),
   ],
   publishers: [
     new PublisherGitHub({
