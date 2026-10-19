@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Blocks staged files over MAX_TOKENS (tokens ≈ bytes / 4) so agents can read them in one pass.
+# Enable once per clone: git config core.hooksPath .githooks
+set -u
+
+MAX_TOKENS=5000
+BYTES_PER_TOKEN=4
+MAX_BYTES=$((MAX_TOKENS * BYTES_PER_TOKEN))
+
+# Not agent-authored: lockfiles, sqlc output, binary/vector assets, minified bundles, snapshots.
+IGNORE_REGEX='(^|/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|go\.sum|bun\.lockb?)$|^go/internal/store/db/|\.(svg|png|jpe?g|gif|ico|icns|woff2?|pdf|min\.js|snap)$'
+
+offenders=()
+while IFS= read -r -d '' file; do
+  [[ $file =~ $IGNORE_REGEX ]] && continue
+  # Measure the staged blob, not the working tree.
+  size=$(git cat-file -s ":$file") || continue
+  (( size <= MAX_BYTES )) && continue
+  # Generated-file marker (sqlc, protobuf, etc.) in the header.
+  git show ":$file" | head -n 5 | grep -qiE 'code generated|do not edit|@generated' && continue
+  offenders+=("$file:$((size / BYTES_PER_TOKEN))")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
+(( ${#offenders[@]} == 0 )) && exit 0
+
+{
+  echo "pre-commit: staged files exceed ${MAX_TOKENS} tokens (bytes/${BYTES_PER_TOKEN}):"
+  for o in "${offenders[@]}"; do echo "  ${o%:*}  (~${o##*:} tokens)"; done
+  cat <<MSG
+
+How to split a file:
+  1. List its top-level responsibilities (types, helpers, components, handlers, queries).
+     Group them by reason to change; each group becomes one new file.
+  2. Create sibling files next to the original, named after the responsibility
+     (e.g. FooPage.tsx -> useFooData.ts, FooSections.tsx, fooUtils.ts; handlers.go -> handlers_pr.go, handlers_sync.go).
+     Follow the feature-local split conventions in CLAUDE.md.
+  3. Move code verbatim — no behaviour changes in the same commit. Move tests with the code they cover.
+  4. Keep the original as the thin entry point that imports/re-exports the pieces
+     (Go: same package, just new files; no import changes needed).
+  5. Aim for each file under ~${MAX_TOKENS} tokens (~${MAX_BYTES} bytes); stage the new files and re-commit.
+  6. Run: cd electron && pnpm type-check && pnpm lint && pnpm test  (Go: cd go && go vet ./... && go test ./...)
+
+Not splittable (fixtures, prose docs)? Commit with --no-verify and say why in the message.
+MSG
+} >&2
+exit 1

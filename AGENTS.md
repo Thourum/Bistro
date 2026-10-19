@@ -82,6 +82,12 @@ cd go && go vet ./... && go test -race ./...
 cd electron && pnpm type-check && pnpm lint && pnpm test
 ```
 
+Enable the pre-commit hook once per clone (blocks staged files over 5,000 tokens, bytes/4; skips lockfiles, sqlc output, images, files marked generated; the error message explains how to split):
+
+```bash
+git config core.hooksPath .githooks
+```
+
 If a command or detail is unclear, check `electron/package.json` scripts. Do not invent workflows.
 
 ---
