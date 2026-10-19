@@ -289,7 +289,7 @@ interface DiffCodeViewProps {
   files: readonly ParsedDiffFile[];
   parsedFiles: readonly ParsedCodeViewFile[];
   items: readonly CodeViewItem<ReviewThread>[];
-  codeViewRef: React.RefObject<CodeViewHandle<ReviewThread> | null>;
+  codeViewRef: React.RefObject<CodeViewHandle<ReviewThread, unknown> | null>;
   pendingScrollFileIdRef: React.RefObject<string | null>;
   activeId: string | null;
   activateVisibleFile: (id: string) => void;
@@ -481,7 +481,7 @@ function filterWhitespaceHunks(
 
 function findTopVisibleFile(
   files: readonly ParsedCodeViewFile[],
-  viewer: ReturnType<CodeViewHandle<ReviewThread>['getInstance']>,
+  viewer: ReturnType<CodeViewHandle<ReviewThread, unknown>['getInstance']>,
   scrollTop: number,
 ): ParsedDiffFile | undefined {
   if (viewer === undefined) return undefined;

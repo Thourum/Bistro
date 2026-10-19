@@ -1,4 +1,7 @@
-import { formatForDisplay } from '@tanstack/react-hotkeys';
+import {
+  type FormatDisplayOptions,
+  formatForDisplay,
+} from '@tanstack/react-hotkeys';
 import type { OverlayKind } from '../overlays/OverlayContext';
 import type { KeyBinding, RouteBase } from './keybindings';
 
@@ -116,7 +119,7 @@ function toShiftedCharacterHotkey(hotkey: string): string {
  */
 export function formatBindingKeys(
   binding: KeyBinding,
-  options?: Parameters<typeof formatForDisplay>[1],
+  options?: FormatDisplayOptions & { parts?: false },
 ): string {
   if (typeof binding.keys !== 'string') {
     return binding.keys

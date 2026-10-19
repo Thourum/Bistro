@@ -27,7 +27,7 @@ export function useInlineDiffAnnotations({
 }: {
   orderedAnnotations: readonly AnnotationEntry[];
   parsedCodeViewFiles: readonly ParsedCodeViewFile[];
-  codeViewRef: React.RefObject<CodeViewHandle<ReviewThread> | null>;
+  codeViewRef: React.RefObject<CodeViewHandle<ReviewThread, unknown> | null>;
 }): void {
   const activeAnnotationKey = useStore(
     appStore,
@@ -142,7 +142,7 @@ export function useDiffFileNavigation({
   onFilesResolved,
 }: FileNavigationOptions) {
   const [activeId, setActiveId] = useState<string | null>(files[0]?.id ?? null);
-  const codeViewRef = useRef<CodeViewHandle<ReviewThread>>(null);
+  const codeViewRef = useRef<CodeViewHandle<ReviewThread, unknown>>(null);
   const pendingScrollFileIdRef = useRef<string | null>(null);
   const selectedFileIndex = useStore(
     appStore,

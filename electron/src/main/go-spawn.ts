@@ -399,11 +399,11 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
     }),
   );
 
-  spawnedProcess.once('spawn', () => {
+  spawnedProcess.nodeChildProcess.once('spawn', () => {
     logger.info('Go process spawned');
   });
 
-  spawnedProcess.once('error', (error: Error) => {
+  spawnedProcess.nodeChildProcess.once('error', (error: Error) => {
     logger.error(`Go process error: ${error.message}`);
     readyWaiter.markFailed(
       ServiceError(
@@ -424,11 +424,11 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
 }
 
 export function isGoProcessRunning(): boolean {
-  return goProcess !== null && !goProcess.killed;
+  return goProcess !== null && !goProcess.nodeChildProcess.killed;
 }
 
 export function killGoProcess(): void {
-  if (goProcess && !goProcess.killed) {
+  if (goProcess && !goProcess.nodeChildProcess.killed) {
     const processToStop = goProcess;
     goProcess = null;
     processToStop.kill('SIGTERM');

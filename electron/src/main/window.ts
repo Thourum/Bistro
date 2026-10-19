@@ -35,7 +35,7 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
       height: 32,
     },
     webPreferences: {
-      preload: join(__dirname, 'preload.js'),
+      preload: join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,

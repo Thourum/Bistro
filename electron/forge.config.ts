@@ -2,7 +2,7 @@ import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { VitePlugin } from '@electron-forge/plugin-vite';
-import { PublisherGithub } from '@electron-forge/publisher-github';
+import { PublisherGitHub } from '@electron-forge/publisher-github';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 
 // Signing is opt-in: unsigned local builds stay possible when no identity is provided.
@@ -48,7 +48,7 @@ const config: ForgeConfig = {
     new MakerDMG({ icon: 'assets/icon.icns' }),
   ],
   publishers: [
-    new PublisherGithub({
+    new PublisherGitHub({
       repository: {
         owner: 'Itterno',
         name: 'Bistro',
