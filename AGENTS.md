@@ -177,3 +177,14 @@ If search returns 0 results, proceed as a fresh session.
 | `ctx purge` | Call `ctx_purge` MCP tool with confirm: true. Warns before wiping knowledge base. |
 
 After /clear or /compact: knowledge base and session stats preserved. Use `ctx purge` to start fresh.
+
+## Release
+
+Alpha install and release details: `docs/ALPHA.md`. Commands, run from `electron/`:
+
+```bash
+pnpm run release:macos                      # engine build + Forge make (DMG/ZIP)
+scripts/smoke-macos.sh out/Bistro-darwin-arm64/Bistro.app   # launch and check the engine's /ws
+```
+
+Tagging `vX.Y.Z` (matching `electron/package.json`) runs `.github/workflows/release.yml`: security gates, then build, smoke, and a draft pre-release. Signing runs only when the `MACOS_*` / `APPLE_*` secrets exist.
