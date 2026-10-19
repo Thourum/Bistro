@@ -1,3 +1,5 @@
+import { copyFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
@@ -22,13 +24,38 @@ const macSignOptions = APPLE_SIGNING_IDENTITY
     }
   : undefined;
 
-const macNotarizeOptions = APPLE_SIGNING_IDENTITY
-  ? {
-      appleId: process.env.APPLE_ID ?? '',
-      appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD ?? '',
-      teamId: process.env.APPLE_TEAM_ID ?? '',
-    }
-  : undefined;
+const { APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID } = process.env;
+const macNotarizeOptions =
+  APPLE_SIGNING_IDENTITY &&
+  APPLE_ID &&
+  APPLE_APP_SPECIFIC_PASSWORD &&
+  APPLE_TEAM_ID
+    ? {
+        appleId: APPLE_ID,
+        appleIdPassword: APPLE_APP_SPECIFIC_PASSWORD,
+        teamId: APPLE_TEAM_ID,
+      }
+    : undefined;
+
+// Electron's MIT LICENSE and the Chromium/Node notices sit beside Electron.app
+// in the extracted prebuilt, and the DMG/ZIP makers ship only the .app. Copy
+// them into Contents/Resources before signing seals the bundle.
+const ELECTRON_LICENSE_FILES = ['LICENSE', 'LICENSES.chromium.html'];
+const copyElectronLicenses = async ({
+  buildPath,
+  platform,
+}: {
+  buildPath: string;
+  platform: string;
+}) => {
+  if (platform !== 'darwin') return;
+  const resourcesDir = join(buildPath, 'Electron.app', 'Contents', 'Resources');
+  await Promise.all(
+    ELECTRON_LICENSE_FILES.map((name) =>
+      copyFile(join(buildPath, name), join(resourcesDir, name)),
+    ),
+  );
+};
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -41,6 +68,7 @@ const config: ForgeConfig = {
     extraResource: ['../go/dist/go-bin', 'assets/icon.png'],
     osxSign: macSignOptions,
     osxNotarize: macNotarizeOptions,
+    afterExtract: [copyElectronLicenses],
   },
   rebuildConfig: {},
   makers: [
