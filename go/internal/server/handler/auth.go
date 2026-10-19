@@ -50,6 +50,7 @@ const (
 	authReasonNoStoredToken   = "no_stored_token"
 	githubOAuthAuthorizeURL   = "https://github.com/login/oauth/authorize"
 	githubOAuthTokenURL       = "https://github.com/login/oauth/access_token"
+	bistroOAuthExchangeURL    = "https://get-bistro.com/api/oauth/token"
 	usernameLookupTimeout     = 10 * time.Second
 	callbackShutdownTimeout   = 5 * time.Second
 )
@@ -216,22 +217,26 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 
 		clientID := deps.GetClientID()
 		clientSecret := deps.GetClientSecret()
-		if clientID == "" || clientSecret == "" {
+		if clientID == "" {
 			mu.Unlock()
-			logger.Error("oauth client credentials missing",
-				"has_client_id", clientID != "",
-				"has_client_secret", clientSecret != "",
-			)
+			logger.Error("oauth client ID missing")
 			return map[string]interface{}{
 				"id":   msg.ID,
 				"type": "AUTH_FAILED",
-				"data": map[string]string{"error": "GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET not configured"},
+				"data": map[string]string{"error": "GITHUB_CLIENT_ID not configured"},
 			}, nil
+		}
+
+		// Without a secret (packaged builds) the code is exchanged via get-bistro.com,
+		// which holds the secret. Dev builds with a secret talk to GitHub directly.
+		tokenURL := bistroOAuthExchangeURL
+		if clientSecret != "" {
+			tokenURL = githubOAuthTokenURL
 		}
 
 		cfg := auth.ProviderConfig{
 			AuthURL:      githubOAuthAuthorizeURL,
-			TokenURL:     githubOAuthTokenURL,
+			TokenURL:     tokenURL,
 			Scopes:       []string{"repo", "read:user"},
 			ClientID:     clientID,
 			ClientSecret: clientSecret,

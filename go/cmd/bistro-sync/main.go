@@ -111,9 +111,10 @@ func main() {
 	}
 	app.SetGitHubClientID(clientID)
 
+	// Packaged builds have no secret: sign-in then exchanges the code through get-bistro.com.
 	clientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
 	if clientSecret == "" {
-		log.Warn("GITHUB_CLIENT_SECRET not set — OAuth will fail until configured")
+		log.Info("GITHUB_CLIENT_SECRET not set — OAuth code exchange goes through get-bistro.com")
 	}
 	app.SetGitHubClientSecret(clientSecret)
 

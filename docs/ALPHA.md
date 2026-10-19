@@ -4,7 +4,6 @@
 
 - macOS 12 or later, Apple Silicon (arm64) only.
 - Alpha means: expect rough edges and data resets. Bistro is not yet a stable v1.0.
-- Known blocker: packaged builds carry no OAuth client secret, so GitHub sign-in can't finish until the engine exchanges codes through `https://get-bistro.com/api/oauth/token`. Dev builds with `GITHUB_CLIENT_SECRET` in `electron/.env.local` sign in directly.
 
 ## Installing
 

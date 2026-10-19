@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -236,5 +237,59 @@ func TestCallbackConstants(t *testing.T) {
 	}
 	if CallbackTimeout != 5*time.Minute {
 		t.Fatalf("expected 5m timeout, got %v", CallbackTimeout)
+	}
+}
+
+// TestExchangeToken_WithoutSecretPostsJSONToExchangeEndpoint verifies that a
+// build without a client secret sends {code, redirect_uri} as JSON and no
+// client_id or client_secret, as the get-bistro.com exchange expects.
+func TestExchangeToken_WithoutSecretPostsJSONToExchangeEndpoint(t *testing.T) {
+	var gotContentType string
+	var gotBody map[string]any
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "read error", http.StatusBadRequest)
+			return
+		}
+		if err := json.Unmarshal(raw, &gotBody); err != nil {
+			http.Error(w, "decode error", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]string{
+			"access_token": "tok-exchanged",
+			"token_type":   "bearer",
+			"scope":        "repo,read:user",
+		}); err != nil {
+			http.Error(w, "encode error", http.StatusInternalServerError)
+		}
+	}))
+	defer mockServer.Close()
+
+	cfg := ProviderConfig{
+		TokenURL: mockServer.URL,
+		ClientID: "cid",
+		Scopes:   []string{"repo", "read:user"},
+	}
+
+	token, err := ExchangeToken(context.Background(), cfg, "auth-code", "http://localhost:19284/callback")
+	if err != nil {
+		t.Fatalf("ExchangeToken failed: %v", err)
+	}
+	if token != "tok-exchanged" {
+		t.Fatalf("expected tok-exchanged, got %s", token)
+	}
+	if gotContentType != "application/json" {
+		t.Fatalf("expected application/json content type, got %q", gotContentType)
+	}
+	if gotBody["code"] != "auth-code" || gotBody["redirect_uri"] != "http://localhost:19284/callback" {
+		t.Fatalf("unexpected body: %v", gotBody)
+	}
+	for _, forbidden := range []string{"client_id", "client_secret"} {
+		if _, ok := gotBody[forbidden]; ok {
+			t.Fatalf("body must not contain %s: %v", forbidden, gotBody)
+		}
 	}
 }

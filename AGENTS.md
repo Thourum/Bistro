@@ -4,7 +4,7 @@
 
 **Bistro** is the keyboard-first code review client for the AI-PR era: a local-first desktop GitHub PR review app. Review PRs at the speed of thought — no browser, no mouse.
 
-There is no server. Everything runs locally. SQLite is a local cache, not a shared database.
+There is no server. Everything runs locally. SQLite is a local cache, not a shared database. The one remote call besides GitHub is the OAuth code exchange: when no `GITHUB_CLIENT_SECRET` is configured (packaged builds), the engine posts the code to `https://get-bistro.com/api/oauth/token`, which holds the secret.
 
 Authoritative references (read when relevant, don't duplicate here):
 
