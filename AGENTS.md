@@ -31,7 +31,7 @@ Where things live: Go engine in `go/` (entry `go/cmd/bistro-sync/`, packages und
 
 - **Go 1.26** — go-git, go-github, gorilla/websocket, mattn/go-sqlite3, go-keyring, x/oauth2.
 - **Electron + Electron Forge + Vite** — React 19, TypeScript, TanStack (React Query / Hotkeys / Virtual / Store), Radix UI, Tailwind, Biome (lint+format), Vitest (test).
-- **Package manager: pnpm** for the Electron app. Run pnpm commands from `electron/`; the lockfile is the repo-root `pnpm-lock.yaml` (workspace defined in `pnpm-workspace.yaml`, covering `electron/` and `website/`). Versions live in `go/go.mod` and `electron/package.json` — check there, don't assume.
+- **Package manager: pnpm** for the Electron app. Run pnpm commands from `electron/`; the lockfile is the repo-root `pnpm-lock.yaml` (workspace defined in `pnpm-workspace.yaml`, covering `electron/` and `website/`). `minimumReleaseAge` in `pnpm-workspace.yaml` blocks package versions younger than 7 days, so a just-published release won't resolve yet. Versions live in `go/go.mod` and `electron/package.json` — check there, don't assume.
 
 ## Conventions
 
