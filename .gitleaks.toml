@@ -1,0 +1,9 @@
+title = "Bistro gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known fake fixtures"
+# electron/tests/unit/error.test.ts and an old plan doc use this obviously fake GitHub token to test redaction.
+regexes = ['''ghp_abc123xyz''']

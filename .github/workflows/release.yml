@@ -1,0 +1,221 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VULNCHECK_VERSION: v1.9.0
+  GITLEAKS_VERSION: v8.30.1
+  # Fail on critical advisories only until the open high-severity transitive
+  # bumps in electron/ are merged; raise to "high" after that.
+  PNPM_AUDIT_LEVEL: critical
+
+jobs:
+  gates:
+    name: Security and license gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install scanners
+        run: |
+          go install "golang.org/x/vuln/cmd/govulncheck@${GO_VULNCHECK_VERSION}"
+          go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Scan Go call graph for known vulnerabilities
+        working-directory: go
+        run: govulncheck ./...
+
+      - name: Audit production Node dependencies
+        working-directory: electron
+        run: pnpm audit --prod --audit-level="$PNPM_AUDIT_LEVEL"
+
+      - name: Scan git history for secrets
+        run: gitleaks git --redact --no-banner --config .gitleaks.toml .
+
+  release:
+    name: Build, smoke test, and draft release
+    needs: gates
+    runs-on: macos-15
+    environment: release
+    permissions:
+      contents: write
+    env:
+      CGO_ENABLED: "1"
+      GITHUB_CLIENT_ID: ${{ secrets.GITHUB_CLIENT_ID }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify release inputs
+        run: |
+          : "${GITHUB_CLIENT_ID:?secret GITHUB_CLIENT_ID is required to embed the OAuth client ID in the engine}"
+          tag_version="${GITHUB_REF_NAME#v}"
+          package_version="$(node -p "require('./electron/package.json').version")"
+          if [[ "$tag_version" != "$package_version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match electron/package.json version $package_version" >&2
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Decide whether to sign and notarize
+        id: signing
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          if [[ -n "$MACOS_CERT_P12_BASE64" && -n "$MACOS_SIGNING_IDENTITY" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Signing secrets not set; producing an unsigned alpha build"
+          fi
+
+      - name: Import Developer ID certificate
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          cert="$RUNNER_TEMP/cert.p12"
+          echo "$MACOS_CERT_P12_BASE64" | base64 --decode > "$cert"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security import "$cert" -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$cert"
+
+      - name: Expose signing settings to Forge
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          {
+            echo "APPLE_SIGNING_IDENTITY=$MACOS_SIGNING_IDENTITY"
+            echo "APPLE_ID=$APPLE_ID_SECRET"
+            echo "APPLE_APP_SPECIFIC_PASSWORD=$APPLE_APP_PASSWORD"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM"
+          } >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        working-directory: electron
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and package the app
+        working-directory: electron
+        run: pnpm run release:macos
+
+      - name: Smoke test the packaged app
+        working-directory: electron
+        run: scripts/smoke-macos.sh out/Bistro-darwin-arm64/Bistro.app
+
+      - name: Collect artifacts and write checksums
+        id: artifacts
+        run: |
+          shopt -s nullglob
+          artifacts=(electron/out/make/*.dmg electron/out/make/zip/darwin/arm64/*.zip)
+          if (( ${#artifacts[@]} == 0 )); then
+            echo "::error::no DMG or ZIP produced under electron/out/make" >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/release"
+          : > "$RUNNER_TEMP/release/SHA256SUMS"
+          for artifact in "${artifacts[@]}"; do
+            (cd "$(dirname "$artifact")" && shasum -a 256 "$(basename "$artifact")") >> "$RUNNER_TEMP/release/SHA256SUMS"
+          done
+          printf '%s\n' "${artifacts[@]}" > "$RUNNER_TEMP/artifact-list"
+
+      - name: Write release notes
+        env:
+          SIGNED: ${{ steps.signing.outputs.enabled }}
+        run: |
+          {
+            echo "Alpha build for macOS on Apple Silicon (arm64, macOS 12 or later)."
+            echo
+            if [[ "$SIGNED" == "true" ]]; then
+              echo "This build is signed and notarized."
+            else
+              echo 'This build is **unsigned**. Right-click > Open the app the first time, or run `xattr -dr com.apple.quarantine /Applications/Bistro.app`. See docs/ALPHA.md.'
+            fi
+            echo
+            echo "Auto-updates are off by default. Verify downloads against SHA256SUMS."
+          } > "$RUNNER_TEMP/release-notes.md"
+
+      - name: Create draft pre-release
+        run: |
+          artifacts=()
+          while IFS= read -r artifact; do
+            artifacts+=("$artifact")
+          done < "$RUNNER_TEMP/artifact-list"
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --draft \
+            --prerelease \
+            --title "Bistro $GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            "${artifacts[@]}" \
+            "$RUNNER_TEMP/release/SHA256SUMS"
+
+      - name: Remove signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2>/dev/null || true
