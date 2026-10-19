@@ -1,4 +1,3 @@
-import { createRequire } from 'node:module';
 import {
   err,
   errAsync,
@@ -12,20 +11,10 @@ import {
 } from '@thourum/fault';
 import type { Logger } from 'electron-log';
 import { execa, type ResultPromise } from 'execa';
+import waitOn from 'wait-on';
 import { z } from 'zod';
 import type { GoProcessConfig } from './types';
 
-const require = createRequire(__filename);
-
-type WaitOnOptions = {
-  resources: string[];
-  timeout: number;
-  interval?: number;
-  tcpTimeout?: number;
-  window?: number;
-};
-
-const waitOn = require('wait-on') as (options: WaitOnOptions) => Promise<void>;
 const MAX_WS_PORT = 65535;
 const readyLineSchema = z.object({
   event: z.literal('ready'),

@@ -14,7 +14,10 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
     return mainWindow;
   }
 
-  const iconPath = join(app.getAppPath(), 'assets/icon.png');
+  // Packaged: shipped via Forge extraResource (the asar holds only .vite/).
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(app.getAppPath(), 'assets/icon.png');
 
   if (process.platform === 'darwin') {
     app.dock?.setIcon(iconPath);
