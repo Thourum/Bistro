@@ -4,7 +4,12 @@ import { useEffect, useMemo } from 'react';
 import type { AppSettings } from '../../../types/settings';
 import { useStore } from '../../hooks/useStore';
 import { appStore } from '../../store';
-import type { Comment, ExpertiseFileData, ReviewThread } from '../../types';
+import type {
+  Comment,
+  ExpertiseFileData,
+  ReviewThread,
+  TriageFileStatus,
+} from '../../types';
 import { createLogger } from '../../utils/logger';
 import { openUrlInBrowser } from '../../utils/openUrl';
 import { hideWhitespaceOnlyHunks } from '../../utils/whitespaceDiff';
@@ -50,6 +55,8 @@ export interface DiffViewProps {
   prBrowserUrl?: string | null;
   /** Paths marked viewed (`v`) for the current user. */
   viewedPaths?: ReadonlySet<string>;
+  /** Since-last-review status per path, shown as sidebar badges. */
+  triageStatuses?: ReadonlyMap<string, TriageFileStatus>;
 }
 
 /** CodeView owns the only virtualized scroll surface for the PR diff. */
@@ -67,6 +74,7 @@ export function DiffView({
   expertiseError = null,
   prBrowserUrl = null,
   viewedPaths = EMPTY_VIEWED_PATHS,
+  triageStatuses,
 }: DiffViewProps): React.ReactElement {
   const {
     files,
@@ -132,6 +140,7 @@ export function DiffView({
         onSelect={selectFile}
         totalCount={files.length}
         viewedPaths={viewedPaths}
+        {...(triageStatuses !== undefined ? { triageStatuses } : {})}
       />
       <section className="flex-1 min-w-0 min-h-0 bg-surface-container-lowest overflow-hidden relative">
         {activeUnrenderableFile !== undefined ? (

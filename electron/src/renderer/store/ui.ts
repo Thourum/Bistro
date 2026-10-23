@@ -113,8 +113,8 @@ export interface UIState {
   diffFileKeys: string[];
   /**
    * Patchset pair selected in the timeline, as 1-based patchset numbers
-   * `[from, to]`. Drives the range diff in the diff view. Null = compare the
-   * full PR (default head-to-base behaviour).
+   * `[from, to]`. Filters the diff to changed/new files between patchsets.
+   * Null = full PR diff (unless since-last-review is active).
    */
   selectedPatchsetPair: [number, number] | null;
   /**

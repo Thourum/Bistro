@@ -86,7 +86,7 @@ const eventHandlers: WsEventHandlers = {
   PRS_READ_ACK: resolveWsResponse,
   DIFF_READY: resolveWsResponse,
   PATCHSETS_READY: resolveWsResponse,
-  RANGE_DIFF_READY: resolveWsResponse,
+  TRIAGE_READY: resolveWsResponse,
   FILE_VIEWED_ACK: resolveWsResponse,
   REVIEW_THREADS_READY: resolveWsResponse,
   ACTION_RESULT: resolveWsResponse,

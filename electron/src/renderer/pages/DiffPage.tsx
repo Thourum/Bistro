@@ -9,18 +9,20 @@
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useLayoutEffect, useMemo, useState } from 'react';
 import { DiffView } from '../components/diff/DiffView';
+import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
 import { OpenInEditorDialog } from '../components/OpenInEditorDialog';
 import { useExpertise } from '../hooks/useExpertise';
 import { usePRHydration } from '../hooks/usePRHydration';
-import { type RangeDiffRequest, useRangeDiff } from '../hooks/useRangeDiff';
 import { useReviewThreads } from '../hooks/useReviewThreads';
 import { useStore } from '../hooks/useStore';
+import { type TriageRequest, useTriage } from '../hooks/useTriage';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { replyComment } from '../services/prActions';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { repoIdForPR } from '../utils/expertise';
+import { filterDiffToPaths, triageSummary } from '../utils/sinceLastReview';
 import { prBrowserUrl } from '../utils/triage';
 import {
   DiffPageBody,
@@ -33,15 +35,13 @@ import { useDiffPageData } from './useDiffPageData';
 /**
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
  *
- * Two diff surfaces share this page:
- *   - the full PR diff (default), rendered by {@link DiffView}
- *   - a range diff (since-last-review or a timeline patchset pair), rendered
- *     by {@link RangeDiffView}
+ * One diff surface: the normal current PR diff, optionally filtered to files
+ * changed since your last review or between a timeline patchset pair.
  *
  * PR resolved by $prId route param; file resolved by ?file canonical key.
  *
  * Keyboard-first affordances (registered in `keybindings.ts`, driven here):
- *   - `s` toggles the since-last-review range diff
+ *   - `s` filters to files changed since your last review
  *   - `v` marks the current file viewed
  */
 export function DiffPage() {
@@ -50,7 +50,7 @@ export function DiffPage() {
   const { file: fileKey } = useSearch({ from: '/authed/prs/$prId/diff' });
   const navigate = useNavigate();
 
-  // Phase 2 store reads: range-diff intent and file-viewed tracking.
+  // Store reads: triage intent and file-viewed tracking.
   const selectedFileIndex = useStore(
     appStore,
     (s: UIState) => s.selectedFileIndex,
@@ -86,30 +86,62 @@ export function DiffPage() {
   const { diff, files, setFiles, loading, diffError, comments } =
     useDiffPageData({ pr, isAwaitingHydration, commentsRevision });
 
-  // Review threads for inline annotations (full diff path only).
+  // Review threads for inline annotations on the visible diff.
   const { threads } = useReviewThreads(pr?.id);
 
-  // ── Range-diff intent ──────────────────────────────────────────────
+  // ── Triage (since last review, or an explicit patchset pair) ──────
   const sinceLastReview = confirmingAction === 'since-last-review';
-
-  const rangeReq = useMemo<RangeDiffRequest | null>(() => {
+  const triageReq = useMemo<TriageRequest | null>(() => {
     if (sinceLastReview) return { kind: 'sinceLastReview' };
     if (selectedPatchsetPair !== null) {
       const [from, to] = selectedPatchsetPair;
-      if (from !== to) {
+      if (from !== to)
         return { kind: 'pair', fromPatchset: from, toPatchset: to };
-      }
     }
     return null;
   }, [sinceLastReview, selectedPatchsetPair]);
-
   const {
-    result: rangeResult,
-    loading: rangeLoading,
-    error: rangeError,
-  } = useRangeDiff(pr?.id, rangeReq);
+    result: triage,
+    loading: triageLoading,
+    error: triageError,
+  } = useTriage(pr?.id, triageReq);
+  const triageOk = triage?.state === 'ok' ? triage : null;
 
-  const showRangeDiff = rangeReq !== null;
+  const triageStatuses = useMemo(
+    () =>
+      triageOk === null
+        ? undefined
+        : new Map(triageOk.files.map((file) => [file.path, file.status])),
+    [triageOk],
+  );
+  const visibleDiff = useMemo(() => {
+    if (triageOk === null) return diff;
+    const shown = triageOk.files
+      .filter((file) => file.status === 'changed' || file.status === 'new')
+      .map((file) => file.path);
+    return filterDiffToPaths(diff, new Set(shown));
+  }, [diff, triageOk]);
+  const removedPaths =
+    triageOk?.files
+      .filter((file) => file.status === 'removed')
+      .map((file) => file.path) ?? [];
+
+  const triageLabel =
+    triageReq === null
+      ? null
+      : triageReq.kind === 'sinceLastReview'
+        ? 'Since last review'
+        : `P${triageReq.fromPatchset} → P${triageReq.toPatchset}`;
+  const triageStatusText =
+    triageReq === null
+      ? null
+      : triageLoading
+        ? 'loading triage…'
+        : triageError !== null
+          ? `triage failed: ${triageError}`
+          : triage === null
+            ? null
+            : triageSummary(triage, new Date());
 
   // Clear stale diffFileKeys whenever the target PR changes.
   // This prevents keybindings from using keys from a previous PR's diff.
@@ -124,7 +156,10 @@ export function DiffPage() {
     appStore.setState((s) => ({ ...s, diffFileKeys: canonicalKeys }));
   };
 
-  const currentFile = files[selectedFileIndex];
+  const currentFile = useMemo(() => {
+    const path = splitUnifiedDiff(visibleDiff)[selectedFileIndex]?.path;
+    return files.find((file) => file.path === path);
+  }, [visibleDiff, selectedFileIndex, files]);
   const {
     state: openInEditorState,
     checkoutAndOpen,
@@ -161,9 +196,7 @@ export function DiffPage() {
     <main className="flex-1 flex flex-col overflow-hidden bg-surface text-on-surface">
       <DiffPageToolbar
         pr={pr}
-        showRangeDiff={showRangeDiff}
-        sinceLastReview={sinceLastReview}
-        selectedPatchsetPair={selectedPatchsetPair}
+        triageLabel={triageLabel}
         findQuery={findQuery}
         onFindQueryChange={setFindQuery}
         onBack={handleBack}
@@ -174,43 +207,51 @@ export function DiffPage() {
         hydrationError={hydrationError}
         isHydrating={isHydrating}
         onRetry={retry}
-        showRangeDiff={showRangeDiff}
-        rangeLoading={rangeLoading}
-        rangeError={rangeError}
-        rangeResult={rangeResult}
         fullDiffLoading={loading}
         fullDiffError={diffError}
       >
-        <DiffView
-          diff={diff}
-          theme={theme}
-          diffStyle={diffStyle}
-          findQuery={findQuery}
-          selectedFileKey={fileKey}
-          onFilesResolved={handleFilesResolved}
-          threads={threads}
-          comments={comments}
-          onThreadReply={(threadId, body) => {
-            if (pr === undefined) return;
-            replyComment(pr.id, body, { threadId });
-          }}
-          prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
-          expertiseFiles={expertise?.files ?? []}
-          expertiseError={
-            expertiseStatus?.status === 'error'
-              ? (expertiseStatus.message ?? expertiseStatus.code ?? 'unknown')
-              : null
-          }
-          viewedPaths={viewedPaths}
-        />
+        <div className="h-full flex flex-col">
+          {removedPaths.length > 0 && (
+            <div className="shrink-0 px-4 py-1.5 border-b border-outline-variant/30 bg-surface-container-low font-mono text-[10px] text-outline">
+              Removed since P{triageOk?.from_patchset}:{' '}
+              {removedPaths.join(', ')}
+            </div>
+          )}
+          <div className="flex-1 min-h-0">
+            <DiffView
+              diff={visibleDiff}
+              {...(triageStatuses !== undefined ? { triageStatuses } : {})}
+              theme={theme}
+              diffStyle={diffStyle}
+              findQuery={findQuery}
+              selectedFileKey={fileKey}
+              onFilesResolved={handleFilesResolved}
+              threads={threads}
+              comments={comments}
+              onThreadReply={(threadId, body) => {
+                if (pr === undefined) return;
+                replyComment(pr.id, body, { threadId });
+              }}
+              prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
+              expertiseFiles={expertise?.files ?? []}
+              expertiseError={
+                expertiseStatus?.status === 'error'
+                  ? (expertiseStatus.message ??
+                    expertiseStatus.code ??
+                    'unknown')
+                  : null
+              }
+              viewedPaths={viewedPaths}
+            />
+          </div>
+        </div>
       </DiffPageBody>
 
       <DiffPageStatusBar
-        diff={diff}
+        diff={visibleDiff}
         files={files}
         currentFile={currentFile}
-        showRangeDiff={showRangeDiff}
-        rangeResult={rangeResult}
+        triageSummary={triageStatusText}
       />
 
       <OpenInEditorDialog
