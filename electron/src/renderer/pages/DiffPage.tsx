@@ -132,7 +132,8 @@ export function DiffPage() {
   }, [prId]);
 
   // One line per diff open so big-PR regressions show up in user logs.
-  // rAF after commit ≈ the first file's first paint.
+  // rAF after commit ≈ the next frame with the diff committed (pre-paint,
+  // before highlighting).
   useEffect(() => {
     if (diff === '') return;
     const frame = requestAnimationFrame(() =>

@@ -11,7 +11,7 @@ interface DiffFileSidebarProps {
   viewedPaths?: ReadonlySet<string>;
 }
 
-// 28px button (py-1.5 + 16px line) + 4px gap; rows must stay fixed-height.
+// 32px wrapper: 28px h-full button + 4px pb-1 gap; rows must stay fixed-height.
 const ROW_HEIGHT_PX = 32;
 // Rows rendered beyond the viewport so fast scrolls don't flash blank.
 const OVERSCAN_ROWS = 20;

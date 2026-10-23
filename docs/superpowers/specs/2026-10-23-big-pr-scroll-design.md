@@ -42,11 +42,15 @@ highlighting. Fast scrolling through many small files stacks both.
   `DefaultDiffOptions()` and the `MaxTotalPatchBytes` budget branch in
   `renderDiffFile` (`go/internal/git/diff.go`). Delete the option entirely if
   nothing else sets it.
-- Keep the 512 KB per-file cap (`DefaultMaxFilePatchBytes`). Files over it keep
-  `diff_status = 'too_large'`.
-- Renderer: a `too_large` file renders a placeholder row instead of a blank
-  body: `File too large (N KB) — o open on GitHub`, using the existing `o`
-  binding.
+- Keep the 512 KB per-file cap (`DefaultMaxFilePatchBytes`). Files over it get
+  `diff_status = 'truncated'`. `'too_large'` only appears on rows synced before
+  the per-PR budget was removed; the renderer handles both values.
+- Renderer: selecting an oversized file (sidebar click or `Shift+J`/`Shift+K`)
+  shows a placeholder panel instead of a blank body: `File too large (N KB)`
+  with an `o — open on GitHub` button. It follows the existing binary and
+  parse-failed file pattern; it is not a row in the scroll stream.
+- Follow-up: an in-stream placeholder row, since selecting a capped file today
+  swaps out CodeView and remounts it.
 
 ### 2. Stop whole-tree re-renders (renderer)
 
