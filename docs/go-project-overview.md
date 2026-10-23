@@ -7,7 +7,7 @@ Bistro is a local-first PR dashboard. The Go backend (`go/`) is a sync daemon (`
 1. Authenticates with GitHub via OAuth
 2. Periodically syncs PR data (metadata, comments, CI status, diffs) into a local SQLite database
 3. Exposes a WebSocket API for an Electron frontend to query and interact with PRs
-4. Supports offline queueing of write actions (approve, request changes, comment) with automatic retry
+4. Supports offline queueing of replayable write actions with automatic retry; review submissions with drafts bypass the queue and keep unsubmitted drafts on failure
 
 ---
 
@@ -125,13 +125,16 @@ go/
 │   │   └── scanner_test.go
 │   │
 │   ├── server/                         # App orchestrator + WebSocket handlers
-│   │   ├── app.go                      #   App struct, Run(), dependency wiring, handler registration
+│   │   ├── app.go                      #   App struct, Run(), provider lifecycle and dependency wiring
+│   │   ├── app_handlers.go             #   Domain-specific WebSocket handler registration
+│   │   ├── app_startup.go              #   Database/store setup, expertise/LLM setup, startup provider
 │   │   ├── ready.go                    #   Engine readiness event payload
 │   │   ├── repo_location_resolver.go   #   Chooses local clone vs Bistro cache for repo operations
 │   │   ├── syncloop.go                 #   Periodic sync loop and watched-repo sync
 │   │   └── handler/                    #   Domain WebSocket handlers
 │   │       ├── auth.go                 #     AUTH_START, AUTH_CANCEL, AUTH_CHECK, AUTH_DISCONNECT
 │   │       ├── comments.go             #     Comment CRUD / thread operations
+│   │       ├── drafts.go               #     DRAFT_SAVE / DRAFT_DELETE / DRAFTS_LIST
 │   │       ├── diff.go                 #     REQUEST_DIFF → DIFF_READY handler
 │   │       ├── patchsets.go            #     Patchset metadata handlers
 │   │       ├── pr.go                   #     REQUEST_PR_LIST → PR_LIST_READY handler
@@ -151,6 +154,7 @@ go/
 │   │   ├── last_reviewed.go            #   Last-reviewed commit/patchset state
 │   │   ├── patchsets.go                #   Patchset persistence
 │   │   ├── repo_location.go            #   RepoLocationStore: repo source/local/cache columns
+│   │   ├── review_drafts.go            #   Current-user line/range draft CRUD
 │   │   ├── review_thread_store.go      #   Review-thread persistence
 │   │   ├── sync_cursor.go              #   Sync cursor persistence
 │   │   ├── migration_runner.go         #   Embedded SQL migrations, version tracking
@@ -158,7 +162,10 @@ go/
 │   │
 │   ├── sync/                           # Sync engine: orchestration, concurrency, DB writes, queueing
 │   │   ├── types.go                    #   SyncRequest, SyncResult, SyncProgress
-│   │   ├── orchestrator.go             #   Orchestrator: Sync(), ApplyAction, ReplayQueuedActions, syncPRList
+│   │   ├── orchestrator.go             #   Orchestrator state, constructor and sync coordination
+│   │   ├── orchestrator_actions.go     #   ApplyAction and replayable action execution
+│   │   ├── orchestrator_options.go     #   With* builders
+│   │   ├── orchestrator_review.go      #   Draft absorption, grouped review submission, accepted-draft deletion
 │   │   ├── concurrent.go              #   WorkerPool, PRFetchResult, FetchPRDetails, SyncPRsWithDetails
 │   │   ├── writer.go                  #   Writer: WriteSyncResults (batch upsert PRs + comments)
 │   │   ├── queue.go                   #   ActionQueue: Enqueue, GetPending, MarkCompleted/Failed, cleanup
@@ -231,9 +238,9 @@ go/
 Parses CLI flags, configures logging, checks the OS keychain for an existing token, and calls `server.App.Run()`.
 
 ### `internal/server` -- Application Core
-`app.go` owns the application dependency graph, lifecycle, WebSocket server setup, and handler registration. Background sync logic lives in `syncloop.go`; readiness payloads live in `ready.go`; repo path resolution lives in `repo_location_resolver.go`.
+`app.go` owns the application dependency graph, provider lifecycle, and `Run()`. `app_startup.go` initializes the database/stores, expertise/LLM support, and startup provider; `app_handlers.go` registers WebSocket handlers by domain. Background sync logic lives in `syncloop.go`; readiness payloads live in `ready.go`; repo path resolution lives in `repo_location_resolver.go`.
 
-The `handler/` subpackage contains focused `ws.MessageHandler` factories grouped by domain: auth, comments, diff, patchsets, PR list, triage, interdiff, repos, repo-location management, sync, and review threads. Repo-location handlers cover dev-folder validation/scanning, add-by-URL, removal preflight/removal, local-path recovery, cache recovery, cache stats, prune, clear, and targeted cache deletion.
+The `handler/` subpackage contains focused `ws.MessageHandler` factories grouped by domain: auth, comments, review drafts (`drafts.go`: `DRAFT_SAVE` / `DRAFT_DELETE` / `DRAFTS_LIST`), diff, patchsets, PR list, triage, interdiff, repos, repo-location management, sync, and review threads. Repo-location handlers cover dev-folder validation/scanning, add-by-URL, removal preflight/removal, local-path recovery, cache recovery, cache stats, prune, clear, and targeted cache deletion.
 
 ### `internal/ws` -- WebSocket Transport
 Clean, focused package. `Server` manages connections and lifecycle; `Dispatcher` routes JSON messages to registered `MessageHandler` functions. No business logic.
@@ -253,7 +260,7 @@ The `Client` wraps `go-github` and is split across 7 files:
 
 ### `internal/sync` -- Sync Engine
 Orchestrates the full sync cycle (list PRs, fetch details concurrently, write to DB). Contains:
-- Orchestrator (main sync + action dispatch)
+- Orchestrator (main sync + action dispatch): `orchestrator_options.go` holds `With*` builders, `orchestrator_actions.go` owns `ApplyAction`, and `orchestrator_review.go` handles draft-absorbing review submission. Approve / request changes include the current user's drafts; `submit_review` bypasses offline/rate-limited replay and removes drafts only after GitHub accepts each commit group
 - WorkerPool (bounded concurrency)
 - Writer (batch DB upserts)
 - ActionQueue (offline queue with retry/cleanup)
@@ -273,7 +280,7 @@ The `-auth-callback-timeout` flag controls how long the engine waits for the OAu
 Simple pub/sub `EventEmitter` with buffered channels. Used by both sync and actions packages.
 
 ### `internal/store` -- Database Layer
-SQLite via `mattn/go-sqlite3`. `DB` is a thin wrapper applying pragmas (FK, WAL). Store types own persistence for diffs, review threads, patchsets, viewed files, current user, sync cursors, queued write actions, and repo locations. `RepoLocationStore` manages the repo-location columns added by migration 026 (`repo_source`, `local_path`, `local_path_verified_at`, `cache_path`) so the engine can prefer user-owned clones while retaining Bistro cache fallback. `MigrationRunner` applies embedded `.sql` migrations.
+SQLite via `mattn/go-sqlite3`. `DB` is a thin wrapper applying pragmas (FK, WAL). Store types own persistence for diffs, review threads, review drafts, patchsets, viewed files, current user, sync cursors, queued write actions, and repo locations. `review_drafts.go` owns current-user-scoped line/range draft creation, body edits, listing, and deletion; all draft writes stay in the engine. `RepoLocationStore` manages the repo-location columns added by migration 026 (`repo_source`, `local_path`, `local_path_verified_at`, `cache_path`) so the engine can prefer user-owned clones while retaining Bistro cache fallback. `MigrationRunner` applies embedded `.sql` migrations.
 
 ### `internal/git` -- Git Operations
 Uses `go-git` for cloning repos and generating unified diffs between two SHAs. Includes an in-memory cache with TTL for cloned repos, remote identity normalization (`ParseRemoteURL`, `SafeRepoID`), per-repo operation locks, local-clone PR ref fetching, and cache-maintenance helpers for stats, orphan sweeping, and safe deletion under the cache root.

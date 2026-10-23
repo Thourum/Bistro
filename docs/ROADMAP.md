@@ -130,16 +130,16 @@ File-by-file unified diff via `@pierre/diffs`, syntax highlighting via highlight
 
 ### 1.3 PR actions
 
-Approve (with `a a` confirmation), request changes, post line/thread comments, exponential-backoff retry, offline queue.
+Approve (with the `a a` two-key sequence), request changes, post line/thread comments, exponential-backoff retry, offline queue for replayable actions. Approve / request changes absorb pending line-comment drafts; review submissions with drafts are never queued.
 
 | Sub-feature | Status | Notes |
 |---|---|---|
 | Approve / request changes / PR-level comment | done | |
-| **Line-level / inline review comment** | partial (2026-07-11) | Inline threads render, and **replies to existing threads post end-to-end** (`CreateCommentInReplyTo`, reply UI in diff view). Posting a *new* line-level comment is still rejected when `line > 0` — provider lacks `path`/`commitSHA`/`side` posting |
-| `a a` double-tap confirmation | done | `keyboard.ts` |
+| **Line-level / inline review comment** | done (2026-10-23) | “Review Without Leaving Keyboard” Phase 1 shipped: `c` enters line-comment mode; line/range drafts persist locally, can be edited with `Enter` or deleted with `d d`, and submit via `SubmitReview` / GitHub `CreateReview` with `path`/`commitSHA`/`side`. Approve / request changes include pending drafts; the palette also offers Submit review / Discard drafts. Phase 2 key-remap UI is in progress |
+| `a a` approve sequence | done | Two-key sequence in `utils/keybindings.ts`; approves immediately and includes pending drafts |
 | Exponential backoff retry | done | `actions/executor.go` |
 | Offline action queue with replay | done | ⚠️ Audit (FIXED 2026-06-19): re-enqueuing the same `(PR, action)` hit a `PRIMARY KEY` collision and silently dropped the retry. `Enqueue` now uses `ON CONFLICT(id) DO UPDATE … status='pending', retry_count=0` |
-| **Resolve / unresolve conversation** | done (2026-07-11) | GraphQL client landed (`provider/github/graphql.go` — `resolveReviewThread`/`unresolveReviewThread`), wired through action handlers and `useThreadActions` + `UnresolvedThreadsView` |
+| **Resolve / unresolve conversation** | done (2026-07-11; keyboard toggle 2026-10-23) | GraphQL client (`provider/github/graphql.go` — `resolveReviewThread`/`unresolveReviewThread`), thread-overlay actions, and `x` / palette toggle for the active diff thread |
 | **Reviewer-request write-back** | not started | Required for Phase 4 expertise routing to be useful. ⚠️ Audit: wider blast radius than implied — needs a new `Provider.RequestReviewers` method (breaks the mock + all interface assertions), a new `ActionCommand`, handler, and WS message. go-github v84 *does* expose `PullRequests.RequestReviewers`, so the GitHub impl is feasible |
 | **Idempotency keys on retried actions** | done (2026-07-11) | Stable action IDs in `store/action_queue.go`; replay path in the orchestrator dedupes on them |
 
@@ -834,7 +834,7 @@ Everything left between here and FOSS v1.0, in rough dependency order. Done work
 - [ ] Security gates pass: `govulncheck` and `pnpm audit --prod` currently fail (reachable Go vulns in `go/`; 1 critical in `electron/` via `seroval`). Fix and raise `PNPM_AUDIT_LEVEL` to `high` in the release workflow
 - [ ] macOS signing + notarization (secrets not yet configured; alpha ships unsigned); decide auto-update hosting (open question #5)
 - [ ] Windows MSI, Linux AppImage/`.deb`, Homebrew cask (7.2)
-- [ ] Post *new* line-level review comments (`PostReviewComment` with path/commitSHA/side) — replies already work (1.3)
+- [ ] Post *new* line-level review comments (`PostReviewComment` with path/commitSHA/side) — draft-based line comments shipped 2026-10-23 via `SubmitReview` / `CreateReview` (1.3); direct `PostReviewComment` remains unimplemented
 - [x] Former range-diff handler wiring blocker superseded (2026-10-23): patch-ID triage and go-git interdiffs shipped; `s` no longer falls back after an observed force-push when comparable fingerprints exist (2.1/2.2)
 
 **Phase 3 — classification (implemented 2026-07-12, the wedge)**

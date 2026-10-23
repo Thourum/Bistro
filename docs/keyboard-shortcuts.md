@@ -9,7 +9,7 @@ settings, so the UI must render from config, never hardcode.
 A binding is active in **one route** (a screen) or **one overlay** (a modal).
 When an overlay is open, ONLY that overlay's bindings fire. Routes: Inbox
 (`/prs`), PR detail, Diff, Settings. Overlays: command palette, help, search,
-filter, repo picker, add-repo, threads.
+filter, repo picker, add-repo, threads, line-comment mode.
 
 Note: the same key intentionally means different things per context (`s` = star
 in the inbox, since-last-review in a diff; `Shift+R` = mark lane read in the
@@ -58,9 +58,10 @@ Only quit is truly global. The rest are inactive on login, onboarding and
 |---|---|
 | `Space` | Open the diff |
 | `n` / `p` | Next / previous file |
-| `a a` | Approve (double-tap) |
+| `a a` | Approve (includes pending drafts) |
 | `c` | Comment |
-| `Shift+R` | Request changes |
+| `Shift+R` | Request changes (includes pending drafts) |
+| `x` | Resolve / unresolve active thread — open the diff and select a thread with `n` / `p` |
 | `r` | Reply — bound, not yet wired (use `Enter` on a thread in the diff view) |
 | `g u` | Review threads |
 | `d n` | Dismiss nits + info |
@@ -88,7 +89,10 @@ Only quit is truly global. The rest are inactive on login, onboarding and
 | `z` | Collapse / expand focused file |
 | `v` | Mark file viewed |
 | `o` | Open file in browser |
-| `Enter` | Reply to selected inline comment |
+| `c` | Comment on line |
+| `d d` | Delete selected draft |
+| `x` | Resolve / unresolve active thread |
+| `Enter` | Edit selected draft / reply to selected inline comment |
 | `h` / `l`, arrows | Scroll |
 | `Ctrl+D` / `Ctrl+U` | Page down / up |
 | `0` / `$` | Jump to top / bottom |
@@ -96,6 +100,26 @@ Only quit is truly global. The rest are inactive on login, onboarding and
 Note: PR detail mode keeps its own `n` / `p` for file navigation (no inline
 comment view there); the diff route's `n` / `p` mean comment navigation
 instead — this is a deliberate context-dependent rebind, not a duplicate bug.
+
+## Comment mode
+
+Press `c` in the diff to enter line-comment mode. Cursor keys apply while the
+composer is closed; `Enter` opens it for typing. Select saved drafts with `n` /
+`p` in the diff, then `Enter` to edit or `d d` to delete.
+
+| Key | Action |
+|---|---|
+| `j` / `k` | Next / previous line |
+| `Shift+J` / `Shift+K` | Extend range down / up (within one hunk and side) |
+| `h` / `l` | Old / new side (split view) |
+| `Enter` | Write comment |
+| `Mod+Enter` | Save draft |
+| `Esc` | Exit comment mode |
+
+Drafts stay local until you approve, request changes, or choose **Submit review**
+in the command palette. Review submissions are not queued for offline replay;
+failed submissions keep unsubmitted drafts. **Discard drafts** in the palette
+removes all pending drafts for the current PR.
 
 ## Overlay: filter
 
