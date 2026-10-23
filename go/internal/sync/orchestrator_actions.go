@@ -76,6 +76,11 @@ func (o *Orchestrator) ApplyAction(ctx context.Context, req *actions.ActionReque
 	if result := o.validateThreadPreflight(ctx, req); result != nil {
 		return result
 	}
+	// Review submissions with drafts bypass the queue: drafts are already
+	// persisted, so a rate-limited or offline submit fails with them intact.
+	if result, handled := o.applyReviewWithDrafts(ctx, req); handled {
+		return result
+	}
 	resolvedReq, failure := o.prepareReplyCommentTarget(ctx, req)
 	if failure != nil {
 		return failure
@@ -173,7 +178,7 @@ func (o *Orchestrator) executeAction(ctx context.Context, req *actions.ActionReq
 			o.handleThreadActionSuccess(ctx, req, log)
 		case actions.ReplyCommentCommand:
 			o.handleReplyCommentSuccess(req)
-		case actions.ApproveCommand, actions.RequestChangesCommand, actions.PostCommentCommand:
+		case actions.ApproveCommand, actions.RequestChangesCommand, actions.PostCommentCommand, actions.SubmitReviewCommand:
 			if o.postReview != nil {
 				o.postReview(ctx, req.PRID)
 			}

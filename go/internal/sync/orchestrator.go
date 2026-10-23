@@ -44,6 +44,9 @@ type Orchestrator struct {
 	// every ActionExecutor so successful reviews record last_reviewed_sha.
 	reviewLogin     actions.ReviewLoginGetter
 	reviewSHAWriter actions.ReviewSHAWriter
+	// drafts is optional; when set, approve/request_changes absorb the current
+	// user's line-comment drafts and submit_review can run.
+	drafts reviewDraftStore
 	// anchorResolver is optional; when set it runs on each clone after diff
 	// generation and populates PRFetchResult.AnchorUpdates.
 	anchorResolver *git.AnchorResolver
@@ -203,6 +206,12 @@ func (o *Orchestrator) WithPostCommit(fn func(prIDs []string)) *Orchestrator {
 // WithPostReview attaches a hook invoked after successful review-like actions.
 func (o *Orchestrator) WithPostReview(fn func(ctx context.Context, prID string)) *Orchestrator {
 	o.postReview = fn
+	return o
+}
+
+// WithReviewDrafts attaches the draft store used for review submission.
+func (o *Orchestrator) WithReviewDrafts(d reviewDraftStore) *Orchestrator {
+	o.drafts = d
 	return o
 }
 
