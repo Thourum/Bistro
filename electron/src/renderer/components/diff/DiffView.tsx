@@ -1,5 +1,13 @@
 import type { CodeViewItem } from '@pierre/diffs';
-import { CodeView, type CodeViewHandle } from '@pierre/diffs/react';
+import {
+  CodeView,
+  type CodeViewHandle,
+  useWorkerPool,
+  WorkerPoolContextProvider,
+  type WorkerPoolOptions,
+} from '@pierre/diffs/react';
+import DiffsHighlighterWorker from '@pierre/diffs/worker/worker.js?worker';
+import { Fault, ResultAsync } from '@thourum/fault';
 import { useEffect, useMemo } from 'react';
 import type { AppSettings } from '../../../types/settings';
 import { useStore } from '../../hooks/useStore';
@@ -29,6 +37,23 @@ import {
 
 const OPEN_FILE_BROWSER_EVENT = 'bistro:diff:open-file-browser';
 const log = createLogger('DiffView');
+// Lines longer than this render unhighlighted, so a minified bundle can't
+// pin a worker. 1,000 chars covers hand-written code with margin.
+const TOKENIZE_MAX_LINE_LENGTH = 1000;
+const LINE_DIFF_TYPE = 'word';
+
+const WORKER_POOL_OPTIONS: WorkerPoolOptions = {
+  workerFactory: () => new DiffsHighlighterWorker(),
+  // Pool stops workers and falls back to main-thread highlighting on failure.
+  onWorkerError: (event) => {
+    event.preventDefault();
+    log.error(
+      { error: event instanceof ErrorEvent ? event.message : event.type },
+      'diff highlighter worker failed',
+    );
+  },
+};
+
 const EMPTY_VIEWED_PATHS: ReadonlySet<string> = new Set();
 const EMPTY_OVERSIZED: ReadonlyMap<string, number> = new Map();
 const EMPTY_THREADS: readonly ReviewThread[] = [];
@@ -130,44 +155,53 @@ export function DiffView({
     activeId ?? '',
   );
   return (
-    <div className="w-full h-full min-h-0 flex overflow-hidden">
-      <DiffFileSidebar
-        files={filteredFiles}
-        activeId={activeId}
-        onSelect={selectFile}
-        totalCount={files.length}
-        viewedPaths={viewedPaths}
-      />
-      <section className="flex-1 min-w-0 min-h-0 bg-surface-container-lowest overflow-hidden relative">
-        {activeUnrenderableFile !== undefined ? (
-          <DiffParseFailurePanel
-            file={activeUnrenderableFile}
-            {...(openFilesInBrowser !== undefined
-              ? { onOpenInBrowser: openFilesInBrowser }
-              : {})}
-          />
-        ) : (
-          <DiffCodeView
-            files={files}
-            parsedFiles={parsedFiles}
-            items={items}
-            codeViewRef={codeViewRef}
-            pendingScrollFileIdRef={pendingScrollFileIdRef}
-            activeId={activeId}
-            activateVisibleFile={activateVisibleFile}
-            hiddenWhitespaceByFileId={hiddenWhitespaceByFileId}
-            expertiseByPath={expertiseByPath}
-            expertiseError={expertiseError}
-            commentsByThread={commentsByThread}
-            activeAnnotationKey={activeAnnotationKey}
-            replyingToThreadId={replyingToThreadId}
-            onThreadReply={onThreadReply}
-            theme={theme}
-            diffStyle={diffStyle}
-          />
-        )}
-      </section>
-    </div>
+    <WorkerPoolContextProvider
+      poolOptions={WORKER_POOL_OPTIONS}
+      highlighterOptions={{
+        theme: `pierre-${theme}`,
+        lineDiffType: LINE_DIFF_TYPE,
+        tokenizeMaxLineLength: TOKENIZE_MAX_LINE_LENGTH,
+      }}
+    >
+      <div className="w-full h-full min-h-0 flex overflow-hidden">
+        <DiffFileSidebar
+          files={filteredFiles}
+          activeId={activeId}
+          onSelect={selectFile}
+          totalCount={files.length}
+          viewedPaths={viewedPaths}
+        />
+        <section className="flex-1 min-w-0 min-h-0 bg-surface-container-lowest overflow-hidden relative">
+          {activeUnrenderableFile !== undefined ? (
+            <DiffParseFailurePanel
+              file={activeUnrenderableFile}
+              {...(openFilesInBrowser !== undefined
+                ? { onOpenInBrowser: openFilesInBrowser }
+                : {})}
+            />
+          ) : (
+            <DiffCodeView
+              files={files}
+              parsedFiles={parsedFiles}
+              items={items}
+              codeViewRef={codeViewRef}
+              pendingScrollFileIdRef={pendingScrollFileIdRef}
+              activeId={activeId}
+              activateVisibleFile={activateVisibleFile}
+              hiddenWhitespaceByFileId={hiddenWhitespaceByFileId}
+              expertiseByPath={expertiseByPath}
+              expertiseError={expertiseError}
+              commentsByThread={commentsByThread}
+              activeAnnotationKey={activeAnnotationKey}
+              replyingToThreadId={replyingToThreadId}
+              onThreadReply={onThreadReply}
+              theme={theme}
+              diffStyle={diffStyle}
+            />
+          )}
+        </section>
+      </div>
+    </WorkerPoolContextProvider>
   );
 }
 
@@ -336,6 +370,21 @@ function DiffCodeView({
   theme,
   diffStyle,
 }: DiffCodeViewProps): React.ReactElement {
+  const workerPool = useWorkerPool();
+  // The pool is a singleton: highlighterOptions apply only at creation, so
+  // later theme switches must be pushed to the workers.
+  useEffect(() => {
+    if (workerPool === undefined) return;
+    void ResultAsync.fromPromise(
+      workerPool.setRenderOptions({ theme: `pierre-${theme}` }),
+      (cause) =>
+        new Fault(cause instanceof Error ? cause.message : String(cause))
+          .withTag('DIFF_THEME_ERROR')
+          .withCause(cause),
+    ).orInspect((error) =>
+      log.error({ error: error.message }, 'failed to switch diff theme'),
+    );
+  }, [workerPool, theme]);
   return (
     <CodeView
       ref={codeViewRef}
@@ -351,12 +400,12 @@ function DiffCodeView({
         });
       }}
       className="h-full w-full overflow-y-auto overflow-x-auto"
-      disableWorkerPool
       items={items}
       options={{
         theme: `pierre-${theme}`,
         diffStyle,
-        lineDiffType: 'word',
+        lineDiffType: LINE_DIFF_TYPE,
+        tokenizeMaxLineLength: TOKENIZE_MAX_LINE_LENGTH,
         stickyHeaders: true,
         layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
       }}
