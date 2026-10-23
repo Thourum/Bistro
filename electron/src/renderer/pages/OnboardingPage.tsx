@@ -150,7 +150,7 @@ export function OnboardingPage(): React.ReactElement {
           </header>
 
           {step === 'navigation' ? (
-            <OnboardingNavigationStep onError={setStepError} />
+            <OnboardingNavigationStep onErrorChange={setStepError} />
           ) : (
             <OnboardingDevFolderStep
               discoveredCount={discoveredCount}

@@ -8,12 +8,13 @@ interface NavigationStyleCard {
   readonly caveat?: string;
 }
 
-const CARDS = {
+export const NAVIGATION_STYLE_CARDS = {
   vim: { label: 'Vim', pitch: 'h j k l, g g, G — modal muscle memory.' },
   emacs: {
     label: 'Emacs',
     pitch: 'C-n / C-p to move, C-c C-<key> for actions.',
-    caveat: 'On Windows and Linux, C-c also means copy outside text fields.',
+    caveat:
+      'On Windows and Linux, C-c and C-x act as Bistro prefixes instead of copy and cut outside text fields.',
   },
   standard: {
     label: 'Standard',
@@ -37,7 +38,7 @@ export function NavigationStylePicker({
       className="grid grid-cols-1 md:grid-cols-3 gap-4"
     >
       {NAVIGATION_STYLES.map((style) => {
-        const card: NavigationStyleCard = CARDS[style];
+        const card: NavigationStyleCard = NAVIGATION_STYLE_CARDS[style];
         const isSelected = style === selected;
         return (
           <button
@@ -45,6 +46,7 @@ export function NavigationStylePicker({
             type="button"
             role="radio"
             aria-checked={isSelected}
+            tabIndex={isSelected ? 0 : -1}
             onClick={() => onSelect(style)}
             className={cn(
               // `!`: the unlayered `button` reset in globals.css beats layered utilities.

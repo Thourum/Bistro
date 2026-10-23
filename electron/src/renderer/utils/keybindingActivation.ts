@@ -9,20 +9,41 @@ const SANDBOX_STEP_ACTION_IDS: ReadonlySet<string> = new Set([
   'onboarding.prevStyle',
 ]);
 
+const CONTINUE_ACTION_ID = 'onboarding.continue';
+// Controls whose native Space activation must win over `onboarding.continue`.
+const NATIVELY_ACTIVATED_SELECTOR =
+  'button, a[href], summary, [role="button"], [role="radio"]';
+
+/** `onboarding.continue` steps aside while a button-like control has focus. */
+export function yieldsToFocusedControl(
+  binding: Pick<KeyBinding, 'actionId'>,
+  target: EventTarget | null,
+): boolean {
+  return (
+    binding.actionId === CONTINUE_ACTION_ID &&
+    typeof Element !== 'undefined' &&
+    target instanceof Element &&
+    target.closest(NATIVELY_ACTIVATED_SELECTOR) !== null
+  );
+}
+
 /** Only literal Escape participates in Radix's dismissal handling. */
 export function isEscape(binding: Pick<KeyBinding, 'keys'>): boolean {
   return binding.keys === 'Escape';
 }
 
-/** Input handling for single hotkeys; Escape preserves prior dismissal state. */
+/** Input handling for single hotkeys; Escape and continue manage defaults themselves. */
 export function hotkeyOptions(
-  binding: Pick<KeyBinding, 'keys'>,
+  binding: Pick<KeyBinding, 'keys' | 'actionId'>,
 ): Pick<HotkeyOptions, 'ignoreInputs' | 'preventDefault'> {
   return {
     // Composers cancel locally on Escape only; C-g must not bypass that cleanup.
     ignoreInputs: !isEscape(binding),
-    // Keep `defaultPrevented` meaningful as "already handled" for Escape only.
-    ...(isEscape(binding) ? { preventDefault: false } : {}),
+    // Escape keeps `defaultPrevented` meaningful as "already handled";
+    // continue must not cancel a focused button's native Space click.
+    ...(isEscape(binding) || binding.actionId === CONTINUE_ACTION_ID
+      ? { preventDefault: false }
+      : {}),
   };
 }
 
@@ -85,7 +106,7 @@ export function isBindingEnabled(
     );
   }
   // In an opened fake PR, Space belongs to the PR (vim detail.viewDiff).
-  if (binding.actionId === 'onboarding.continue') {
+  if (binding.actionId === CONTINUE_ACTION_ID) {
     return sandboxPane === 'list' && isActive(binding, real);
   }
   if (SANDBOX_ACTION_IDS.has(binding.actionId)) {

@@ -1,5 +1,8 @@
 import { type ReactElement, useEffect, useMemo } from 'react';
-import { NavigationStylePicker } from '../components/NavigationStylePicker';
+import {
+  NAVIGATION_STYLE_CARDS,
+  NavigationStylePicker,
+} from '../components/NavigationStylePicker';
 import { Kbd } from '../components/ui/kbd';
 import { useStore } from '../hooks/useStore';
 import { cn } from '../lib/utils';
@@ -13,11 +16,12 @@ import { SANDBOX_TASKS } from '../utils/onboardingSandbox';
 import { OnboardingSandbox } from './OnboardingSandbox';
 
 interface OnboardingNavigationStepProps {
-  readonly onError: (message: string) => void;
+  /** Receives a save failure message, or `null` once a save succeeds. */
+  readonly onErrorChange: (message: string | null) => void;
 }
 
 export function OnboardingNavigationStep({
-  onError,
+  onErrorChange,
 }: OnboardingNavigationStepProps): ReactElement {
   const style = useStore(settingsStore, (s) => s.navigation.style);
   const overrides = useStore(settingsStore, (s) => s.keybindings);
@@ -55,14 +59,18 @@ export function OnboardingNavigationStep({
           selected={style}
           onSelect={(next) =>
             void setNavigationStyle(next).match(
-              () => undefined,
+              () => onErrorChange(null),
               (error) =>
-                onError(
+                onErrorChange(
                   `Navigation style could not be saved: ${error.message}`,
                 ),
             )
           }
         />
+        {/* Tab / Shift+Tab switch styles without moving focus, so announce it. */}
+        <p className="sr-only" aria-live="polite">
+          {NAVIGATION_STYLE_CARDS[style].label} navigation selected
+        </p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-12 border border-outline-variant/30">
         <div className="md:col-span-8">

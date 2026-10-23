@@ -130,3 +130,27 @@ describe('onboarding hotkey routing', () => {
     expect(appStore.state.onboardingSandbox?.pane).toBe('detail');
   });
 });
+
+describe('onboarding continue', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('lets a focused button handle Space natively instead of continuing', () => {
+    class FakeElement {
+      closest(selector: string): FakeElement | null {
+        return selector.includes('button') ? this : null;
+      }
+    }
+    vi.stubGlobal('Element', FakeElement);
+    useAppHotkeys();
+    const space = findHotkey('Space');
+    const preventDefault = vi.fn();
+
+    space.callback({ target: new FakeElement(), preventDefault } as never);
+    expect(appStore.state.confirmingAction).toBeNull();
+    expect(preventDefault).not.toHaveBeenCalled();
+
+    space.callback({ target: null, preventDefault } as never);
+    expect(appStore.state.confirmingAction).toBe('onboarding_continue');
+    expect(preventDefault).toHaveBeenCalledOnce();
+  });
+});

@@ -15,7 +15,11 @@ import {
   getBindingAction,
   type KeyActionContext,
 } from '../utils/keybindingActions';
-import { hotkeyOptions, isEscape } from '../utils/keybindingActivation';
+import {
+  hotkeyOptions,
+  isEscape,
+  yieldsToFocusedControl,
+} from '../utils/keybindingActivation';
 import {
   getEffectiveBindings,
   isBindingEnabled,
@@ -132,6 +136,11 @@ export function useAppHotkeys(): void {
             // calls preventDefault() itself before every callback, which would
             // make this flag always true.
             if (isEscape(binding) && event.defaultPrevented) return;
+            if (yieldsToFocusedControl(binding, event.target)) return;
+            // Continue opts out of the manager's preventDefault (see
+            // `hotkeyOptions`), so stop Space scrolling the page here.
+            if (binding.actionId === 'onboarding.continue')
+              event.preventDefault();
             runBinding(binding.actionId, makeCtx());
           },
           options: {
