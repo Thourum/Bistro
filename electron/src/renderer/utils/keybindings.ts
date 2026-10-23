@@ -90,6 +90,15 @@ const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
     },
   },
   {
+    actionId: 'global.cancel',
+    description: 'Back / Cancel',
+    activation: {
+      routes: ['list', 'detail', 'diff', 'settings'],
+      overlays: ALL_OVERLAYS,
+    },
+    hidden: true,
+  },
+  {
     actionId: 'global.command',
     description: 'Commands',
     activation: { routes: ['list', 'detail', 'diff'] },
@@ -272,6 +281,12 @@ const DETAIL_BINDINGS: readonly BindingDefinition[] = [
     actionId: 'detail.undoDismiss',
     description: 'Undo last dismissal',
     activation: DETAIL,
+  },
+  {
+    actionId: 'detail.undoDismissAlt',
+    description: 'Undo last dismissal',
+    activation: DETAIL,
+    hidden: true,
   },
   {
     actionId: 'detail.filterCritical',

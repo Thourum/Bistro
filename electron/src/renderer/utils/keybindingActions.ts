@@ -265,6 +265,7 @@ function scrollDiffToBottom(): void {
 const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'global.help': openHelp,
   'global.escape': handleEscape,
+  'global.cancel': handleEscape,
   'onboarding.finish': (context) =>
     context.store.setState((state) => ({
       ...state,
@@ -342,6 +343,7 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'detail.dismissNits': () => emitAppEvent('bistro:comments:dismiss-nits'),
   'detail.dismissBots': () => emitAppEvent('bistro:comments:dismiss-bots'),
   'detail.undoDismiss': () => emitAppEvent('bistro:comments:undo-dismiss'),
+  'detail.undoDismissAlt': () => emitAppEvent('bistro:comments:undo-dismiss'),
   'detail.filterCritical': (context) =>
     context.store.setState((state) => ({
       ...state,

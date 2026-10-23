@@ -20,6 +20,7 @@ import {
   isActive,
   isSequenceBinding,
 } from '../../src/renderer/utils/keybindings';
+import { KEYMAPS } from '../../src/renderer/utils/keymaps';
 
 // Mock the router so list.open / list.bottom can call router.navigate without
 // a real RouterProvider.
@@ -319,7 +320,9 @@ describe('vim bindings', () => {
 describe('getEffectiveBindings', () => {
   it('returns defaults when no overrides exist', () => {
     const bindings = getEffectiveBindings('vim', {});
-    expect(bindings).toHaveLength(ACTION_CATALOG.length);
+    expect(bindings.map((binding) => binding.actionId).sort()).toEqual(
+      Object.keys(KEYMAPS.vim).sort(),
+    );
     expect(bindings.find((b) => b.actionId === 'list.down')?.keys).toBe('j');
   });
 

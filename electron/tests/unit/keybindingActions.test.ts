@@ -305,6 +305,23 @@ describe('binding actions', () => {
     });
   });
 
+  it('C-g cancels a pending list confirmation', () => {
+    const store = makeStore({ confirmingAction: 'approve' });
+    invokeAction('global.cancel', makeCtx(store, 'list'));
+    expect(store.state.confirmingAction).toBeNull();
+  });
+
+  it('the alternate undo action emits the dismissal undo event', () => {
+    const undoEvents: string[] = [];
+    document.addEventListener(
+      'bistro:comments:undo-dismiss',
+      (event) => undoEvents.push(event.type),
+      { once: true },
+    );
+    invokeAction('detail.undoDismissAlt', makeCtx({}, 'detail'));
+    expect(undoEvents).toEqual(['bistro:comments:undo-dismiss']);
+  });
+
   describe('diff route: j/k always scroll, n/p navigate inline comments', () => {
     it('j always scrolls, even when inline comments exist', () => {
       const viewport = document.createElement('div');
