@@ -128,3 +128,48 @@ it('preserves cap-map identity across viewed updates and refreshes changed metad
     new Map([['huge.c', 716800]]),
   );
 });
+
+it('does not refetch or blank the diff when the PR list re-polls an unchanged PR', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const seenData: ReturnType<typeof useDiffPageData>[] = [];
+  const onData = (data: ReturnType<typeof useDiffPageData>): void => {
+    seenData.push(data);
+  };
+  request.mockImplementation((type: string) =>
+    okAsync(
+      type === 'REQUEST_DIFF'
+        ? { diff: '', files: [CAPPED_FILE] }
+        : { comments: [] },
+    ),
+  );
+  const container = document.createElement('div');
+  const root = createRoot(container);
+  onTestFinished(async () => {
+    await act(async () => root.unmount());
+    request.mockReset();
+  });
+  await act(async () => root.render(<Probe pr={PR_FIXTURE} onData={onData} />));
+  const loadedAt = seenData.length;
+
+  // A poll hands back a new object for the same PR revision.
+  await act(async () =>
+    root.render(
+      <Probe
+        pr={{ ...PR_FIXTURE, updated_at: '2026-10-23T00:01:00Z' }}
+        onData={onData}
+      />,
+    ),
+  );
+  const diffRequests = (): number =>
+    request.mock.calls.filter(([type]) => type === 'REQUEST_DIFF').length;
+  expect(diffRequests()).toBe(1);
+
+  // A new head refetches, but keeps showing the loaded diff meanwhile.
+  await act(async () =>
+    root.render(
+      <Probe pr={{ ...PR_FIXTURE, head_sha: 'updated' }} onData={onData} />,
+    ),
+  );
+  expect(diffRequests()).toBe(2);
+  expect(seenData.slice(loadedAt).every((data) => !data.loading)).toBe(true);
+});

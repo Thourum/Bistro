@@ -1,5 +1,5 @@
 import { Fault } from '@thourum/fault';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { wsClient } from '../services/ws/connection';
 import {
   type Comment,
@@ -51,16 +51,29 @@ export function useDiffPageData({
     ReadonlyMap<string, number>
   >(() => new Map());
 
+  // The PR list re-polls every minute with fresh PR objects; key the fetch on
+  // the PR revision so an unchanged PR isn't refetched (and its diff blanked).
+  const prId = pr?.id;
+  const repo = pr === undefined ? undefined : `${pr.owner}/${pr.repo}`;
+  const baseSha = pr?.base_sha;
+  const headSha = pr?.head_sha;
+  const loadedPrIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (pr === undefined || isAwaitingHydration) return;
-    setLoading(true);
+    if (prId === undefined || repo === undefined || isAwaitingHydration) return;
+    void baseSha;
+    void headSha;
+    // Show the loading state only for a new PR; a new head keeps the old diff
+    // on screen until the refreshed one arrives.
+    if (loadedPrIdRef.current !== prId) setLoading(true);
     setDiffError(null);
     void wsClient
-      .request('REQUEST_DIFF', { pr_id: pr.id, repo: `${pr.owner}/${pr.repo}` })
+      .request('REQUEST_DIFF', { pr_id: prId, repo })
       .mapErr(requestFault)
       .andThen((data) => parseResponse(diffResponseSchema, data))
       .match(
         (payload) => {
+          loadedPrIdRef.current = prId;
           setDiff(payload.diff ?? '');
           setFiles(payload.files);
           // 'too_large' is a legacy status from before the per-PR budget removal.
@@ -75,11 +88,12 @@ export function useDiffPageData({
         },
         (error) => {
           log.error({ err: error.message }, 'failed to fetch diff');
+          loadedPrIdRef.current = prId;
           setDiffError(error.message);
           setLoading(false);
         },
       );
-  }, [isAwaitingHydration, pr]);
+  }, [isAwaitingHydration, prId, repo, baseSha, headSha]);
 
   useEffect(() => {
     if (pr === undefined) return;
