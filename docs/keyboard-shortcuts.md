@@ -3,6 +3,9 @@
 Generated from `electron/src/renderer/utils/keybindings.ts` (updated 2026-10-23). This is
 the full surface for a help-menu redesign. Every key is user-overridable via
 settings, so the UI must render from config, never hardcode.
+To rebind, open Settings → Keyboard, press `Enter` on an action, type the new key
+or chord, and press `Enter` to save (`Esc` cancels). `Backspace` restores the
+default. Keys that would collide with a binding active in the same place are rejected.
 
 ## Contexts
 

@@ -182,6 +182,8 @@ export interface UIState {
    * and deliberately not persisted — it answers "is this churn?" for one PR.
    */
   hideWhitespaceHunks: boolean;
+  /** True while the keyboard settings page records a new binding; Esc then cancels recording instead of leaving settings. */
+  isRecordingKeybinding: boolean;
   /**
    * Canonical file keys whose default collapse state is inverted by `z`.
    * Generated files start collapsed; everything else starts expanded.
@@ -277,6 +279,7 @@ export const initialUIState: UIState = {
   activeInlineCommentThreadId: null,
   replyingInlineCommentThreadId: null,
   hideWhitespaceHunks: false,
+  isRecordingKeybinding: false,
   diffCollapseOverrides: [],
   commentMinSeverity: null,
   commentHumanOnly: false,

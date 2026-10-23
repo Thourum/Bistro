@@ -183,8 +183,21 @@ onboarding unless a button has focus.
 
 Open settings with `Cmd+,` / `Ctrl+,` or run `settings` in the command palette
 (`:`, `Alt+x`, or `Mod+k`, depending on your style). **Settings → Keyboard** shows
-the style picker above your shortcuts. Keybinding overrides are stored locally
-in `settings.json` as action ids mapped to key arrays:
+the style picker above your shortcuts. To rebind one:
+
+1. Move to an action with `Tab` and press `Enter`.
+2. Type the new key or chord (for example `g` then `x`). `Backspace` removes the
+   last step.
+3. Press `Enter` to save, or `Esc` to cancel.
+
+Press `Backspace` on a customized action to restore your style's default. A key
+that would collide with another binding active on the same screen is rejected,
+and the message names the action that already uses it.
+
+### Advanced: settings.json
+
+Overrides are stored locally in `settings.json` as action ids mapped to key
+arrays. You can also edit them there:
 
 ```json
 {

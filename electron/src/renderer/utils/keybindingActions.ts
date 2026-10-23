@@ -218,6 +218,7 @@ function openHelp(context: KeyActionContext): void {
 }
 
 function handleEscape(context: KeyActionContext): void {
+  if (context.store.state.isRecordingKeybinding) return;
   const { activeOverlay, routeBase } = context;
   if (activeOverlay === 'search') {
     context.overlays.closeSearch({ clearQuery: true });
