@@ -99,8 +99,13 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 	// cancellation is observed after a provider call that may have succeeded.
 	// Using ErrAmbiguousRemoteSuccess prefix marks the result as terminal in
 	// the queue replay path so it is never retried (blocker 1).
-	ambiguousResult := func() *ActionResult {
-		return failedResult(req, ErrAmbiguousRemoteSuccess+"provider action may have executed; local effects suppressed")
+	// cause is the provider error that made the outcome unknown, if any.
+	ambiguousResult := func(cause string) *ActionResult {
+		msg := ErrAmbiguousRemoteSuccess + "provider action may have executed; local effects suppressed"
+		if cause != "" {
+			msg += ": " + cause
+		}
+		return failedResult(req, msg)
 	}
 
 	// Guard 1: immediately after handler.Handle, which is the provider mutation
@@ -114,7 +119,7 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 	// return early ABOVE — they never reach this point — so they are correctly
 	// NOT marked ambiguous.
 	if ctx.Err() != nil {
-		result = ambiguousResult()
+		result = ambiguousResult(result.Error)
 	}
 
 	// Guard 1b: recoverable transport failure from a non-idempotent action.
@@ -132,7 +137,7 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 	// Auth/permission errors (401, 403, 404, 422) are permanent, not recoverable,
 	// so IsRecoverable() returns false for them and this guard never fires.
 	if result.IsRecoverable() && !result.IsRateLimit() && req.Action.isNonIdempotent() {
-		result = ambiguousResult()
+		result = ambiguousResult(result.Error)
 	}
 
 	ae.logResult(req, result)
@@ -140,13 +145,13 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 	// Guard 2: before emitting events (action_complete, pr_approved,
 	// changes_requested). Closes the race window between Guard 1 and here.
 	if result.Success && ctx.Err() != nil {
-		result = ambiguousResult()
+		result = ambiguousResult("")
 	}
 	ae.emitEvent(req, result)
 
 	// Guard 3: before local DB writes (updatePRReviewStatus, recordLastReviewedSHA).
 	if result.Success && ctx.Err() != nil {
-		result = ambiguousResult()
+		result = ambiguousResult("")
 	}
 	if result.Success {
 		ae.updatePRReviewStatus(ctx, req)
@@ -155,7 +160,7 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 	// Guard 4: final success return. Ensures the caller never sees Success=true
 	// if cancellation occurred at any point during the side-effect section.
 	if result.Success && ctx.Err() != nil {
-		result = ambiguousResult()
+		result = ambiguousResult("")
 	}
 
 	return result, nil

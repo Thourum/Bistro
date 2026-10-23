@@ -201,7 +201,9 @@ var transientErrorKeywords = [...]string{
 // Only transient errors (rate limit, timeout, 5xx, network) are recoverable.
 // Permanent errors (auth, not found, validation) are not retried.
 func (ar *ActionResult) IsRecoverable() bool {
-	if ar.Success || ar.Error == "" {
+	// An ambiguous result may carry a transient cause, but retrying it could
+	// repeat a mutation the provider already applied.
+	if ar.Success || ar.Error == "" || ar.IsAmbiguousRemoteSuccess() {
 		return false
 	}
 

@@ -231,7 +231,8 @@ func TestApplyAction_ReviewPartialSuccessDeletesOnlyAcceptedGroup(t *testing.T) 
 
 	result := orch.ApplyAction(context.Background(), &actions.ActionRequest{PRID: "pr-r", Action: actions.RequestChangesCommand, Body: "Please fix"})
 
-	if result.Success || !strings.Contains(result.Error, "head.go:3-5") || !strings.Contains(result.Error, "422") {
+	if result.Success || !strings.Contains(result.Error, "head.go:3-5") || !strings.Contains(result.Error, "422") ||
+		!strings.Contains(result.Error, "comments on older commits posted") {
 		t.Fatalf("result = %+v, want failed range draft identified", result)
 	}
 	if len(prov.submissions) != 1 || prov.submissions[0].CommitID != "old" {
@@ -252,8 +253,9 @@ func TestApplyAction_OfflineReviewKeepsDraftsWithoutQueueing(t *testing.T) {
 
 	result := orch.ApplyAction(context.Background(), &actions.ActionRequest{PRID: "pr-r", Action: actions.SubmitReviewCommand, ReviewEvent: actions.ReviewEventComment})
 
-	if result.Success || !result.IsAmbiguousRemoteSuccess() || !strings.Contains(result.Error, "1 draft(s) kept (a.go:1)") {
-		t.Fatalf("result = %+v, want ambiguous result naming the kept draft", result)
+	if result.Success || !result.IsAmbiguousRemoteSuccess() || !strings.Contains(result.Error, "1 draft(s) kept (a.go:1)") ||
+		!strings.Contains(result.Error, "network connection reset") {
+		t.Fatalf("result = %+v, want ambiguous result naming the kept draft and the cause", result)
 	}
 	remaining, err := drafts.List(context.Background(), "pr-r", "me")
 	if err != nil || len(remaining) != 1 {

@@ -83,6 +83,14 @@ func TestActionResultFailure(t *testing.T) {
 	}
 }
 
+func TestAmbiguousResultWithTransientCauseIsNotRecoverable(t *testing.T) {
+	// Retrying would repeat a mutation the provider may already have applied.
+	result := &ActionResult{Error: ErrAmbiguousRemoteSuccess + "provider action may have executed; local effects suppressed: network connection reset"}
+	if result.IsRecoverable() {
+		t.Error("ambiguous result must not be recoverable even when its cause is transient")
+	}
+}
+
 func TestResolveThreadCommandValidation(t *testing.T) {
 	cases := []struct {
 		name    string

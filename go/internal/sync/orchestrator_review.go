@@ -102,13 +102,21 @@ func (o *Orchestrator) submitReview(ctx context.Context, req *actions.ActionRequ
 		result = o.executeAction(ctx, reviewRequestForGroup(req, group, i == len(groups)-1))
 		if !result.Success {
 			if result.IsAmbiguousRemoteSuccess() {
-				return ambiguousReviewResult(req, group, len(groups)-1-i)
+				return ambiguousReviewResult(req, groups[i:], result.Error)
 			}
-			if len(group.drafts) == 0 {
+			if i == 0 && len(group.drafts) == 0 {
 				return result
 			}
-			return failedActionResult(req, fmt.Sprintf("review not submitted; %d draft(s) kept (%s): %s",
-				len(group.drafts), describeDrafts(group.drafts), result.Error))
+			// Groups before i were accepted and their drafts deleted, so resubmitting
+			// sends only what is kept.
+			msg := "review not submitted"
+			if i > 0 {
+				msg = "comments on older commits posted; " + msg
+			}
+			if len(group.drafts) > 0 {
+				msg += fmt.Sprintf("; %d draft(s) kept (%s)", len(group.drafts), describeDrafts(group.drafts))
+			}
+			return failedActionResult(req, fmt.Sprintf("%s: %s", msg, result.Error))
 		}
 		o.deleteSubmittedDrafts(ctx, req.PRID, login, group.drafts)
 	}
@@ -117,7 +125,8 @@ func (o *Orchestrator) submitReview(ctx context.Context, req *actions.ActionRequ
 
 // ambiguousReviewResult keeps the ambiguous sentinel so the UI warns before a
 // resubmit, which could post the same comments twice, and names what is left.
-func ambiguousReviewResult(req *actions.ActionRequest, group draftGroup, unsentGroups int) *actions.ActionResult {
+func ambiguousReviewResult(req *actions.ActionRequest, unsent []draftGroup, cause string) *actions.ActionResult {
+	group, unsentGroups := unsent[0], len(unsent)-1
 	msg := actions.ErrAmbiguousRemoteSuccess + "review may have been submitted; check GitHub before resubmitting."
 	if len(group.drafts) > 0 {
 		msg += fmt.Sprintf(" %d draft(s) kept (%s).", len(group.drafts), describeDrafts(group.drafts))
@@ -125,6 +134,7 @@ func ambiguousReviewResult(req *actions.ActionRequest, group draftGroup, unsentG
 	if unsentGroups > 0 {
 		msg += fmt.Sprintf(" %d later commit group(s) not sent.", unsentGroups)
 	}
+	msg += fmt.Sprintf(" (cause: %s)", strings.TrimPrefix(cause, actions.ErrAmbiguousRemoteSuccess))
 	return failedActionResult(req, msg)
 }
 
