@@ -1,5 +1,22 @@
+import type { HotkeyOptions } from '@tanstack/hotkeys';
 import type { OverlayKind } from '../overlays/OverlayContext';
 import type { KeyBinding, RouteBase } from './keybindings';
+
+/** Only literal Escape participates in Radix's dismissal handling. */
+export function isEscape(binding: Pick<KeyBinding, 'keys'>): boolean {
+  return binding.keys === 'Escape';
+}
+
+/** Input handling for single hotkeys; Escape preserves prior dismissal state. */
+export function hotkeyOptions(
+  binding: Pick<KeyBinding, 'actionId' | 'keys'>,
+): Pick<HotkeyOptions, 'ignoreInputs' | 'preventDefault'> {
+  return {
+    ignoreInputs: !isEscape(binding) && binding.actionId !== 'global.cancel',
+    // Keep `defaultPrevented` meaningful as "already handled" for Escape only.
+    ...(isEscape(binding) ? { preventDefault: false } : {}),
+  };
+}
 
 /** Derive the route used for binding activation from the current pathname. */
 export function routeBaseFromPath(pathname: string): RouteBase | null {

@@ -8,6 +8,7 @@ vi.mock('../router', () => ({
 import type { OverlayContextValue } from '../overlays/OverlayContext';
 import { initialUIState } from '../store/ui';
 import { getBindingAction, type KeyActionContext } from './keybindingActions';
+import { hotkeyOptions, isEscape } from './keybindingActivation';
 import {
   ACTION_CATALOG,
   getEffectiveBindings,
@@ -36,6 +37,19 @@ describe('getEffectiveBindings', () => {
     expect(keysOf('list.top')).toEqual(['g', 'h']);
     expect(keysOf('list.mute')).toBeUndefined();
     expect(keysOf('list.up')).toBe('k');
+  });
+});
+
+describe('hotkeyOptions', () => {
+  it('allows cancel while typing without applying Escape-only event handling', () => {
+    const cancel = { actionId: 'global.cancel', keys: 'Control+G' };
+    expect(hotkeyOptions(cancel)).toEqual({ ignoreInputs: false });
+    expect(isEscape(cancel)).toBe(false);
+    expect(hotkeyOptions(binding('global.escape'))).toEqual({
+      ignoreInputs: false,
+      preventDefault: false,
+    });
+    expect(hotkeyOptions(binding('list.down'))).toEqual({ ignoreInputs: true });
   });
 });
 

@@ -14,6 +14,7 @@ import {
   getBindingAction,
   type KeyActionContext,
 } from '../utils/keybindingActions';
+import { hotkeyOptions, isEscape } from '../utils/keybindingActivation';
 import {
   getEffectiveBindings,
   isActive,
@@ -22,11 +23,6 @@ import {
 } from '../utils/keybindings';
 import { SEQUENCE_TIMEOUT_MS } from '../utils/keymaps';
 import { useStore } from './useStore';
-
-/** Escape needs different event handling than every other binding — see below. */
-function isEscape(binding: { keys: string | readonly string[] }): boolean {
-  return binding.keys === 'Escape';
-}
 
 function routePrId(
   matches: readonly { params?: Record<string, unknown> }[] | undefined,
@@ -47,8 +43,8 @@ function routePrId(
  *
  * Must be rendered inside both OverlayProvider and a TanStack RouterProvider.
  *
- * `Escape` stays active while typing (`ignoreInputs: false`) so it can exit
- * search and comment inputs; everything else is suppressed in form fields.
+ * `Escape` and `global.cancel` stay active while typing (`ignoreInputs: false`)
+ * so they can exit search and comment inputs; other bindings ignore form fields.
  */
 export function useAppHotkeys(): void {
   const overlays = useOverlays();
@@ -114,16 +110,14 @@ export function useAppHotkeys(): void {
             // callback is replaced), so we read the event instead. This
             // requires `preventDefault: false` below — the manager otherwise
             // calls preventDefault() itself before every callback, which would
-            // make this flag always true.
+            // make this flag always true. Control+G does not trigger Radix's
+            // dismissal handling, so global.cancel keeps the default behavior.
             if (isEscape(binding) && event.defaultPrevented) return;
             getBindingAction(binding.actionId)?.(makeCtx());
           },
           options: {
             enabled: isActive(binding, { routeBase, activeOverlay }),
-            ignoreInputs: !isEscape(binding),
-            // Keep `defaultPrevented` meaningful as "already handled".
-            // Escape has no default browser action worth suppressing.
-            ...(isEscape(binding) ? { preventDefault: false } : {}),
+            ...hotkeyOptions(binding),
           },
         })),
     [bindings, routeBase, activeOverlay, makeCtx],
