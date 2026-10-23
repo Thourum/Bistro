@@ -327,18 +327,20 @@ func (ae *ActionExecutor) updatePRReviewStatus(ctx context.Context, req *ActionR
 	// not constitute a "review" for SHA tracking.
 	switch reviewOutcome(req) {
 	case ApproveCommand, RequestChangesCommand, PostCommentCommand:
-		ae.recordLastReviewedSHA(ctx, req.PRID)
+		ae.recordLastReviewedSHA(ctx, req)
 	}
 }
 
 // recordLastReviewedSHA fetches the PR's current patchset identity and writes a
-// last_reviewed_sha row for the authenticated login. Best-effort: any failure
-// is logged and swallowed so the caller's action result is unaffected.
-func (ae *ActionExecutor) recordLastReviewedSHA(ctx context.Context, prID string) {
+// last_reviewed_sha row for the authenticated login. Reviews pinned to another
+// commit are skipped so older draft groups cannot mark the current head reviewed.
+// Best-effort: any failure is logged and swallowed so the action result is unaffected.
+func (ae *ActionExecutor) recordLastReviewedSHA(ctx context.Context, req *ActionRequest) {
 	if ae.reviewLogin == nil || ae.reviewSHAWriter == nil || ae.store == nil {
 		return
 	}
 
+	prID := req.PRID
 	login, ok, err := ae.reviewLogin.GetCurrentUser(ctx, "github")
 	if err != nil {
 		ae.log.Warn("recordLastReviewedSHA: could not fetch current user", "pr_id", prID, "error", err)
@@ -355,6 +357,10 @@ func (ae *ActionExecutor) recordLastReviewedSHA(ctx context.Context, prID string
 	).Scan(&headSHA); err != nil {
 		ae.log.Warn("recordLastReviewedSHA: could not fetch PR SHAs",
 			"pr_id", prID, "login", login, "error", err)
+		return
+	}
+
+	if req.CommitID != "" && req.CommitID != headSHA {
 		return
 	}
 

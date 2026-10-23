@@ -377,7 +377,7 @@ func TestExecute_SubmitReviewLocalSideEffects(t *testing.T) {
 			if status != tc.wantStatus {
 				t.Errorf("review_status = %q, want %q", status, tc.wantStatus)
 			}
-			if len(shaWriter.calls) != 1 || shaWriter.calls[0] != (patchsetReviewCall{prID: prID, login: "alice", sha: "sha-head", baseSHA: "b"}) {
+			if len(shaWriter.calls) != 1 || (shaWriter.calls[0].PRID != prID || shaWriter.calls[0].Login != "alice" || shaWriter.calls[0].HeadSHA != "sha-head") {
 				t.Errorf("last-reviewed writes = %+v", shaWriter.calls)
 			}
 			var eventTypes []string
@@ -392,6 +392,41 @@ func TestExecute_SubmitReviewLocalSideEffects(t *testing.T) {
 				t.Errorf("event types = %v, want %v", eventTypes, tc.wantEventTypes)
 			}
 		})
+	}
+}
+
+func TestExecute_SubmitReviewOlderCommitDoesNotAdvanceLastReviewedSHA(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	if err := store.NewMigrationRunner(nil, db.DB).Run(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	const prID = "github:o/r:1"
+	const cachedHeadSHA = "H2"
+	const submittedCommitSHA = "H1"
+	if _, err := db.ExecContext(ctx, `INSERT INTO prs
+		(id, provider, owner, repo, number, title, author, state,
+		 created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
+		VALUES (?, 'github','o','r',1,'T','a','open','2026-01-01','2026-01-01','main','f','b',?)`, prID, cachedHeadSHA); err != nil {
+		t.Fatalf("insert pr: %v", err)
+	}
+	prov := &reviewSubmitterProvider{MockProvider: mock.NewMockProvider()}
+	shaWriter := &stubSHAWriter{}
+	executor := NewActionExecutor(slog.New(slog.NewTextHandler(io.Discard, nil)), prov, db, nil).
+		WithReviewTracking(&stubLoginGetter{login: "alice", found: true}, shaWriter)
+	result, err := executor.Execute(ctx, &ActionRequest{
+		PRID: prID, Action: SubmitReviewCommand, ReviewEvent: ReviewEventComment, CommitID: submittedCommitSHA,
+		ReviewComments: []provider.ReviewComment{{Path: "a.go", Side: "RIGHT", Line: 1, Body: "Older draft"}},
+	})
+	if err != nil || !result.Success {
+		t.Fatalf("result = %+v, err = %v", result, err)
+	}
+	if len(shaWriter.calls) != 0 {
+		t.Fatalf("last-reviewed writes = %+v, want none for a review on %s with cached head %s", shaWriter.calls, submittedCommitSHA, cachedHeadSHA)
 	}
 }
 
