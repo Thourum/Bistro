@@ -20,6 +20,7 @@ import { useStore } from '../hooks/useStore';
 import { type TriageRequest, useTriage } from '../hooks/useTriage';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { replyComment } from '../services/prActions';
+import { isDraftOutdated } from '../services/reviewDrafts';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -104,6 +105,9 @@ export function DiffPage() {
   const { threads } = useReviewThreads(pr?.id);
   useReviewDrafts(pr?.id);
   const drafts = useStore(appStore, (s: UIState) => s.reviewDrafts);
+  const outdatedDraftCount = drafts.filter((draft) =>
+    isDraftOutdated(draft, pr?.head_sha ?? ''),
+  ).length;
 
   // ── Triage (since last review, or an explicit patchset pair) ──────
   const sinceLastReview = useStore(
@@ -359,6 +363,8 @@ export function DiffPage() {
         files={files}
         currentFile={currentFile}
         triageSummary={interdiffHint ?? triageStatusText}
+        draftCount={drafts.length}
+        outdatedDraftCount={outdatedDraftCount}
       />
 
       <OpenInEditorDialog

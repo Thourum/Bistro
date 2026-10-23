@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useStore } from '../../hooks/useStore';
 import { useOverlays } from '../../overlays/OverlayContext';
 import { appStore } from '../../store';
+import type { ReviewDraft } from '../../types';
 import {
   cursorRange,
   type DiffLayout,
@@ -13,14 +14,20 @@ import {
   toAnnotationSide,
 } from '../../utils/lineCommentCursor';
 import { addToast } from '../ToastContainer';
-import { type DiffAnnotationMeta, lineExistsOnSide } from './diffAnnotations';
+import {
+  type DiffAnnotationMeta,
+  draftIdFromKey,
+  lineExistsOnSide,
+} from './diffAnnotations';
 import type { ParsedCodeViewFile } from './diffCodeViewItems';
 
 const OPEN_LINE_COMMENT_EVENT = 'bistro:diff:line-comment';
+const EDIT_DRAFT_EVENT = 'bistro:diff:edit-draft';
 
 interface LineCommentModeOptions {
   prId: string | undefined;
   headSha: string | undefined;
+  drafts: readonly ReviewDraft[];
   parsedFiles: readonly ParsedCodeViewFile[];
   activeFileId: string | null;
   layout: DiffLayout;
@@ -43,6 +50,7 @@ function clearLineComment(): void {
 export function useLineCommentMode({
   prId,
   headSha,
+  drafts,
   parsedFiles,
   activeFileId,
   layout,
@@ -84,6 +92,36 @@ export function useLineCommentMode({
     document.addEventListener(OPEN_LINE_COMMENT_EVENT, open);
     return () => document.removeEventListener(OPEN_LINE_COMMENT_EVENT, open);
   }, [prId, headSha, parsedFiles, activeFileId, layout, openLineComment]);
+
+  useEffect(() => {
+    const edit = (): void => {
+      const draftId = draftIdFromKey(
+        appStore.state.activeInlineCommentThreadId,
+      );
+      const draft = drafts.find((entry) => entry.id === draftId);
+      const parsed = parsedFiles.find(({ file }) => file.path === draft?.path);
+      if (draft === undefined || parsed === undefined || prId === undefined)
+        return;
+      const state: LineCommentState = {
+        prId,
+        fileId: parsed.file.id,
+        path: draft.path,
+        headSha: draft.commit_sha,
+        layout,
+        lines: listCommentableLines(parsed.fileDiff.hunks, layout),
+        cursor: {
+          side: draft.side,
+          anchor: draft.start_line === 0 ? draft.line : draft.start_line,
+          head: draft.line,
+        },
+        composer: { draftId: draft.id, initialBody: draft.body },
+      };
+      appStore.setState((current) => ({ ...current, lineComment: state }));
+      openLineComment();
+    };
+    document.addEventListener(EDIT_DRAFT_EVENT, edit);
+    return () => document.removeEventListener(EDIT_DRAFT_EVENT, edit);
+  }, [prId, drafts, parsedFiles, layout, openLineComment]);
 
   // Any overlay change (Esc, save, another overlay) ends comment mode.
   useEffect(() => {

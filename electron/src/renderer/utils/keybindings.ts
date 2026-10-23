@@ -493,6 +493,11 @@ const DETAIL_BINDINGS: readonly BindingDefinition[] = [
     description: 'Comment on line',
     activation: DIFF,
   },
+  {
+    actionId: 'diff.deleteDraft',
+    description: 'Delete draft',
+    activation: DIFF,
+  },
 ];
 
 const LINE_COMMENT_BINDINGS: readonly BindingDefinition[] = [

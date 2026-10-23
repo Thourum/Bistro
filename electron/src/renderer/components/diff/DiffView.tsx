@@ -34,7 +34,10 @@ import {
   parseCodeViewFiles,
 } from './diffCodeViewItems';
 import { scrollToCodeViewFile } from './diffCodeViewNavigation';
-import { LineCommentComposer } from './diffDraftAnnotation';
+import {
+  DraftAnnotationCard,
+  LineCommentComposer,
+} from './diffDraftAnnotation';
 import { DiffFileExpertise } from './diffFileExpertise';
 import { DiffFileSidebar } from './diffFileSidebar';
 import { DiffParseFailurePanel } from './diffParseFailurePanel';
@@ -164,6 +167,7 @@ export function DiffView({
   const selectedLines = useLineCommentMode({
     prId,
     headSha,
+    drafts,
     parsedFiles,
     activeFileId: activeId,
     layout: diffStyle,
@@ -501,9 +505,21 @@ function DiffCodeView({
                 onThreadReply={onThreadReply}
               />
             );
-          // Task 9 renders the draft card.
           case 'draft':
-            return null;
+            return (
+              <DraftAnnotationCard
+                draft={metadata.draft}
+                annotationKey={metadata.key}
+                isOutdated={metadata.isOutdated}
+                isActive={metadata.key === activeAnnotationKey}
+                onActivate={() =>
+                  appStore.setState((state) => ({
+                    ...state,
+                    activeInlineCommentThreadId: metadata.key,
+                  }))
+                }
+              />
+            );
           case 'composer':
             return <LineCommentComposer lineComment={metadata.lineComment} />;
           default: {

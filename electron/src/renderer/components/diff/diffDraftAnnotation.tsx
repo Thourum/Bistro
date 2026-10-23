@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useOverlays } from '../../overlays/OverlayContext';
 import { saveDraft } from '../../services/reviewDrafts';
+import type { ReviewDraft } from '../../types';
 import {
   isTextareaSubmit,
   TEXTAREA_SUBMIT_HOTKEY,
@@ -9,7 +10,9 @@ import {
   cursorRange,
   type LineCommentState,
 } from '../../utils/lineCommentCursor';
+import { Markdown } from '../Markdown';
 import { addToast } from '../ToastContainer';
+import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { ShortcutBadge } from '../ui/shortcut-badge';
 import { Textarea } from '../ui/textarea';
@@ -23,6 +26,55 @@ function rangeLabel(
   return startLine === null
     ? `${path}:${line}`
     : `${path}:${startLine}-${line}`;
+}
+
+interface DraftAnnotationCardProps {
+  draft: ReviewDraft;
+  annotationKey: string;
+  isOutdated: boolean;
+  isActive: boolean;
+  onActivate: () => void;
+}
+
+/** A saved, unsubmitted line comment. Enter edits, d d deletes. */
+export function DraftAnnotationCard({
+  draft,
+  annotationKey,
+  isOutdated,
+  isActive,
+  onActivate,
+}: DraftAnnotationCardProps): React.ReactElement {
+  const startLine = draft.start_line === 0 ? null : draft.start_line;
+  return (
+    <div
+      data-annotation-key={annotationKey}
+      data-active={isActive ? 'true' : 'false'}
+      className={`border-l-2 bg-surface-container-low px-3 py-2 space-y-2 text-[11px] ${
+        isActive
+          ? 'border-primary bg-surface-container'
+          : 'border-outline-variant/30'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onActivate}
+        aria-label={`Focus draft at ${rangeLabel(draft.path, startLine, draft.line)}`}
+        className="flex w-full items-center gap-2 text-left cursor-crosshair"
+      >
+        <Badge variant="outline">DRAFT</Badge>
+        {isOutdated && <Badge variant="outdated">OUTDATED</Badge>}
+        <span className="font-mono text-[10px] text-outline truncate">
+          {rangeLabel(draft.path, startLine, draft.line)}
+        </span>
+      </button>
+      <Markdown body={draft.body} compact />
+      {isActive && (
+        <p className="font-mono text-[9px] uppercase tracking-widest text-outline">
+          Enter edit · d d delete
+        </p>
+      )}
+    </div>
+  );
 }
 
 /** Inline draft composer; saving stores a pending review draft. */

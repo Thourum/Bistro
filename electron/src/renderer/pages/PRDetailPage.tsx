@@ -31,6 +31,7 @@ import {
   Description,
   FileList,
   Header,
+  PendingDraftsNotice,
   PRCommentComposer,
   RecentComments,
 } from './PRDetailSections';
@@ -80,6 +81,7 @@ export function PRDetailPage() {
   const detailPrId = isAwaitingHydration ? undefined : pr?.id;
   const { patchsets } = usePatchsets(detailPrId);
   useReviewDrafts(detailPrId);
+  const reviewDrafts = useStore(appStore, (s: UIState) => s.reviewDrafts);
   const { expertise } = useExpertise(detailPrId);
   const expertiseStatus = useStore(appStore, (s: UIState) =>
     pr !== undefined ? s.expertiseRepoStatuses?.[repoIdForPR(pr)] : undefined,
@@ -196,6 +198,8 @@ export function PRDetailPage() {
           actionResult={actionResult}
           onDismiss={clearActionResult}
         />
+
+        <PendingDraftsNotice drafts={reviewDrafts} headSha={pr.head_sha} />
 
         <ExpertiseNudge repoId={repoIdForPR(pr)} />
 

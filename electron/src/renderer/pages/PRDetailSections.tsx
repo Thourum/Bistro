@@ -5,9 +5,10 @@ import { Button } from '../components/ui/button';
 import { ShortcutBadge } from '../components/ui/shortcut-badge';
 import { Textarea } from '../components/ui/textarea';
 import { useStore } from '../hooks/useStore';
+import { isDraftOutdated } from '../services/reviewDrafts';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
-import type { Comment, ExpertiseFileData, PR } from '../types';
+import type { Comment, ExpertiseFileData, PR, ReviewDraft } from '../types';
 import {
   filterBySeverity,
   groupVisibleFindings,
@@ -34,6 +35,29 @@ function relativeTime(iso: string): string {
   if (hour < 24) return `${hour}H AGO`;
   const day = Math.floor(hour / 24);
   return `${day}D AGO`;
+}
+
+interface PendingDraftsNoticeProps {
+  drafts: readonly ReviewDraft[];
+  headSha: string;
+}
+
+/** Explains that pending drafts ride along with the next review action. */
+export function PendingDraftsNotice({
+  drafts,
+  headSha,
+}: PendingDraftsNoticeProps): React.ReactElement | null {
+  if (drafts.length === 0) return null;
+  const outdated = drafts.filter((draft) =>
+    isDraftOutdated(draft, headSha),
+  ).length;
+  return (
+    <p className="font-mono text-[10px] uppercase tracking-widest text-primary">
+      {drafts.length} pending {drafts.length === 1 ? 'draft' : 'drafts'}
+      {outdated > 0 ? ` (${outdated} outdated)` : ''} — sent with your next
+      approve (a a) or request changes (⇧R), or submit from the command palette
+    </p>
+  );
 }
 
 interface PRCommentComposerProps {

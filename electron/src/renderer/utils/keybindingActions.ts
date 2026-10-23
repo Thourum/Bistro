@@ -1,4 +1,6 @@
 import type { Store } from '@tanstack/store';
+import { draftIdFromKey } from '../components/diff/diffAnnotations';
+import { addToast } from '../components/ToastContainer';
 import type {
   OverlayContextValue,
   OverlayKind,
@@ -25,6 +27,7 @@ import {
 } from '../services/signIn';
 import { appStore } from '../store';
 import { approvePR } from '../services/prActions';
+import { deleteDrafts } from '../services/reviewDrafts';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import type { RouteBase } from './keybindings';
 import {
@@ -97,8 +100,35 @@ function moveInlineDiffComment(context: KeyActionContext, delta: 1 | -1): void {
   }));
 }
 
+function deleteActiveDraft(context: KeyActionContext): void {
+  const draftId = draftIdFromKey(
+    context.store.state.activeInlineCommentThreadId,
+  );
+  if (draftId === null || context.prId === undefined) return;
+  void deleteDrafts(context.prId, [draftId]).match(
+    () =>
+      addToast({
+        type: 'success',
+        message: 'Draft deleted',
+        dismissible: false,
+      }),
+    (fault) =>
+      addToast({
+        type: 'error',
+        message: `Draft not deleted: ${fault.message}`,
+        dismissible: true,
+      }),
+  );
+}
+
 function startInlineDiffReply(context: KeyActionContext): void {
   if (context.routeBase !== 'diff') return;
+  if (
+    draftIdFromKey(context.store.state.activeInlineCommentThreadId) !== null
+  ) {
+    emitAppEvent('bistro:diff:edit-draft');
+    return;
+  }
   const active = context.store.state.activeInlineCommentThreadId;
   if (
     active === null ||
@@ -540,6 +570,7 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'diff.nextComment': (context) => moveInlineDiffComment(context, 1),
   'diff.prevComment': (context) => moveInlineDiffComment(context, -1),
   'detail.inlineReply': startInlineDiffReply,
+  'diff.deleteDraft': deleteActiveDraft,
   'detail.scrollRight': () => scrollDiff({ left: SCROLL_HORIZONTAL_PX }),
   'detail.scrollDownArrow': () => scrollDiff({ top: SCROLL_LINE_PX }),
   'detail.scrollUpArrow': () => scrollDiff({ top: -SCROLL_LINE_PX }),

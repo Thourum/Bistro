@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 
 import { Store } from '@tanstack/store';
-import { assert, describe, expect, it, vi } from 'vitest';
+import { errAsync, Fault, okAsync } from '@thourum/fault';
+import { afterEach, assert, describe, expect, it, vi } from 'vitest';
+import { appStore } from '../../src/renderer/store';
 import type { OverlayContextValue } from '../../src/renderer/overlays/OverlayContext';
 import type { UIState } from '../../src/renderer/store/ui';
 import { initialUIState } from '../../src/renderer/store/ui';
@@ -65,6 +67,11 @@ function invokeAction(actionId: string, context: KeyActionContext): void {
 const mockApprovePR = vi.hoisted(() => vi.fn());
 vi.mock('../../src/renderer/services/prActions', () => ({
   approvePR: mockApprovePR,
+}));
+
+const request = vi.hoisted(() => vi.fn());
+vi.mock('../../src/renderer/services/ws/connection', () => ({
+  wsClient: { send: vi.fn(), request },
 }));
 
 // ---------------------------------------------------------------------------
@@ -421,6 +428,89 @@ describe('binding actions', () => {
         expect(closeOverlay).toHaveBeenCalled();
       });
     }
+  });
+});
+
+describe('draft annotation bindings', () => {
+  afterEach(() => {
+    appStore.setState(() => initialUIState);
+    request.mockReset();
+  });
+
+  it('n/p reach drafts without putting them in thread reply state', () => {
+    const store = makeStore({
+      inlineCommentThreadIds: ['T1', 'draft:D1', 'T2'],
+      activeInlineCommentThreadId: 'T1',
+      replyingInlineCommentThreadId: 'T1',
+    });
+    invokeAction('diff.nextComment', makeCtx(store, 'diff'));
+    expect(store.state.activeInlineCommentThreadId).toBe('draft:D1');
+    expect(store.state.replyingInlineCommentThreadId).toBeNull();
+    invokeAction('diff.nextComment', makeCtx(store, 'diff'));
+    invokeAction('diff.prevComment', makeCtx(store, 'diff'));
+    expect(store.state.activeInlineCommentThreadId).toBe('draft:D1');
+  });
+
+  it('Enter requests draft editing instead of a thread reply', () => {
+    const store = makeStore({
+      inlineCommentThreadIds: ['draft:D1'],
+      activeInlineCommentThreadId: 'draft:D1',
+    });
+    const events: string[] = [];
+    const recordEdit = (event: Event): void => {
+      events.push(event.type);
+    };
+    document.addEventListener('bistro:diff:edit-draft', recordEdit);
+    invokeAction('detail.inlineReply', makeCtx(store, 'diff'));
+    document.removeEventListener('bistro:diff:edit-draft', recordEdit);
+    expect(events).toEqual(['bistro:diff:edit-draft']);
+    expect(store.state.replyingInlineCommentThreadId).toBeNull();
+  });
+
+  it('d d deletes only the active draft and reports success', async () => {
+    request.mockReturnValue(okAsync({ deleted: 1 }));
+    const store = makeStore({ activeInlineCommentThreadId: 'draft:D1' });
+    invokeAction('diff.deleteDraft', makeCtx(store, 'diff'));
+    await vi.waitFor(() => expect(appStore.state.toasts).toHaveLength(1));
+    expect(request).toHaveBeenCalledExactlyOnceWith('DRAFT_DELETE', {
+      pr_id: 'pr-test-id',
+      draft_ids: ['D1'],
+    });
+    expect(appStore.state.toasts[0]).toMatchObject({
+      type: 'success',
+      message: 'Draft deleted',
+      dismissible: false,
+    });
+  });
+
+  it('d d reports failure without claiming the draft was deleted', async () => {
+    request.mockReturnValue(errAsync(new Fault('Offline')));
+    const store = makeStore({ activeInlineCommentThreadId: 'draft:D1' });
+    invokeAction('diff.deleteDraft', makeCtx(store, 'diff'));
+    await vi.waitFor(() => expect(appStore.state.toasts).toHaveLength(1));
+    expect(appStore.state.toasts[0]).toMatchObject({
+      type: 'error',
+      dismissible: true,
+    });
+    expect(appStore.state.toasts[0]?.message).toContain('Draft not deleted:');
+    expect(store.state.activeInlineCommentThreadId).toBe('draft:D1');
+  });
+
+  it('d d is a no-op on threads, no selection, or a missing PR', async () => {
+    invokeAction(
+      'diff.deleteDraft',
+      makeCtx({ activeInlineCommentThreadId: 'T1' }, 'diff'),
+    );
+    invokeAction('diff.deleteDraft', makeCtx({}, 'diff'));
+    const context = makeCtx(
+      { activeInlineCommentThreadId: 'draft:D1' },
+      'diff',
+    );
+    delete context.prId;
+    invokeAction('diff.deleteDraft', context);
+    await Promise.resolve();
+    expect(request).not.toHaveBeenCalled();
+    expect(appStore.state.toasts).toEqual([]);
   });
 });
 
