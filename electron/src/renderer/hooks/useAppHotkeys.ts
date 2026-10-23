@@ -20,10 +20,8 @@ import {
   isSequenceBinding,
   routeBaseFromPath,
 } from '../utils/keybindings';
+import { SEQUENCE_TIMEOUT_MS } from '../utils/keymaps';
 import { useStore } from './useStore';
-
-/** Sequence steps must follow each other within this window (was 500ms before the migration). */
-const SEQUENCE_TIMEOUT_MS = 500;
 
 /** Escape needs different event handling than every other binding — see below. */
 function isEscape(binding: { keys: string | readonly string[] }): boolean {
@@ -55,6 +53,7 @@ function routePrId(
 export function useAppHotkeys(): void {
   const overlays = useOverlays();
   const overrides = useStore(settingsStore, (s) => s.keybindings);
+  const style = useStore(settingsStore, (s) => s.navigation.style);
   const routerState = useRouterState();
 
   const routeBase = routeBaseFromPath(routerState.location.pathname);
@@ -86,7 +85,10 @@ export function useAppHotkeys(): void {
     return prId === undefined ? ctx : { ...ctx, prId };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bindings = useMemo(() => getEffectiveBindings(overrides), [overrides]);
+  const bindings = useMemo(
+    () => getEffectiveBindings(style, overrides),
+    [style, overrides],
+  );
 
   const hotkeyDefs = useMemo<UseHotkeyDefinition[]>(
     () =>
@@ -143,6 +145,6 @@ export function useAppHotkeys(): void {
   useHotkeys(hotkeyDefs, { conflictBehavior: 'allow' });
   useHotkeySequences(sequenceDefs, {
     conflictBehavior: 'allow',
-    timeout: SEQUENCE_TIMEOUT_MS,
+    timeout: SEQUENCE_TIMEOUT_MS[style],
   });
 }

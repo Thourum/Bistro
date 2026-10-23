@@ -37,6 +37,7 @@ function persistTourComplete(): void {
 export function TourOverlay(): React.ReactElement | null {
   const { activeOverlay, openTour, closeOverlay } = useOverlays();
   const overrides = useStore(settingsStore, (s) => s.keybindings);
+  const style = useStore(settingsStore, (s) => s.navigation.style);
   const tourComplete = useStore(
     settingsStore,
     (s) => s.appearance.tourComplete,
@@ -65,8 +66,8 @@ export function TourOverlay(): React.ReactElement | null {
   }, [isOpen]);
 
   const screens = useMemo(
-    () => resolveTourScreens(getEffectiveBindings(overrides)),
-    [overrides],
+    () => resolveTourScreens(getEffectiveBindings(style, overrides)),
+    [style, overrides],
   );
   const screen = screens[screenIndex];
   const isLastScreen = screenIndex === screens.length - 1;

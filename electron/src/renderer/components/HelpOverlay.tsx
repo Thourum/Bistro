@@ -148,9 +148,10 @@ function buildSections(
 export function HelpOverlay(): React.ReactElement | null {
   const { activeOverlay, helpSourceRoute, closeOverlay } = useOverlays();
   const overrides = useStore(settingsStore, (s) => s.keybindings);
+  const style = useStore(settingsStore, (s) => s.navigation.style);
   const isOpen = activeOverlay === 'help';
   const sections = buildSections(
-    getEffectiveBindings(overrides),
+    getEffectiveBindings(style, overrides),
     helpSourceRoute,
   );
 

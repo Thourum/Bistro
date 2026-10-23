@@ -13,8 +13,9 @@ import { Section, showSettingsError } from './SettingsComponents';
 
 export function KeyboardSection() {
   const overrides = useStore(settingsStore, (s) => s.keybindings);
+  const style = useStore(settingsStore, (s) => s.navigation.style);
   const groups = useMemo(() => {
-    const bindings = getEffectiveBindings(overrides);
+    const bindings = getEffectiveBindings(style, overrides);
     const map = new Map<string, typeof bindings>();
     for (const b of bindings) {
       const modeKey =
@@ -24,7 +25,7 @@ export function KeyboardSection() {
       map.set(modeKey, bucket);
     }
     return Array.from(map.entries());
-  }, [overrides]);
+  }, [style, overrides]);
 
   return (
     <Section id="keyboard" title="Keyboard">

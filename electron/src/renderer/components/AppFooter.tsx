@@ -30,6 +30,7 @@ export function AppFooter(): React.ReactElement {
   const lastSyncAt = useStore(appStore, (state: UIState) => state.lastSyncAt);
   const isOffline = useStore(appStore, (state: UIState) => state.isOffline);
   const overrides = useStore(settingsStore, (s) => s.keybindings);
+  const style = useStore(settingsStore, (s) => s.navigation.style);
   const syncSettings = useStore(settingsStore, (s) => s.sync);
 
   const overlayContext = useOptionalOverlays();
@@ -44,9 +45,9 @@ export function AppFooter(): React.ReactElement {
 
   const legendEntries = React.useMemo(() => {
     if (slots.left) return [];
-    const bindings = getEffectiveBindings(overrides);
+    const bindings = getEffectiveBindings(style, overrides);
     return buildLegendForRouteBase(routeBase, activeOverlay, bindings);
-  }, [routeBase, activeOverlay, overrides, slots.left]);
+  }, [routeBase, activeOverlay, style, overrides, slots.left]);
 
   const { label: statusLabel, dotClass: statusDot } = deriveStatus(
     syncStatus,

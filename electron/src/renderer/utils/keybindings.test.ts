@@ -1,5 +1,5 @@
 import { Store } from '@tanstack/store';
-import { describe, expect, it, vi } from 'vitest';
+import { assert, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../router', () => ({
   router: { navigate: vi.fn() },
@@ -8,21 +8,40 @@ vi.mock('../router', () => ({
 import type { OverlayContextValue } from '../overlays/OverlayContext';
 import { initialUIState } from '../store/ui';
 import { getBindingAction, type KeyActionContext } from './keybindingActions';
-import { DEFAULT_KEYBINDINGS, isActive, type KeyBinding } from './keybindings';
+import {
+  ACTION_CATALOG,
+  getEffectiveBindings,
+  isActive,
+  type KeyBinding,
+} from './keybindings';
 
 function binding(actionId: string): KeyBinding {
-  const found = DEFAULT_KEYBINDINGS.find(
+  const found = getEffectiveBindings('vim', {}).find(
     (candidate) => candidate.actionId === actionId,
   );
-  if (found === undefined) {
-    throw new Error(`Expected binding ${actionId}`);
-  }
+  assert(found !== undefined, `Expected binding ${actionId}`);
   return found;
 }
 
+describe('getEffectiveBindings', () => {
+  it('lets a user override beat the style table and an empty override unbind', () => {
+    const bindings = getEffectiveBindings('vim', {
+      'list.down': ['x'],
+      'list.mute': [],
+      'list.top': ['g', 'h'],
+    });
+    const keysOf = (id: string) =>
+      bindings.find((b) => b.actionId === id)?.keys;
+    expect(keysOf('list.down')).toBe('x');
+    expect(keysOf('list.top')).toEqual(['g', 'h']);
+    expect(keysOf('list.mute')).toBeUndefined();
+    expect(keysOf('list.up')).toBe('k');
+  });
+});
+
 describe('inbox keybindings', () => {
   it('resolves an action for every configured binding', () => {
-    for (const configuredBinding of DEFAULT_KEYBINDINGS) {
+    for (const configuredBinding of ACTION_CATALOG) {
       expect(
         getBindingAction(configuredBinding.actionId),
         configuredBinding.actionId,
