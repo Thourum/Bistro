@@ -8,6 +8,7 @@ import type {
   ExpertiseSettingsPayload,
   PendingAction,
   RepoInfo,
+  ReviewDraft,
   Toast,
 } from '../types';
 import {
@@ -40,8 +41,6 @@ interface SyncStats {
  * round-tripped through the main process into `userData/settings.json`.
  */
 export type ConfirmingAction =
-  | 'approve'
-  | 'approve_confirmed'
   | 'command'
   | 'comment'
   | 'draft'
@@ -167,6 +166,10 @@ export interface UIState {
    * Set by PierreDiffView; consumed by centralized diff hotkeys.
    */
   inlineCommentThreadIds: string[];
+  /** Current user's pending line-comment drafts for `reviewDraftsPrId`. */
+  reviewDrafts: ReviewDraft[];
+  /** PR whose drafts `reviewDrafts` holds; set by useReviewDrafts. */
+  reviewDraftsPrId: string | null;
   /** Currently selected inline diff-comment thread, if any. */
   activeInlineCommentThreadId: string | null;
   /** Inline diff-comment thread currently showing the reply composer, if any. */
@@ -265,6 +268,8 @@ export const initialUIState: UIState = {
   interdiffActive: false,
   threadsRevision: 0,
   inlineCommentThreadIds: [],
+  reviewDrafts: [],
+  reviewDraftsPrId: null,
   activeInlineCommentThreadId: null,
   replyingInlineCommentThreadId: null,
   hideWhitespaceHunks: false,

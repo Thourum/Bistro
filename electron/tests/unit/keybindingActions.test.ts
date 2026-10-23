@@ -62,6 +62,14 @@ function invokeAction(actionId: string, context: KeyActionContext): void {
   assert(action !== undefined, `no action for binding ${actionId}`);
   action(context);
 }
+const mockApprovePR = vi.hoisted(() => vi.fn());
+vi.mock('../../src/renderer/services/prActions', () => ({
+  approvePR: mockApprovePR,
+}));
+
+// ---------------------------------------------------------------------------
+// Action behavior (direct invocation)
+// ---------------------------------------------------------------------------
 
 describe('binding actions', () => {
   it('j moves to the next PR', () => {
@@ -204,12 +212,11 @@ describe('binding actions', () => {
     expect(store.state.selectedPRIndex).toBe(4);
   });
 
-  it('aa requires a double tap to confirm approve', () => {
+  it('aa approves the shown PR on the first sequence', () => {
     const store = makeStore({});
     invokeAction('detail.approve', makeCtx(store, 'detail'));
-    expect(store.state.confirmingAction).toBe('approve');
-    invokeAction('detail.approve', makeCtx(store, 'detail'));
-    expect(store.state.confirmingAction).toBe('approve_confirmed');
+    expect(mockApprovePR).toHaveBeenCalledExactlyOnceWith('pr-test-id');
+    expect(store.state.confirmingAction).toBeNull();
   });
 
   it('Shift+R opens the request-changes composer on detail', () => {
@@ -298,7 +305,7 @@ describe('binding actions', () => {
 
     it('in list mode it cancels confirming actions', () => {
       const store = makeStore({
-        confirmingAction: 'approve',
+        confirmingAction: 'comment',
       });
       invokeAction('global.escape', makeCtx(store, 'list'));
       expect(store.state.confirmingAction).toBeNull();
@@ -306,7 +313,7 @@ describe('binding actions', () => {
   });
 
   it('C-g cancels a pending list confirmation', () => {
-    const store = makeStore({ confirmingAction: 'approve' });
+    const store = makeStore({ confirmingAction: 'comment' });
     invokeAction('global.cancel', makeCtx(store, 'list'));
     expect(store.state.confirmingAction).toBeNull();
   });

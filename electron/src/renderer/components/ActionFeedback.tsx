@@ -5,6 +5,7 @@ const ACTION_LABELS: Record<string, string> = {
   approve: 'Approving',
   request_changes: 'Requesting changes',
   post_comment: 'Posting comment',
+  submit_review: 'Submitting review',
 };
 
 const AUTO_DISMISS_MS = 3000;

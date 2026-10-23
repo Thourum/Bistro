@@ -24,6 +24,7 @@ import {
   startSignIn,
 } from '../services/signIn';
 import { appStore } from '../store';
+import { approvePR } from '../services/prActions';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import type { RouteBase } from './keybindings';
 import { createLogger } from './logger';
@@ -249,15 +250,6 @@ function viewDiff(context: KeyActionContext): void {
   });
 }
 
-function toggleApproval(context: KeyActionContext): void {
-  const confirmingAction =
-    context.store.state.confirmingAction === 'approve'
-      ? 'approve_confirmed'
-      : 'approve';
-  context.store.setState((state) => ({ ...state, confirmingAction }));
-  recordFirstRunAction('detail.approve');
-}
-
 function toggleSinceLastReview(context: KeyActionContext): void {
   const isActive = context.store.state.sinceLastReviewActive;
   context.store.setState((state) => ({
@@ -461,7 +453,9 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
       commentMinSeverity: null,
       commentHumanOnly: false,
     })),
-  'detail.approve': toggleApproval,
+  'detail.approve': (context) => {
+    if (context.prId !== undefined) approvePR(context.prId);
+  },
   'detail.comment': (context) => {
     context.store.setState((state) => ({
       ...state,

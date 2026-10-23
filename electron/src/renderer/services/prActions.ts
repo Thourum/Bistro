@@ -37,23 +37,91 @@ function setFailedAction(
   }));
 }
 
-/** Dispatches approval; ACTION_COMPLETE / ACTION_FAILED finish the store transition. */
-export function approvePR(prId: string): void {
-  recordFirstRunAction('detail.approve');
-  setPendingAction('approve', prId);
-  if (wsClient.send('APPROVE_PR', { pr_id: prId }) === undefined) {
-    setFailedAction('approve', prId, 'WebSocket not connected');
-  }
+export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
+
+interface ActionDispatch {
+  type: ActionType;
+  prId: string;
+  payload: Readonly<Record<string, unknown>>;
+  successMessage: string;
+  failureMessage: string;
 }
 
-/** Dispatches a change request; push events finish the store transition. */
+/** Sends SUBMIT_ACTION and settles pendingAction/actionResult from its reply. */
+function dispatchAction({
+  type,
+  prId,
+  payload,
+  successMessage,
+  failureMessage,
+}: ActionDispatch): void {
+  setPendingAction(type, prId);
+  void wsClient
+    .request('SUBMIT_ACTION', { pr_id: prId, action: type, ...payload })
+    .mapErr((cause) =>
+      new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
+    )
+    .match(
+      (data) => {
+        const parsed = actionResponseSchema.safeParse(data);
+        const success = parsed.success && parsed.data.success;
+        appStore.setState((s) => ({
+          ...s,
+          pendingAction: null,
+          actionResult: {
+            type,
+            prId,
+            success,
+            message: success
+              ? successMessage
+              : ((parsed.success ? parsed.data.error : null) ?? failureMessage),
+          },
+          commentsRevision: success
+            ? s.commentsRevision + 1
+            : s.commentsRevision,
+          threadsRevision: success ? s.threadsRevision + 1 : s.threadsRevision,
+        }));
+      },
+      (fault) => setFailedAction(type, prId, fault.message),
+    );
+}
+
+/** Approves; the engine folds pending drafts into the same review. */
+export function approvePR(prId: string): void {
+  recordFirstRunAction('detail.approve');
+  dispatchAction({
+    type: 'approve',
+    prId,
+    payload: {},
+    successMessage: 'Approved',
+    failureMessage: 'Approval failed',
+  });
+}
+
+/** Requests changes; the engine folds pending drafts into the same review. */
 export function requestChanges(prId: string, comment: string): void {
-  setPendingAction('request_changes', prId);
-  if (
-    wsClient.send('REQUEST_CHANGES', { pr_id: prId, comment }) === undefined
-  ) {
-    setFailedAction('request_changes', prId, 'WebSocket not connected');
-  }
+  dispatchAction({
+    type: 'request_changes',
+    prId,
+    payload: { body: comment },
+    successMessage: 'Changes requested',
+    failureMessage: 'Request changes failed',
+  });
+}
+
+/** Submits pending drafts as one review with the given event. */
+export function submitReview(
+  prId: string,
+  event: ReviewEvent,
+  body = '',
+): void {
+  dispatchAction({
+    type: 'submit_review',
+    prId,
+    payload: { review_event: event, body },
+    successMessage: 'Review submitted',
+    failureMessage: 'Review failed',
+  });
 }
 
 /** Clears the last PR action's feedback. */
@@ -66,40 +134,13 @@ export function postComment(prId: string, body: string): void {
   const trimmed = body.trim();
   if (trimmed.length === 0) return;
   recordFirstRunAction('detail.comment');
-  setPendingAction('post_comment', prId);
-
-  void wsClient
-    .request('SUBMIT_ACTION', {
-      pr_id: prId,
-      action: 'post_comment',
-      body: trimmed,
-    })
-    .mapErr((cause) =>
-      new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
-    )
-    .match(
-      (data) => {
-        const parsed = actionResponseSchema.safeParse(data);
-        const success = parsed.success && parsed.data.success;
-        appStore.setState((s) => ({
-          ...s,
-          pendingAction: null,
-          actionResult: {
-            type: 'post_comment',
-            prId,
-            success,
-            message: success
-              ? 'Comment posted'
-              : ((parsed.success ? parsed.data.error : null) ??
-                'Comment failed'),
-          },
-          commentsRevision: success
-            ? s.commentsRevision + 1
-            : s.commentsRevision,
-        }));
-      },
-      (message) => setFailedAction('post_comment', prId, message.message),
-    );
+  dispatchAction({
+    type: 'post_comment',
+    prId,
+    payload: { body: trimmed },
+    successMessage: 'Comment posted',
+    failureMessage: 'Comment failed',
+  });
 }
 
 /** Replies to a comment and refreshes comments and threads on success. */
@@ -110,40 +151,15 @@ export function replyComment(
 ): void {
   const trimmed = body.trim();
   if (trimmed.length === 0) return;
-  setPendingAction('reply_comment', prId);
-
-  void wsClient
-    .request('SUBMIT_ACTION', {
-      pr_id: prId,
-      action: 'reply_comment',
+  dispatchAction({
+    type: 'reply_comment',
+    prId,
+    payload: {
       body: trimmed,
       thread_id: target.threadId ?? '',
       comment_id: target.commentId ?? '',
-    })
-    .mapErr((cause) =>
-      new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
-    )
-    .match(
-      (data) => {
-        const parsed = actionResponseSchema.safeParse(data);
-        const success = parsed.success && parsed.data.success;
-        appStore.setState((s) => ({
-          ...s,
-          pendingAction: null,
-          actionResult: {
-            type: 'reply_comment',
-            prId,
-            success,
-            message: success
-              ? 'Reply posted'
-              : ((parsed.success ? parsed.data.error : null) ?? 'Reply failed'),
-          },
-          commentsRevision: success
-            ? s.commentsRevision + 1
-            : s.commentsRevision,
-          threadsRevision: success ? s.threadsRevision + 1 : s.threadsRevision,
-        }));
-      },
-      (message) => setFailedAction('reply_comment', prId, message.message),
-    );
+    },
+    successMessage: 'Reply posted',
+    failureMessage: 'Reply failed',
+  });
 }

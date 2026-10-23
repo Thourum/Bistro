@@ -1,4 +1,4 @@
-import { okAsync } from '@thourum/fault';
+import { errAsync, okAsync, ServiceError } from '@thourum/fault';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
@@ -6,9 +6,9 @@ import { initialUIState } from '../store/ui';
 import { approvePR, postComment, requestChanges } from './prActions';
 import { wsClient } from './ws/connection';
 
-const send = vi.hoisted(() => vi.fn(() => undefined));
+const request = vi.hoisted(() => vi.fn());
 vi.mock('./ws/connection', () => ({
-  wsClient: { send, request: vi.fn() },
+  wsClient: { send: vi.fn(), request },
 }));
 
 describe('first-run milestones from PR services', () => {
@@ -35,7 +35,8 @@ describe('first-run milestones from PR services', () => {
     vi.clearAllMocks();
   });
 
-  it('records dispatched approval even when transport is unavailable', () => {
+  it('records a dispatched approval', () => {
+    request.mockReturnValueOnce(okAsync({ success: true }));
     approvePR('pr-1');
     expect(appStore.state.firstRunRail.completed).toEqual(['review']);
   });
@@ -52,7 +53,7 @@ describe('first-run milestones from PR services', () => {
 describe('PR actions', () => {
   afterEach(() => {
     appStore.setState(() => initialUIState);
-    send.mockClear();
+    request.mockReset();
   });
 
   it.each([
@@ -60,10 +61,13 @@ describe('PR actions', () => {
     ['request_changes', () => requestChanges('pr-1', 'Please revise')],
   ] as const)(
     'clears pending %s when the WebSocket cannot send',
-    (type, dispatch) => {
+    async (type, dispatch) => {
+      request.mockReturnValue(
+        errAsync(ServiceError('CONNECTION_ERROR', 'WebSocket not connected')),
+      );
       dispatch();
+      await vi.waitFor(() => expect(appStore.state.pendingAction).toBeNull());
 
-      expect(appStore.state.pendingAction).toBeNull();
       expect(appStore.state.actionResult).toMatchObject({
         type,
         prId: 'pr-1',
@@ -72,4 +76,13 @@ describe('PR actions', () => {
       });
     },
   );
+
+  it('submits approve through SUBMIT_ACTION so the engine can absorb drafts', () => {
+    request.mockReturnValue(errAsync(ServiceError('CONNECTION_ERROR', 'x')));
+    approvePR('pr-1');
+    expect(request).toHaveBeenCalledWith('SUBMIT_ACTION', {
+      pr_id: 'pr-1',
+      action: 'approve',
+    });
+  });
 });

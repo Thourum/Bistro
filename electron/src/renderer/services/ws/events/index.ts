@@ -30,6 +30,7 @@ import {
 } from './repos';
 import {
   handleCIStatusChanged,
+  handleDraftsChanged,
   handlePRApproved,
   handlePRListChanged,
   handleThreadStateChanged,
@@ -91,6 +92,10 @@ const eventHandlers: WsEventHandlers = {
   FILE_VIEWED_ACK: resolveWsResponse,
   REVIEW_THREADS_READY: resolveWsResponse,
   ACTION_RESULT: resolveWsResponse,
+  DRAFTS_CHANGED: handleDraftsChanged,
+  DRAFTS_READY: resolveWsResponse,
+  DRAFT_SAVED: resolveWsResponse,
+  DRAFTS_DELETED: resolveWsResponse,
   PR_CHECKOUT_STATUS: resolveWsResponse,
   PR_CHECKOUT_RESULT: resolveWsResponse,
   VALIDATE_DEV_FOLDER_RESULT: resolveWsResponse,
