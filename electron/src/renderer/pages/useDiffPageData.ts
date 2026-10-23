@@ -16,6 +16,7 @@ const log = createLogger('DiffPage');
 interface DiffPageData {
   diff: string;
   files: DiffFile[];
+  oversizedPatchBytes: ReadonlyMap<string, number>;
   setFiles: React.Dispatch<React.SetStateAction<DiffFile[]>>;
   loading: boolean;
   diffError: string | null;
@@ -45,6 +46,10 @@ export function useDiffPageData({
   const [loading, setLoading] = useState(true);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
+  // Viewed-only updates must not reparse patches or reset URL-driven selection.
+  const [oversizedPatchBytes, setOversizedPatchBytes] = useState<
+    ReadonlyMap<string, number>
+  >(() => new Map());
 
   useEffect(() => {
     if (pr === undefined || isAwaitingHydration) return;
@@ -58,6 +63,14 @@ export function useDiffPageData({
         (payload) => {
           setDiff(payload.diff ?? '');
           setFiles(payload.files);
+          // 'too_large' is a legacy status from before the per-PR budget removal.
+          setOversizedPatchBytes(
+            new Map(
+              payload.files
+                .filter((file) => !file.is_binary && file.diff_status !== 'ok')
+                .map((file) => [file.path, file.patch_bytes]),
+            ),
+          );
           setLoading(false);
         },
         (error) => {
@@ -87,5 +100,13 @@ export function useDiffPageData({
       );
   }, [pr, commentsRevision]);
 
-  return { diff, files, setFiles, loading, diffError, comments };
+  return {
+    diff,
+    files,
+    oversizedPatchBytes,
+    setFiles,
+    loading,
+    diffError,
+    comments,
+  };
 }

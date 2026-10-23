@@ -83,8 +83,15 @@ export function DiffPage() {
   );
 
   const [findQuery, setFindQuery] = useState('');
-  const { diff, files, setFiles, loading, diffError, comments } =
-    useDiffPageData({ pr, isAwaitingHydration, commentsRevision });
+  const {
+    diff,
+    files,
+    oversizedPatchBytes,
+    setFiles,
+    loading,
+    diffError,
+    comments,
+  } = useDiffPageData({ pr, isAwaitingHydration, commentsRevision });
 
   // Review threads for inline annotations (full diff path only).
   const { threads } = useReviewThreads(pr?.id);
@@ -146,16 +153,6 @@ export function DiffPage() {
 
   const viewedPaths = useMemo(
     () => new Set(files.filter((f) => f.viewed).map((f) => f.path)),
-    [files],
-  );
-  // 'too_large' only appears on rows synced before the per-PR budget was removed.
-  const oversizedPatchBytes = useMemo(
-    () =>
-      new Map(
-        files
-          .filter((f) => !f.is_binary && f.diff_status !== 'ok')
-          .map((f) => [f.path, f.patch_bytes]),
-      ),
     [files],
   );
 
