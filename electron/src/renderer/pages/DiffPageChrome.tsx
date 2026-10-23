@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import { RangeDiffView } from '../components/RangeDiffView';
 import { StatusSquare } from '../components/StatusSquare';
 import type { DiffFile, PR, RangeDiffResult } from '../types';
@@ -85,14 +85,18 @@ export function DiffPageStatusBar({
   showRangeDiff,
   rangeResult,
 }: DiffPageStatusBarProps): React.ReactElement {
+  // The full diff can be ~19 MB; split it once per diff, never per render.
+  const diffLineCount = useMemo(() => diff.split('\n').length, [diff]);
+  const rangeLineCount = useMemo(
+    () => (rangeResult === null ? 0 : rangeResult.raw.split('\n').length),
+    [rangeResult],
+  );
   const viewedCount = files.filter((file) => file.viewed).length;
   return (
     <div className="shrink-0 h-6 px-4 flex items-center justify-between border-t border-outline-variant/30 bg-surface-container-low">
       <div className="flex items-center gap-4 font-mono text-[10px] uppercase tracking-widest text-outline">
         <span>
-          {showRangeDiff && rangeResult !== null
-            ? `${rangeResult.raw.split('\n').length} lines`
-            : `${diff.split('\n').length} lines`}
+          {`${showRangeDiff && rangeResult !== null ? rangeLineCount : diffLineCount} lines`}
         </span>
         {currentFile !== undefined && (
           <span className="flex items-center gap-1.5">

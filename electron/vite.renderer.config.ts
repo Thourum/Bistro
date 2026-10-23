@@ -15,6 +15,9 @@ export default defineConfig({
     emptyOutDir: true,
   },
   plugins: [react(), tailwindcss()],
+  // @pierre/diffs' highlighter worker lazy-imports shiki's wasm; only ES
+  // workers can code-split.
+  worker: { format: 'es' },
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(version),
     'import.meta.env.VITE_SENTRY_ENABLED': JSON.stringify(

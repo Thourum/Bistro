@@ -18,40 +18,32 @@ type CloneResult struct {
 	HeadSHA   string // Head commit SHA
 }
 
-// Diff status values — mirrors the diff_status column in pr_diffs.
+// Diff status values — mirrors the diff_status column in pr_diffs. Rows
+// written before the per-PR budget was removed may still hold "too_large".
 const (
 	DiffStatusOK        = "ok"        // full patch stored
 	DiffStatusTruncated = "truncated" // per-file budget exceeded; patch empty
-	DiffStatusTooLarge  = "too_large" // PR-level budget exhausted; patch empty
 )
 
-// Default budget limits (conservative: safe for all SQLite page sizes).
-const (
-	DefaultMaxFilePatchBytes  int64 = 512 * 1024      // 512 KB per file
-	DefaultMaxTotalPatchBytes int64 = 4 * 1024 * 1024 // 4 MB per PR
-)
+// DefaultMaxFilePatchBytes caps one file's stored patch (safe for all SQLite page sizes).
+const DefaultMaxFilePatchBytes int64 = 512 * 1024
 
-// DiffOptions controls budget limits for GenerateDiff.
-// Zero values mean "no limit" to allow callers that pre-date budget enforcement
-// to keep working, but the sync path should always pass DefaultDiffOptions().
+// DiffOptions controls budget limits for GenerateDiff. A zero value means
+// "no limit"; the sync path should always pass DefaultDiffOptions().
 type DiffOptions struct {
-	MaxFilePatchBytes  int64 // 0 = unlimited
-	MaxTotalPatchBytes int64 // 0 = unlimited
+	MaxFilePatchBytes int64 // 0 = unlimited
 }
 
 // DefaultDiffOptions returns the production-safe budget defaults.
 func DefaultDiffOptions() DiffOptions {
-	return DiffOptions{
-		MaxFilePatchBytes:  DefaultMaxFilePatchBytes,
-		MaxTotalPatchBytes: DefaultMaxTotalPatchBytes,
-	}
+	return DiffOptions{MaxFilePatchBytes: DefaultMaxFilePatchBytes}
 }
 
 // DiffFile represents a single file's diff
 type DiffFile struct {
 	Path         string // File path, e.g., "cmd/main.go"
 	Status       string // "added", "modified", "deleted", "renamed", or "binary"
-	DiffStatus   string // "ok", "truncated", "too_large"
+	DiffStatus   string // "ok" or "truncated"
 	OldPath      string // Previous path for renames/deletes
 	Binary       bool   // Whether the file patch is binary
 	Truncated    bool   // Whether the patch content was truncated
@@ -76,7 +68,6 @@ type DiffProfile struct {
 	PatchBytes        int64
 	BinaryFileCount   int
 	TruncatedFiles    int // files where per-file budget was exceeded
-	TooLargeFiles     int // files skipped because PR-level budget was exhausted
 }
 
 // DiffResult contains all changed files
