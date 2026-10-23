@@ -1,8 +1,13 @@
-import { useMatchRoute, useNavigate } from '@tanstack/react-router';
+import {
+  useMatchRoute,
+  useNavigate,
+  useRouterState,
+} from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
+import { useKeyActionContext } from '../hooks/useKeyActionContext';
 import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useOverlays } from '../overlays/OverlayContext';
@@ -14,126 +19,21 @@ import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
-import { findActionKeys } from '../utils/legendPresets';
+import { getBindingAction } from '../utils/keybindingActions';
+import { routeBaseFromPath } from '../utils/keybindings';
 import { createLogger } from '../utils/logger';
 import { openUrlInBrowser } from '../utils/openUrl';
 import { prBrowserUrl } from '../utils/triage';
+import {
+  COMMANDS,
+  type CommandItem,
+  shortcutFor,
+} from './commandPaletteCommands';
 import { addToast } from './ToastContainer';
 
 const log = createLogger('CommandPalette');
 
-type Icon = string;
-
-interface CommandItem {
-  readonly id: string;
-  readonly name: string;
-  readonly description?: string;
-  readonly icon: Icon;
-  /** Action whose effective keys render as the row's shortcut hint. */
-  readonly shortcutActionId?: string;
-  readonly dev?: boolean;
-  /** Only listed on the diff route — DiffPage is the sole consumer of the intent. */
-  readonly diffOnly?: boolean;
-}
-
 const isDev = import.meta.env.DEV;
-
-const COMMANDS: readonly CommandItem[] = [
-  {
-    id: 'help',
-    name: 'Show keyboard shortcuts',
-    icon: 'keyboard',
-    shortcutActionId: 'global.help',
-  },
-  {
-    id: 'tour',
-    name: ':tour',
-    description: 'Show the first-review guide again',
-    icon: 'school',
-  },
-  {
-    id: 'settings',
-    name: 'Open project settings',
-    icon: 'settings',
-    shortcutActionId: 'global.settings',
-  },
-  {
-    id: 'sync',
-    name: 'Sync now',
-    description: 'Force sync all watched repos',
-    icon: 'sync',
-  },
-  {
-    id: 'clear',
-    name: 'Clear all filters and search',
-    icon: 'filter_alt_off',
-  },
-  {
-    id: 'view-lanes',
-    name: ':view lanes',
-    description: 'Organize the PR inbox by review lanes',
-    icon: 'view_agenda',
-  },
-  {
-    id: 'view-groups',
-    name: ':view groups',
-    description: 'Organize the PR inbox by repository',
-    icon: 'account_tree',
-  },
-  {
-    id: 'open-browser',
-    name: ':open in browser',
-    description: 'Open the focused PR on GitHub',
-    icon: 'open_in_new',
-    shortcutActionId: 'list.openBrowser',
-  },
-  {
-    id: 'diff-split',
-    name: ':diff split',
-    description: 'Show diffs side by side',
-    icon: 'vertical_split',
-    shortcutActionId: 'diff.toggleStyle',
-  },
-  {
-    id: 'diff-unified',
-    name: ':diff unified',
-    description: 'Show diffs in a single column',
-    icon: 'view_stream',
-    shortcutActionId: 'diff.toggleStyle',
-  },
-  {
-    id: 'open-editor',
-    name: 'Open file in editor',
-    description:
-      "Opens in $EDITOR at the selected comment's line when one is selected",
-    icon: 'edit_document',
-    diffOnly: true,
-  },
-  {
-    id: 'repo-picker',
-    name: 'Open repository picker',
-    description: 'Discover and watch repositories',
-    icon: 'source_environment',
-  },
-  {
-    id: 'add-repo-by-url',
-    name: 'Add repository by URL',
-    description: 'Clone or link a repository from a Git URL',
-    icon: 'add_link',
-  },
-  { id: 'expertise-enable', name: 'Enable expertise', icon: 'psychology' },
-  { id: 'expertise-disable', name: 'Disable expertise', icon: 'psychology' },
-  { id: 'focus-list', name: 'Focus PR list', icon: 'list_alt' },
-  { id: 'focus-detail', name: 'Focus PR detail', icon: 'article' },
-  { id: 'about', name: 'About BISTRO', icon: 'info' },
-  {
-    id: 'reset-store',
-    name: 'Reset store to initial state',
-    icon: 'restart_alt',
-    description: 'DEV ONLY',
-    dev: true,
-  },
-];
 
 /**
  * Command Palette — matches `command_palette/code.html`.
@@ -152,6 +52,8 @@ const COMMANDS: readonly CommandItem[] = [
 export function CommandPalette(): React.ReactElement | null {
   const { activeOverlay, closeOverlay, openHelp, openRepoPicker, openAddRepo } =
     useOverlays();
+  const makeCtx = useKeyActionContext();
+  const draftCount = useStore(appStore, (s) => s.reviewDrafts.length);
   const isOpen = activeOverlay === 'command';
   const [query, setQuery] = useState('');
   const prefetchedRef = useRef(false);
@@ -160,6 +62,10 @@ export function CommandPalette(): React.ReactElement | null {
   const matchRoute = useMatchRoute();
   const routedPR = matchRoute({ to: '/prs/$prId', fuzzy: true });
   const isDiffRoute = matchRoute({ to: '/prs/$prId/diff' }) !== false;
+  const isPRRoute = routedPR !== false;
+  const routeBase = useRouterState({
+    select: (state) => routeBaseFromPath(state.location.pathname),
+  });
 
   // Use the shared visible-PR source so palette results match the list route.
   const { prs } = useVisiblePRs();
@@ -184,16 +90,25 @@ export function CommandPalette(): React.ReactElement | null {
 
   const filteredCommands = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return COMMANDS.filter((cmd) => {
+    return COMMANDS.map(
+      (command): CommandItem =>
+        command.id === 'review-submit'
+          ? {
+              ...command,
+              name: `Submit review (${draftCount} ${draftCount === 1 ? 'draft' : 'drafts'})`,
+            }
+          : command,
+    ).filter((cmd) => {
       if (cmd.dev === true && !isDev) return false;
       if (cmd.diffOnly === true && !isDiffRoute) return false;
+      if (cmd.prOnly === true && !isPRRoute) return false;
       if (q === '') return true;
       return (
         cmd.name.toLowerCase().includes(q) ||
         cmd.description?.toLowerCase().includes(q) === true
       );
     });
-  }, [query, isDiffRoute]);
+  }, [query, isDiffRoute, isPRRoute, draftCount]);
 
   useEffect(() => {
     if (isOpen) {
@@ -259,6 +174,14 @@ export function CommandPalette(): React.ReactElement | null {
   };
 
   const handleExecuteCommand = (command: CommandItem): void => {
+    if (command.actionId !== undefined) {
+      handleClose();
+      getBindingAction(command.actionId)?.({
+        ...makeCtx(),
+        activeOverlay: null,
+      });
+      return;
+    }
     switch (command.id) {
       case 'settings':
         void navigate({ to: '/settings' });
@@ -449,11 +372,11 @@ export function CommandPalette(): React.ReactElement | null {
                 <CommandRow
                   key={cmd.id}
                   command={cmd}
-                  shortcut={
-                    cmd.shortcutActionId === undefined
-                      ? undefined
-                      : findActionKeys(bindings, [cmd.shortcutActionId])
-                  }
+                  shortcut={shortcutFor(
+                    cmd.actionId ?? cmd.shortcutActionId,
+                    bindings,
+                    routeBase,
+                  )}
                   onSelect={() => handleExecuteCommand(cmd)}
                 />
               ))}
