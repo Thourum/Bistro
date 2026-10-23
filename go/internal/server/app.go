@@ -707,8 +707,9 @@ func (a *App) registerDiffAndCheckoutHandlers(stores runStores) {
 	a.wsServer.RegisterHandler("REQUEST_TRIAGE", handler.NewTriageHandler(handler.TriageHandlerDeps{
 		Store: a.db, CurrentUser: stores.currentUser, Log: a.log,
 	}))
-	a.wsServer.RegisterHandler("MARK_FILE_VIEWED",
-		handler.NewMarkFileViewedHandlerWithDiffStore(a.db, stores.currentUser, stores.diff, a.log))
+	a.wsServer.RegisterHandler("MARK_FILE_VIEWED", handler.NewMarkFileViewedHandlerWithDeps(handler.MarkFileViewedDeps{
+		Viewed: a.db, CurrentUser: stores.currentUser, DiffStore: stores.diff, Baseline: a.db, Log: a.log,
+	}))
 	a.wsServer.RegisterHandler("MARK_PRS_READ",
 		handler.NewMarkPRsReadHandler(a.db, stores.currentUser, a.wsServer, a.log))
 	// Phase 2.4 handlers.

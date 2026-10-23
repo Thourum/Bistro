@@ -175,7 +175,7 @@ func TestMarkFileViewedHandler_HashValidation_Mismatch(t *testing.T) {
 	cu := &mockCurrentUserReader{login: "alice", found: true}
 
 	const patch = "real patch content for main.go"
-	canonicalHash := PatchContentHash(patch)
+	canonicalHash := viewedHash(store.DiffFile{Patch: patch})
 
 	ds := &stubDiffReader{
 		diffs: map[string]string{"pr-v": "unified"},
@@ -184,7 +184,7 @@ func TestMarkFileViewedHandler_HashValidation_Mismatch(t *testing.T) {
 		},
 	}
 
-	h := NewMarkFileViewedHandlerWithDiffStore(db, cu, ds, testRepoLogger())
+	h := NewMarkFileViewedHandlerWithDeps(MarkFileViewedDeps{Viewed: db, CurrentUser: cu, DiffStore: ds, Log: testRepoLogger()})
 	// Send a DIFFERENT hash than what the server computed.
 	data, _ := json.Marshal(map[string]string{
 		"pr_id": "pr-v", "file_path": "main.go",
@@ -211,7 +211,7 @@ func TestMarkFileViewedHandler_HashValidation_Match(t *testing.T) {
 	cu := &mockCurrentUserReader{login: "alice", found: true}
 
 	const patch = "the canonical patch content"
-	canonicalHash := PatchContentHash(patch)
+	canonicalHash := viewedHash(store.DiffFile{Patch: patch})
 
 	ds := &stubDiffReader{
 		diffs: map[string]string{"pr-vm": "unified"},
@@ -220,7 +220,7 @@ func TestMarkFileViewedHandler_HashValidation_Match(t *testing.T) {
 		},
 	}
 
-	h := NewMarkFileViewedHandlerWithDiffStore(db, cu, ds, testRepoLogger())
+	h := NewMarkFileViewedHandlerWithDeps(MarkFileViewedDeps{Viewed: db, CurrentUser: cu, DiffStore: ds, Log: testRepoLogger()})
 	data, _ := json.Marshal(map[string]string{
 		"pr_id": "pr-vm", "file_path": "a.go", "content_hash": canonicalHash,
 	})
