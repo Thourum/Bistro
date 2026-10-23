@@ -1,6 +1,6 @@
 ---
 title: Keybindings
-description: Default keyboard shortcuts reviewing pull requests in Bistro.
+description: Default keyboard shortcuts for reviewing pull requests in Bistro.
 ---
 
 # Keybindings
@@ -30,7 +30,7 @@ your overrides; an empty override array disables that action.
 
 In the tables, `Mod` means `Cmd` on macOS and `Ctrl` on Windows/Linux. `Alt` means
 Option on macOS. Space-separated keys are a sequence, not a simultaneous chord:
-`Ctrl+c Ctrl+a` means press `Ctrl+c`, then `Ctrl+a`. The default gap between
+`Ctrl+c Ctrl+a` means press `Ctrl+c`, then `Ctrl+a`. The gap between
 sequence steps is up to 500 ms for Vim/Standard and 1,500 ms for Emacs.
 
 :::caution
@@ -148,9 +148,10 @@ These shortcuts apply only in the diff:
 
 The first step includes a practice sandbox using your chosen style and overrides.
 Its checklist is optional; click **Continue** when ready. In the sandbox inbox,
-`Space` also continues; inside an opened practice PR, it follows the sandbox's
+`Space` also continues unless a button has focus; inside an opened practice PR, it follows the sandbox's
 bindings instead (for example, Vim's `Space` opens the diff). The second step
-configures your development folder, where `Space` finishes onboarding.
+configures your development folder, where `Space` finishes onboarding unless a
+button has focus.
 
 ## Remapping keys
 
@@ -172,6 +173,7 @@ in `settings.json` as action ids mapped to key arrays:
 
 :::info
 An empty array disables a binding. Default keys live in
-`electron/src/renderer/utils/keymaps.ts`; action ids and activation rules live in
-`utils/keybindings.ts`.
+`electron/src/renderer/utils/keymaps.ts`; action ids live in
+`utils/keybindings.ts`, and activation rules live in
+`electron/src/renderer/utils/keybindingActivation.ts`.
 :::
