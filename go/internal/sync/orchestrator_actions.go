@@ -156,7 +156,12 @@ func (o *Orchestrator) executeAction(ctx context.Context, req *actions.ActionReq
 	executor := actions.NewActionExecutor(o.log, o.provider, o.store, o.emitter).
 		WithReviewTracking(o.reviewLogin, o.reviewSHAWriter)
 	start := time.Now()
-	result, err := executor.ExecuteWithRetry(execCtx, req, actionRetryCount)
+	attempts := actionRetryCount
+	if req.Action == actions.SubmitReviewCommand {
+		// A retried CreateReview that GitHub already accepted posts every comment twice.
+		attempts = 1
+	}
+	result, err := executor.ExecuteWithRetry(execCtx, req, attempts)
 	dur := time.Since(start).Milliseconds()
 
 	if err != nil {

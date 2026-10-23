@@ -19,9 +19,11 @@ type reviewRecorder struct {
 	submissions []provider.ReviewSubmission
 	err         error
 	failAfter   int
+	calls       int
 }
 
 func (r *reviewRecorder) SubmitReview(_ context.Context, _ string, sub provider.ReviewSubmission) error {
+	r.calls++
 	if r.err != nil && len(r.submissions) >= r.failAfter {
 		return r.err
 	}
@@ -250,7 +252,7 @@ func TestApplyAction_OfflineReviewKeepsDraftsWithoutQueueing(t *testing.T) {
 
 	result := orch.ApplyAction(context.Background(), &actions.ActionRequest{PRID: "pr-r", Action: actions.SubmitReviewCommand, ReviewEvent: actions.ReviewEventComment})
 
-	if result.Success || !strings.Contains(result.Error, "draft(s) kept") {
+	if result.Success {
 		t.Fatalf("result = %+v", result)
 	}
 	remaining, err := drafts.List(context.Background(), "pr-r", "me")
@@ -269,5 +271,42 @@ func TestApplyAction_CommentReviewWithNothingToSubmitFails(t *testing.T) {
 	result := orch.ApplyAction(context.Background(), &actions.ActionRequest{PRID: "pr-r", Action: actions.SubmitReviewCommand, ReviewEvent: actions.ReviewEventComment})
 	if result.Success || len(prov.submissions) != 0 {
 		t.Fatalf("result = %+v, want failure without a provider call", result)
+	}
+}
+
+func TestApplyAction_InvalidReviewPostsNoOlderGroups(t *testing.T) {
+	prov := &reviewRecorder{MockProvider: mock.NewMockProvider()}
+	orch, drafts := newReviewTestOrchestrator(t, prov)
+	mustDraft(t, drafts, store.ReviewDraft{Path: "old.go", Side: "RIGHT", Line: 2, Body: "outdated", CommitSHA: "old"})
+
+	result := orch.ApplyAction(context.Background(), &actions.ActionRequest{PRID: "pr-r", Action: actions.SubmitReviewCommand, ReviewEvent: actions.ReviewEventRequestChanges})
+
+	if result.Success || prov.calls != 0 {
+		t.Fatalf("result = %+v, calls = %d, want rejection before any review posts", result, prov.calls)
+	}
+}
+
+func TestApplyAction_SubmitReviewIsAttemptedOnce(t *testing.T) {
+	// A retryable failure still must not resend: GitHub may have accepted the batch.
+	prov := &reviewRecorder{MockProvider: mock.NewMockProvider(), err: errors.New("POST .../reviews: 429 Too Many Requests")}
+	orch, drafts := newReviewTestOrchestrator(t, prov)
+	mustDraft(t, drafts, store.ReviewDraft{Path: "a.go", Side: "RIGHT", Line: 1, Body: "one", CommitSHA: "head"})
+
+	orch.ApplyAction(context.Background(), &actions.ActionRequest{PRID: "pr-r", Action: actions.SubmitReviewCommand, ReviewEvent: actions.ReviewEventComment})
+
+	if prov.calls != 1 {
+		t.Fatalf("SubmitReview calls = %d, want 1", prov.calls)
+	}
+}
+
+func TestApplyAction_AmbiguousReviewResultIsNotReportedAsUnsubmitted(t *testing.T) {
+	prov := &reviewRecorder{MockProvider: mock.NewMockProvider(), err: errors.New("POST .../reviews: Client.Timeout exceeded")}
+	orch, drafts := newReviewTestOrchestrator(t, prov)
+	mustDraft(t, drafts, store.ReviewDraft{Path: "a.go", Side: "RIGHT", Line: 1, Body: "one", CommitSHA: "head"})
+
+	result := orch.ApplyAction(context.Background(), &actions.ActionRequest{PRID: "pr-r", Action: actions.SubmitReviewCommand, ReviewEvent: actions.ReviewEventComment})
+
+	if !result.IsAmbiguousRemoteSuccess() || strings.Contains(result.Error, "not submitted") {
+		t.Fatalf("result = %+v, want the ambiguous result unchanged", result)
 	}
 }

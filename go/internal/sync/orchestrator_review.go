@@ -79,6 +79,10 @@ func asSubmitReview(req *actions.ActionRequest) *actions.ActionRequest {
 // COMMENT reviews, and deletes each group's drafts once GitHub accepts it.
 // Never queued: drafts are already persisted, so failure just keeps them.
 func (o *Orchestrator) submitReview(ctx context.Context, req *actions.ActionRequest, login string, drafts []store.ReviewDraft) *actions.ActionResult {
+	// Reject a bad event or body before older commit groups post.
+	if err := req.Validate(); err != nil {
+		return failedActionResult(req, fmt.Sprintf("validation failed: %v", err))
+	}
 	if len(drafts) == 0 && req.ReviewEvent == actions.ReviewEventComment && req.Body == "" {
 		return failedActionResult(req, "nothing to submit: no drafts and no review body")
 	}
@@ -97,7 +101,8 @@ func (o *Orchestrator) submitReview(ctx context.Context, req *actions.ActionRequ
 	for i, group := range groups {
 		result = o.executeAction(ctx, reviewRequestForGroup(req, group, i == len(groups)-1))
 		if !result.Success {
-			if len(group.drafts) == 0 {
+			// The review may be on GitHub: "drafts kept" would invite a duplicate resubmit.
+			if len(group.drafts) == 0 || result.IsAmbiguousRemoteSuccess() {
 				return result
 			}
 			return failedActionResult(req, fmt.Sprintf("review not submitted; %d draft(s) kept (%s): %s",
