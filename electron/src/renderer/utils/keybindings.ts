@@ -498,6 +498,11 @@ const DETAIL_BINDINGS: readonly BindingDefinition[] = [
     description: 'Delete draft',
     activation: DIFF,
   },
+  {
+    actionId: 'review.toggleResolve',
+    description: 'Resolve / unresolve thread',
+    activation: SCROLL,
+  },
 ];
 
 const LINE_COMMENT_BINDINGS: readonly BindingDefinition[] = [

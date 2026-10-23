@@ -11,6 +11,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { DiffView } from '../components/diff/DiffView';
 import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
 import { OpenInEditorDialog } from '../components/OpenInEditorDialog';
+import { useDismissals } from '../hooks/useDismissals';
 import { useExpertise } from '../hooks/useExpertise';
 import { type InterdiffRequest, useInterdiff } from '../hooks/useInterdiff';
 import { usePRHydration } from '../hooks/usePRHydration';
@@ -100,6 +101,7 @@ export function DiffPage() {
     diffError,
     comments,
   } = useDiffPageData({ pr, isAwaitingHydration, commentsRevision });
+  useDismissals(pr?.id, comments);
 
   // Review threads for inline annotations on the visible diff.
   const { threads } = useReviewThreads(pr?.id);

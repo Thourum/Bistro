@@ -26,7 +26,7 @@ import {
   startSignIn,
 } from '../services/signIn';
 import { appStore } from '../store';
-import { approvePR } from '../services/prActions';
+import { approvePR, submitReview } from '../services/prActions';
 import { deleteDrafts } from '../services/reviewDrafts';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import type { RouteBase } from './keybindings';
@@ -114,6 +114,66 @@ function deleteActiveDraft(context: KeyActionContext): void {
         dismissible: true,
       }),
   );
+}
+
+function toggleActiveThreadResolve(context: KeyActionContext): void {
+  const active = context.store.state.activeInlineCommentThreadId;
+  if (
+    context.routeBase !== 'diff' ||
+    active === null ||
+    draftIdFromKey(active) !== null
+  ) {
+    addToast({
+      type: 'warning',
+      message: 'Select a review thread in the diff (n / p) to resolve it',
+      dismissible: true,
+    });
+    return;
+  }
+  emitAppEvent('bistro:diff:toggle-resolve');
+}
+
+function submitDraftsReview(context: KeyActionContext): void {
+  if (context.prId === undefined) return;
+  if (context.store.state.reviewDrafts.length === 0) {
+    addToast({
+      type: 'warning',
+      message: 'No drafts to submit',
+      dismissible: true,
+    });
+    return;
+  }
+  submitReview(context.prId, 'COMMENT');
+}
+
+function discardAllDrafts(context: KeyActionContext): void {
+  const ids = context.store.state.reviewDrafts.map((draft) => draft.id);
+  if (context.prId === undefined || ids.length === 0) return;
+  void deleteDrafts(context.prId, ids).match(
+    () =>
+      addToast({
+        type: 'success',
+        message: `Discarded ${ids.length} drafts`,
+        dismissible: false,
+      }),
+    (fault) =>
+      addToast({
+        type: 'error',
+        message: `Drafts not discarded: ${fault.message}`,
+        dismissible: true,
+      }),
+  );
+}
+
+/** The detail page owns the PR comment composers; the diff page jumps there. */
+function openDetailComposer(
+  context: KeyActionContext,
+  confirmingAction: 'comment' | 'request_changes',
+): void {
+  context.store.setState((state) => ({ ...state, confirmingAction }));
+  if (confirmingAction === 'comment') recordFirstRunAction('detail.comment');
+  if (context.routeBase === 'diff' && context.prId !== undefined)
+    void router.navigate({ to: '/prs/$prId', params: { prId: context.prId } });
 }
 
 function startInlineDiffReply(context: KeyActionContext): void {
@@ -487,18 +547,12 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'detail.approve': (context) => {
     if (context.prId !== undefined) approvePR(context.prId);
   },
-  'detail.comment': (context) => {
-    context.store.setState((state) => ({
-      ...state,
-      confirmingAction: 'comment',
-    }));
-    recordFirstRunAction('detail.comment');
-  },
+  'detail.comment': (context) => openDetailComposer(context, 'comment'),
   'detail.requestChanges': (context) =>
-    context.store.setState((state) => ({
-      ...state,
-      confirmingAction: 'request_changes',
-    })),
+    openDetailComposer(context, 'request_changes'),
+  'review.toggleResolve': toggleActiveThreadResolve,
+  'review.submit': submitDraftsReview,
+  'review.discardDrafts': discardAllDrafts,
   'diff.sinceLastReview': toggleSinceLastReview,
   'diff.interdiff': toggleInterdiff,
   'diff.toggleStyle': (context) =>

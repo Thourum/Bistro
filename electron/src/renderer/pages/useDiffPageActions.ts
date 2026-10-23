@@ -5,6 +5,7 @@ import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
 import { addToast } from '../components/ToastContainer';
 import { useOpenInEditor } from '../hooks/useOpenInEditor';
 import { useStore } from '../hooks/useStore';
+import { useThreadActions } from '../hooks/useThreadActions';
 import { markFileViewed } from '../services/readState';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
@@ -34,6 +35,28 @@ export function useDiffPageActions({
   const openInEditor = useOpenInEditor();
   const { state, requestOpen } = openInEditor;
   const markInFlight = useRef(false);
+  const { resolveThread, unresolveThread } = useThreadActions(pr?.id);
+
+  useEffect(() => {
+    const toggle = (): void => {
+      const thread = threads.find(
+        (entry) => entry.id === appStore.state.activeInlineCommentThreadId,
+      );
+      if (thread === undefined) return;
+      if (!thread.state_known) {
+        addToast({
+          type: 'warning',
+          message: 'Thread state unknown; sync before resolving',
+          dismissible: true,
+        });
+        return;
+      }
+      (thread.resolved ? unresolveThread : resolveThread)(thread.id);
+    };
+    document.addEventListener('bistro:diff:toggle-resolve', toggle);
+    return () =>
+      document.removeEventListener('bistro:diff:toggle-resolve', toggle);
+  }, [threads, resolveThread, unresolveThread]);
 
   const doMarkViewed = useCallback(() => {
     if (pr === undefined || currentFile === undefined || markInFlight.current)
