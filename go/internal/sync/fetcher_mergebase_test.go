@@ -73,6 +73,9 @@ func TestGenerateDiffUsesMergeBaseForDiffAndAnchors(t *testing.T) {
 				t.Errorf("DiffComputed=%v, files=%v; want only the two PR files", result.DiffComputed, result.DiffFiles)
 			}
 			for _, file := range result.DiffFiles {
+				if file.PatchID == "" || file.PatchID != git.PatchID(file.Patch) {
+					t.Errorf("PatchID for %s = %q, want full-patch fingerprint", file.FilePath, file.PatchID)
+				}
 				if file.FilePath != "src/app.go" && file.FilePath != "docs/readme.md" {
 					t.Errorf("unexpected PR diff file %q", file.FilePath)
 				}

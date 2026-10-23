@@ -45,6 +45,7 @@ type PRFetchResult struct {
 	PR       *provider.PR
 	Comments []*provider.Comment
 	Threads  []*provider.ReviewThread // populated when provider implements ThreadProvider
+	Reviews  []*provider.Review       // Submitted reviews; the writer derives the user's GitHub-review baseline.
 	// CommentsFetched and ThreadsFetched distinguish a successful empty refresh
 	// from a write where the corresponding source was not fetched. Mention state
 	// may only be cleared once every source has been refreshed.
@@ -205,6 +206,7 @@ func (o *Orchestrator) fetchReviews(ctx context.Context, result *PRFetchResult, 
 	if err != nil {
 		return fmt.Errorf("reviews: %w", err)
 	}
+	result.Reviews = reviews
 	status, approvedBy, changesBy := provider.DeriveReviewStatus(reviews)
 	result.PR.ReviewStatus = status
 	result.PR.ApprovedBy = approvedBy
@@ -332,6 +334,7 @@ func storeDiffFiles(diff *git.DiffResult) []store.DiffFile {
 			PatchBytes:  file.PatchBytes,
 			HunkCount:   file.HunkCount,
 			Patch:       file.Patch,
+			PatchID:     file.PatchID,
 			Additions:   file.AddedLines,
 			Deletions:   file.RemovedLines,
 		})

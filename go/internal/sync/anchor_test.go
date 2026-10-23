@@ -48,7 +48,9 @@ func TestIsAnchorable(t *testing.T) {
 // resolved patchset number is populated when a matching patchset exists.
 func TestSelectDiffBaseSHA_CurrentPosition(t *testing.T) {
 	patchsets := []store.Patchset{
-		{Number: 1, HeadSHA: "sha-HEAD", BaseSHA: "sha-BASE"},
+		{Number: 1, HeadSHA: "sha-HEAD", BaseSHA: "sha-OLD-BASE"},
+		{Number: 2, HeadSHA: "sha-HEAD", BaseSHA: "sha-OTHER-BASE"},
+		{Number: 3, HeadSHA: "sha-OTHER-HEAD", BaseSHA: "sha-BASE"},
 	}
 	base, psNum, skip := selectDiffBaseSHA(diffBaseSelection{patchsets: patchsets, isCurrentPosition: true, prBaseSHA: "sha-BASE", prHeadSHA: "sha-HEAD"})
 	if skip {
@@ -57,8 +59,8 @@ func TestSelectDiffBaseSHA_CurrentPosition(t *testing.T) {
 	if base != "sha-BASE" {
 		t.Errorf("current-position: got DiffBaseSHA=%q want sha-BASE", base)
 	}
-	if psNum != 1 {
-		t.Errorf("current-position: got resolvedPatchsetNum=%d want 1", psNum)
+	if psNum != 2 {
+		t.Errorf("current-position: got resolvedPatchsetNum=%d want 2", psNum)
 	}
 }
 
@@ -78,19 +80,19 @@ func TestSelectDiffBaseSHA_CurrentPosition_NoPatchsetYet(t *testing.T) {
 }
 
 // TestSelectDiffBaseSHA_OriginalPosition_ByNumber_Found verifies that exact
-// patchset number matching returns the correct BaseSHA, not the current PR base.
+// patchset number matching returns its merge base, not the current PR base.
 func TestSelectDiffBaseSHA_OriginalPosition_ByNumber_Found(t *testing.T) {
 	patchsets := []store.Patchset{
-		{Number: 1, HeadSHA: "sha-P1", BaseSHA: "sha-P1-BASE"},
+		{Number: 1, HeadSHA: "sha-P1", BaseSHA: "sha-P1-BASE", MergeBaseSHA: "sha-P1-MERGE-BASE"},
 		{Number: 2, HeadSHA: "sha-P2", BaseSHA: "sha-P2-BASE"},
 	}
-	// patchsetNum=1 → must select P1's BaseSHA
+	// patchsetNum=1 → must select P1's known merge base.
 	base, _, skip := selectDiffBaseSHA(diffBaseSelection{patchsets: patchsets, patchsetNum: 1, prBaseSHA: "WRONG-CURRENT-BASE", prHeadSHA: "sha-head"})
 	if skip {
 		t.Error("original-position with matching patchset_number must not be skipped")
 	}
-	if base != "sha-P1-BASE" {
-		t.Errorf("original-position patchsetNum=1: got DiffBaseSHA=%q want sha-P1-BASE", base)
+	if base != "sha-P1-MERGE-BASE" {
+		t.Errorf("original-position patchsetNum=1: got DiffBaseSHA=%q want sha-P1-MERGE-BASE", base)
 	}
 }
 
