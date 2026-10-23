@@ -161,6 +161,10 @@ export function DiffView({
         theme: `pierre-${theme}`,
         lineDiffType: LINE_DIFF_TYPE,
         tokenizeMaxLineLength: TOKENIZE_MAX_LINE_LENGTH,
+        // Oniguruma (wasm) over the default JS regex engine: on Marlin #28644
+        // it cut large-file highlight from ~440 ms to ~100 ms and worker heaps
+        // from ~120 MB to <50 MB, which is what lets 8 workers fit in memory.
+        preferredHighlighter: 'shiki-wasm',
       }}
     >
       <div className="w-full h-full min-h-0 flex overflow-hidden">
