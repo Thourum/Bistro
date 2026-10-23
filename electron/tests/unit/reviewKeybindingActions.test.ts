@@ -35,14 +35,21 @@ afterEach(() => {
 });
 
 describe('review shortcuts', () => {
+  it('on diff hides the PR comment chip and shows the line-comment chip', () => {
+    const bindings = getEffectiveBindings({});
+    expect(shortcutFor('detail.comment', bindings, 'diff')).toBeUndefined();
+    expect(shortcutFor('diff.lineComment', bindings, 'diff')).toEqual(['C']);
+    expect(shortcutFor('detail.comment', bindings, 'detail')).toEqual(['C']);
+  });
+
   it('shows effective sequence and remapped chips; unbound actions have none', () => {
     const defaults = getEffectiveBindings({});
-    expect(shortcutFor('detail.approve', defaults)).toEqual(['A', 'A']);
-    expect(shortcutFor('review.toggleResolve', defaults)).toEqual(['X']);
-    expect(shortcutFor('review.submit', defaults)).toBeUndefined();
+    expect(shortcutFor('detail.approve', defaults, 'detail')).toEqual(['A', 'A']);
+    expect(shortcutFor('review.toggleResolve', defaults, 'diff')).toEqual(['X']);
+    expect(shortcutFor('review.submit', defaults, 'detail')).toBeUndefined();
     const remapped = getEffectiveBindings({ 'detail.approve': ['q', 'r'], 'review.toggleResolve': [] });
-    expect(shortcutFor('detail.approve', remapped)).toEqual(['Q', 'R']);
-    expect(shortcutFor('review.toggleResolve', remapped)).toBeUndefined();
+    expect(shortcutFor('detail.approve', remapped, 'detail')).toEqual(['Q', 'R']);
+    expect(shortcutFor('review.toggleResolve', remapped, 'diff')).toBeUndefined();
     const resolve = defaults.find((binding) => binding.actionId === 'review.toggleResolve');
     expect(resolve).toBeDefined();
     if (resolve === undefined) return;
