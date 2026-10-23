@@ -72,16 +72,7 @@ export type InterdiffResult = z.infer<typeof interdiffResultSchema>;
 
   and `'diff.interdiff': toggleInterdiff,` in `ACTIONS` next to `'diff.sinceLastReview'`.
 - `components/HelpOverlay.tsx`: add `'diff.interdiff'` to `DIFF_IDS` after `'diff.sinceLastReview'`.
-- `pages/useDiffPageActions.ts`: in the unmount cleanup, also reset `interdiffActive`:
-
-  ```ts
-      appStore.setState((s) => ({
-        ...s,
-        interdiffActive: false,
-        confirmingAction:
-          s.confirmingAction === 'since-last-review' ? null : s.confirmingAction,
-      }));
-  ```
+- `pages/useDiffPageActions.ts`: the unmount cleanup already resets `sinceLastReviewActive` (Task 9 fix); also reset `interdiffActive: false` in the same `setState`. Like `sinceLastReviewActive`, `interdiffActive` is durable UI state, not a `confirmingAction`, so `v` and other one-shot actions must not turn it off.
 
 - [ ] **Step 3: `useInterdiff`**
 
