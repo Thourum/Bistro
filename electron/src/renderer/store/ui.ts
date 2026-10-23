@@ -35,7 +35,6 @@ export type ConfirmingAction =
   | 'open-in-editor'
   | 'reply'
   | 'request_changes'
-  | 'since-last-review'
   | 'star'
   | 'toggle-diff-style'
   | AuthAction;
@@ -117,6 +116,8 @@ export interface UIState {
    * Null = full PR diff (unless since-last-review is active).
    */
   selectedPatchsetPair: [number, number] | null;
+  /** Diff filter mode (`s`), retained across review actions and reset on exit. */
+  sinceLastReviewActive: boolean;
   /**
    * Bumped every time a `THREAD_RESOLVED` / `THREAD_REOPENED` push event
    * arrives. The threads view depends on this so a remote state change (or our
@@ -206,6 +207,7 @@ export const initialUIState: UIState = {
   collapsedRepoKeys: [],
   diffFileKeys: [],
   selectedPatchsetPair: null,
+  sinceLastReviewActive: false,
   threadsRevision: 0,
   inlineCommentThreadIds: [],
   activeInlineCommentThreadId: null,

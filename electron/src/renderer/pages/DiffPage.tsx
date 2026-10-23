@@ -90,7 +90,10 @@ export function DiffPage() {
   const { threads } = useReviewThreads(pr?.id);
 
   // ── Triage (since last review, or an explicit patchset pair) ──────
-  const sinceLastReview = confirmingAction === 'since-last-review';
+  const sinceLastReview = useStore(
+    appStore,
+    (s: UIState) => s.sinceLastReviewActive,
+  );
   const triageReq = useMemo<TriageRequest | null>(() => {
     if (sinceLastReview) return { kind: 'sinceLastReview' };
     if (selectedPatchsetPair !== null) {

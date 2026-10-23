@@ -220,10 +220,9 @@ function toggleApproval(context: KeyActionContext): void {
 }
 
 function toggleSinceLastReview(context: KeyActionContext): void {
-  const isActive = context.store.state.confirmingAction === 'since-last-review';
   context.store.setState((state) => ({
     ...state,
-    confirmingAction: isActive ? null : 'since-last-review',
+    sinceLastReviewActive: !state.sinceLastReviewActive,
   }));
 }
 

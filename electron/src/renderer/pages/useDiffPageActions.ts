@@ -132,11 +132,7 @@ export function useDiffPageActions({
 
   useEffect(() => {
     return () => {
-      appStore.setState((s) =>
-        s.confirmingAction === 'since-last-review'
-          ? { ...s, confirmingAction: null }
-          : s,
-      );
+      appStore.setState((s) => ({ ...s, sinceLastReviewActive: false }));
     };
   }, []);
 
