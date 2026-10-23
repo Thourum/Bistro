@@ -67,7 +67,7 @@ export function isSandboxComposerSubmit(event: {
   return (event.shiftKey && event.key === ' ') || isTextareaSubmit(event);
 }
 
-const ALL_ROUTES: readonly RouteBase[] = [
+export const ALL_ROUTES: readonly RouteBase[] = [
   'list',
   'detail',
   'diff',
