@@ -67,12 +67,14 @@ export function useDiffPageData({
     // on screen until the refreshed one arrives.
     if (loadedPrIdRef.current !== prId) setLoading(true);
     setDiffError(null);
+    let stale = false;
     void wsClient
       .request('REQUEST_DIFF', { pr_id: prId, repo })
       .mapErr(requestFault)
       .andThen((data) => parseResponse(diffResponseSchema, data))
       .match(
         (payload) => {
+          if (stale) return;
           loadedPrIdRef.current = prId;
           setDiff(payload.diff ?? '');
           setFiles(payload.files);
@@ -87,31 +89,42 @@ export function useDiffPageData({
           setLoading(false);
         },
         (error) => {
+          if (stale) return;
           log.error({ err: error.message }, 'failed to fetch diff');
           loadedPrIdRef.current = prId;
           setDiffError(error.message);
           setLoading(false);
         },
       );
+    return () => {
+      stale = true;
+    };
   }, [isAwaitingHydration, prId, repo, baseSha, headSha]);
 
   useEffect(() => {
     if (pr === undefined) return;
     void commentsRevision;
+    let stale = false;
     void wsClient
       .request('REQUEST_COMMENTS', { pr_id: pr.id })
       .mapErr(requestFault)
       .andThen((data) => parseResponse(commentsResponseSchema, data))
       .match(
         (payload) => {
+          if (stale) return;
           setComments(payload.comments);
         },
-        (error) =>
+        (error) => {
+          if (stale) return;
           log.warn(
             { err: error.message },
             'failed to fetch comments for diff annotations',
-          ),
+          );
+        },
       );
+    return () => {
+      stale = true;
+    };
   }, [pr, commentsRevision]);
 
   return {

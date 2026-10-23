@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { okAsync } from '@thourum/fault';
+import { fromSafePromise, okAsync } from '@thourum/fault';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, onTestFinished, vi } from 'vitest';
@@ -172,4 +172,43 @@ it('does not refetch or blank the diff when the PR list re-polls an unchanged PR
   );
   expect(diffRequests()).toBe(2);
   expect(seenData.slice(loadedAt).every((data) => !data.loading)).toBe(true);
+});
+
+it('ignores a diff response that resolves after a newer request', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const seenData: ReturnType<typeof useDiffPageData>[] = [];
+  const onData = (data: ReturnType<typeof useDiffPageData>): void => {
+    seenData.push(data);
+  };
+  const resolvers: Array<(payload: unknown) => void> = [];
+  request.mockImplementation((type: string) =>
+    type === 'REQUEST_DIFF'
+      ? fromSafePromise(
+          new Promise((resolve) => {
+            resolvers.push(resolve);
+          }),
+        )
+      : okAsync({ comments: [] }),
+  );
+  const container = document.createElement('div');
+  const root = createRoot(container);
+  onTestFinished(async () => {
+    await act(async () => root.unmount());
+    request.mockReset();
+  });
+  await act(async () => root.render(<Probe pr={PR_FIXTURE} onData={onData} />));
+  await act(async () =>
+    root.render(
+      <Probe pr={{ ...PR_FIXTURE, head_sha: 'newer' }} onData={onData} />,
+    ),
+  );
+  const [resolveOlder, resolveNewer] = resolvers;
+  if (resolveOlder === undefined || resolveNewer === undefined) {
+    throw new Error('expected two diff requests');
+  }
+
+  await act(async () => resolveNewer({ diff: 'newer', files: [] }));
+  await act(async () => resolveOlder({ diff: 'older', files: [] }));
+
+  expect(seenData.at(-1)?.diff).toBe('newer');
 });
