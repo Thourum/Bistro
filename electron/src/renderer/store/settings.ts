@@ -101,7 +101,13 @@ function persistLocal(state: AppSettings): Result<void, Fault> {
 function loadLocal(): Result<AppSettings, Fault> {
   return readLocalJson(LOCAL_FALLBACK_KEY).andThen((value) => {
     if (value === null) return ok(DEFAULT_SETTINGS);
-    const parsed = appSettingsSchema.safeParse(value);
+    const saved = z.record(z.string(), z.unknown()).safeParse(value);
+    if (!saved.success)
+      return err(ServiceError('VALIDATION_ERROR', 'Invalid local settings'));
+    const parsed = appSettingsSchema.safeParse({
+      ...DEFAULT_SETTINGS,
+      ...saved.data,
+    });
     return parsed.success
       ? ok(parsed.data)
       : err(ServiceError('VALIDATION_ERROR', 'Invalid local settings'));
