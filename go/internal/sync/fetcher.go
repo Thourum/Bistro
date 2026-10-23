@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -60,6 +61,10 @@ type PRFetchResult struct {
 	// DiffComputed is true iff diff generation succeeded and DiffFiles is valid.
 	// When false, the writer must not touch pr_diffs for this result.
 	DiffComputed bool
+	// MergeBaseSHA is the merge base the diff was generated against; empty when
+	// the diff was not computed or the merge base stayed unknown (the diff then
+	// used the base tip). Part of patchset identity.
+	MergeBaseSHA string
 	// AnchorUpdates carries per-comment anchor results computed from the clone.
 	// Populated only when the clone was available and anchoring ran without a
 	// fatal error. Each entry is written back to the comments table after the
@@ -261,7 +266,12 @@ func (o *Orchestrator) fetchDiff(ctx context.Context, result *PRFetchResult, log
 func (o *Orchestrator) generateDiff(ctx context.Context, result *PRFetchResult, clone *git.CloneResult, log *slog.Logger) error {
 	pr := result.PR
 	started := time.Now()
-	diff, err := o.git.GenerateDiff(clone.LocalPath, pr.BaseSHA, pr.HeadSHA, git.DefaultDiffOptions())
+	mergeBase := o.resolveMergeBase(ctx, clone, pr, log)
+	diffBase := pr.BaseSHA
+	if mergeBase != "" {
+		diffBase = mergeBase
+	}
+	diff, err := o.git.GenerateDiff(clone.LocalPath, diffBase, pr.HeadSHA, git.DefaultDiffOptions())
 	if err != nil {
 		return fmt.Errorf("diff: %w", err)
 	}
@@ -284,9 +294,29 @@ func (o *Orchestrator) generateDiff(ctx context.Context, result *PRFetchResult, 
 	// Diffs must be written atomically with the PR row and patchset by the writer.
 	result.DiffFiles = storeDiffFiles(diff)
 	result.DiffComputed = true
+	result.MergeBaseSHA = mergeBase
 	o.notifyExpertiseHook(ctx, pr, result.DiffFiles)
-	o.resolveDiffAnchors(ctx, result, clone, log)
+	o.resolveDiffAnchors(ctx, result, clone, diffBase, log)
 	return nil
+}
+
+// resolveMergeBase returns the PR's merge base, deepening a shallow clone once
+// when history stops short of it. "" means it stayed unknown; the caller then
+// diffs against the base tip.
+func (o *Orchestrator) resolveMergeBase(ctx context.Context, clone *git.CloneResult, pr *provider.PR, log *slog.Logger) string {
+	mergeBase, err := git.MergeBase(clone.LocalPath, pr.BaseSHA, pr.HeadSHA)
+	if errors.Is(err, git.ErrMergeBaseNotFound) {
+		if deepenErr := o.git.Deepen(ctx, clone.LocalPath, diffCloneOptions(pr)); deepenErr != nil {
+			log.Debug("merge base deepen failed", "error", deepenErr)
+		} else {
+			mergeBase, err = git.MergeBase(clone.LocalPath, pr.BaseSHA, pr.HeadSHA)
+		}
+	}
+	if err != nil {
+		log.Warn("merge base unavailable; diffing against base tip", "error", err)
+		return ""
+	}
+	return mergeBase
 }
 
 func storeDiffFiles(diff *git.DiffResult) []store.DiffFile {
@@ -309,7 +339,7 @@ func storeDiffFiles(diff *git.DiffResult) []store.DiffFile {
 	return files
 }
 
-func (o *Orchestrator) resolveDiffAnchors(ctx context.Context, result *PRFetchResult, clone *git.CloneResult, log *slog.Logger) {
+func (o *Orchestrator) resolveDiffAnchors(ctx context.Context, result *PRFetchResult, clone *git.CloneResult, diffBase string, log *slog.Logger) {
 	if o.anchorResolver == nil {
 		return
 	}
@@ -323,7 +353,7 @@ func (o *Orchestrator) resolveDiffAnchors(ctx context.Context, result *PRFetchRe
 		prID:      pr.ID,
 		localPath: clone.LocalPath,
 		headSHA:   pr.HeadSHA,
-		prBaseSHA: pr.BaseSHA,
+		prBaseSHA: diffBase,
 		log:       log,
 	})
 	logSubstep(log, "anchor resolution complete", time.Since(started).Milliseconds(),
