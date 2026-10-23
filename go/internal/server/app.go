@@ -707,6 +707,12 @@ func (a *App) registerDiffAndCheckoutHandlers(stores runStores) {
 	a.wsServer.RegisterHandler("REQUEST_TRIAGE", handler.NewTriageHandler(handler.TriageHandlerDeps{
 		Store: a.db, CurrentUser: stores.currentUser, Log: a.log,
 	}))
+	a.wsServer.RegisterHandler("REQUEST_INTERDIFF", handler.NewInterdiffHandler(handler.InterdiffHandlerDeps{
+		Patchsets: a.db,
+		Git:       a.gitClient,
+		RepoForPR: prRepoLocator{db: a.db, locations: stores.repoLocation}.RepoForPR,
+		Log:       a.log,
+	}))
 	a.wsServer.RegisterHandler("MARK_FILE_VIEWED", handler.NewMarkFileViewedHandlerWithDeps(handler.MarkFileViewedDeps{
 		Viewed: a.db, CurrentUser: stores.currentUser, DiffStore: stores.diff, Baseline: a.db, Log: a.log,
 	}))
