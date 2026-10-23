@@ -22,11 +22,12 @@ const migrationsDir = "migrations"
 // predate newer migrations, and marking them applied would silently skip
 // them. Bump this only together with new checks in reconciledSchemaVersion.
 const (
-	reconcileBaselineVersion    int64 = 35
-	preHydrationSchemaVersion   int64 = 31
-	preMentionedSchemaVersion   int64 = 32
-	preReadStateSchemaVersion   int64 = 33
-	preFingerprintSchemaVersion int64 = 34
+	reconcileBaselineVersion     int64 = 36
+	preHydrationSchemaVersion    int64 = 31
+	preMentionedSchemaVersion    int64 = 32
+	preReadStateSchemaVersion    int64 = 33
+	preFingerprintSchemaVersion  int64 = 34
+	preReviewDraftsSchemaVersion int64 = 35
 )
 
 //go:embed migrations/*.sql
@@ -193,6 +194,14 @@ func reconciledSchemaVersion(ctx context.Context, db *sql.DB, baselineVersion in
 	}
 	if !hasFingerprintSchema {
 		return min(baselineVersion, preFingerprintSchemaVersion), nil
+	}
+
+	hasReviewDrafts, err := tableExists(ctx, db, "review_drafts")
+	if err != nil {
+		return 0, fmt.Errorf("check review_drafts table: %w", err)
+	}
+	if !hasReviewDrafts {
+		return min(baselineVersion, preReviewDraftsSchemaVersion), nil
 	}
 
 	return baselineVersion, nil
