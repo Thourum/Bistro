@@ -10,6 +10,7 @@ import type {
   Toast,
 } from '../types';
 import type { LaneSection } from '../utils/lanes';
+import type { SandboxState } from '../utils/onboardingSandbox';
 
 interface SyncStats {
   prCount: number;
@@ -51,6 +52,8 @@ export interface UIState {
   paneLayout: 'list' | 'detail' | 'split';
   sortBy: 'updated' | 'created';
   filterState: 'open' | 'draft' | 'all' | 'needs_action' | 'touches_you';
+  /** Onboarding style sandbox; null when the step isn't showing. */
+  onboardingSandbox: SandboxState | null;
   confirmingAction: ConfirmingAction | null;
   pendingAction: PendingAction | null;
   actionResult: ActionResult | null;
@@ -178,6 +181,7 @@ export const initialUIState: UIState = {
   paneLayout: 'split',
   sortBy: 'updated',
   filterState: 'open',
+  onboardingSandbox: null,
   confirmingAction: null,
   pendingAction: null,
   actionResult: null,

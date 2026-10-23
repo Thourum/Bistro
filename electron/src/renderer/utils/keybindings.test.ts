@@ -8,13 +8,18 @@ vi.mock('../router', () => ({
 import type { OverlayContextValue } from '../overlays/OverlayContext';
 import { initialUIState } from '../store/ui';
 import { getBindingAction, type KeyActionContext } from './keybindingActions';
-import { hotkeyOptions, isEscape } from './keybindingActivation';
+import {
+  hotkeyOptions,
+  isBindingEnabled,
+  isEscape,
+} from './keybindingActivation';
 import {
   ACTION_CATALOG,
   getEffectiveBindings,
   isActive,
   type KeyBinding,
 } from './keybindings';
+import type { SandboxPane } from './onboardingSandbox';
 
 function binding(actionId: string): KeyBinding {
   const found = getEffectiveBindings('vim', {}).find(
@@ -50,6 +55,95 @@ describe('hotkeyOptions', () => {
       preventDefault: false,
     });
     expect(hotkeyOptions(binding('list.down'))).toEqual({ ignoreInputs: true });
+  });
+});
+
+describe('isBindingEnabled on the onboarding route', () => {
+  const onboarding = (sandboxPane: SandboxPane | null) => ({
+    routeBase: 'onboarding' as const,
+    activeOverlay: null,
+    sandboxPane,
+  });
+
+  it('activates sandbox actions by the sandbox pane, not the real route', () => {
+    expect(isBindingEnabled(binding('list.down'), onboarding('list'))).toBe(
+      true,
+    );
+    expect(isBindingEnabled(binding('list.down'), onboarding('detail'))).toBe(
+      false,
+    );
+    expect(isBindingEnabled(binding('diff.nextFile'), onboarding('diff'))).toBe(
+      true,
+    );
+    expect(isBindingEnabled(binding('list.mute'), onboarding('list'))).toBe(
+      false,
+    );
+    expect(isBindingEnabled(binding('list.down'), onboarding(null))).toBe(
+      false,
+    );
+  });
+
+  it('only lets Space continue from the sandbox list pane', () => {
+    expect(
+      isBindingEnabled(binding('onboarding.finish'), onboarding('list')),
+    ).toBe(true);
+    expect(
+      isBindingEnabled(binding('onboarding.finish'), onboarding('detail')),
+    ).toBe(false);
+    expect(
+      isBindingEnabled(binding('onboarding.finish'), onboarding('diff')),
+    ).toBe(false);
+    expect(
+      isBindingEnabled(binding('onboarding.finish'), onboarding(null)),
+    ).toBe(true);
+    expect(
+      isBindingEnabled(binding('detail.viewDiff'), onboarding('detail')),
+    ).toBe(true);
+  });
+
+  it('keeps overlay precedence and other routes unchanged', () => {
+    expect(
+      isBindingEnabled(binding('list.down'), {
+        ...onboarding('list'),
+        activeOverlay: 'command',
+      }),
+    ).toBe(false);
+    expect(
+      isBindingEnabled(binding('global.escape'), {
+        ...onboarding('detail'),
+        activeOverlay: 'command',
+      }),
+    ).toBe(true);
+    for (const routeBase of [
+      'list',
+      'detail',
+      'diff',
+      'settings',
+      'login',
+      null,
+    ] as const) {
+      const context = { routeBase, activeOverlay: null };
+      for (const configuredBinding of getEffectiveBindings('vim', {})) {
+        expect(
+          isBindingEnabled(configuredBinding, {
+            ...context,
+            sandboxPane: 'diff',
+          }),
+        ).toBe(isActive(configuredBinding, context));
+      }
+    }
+  });
+
+  it('enables style cycling only while the sandbox step is mounted', () => {
+    for (const actionId of ['onboarding.nextStyle', 'onboarding.prevStyle']) {
+      const styleBinding: KeyBinding = {
+        ...binding('onboarding.finish'),
+        actionId,
+      };
+      expect(isBindingEnabled(styleBinding, onboarding(null))).toBe(false);
+      expect(isBindingEnabled(styleBinding, onboarding('list'))).toBe(true);
+      expect(isBindingEnabled(styleBinding, onboarding('detail'))).toBe(true);
+    }
   });
 });
 

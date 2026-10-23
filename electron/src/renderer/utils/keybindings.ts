@@ -31,7 +31,11 @@ export interface KeyBinding {
 export type BindingDefinition = Omit<KeyBinding, 'keys'>;
 
 export type { KeyActionContext } from './keybindingActions';
-export { isActive, routeBaseFromPath } from './keybindingActivation';
+export {
+  isActive,
+  isBindingEnabled,
+  routeBaseFromPath,
+} from './keybindingActivation';
 
 export function isSequenceBinding(
   binding: KeyBinding,

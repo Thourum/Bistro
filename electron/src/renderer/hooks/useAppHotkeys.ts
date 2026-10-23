@@ -8,6 +8,7 @@ import {
 import { useRouterState } from '@tanstack/react-router';
 import { useCallback, useMemo, useRef } from 'react';
 import { useOverlays } from '../overlays/OverlayContext';
+import { dispatchSandboxAction } from '../services/onboardingSandbox';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import {
@@ -17,12 +18,27 @@ import {
 import { hotkeyOptions, isEscape } from '../utils/keybindingActivation';
 import {
   getEffectiveBindings,
-  isActive,
+  isBindingEnabled,
   isSequenceBinding,
   routeBaseFromPath,
 } from '../utils/keybindings';
 import { SEQUENCE_TIMEOUT_MS } from '../utils/keymaps';
+import { SANDBOX_ACTION_IDS } from '../utils/onboardingSandbox';
 import { useStore } from './useStore';
+
+/** Sandbox actions on the onboarding route drive the fake PR, not the app. */
+function runBinding(actionId: string, context: KeyActionContext): void {
+  if (
+    context.routeBase === 'onboarding' &&
+    context.activeOverlay === null &&
+    appStore.state.onboardingSandbox !== null &&
+    SANDBOX_ACTION_IDS.has(actionId)
+  ) {
+    dispatchSandboxAction(actionId);
+    return;
+  }
+  getBindingAction(actionId)?.(context);
+}
 
 function routePrId(
   matches: readonly { params?: Record<string, unknown> }[] | undefined,
@@ -50,6 +66,10 @@ export function useAppHotkeys(): void {
   const overlays = useOverlays();
   const overrides = useStore(settingsStore, (s) => s.keybindings);
   const style = useStore(settingsStore, (s) => s.navigation.style);
+  const sandboxPane = useStore(
+    appStore,
+    (s) => s.onboardingSandbox?.pane ?? null,
+  );
   const routerState = useRouterState();
 
   const routeBase = routeBaseFromPath(routerState.location.pathname);
@@ -112,27 +132,35 @@ export function useAppHotkeys(): void {
             // calls preventDefault() itself before every callback, which would
             // make this flag always true.
             if (isEscape(binding) && event.defaultPrevented) return;
-            getBindingAction(binding.actionId)?.(makeCtx());
+            runBinding(binding.actionId, makeCtx());
           },
           options: {
-            enabled: isActive(binding, { routeBase, activeOverlay }),
+            enabled: isBindingEnabled(binding, {
+              routeBase,
+              activeOverlay,
+              sandboxPane,
+            }),
             ...hotkeyOptions(binding),
           },
         })),
-    [bindings, routeBase, activeOverlay, makeCtx],
+    [bindings, routeBase, activeOverlay, sandboxPane, makeCtx],
   );
 
   const sequenceDefs = useMemo<UseHotkeySequenceDefinition[]>(
     () =>
       bindings.filter(isSequenceBinding).map((binding) => ({
         sequence: [...binding.keys] as HotkeySequence,
-        callback: () => getBindingAction(binding.actionId)?.(makeCtx()),
+        callback: () => runBinding(binding.actionId, makeCtx()),
         options: {
-          enabled: isActive(binding, { routeBase, activeOverlay }),
+          enabled: isBindingEnabled(binding, {
+            routeBase,
+            activeOverlay,
+            sandboxPane,
+          }),
           ignoreInputs: true,
         },
       })),
-    [bindings, routeBase, activeOverlay, makeCtx],
+    [bindings, routeBase, activeOverlay, sandboxPane, makeCtx],
   );
 
   useHotkeys(hotkeyDefs, { conflictBehavior: 'allow' });
