@@ -4,10 +4,16 @@ package actions
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
+	"github.com/itterno/bistro/internal/store"
 )
 
 func TestApproveHandler(t *testing.T) {
@@ -277,6 +283,145 @@ func TestResolveThreadHandler_NotFound_PermanentError(t *testing.T) {
 	}
 	if result.IsRecoverable() {
 		t.Error("not-found must not be recoverable")
+	}
+}
+
+type reviewSubmitterProvider struct {
+	*mock.MockProvider
+	submissions []provider.ReviewSubmission
+	submitError error
+}
+
+func (p *reviewSubmitterProvider) SubmitReview(_ context.Context, _ string, sub provider.ReviewSubmission) error {
+	p.submissions = append(p.submissions, sub)
+	return p.submitError
+}
+
+func TestExecute_SubmitReviewSendsTheReviewSubmission(t *testing.T) {
+	prov := &reviewSubmitterProvider{MockProvider: mock.NewMockProvider()}
+	comments := []provider.ReviewComment{{Path: "a.go", Side: "LEFT", StartLine: 2, Line: 4, Body: "range"}}
+	result, err := NewActionExecutor(slog.New(slog.NewTextHandler(io.Discard, nil)), prov, nil, nil).Execute(context.Background(), &ActionRequest{
+		PRID: "github:o/r:1", Action: SubmitReviewCommand, ReviewEvent: ReviewEventApprove,
+		Body: "LGTM", CommitID: "abc", ReviewComments: comments,
+	})
+	if err != nil || !result.Success {
+		t.Fatalf("result = %+v, err = %v", result, err)
+	}
+	if result.Action != SubmitReviewCommand || result.PRID != "github:o/r:1" || result.Timestamp.IsZero() {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(prov.submissions) != 1 {
+		t.Fatalf("submissions = %d, want 1", len(prov.submissions))
+	}
+	got := prov.submissions[0]
+	if got.Event != ReviewEventApprove || got.Body != "LGTM" || got.CommitID != "abc" || len(got.Comments) != 1 || got.Comments[0] != comments[0] {
+		t.Fatalf("submission = %+v", got)
+	}
+}
+
+func TestExecute_SubmitReviewWithoutCapabilityFailsPermanently(t *testing.T) {
+	result, err := NewActionExecutor(slog.New(slog.NewTextHandler(io.Discard, nil)), mock.NewMockProvider(), nil, nil).Execute(context.Background(), &ActionRequest{
+		PRID: "github:o/r:1", Action: SubmitReviewCommand, ReviewEvent: ReviewEventApprove,
+	})
+	if err != nil || result.Success || result.IsRecoverable() || !strings.Contains(result.Error, "permanent") {
+		t.Fatalf("result = %+v, err = %v, want a permanent failure", result, err)
+	}
+}
+
+func TestExecute_SubmitReviewLocalSideEffects(t *testing.T) {
+	cases := []struct {
+		name           string
+		event          string
+		wantStatus     string
+		wantEventTypes []string
+	}{
+		{"approve", ReviewEventApprove, "approved", []string{"action_complete", "pr_approved"}},
+		{"request changes", ReviewEventRequestChanges, "changes_requested", []string{"action_complete", "changes_requested"}},
+		{"comment", ReviewEventComment, "pending", []string{"action_complete"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, err := store.OpenDB(":memory:")
+			if err != nil {
+				t.Fatalf("open db: %v", err)
+			}
+			defer db.Close()
+			if err := store.NewMigrationRunner(nil, db.DB).Run(ctx); err != nil {
+				t.Fatalf("migrate: %v", err)
+			}
+			const prID = "github:o/r:1"
+			if _, err := db.ExecContext(ctx, `INSERT INTO prs
+				(id, provider, owner, repo, number, title, author, state,
+				 created_at, updated_at, base_branch, head_branch, base_sha, head_sha, review_status)
+				VALUES (?, 'github','o','r',1,'T','a','open','2026-01-01','2026-01-01','main','f','b','sha-head','pending')`, prID); err != nil {
+				t.Fatalf("insert pr: %v", err)
+			}
+			prov := &reviewSubmitterProvider{MockProvider: mock.NewMockProvider()}
+			emitter := events.NewEventEmitter()
+			subscriber := emitter.Subscribe()
+			defer emitter.Unsubscribe(subscriber)
+			shaWriter := &stubSHAWriter{}
+			executor := NewActionExecutor(slog.New(slog.NewTextHandler(io.Discard, nil)), prov, db, emitter).
+				WithReviewTracking(&stubLoginGetter{login: "alice", found: true}, shaWriter)
+			result, err := executor.Execute(ctx, &ActionRequest{
+				PRID: prID, Action: SubmitReviewCommand, ReviewEvent: tc.event, Body: "Review body", CommitID: "sha-head",
+			})
+			if err != nil || !result.Success {
+				t.Fatalf("result = %+v, err = %v", result, err)
+			}
+			var status string
+			if err := db.QueryRowContext(ctx, `SELECT review_status FROM prs WHERE id = ?`, prID).Scan(&status); err != nil {
+				t.Fatalf("read review status: %v", err)
+			}
+			if status != tc.wantStatus {
+				t.Errorf("review_status = %q, want %q", status, tc.wantStatus)
+			}
+			if len(shaWriter.calls) != 1 || shaWriter.calls[0] != (patchsetReviewCall{prID: prID, login: "alice", sha: "sha-head", baseSHA: "b"}) {
+				t.Errorf("last-reviewed writes = %+v", shaWriter.calls)
+			}
+			var eventTypes []string
+			for len(subscriber) > 0 {
+				event := <-subscriber
+				eventTypes = append(eventTypes, event.Type)
+				if event.Type == "action_complete" && (event.Data["action"] != SubmitReviewCommand || event.Data["success"] != true) {
+					t.Errorf("action_complete = %+v", event.Data)
+				}
+			}
+			if !slices.Equal(eventTypes, tc.wantEventTypes) {
+				t.Errorf("event types = %v, want %v", eventTypes, tc.wantEventTypes)
+			}
+		})
+	}
+}
+
+func TestExecute_SubmitReviewFailuresAndAmbiguousTransport(t *testing.T) {
+	cases := []struct {
+		name          string
+		providerError string
+		wantAmbiguous bool
+		wantRateLimit bool
+	}{
+		{"permanent rejection", "422 validation failed", false, false},
+		{"transport may have succeeded", "connection reset", true, false},
+		{"rate limited", "429 rate limit", false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prov := &reviewSubmitterProvider{MockProvider: mock.NewMockProvider(), submitError: errors.New(tc.providerError)}
+			result, err := NewActionExecutor(slog.New(slog.NewTextHandler(io.Discard, nil)), prov, nil, nil).Execute(context.Background(), &ActionRequest{
+				PRID: "github:o/r:1", Action: SubmitReviewCommand, ReviewEvent: ReviewEventApprove,
+			})
+			if err != nil || result.Success || result.IsAmbiguousRemoteSuccess() != tc.wantAmbiguous || result.IsRateLimit() != tc.wantRateLimit {
+				t.Fatalf("result = %+v, err = %v", result, err)
+			}
+			if !tc.wantAmbiguous && !strings.Contains(result.Error, "failed to submit review: "+tc.providerError) {
+				t.Errorf("error = %q, want provider error with context", result.Error)
+			}
+			if len(prov.submissions) != 1 {
+				t.Errorf("submissions = %d, want 1", len(prov.submissions))
+			}
+		})
 	}
 }
 

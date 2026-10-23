@@ -214,8 +214,26 @@ func (ae *ActionExecutor) handlerFor(action ActionCommand) (Handler, bool) {
 		return NewResolveThreadHandler(ae.provider), true
 	case UnresolveThreadCommand:
 		return NewUnresolveThreadHandler(ae.provider), true
+	case SubmitReviewCommand:
+		return NewSubmitReviewHandler(ae.provider), true
 	default:
 		return nil, false
+	}
+}
+
+// reviewOutcome maps submit_review onto the plain action whose local side
+// effects (events, review_status, last-reviewed SHA) it shares.
+func reviewOutcome(req *ActionRequest) ActionCommand {
+	if req.Action != SubmitReviewCommand {
+		return req.Action
+	}
+	switch req.ReviewEvent {
+	case ReviewEventApprove:
+		return ApproveCommand
+	case ReviewEventRequestChanges:
+		return RequestChangesCommand
+	default:
+		return PostCommentCommand
 	}
 }
 
@@ -252,7 +270,7 @@ func (ae *ActionExecutor) emitEvent(req *ActionRequest, result *ActionResult) {
 		return
 	}
 
-	switch req.Action {
+	switch reviewOutcome(req) {
 	case ApproveCommand:
 		ae.emitter.Emit(&events.Event{
 			Type: "pr_approved",
@@ -282,7 +300,7 @@ func (ae *ActionExecutor) updatePRReviewStatus(ctx context.Context, req *ActionR
 		return
 	}
 
-	switch req.Action {
+	switch reviewOutcome(req) {
 	case ApproveCommand:
 		const query = `
 			UPDATE prs
@@ -307,7 +325,7 @@ func (ae *ActionExecutor) updatePRReviewStatus(ctx context.Context, req *ActionR
 	// feature (phase 2.2). Review submissions and new top-level comments count
 	// as a review. Replies to existing threads and thread resolve/unresolve do
 	// not constitute a "review" for SHA tracking.
-	switch req.Action {
+	switch reviewOutcome(req) {
 	case ApproveCommand, RequestChangesCommand, PostCommentCommand:
 		ae.recordLastReviewedSHA(ctx, req.PRID)
 	}

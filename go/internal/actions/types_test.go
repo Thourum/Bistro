@@ -3,6 +3,8 @@ package actions
 import (
 	"testing"
 	"time"
+
+	"github.com/itterno/bistro/internal/provider"
 )
 
 func TestActionRequestValidation(t *testing.T) {
@@ -118,6 +120,33 @@ func TestResolveThreadCommandValidation(t *testing.T) {
 			err := tc.req.Validate()
 			if (err != nil) != tc.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestSubmitReviewValidation(t *testing.T) {
+	comments := []provider.ReviewComment{{Path: "a.go", Side: "RIGHT", Line: 1, Body: "x"}}
+	cases := []struct {
+		name    string
+		req     ActionRequest
+		wantErr bool
+	}{
+		{"approve without body", ActionRequest{PRID: "p", Action: SubmitReviewCommand, ReviewEvent: ReviewEventApprove}, false},
+		{"comment with drafts only", ActionRequest{PRID: "p", Action: SubmitReviewCommand, ReviewEvent: ReviewEventComment, CommitID: "c", ReviewComments: comments}, false},
+		{"request changes needs body", ActionRequest{PRID: "p", Action: SubmitReviewCommand, ReviewEvent: ReviewEventRequestChanges}, true},
+		{"request changes with body", ActionRequest{PRID: "p", Action: SubmitReviewCommand, ReviewEvent: ReviewEventRequestChanges, Body: "Needs work"}, false},
+		{"unknown event", ActionRequest{PRID: "p", Action: SubmitReviewCommand, ReviewEvent: "MERGE"}, true},
+		{"missing event", ActionRequest{PRID: "p", Action: SubmitReviewCommand}, true},
+		{"comments need commit id", ActionRequest{PRID: "p", Action: SubmitReviewCommand, ReviewEvent: ReviewEventApprove, ReviewComments: comments}, true},
+		{"comment with body", ActionRequest{PRID: "p", Action: SubmitReviewCommand, ReviewEvent: ReviewEventComment, Body: "Notes"}, false},
+		{"comment before drafts are loaded", ActionRequest{PRID: "p", Action: SubmitReviewCommand, ReviewEvent: ReviewEventComment}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.req.Validate()
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("Validate() err = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}
