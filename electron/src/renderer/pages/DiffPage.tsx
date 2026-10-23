@@ -7,7 +7,7 @@
 // diffFileKeys are cleared when prId changes to prevent stale key carryover.
 
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { DiffView } from '../components/diff/DiffView';
 import { OpenInEditorDialog } from '../components/OpenInEditorDialog';
 import { useExpertise } from '../hooks/useExpertise';
@@ -21,6 +21,7 @@ import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { repoIdForPR } from '../utils/expertise';
+import { createLogger } from '../utils/logger';
 import { prBrowserUrl } from '../utils/triage';
 import {
   DiffPageBody,
@@ -29,6 +30,8 @@ import {
 } from './DiffPageChrome';
 import { useDiffPageActions } from './useDiffPageActions';
 import { useDiffPageData } from './useDiffPageData';
+
+const log = createLogger('DiffPage');
 
 /**
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
@@ -118,12 +121,33 @@ export function DiffPage() {
 
   const showRangeDiff = rangeReq !== null;
 
+  // Start of the diff-open measurement; reset whenever the route's PR changes.
+  const openedAtRef = useRef(performance.now());
   // Clear stale diffFileKeys whenever the target PR changes.
   // This prevents keybindings from using keys from a previous PR's diff.
   useLayoutEffect(() => {
+    openedAtRef.current = performance.now();
     if (prId === '') return;
     appStore.setState((s) => ({ ...s, diffFileKeys: [] }));
   }, [prId]);
+
+  // One line per diff open so big-PR regressions show up in user logs.
+  // rAF after commit ≈ the first file's first paint.
+  useEffect(() => {
+    if (diff === '') return;
+    const frame = requestAnimationFrame(() =>
+      log.debug(
+        {
+          prId,
+          fileCount: files.length,
+          payloadChars: diff.length,
+          firstFileMs: Math.round(performance.now() - openedAtRef.current),
+        },
+        'diff opened',
+      ),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [prId, diff, files.length]);
 
   // Consume onFilesResolved via useLayoutEffect to ensure diffFileKeys
   // commits synchronously before the next user input (mirrors visiblePRIds pattern).
