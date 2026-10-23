@@ -33,15 +33,18 @@ func (w *Writer) recordPatchset(ctx context.Context, tx *sql.Tx, write patchsetW
 		return 0, err
 	}
 	number := latest.number
-	if found && !isNewPatchset(latest, write) {
-		err = backfillMergeBase(ctx, tx, write, number)
-	} else {
+	if !found || isNewPatchset(latest, write) {
 		number, err = insertPatchset(ctx, tx, write, latest.number+1)
+		if err != nil {
+			return 0, err
+		}
 	}
-	if err != nil {
+	if err := backfillMergeBase(ctx, tx, write, number); err != nil {
 		return 0, err
 	}
-	if write.files == nil {
+	// Base-tip fallback diffs can include upstream-only files; leave their
+	// fingerprints pending until the PR's merge base is known.
+	if write.files == nil || write.mergeBase == "" {
 		return number, nil
 	}
 	return number, writeFingerprintsOnce(ctx, tx, write, number)
@@ -112,7 +115,7 @@ func backfillMergeBase(ctx context.Context, tx *sql.Tx, write patchsetWrite, num
 }
 
 // writeFingerprintsOnce stores per-file patch IDs the first time a diff is
-// computed for a patchset; the same head and merge base always yield the same
+// computed against a known merge base; the same head and merge base yield the same
 // diff, so later syncs have nothing to add.
 func writeFingerprintsOnce(ctx context.Context, tx *sql.Tx, write patchsetWrite, number int) error {
 	marked, err := tx.ExecContext(ctx,

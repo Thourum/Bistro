@@ -83,6 +83,73 @@ func TestPatchsetWithoutDiffIsBackfilled(t *testing.T) {
 	}
 }
 
+func TestRecordPatchsetReturnWithoutFingerprintsIsBackfilled(t *testing.T) {
+	db := newSyncTestDB(t)
+	w := NewWriter(nil, db)
+	ctx := context.Background()
+	mustWritePR(t, w, patchsetTestPR("tip-1", "h1"))
+	mustWritePR(t, w, patchsetTestPR("tip-2", "h2"))
+	returned := diffResult(patchsetTestPR("tip-1", "h1"), "mb-1", map[string]string{"a.go": "pa"})
+	for range 2 {
+		if err := w.WriteSyncResults([]*PRFetchResult{returned}); err != nil {
+			t.Fatalf("write returned patchset: %v", err)
+		}
+	}
+	patchsets, err := db.ListPatchsets(ctx, returned.PR.ID)
+	if err != nil || len(patchsets) != 2 {
+		t.Fatalf("patchsets = %+v (err %v), want two reused patchsets", patchsets, err)
+	}
+	current, ok, err := db.CurrentPatchset(ctx, returned.PR.ID)
+	if err != nil || !ok || current.Number != 1 || current.MergeBaseSHA != "mb-1" || !current.HasFingerprints {
+		t.Fatalf("current = %+v, ok=%v err=%v; want backfilled P1", current, ok, err)
+	}
+	files, err := db.ListPatchsetFiles(ctx, returned.PR.ID, current.Number)
+	if err != nil || len(files) != 1 || files["a.go"] != "pa" {
+		t.Fatalf("P1 files = %v (err %v), want a.go fingerprint", files, err)
+	}
+	if patchsets[1].MergeBaseSHA != "" || patchsets[1].HasFingerprints {
+		t.Fatalf("P2 = %+v, must remain without merge base or fingerprints", patchsets[1])
+	}
+}
+
+func TestRecordPatchsetUnknownMergeBaseDefersFingerprints(t *testing.T) {
+	db := newSyncTestDB(t)
+	w := NewWriter(nil, db)
+	ctx := context.Background()
+	pr := patchsetTestPR("tip-1", "h1")
+	fallback := diffResult(pr, "", map[string]string{"upstream.go": "fallback-patch"})
+	if err := w.WriteSyncResults([]*PRFetchResult{fallback}); err != nil {
+		t.Fatalf("write fallback diff: %v", err)
+	}
+	current, ok, err := db.CurrentPatchset(ctx, pr.ID)
+	if err != nil || !ok || current.HasFingerprints {
+		t.Fatalf("current = %+v, ok=%v err=%v; fallback must not finalize fingerprints", current, ok, err)
+	}
+	files, err := db.ListPatchsetFiles(ctx, pr.ID, current.Number)
+	if err != nil || len(files) != 0 {
+		t.Fatalf("fallback fingerprints = %v (err %v), want none", files, err)
+	}
+	cached, err := store.NewDiffStore(db.DB).GetDiffs(pr.ID)
+	if err != nil || len(cached) != 1 || cached[0].FilePath != "upstream.go" {
+		t.Fatalf("fallback cache = %+v (err %v), want upstream.go", cached, err)
+	}
+	if err := w.WriteSyncResults([]*PRFetchResult{diffResult(pr, "mb-1", map[string]string{"pr.go": "pr-patch"})}); err != nil {
+		t.Fatalf("write known-base diff: %v", err)
+	}
+	patchsets, err := db.ListPatchsets(ctx, pr.ID)
+	if err != nil || len(patchsets) != 1 || patchsets[0].MergeBaseSHA != "mb-1" || !patchsets[0].HasFingerprints {
+		t.Fatalf("patchsets = %+v (err %v), want backfilled P1", patchsets, err)
+	}
+	files, err = db.ListPatchsetFiles(ctx, pr.ID, 1)
+	if err != nil || len(files) != 1 || files["pr.go"] != "pr-patch" {
+		t.Fatalf("known-base fingerprints = %v (err %v), want only pr.go", files, err)
+	}
+	cached, err = store.NewDiffStore(db.DB).GetDiffs(pr.ID)
+	if err != nil || len(cached) != 1 || cached[0].FilePath != "pr.go" {
+		t.Fatalf("known-base cache = %+v (err %v), want only pr.go", cached, err)
+	}
+}
+
 func TestRecordPatchsetReturnToEarlierPairUsesLatestMatchingHead(t *testing.T) {
 	db := newSyncTestDB(t)
 	w := NewWriter(nil, db)
