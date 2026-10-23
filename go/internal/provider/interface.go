@@ -108,3 +108,9 @@ type ThreadResolver interface {
 type CommentReplier interface {
 	ReplyToComment(ctx context.Context, prID string, inReplyTo string, body string) error
 }
+
+// ReviewSubmitter is an optional capability for providers that can submit a
+// review with inline comments in one call.
+type ReviewSubmitter interface {
+	SubmitReview(ctx context.Context, prID string, sub ReviewSubmission) error
+}
