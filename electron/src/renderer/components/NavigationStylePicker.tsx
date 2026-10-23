@@ -46,7 +46,6 @@ export function NavigationStylePicker({
             type="button"
             role="radio"
             aria-checked={isSelected}
-            tabIndex={isSelected ? 0 : -1}
             onClick={() => onSelect(style)}
             className={cn(
               // `!`: the unlayered `button` reset in globals.css beats layered utilities.
