@@ -148,6 +148,16 @@ export function DiffPage() {
     () => new Set(files.filter((f) => f.viewed).map((f) => f.path)),
     [files],
   );
+  // 'too_large' only appears on rows synced before the per-PR budget was removed.
+  const oversizedPatchBytes = useMemo(
+    () =>
+      new Map(
+        files
+          .filter((f) => !f.is_binary && f.diff_status !== 'ok')
+          .map((f) => [f.path, f.patch_bytes]),
+      ),
+    [files],
+  );
 
   if (!prLoading && pr === undefined) {
     return (
@@ -202,6 +212,7 @@ export function DiffPage() {
               : null
           }
           viewedPaths={viewedPaths}
+          oversizedPatchBytes={oversizedPatchBytes}
         />
       </DiffPageBody>
 

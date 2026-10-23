@@ -30,6 +30,7 @@ import {
 const OPEN_FILE_BROWSER_EVENT = 'bistro:diff:open-file-browser';
 const log = createLogger('DiffView');
 const EMPTY_VIEWED_PATHS: ReadonlySet<string> = new Set();
+const EMPTY_OVERSIZED: ReadonlyMap<string, number> = new Map();
 const EMPTY_THREADS: readonly ReviewThread[] = [];
 const EMPTY_COMMENTS: readonly Comment[] = [];
 const EMPTY_EXPERTISE_FILES: readonly ExpertiseFileData[] = [];
@@ -50,6 +51,8 @@ export interface DiffViewProps {
   prBrowserUrl?: string | null;
   /** Paths marked viewed (`v`) for the current user. */
   viewedPaths?: ReadonlySet<string>;
+  /** Engine-capped files (no stored patch), keyed by path → original patch bytes. */
+  oversizedPatchBytes?: ReadonlyMap<string, number>;
 }
 
 /** CodeView owns the only virtualized scroll surface for the PR diff. */
@@ -67,6 +70,7 @@ export function DiffView({
   expertiseError = null,
   prBrowserUrl = null,
   viewedPaths = EMPTY_VIEWED_PATHS,
+  oversizedPatchBytes = EMPTY_OVERSIZED,
 }: DiffViewProps): React.ReactElement {
   const {
     files,
@@ -85,6 +89,7 @@ export function DiffView({
     comments,
     expertiseFiles,
     expertiseError,
+    oversizedPatchBytes,
   });
   const {
     activeId,
@@ -196,6 +201,7 @@ interface DiffViewDataOptions {
   comments: readonly Comment[];
   expertiseFiles: readonly ExpertiseFileData[];
   expertiseError: string | null;
+  oversizedPatchBytes: ReadonlyMap<string, number>;
 }
 
 function useDiffViewData({
@@ -204,6 +210,7 @@ function useDiffViewData({
   comments,
   expertiseFiles,
   expertiseError,
+  oversizedPatchBytes,
 }: DiffViewDataOptions) {
   const hideWhitespaceHunks = useStore(
     appStore,
@@ -228,8 +235,8 @@ function useDiffViewData({
     [allFiles, hideWhitespaceHunks],
   );
   const { parsedFiles, unrenderableFiles } = useMemo(
-    () => parseCodeViewFiles(files),
-    [files],
+    () => parseCodeViewFiles(files, oversizedPatchBytes),
+    [files, oversizedPatchBytes],
   );
   const expertiseByPath = useMemo(
     () => new Map(expertiseFiles.map((file) => [file.file_path, file])),
