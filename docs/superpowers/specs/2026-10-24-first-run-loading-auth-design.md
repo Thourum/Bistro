@@ -36,80 +36,83 @@ The first two screens should explain themselves and never leave the user stuck:
 
 - **Initialising and connecting (1a, 1b):** unchanged.
 - **Slow state (1c):** shown after `SLOW_ENGINE_MS = 10_000` without a ready
-  engine. A healthy start, including migrations, usually finishes in under a
-  second, so 10 s means something is unusual without firing on a normal cold
-  start. The timer counts from the first spawn and does not reset when the
-  engine is automatically restarted. The screen shows:
+  engine. A healthy start, migrations included, usually takes under a second,
+  so 10 s means something unusual is going on without firing on a normal
+  cold start. The screen shows:
   - an elapsed timer (`CONNECTING… 00:14`);
   - one line explaining the wait ("taking longer than usual … after an update
     or on first launch");
   - the last 3 lines of the engine log;
   - **Open log folder** (`L`).
 
-  **Restart engine** (`R`) appears only once the log tail has not changed for
-  `STALLED_ENGINE_MS = 20_000`. A tail that is still moving means migrations
-  or indexing are running, and restarting would interrupt them. A tail that
-  has gone quiet means the engine is stuck, for example waiting on the lock.
+  There is no restart here. A slow engine is usually still migrating, and a
+  restart would interrupt it.
 - **Crashed state (new, not in the design):** the engine has exited and the
-  automatic restarts (`MAX_RESTARTS = 3` in `go-spawn.ts`) are used up. This
-  state belongs to the engine, not to a route: it replaces whatever screen is
-  showing (loading, sign-in, or later screens) until the engine is ready again.
-  It shows:
+  automatic restarts (`MAX_RESTARTS = 3` in `go-spawn.ts`) are used up. It
+  replaces whatever screen is showing, because the app can't work without the
+  engine. It shows:
   - "The sync engine stopped";
   - the exit code or signal, and the log tail;
-  - **Restart engine** (`R`), **Open log folder** (`L`) and **Report the
-    crash** (`I`).
-- **Log tail source:** the engine log file, falling back to the engine's
-  stderr lines that main has captured (`go-spawn.ts` pipes stderr). That
-  covers a binary that dies before it opens its log, for example a missing
-  library.
-- **Restart with an external engine:** when Electron connected to an engine
-  it did not spawn, it can't restart it. **Restart engine** is hidden, and the
-  copy says to restart the running `bistro-sync`.
-- **Report the crash** is offered only in the crashed state. Slow and
-  engine-down states are still recovering on their own, so a report there
-  would usually describe a transient problem.
+  - **Restart engine** (`R`), **Open log folder** (`L`) and **Report on
+    GitHub** (`I`).
 
-  The report holds:
+  Restart is a nice-to-have, so it stays simple. It resets the restart counter
+  and spawns again through `go-spawn`'s existing path. When Electron is
+  connected to an engine it didn't spawn, restart isn't possible, so the
+  button is hidden.
+- **Log tail source:** the engine log file. If the file is missing or empty,
+  use the stderr lines main has captured. A binary that dies before it opens
+  its log still shows something.
+- **Report on GitHub:** offered only in the crashed state. It opens
+  `https://github.com/Thourum/Bistro/issues/new?title=…&body=…` in the
+  browser. The body holds:
   - app version, OS and architecture, and the engine exit code or signal;
-  - the last `REPORT_LOG_LINES = 60` log lines, in a fenced block. 60 lines
-    covers start-up plus the failure for a typical crash, and fits the URL
-    limit.
+  - the last `REPORT_LOG_LINES = 60` log lines in a fenced block. That's
+    enough for start-up plus the failure.
 
-  Redaction runs before anything leaves main:
+  Redaction runs in main before the URL is built:
   - GitHub token patterns (`gh[pousr]_…`, `github_pat_…`), `Authorization:`
     header values and `code=`/`state=` query values become `[redacted]`;
   - the home directory prefix becomes `~`.
 
-  Repo names, PR titles and usernames in the log are not redacted. The button
-  says so before acting: "Opens a GitHub issue with the last 60 log lines.
-  Check them for private repo names before you submit."
+  Repo names and PR titles are not redacted. The button's hint says so:
+  "Opens a public GitHub issue with the last 60 log lines. Check them before
+  you submit."
 
-  Where the report goes depends on the `IS_SOURCE_PUBLIC` constant, the same
-  one that gates the "read the source" link:
-  - **Public repo:** open
-    `https://github.com/Itterno/Bistro/issues/new?title=…&body=…` (reuse the
-    `BISTRO_UPDATE_REPO` constant). The oldest lines are trimmed until the URL
-    is under `MAX_ISSUE_URL_BYTES = 7_500`. GitHub rejects new-issue URLs much
-    past 8 KB, so this leaves margin. GitHub's new-issue URL can't attach
-    files. The user sees and edits the issue before submitting.
-  - **Private repo (today):** a URL to a private repo gives outside users a
-    404. Instead, copy the same redacted report to the clipboard and say
-    "Crash report copied. Send it to the Bistro team." The label reads **Copy
-    crash report**.
+  The oldest lines are dropped until the URL is under
+  `MAX_ISSUE_URL_BYTES = 7_500`. GitHub rejects new-issue URLs much past 8 KB.
+  The new-issue URL can't attach files, so the log goes in the body. The user
+  sees the issue and can edit it before submitting.
 - **Main-process IPC (new):**
 
   | Channel | Does |
   |---|---|
-  | `engine:restart` | resets the restart counter and respawns through `go-spawn`'s existing path |
-  | `engine:log-tail` `{ lines }` | returns the last N lines of `<dataDir>/logs/bistro-sync.log` |
+  | `engine:restart` | resets the restart counter and respawns (spawned engines only) |
+  | `engine:log-tail` `{ lines }` | returns the last N lines of `<dataDir>/logs/bistro-sync.log`, falling back to captured stderr |
   | `engine:open-log-folder` | `shell.openPath` on the log directory |
-  | `engine:report-crash` | builds the redacted report in main (main owns the log); opens the issue URL or copies the report, per `IS_SOURCE_PUBLIC` |
+  | `engine:report-crash` | builds the redacted issue URL in main (main owns the log) and opens it externally |
 
-  Each handler returns a typed result, and the renderer maps failures to a
+  Each handler returns a typed result, and the renderer turns failures into a
   toast. Main already sends `go:crashed`, but `preload.ts` doesn't allow the
-  channel. Allow it, and add an `engine:status` push (`starting | slow |
-  ready | crashed`, with exit info) so the loading screen doesn't poll.
+  channel. Allow it, and add an `engine:status` push (`starting | ready |
+  crashed`, with exit info and `isSpawned`) so the screen doesn't poll. The
+  renderer derives "slow" from its own timer.
+
+## Repo URL fix (prerequisite)
+
+The canonical repo is `https://github.com/Thourum/Bistro`, and it's public.
+Several places still point at the old `Itterno/Bistro`:
+
+- `electron/src/main/updater.ts` (`BISTRO_UPDATE_REPO`), so auto-update
+  looks at the wrong repo;
+- `electron/package.json`;
+- `README.md`;
+- `docs/ALPHA.md`;
+- `website/vocs.config.ts`;
+- `website/src/pages/docs/{index,feedback}.mdx`.
+
+Update all of them, and keep one exported `BISTRO_REPO = 'Thourum/Bistro'` in
+main that both the updater and the crash report use.
 
 ## Sign-in `[1]` (frames 1d–1h)
 
@@ -155,8 +158,8 @@ Below `md` the card stacks to one column, with the trust panel second.
 - **Facts:**
   - Telemetry: off by default (`privacy.telemetryEnabled: false`).
   - Auto-update: off by default (requires `BISTRO_ENABLE_AUTO_UPDATES=1`).
-  - Licence: GPLv3, with a "read the source" link to the repo. Hide the link
-    behind `IS_SOURCE_PUBLIC` (false today: the repo is private).
+  - Licence: GPLv3, with a "read the source" link to the repo. The link goes to
+    `https://github.com/Thourum/Bistro`.
   - Revoke: GitHub → Settings → Applications.
 
 ### States
