@@ -226,6 +226,13 @@ function toggleSinceLastReview(context: KeyActionContext): void {
   }));
 }
 
+function toggleInterdiff(context: KeyActionContext): void {
+  context.store.setState((state) => ({
+    ...state,
+    interdiffActive: !state.interdiffActive,
+  }));
+}
+
 function toggleDiffCollapse(context: KeyActionContext): void {
   const key =
     context.store.state.diffFileKeys[context.store.state.selectedFileIndex];
@@ -384,6 +391,7 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
       confirmingAction: 'request_changes',
     })),
   'diff.sinceLastReview': toggleSinceLastReview,
+  'diff.interdiff': toggleInterdiff,
   'diff.toggleStyle': (context) =>
     context.store.setState((state) => ({
       ...state,

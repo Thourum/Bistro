@@ -45,6 +45,8 @@ export interface DiffViewProps {
   findQuery?: string;
   selectedFileKey?: string;
   onFilesResolved?: (canonicalKeys: string[]) => void;
+  /** Interdiff disables this so its one-file view preserves the triage selection. */
+  syncFileSelection?: boolean;
   diffStyle?: AppSettings['diff']['style'];
   threads?: readonly ReviewThread[];
   comments?: readonly Comment[];
@@ -66,6 +68,7 @@ export function DiffView({
   findQuery = '',
   selectedFileKey,
   onFilesResolved,
+  syncFileSelection = true,
   diffStyle = 'unified',
   threads = EMPTY_THREADS,
   comments = EMPTY_COMMENTS,
@@ -105,6 +108,7 @@ export function DiffView({
     unrenderableFiles,
     selectedFileKey,
     onFilesResolved,
+    syncFileSelection,
   });
   useInlineDiffAnnotations({
     orderedAnnotations,

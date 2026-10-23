@@ -12,6 +12,7 @@ import { DiffView } from '../components/diff/DiffView';
 import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
 import { OpenInEditorDialog } from '../components/OpenInEditorDialog';
 import { useExpertise } from '../hooks/useExpertise';
+import { type InterdiffRequest, useInterdiff } from '../hooks/useInterdiff';
 import { usePRHydration } from '../hooks/usePRHydration';
 import { useReviewThreads } from '../hooks/useReviewThreads';
 import { useStore } from '../hooks/useStore';
@@ -29,6 +30,7 @@ import {
   DiffPageStatusBar,
   DiffPageToolbar,
 } from './DiffPageChrome';
+import { InterdiffPane } from './DiffPageInterdiff';
 import { useDiffPageActions } from './useDiffPageActions';
 import { useDiffPageData } from './useDiffPageData';
 
@@ -42,6 +44,7 @@ import { useDiffPageData } from './useDiffPageData';
  *
  * Keyboard-first affordances (registered in `keybindings.ts`, driven here):
  *   - `s` filters to files changed since your last review
+ *   - `i` toggles the current file's interdiff
  *   - `v` marks the current file viewed
  */
 export function DiffPage() {
@@ -163,6 +166,34 @@ export function DiffPage() {
     const path = splitUnifiedDiff(visibleDiff)[selectedFileIndex]?.path;
     return files.find((file) => file.path === path);
   }, [visibleDiff, selectedFileIndex, files]);
+  const interdiffActive = useStore(appStore, (s: UIState) => s.interdiffActive);
+  const canInterdiff =
+    triageOk !== null &&
+    currentFile !== undefined &&
+    triageStatuses?.get(currentFile.path) === 'changed';
+  const interdiffReq = useMemo<InterdiffRequest | null>(
+    () =>
+      interdiffActive &&
+      canInterdiff &&
+      triageOk !== null &&
+      currentFile !== undefined
+        ? {
+            path: currentFile.path,
+            fromPatchset: triageOk.from_patchset,
+            toPatchset: triageOk.to_patchset,
+          }
+        : null,
+    [interdiffActive, canInterdiff, triageOk, currentFile],
+  );
+  const interdiff = useInterdiff(pr?.id, interdiffReq);
+  const interdiffLabel =
+    interdiffReq === null
+      ? null
+      : `interdiff P${interdiffReq.fromPatchset} → P${triageOk?.to_patchset}`;
+  const interdiffHint =
+    interdiffActive && !canInterdiff
+      ? 'interdiff needs a changed file in triage (press s)'
+      : null;
   const {
     state: openInEditorState,
     checkoutAndOpen,
@@ -200,6 +231,8 @@ export function DiffPage() {
       <DiffPageToolbar
         pr={pr}
         triageLabel={triageLabel}
+        interdiffLabel={interdiffLabel}
+        isRebased={interdiff.result?.rebased === true && interdiffReq !== null}
         findQuery={findQuery}
         onFindQueryChange={setFindQuery}
         onBack={handleBack}
@@ -213,48 +246,58 @@ export function DiffPage() {
         fullDiffLoading={loading}
         fullDiffError={diffError}
       >
-        <div className="h-full flex flex-col">
-          {removedPaths.length > 0 && (
-            <div className="shrink-0 px-4 py-1.5 border-b border-outline-variant/30 bg-surface-container-low font-mono text-[10px] text-outline">
-              Removed since P{triageOk?.from_patchset}:{' '}
-              {removedPaths.join(', ')}
+        {interdiffReq !== null ? (
+          <InterdiffPane
+            result={interdiff.result}
+            loading={interdiff.loading}
+            error={interdiff.error}
+            theme={theme}
+            diffStyle={diffStyle}
+          />
+        ) : (
+          <div className="h-full flex flex-col">
+            {removedPaths.length > 0 && (
+              <div className="shrink-0 px-4 py-1.5 border-b border-outline-variant/30 bg-surface-container-low font-mono text-[10px] text-outline">
+                Removed since P{triageOk?.from_patchset}:{' '}
+                {removedPaths.join(', ')}
+              </div>
+            )}
+            <div className="flex-1 min-h-0">
+              <DiffView
+                diff={visibleDiff}
+                {...(triageStatuses !== undefined ? { triageStatuses } : {})}
+                theme={theme}
+                diffStyle={diffStyle}
+                findQuery={findQuery}
+                selectedFileKey={fileKey}
+                onFilesResolved={handleFilesResolved}
+                threads={threads}
+                comments={comments}
+                onThreadReply={(threadId, body) => {
+                  if (pr === undefined) return;
+                  replyComment(pr.id, body, { threadId });
+                }}
+                prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
+                expertiseFiles={expertise?.files ?? []}
+                expertiseError={
+                  expertiseStatus?.status === 'error'
+                    ? (expertiseStatus.message ??
+                      expertiseStatus.code ??
+                      'unknown')
+                    : null
+                }
+                viewedPaths={viewedPaths}
+              />
             </div>
-          )}
-          <div className="flex-1 min-h-0">
-            <DiffView
-              diff={visibleDiff}
-              {...(triageStatuses !== undefined ? { triageStatuses } : {})}
-              theme={theme}
-              diffStyle={diffStyle}
-              findQuery={findQuery}
-              selectedFileKey={fileKey}
-              onFilesResolved={handleFilesResolved}
-              threads={threads}
-              comments={comments}
-              onThreadReply={(threadId, body) => {
-                if (pr === undefined) return;
-                replyComment(pr.id, body, { threadId });
-              }}
-              prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
-              expertiseFiles={expertise?.files ?? []}
-              expertiseError={
-                expertiseStatus?.status === 'error'
-                  ? (expertiseStatus.message ??
-                    expertiseStatus.code ??
-                    'unknown')
-                  : null
-              }
-              viewedPaths={viewedPaths}
-            />
           </div>
-        </div>
+        )}
       </DiffPageBody>
 
       <DiffPageStatusBar
         diff={visibleDiff}
         files={files}
         currentFile={currentFile}
-        triageSummary={triageStatusText}
+        triageSummary={interdiffHint ?? triageStatusText}
       />
 
       <OpenInEditorDialog

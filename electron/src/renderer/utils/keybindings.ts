@@ -354,6 +354,12 @@ const DETAIL_BINDINGS: readonly KeyBinding[] = [
     activation: DIFF,
   },
   {
+    actionId: 'diff.interdiff',
+    keys: 'i',
+    description: 'Interdiff: this file since last review',
+    activation: DIFF,
+  },
+  {
     actionId: 'diff.toggleStyle',
     keys: 'Shift+S',
     description: 'Toggle side-by-side',

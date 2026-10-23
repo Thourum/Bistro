@@ -118,6 +118,8 @@ export interface UIState {
   selectedPatchsetPair: [number, number] | null;
   /** Diff filter mode (`s`), retained across review actions and reset on exit. */
   sinceLastReviewActive: boolean;
+  /** `i` in the diff view: show the current file's interdiff instead of the PR diff. */
+  interdiffActive: boolean;
   /**
    * Bumped every time a `THREAD_RESOLVED` / `THREAD_REOPENED` push event
    * arrives. The threads view depends on this so a remote state change (or our
@@ -208,6 +210,7 @@ export const initialUIState: UIState = {
   diffFileKeys: [],
   selectedPatchsetPair: null,
   sinceLastReviewActive: false,
+  interdiffActive: false,
   threadsRevision: 0,
   inlineCommentThreadIds: [],
   activeInlineCommentThreadId: null,

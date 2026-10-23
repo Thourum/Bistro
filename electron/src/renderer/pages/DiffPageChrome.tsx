@@ -5,6 +5,8 @@ import type { DiffFile, PR } from '../types';
 interface DiffPageToolbarProps {
   pr: PR | undefined;
   triageLabel: string | null;
+  interdiffLabel: string | null;
+  isRebased: boolean;
   findQuery: string;
   onFindQueryChange: (query: string) => void;
   onBack: () => void;
@@ -13,6 +15,8 @@ interface DiffPageToolbarProps {
 export function DiffPageToolbar({
   pr,
   triageLabel,
+  interdiffLabel,
+  isRebased,
   findQuery,
   onFindQueryChange,
   onBack,
@@ -40,6 +44,16 @@ export function DiffPageToolbar({
             {triageLabel !== null && (
               <span className="font-mono text-[10px] uppercase tracking-widest text-primary border border-primary/40 px-2 py-0.5">
                 {triageLabel}
+              </span>
+            )}
+            {interdiffLabel !== null && (
+              <span className="font-mono text-[10px] uppercase tracking-widest text-primary border border-primary/40 px-2 py-0.5">
+                {interdiffLabel}
+              </span>
+            )}
+            {isRebased && (
+              <span className="font-mono text-[10px] uppercase tracking-widest text-tertiary border border-tertiary/40 px-2 py-0.5">
+                rebased: includes upstream changes
               </span>
             )}
           </>

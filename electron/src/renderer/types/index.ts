@@ -292,6 +292,23 @@ export type TriageBaselineSource = NonNullable<
 >['source'];
 
 /**
+ * Result of a `REQUEST_INTERDIFF` → `INTERDIFF_READY` round-trip: one file at
+ * the `from_patchset` head vs. the `to_patchset` head. `patch` is empty when
+ * the file is identical at both heads; `available: false` carries a `reason`.
+ */
+export const interdiffResultSchema = z.object({
+  pr_id: z.string(),
+  path: z.string(),
+  from_patchset: z.number(),
+  to_patchset: z.number(),
+  available: z.boolean(),
+  reason: z.string(),
+  patch: z.string(),
+  rebased: z.boolean(),
+});
+export type InterdiffResult = z.infer<typeof interdiffResultSchema>;
+
+/**
  * Acknowledgement of a `MARK_FILE_VIEWED` request.
  * `ok` is false when the engine declined the write; `reason` explains it.
  */

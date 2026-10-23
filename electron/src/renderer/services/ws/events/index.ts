@@ -87,6 +87,7 @@ const eventHandlers: WsEventHandlers = {
   DIFF_READY: resolveWsResponse,
   PATCHSETS_READY: resolveWsResponse,
   TRIAGE_READY: resolveWsResponse,
+  INTERDIFF_READY: resolveWsResponse,
   FILE_VIEWED_ACK: resolveWsResponse,
   REVIEW_THREADS_READY: resolveWsResponse,
   ACTION_RESULT: resolveWsResponse,
