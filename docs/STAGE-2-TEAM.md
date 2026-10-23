@@ -41,6 +41,8 @@ identical to what Stage 2 will use.
 
 ## S2.2 — Pure-Go `git range-diff` engine (standalone foundational module)
 
+> **Superseded for FOSS (2026-10-23):** FOSS no longer shells out to `git range-diff`; since-last-review uses per-file patch-ID triage and go-git interdiffs (see `docs/superpowers/specs/2026-10-23-since-last-review-rebases-design.md`). A pure-Go range-diff remains a possible Team feature.
+
 **Why it's here, not in FOSS.** FOSS v1 gets range-diff semantics by shelling out
 to the **system `git range-diff`** binary (`os/exec`), when present. If the user has
 no system git, the rebase-aware "since last review" / patchset-pair interdiff
