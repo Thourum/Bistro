@@ -72,6 +72,7 @@ const SHARED_KEYS: KeyTable = {
   'filter.close': 'Escape',
   'threads.resolve': 'r',
   'threads.unresolve': 'u',
+  'lineComment.compose': 'Enter',
 };
 
 const VIM_KEYS: KeyTable = {
@@ -136,6 +137,13 @@ const VIM_KEYS: KeyTable = {
   'detail.scrollBottom': 'Shift+4',
   'threads.next': 'j',
   'threads.prev': 'k',
+  'diff.lineComment': 'c',
+  'lineComment.down': 'j',
+  'lineComment.up': 'k',
+  'lineComment.extendDown': 'Shift+J',
+  'lineComment.extendUp': 'Shift+K',
+  'lineComment.left': 'h',
+  'lineComment.right': 'l',
 };
 
 const EMACS_KEYS: KeyTable = {
@@ -203,6 +211,13 @@ const EMACS_KEYS: KeyTable = {
   'detail.scrollBottom': 'Alt+Shift+.',
   'threads.next': 'Control+N',
   'threads.prev': 'Control+P',
+  'diff.lineComment': 'Alt+;',
+  'lineComment.down': 'Control+N',
+  'lineComment.up': 'Control+P',
+  'lineComment.extendDown': 'Control+Shift+N',
+  'lineComment.extendUp': 'Control+Shift+P',
+  'lineComment.left': 'Control+B',
+  'lineComment.right': 'Control+F',
 };
 
 /** Arrows/Home/End/PgUp/PgDn/Ctrl+Tab move; actions keep vim's plain letters. */
@@ -241,8 +256,8 @@ const STANDARD_KEYS: KeyTable = {
   'detail.filterNit': ['f', 'n'],
   'detail.filterHuman': ['f', 'h'],
   'detail.filterClear': ['f', 'f'],
-  // Approve already asks for confirmation, so one key is safe here.
-  'detail.approve': 'a',
+  // Approve submits at once (no confirm step), so it takes a double press.
+  'detail.approve': ['a', 'a'],
   'detail.comment': 'c',
   'detail.reply': 'r',
   'detail.requestChanges': 'Shift+R',
@@ -263,6 +278,13 @@ const STANDARD_KEYS: KeyTable = {
   'detail.scrollBottom': 'End',
   'threads.next': 'ArrowDown',
   'threads.prev': 'ArrowUp',
+  'diff.lineComment': 'c',
+  'lineComment.down': 'ArrowDown',
+  'lineComment.up': 'ArrowUp',
+  'lineComment.extendDown': 'Shift+ArrowDown',
+  'lineComment.extendUp': 'Shift+ArrowUp',
+  'lineComment.left': 'ArrowLeft',
+  'lineComment.right': 'ArrowRight',
 };
 
 /** Per-style key tables. */

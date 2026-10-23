@@ -84,6 +84,7 @@ const ALL_OVERLAYS: readonly OverlayKind[] = [
   'repoPicker',
   'addRepo',
   'threads',
+  'lineComment',
 ];
 const LIST = { routes: ['list'] } as const;
 const DETAIL = { routes: ['detail'] } as const;
@@ -91,6 +92,7 @@ const DIFF = { routes: ['diff'] } as const;
 const SCROLL = { routes: ['detail', 'diff'] } as const;
 const FILTER = { overlays: ['filter'] } as const;
 const THREADS = { overlays: ['threads'] } as const;
+const LINE_COMMENT = { overlays: ['lineComment'] } as const;
 
 const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
   {
@@ -486,6 +488,49 @@ const DETAIL_BINDINGS: readonly BindingDefinition[] = [
     description: 'Reply',
     activation: DETAIL,
   },
+  {
+    actionId: 'diff.lineComment',
+    description: 'Comment on line',
+    activation: DIFF,
+  },
+];
+
+const LINE_COMMENT_BINDINGS: readonly BindingDefinition[] = [
+  {
+    actionId: 'lineComment.down',
+    description: 'Next line',
+    activation: LINE_COMMENT,
+  },
+  {
+    actionId: 'lineComment.up',
+    description: 'Previous line',
+    activation: LINE_COMMENT,
+  },
+  {
+    actionId: 'lineComment.extendDown',
+    description: 'Extend range down',
+    activation: LINE_COMMENT,
+  },
+  {
+    actionId: 'lineComment.extendUp',
+    description: 'Extend range up',
+    activation: LINE_COMMENT,
+  },
+  {
+    actionId: 'lineComment.left',
+    description: 'Old side (split view)',
+    activation: LINE_COMMENT,
+  },
+  {
+    actionId: 'lineComment.right',
+    description: 'New side (split view)',
+    activation: LINE_COMMENT,
+  },
+  {
+    actionId: 'lineComment.compose',
+    description: 'Write comment',
+    activation: LINE_COMMENT,
+  },
 ];
 
 const FILTER_BINDINGS: readonly BindingDefinition[] = [
@@ -649,6 +694,7 @@ export const ACTION_CATALOG: readonly BindingDefinition[] = [
   ...SCROLL_BINDINGS,
   ...THREAD_BINDINGS,
   ...FILTER_BINDINGS,
+  ...LINE_COMMENT_BINDINGS,
 ];
 
 /** Resolve keys: user override (empty = unbound) → style table → unbound. */

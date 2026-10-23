@@ -27,6 +27,12 @@ import { appStore } from '../store';
 import { approvePR } from '../services/prActions';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import type { RouteBase } from './keybindings';
+import {
+  extendCursor,
+  type LineCommentState,
+  moveCursor,
+  switchSide,
+} from './lineCommentCursor';
 import { createLogger } from './logger';
 import {
   moveOnboardingCursor,
@@ -301,6 +307,32 @@ function scrollDiffToBottom(): void {
     viewport.scrollTop = viewport.scrollHeight;
 }
 
+/** Cursor keys only steer while the composer is closed. */
+function updateLineComment(
+  context: KeyActionContext,
+  update: (state: LineCommentState) => LineCommentState,
+): void {
+  context.store.setState((state) =>
+    state.lineComment === null || state.lineComment.composer !== null
+      ? state
+      : { ...state, lineComment: update(state.lineComment) },
+  );
+}
+
+function composeLineComment(context: KeyActionContext): void {
+  context.store.setState((state) =>
+    state.lineComment === null
+      ? state
+      : {
+          ...state,
+          lineComment: {
+            ...state.lineComment,
+            composer: { draftId: null, initialBody: '' },
+          },
+        },
+  );
+}
+
 const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'connecting.restart': () => {
     if (appStore.state.engineStatus?.state !== 'crashed') return;
@@ -520,6 +552,40 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'threads.prev': () => emitAppEvent('bistro:threads:prev'),
   'threads.resolve': () => emitAppEvent('bistro:threads:resolve'),
   'threads.unresolve': () => emitAppEvent('bistro:threads:unresolve'),
+  'diff.lineComment': () => emitAppEvent('bistro:diff:line-comment'),
+  'lineComment.down': (context) =>
+    updateLineComment(context, (lc) => ({
+      ...lc,
+      cursor: moveCursor(lc.lines, lc.cursor, lc.layout, 1),
+    })),
+  'lineComment.up': (context) =>
+    updateLineComment(context, (lc) => ({
+      ...lc,
+      cursor: moveCursor(lc.lines, lc.cursor, lc.layout, -1),
+    })),
+  'lineComment.extendDown': (context) =>
+    updateLineComment(context, (lc) => ({
+      ...lc,
+      cursor: extendCursor(lc.lines, lc.cursor, 1),
+    })),
+  'lineComment.extendUp': (context) =>
+    updateLineComment(context, (lc) => ({
+      ...lc,
+      cursor: extendCursor(lc.lines, lc.cursor, -1),
+    })),
+  'lineComment.left': (context) =>
+    updateLineComment(context, (lc) =>
+      lc.layout === 'split'
+        ? { ...lc, cursor: switchSide(lc.lines, lc.cursor, 'LEFT') }
+        : lc,
+    ),
+  'lineComment.right': (context) =>
+    updateLineComment(context, (lc) =>
+      lc.layout === 'split'
+        ? { ...lc, cursor: switchSide(lc.lines, lc.cursor, 'RIGHT') }
+        : lc,
+    ),
+  'lineComment.compose': composeLineComment,
 };
 
 /** Find the handler for a configured binding; undefined means the action is not registered. */

@@ -8,9 +8,12 @@ import {
 } from 'react';
 import { useStore } from '../../hooks/useStore';
 import { appStore } from '../../store';
-import type { ReviewThread } from '../../types';
 import { findFileByKey } from '../../utils/diffFileKey';
-import { type AnnotationEntry, lineExistsInAdditions } from './diffAnnotations';
+import {
+  type AnnotationEntry,
+  type DiffAnnotationMeta,
+  lineExistsOnSide,
+} from './diffAnnotations';
 import type {
   ParsedCodeViewFile,
   UnrenderableDiffFile,
@@ -33,7 +36,10 @@ export function useInlineDiffAnnotations({
 }: {
   orderedAnnotations: readonly AnnotationEntry[];
   parsedCodeViewFiles: readonly ParsedCodeViewFile[];
-  codeViewRef: React.RefObject<CodeViewHandle<ReviewThread, unknown> | null>;
+  codeViewRef: React.RefObject<CodeViewHandle<
+    DiffAnnotationMeta,
+    unknown
+  > | null>;
 }): void {
   const activeAnnotationKey = useStore(
     appStore,
@@ -94,13 +100,13 @@ export function useInlineDiffAnnotations({
     );
     if (
       parsedFile !== undefined &&
-      lineExistsInAdditions(parsedFile.fileDiff, entry.line)
+      lineExistsOnSide(parsedFile.fileDiff, entry.line, entry.side)
     ) {
       codeViewRef.current?.scrollTo({
         type: 'line',
         id: entry.fileId,
         lineNumber: entry.line,
-        side: 'additions',
+        side: entry.side,
         align: 'nearest',
         behavior: 'instant',
       });
@@ -147,7 +153,7 @@ export function useDiffFileNavigation({
   syncFileSelection,
 }: FileNavigationOptions) {
   const [activeId, setActiveId] = useState<string | null>(files[0]?.id ?? null);
-  const codeViewRef = useRef<CodeViewHandle<ReviewThread, unknown>>(null);
+  const codeViewRef = useRef<CodeViewHandle<DiffAnnotationMeta, unknown>>(null);
   const pendingScrollFileIdRef = useRef<string | null>(null);
   const selectedFileIndex = useStore(
     appStore,

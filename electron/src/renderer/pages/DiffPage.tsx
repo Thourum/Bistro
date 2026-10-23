@@ -14,6 +14,7 @@ import { OpenInEditorDialog } from '../components/OpenInEditorDialog';
 import { useExpertise } from '../hooks/useExpertise';
 import { type InterdiffRequest, useInterdiff } from '../hooks/useInterdiff';
 import { usePRHydration } from '../hooks/usePRHydration';
+import { useReviewDrafts } from '../hooks/useReviewDrafts';
 import { useReviewThreads } from '../hooks/useReviewThreads';
 import { useStore } from '../hooks/useStore';
 import { type TriageRequest, useTriage } from '../hooks/useTriage';
@@ -101,6 +102,8 @@ export function DiffPage() {
 
   // Review threads for inline annotations on the visible diff.
   const { threads } = useReviewThreads(pr?.id);
+  useReviewDrafts(pr?.id);
+  const drafts = useStore(appStore, (s: UIState) => s.reviewDrafts);
 
   // ── Triage (since last review, or an explicit patchset pair) ──────
   const sinceLastReview = useStore(
@@ -342,6 +345,9 @@ export function DiffPage() {
                 }
                 viewedPaths={viewedPaths}
                 oversizedPatchBytes={oversizedPatchBytes}
+                prId={pr?.id}
+                headSha={pr?.head_sha}
+                drafts={drafts}
               />
             </div>
           </div>

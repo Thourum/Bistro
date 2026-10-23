@@ -27,6 +27,7 @@ export interface OnboardingSyncState {
   readonly queueError: string | null;
   readonly folder: FolderScanState;
 }
+import type { LineCommentState } from '../utils/lineCommentCursor';
 
 interface SyncStats {
   prCount: number;
@@ -170,6 +171,8 @@ export interface UIState {
   reviewDrafts: ReviewDraft[];
   /** PR whose drafts `reviewDrafts` holds; set by useReviewDrafts. */
   reviewDraftsPrId: string | null;
+  /** Line-pick overlay state (diff `c`); null when comment mode is closed. */
+  lineComment: LineCommentState | null;
   /** Currently selected inline diff-comment thread, if any. */
   activeInlineCommentThreadId: string | null;
   /** Inline diff-comment thread currently showing the reply composer, if any. */
@@ -270,6 +273,7 @@ export const initialUIState: UIState = {
   inlineCommentThreadIds: [],
   reviewDrafts: [],
   reviewDraftsPrId: null,
+  lineComment: null,
   activeInlineCommentThreadId: null,
   replyingInlineCommentThreadId: null,
   hideWhitespaceHunks: false,

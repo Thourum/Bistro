@@ -1,6 +1,13 @@
-import type { FileDiffMetadata, Hunk } from '@pierre/diffs';
+import { type FileDiffMetadata, type Hunk, processFile } from '@pierre/diffs';
 import { describe, expect, it } from 'vitest';
-import { lineExistsInAdditions } from './diffAnnotations';
+import type { ReviewDraft, ReviewThread } from '../../types';
+import {
+  buildOrderedAnnotations,
+  draftAnnotationKey,
+  draftIdFromKey,
+  lineExistsOnSide,
+} from './diffAnnotations';
+import type { ParsedDiffFile } from './diffPathUtils';
 
 function hunk(additionStart: number, additionCount: number): Hunk {
   return { additionStart, additionCount } as Hunk;
@@ -10,33 +17,95 @@ function fileDiff(hunks: Hunk[]): FileDiffMetadata {
   return { hunks } as FileDiffMetadata;
 }
 
-describe('lineExistsInAdditions', () => {
+const file: ParsedDiffFile = {
+  id: 'file-a',
+  path: 'a.ts',
+  oldFile: 'a/a.ts',
+  newFile: 'b/a.ts',
+  canonicalKey: 'a.ts',
+  lang: 'TS',
+  additions: 1,
+  deletions: 2,
+  patch: '',
+  lineCount: 0,
+};
+
+const thread: ReviewThread = {
+  id: 'thread-1',
+  pr_id: 'pr-1',
+  file_path: 'a.ts',
+  line: 20,
+  resolved: false,
+  outdated: false,
+  state_known: true,
+};
+
+const draft: ReviewDraft = {
+  id: 'draft-1',
+  pr_id: 'pr-1',
+  path: 'a.ts',
+  side: 'LEFT',
+  start_line: 0,
+  line: 11,
+  body: 'why?',
+  commit_sha: 'sha',
+  created_at: '2026-10-23T00:00:00Z',
+};
+
+describe('lineExistsOnSide', () => {
   it('returns true for a line inside a single hunk', () => {
-    expect(lineExistsInAdditions(fileDiff([hunk(10, 5)]), 12)).toBe(true);
+    expect(lineExistsOnSide(fileDiff([hunk(10, 5)]), 12, 'additions')).toBe(
+      true,
+    );
   });
 
   it('returns true for the first and last line of a hunk (inclusive range)', () => {
     const diff = fileDiff([hunk(10, 5)]);
-    expect(lineExistsInAdditions(diff, 10)).toBe(true);
-    expect(lineExistsInAdditions(diff, 14)).toBe(true);
+    expect(lineExistsOnSide(diff, 10, 'additions')).toBe(true);
+    expect(lineExistsOnSide(diff, 14, 'additions')).toBe(true);
   });
 
   it('returns false for a line just past the end of a hunk', () => {
-    expect(lineExistsInAdditions(fileDiff([hunk(10, 5)]), 15)).toBe(false);
+    expect(lineExistsOnSide(fileDiff([hunk(10, 5)]), 15, 'additions')).toBe(
+      false,
+    );
   });
 
   it('returns false for a line before any hunk', () => {
-    expect(lineExistsInAdditions(fileDiff([hunk(10, 5)]), 9)).toBe(false);
+    expect(lineExistsOnSide(fileDiff([hunk(10, 5)]), 9, 'additions')).toBe(
+      false,
+    );
   });
 
   it('checks across multiple hunks', () => {
     const diff = fileDiff([hunk(1, 3), hunk(50, 2)]);
-    expect(lineExistsInAdditions(diff, 2)).toBe(true);
-    expect(lineExistsInAdditions(diff, 51)).toBe(true);
-    expect(lineExistsInAdditions(diff, 10)).toBe(false);
+    expect(lineExistsOnSide(diff, 2, 'additions')).toBe(true);
+    expect(lineExistsOnSide(diff, 51, 'additions')).toBe(true);
+    expect(lineExistsOnSide(diff, 10, 'additions')).toBe(false);
   });
 
   it('returns false when the file has no hunks', () => {
-    expect(lineExistsInAdditions(fileDiff([]), 1)).toBe(false);
+    expect(lineExistsOnSide(fileDiff([]), 1, 'additions')).toBe(false);
+  });
+
+  it('checks deletion-side lines against the old file range', () => {
+    const parsed = processFile(
+      'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -10,2 +10,1 @@\n-old\n-gone\n+new\n',
+    );
+    if (parsed === undefined) throw new Error('expected a parsed diff');
+    expect(lineExistsOnSide(parsed, 11, 'deletions')).toBe(true);
+    expect(lineExistsOnSide(parsed, 12, 'deletions')).toBe(false);
+  });
+});
+
+describe('buildOrderedAnnotations', () => {
+  it('orders drafts with threads and keys them apart', () => {
+    const entries = buildOrderedAnnotations([file], [thread], [draft]);
+    expect(entries.map((entry) => entry.key)).toEqual([
+      draftAnnotationKey(draft.id),
+      thread.id,
+    ]);
+    expect(draftIdFromKey(entries[0]?.key ?? null)).toBe(draft.id);
+    expect(draftIdFromKey(thread.id)).toBeNull();
   });
 });

@@ -66,6 +66,13 @@ const FOOTER_LEGEND_PRESETS_BY_OVERLAY = {
   command: ['global.escape'],
   repoPicker: ['global.escape'],
   addRepo: ['global.escape'],
+  lineComment: [
+    'lineComment.down',
+    'lineComment.up',
+    'lineComment.extendDown',
+    'lineComment.compose',
+    'global.escape',
+  ],
 } as const satisfies Record<OverlayKind, readonly string[]>;
 
 export interface FooterLegendEntry {

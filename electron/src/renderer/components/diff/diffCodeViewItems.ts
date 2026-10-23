@@ -7,10 +7,18 @@ import type {
   Comment,
   ExpertiseExpert,
   ExpertiseFileData,
+  ReviewDraft,
   ReviewThread,
 } from '../../types';
 import { isGeneratedFile } from '../../utils/generatedFiles';
-import { buildFileAnnotations } from './diffAnnotations';
+import {
+  cursorRange,
+  type LineCommentState,
+} from '../../utils/lineCommentCursor';
+import {
+  buildFileAnnotations,
+  type DiffAnnotationMeta,
+} from './diffAnnotations';
 import type { ParsedDiffFile } from './diffPathUtils';
 
 export interface ParsedCodeViewFile {
@@ -71,6 +79,10 @@ export function parseCodeViewFiles(
 export interface CodeViewItemsOptions {
   parsedCodeViewFiles: readonly ParsedCodeViewFile[];
   threads: readonly ReviewThread[];
+  drafts: readonly ReviewDraft[];
+  /** PR head; drafts anchored to another commit render as outdated. */
+  headSha: string;
+  lineComment: LineCommentState | null;
   commentsByThread: ReadonlyMap<string, readonly Comment[]>;
   activeAnnotationKey: string | null;
   replyingToThreadId: string | null;
@@ -82,15 +94,23 @@ export interface CodeViewItemsOptions {
 export function buildCodeViewItems({
   parsedCodeViewFiles,
   threads,
+  drafts,
+  headSha,
+  lineComment,
   commentsByThread,
   activeAnnotationKey,
   replyingToThreadId,
   expertiseByPath,
   expertiseError,
   collapseOverrides = [],
-}: CodeViewItemsOptions): CodeViewItem<ReviewThread>[] {
+}: CodeViewItemsOptions): CodeViewItem<DiffAnnotationMeta>[] {
   return parsedCodeViewFiles.map(({ file, fileDiff, patchVersion }) => {
-    const annotations = buildFileAnnotations(file, threads);
+    const annotations = buildFileAnnotations(file, {
+      threads,
+      drafts,
+      headSha,
+      lineComment,
+    });
     const collapsed = isFileCollapsed(file, collapseOverrides);
     return {
       id: file.id,
@@ -149,7 +169,7 @@ export function groupCommentsByThread(
 
 interface ItemVersionOptions {
   patchVersion: number;
-  annotations: readonly DiffLineAnnotation<ReviewThread>[];
+  annotations: readonly DiffLineAnnotation<DiffAnnotationMeta>[];
   commentsByThread: ReadonlyMap<string, readonly Comment[]>;
   activeAnnotationKey: string | null;
   replyingToThreadId: string | null;
@@ -172,21 +192,40 @@ function buildItemVersion({
     serializeExpertise(expertise),
     expertiseError ?? '',
     String(collapsed),
-    ...annotations.map((annotation) => {
-      const thread = annotation.metadata;
-      if (thread === undefined) {
-        return `${annotation.side}:${annotation.lineNumber}`;
-      }
-      const comments = commentsByThread.get(thread.id) ?? [];
+    ...annotations.map((annotation) =>
+      serializeAnnotation(annotation, {
+        commentsByThread,
+        activeAnnotationKey,
+        replyingToThreadId,
+      }),
+    ),
+  ].join('|');
+  return hashString(`|${content}`, patchVersion);
+}
+
+type AnnotationVersionContext = Pick<
+  ItemVersionOptions,
+  'commentsByThread' | 'activeAnnotationKey' | 'replyingToThreadId'
+>;
+
+function serializeAnnotation(
+  { side, lineNumber, metadata }: DiffLineAnnotation<DiffAnnotationMeta>,
+  context: AnnotationVersionContext,
+): string {
+  if (metadata === undefined) return `${side}:${lineNumber}`;
+  switch (metadata.kind) {
+    case 'thread': {
+      const { thread } = metadata;
+      const comments = context.commentsByThread.get(thread.id) ?? [];
       return [
-        annotation.side,
-        annotation.lineNumber,
+        side,
+        lineNumber,
         thread.id,
         thread.state_known,
         thread.resolved,
         thread.outdated,
-        activeAnnotationKey === thread.id,
-        replyingToThreadId === thread.id,
+        context.activeAnnotationKey === thread.id,
+        context.replyingToThreadId === thread.id,
         ...comments.map((comment) =>
           [
             comment.id,
@@ -197,9 +236,31 @@ function buildItemVersion({
           ].join(':'),
         ),
       ].join(':');
-    }),
-  ].join('|');
-  return hashString(`|${content}`, patchVersion);
+    }
+    case 'draft':
+      return [
+        side,
+        lineNumber,
+        metadata.key,
+        metadata.draft.body,
+        metadata.isOutdated,
+        context.activeAnnotationKey === metadata.key,
+      ].join(':');
+    case 'composer': {
+      const range = cursorRange(metadata.lineComment.cursor);
+      return [
+        metadata.key,
+        metadata.lineComment.composer?.draftId ?? '',
+        range.side,
+        range.startLine ?? '',
+        range.line,
+      ].join(':');
+    }
+    default: {
+      const unreachable: never = metadata;
+      return unreachable;
+    }
+  }
 }
 
 function serializeExpertise(expertise: ExpertiseFileData | undefined): string {
