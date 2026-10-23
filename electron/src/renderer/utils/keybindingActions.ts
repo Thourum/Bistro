@@ -319,9 +319,10 @@ function updateLineComment(
   );
 }
 
+/** Opens an empty composer; a no-op while one is already open (keeps its draftId). */
 function composeLineComment(context: KeyActionContext): void {
   context.store.setState((state) =>
-    state.lineComment === null
+    state.lineComment === null || state.lineComment.composer !== null
       ? state
       : {
           ...state,

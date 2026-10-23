@@ -20,7 +20,11 @@ export interface CursorHunk {
 export interface CommentableLine {
   side: ReviewSide;
   line: number;
-  /** Display row; split view puts both sides of a row on the same number. */
+  /**
+   * Ordinal for ordering and side-switch distance within one file, not
+   * @pierre/diffs' rendered row index; split view gives both sides of a row
+   * the same number.
+   */
   row: number;
   hunkIndex: number;
   isChange: boolean;

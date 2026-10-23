@@ -423,3 +423,23 @@ describe('binding actions', () => {
     }
   });
 });
+
+describe('line comment bindings', () => {
+  it('Enter keeps an already-open composer (and its draftId)', () => {
+    const composer = { draftId: 'D1', initialBody: 'existing' };
+    const store = makeStore({
+      lineComment: {
+        prId: 'pr-test-id',
+        fileId: 'F1',
+        path: 'a.ts',
+        headSha: 'sha',
+        layout: 'unified',
+        lines: [],
+        cursor: { side: 'RIGHT', anchor: 1, head: 1 },
+        composer,
+      },
+    });
+    invokeAction('lineComment.compose', makeCtx(store, 'diff'));
+    expect(store.state.lineComment?.composer).toBe(composer);
+  });
+});

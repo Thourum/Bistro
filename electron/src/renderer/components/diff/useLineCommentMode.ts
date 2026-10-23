@@ -1,6 +1,6 @@
 import type { CodeViewLineSelection } from '@pierre/diffs';
 import type { CodeViewHandle } from '@pierre/diffs/react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useStore } from '../../hooks/useStore';
 import { useOverlays } from '../../overlays/OverlayContext';
 import { appStore } from '../../store';
@@ -48,7 +48,7 @@ export function useLineCommentMode({
   layout,
   codeViewRef,
 }: LineCommentModeOptions): CodeViewLineSelection | null {
-  const { activeOverlay, openLineComment } = useOverlays();
+  const { activeOverlay, closeOverlay, openLineComment } = useOverlays();
   const lineComment = useStore(appStore, (state) => state.lineComment);
 
   useEffect(() => {
@@ -89,24 +89,40 @@ export function useLineCommentMode({
   useEffect(() => {
     if (activeOverlay !== 'lineComment') clearLineComment();
   }, [activeOverlay]);
-  useEffect(() => clearLineComment, []);
+
+  // Unmount (e.g. leaving the diff by mouse) must not leave the overlay open.
+  const activeOverlayRef = useRef(activeOverlay);
+  activeOverlayRef.current = activeOverlay;
+  useEffect(
+    () => () => {
+      if (activeOverlayRef.current === 'lineComment') closeOverlay();
+      clearLineComment();
+    },
+    [closeOverlay],
+  );
+
+  // The commentable-line list depends on layout, so a layout switch ends comment mode.
+  const previousLayoutRef = useRef(layout);
+  useEffect(() => {
+    if (previousLayoutRef.current === layout) return;
+    previousLayoutRef.current = layout;
+    if (activeOverlay === 'lineComment') closeOverlay();
+  }, [layout, activeOverlay, closeOverlay]);
 
   useEffect(() => {
     if (lineComment === null) return;
-    const range = cursorRange(lineComment.cursor);
-    const side = toAnnotationSide(range.side);
+    // Follow the moving end so extending upward keeps it in view.
+    const { head } = lineComment.cursor;
+    const side = toAnnotationSide(lineComment.cursor.side);
     const parsed = parsedFiles.find(
       ({ file }) => file.id === lineComment.fileId,
     );
-    if (
-      parsed === undefined ||
-      !lineExistsOnSide(parsed.fileDiff, range.line, side)
-    )
+    if (parsed === undefined || !lineExistsOnSide(parsed.fileDiff, head, side))
       return;
     codeViewRef.current?.scrollTo({
       type: 'line',
       id: lineComment.fileId,
-      lineNumber: range.line,
+      lineNumber: head,
       side,
       align: 'nearest',
       behavior: 'instant',
