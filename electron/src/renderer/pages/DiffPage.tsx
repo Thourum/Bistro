@@ -7,7 +7,7 @@
 // diffFileKeys are cleared when prId changes to prevent stale key carryover.
 
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { DiffView } from '../components/diff/DiffView';
 import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
 import { OpenInEditorDialog } from '../components/OpenInEditorDialog';
@@ -151,9 +151,16 @@ export function DiffPage() {
 
   // Clear stale diffFileKeys whenever the target PR changes.
   // This prevents keybindings from using keys from a previous PR's diff.
+  // Collapse and whitespace settings are PR-scoped too; they reset here, not
+  // on DiffView unmount, because the interdiff toggle swaps DiffViews mid-PR.
   useLayoutEffect(() => {
     if (prId === '') return;
-    appStore.setState((s) => ({ ...s, diffFileKeys: [] }));
+    appStore.setState((s) => ({
+      ...s,
+      diffFileKeys: [],
+      diffCollapseOverrides: [],
+      hideWhitespaceHunks: false,
+    }));
   }, [prId]);
 
   // Consume onFilesResolved via useLayoutEffect to ensure diffFileKeys
@@ -186,6 +193,21 @@ export function DiffPage() {
     [interdiffActive, canInterdiff, triageOk, currentFile],
   );
   const interdiff = useInterdiff(pr?.id, interdiffReq);
+  // Sidebar and scroll selection only move the store index, so record the
+  // current file in ?file before the normal DiffView remounts on return.
+  const isShowingInterdiff = interdiffReq !== null;
+  useEffect(() => {
+    if (!isShowingInterdiff) return;
+    const { diffFileKeys, selectedFileIndex: index } = appStore.state;
+    const file = diffFileKeys[index];
+    if (file === undefined) return;
+    void navigate({
+      to: '/prs/$prId/diff',
+      params: { prId },
+      search: (prev) => ({ ...prev, file }),
+      replace: true,
+    });
+  }, [isShowingInterdiff, navigate, prId]);
   const interdiffLabel =
     interdiffReq === null
       ? null
@@ -246,7 +268,7 @@ export function DiffPage() {
         fullDiffLoading={loading}
         fullDiffError={diffError}
       >
-        {interdiffReq !== null ? (
+        {isShowingInterdiff ? (
           <InterdiffPane
             result={interdiff.result}
             loading={interdiff.loading}

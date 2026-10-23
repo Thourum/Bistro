@@ -70,9 +70,6 @@ export function useInlineDiffAnnotations({
         inlineCommentThreadIds: [],
         activeInlineCommentThreadId: null,
         replyingInlineCommentThreadId: null,
-        // These settings are keyed to the diff and must not leak into the next PR.
-        diffCollapseOverrides: [],
-        hideWhitespaceHunks: false,
       }));
     };
   }, []);
