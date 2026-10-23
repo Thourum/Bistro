@@ -12,6 +12,7 @@ import (
 type viewedBaselineStore interface {
 	ListViewedFiles(ctx context.Context, prID, login string) ([]store.FileViewed, error)
 	CurrentPatchset(ctx context.Context, prID string) (store.Patchset, bool, error)
+	ListPatchsetFiles(ctx context.Context, prID string, number int) (map[string]string, error)
 	RecordLastReviewed(ctx context.Context, event store.ReviewEvent) error
 }
 
@@ -39,12 +40,35 @@ func recordAllViewedBaseline(ctx context.Context, deps MarkFileViewedDeps, prID,
 		logger.Warn("all-viewed baseline: no current patchset", "pr_id", prID, "found", found, "error", err)
 		return
 	}
+	if !patchset.HasFingerprints || !cachedDiffsMatchPatchset(ctx, deps.Baseline, patchset, diffs) {
+		logger.Debug("all-viewed baseline: current patchset diffs pending", "pr_id", prID, "patchset", patchset.Number)
+		return
+	}
 	if err := deps.Baseline.RecordLastReviewed(ctx, store.ReviewEvent{
 		PRID: prID, Login: login, HeadSHA: patchset.HeadSHA, PatchsetNum: patchset.Number,
 		ReviewedAt: time.Now(), Source: store.ReviewSourceAllViewed,
 	}); err != nil {
 		logger.Warn("all-viewed baseline: record failed", "pr_id", prID, "error", err)
 	}
+}
+
+// Cached diffs can outlive their head when a list-only sync advances the PR.
+func cachedDiffsMatchPatchset(ctx context.Context, baseline viewedBaselineStore, patchset store.Patchset, diffs []store.DiffFile) bool {
+	fingerprints, err := baseline.ListPatchsetFiles(ctx, patchset.PRID, patchset.Number)
+	if err != nil {
+		logging.FromContext(ctx).Warn("all-viewed baseline: fingerprint lookup failed", "pr_id", patchset.PRID, "error", err)
+		return false
+	}
+	if len(fingerprints) != len(diffs) {
+		return false
+	}
+	for _, diff := range diffs {
+		patchID, found := fingerprints[diff.FilePath]
+		if !found || patchID != viewedHash(diff) {
+			return false
+		}
+	}
+	return true
 }
 
 func allFilesViewed(diffs []store.DiffFile, viewed []store.FileViewed) bool {
