@@ -20,6 +20,7 @@ interface DiffPageActionsOptions {
   threads: ReviewThread[];
   confirmingAction: UIState['confirmingAction'];
   setFiles: React.Dispatch<React.SetStateAction<DiffFile[]>>;
+  showInterdiff: boolean;
 }
 
 /** Handles diff page keyboard intents and editor opening without changing fetches. */
@@ -30,6 +31,7 @@ export function useDiffPageActions({
   threads,
   confirmingAction,
   setFiles,
+  showInterdiff,
 }: DiffPageActionsOptions): ReturnType<typeof useOpenInEditor> {
   const diffStyle = useStore(settingsStore, (s) => s.diff.style);
   const openInEditor = useOpenInEditor();
@@ -57,6 +59,21 @@ export function useDiffPageActions({
     return () =>
       document.removeEventListener('bistro:diff:toggle-resolve', toggle);
   }, [threads, resolveThread, unresolveThread]);
+
+  // The interdiff mounts no DiffView, so nothing else answers `c` there.
+  useEffect(() => {
+    if (!showInterdiff) return;
+    const explain = (): void => {
+      addToast({
+        type: 'info',
+        message: 'Line comments are unavailable in the interdiff',
+        dismissible: true,
+      });
+    };
+    document.addEventListener('bistro:diff:line-comment', explain);
+    return () =>
+      document.removeEventListener('bistro:diff:line-comment', explain);
+  }, [showInterdiff]);
 
   const doMarkViewed = useCallback(() => {
     if (pr === undefined || currentFile === undefined || markInFlight.current)

@@ -92,6 +92,7 @@ export function DiffPage() {
   );
 
   const [findQuery, setFindQuery] = useState('');
+  const [unanchoredDraftCount, setUnanchoredDraftCount] = useState(0);
   const {
     diff,
     files,
@@ -270,6 +271,7 @@ export function DiffPage() {
     threads,
     confirmingAction,
     setFiles,
+    showInterdiff: isShowingInterdiff,
   });
 
   const handleBack = (): void => {
@@ -354,6 +356,7 @@ export function DiffPage() {
                 prId={pr?.id}
                 headSha={pr?.head_sha}
                 drafts={drafts}
+                onUnanchoredDraftCountChange={setUnanchoredDraftCount}
               />
             </div>
           </div>
@@ -367,6 +370,8 @@ export function DiffPage() {
         triageSummary={interdiffHint ?? triageStatusText}
         draftCount={drafts.length}
         outdatedDraftCount={outdatedDraftCount}
+        // DiffView isn't mounted on the interdiff, so its last count is stale.
+        unanchoredDraftCount={isShowingInterdiff ? 0 : unanchoredDraftCount}
       />
 
       <OpenInEditorDialog

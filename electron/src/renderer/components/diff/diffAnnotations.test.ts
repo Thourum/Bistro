@@ -5,12 +5,18 @@ import {
   buildOrderedAnnotations,
   draftAnnotationKey,
   draftIdFromKey,
+  isDraftAnchored,
   lineExistsOnSide,
 } from './diffAnnotations';
 import type { ParsedDiffFile } from './diffPathUtils';
 
-function hunk(additionStart: number, additionCount: number): Hunk {
-  return { additionStart, additionCount } as Hunk;
+function hunk(
+  additionStart: number,
+  additionCount: number,
+  deletionStart = 0,
+  deletionCount = 0,
+): Hunk {
+  return { additionStart, additionCount, deletionStart, deletionCount } as Hunk;
 }
 
 function fileDiff(hunks: Hunk[]): FileDiffMetadata {
@@ -98,9 +104,30 @@ describe('lineExistsOnSide', () => {
   });
 });
 
+// Old lines 10-11 and new lines 18-22 are in the diff.
+const anchorable = { file, fileDiff: fileDiff([hunk(18, 5, 10, 2)]) };
+
+describe('isDraftAnchored', () => {
+  it('anchors only drafts whose path and side line are in the diff', () => {
+    expect(isDraftAnchored(draft, [anchorable])).toBe(true);
+    expect(isDraftAnchored({ ...draft, line: 12 }, [anchorable])).toBe(false);
+    expect(isDraftAnchored({ ...draft, side: 'RIGHT' }, [anchorable])).toBe(
+      false,
+    );
+    expect(isDraftAnchored({ ...draft, path: 'b.ts' }, [anchorable])).toBe(
+      false,
+    );
+  });
+});
+
 describe('buildOrderedAnnotations', () => {
-  it('orders drafts with threads and keys them apart', () => {
-    const entries = buildOrderedAnnotations([file], [thread], [draft]);
+  it('orders anchored drafts with threads and keys them apart', () => {
+    const unanchored = { ...draft, id: 'draft-2', line: 40 };
+    const entries = buildOrderedAnnotations(
+      [anchorable],
+      [thread],
+      [draft, unanchored],
+    );
     expect(entries.map((entry) => entry.key)).toEqual([
       draftAnnotationKey(draft.id),
       thread.id,

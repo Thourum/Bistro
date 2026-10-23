@@ -82,13 +82,37 @@ function fileEntries(
   );
 }
 
+/** A parsed file plus the hunks its annotations anchor to. */
+export interface AnchorableDiffFile {
+  file: ParsedDiffFile;
+  fileDiff: FileDiffMetadata;
+}
+
+/**
+ * True when the draft renders a card: its path is in the diff and its line is
+ * inside a hunk on its side. Other drafts are kept but can't be reached here.
+ */
+export function isDraftAnchored(
+  draft: ReviewDraft,
+  files: readonly AnchorableDiffFile[],
+): boolean {
+  const parsed = files.find(({ file }) => file.path === draft.path);
+  return (
+    parsed !== undefined &&
+    lineExistsOnSide(parsed.fileDiff, draft.line, toAnnotationSide(draft.side))
+  );
+}
+
 export function buildOrderedAnnotations(
-  files: readonly ParsedDiffFile[],
+  files: readonly AnchorableDiffFile[],
   threads: readonly ReviewThread[],
   drafts: readonly ReviewDraft[] = [],
 ): AnnotationEntry[] {
-  return files.flatMap((file, fileIndex) =>
-    fileEntries(file, fileIndex, threads, drafts),
+  const anchoredDrafts = drafts.filter((draft) =>
+    isDraftAnchored(draft, files),
+  );
+  return files.flatMap(({ file }, fileIndex) =>
+    fileEntries(file, fileIndex, threads, anchoredDrafts),
   );
 }
 

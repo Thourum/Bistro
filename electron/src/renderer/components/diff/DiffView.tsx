@@ -25,6 +25,7 @@ import { hideWhitespaceOnlyHunks } from '../../utils/whitespaceDiff';
 import {
   buildOrderedAnnotations,
   type DiffAnnotationMeta,
+  isDraftAnchored,
 } from './diffAnnotations';
 import {
   buildCodeViewItems,
@@ -101,6 +102,8 @@ export interface DiffViewProps {
   headSha?: string | undefined;
   /** Current user's pending line-comment drafts for this PR. */
   drafts?: readonly ReviewDraft[];
+  /** Reports how many drafts have no card because they aren't in this diff. */
+  onUnanchoredDraftCountChange?: (count: number) => void;
 }
 
 /** CodeView owns the only virtualized scroll surface for the PR diff. */
@@ -124,6 +127,7 @@ export function DiffView({
   prId,
   headSha,
   drafts = EMPTY_DRAFTS,
+  onUnanchoredDraftCountChange,
 }: DiffViewProps): React.ReactElement {
   const {
     files,
@@ -159,6 +163,13 @@ export function DiffView({
     onFilesResolved,
     syncFileSelection,
   });
+  const unanchoredDraftCount = useMemo(
+    () => drafts.filter((draft) => !isDraftAnchored(draft, parsedFiles)).length,
+    [drafts, parsedFiles],
+  );
+  useEffect(() => {
+    onUnanchoredDraftCountChange?.(unanchoredDraftCount);
+  }, [unanchoredDraftCount, onUnanchoredDraftCountChange]);
   useInlineDiffAnnotations({
     orderedAnnotations,
     parsedCodeViewFiles: parsedFiles,
@@ -332,12 +343,7 @@ function useDiffViewData({
     [comments],
   );
   const orderedAnnotations = useMemo(
-    () =>
-      buildOrderedAnnotations(
-        parsedFiles.map(({ file }) => file),
-        threads,
-        drafts,
-      ),
+    () => buildOrderedAnnotations(parsedFiles, threads, drafts),
     [parsedFiles, threads, drafts],
   );
   const items = useMemo(

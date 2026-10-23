@@ -17,6 +17,7 @@ import { addToast } from '../ToastContainer';
 import {
   type DiffAnnotationMeta,
   draftIdFromKey,
+  isDraftAnchored,
   lineExistsOnSide,
 } from './diffAnnotations';
 import type { ParsedCodeViewFile } from './diffCodeViewItems';
@@ -100,7 +101,13 @@ export function useLineCommentMode({
       );
       const draft = drafts.find((entry) => entry.id === draftId);
       const parsed = parsedFiles.find(({ file }) => file.path === draft?.path);
-      if (draft === undefined || parsed === undefined || prId === undefined)
+      // An unanchored draft has no card, so the composer would have no place.
+      if (
+        draft === undefined ||
+        parsed === undefined ||
+        prId === undefined ||
+        !isDraftAnchored(draft, [parsed])
+      )
         return;
       const state: LineCommentState = {
         prId,
