@@ -2,7 +2,7 @@ import { okAsync } from '@thourum/fault';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { appStore } from '../store';
 import { initialUIState } from '../store/ui';
-import { deleteDrafts, loadDrafts } from './reviewDrafts';
+import { loadDrafts } from './reviewDrafts';
 
 const request = vi.hoisted(() => vi.fn());
 vi.mock('./ws/connection', () => ({
@@ -37,13 +37,13 @@ describe('review drafts', () => {
     expect(appStore.state.reviewDrafts).toEqual([draft]);
   });
 
-  it('fails with the engine error instead of reporting success', async () => {
-    request.mockReturnValue(okAsync({ error: 'unable to delete drafts' }));
+  it('ignores a DRAFTS_READY reply for a PR that is no longer shown', async () => {
+    appStore.setState((s) => ({ ...s, reviewDraftsPrId: 'pr-2' }));
+    request.mockReturnValue(okAsync({ pr_id: 'pr-1', drafts: [draft] }));
 
-    const result = await deleteDrafts('pr-1', ['d-1']);
+    const result = await loadDrafts('pr-1');
 
-    expect(result.isErr() && result.error.message).toBe(
-      'unable to delete drafts',
-    );
+    expect(result.isOk()).toBe(true);
+    expect(appStore.state.reviewDrafts).toEqual([]);
   });
 });

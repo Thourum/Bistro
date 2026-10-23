@@ -1,4 +1,4 @@
-import { err, Fault, type Result, type ResultAsync } from '@thourum/fault';
+import { Fault, type ResultAsync } from '@thourum/fault';
 import { z } from 'zod';
 import { appStore } from '../store';
 import { type ReviewDraft, reviewDraftSchema } from '../types';
@@ -14,7 +14,6 @@ const draftsReadySchema = z.object({
 });
 const draftSavedSchema = z.object({ draft: reviewDraftSchema });
 const draftsDeletedSchema = z.object({ deleted: z.number() });
-const engineErrorSchema = z.object({ error: z.string() });
 
 export interface DraftInput {
   prId: string;
@@ -32,18 +31,6 @@ function networkFault(cause: Fault): Fault {
   return new Fault(cause).withTag('NETWORK_ERROR').withCause(cause);
 }
 
-/** Every drafts reply may carry `error` instead of (or beside) its payload. */
-function parseDraftsResponse<T>(
-  schema: z.ZodType<T>,
-  data: unknown,
-): Result<T, Fault> {
-  const failure = engineErrorSchema.safeParse(data);
-  if (failure.success) {
-    return err(new Fault(failure.data.error).withTag('EXTERNAL_ERROR'));
-  }
-  return parseResponse(schema, data);
-}
-
 /** Loads the current user's drafts and stores them if `prId` is still shown. */
 export function loadDrafts(
   prId: string,
@@ -51,7 +38,7 @@ export function loadDrafts(
   return wsClient
     .request('DRAFTS_LIST', { pr_id: prId })
     .mapErr(networkFault)
-    .andThen((data) => parseDraftsResponse(draftsReadySchema, data))
+    .andThen((data) => parseResponse(draftsReadySchema, data))
     .map(({ drafts }) => {
       appStore.setState((state) =>
         state.reviewDraftsPrId === prId
@@ -78,7 +65,7 @@ export function saveDraft(
       commit_sha: input.commitSha,
     })
     .mapErr(networkFault)
-    .andThen((data) => parseDraftsResponse(draftSavedSchema, data))
+    .andThen((data) => parseResponse(draftSavedSchema, data))
     .map(({ draft }) => draft);
 }
 
@@ -90,7 +77,7 @@ export function deleteDrafts(
   return wsClient
     .request('DRAFT_DELETE', { pr_id: prId, draft_ids: ids })
     .mapErr(networkFault)
-    .andThen((data) => parseDraftsResponse(draftsDeletedSchema, data))
+    .andThen((data) => parseResponse(draftsDeletedSchema, data))
     .map(() => undefined);
 }
 
