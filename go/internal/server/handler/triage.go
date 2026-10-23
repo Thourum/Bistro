@@ -29,6 +29,7 @@ const (
 // triageStore is the DB subset REQUEST_TRIAGE reads. Satisfied by *store.DB.
 type triageStore interface {
 	ListPatchsets(ctx context.Context, prID string) ([]store.Patchset, error)
+	CurrentPatchset(ctx context.Context, prID string) (store.Patchset, bool, error)
 	ListPatchsetFiles(ctx context.Context, prID string, number int) (map[string]string, error)
 	GetLastReviewed(ctx context.Context, prID, login string) (store.LastReviewedRecord, bool, error)
 }
@@ -106,6 +107,16 @@ func buildTriage(ctx context.Context, deps TriageHandlerDeps, req triageRequest)
 			return withTriageState(response, triageStateNoPatchsets, fmt.Sprintf("P%d is not recorded", req.ToPatchset))
 		}
 		to = *requested
+	}
+	if req.ToPatchset == 0 {
+		current, found, err := deps.Store.CurrentPatchset(ctx, req.PRID)
+		if err != nil {
+			logging.FromContext(ctx).Warn("triage: current patchset lookup failed", "error", err)
+			return withTriageState(response, triageStateNoPatchsets, "could not load patchsets")
+		}
+		if found {
+			to = current
+		}
 	}
 	response.ToPatchset = to.Number
 

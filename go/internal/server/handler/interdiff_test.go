@@ -56,7 +56,7 @@ func TestInterdiffHandlerContract(t *testing.T) {
 		{name: "missing target", toPatchset: 4, patchsets: patchsets, wantTo: 4, wantReason: "patchset is not recorded"},
 		{name: "repo lookup failed", patchsets: patchsets, repoErr: failure, wantTo: 5, wantReason: "could not locate the repository"},
 		{name: "repo not cached", patchsets: patchsets, wantTo: 5, wantReason: "no local copy of this repository yet"},
-		{name: "head lost", patchsets: patchsets, hasRepo: true, gitErr: fmt.Errorf("load: %w", git.ErrHeadUnavailable), wantTo: 5, wantReason: "P3's head is no longer available locally"},
+		{name: "target head lost", patchsets: patchsets, hasRepo: true, gitErr: fmt.Errorf("%w: h5", git.ErrHeadUnavailable), wantTo: 5, wantReason: "could not load a patchset head (P3 or P5): patchset head unavailable locally: h5"},
 		{name: "diff failed", patchsets: patchsets, hasRepo: true, gitErr: failure, wantTo: 5, wantReason: "could not compute the interdiff"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

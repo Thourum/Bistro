@@ -21,6 +21,10 @@ func (m *mockPatchsetLister) ListPatchsets(_ context.Context, _ string) ([]store
 	return m.patchsets, m.err
 }
 
+func (m *mockPatchsetLister) CurrentPatchset(_ context.Context, _ string) (store.Patchset, bool, error) {
+	return store.Patchset{}, false, nil
+}
+
 type mockFileViewedMarker struct {
 	called bool
 	err    error
@@ -236,9 +240,3 @@ func TestMarkFileViewedHandler_HashValidation_Match(t *testing.T) {
 		t.Errorf("ok must be true for valid hash, got: %v (reason: %v)", d["ok"], d["reason"])
 	}
 }
-
-// ---- REQUEST_RANGE_DIFF ----
-
-// ── Blocker 1: patchset identity tests ──────────────────────────────────────
-
-// ── Blocker 3: pair-specific raw tests ──────────────────────────────────────

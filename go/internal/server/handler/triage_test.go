@@ -141,6 +141,37 @@ func TestTriageHandlerReturnsPairAndReviewContracts(t *testing.T) {
 	}
 }
 
+func TestDefaultTargetsUseCurrentPatchsetAfterForcePushBack(t *testing.T) {
+	db := newReadStateTestDB(t)
+	ctx := context.Background()
+	const prID = "github:o/r:1"
+	mustExecDB(t, db.DB, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state, created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
+		VALUES (?, 'github', 'o', 'r', 1, 'T', 'a', 'open', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'main', 'f', 'tip', 'h1')`, prID)
+	mustExecDB(t, db.DB, `INSERT INTO patchsets (pr_id, number, head_sha, base_sha, merge_base_sha, pushed_at, has_fingerprints)
+		VALUES (?, 1, 'h1', 'tip', 'merge-1', CURRENT_TIMESTAMP, 1),
+		       (?, 2, 'h2', 'tip', 'merge-2', CURRENT_TIMESTAMP, 1)`, prID, prID)
+	mustExecDB(t, db.DB, `INSERT INTO patchset_files (pr_id, patchset_number, path, patch_id)
+		VALUES (?, 1, 'a.go', 'patch-1'), (?, 2, 'a.go', 'patch-2')`, prID, prID)
+	mustExecDB(t, db.DB, `UPDATE prs SET head_sha = 'h2' WHERE id = ?`, prID)
+	mustExecDB(t, db.DB, `UPDATE prs SET head_sha = 'h1' WHERE id = ?`, prID)
+
+	triage := buildTriage(ctx, TriageHandlerDeps{Store: db}, triageRequest{PRID: prID, FromPatchset: 1})
+	if triage.State != triageStateOK || triage.ToPatchset != 1 || triage.ChangedCount != 0 ||
+		!reflect.DeepEqual(triage.Files, []fileTriage{{Path: "a.go", Status: triageUnchanged}}) {
+		t.Errorf("triage after force-push back = %+v, want unchanged P1", triage)
+	}
+	gitClient := &interdiffGitStub{}
+	interdiff := buildInterdiff(ctx, InterdiffHandlerDeps{
+		Patchsets: db, Git: gitClient,
+		RepoForPR: func(context.Context, string) (string, string, bool, error) {
+			return "https://github.com/o/r.git", "/local/repo", true, nil
+		},
+	}, interdiffRequest{PRID: prID, Path: "a.go", FromPatchset: 1})
+	if !interdiff.Available || interdiff.ToPatchset != 1 || gitClient.request.ToHead != "h1" || gitClient.request.ToMergeBase != "merge-1" {
+		t.Errorf("interdiff after force-push back = %+v, git request = %+v; want current P1", interdiff, gitClient.request)
+	}
+}
+
 func TestTriageHandlerUnavailableStates(t *testing.T) {
 	const prID = "github:o/r:1"
 	lookupErr := errors.New("storage unavailable")

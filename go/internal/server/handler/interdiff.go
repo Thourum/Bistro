@@ -15,6 +15,7 @@ import (
 
 type interdiffPatchsets interface {
 	ListPatchsets(ctx context.Context, prID string) ([]store.Patchset, error)
+	CurrentPatchset(ctx context.Context, prID string) (store.Patchset, bool, error)
 }
 
 type interdiffer interface {
@@ -82,6 +83,14 @@ func buildInterdiff(ctx context.Context, deps InterdiffHandlerDeps, req interdif
 	to := patchsetByNumber(patchsets, req.ToPatchset)
 	if req.ToPatchset == 0 && len(patchsets) > 0 {
 		to = &patchsets[len(patchsets)-1]
+		current, found, err := deps.Patchsets.CurrentPatchset(ctx, req.PRID)
+		if err != nil {
+			logger.Warn("interdiff: current patchset lookup failed", "error", err)
+			return unavailableInterdiff(response, "could not load patchsets")
+		}
+		if found {
+			to = &current
+		}
 	}
 	if from == nil || to == nil {
 		return unavailableInterdiff(response, "patchset is not recorded")
@@ -101,7 +110,7 @@ func buildInterdiff(ctx context.Context, deps InterdiffHandlerDeps, req interdif
 		FromMergeBase: from.MergeBaseSHA, ToMergeBase: to.MergeBaseSHA,
 	})
 	if errors.Is(err, git.ErrHeadUnavailable) {
-		return unavailableInterdiff(response, fmt.Sprintf("P%d's head is no longer available locally", from.Number))
+		return unavailableInterdiff(response, fmt.Sprintf("could not load a patchset head (P%d or P%d): %s", from.Number, to.Number, err))
 	}
 	if err != nil {
 		logger.Warn("interdiff failed", "path", req.Path, "error", err)

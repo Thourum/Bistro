@@ -28,7 +28,7 @@ func TestGenerateDiffUsesMergeBaseForDiffAndAnchors(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Checkout base-tip: %v", err)
 	}
-	writeExpertiseHookFile(t, dir, "src/app.go", "// upstream\npackage main\n\nfunc main() {}\n")
+	writeExpertiseHookFile(t, dir, "src/app.go", "// upstream\npackage upstream\n\nfunc main() {}\n")
 	writeExpertiseHookFile(t, dir, "upstream.txt", "upstream\n")
 	baseSHA := commitExpertiseHookRepo(t, worktree, "upstream change")
 	if err := repo.Storer.SetReference(plumbing.NewHashReference("refs/pull/123/head", plumbing.NewHash(headSHA))); err != nil {
@@ -55,11 +55,15 @@ func TestGenerateDiffUsesMergeBaseForDiffAndAnchors(t *testing.T) {
 			}
 
 			position := 4 // Three-dot diff: two context lines, deletion, then addition.
+			deletionPosition := 3
 			result := &PRFetchResult{
 				PR: &provider.PR{BaseSHA: baseSHA, HeadSHA: headSHA, BaseBranch: baseBranch, Number: prNumber},
 				Comments: []*provider.Comment{{
 					ID: "review-comment", Kind: "review", CommitSHA: headSHA,
 					FilePath: "src/app.go", Side: "RIGHT", Position: &position,
+				}, {
+					ID: "deletion-comment", Kind: "review", CommitSHA: headSHA,
+					FilePath: "src/app.go", Side: "LEFT", Position: &deletionPosition,
 				}},
 			}
 			orchestrator := &Orchestrator{git: git.NewClient(nil), anchorResolver: git.NewAnchorResolver()}
@@ -80,8 +84,14 @@ func TestGenerateDiffUsesMergeBaseForDiffAndAnchors(t *testing.T) {
 					t.Errorf("unexpected PR diff file %q", file.FilePath)
 				}
 			}
-			if len(result.AnchorUpdates) != 1 || !result.AnchorUpdates[0].Anchored || result.AnchorUpdates[0].AnchoredLine != 3 {
-				t.Errorf("AnchorUpdates=%+v; want review-comment anchored at line 3", result.AnchorUpdates)
+			if len(result.AnchorUpdates) != 2 {
+				t.Fatalf("AnchorUpdates=%+v; want RIGHT and LEFT comments anchored", result.AnchorUpdates)
+			}
+			for i, commentID := range []string{"review-comment", "deletion-comment"} {
+				anchor := result.AnchorUpdates[i]
+				if anchor.CommentID != commentID || !anchor.Anchored || anchor.AnchoredLine != 3 {
+					t.Errorf("AnchorUpdates[%d]=%+v; want %s anchored at line 3", i, anchor, commentID)
+				}
 			}
 		})
 	}
