@@ -113,7 +113,7 @@ func loadDiffPatch(repo *gitlib.Repository, baseSHA, headSHA string) (fdiff.Patc
 func renderDiffFiles(patch fdiff.Patch, opts DiffOptions) (*DiffResult, error) {
 	result := &DiffResult{Files: make([]*DiffFile, 0)}
 	for _, filePatch := range patch.FilePatches() {
-		diffFile, err := renderDiffFile(filePatch, opts, result.Size)
+		diffFile, err := renderDiffFile(filePatch, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -124,14 +124,12 @@ func renderDiffFiles(patch fdiff.Patch, opts DiffOptions) (*DiffResult, error) {
 			result.Profile.BinaryFileCount++
 		case diffFile.DiffStatus == DiffStatusTruncated:
 			result.Profile.TruncatedFiles++
-		case diffFile.DiffStatus == DiffStatusTooLarge:
-			result.Profile.TooLargeFiles++
 		}
 	}
 	return result, nil
 }
 
-func renderDiffFile(filePatch fdiff.FilePatch, opts DiffOptions, storedBytes int64) (*DiffFile, error) {
+func renderDiffFile(filePatch fdiff.FilePatch, opts DiffOptions) (*DiffFile, error) {
 	from, to := filePatch.Files()
 	var path, oldPath, status string
 	switch {
@@ -160,8 +158,6 @@ func renderDiffFile(filePatch fdiff.FilePatch, opts DiffOptions, storedBytes int
 		patchToStore = ""
 	case opts.MaxFilePatchBytes > 0 && int64(patchBytes) > opts.MaxFilePatchBytes:
 		diffStatus, patchToStore = DiffStatusTruncated, ""
-	case opts.MaxTotalPatchBytes > 0 && storedBytes+int64(patchBytes) > opts.MaxTotalPatchBytes:
-		diffStatus, patchToStore = DiffStatusTooLarge, ""
 	}
 
 	// Count from the full patch so truncated/binary files retain line stats.
@@ -172,7 +168,7 @@ func renderDiffFile(filePatch fdiff.FilePatch, opts DiffOptions, storedBytes int
 		DiffStatus:   diffStatus,
 		OldPath:      oldPath,
 		Binary:       isBinary,
-		Truncated:    diffStatus == DiffStatusTruncated || diffStatus == DiffStatusTooLarge,
+		Truncated:    diffStatus == DiffStatusTruncated,
 		PatchBytes:   patchBytes,
 		HunkCount:    countHunks(patchStr),
 		Patch:        patchToStore,
