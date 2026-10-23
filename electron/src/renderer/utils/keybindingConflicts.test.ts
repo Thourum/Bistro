@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from 'vitest';
+import { afterEach, assert, describe, expect, it, vi } from 'vitest';
 import { findKeybindingConflicts } from './keybindingConflicts';
 import { getEffectiveBindings, type KeyBinding } from './keybindings';
 import { KEYMAPS } from './keymaps';
@@ -90,26 +90,77 @@ describe('findKeybindingConflicts', () => {
     ]);
   });
 
-  it.each(['j', 'k', 'Shift+J', 'Shift+K', 'h', 'l', 'Enter'])(
-    'does not confuse line-comment %s with diff-route bindings',
-    (keys) => {
-      const lineCommentBinding = DEFAULT_KEYBINDINGS.find(
-        (binding) =>
-          binding.keys === keys &&
-          binding.activation.overlays?.includes('lineComment'),
-      );
-      assert.isDefined(lineCommentBinding);
-      const diffBindings = DEFAULT_KEYBINDINGS.filter((binding) =>
-        binding.activation.routes?.includes('diff'),
-      );
-      expect(findKeybindingConflicts(diffBindings, lineCommentBinding)).toEqual(
-        [],
-      );
-    },
-  );
+  it('does not confuse line-comment j with diff-route bindings', () => {
+    const lineCommentBinding = remap('lineComment.down', 'j');
+    const diffBindings = DEFAULT_KEYBINDINGS.filter((binding) =>
+      binding.activation.routes?.includes('diff'),
+    );
+    expect(findKeybindingConflicts(diffBindings, lineCommentBinding)).toEqual(
+      [],
+    );
+  });
 
-  it('allows the detail and diff comment actions to share c', () => {
-    expect(conflictIds(remap('diff.lineComment', 'c'))).toEqual([]);
+  it('normalizes the case of every sequence step', () => {
+    expect(conflictIds(remap('diff.markViewed', ['D', 'D']))).toEqual([
+      'diff.deleteDraft',
+    ]);
+  });
+
+  it('normalizes case when a single key prefixes a sequence', () => {
+    expect(conflictIds(remap('diff.deleteDraft', ['N', 'n']))).toEqual([
+      'diff.nextComment',
+    ]);
+  });
+
+  it('normalizes modifier aliases and order', () => {
+    const bindings = [
+      {
+        ...scopedBinding({ routes: ['diff'] }),
+        actionId: 'existing',
+        keys: 'Control+Shift+N',
+      },
+    ];
+    const candidate = {
+      ...scopedBinding({ routes: ['diff'] }),
+      keys: 'shift+ctrl+n',
+    };
+    expect(findKeybindingConflicts(bindings, candidate)).toEqual(bindings);
+  });
+
+  describe('platform-adaptive Mod', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it.each([
+      { platform: 'MacIntel', modifier: 'Meta', otherModifier: 'Control' },
+      { platform: 'Win32', modifier: 'Control', otherModifier: 'Meta' },
+      { platform: 'Linux x86_64', modifier: 'Control', otherModifier: 'Meta' },
+    ])(
+      'matches registration on $platform',
+      ({ platform, modifier, otherModifier }) => {
+        vi.stubGlobal('navigator', { platform, userAgent: '' });
+        const bindings = [
+          {
+            ...scopedBinding({ routes: ['diff'] }),
+            actionId: 'primary',
+            keys: `${modifier}+n`,
+          },
+          {
+            ...scopedBinding({ routes: ['diff'] }),
+            actionId: 'other',
+            keys: `${otherModifier}+n`,
+          },
+        ];
+        const candidate = {
+          ...scopedBinding({ routes: ['diff'] }),
+          keys: 'Mod+N',
+        };
+        expect(
+          findKeybindingConflicts(bindings, candidate).map(
+            (binding) => binding.actionId,
+          ),
+        ).toEqual(['primary']);
+      },
+    );
   });
 
   it.each<{

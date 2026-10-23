@@ -1,3 +1,4 @@
+import { normalizeHotkey } from '@tanstack/hotkeys';
 import { isActive } from './keybindingActivation';
 import { ALL_ROUTES, type KeyBinding } from './keybindings';
 
@@ -15,7 +16,9 @@ function hasSharedScope(candidate: KeyBinding, other: KeyBinding): boolean {
 }
 
 function keySteps(binding: KeyBinding): readonly string[] {
-  return typeof binding.keys === 'string' ? [binding.keys] : binding.keys;
+  const steps =
+    typeof binding.keys === 'string' ? [binding.keys] : binding.keys;
+  return steps.map((step) => normalizeHotkey(step));
 }
 
 function isPrefixOrEqual(
