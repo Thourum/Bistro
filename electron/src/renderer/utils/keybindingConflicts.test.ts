@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, assert, describe, expect, it, vi } from 'vitest';
 import { findKeybindingConflicts } from './keybindingConflicts';
 import { getEffectiveBindings, type KeyBinding } from './keybindings';
@@ -213,5 +214,17 @@ describe('findKeybindingConflicts', () => {
     expect(
       findKeybindingConflicts(bindings, scopedBinding({ routes: ['login'] })),
     ).toEqual(bindings);
+  });
+
+  it('catches a shifted character that fires an existing binding', () => {
+    const candidate = remap('diff.markViewed', 'Shift+?');
+    const events = [
+      new KeyboardEvent('keydown', { key: '?', code: 'Slash', shiftKey: true }),
+    ];
+    expect(
+      findKeybindingConflicts(DEFAULT_KEYBINDINGS, candidate, events).map(
+        (binding) => binding.actionId,
+      ),
+    ).toEqual(['global.help']);
   });
 });
