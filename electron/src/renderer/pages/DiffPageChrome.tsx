@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
 import { RangeDiffView } from '../components/RangeDiffView';
 import { StatusSquare } from '../components/StatusSquare';
+import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import type { DiffFile, PR, RangeDiffResult } from '../types';
+import { findActionKeys } from '../utils/legendPresets';
 
 interface DiffPageToolbarProps {
   pr: PR | undefined;
@@ -86,6 +88,9 @@ export function DiffPageStatusBar({
   rangeResult,
 }: DiffPageStatusBarProps): React.ReactElement {
   const viewedCount = files.filter((file) => file.viewed).length;
+  const markViewedKeys = findActionKeys(useEffectiveBindings(), [
+    'diff.markViewed',
+  ]);
   return (
     <div className="shrink-0 h-6 px-4 flex items-center justify-between border-t border-outline-variant/30 bg-surface-container-low">
       <div className="flex items-center gap-4 font-mono text-[10px] uppercase tracking-widest text-outline">
@@ -104,7 +109,11 @@ export function DiffPageStatusBar({
             <span
               className={currentFile.viewed ? 'text-primary' : 'text-outline'}
             >
-              {currentFile.viewed ? 'viewed' : 'press v to mark viewed'}
+              {currentFile.viewed
+                ? 'viewed'
+                : markViewedKeys === undefined
+                  ? 'not viewed'
+                  : `press ${markViewedKeys} to mark viewed`}
             </span>
           </span>
         )}

@@ -1,8 +1,10 @@
 import type React from 'react';
+import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useStore } from '../hooks/useStore';
 import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
+import { findActionKeys } from '../utils/legendPresets';
 import { Button } from './ui/button';
 import { Kbd } from './ui/kbd';
 
@@ -19,6 +21,7 @@ const FILTER_OPTIONS: { label: string; value: FilterValue; hint: string }[] = [
 function FilterPanel(): React.ReactElement {
   const filterState = useStore(appStore, (s) => s.filterState);
   const { closeOverlay } = useOverlays();
+  const toggleKeys = findActionKeys(useEffectiveBindings(), ['filter.toggle']);
 
   const handleSelect = (value: FilterValue): void => {
     appStore.setState((s) => ({ ...s, filterState: value }));
@@ -53,7 +56,13 @@ function FilterPanel(): React.ReactElement {
         </div>
       ))}
       <div className="border-t border-outline-variant px-3 py-2 font-mono text-[10px] text-outline">
-        Press <Kbd>f</Kbd> or <Kbd>Esc</Kbd> to close
+        Press{' '}
+        {toggleKeys !== undefined && (
+          <>
+            <Kbd>{toggleKeys}</Kbd> or{' '}
+          </>
+        )}
+        <Kbd>Esc</Kbd> to close
       </div>
     </div>
   );
@@ -62,6 +71,7 @@ function FilterPanel(): React.ReactElement {
 export function FilterMenu(): React.ReactElement {
   const { activeOverlay, toggleFilter } = useOverlays();
   const isOpen = activeOverlay === 'filter';
+  const filterKeys = findActionKeys(useEffectiveBindings(), ['list.filter']);
 
   return (
     <div className="relative">
@@ -72,9 +82,11 @@ export function FilterMenu(): React.ReactElement {
         aria-label="Filter"
       >
         <span className="normal-case">Filter</span>
-        <Kbd className="border-0 bg-transparent px-0 text-outline-variant">
-          f
-        </Kbd>
+        {filterKeys !== undefined && (
+          <Kbd className="border-0 bg-transparent px-0 text-outline-variant">
+            {filterKeys}
+          </Kbd>
+        )}
       </Button>
       {isOpen && <FilterPanel />}
     </div>

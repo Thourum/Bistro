@@ -188,7 +188,7 @@ export function HelpOverlay(): React.ReactElement | null {
             ))}
 
             <div className="mt-4 border-t border-outline-variant pt-4 text-center text-xs text-on-surface-variant">
-              Press <Kbd>?</Kbd> or <Kbd>Esc</Kbd> to close
+              Press <Kbd>Esc</Kbd> to close
             </div>
           </div>
         </ScrollArea>

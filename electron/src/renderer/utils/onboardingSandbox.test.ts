@@ -20,6 +20,9 @@ describe('reduceSandbox', () => {
   it('ticks moveDown only after three down presses and clamps the cursor', () => {
     const twice = run(['list.down', 'list.downArrow']);
     expect(twice.completed).not.toContain('moveDown');
+    expect(run(['list.down', 'list.down', 'list.down']).completed).toContain(
+      'moveDown',
+    );
     const many = run(pressPastEnd(SANDBOX_PR_COUNT, 'list.down'));
     expect(many.completed).toContain('moveDown');
     expect(many.cursor).toBe(SANDBOX_PR_COUNT - 1);

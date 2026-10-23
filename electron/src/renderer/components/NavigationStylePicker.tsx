@@ -32,10 +32,9 @@ export function NavigationStylePicker({
   onSelect,
 }: NavigationStylePickerProps): ReactElement {
   return (
-    <div
-      role="radiogroup"
+    <fieldset
       aria-label="Navigation style"
-      className="grid grid-cols-1 md:grid-cols-3 gap-4"
+      className="grid grid-cols-1 md:grid-cols-3 gap-4 min-w-0"
     >
       {NAVIGATION_STYLES.map((style) => {
         const card: NavigationStyleCard = NAVIGATION_STYLE_CARDS[style];
@@ -44,8 +43,9 @@ export function NavigationStylePicker({
           <button
             key={style}
             type="button"
-            role="radio"
-            aria-checked={isSelected}
+            aria-pressed={isSelected}
+            // Mouse clicks must not take focus: a focused card would swallow Space.
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => onSelect(style)}
             className={cn(
               // `!`: the unlayered `button` reset in globals.css beats layered utilities.
@@ -85,6 +85,6 @@ export function NavigationStylePicker({
           </button>
         );
       })}
-    </div>
+    </fieldset>
   );
 }

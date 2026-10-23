@@ -55,6 +55,10 @@ describe('hotkeyOptions', () => {
       preventDefault: false,
     });
     expect(hotkeyOptions(binding('list.down'))).toEqual({ ignoreInputs: true });
+    expect(hotkeyOptions(binding('onboarding.continue'))).toEqual({
+      ignoreInputs: true,
+      preventDefault: false,
+    });
   });
 });
 

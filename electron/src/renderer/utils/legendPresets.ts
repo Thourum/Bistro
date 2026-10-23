@@ -129,15 +129,23 @@ export function formatBindingKeys(
   return formatForDisplay(toShiftedCharacterHotkey(binding.keys), options);
 }
 
+/** Keys of the first of `actionIds` that `bindings` binds, or undefined. */
+export function findActionKeys(
+  bindings: readonly KeyBinding[],
+  actionIds: readonly string[],
+): string | undefined {
+  const binding = actionIds
+    .map((id) => bindings.find((candidate) => candidate.actionId === id))
+    .find((found) => found !== undefined && found.keys.length > 0);
+  return binding === undefined ? undefined : formatBindingKeys(binding);
+}
+
 /** Keys of the first of `actionIds` that `bindings` binds, or `—` if none. */
 export function formatActionKeys(
   bindings: readonly KeyBinding[],
   actionIds: readonly string[],
 ): string {
-  const binding = actionIds
-    .map((id) => bindings.find((candidate) => candidate.actionId === id))
-    .find((found) => found !== undefined);
-  return binding === undefined ? '—' : formatBindingKeys(binding);
+  return findActionKeys(bindings, actionIds) ?? '—';
 }
 
 /**

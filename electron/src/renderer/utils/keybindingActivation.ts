@@ -11,8 +11,7 @@ const SANDBOX_STEP_ACTION_IDS: ReadonlySet<string> = new Set([
 
 const CONTINUE_ACTION_ID = 'onboarding.continue';
 // Controls whose native Space activation must win over `onboarding.continue`.
-const NATIVELY_ACTIVATED_SELECTOR =
-  'button, a[href], summary, [role="button"], [role="radio"]';
+const NATIVELY_ACTIVATED_SELECTOR = 'button, summary, [role="button"]';
 
 /** `onboarding.continue` steps aside while a button-like control has focus. */
 export function yieldsToFocusedControl(

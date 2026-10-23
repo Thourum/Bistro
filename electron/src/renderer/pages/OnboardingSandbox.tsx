@@ -54,6 +54,12 @@ const FAKE_FILES: readonly SandboxFile[] = [
   },
 ];
 
+const PANE_LABELS = {
+  list: 'Pull request list',
+  detail: 'Pull request detail',
+  diff: 'Diff',
+} satisfies Record<SandboxState['pane'], string>;
+
 interface OnboardingSandboxProps {
   readonly state: SandboxState;
 }
@@ -181,12 +187,15 @@ function SandboxDiff({ state }: OnboardingSandboxProps): ReactElement | null {
 export function OnboardingSandbox({
   state,
 }: OnboardingSandboxProps): ReactElement {
+  const pr = FAKE_PRS[state.cursor];
   return (
     <section
       aria-label="Practice pull request"
-      aria-live="polite"
       className="h-72 overflow-auto bg-surface-container-lowest mono-text text-sm"
     >
+      <p className="sr-only" aria-live="polite">
+        {`${PANE_LABELS[state.pane]}: ${pr?.number ?? ''} ${pr?.title ?? ''}`}
+      </p>
       {state.pane === 'list' && <SandboxList state={state} />}
       {state.pane === 'detail' && <SandboxDetail state={state} />}
       {state.pane === 'diff' && <SandboxDiff state={state} />}
