@@ -43,8 +43,8 @@ function routePrId(
  *
  * Must be rendered inside both OverlayProvider and a TanStack RouterProvider.
  *
- * `Escape` and `global.cancel` stay active while typing (`ignoreInputs: false`)
- * so they can exit search and comment inputs; other bindings ignore form fields.
+ * `Escape` stays active while typing (`ignoreInputs: false`) so it can exit
+ * search and comment inputs; everything else is suppressed in form fields.
  */
 export function useAppHotkeys(): void {
   const overlays = useOverlays();
@@ -110,8 +110,7 @@ export function useAppHotkeys(): void {
             // callback is replaced), so we read the event instead. This
             // requires `preventDefault: false` below — the manager otherwise
             // calls preventDefault() itself before every callback, which would
-            // make this flag always true. Control+G does not trigger Radix's
-            // dismissal handling, so global.cancel keeps the default behavior.
+            // make this flag always true.
             if (isEscape(binding) && event.defaultPrevented) return;
             getBindingAction(binding.actionId)?.(makeCtx());
           },

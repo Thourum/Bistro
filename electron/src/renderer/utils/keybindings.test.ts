@@ -41,9 +41,9 @@ describe('getEffectiveBindings', () => {
 });
 
 describe('hotkeyOptions', () => {
-  it('allows cancel while typing without applying Escape-only event handling', () => {
+  it('suppresses cancel while typing and preserves Escape-only event handling', () => {
     const cancel = { actionId: 'global.cancel', keys: 'Control+G' };
-    expect(hotkeyOptions(cancel)).toEqual({ ignoreInputs: false });
+    expect(hotkeyOptions(cancel)).toEqual({ ignoreInputs: true });
     expect(isEscape(cancel)).toBe(false);
     expect(hotkeyOptions(binding('global.escape'))).toEqual({
       ignoreInputs: false,

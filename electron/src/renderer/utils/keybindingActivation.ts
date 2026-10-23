@@ -9,10 +9,11 @@ export function isEscape(binding: Pick<KeyBinding, 'keys'>): boolean {
 
 /** Input handling for single hotkeys; Escape preserves prior dismissal state. */
 export function hotkeyOptions(
-  binding: Pick<KeyBinding, 'actionId' | 'keys'>,
+  binding: Pick<KeyBinding, 'keys'>,
 ): Pick<HotkeyOptions, 'ignoreInputs' | 'preventDefault'> {
   return {
-    ignoreInputs: !isEscape(binding) && binding.actionId !== 'global.cancel',
+    // Composers cancel locally on Escape only; C-g must not bypass that cleanup.
+    ignoreInputs: !isEscape(binding),
     // Keep `defaultPrevented` meaningful as "already handled" for Escape only.
     ...(isEscape(binding) ? { preventDefault: false } : {}),
   };
