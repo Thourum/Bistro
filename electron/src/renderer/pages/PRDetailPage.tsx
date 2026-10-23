@@ -8,6 +8,7 @@ import { PatchsetTimeline } from '../components/PatchsetTimeline';
 import StatusSidebar from '../components/StatusSidebar';
 import { UnresolvedThreadsView } from '../components/UnresolvedThreadsView';
 import { useDismissals } from '../hooks/useDismissals';
+import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useExpertise } from '../hooks/useExpertise';
 import { usePatchsets } from '../hooks/usePatchsets';
 import { usePRHydration } from '../hooks/usePRHydration';
@@ -25,6 +26,7 @@ import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { Patchset } from '../types';
 import { repoIdForPR, touchesYouCount } from '../utils/expertise';
+import { findActionKeys } from '../utils/legendPresets';
 import {
   Description,
   FileList,
@@ -38,8 +40,8 @@ import { usePRDetailData } from './usePRDetailData';
  * PR overview — matches `pr_overview_minimal_refined/code.html`.
  *
  * 90/10 split with the editorial article on the left and a vertical CI /
- * review status rail on the right. Press `SPACE` on an open PR to switch to
- * the diff view. Inline comments are intentionally disabled this pass —
+ * review status rail on the right. `detail.viewDiff` on an open PR switches
+ * to the diff view. Inline comments are intentionally disabled this pass —
  * re-enabled once `@pierre/diffs` gains first-class comment gutters.
  */
 export function PRDetailPage() {
@@ -81,6 +83,10 @@ export function PRDetailPage() {
   const expertiseStatus = useStore(appStore, (s: UIState) =>
     pr !== undefined ? s.expertiseRepoStatuses?.[repoIdForPR(pr)] : undefined,
   );
+
+  const bindings = useEffectiveBindings();
+  const viewDiffKeys = findActionKeys(bindings, ['detail.viewDiff']);
+  const threadsKeys = findActionKeys(bindings, ['detail.threads']);
 
   const handleSelectPair = useCallback((from: Patchset, to: Patchset): void => {
     appStore.setState((s) => ({
@@ -246,22 +252,34 @@ export function PRDetailPage() {
 
         <footer className="mt-auto pt-12">
           <div className="inline-flex items-center gap-x-6">
-            <div className="inline-flex items-center space-x-3 bg-surface-container-high px-4 py-2">
-              <span className="material-symbols-outlined text-base">
-                keyboard_command_key
-              </span>
-              <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface">
-                Press <span className="font-black text-primary">[SPACE]</span>{' '}
-                to view diff
-              </span>
-            </div>
-            <div className="inline-flex items-center space-x-3 bg-surface-container-high px-4 py-2">
-              <span className="material-symbols-outlined text-base">forum</span>
-              <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface">
-                Press <span className="font-black text-primary">[G U]</span> for
-                review threads
-              </span>
-            </div>
+            {viewDiffKeys !== undefined && (
+              <div className="inline-flex items-center space-x-3 bg-surface-container-high px-4 py-2">
+                <span className="material-symbols-outlined text-base">
+                  keyboard_command_key
+                </span>
+                <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface">
+                  Press{' '}
+                  <span className="font-black text-primary">
+                    [{viewDiffKeys}]
+                  </span>{' '}
+                  to view diff
+                </span>
+              </div>
+            )}
+            {threadsKeys !== undefined && (
+              <div className="inline-flex items-center space-x-3 bg-surface-container-high px-4 py-2">
+                <span className="material-symbols-outlined text-base">
+                  forum
+                </span>
+                <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface">
+                  Press{' '}
+                  <span className="font-black text-primary">
+                    [{threadsKeys}]
+                  </span>{' '}
+                  for review threads
+                </span>
+              </div>
+            )}
           </div>
         </footer>
       </article>

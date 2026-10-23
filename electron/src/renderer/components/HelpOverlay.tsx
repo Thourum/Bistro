@@ -1,10 +1,8 @@
 import { detectPlatform } from '@tanstack/react-hotkeys';
 import type React from 'react';
-import { useStore } from '../hooks/useStore';
+import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useOverlays } from '../overlays/OverlayContext';
-import { settingsStore } from '../store/settings';
 import type { KeyBinding, RouteBase } from '../utils/keybindings';
-import { getEffectiveBindings } from '../utils/keybindings';
 import { formatBindingKeys } from '../utils/legendPresets';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Kbd } from './ui/kbd';
@@ -147,13 +145,8 @@ function buildSections(
 
 export function HelpOverlay(): React.ReactElement | null {
   const { activeOverlay, helpSourceRoute, closeOverlay } = useOverlays();
-  const overrides = useStore(settingsStore, (s) => s.keybindings);
-  const style = useStore(settingsStore, (s) => s.navigation.style);
   const isOpen = activeOverlay === 'help';
-  const sections = buildSections(
-    getEffectiveBindings(style, overrides),
-    helpSourceRoute,
-  );
+  const sections = buildSections(useEffectiveBindings(), helpSourceRoute);
 
   const handleClose = (): void => {
     closeOverlay();
