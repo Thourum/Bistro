@@ -252,8 +252,8 @@ func TestApplyAction_OfflineReviewKeepsDraftsWithoutQueueing(t *testing.T) {
 
 	result := orch.ApplyAction(context.Background(), &actions.ActionRequest{PRID: "pr-r", Action: actions.SubmitReviewCommand, ReviewEvent: actions.ReviewEventComment})
 
-	if result.Success {
-		t.Fatalf("result = %+v", result)
+	if result.Success || !result.IsAmbiguousRemoteSuccess() || !strings.Contains(result.Error, "1 draft(s) kept (a.go:1)") {
+		t.Fatalf("result = %+v, want ambiguous result naming the kept draft", result)
 	}
 	remaining, err := drafts.List(context.Background(), "pr-r", "me")
 	if err != nil || len(remaining) != 1 {

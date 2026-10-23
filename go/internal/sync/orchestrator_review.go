@@ -101,8 +101,10 @@ func (o *Orchestrator) submitReview(ctx context.Context, req *actions.ActionRequ
 	for i, group := range groups {
 		result = o.executeAction(ctx, reviewRequestForGroup(req, group, i == len(groups)-1))
 		if !result.Success {
-			// The review may be on GitHub: "drafts kept" would invite a duplicate resubmit.
-			if len(group.drafts) == 0 || result.IsAmbiguousRemoteSuccess() {
+			if result.IsAmbiguousRemoteSuccess() {
+				return ambiguousReviewResult(req, group, len(groups)-1-i)
+			}
+			if len(group.drafts) == 0 {
 				return result
 			}
 			return failedActionResult(req, fmt.Sprintf("review not submitted; %d draft(s) kept (%s): %s",
@@ -111,6 +113,19 @@ func (o *Orchestrator) submitReview(ctx context.Context, req *actions.ActionRequ
 		o.deleteSubmittedDrafts(ctx, req.PRID, login, group.drafts)
 	}
 	return result
+}
+
+// ambiguousReviewResult keeps the ambiguous sentinel so the UI warns before a
+// resubmit, which could post the same comments twice, and names what is left.
+func ambiguousReviewResult(req *actions.ActionRequest, group draftGroup, unsentGroups int) *actions.ActionResult {
+	msg := actions.ErrAmbiguousRemoteSuccess + "review may have been submitted; check GitHub before resubmitting."
+	if len(group.drafts) > 0 {
+		msg += fmt.Sprintf(" %d draft(s) kept (%s).", len(group.drafts), describeDrafts(group.drafts))
+	}
+	if unsentGroups > 0 {
+		msg += fmt.Sprintf(" %d later commit group(s) not sent.", unsentGroups)
+	}
+	return failedActionResult(req, msg)
 }
 
 // groupDraftsByCommit keeps first-seen order and moves the head commit's group
