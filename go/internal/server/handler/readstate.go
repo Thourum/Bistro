@@ -22,7 +22,8 @@ type broadcaster interface {
 	Broadcast(msg interface{})
 }
 
-type prsReadChangedMessage struct {
+// pushMessage is a server-initiated {type, data} broadcast.
+type pushMessage struct {
 	Type string                 `json:"type"`
 	Data map[string]interface{} `json:"data"`
 }
@@ -75,7 +76,7 @@ func NewMarkPRsReadHandler(db readStateDB, cu currentUserReader, bc broadcaster,
 			return markPRsReadACK(msg.ID, false, 0, "unable to update read state"), nil
 		}
 
-		bc.Broadcast(prsReadChangedMessage{
+		bc.Broadcast(pushMessage{
 			Type: "PRS_READ_CHANGED",
 			Data: map[string]interface{}{"pr_ids": prIDs},
 		})

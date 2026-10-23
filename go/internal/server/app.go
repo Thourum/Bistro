@@ -177,6 +177,7 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 		WithReviewTracking(a.currentUserStore, a.db).
 		WithAnchorResolver(a.anchorResolver).
 		WithActionQueue(store.NewActionQueue(a.db.DB)).
+		WithReviewDrafts(store.NewReviewDrafts(a.db.DB)).
 		WithLiveness(a.provCtx).
 		WithClassifier(a.classifier).
 		WithCurrentUser(a.currentUserStore).
