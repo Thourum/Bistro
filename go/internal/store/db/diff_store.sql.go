@@ -33,9 +33,10 @@ INSERT INTO pr_diffs (
     patch,
     additions,
     deletions,
-    diff_status
+    diff_status,
+    patch_id
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertDiffParams struct {
@@ -51,6 +52,7 @@ type InsertDiffParams struct {
 	Additions   int64          `json:"additions"`
 	Deletions   int64          `json:"deletions"`
 	DiffStatus  string         `json:"diff_status"`
+	PatchID     string         `json:"patch_id"`
 }
 
 func (q *Queries) InsertDiff(ctx context.Context, arg InsertDiffParams) error {
@@ -67,6 +69,7 @@ func (q *Queries) InsertDiff(ctx context.Context, arg InsertDiffParams) error {
 		arg.Additions,
 		arg.Deletions,
 		arg.DiffStatus,
+		arg.PatchID,
 	)
 	return err
 }
@@ -83,7 +86,8 @@ SELECT
     patch,
     additions,
     deletions,
-    diff_status
+    diff_status,
+    patch_id
 FROM pr_diffs
 WHERE pr_id = ?
 ORDER BY file_path
@@ -101,6 +105,7 @@ type ListDiffsForPRRow struct {
 	Additions   int64  `json:"additions"`
 	Deletions   int64  `json:"deletions"`
 	DiffStatus  string `json:"diff_status"`
+	PatchID     string `json:"patch_id"`
 }
 
 func (q *Queries) ListDiffsForPR(ctx context.Context, prID string) ([]ListDiffsForPRRow, error) {
@@ -124,6 +129,7 @@ func (q *Queries) ListDiffsForPR(ctx context.Context, prID string) ([]ListDiffsF
 			&i.Additions,
 			&i.Deletions,
 			&i.DiffStatus,
+			&i.PatchID,
 		); err != nil {
 			return nil, err
 		}

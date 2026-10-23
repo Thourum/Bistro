@@ -11,6 +11,30 @@ import (
 	"strings"
 )
 
+const getCurrentPatchset = `-- name: GetCurrentPatchset :one
+SELECT ps.pr_id, ps.number, ps.head_sha, ps.base_sha, ps.pushed_at, ps.merge_base_sha, ps.has_fingerprints
+FROM patchsets ps
+JOIN prs p ON p.id = ps.pr_id AND p.head_sha = ps.head_sha
+WHERE ps.pr_id = ?
+ORDER BY ps.number DESC
+LIMIT 1
+`
+
+func (q *Queries) GetCurrentPatchset(ctx context.Context, prID string) (Patchset, error) {
+	row := q.db.QueryRowContext(ctx, getCurrentPatchset, prID)
+	var i Patchset
+	err := row.Scan(
+		&i.PrID,
+		&i.Number,
+		&i.HeadSha,
+		&i.BaseSha,
+		&i.PushedAt,
+		&i.MergeBaseSha,
+		&i.HasFingerprints,
+	)
+	return i, err
+}
+
 const listCommentPatchsetNumbers = `-- name: ListCommentPatchsetNumbers :many
 SELECT
     id,
@@ -58,13 +82,55 @@ func (q *Queries) ListCommentPatchsetNumbers(ctx context.Context, commentIds []s
 	return items, nil
 }
 
+const listPatchsetFiles = `-- name: ListPatchsetFiles :many
+SELECT path, patch_id
+FROM patchset_files
+WHERE pr_id = ? AND patchset_number = ?
+ORDER BY path
+`
+
+type ListPatchsetFilesParams struct {
+	PrID           string `json:"pr_id"`
+	PatchsetNumber int64  `json:"patchset_number"`
+}
+
+type ListPatchsetFilesRow struct {
+	Path    string `json:"path"`
+	PatchID string `json:"patch_id"`
+}
+
+func (q *Queries) ListPatchsetFiles(ctx context.Context, arg ListPatchsetFilesParams) ([]ListPatchsetFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPatchsetFiles, arg.PrID, arg.PatchsetNumber)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPatchsetFilesRow
+	for rows.Next() {
+		var i ListPatchsetFilesRow
+		if err := rows.Scan(&i.Path, &i.PatchID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPatchsets = `-- name: ListPatchsets :many
 SELECT
     pr_id,
     number,
     head_sha,
     base_sha,
-    pushed_at
+    pushed_at,
+    merge_base_sha,
+    has_fingerprints
 FROM patchsets
 WHERE pr_id = ?
 ORDER BY number ASC
@@ -85,6 +151,8 @@ func (q *Queries) ListPatchsets(ctx context.Context, prID string) ([]Patchset, e
 			&i.HeadSha,
 			&i.BaseSha,
 			&i.PushedAt,
+			&i.MergeBaseSha,
+			&i.HasFingerprints,
 		); err != nil {
 			return nil, err
 		}

@@ -10,159 +10,46 @@ import (
 	"database/sql"
 )
 
-const getLastReviewedPatchset = `-- name: GetLastReviewedPatchset :one
+const getLastReviewed = `-- name: GetLastReviewed :one
 SELECT
     sha,
-    COALESCE(patchset_number, 0) AS patchset_number,
-    COALESCE(base_sha, '') AS base_sha
-FROM last_reviewed_sha
-WHERE pr_id = ?1
-  AND account_provider = ?2
-  AND account_login = ?3
-  AND login = ?4
-`
-
-type GetLastReviewedPatchsetParams struct {
-	PrID            string `json:"pr_id"`
-	AccountProvider string `json:"account_provider"`
-	AccountLogin    string `json:"account_login"`
-	Login           string `json:"login"`
-}
-
-type GetLastReviewedPatchsetRow struct {
-	Sha            string `json:"sha"`
-	PatchsetNumber int64  `json:"patchset_number"`
-	BaseSha        string `json:"base_sha"`
-}
-
-func (q *Queries) GetLastReviewedPatchset(ctx context.Context, arg GetLastReviewedPatchsetParams) (GetLastReviewedPatchsetRow, error) {
-	row := q.db.QueryRowContext(ctx, getLastReviewedPatchset,
-		arg.PrID,
-		arg.AccountProvider,
-		arg.AccountLogin,
-		arg.Login,
-	)
-	var i GetLastReviewedPatchsetRow
-	err := row.Scan(&i.Sha, &i.PatchsetNumber, &i.BaseSha)
-	return i, err
-}
-
-const getLastReviewedSHA = `-- name: GetLastReviewedSHA :one
-SELECT sha
-FROM last_reviewed_sha
-WHERE pr_id = ?1
-  AND account_provider = ?2
-  AND account_login = ?3
-  AND login = ?4
-`
-
-type GetLastReviewedSHAParams struct {
-	PrID            string `json:"pr_id"`
-	AccountProvider string `json:"account_provider"`
-	AccountLogin    string `json:"account_login"`
-	Login           string `json:"login"`
-}
-
-func (q *Queries) GetLastReviewedSHA(ctx context.Context, arg GetLastReviewedSHAParams) (string, error) {
-	row := q.db.QueryRowContext(ctx, getLastReviewedSHA,
-		arg.PrID,
-		arg.AccountProvider,
-		arg.AccountLogin,
-		arg.Login,
-	)
-	var sha string
-	err := row.Scan(&sha)
-	return sha, err
-}
-
-const upsertLastReviewedPatchset = `-- name: UpsertLastReviewedPatchset :exec
-INSERT INTO last_reviewed_sha (
-    pr_id,
-    account_provider,
-    account_login,
-    login,
-    sha,
     patchset_number,
-    base_sha,
-    updated_at
-)
-VALUES (
-    ?1,
-    ?2,
-    ?3,
-    ?4,
-    ?5,
-    ?6,
-    ?7,
-    strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-)
-ON CONFLICT(pr_id, account_provider, account_login, login) DO UPDATE SET
-    sha = excluded.sha,
-    patchset_number = excluded.patchset_number,
-    base_sha = excluded.base_sha,
-    updated_at = excluded.updated_at
+    reviewed_at,
+    source
+FROM last_reviewed_sha
+WHERE pr_id = ?1
+  AND account_provider = ?2
+  AND account_login = ?3
+  AND login = ?4
 `
 
-type UpsertLastReviewedPatchsetParams struct {
-	PrID            string         `json:"pr_id"`
-	AccountProvider string         `json:"account_provider"`
-	AccountLogin    string         `json:"account_login"`
-	Login           string         `json:"login"`
-	Sha             string         `json:"sha"`
-	PatchsetNumber  sql.NullInt64  `json:"patchset_number"`
-	BaseSha         sql.NullString `json:"base_sha"`
-}
-
-func (q *Queries) UpsertLastReviewedPatchset(ctx context.Context, arg UpsertLastReviewedPatchsetParams) error {
-	_, err := q.db.ExecContext(ctx, upsertLastReviewedPatchset,
-		arg.PrID,
-		arg.AccountProvider,
-		arg.AccountLogin,
-		arg.Login,
-		arg.Sha,
-		arg.PatchsetNumber,
-		arg.BaseSha,
-	)
-	return err
-}
-
-const upsertLastReviewedSHA = `-- name: UpsertLastReviewedSHA :exec
-INSERT INTO last_reviewed_sha (
-    pr_id,
-    account_provider,
-    account_login,
-    login,
-    sha,
-    updated_at
-)
-VALUES (
-    ?1,
-    ?2,
-    ?3,
-    ?4,
-    ?5,
-    strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-)
-ON CONFLICT(pr_id, account_provider, account_login, login) DO UPDATE SET
-    sha = excluded.sha,
-    updated_at = excluded.updated_at
-`
-
-type UpsertLastReviewedSHAParams struct {
+type GetLastReviewedParams struct {
 	PrID            string `json:"pr_id"`
 	AccountProvider string `json:"account_provider"`
 	AccountLogin    string `json:"account_login"`
 	Login           string `json:"login"`
-	Sha             string `json:"sha"`
 }
 
-func (q *Queries) UpsertLastReviewedSHA(ctx context.Context, arg UpsertLastReviewedSHAParams) error {
-	_, err := q.db.ExecContext(ctx, upsertLastReviewedSHA,
+type GetLastReviewedRow struct {
+	Sha            string         `json:"sha"`
+	PatchsetNumber sql.NullInt64  `json:"patchset_number"`
+	ReviewedAt     sql.NullString `json:"reviewed_at"`
+	Source         string         `json:"source"`
+}
+
+func (q *Queries) GetLastReviewed(ctx context.Context, arg GetLastReviewedParams) (GetLastReviewedRow, error) {
+	row := q.db.QueryRowContext(ctx, getLastReviewed,
 		arg.PrID,
 		arg.AccountProvider,
 		arg.AccountLogin,
 		arg.Login,
-		arg.Sha,
 	)
-	return err
+	var i GetLastReviewedRow
+	err := row.Scan(
+		&i.Sha,
+		&i.PatchsetNumber,
+		&i.ReviewedAt,
+		&i.Source,
+	)
+	return i, err
 }

@@ -22,10 +22,11 @@ const migrationsDir = "migrations"
 // predate newer migrations, and marking them applied would silently skip
 // them. Bump this only together with new checks in reconciledSchemaVersion.
 const (
-	reconcileBaselineVersion  int64 = 34
-	preHydrationSchemaVersion int64 = 31
-	preMentionedSchemaVersion int64 = 32
-	preReadStateSchemaVersion int64 = 33
+	reconcileBaselineVersion    int64 = 35
+	preHydrationSchemaVersion   int64 = 31
+	preMentionedSchemaVersion   int64 = 32
+	preReadStateSchemaVersion   int64 = 33
+	preFingerprintSchemaVersion int64 = 34
 )
 
 //go:embed migrations/*.sql
@@ -186,7 +187,38 @@ func reconciledSchemaVersion(ctx context.Context, db *sql.DB, baselineVersion in
 		return min(baselineVersion, preReadStateSchemaVersion), nil
 	}
 
+	hasFingerprintSchema, err := fingerprintSchemaExists(ctx, db)
+	if err != nil {
+		return 0, err
+	}
+	if !hasFingerprintSchema {
+		return min(baselineVersion, preFingerprintSchemaVersion), nil
+	}
+
 	return baselineVersion, nil
+}
+
+// fingerprintSchemaExists recognizes all schema additions from migration 35.
+func fingerprintSchemaExists(ctx context.Context, db *sql.DB) (bool, error) {
+	for _, column := range []struct {
+		table string
+		name  string
+	}{
+		{table: "patchsets", name: "merge_base_sha"},
+		{table: "patchsets", name: "has_fingerprints"},
+		{table: "pr_diffs", name: "patch_id"},
+		{table: "last_reviewed_sha", name: "reviewed_at"},
+		{table: "last_reviewed_sha", name: "source"},
+	} {
+		hasColumn, err := columnExists(ctx, db, column.table, column.name)
+		if err != nil {
+			return false, fmt.Errorf("check %s.%s column: %w", column.table, column.name, err)
+		}
+		if !hasColumn {
+			return false, nil
+		}
+	}
+	return tableExists(ctx, db, "patchset_files")
 }
 
 // repairMalformedReadStateSchema removes an incomplete pre-existing table so

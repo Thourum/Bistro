@@ -139,6 +139,8 @@ type LastReviewedSha struct {
 	UpdatedAt       time.Time      `json:"updated_at"`
 	PatchsetNumber  sql.NullInt64  `json:"patchset_number"`
 	BaseSha         sql.NullString `json:"base_sha"`
+	ReviewedAt      sql.NullString `json:"reviewed_at"`
+	Source          string         `json:"source"`
 }
 
 type LlmClassificationCache struct {
@@ -150,11 +152,20 @@ type LlmClassificationCache struct {
 }
 
 type Patchset struct {
-	PrID     string    `json:"pr_id"`
-	Number   int64     `json:"number"`
-	HeadSha  string    `json:"head_sha"`
-	BaseSha  string    `json:"base_sha"`
-	PushedAt time.Time `json:"pushed_at"`
+	PrID            string    `json:"pr_id"`
+	Number          int64     `json:"number"`
+	HeadSha         string    `json:"head_sha"`
+	BaseSha         string    `json:"base_sha"`
+	PushedAt        time.Time `json:"pushed_at"`
+	MergeBaseSha    string    `json:"merge_base_sha"`
+	HasFingerprints int64     `json:"has_fingerprints"`
+}
+
+type PatchsetFile struct {
+	PrID           string `json:"pr_id"`
+	PatchsetNumber int64  `json:"patchset_number"`
+	Path           string `json:"path"`
+	PatchID        string `json:"patch_id"`
 }
 
 type Pr struct {
@@ -201,6 +212,7 @@ type PrDiff struct {
 	PatchBytes  int64          `json:"patch_bytes"`
 	HunkCount   int64          `json:"hunk_count"`
 	DiffStatus  string         `json:"diff_status"`
+	PatchID     string         `json:"patch_id"`
 }
 
 type PrReadState struct {

@@ -16,6 +16,16 @@ type patchsetLister interface {
 	ListPatchsets(ctx context.Context, prID string) ([]store.Patchset, error)
 }
 
+// patchsetByNumber finds a patchset by its number in an ordered slice.
+func patchsetByNumber(patchsets []store.Patchset, number int) *store.Patchset {
+	for i := range patchsets {
+		if patchsets[i].Number == number {
+			return &patchsets[i]
+		}
+	}
+	return nil
+}
+
 // fileViewedMarker is the DB subset required by NewMarkFileViewedHandler.
 type fileViewedMarker interface {
 	MarkFileViewed(ctx context.Context, prID, filePath, login, contentHash string) error
