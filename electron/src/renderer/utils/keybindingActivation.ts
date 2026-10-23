@@ -8,10 +8,6 @@ const SANDBOX_STEP_ACTION_IDS: ReadonlySet<string> = new Set([
   'onboarding.nextStyle',
   'onboarding.prevStyle',
 ]);
-const CONTINUE_ACTION_IDS: ReadonlySet<string> = new Set([
-  'onboarding.finish',
-  'onboarding.continue',
-]);
 
 /** Only literal Escape participates in Radix's dismissal handling. */
 export function isEscape(binding: Pick<KeyBinding, 'keys'>): boolean {
@@ -89,7 +85,7 @@ export function isBindingEnabled(
     );
   }
   // In an opened fake PR, Space belongs to the PR (vim detail.viewDiff).
-  if (CONTINUE_ACTION_IDS.has(binding.actionId)) {
+  if (binding.actionId === 'onboarding.continue') {
     return sandboxPane === 'list' && isActive(binding, real);
   }
   if (SANDBOX_ACTION_IDS.has(binding.actionId)) {

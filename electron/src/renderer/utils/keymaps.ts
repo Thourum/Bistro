@@ -33,7 +33,9 @@ const SHARED_KEYS: KeyTable = {
   'global.settings': 'Mod+,',
   'global.quit.mac': 'Meta+Q',
   'global.quit.win': 'Alt+F4',
-  'onboarding.finish': 'Space',
+  'onboarding.continue': 'Space',
+  'onboarding.nextStyle': 'Tab',
+  'onboarding.prevStyle': 'Shift+Tab',
   ...Object.fromEntries(
     PROVIDERS.map((provider) => [
       `login.provider.${provider.id}`,

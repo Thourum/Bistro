@@ -129,6 +129,17 @@ export function formatBindingKeys(
   return formatForDisplay(toShiftedCharacterHotkey(binding.keys), options);
 }
 
+/** Keys of the first of `actionIds` that `bindings` binds, or `—` if none. */
+export function formatActionKeys(
+  bindings: readonly KeyBinding[],
+  actionIds: readonly string[],
+): string {
+  const binding = actionIds
+    .map((id) => bindings.find((candidate) => candidate.actionId === id))
+    .find((found) => found !== undefined);
+  return binding === undefined ? '—' : formatBindingKeys(binding);
+}
+
 /**
  * Build the ordered legend entries for the given route/overlay context
  * using the effective (user-overridden) bindings.

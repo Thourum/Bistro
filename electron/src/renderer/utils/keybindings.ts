@@ -139,8 +139,18 @@ const LOGIN_BINDINGS: readonly BindingDefinition[] = PROVIDERS.map(
 
 const ONBOARDING_BINDINGS: readonly BindingDefinition[] = [
   {
-    actionId: 'onboarding.finish',
-    description: 'Finish onboarding',
+    actionId: 'onboarding.continue',
+    description: 'Continue',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.nextStyle',
+    description: 'Next navigation style',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.prevStyle',
+    description: 'Previous navigation style',
     activation: { routes: ['onboarding'] },
   },
 ];

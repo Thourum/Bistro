@@ -85,16 +85,16 @@ describe('isBindingEnabled on the onboarding route', () => {
 
   it('only lets Space continue from the sandbox list pane', () => {
     expect(
-      isBindingEnabled(binding('onboarding.finish'), onboarding('list')),
+      isBindingEnabled(binding('onboarding.continue'), onboarding('list')),
     ).toBe(true);
     expect(
-      isBindingEnabled(binding('onboarding.finish'), onboarding('detail')),
+      isBindingEnabled(binding('onboarding.continue'), onboarding('detail')),
     ).toBe(false);
     expect(
-      isBindingEnabled(binding('onboarding.finish'), onboarding('diff')),
+      isBindingEnabled(binding('onboarding.continue'), onboarding('diff')),
     ).toBe(false);
     expect(
-      isBindingEnabled(binding('onboarding.finish'), onboarding(null)),
+      isBindingEnabled(binding('onboarding.continue'), onboarding(null)),
     ).toBe(true);
     expect(
       isBindingEnabled(binding('detail.viewDiff'), onboarding('detail')),
@@ -136,10 +136,7 @@ describe('isBindingEnabled on the onboarding route', () => {
 
   it('enables style cycling only while the sandbox step is mounted', () => {
     for (const actionId of ['onboarding.nextStyle', 'onboarding.prevStyle']) {
-      const styleBinding: KeyBinding = {
-        ...binding('onboarding.finish'),
-        actionId,
-      };
+      const styleBinding = binding(actionId);
       expect(isBindingEnabled(styleBinding, onboarding(null))).toBe(false);
       expect(isBindingEnabled(styleBinding, onboarding('list'))).toBe(true);
       expect(isBindingEnabled(styleBinding, onboarding('detail'))).toBe(true);

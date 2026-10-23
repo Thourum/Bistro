@@ -5,6 +5,7 @@ import type {
 } from '../overlays/OverlayContext';
 import { authAction, PROVIDERS } from '../providers';
 import { router } from '../router';
+import { cycleNavigationStyle } from '../services/navigationStyle';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import type { RouteBase } from './keybindings';
 import { createLogger } from './logger';
@@ -266,11 +267,13 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'global.help': openHelp,
   'global.escape': handleEscape,
   'global.cancel': handleEscape,
-  'onboarding.finish': (context) =>
+  'onboarding.continue': (context) =>
     context.store.setState((state) => ({
       ...state,
-      confirmingAction: 'onboarding_finish',
+      confirmingAction: 'onboarding_continue',
     })),
+  'onboarding.nextStyle': () => cycleNavigationStyle(1),
+  'onboarding.prevStyle': () => cycleNavigationStyle(-1),
   'global.command': (context) => context.overlays.openCommand(),
   'global.settings': () => {
     void router.navigate({ to: '/settings' });
