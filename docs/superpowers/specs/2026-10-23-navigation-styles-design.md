@@ -94,7 +94,6 @@ shorthand for `Control+X`, `M-x` for `Alt+X`).
 | global.escape | `Escape` |
 | global.settings | `Mod+,` |
 | global.quit.mac / .win | `Meta+Q` / `Alt+F4` |
-| global.search | `Mod+/` |
 | onboarding.continue | `Space` |
 | onboarding.nextStyle / prevStyle (new) | `Tab` / `Shift+Tab` |
 | login.provider.* | provider keys |
@@ -115,6 +114,7 @@ same in every style. `filter.toggle` uses the style's `list.filter` key.
 | global.help | `Shift+/` | `C-h` | `F1` |
 | global.command | `Shift+;` | `M-x` | `Mod+K` |
 | global.cancel (new) | — | `C-g` | — |
+| global.search | `Mod+/` | `C-c /` | `Mod+/` |
 | list.down / list.up | `j` / `k` | `C-n` / `C-p` | — (arrows) |
 | list.top / list.bottom | `g g` / `Shift+G` | `M-<` / `M->` | `Home` / `End` |
 | list.pageDown / pageUp | `C-d` / `C-u` | `C-v` / `M-v` | `PageDown` / `PageUp` |
@@ -130,12 +130,13 @@ same in every style. `filter.toggle` uses the style's `list.filter` key.
 | detail.viewDiff | `Space` | `Enter` | `Enter` |
 | detail.threads | `g u` | `C-c C-t` | `t` |
 | detail.dismissNits / dismissBots | `d n` / `d b` | `C-c C-d n` / `C-c C-d b` | · |
-| detail.undoDismiss | `u` | `C-x u` | `Mod+Z` |
+| detail.undoDismiss | `u` | `C-/` | `Mod+Z` |
+| detail.undoDismissAlt (new alias) | — | `C-x u` | — |
 | detail.filter{Critical,Warning,Suggestion,Nit,Human,Clear} | `f c/w/s/n/h/f` | `C-c C-f c/w/s/n/h/f` | · |
 | detail.approve | `a a` | `C-c C-a` | `a` (approve already confirms) |
 | detail.comment | `c` | `C-c C-c` | · |
-| detail.reply | `r` | `C-c C-w` | · |
-| detail.requestChanges | `Shift+R` | `C-c C-r` | · |
+| detail.reply | `r` | `C-c C-r` | · |
+| detail.requestChanges | `Shift+R` | `C-c C-w` | · |
 | diff.nextFile / prevFile | `Shift+J` / `Shift+K` | `C-M-n` / `C-M-p` | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 | diff.nextComment / prevComment | `n` / `p` | `M-n` / `M-p` | · |
 | diff.sinceLastReview | `s` | `C-c C-l` | · |
@@ -163,8 +164,8 @@ the shared alias actions.
   whether TanStack also fires the single key mid-sequence. If it does and
   today's vim behaves the same, keep it consistent. Otherwise, add the case
   to the collision test.
-- `C-/` is intentionally unused in emacs: `Mod+/` (global search) is
-  `Control+/` on Windows/Linux.
+- Emacs moves global search to `C-c /` because `Mod+/` is `Control+/` on
+  Windows/Linux, which would collide with `C-/` undo in the detail context.
 - Electron app-menu accelerators (`Mod+K`, `Mod+Shift+F`, `Mod+1–6`,
   `Mod+Z`). Make sure none is swallowed by a menu role. Change the key if one
   is.
