@@ -123,6 +123,53 @@ func TestCallbackServer_MissingCode(t *testing.T) {
 	}
 }
 
+func TestCallbackFailurePage(t *testing.T) {
+	cases := []struct {
+		name, query, code, detail string
+		status                    int
+	}{
+		{name: "state", query: "state=wrong&code=x", code: "INVALID_STATE", detail: "state mismatch", status: http.StatusForbidden},
+		{name: "denied", query: "state=valid&error=access_denied&error_description=%3Cscript%3E", code: "access_denied", detail: "&lt;script&gt;", status: http.StatusBadRequest},
+		{name: "missing", query: "state=valid", code: "MISSING_CODE", detail: "missing code", status: http.StatusBadRequest},
+		{name: "exchange", query: "state=valid&code=x", code: "TOKEN_EXCHANGE_FAILED", detail: "bad_verification_code", status: http.StatusInternalServerError},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			tokenEndpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := w.Write([]byte(`{"error":"bad_verification_code","error_description":"<script>"}`)); err != nil {
+					t.Errorf("write token response: %v", err)
+				}
+			}))
+			defer tokenEndpoint.Close()
+			results := make(chan CallbackResult, 1)
+			cs := NewCallbackServer(ProviderConfig{TokenURL: tokenEndpoint.URL}, "valid", RedirectURI, results)
+			response := httptest.NewRecorder()
+			cs.handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/callback?"+test.query, nil))
+			if response.Code != test.status {
+				t.Fatalf("status %d", response.Code)
+			}
+			body := response.Body.String()
+			for _, want := range []string{test.code, test.detail, "Sign-in didn", "Nothing was saved", "description", "at"} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("missing %q in %s", want, body)
+				}
+			}
+			if strings.Contains(body, "<script>") {
+				t.Fatal("unescaped detail")
+			}
+			select {
+			case result := <-results:
+				if result.Err == nil {
+					t.Fatal("failure did not reach auth flow")
+				}
+			case <-time.After(time.Second):
+				t.Fatal("missing callback result")
+			}
+		})
+	}
+}
+
 // TestExchangeToken_Success verifies token exchange with a mock server.
 func TestExchangeToken_Success(t *testing.T) {
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

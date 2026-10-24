@@ -177,11 +177,13 @@ function createWsClient(): Readonly<WsClient> {
     appStore.setState((previous) => ({
       ...previous,
       syncStatus: 'connected',
+      isWsOpen: true,
       syncError: null,
       lastSyncAt: new Date().toISOString(),
       isOffline: false,
       authChecked: false,
     }));
+    if (appStore.state.authInterrupted) send('AUTH_CANCEL', {});
     send('AUTH_CHECK', {});
     sendStartupDevFolderScan();
   }
@@ -205,8 +207,17 @@ function createWsClient(): Readonly<WsClient> {
     appStore.setState((previous) => ({
       ...previous,
       syncStatus: 'disconnected',
+      isWsOpen: false,
       isOffline: !isOnline,
+      authInterrupted:
+        previous.authInterrupted ||
+        previous.authLoading ||
+        previous.authUrl !== null,
       authLoading: false,
+      authUrl: null,
+      authStartedAt: null,
+      authTimedOut: false,
+      authExchange: null,
     }));
     if (!state.isActive) return;
     const delay = Math.min(
@@ -273,6 +284,7 @@ function createWsClient(): Readonly<WsClient> {
 
   function disconnect(): void {
     state.isActive = false;
+    appStore.setState((previous) => ({ ...previous, isWsOpen: false }));
     if (state.reconnectTimer !== null) clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
     const socket = state.socket;

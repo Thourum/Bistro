@@ -12,9 +12,16 @@ import {
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import log from 'electron-log';
 import { z } from 'zod';
+import type { EngineStatus } from '../types/engine';
 import type { ClassificationSettings, SyncSettings } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
-import { killGoProcess, spawnGoProcess } from './go-spawn';
+import { registerEngineIPC } from './engineIpc';
+import {
+  type GoSpawnOptions,
+  killGoProcess,
+  restartGoProcess,
+  spawnGoProcess,
+} from './go-spawn';
 import { setupIPC } from './ipc';
 import {
   captureSentryException,
@@ -290,105 +297,162 @@ app.on('ready', () => {
   log.info(`Log file: ${appConfig.goProcess.logFile}`);
   log.info(`WS port: ${appConfig.goProcess.wsPort}`);
 
-  void ResultAsync.fromPromise(
-    spawnGoProcess({
-      config: appConfig.goProcess,
-      logger: log,
-      onStillStarting: () => {
-        fromThrowable(
-          () => createWindow(runtimeConfig ?? appConfig, log),
-          mainFault,
-        )().orInspect((error) => {
-          log.error('Failed to show slow-start window', error.message);
-          app.quit();
-        });
-      },
-      onCrash: (code, signal) => {
-        log.error(`Go process crashed: code=${code}, signal=${signal}`);
-        captureSentryException(
-          ServiceError('GO_PROCESS_ERROR', 'Go sync engine crashed'),
-          {
-            tags: { component: 'go-sync-engine' },
-            extra: { code, signal },
-          },
+  let engineStatus: EngineStatus = {
+    state: 'starting',
+    startedAt: Date.now(),
+    isSpawned: process.env.BISTRO_SKIP_GO_SPAWN !== '1',
+    code: null,
+    signal: null,
+    error: null,
+  };
+  const publishEngineStatus = (patch: Partial<EngineStatus>): void => {
+    engineStatus = { ...engineStatus, ...patch };
+    for (const win of BrowserWindow.getAllWindows())
+      win.webContents.send('engine:status', engineStatus);
+  };
+  const spawnOptions: GoSpawnOptions = {
+    config: appConfig.goProcess,
+    logger: log,
+    onStarting: () =>
+      publishEngineStatus({
+        state: 'starting',
+        startedAt: Date.now(),
+        error: null,
+      }),
+    onReady: () =>
+      publishEngineStatus({
+        state: 'ready',
+        code: null,
+        signal: null,
+        error: null,
+      }),
+    onGiveUp: ({ code, signal }) =>
+      publishEngineStatus({
+        state: 'crashed',
+        code,
+        signal,
+        error: `Engine exited: ${signal ?? code ?? 'unknown'}`,
+      }),
+    onStillStarting: () => {
+      fromThrowable(
+        () => createWindow(runtimeConfig ?? appConfig, log),
+        mainFault,
+      )().orInspect((error) => {
+        log.error('Failed to show slow-start window', error.message);
+        app.quit();
+      });
+    },
+    onCrash: (code, signal) => {
+      publishEngineStatus({
+        state: 'starting',
+        code,
+        signal,
+        startedAt: Date.now(),
+      });
+      log.error(`Go process crashed: code=${code}, signal=${signal}`);
+      captureSentryException(
+        ServiceError('GO_PROCESS_ERROR', 'Go sync engine crashed'),
+        {
+          tags: { component: 'go-sync-engine' },
+          extra: { code, signal },
+        },
+      );
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('go:crashed', { code, signal });
+        }
+      });
+    },
+  };
+  const connectMainToEngine = (actualWsPort: number): void => {
+    if (!isValidStartupPort(actualWsPort)) {
+      log.error(
+        `Go sync engine reported invalid WebSocket port: ${actualWsPort}`,
+      );
+      app.quit();
+      return;
+    }
+    log.info(`Go sync engine is running on port ${actualWsPort}`);
+
+    runtimeConfig = {
+      ...appConfig,
+      goProcess: { ...appConfig.goProcess, wsPort: actualWsPort },
+    };
+
+    // 2. Create WebSocket client and connect (Go is now ready)
+    // 127.0.0.1, not localhost: the engine binds IPv4 loopback only and
+    // localhost may resolve to ::1 first.
+    const wsUrl = `ws://127.0.0.1:${actualWsPort}/ws`;
+    wsClient = new WebSocketClient(wsUrl, log);
+    const activeSettingsService = settingsService;
+    if (activeSettingsService === null) {
+      log.error('Settings unavailable after engine startup');
+      app.quit();
+      return;
+    }
+
+    const sendSyncSettingsToGo = (sync: SyncSettings) => {
+      if (!wsClient?.isConnected()) return;
+      wsClient
+        .send({
+          type: 'SET_SYNC_SETTINGS',
+          data: syncSettingsPayload(sync),
+        })
+        .orInspect((error) =>
+          log.warn(`Sync settings update failed: ${error.message}`),
         );
-        BrowserWindow.getAllWindows().forEach((win) => {
-          if (!win.isDestroyed()) {
-            win.webContents.send('go:crashed', { code, signal });
+    };
+    const sendClassificationSettingsToGo = (c: ClassificationSettings) => {
+      if (!wsClient?.isConnected()) return;
+      wsClient
+        .send({
+          type: 'SET_CLASSIFICATION_SETTINGS',
+          data: classificationSettingsPayload(c),
+        })
+        .orInspect((error) =>
+          log.warn(`Classification settings update failed: ${error.message}`),
+        );
+    };
+    wsClient.on('connected', () => {
+      // Bootstrap-on-connect: Go starts with defaults; push live settings
+      // on every (re)connect per the Phase 3 wire contract.
+      sendSyncSettingsToGo(activeSettingsService.snapshot.sync);
+      sendClassificationSettingsToGo(
+        activeSettingsService.snapshot.classification,
+      );
+    });
+    wsClient.connect();
+
+    // 3. Forward runtime sync-settings changes to Go engine over WebSocket.
+    activeSettingsService.addChangeListener((s) => {
+      sendSyncSettingsToGo(s.sync);
+      sendClassificationSettingsToGo(s.classification);
+      telemetryService?.setEnabled(s.privacy.telemetryEnabled);
+      configureSentryConsent(s.privacy.telemetryEnabled);
+    });
+  };
+  registerEngineIPC({
+    logFile: appConfig.goProcess.logFile,
+    getStatus: () => engineStatus,
+    restart: () =>
+      ResultAsync.fromPromise(restartGoProcess(spawnOptions), mainFault)
+        .orInspect((fault) =>
+          publishEngineStatus({ state: 'crashed', error: fault.message }),
+        )
+        .map((port) => {
+          if (wsClient === null) {
+            connectMainToEngine(port);
+            for (const win of BrowserWindow.getAllWindows())
+              win.webContents.reload();
           }
-        });
-      },
-    }),
-    (cause) => mainFault(cause).withTag('GO_PROCESS_ERROR'),
+          return undefined;
+        }),
+  });
+  void ResultAsync.fromPromise(spawnGoProcess(spawnOptions), (cause) =>
+    mainFault(cause).withTag('GO_PROCESS_ERROR'),
   ).match(
-    (actualWsPort) => {
-      if (!isValidStartupPort(actualWsPort)) {
-        log.error(
-          `Go sync engine reported invalid WebSocket port: ${actualWsPort}`,
-        );
-        app.quit();
-        return;
-      }
-      log.info(`Go sync engine is running on port ${actualWsPort}`);
-
-      runtimeConfig = {
-        ...appConfig,
-        goProcess: { ...appConfig.goProcess, wsPort: actualWsPort },
-      };
-
-      // 2. Create WebSocket client and connect (Go is now ready)
-      // 127.0.0.1, not localhost: the engine binds IPv4 loopback only and
-      // localhost may resolve to ::1 first.
-      const wsUrl = `ws://127.0.0.1:${actualWsPort}/ws`;
-      wsClient = new WebSocketClient(wsUrl, log);
-      const activeSettingsService = settingsService;
-      if (activeSettingsService === null) {
-        log.error('Settings unavailable after engine startup');
-        app.quit();
-        return;
-      }
-
-      const sendSyncSettingsToGo = (sync: SyncSettings) => {
-        if (!wsClient?.isConnected()) return;
-        wsClient
-          .send({
-            type: 'SET_SYNC_SETTINGS',
-            data: syncSettingsPayload(sync),
-          })
-          .orInspect((error) =>
-            log.warn(`Sync settings update failed: ${error.message}`),
-          );
-      };
-      const sendClassificationSettingsToGo = (c: ClassificationSettings) => {
-        if (!wsClient?.isConnected()) return;
-        wsClient
-          .send({
-            type: 'SET_CLASSIFICATION_SETTINGS',
-            data: classificationSettingsPayload(c),
-          })
-          .orInspect((error) =>
-            log.warn(`Classification settings update failed: ${error.message}`),
-          );
-      };
-      wsClient.on('connected', () => {
-        // Bootstrap-on-connect: Go starts with defaults; push live settings
-        // on every (re)connect per the Phase 3 wire contract.
-        sendSyncSettingsToGo(activeSettingsService.snapshot.sync);
-        sendClassificationSettingsToGo(
-          activeSettingsService.snapshot.classification,
-        );
-      });
-      wsClient.connect();
-
-      // 3. Forward runtime sync-settings changes to Go engine over WebSocket.
-      activeSettingsService.addChangeListener((s) => {
-        sendSyncSettingsToGo(s.sync);
-        sendClassificationSettingsToGo(s.classification);
-        telemetryService?.setEnabled(s.privacy.telemetryEnabled);
-        configureSentryConsent(s.privacy.telemetryEnabled);
-      });
-
-      // 4. Create window (last — everything is ready)
+    (port) => {
+      connectMainToEngine(port);
       fromThrowable(
         () => createWindow(runtimeConfig ?? appConfig, log),
         mainFault,
@@ -398,6 +462,7 @@ app.on('ready', () => {
       });
     },
     (error) => {
+      publishEngineStatus({ state: 'crashed', error: error.message });
       log.error(`Failed to start app: ${error.message}`);
       captureSentryException(
         ServiceError('INTERNAL_ERROR', 'Electron main startup failed'),

@@ -6,9 +6,9 @@ export default defineConfig({
   renderStrategy: 'full-static',
   iconUrl: '/favicon.svg',
   editLink: {
-    link: 'https://github.com/Itterno/Bistro/edit/master/website/src/pages/:path',
+    link: 'https://github.com/Thourum/Bistro/edit/master/website/src/pages/:path',
   },
-  socials: [{ icon: 'github', link: 'https://github.com/Itterno/Bistro' }],
+  socials: [{ icon: 'github', link: 'https://github.com/Thourum/Bistro' }],
   sidebar: {
     '/docs': [
       {

@@ -77,4 +77,19 @@ describe('dispatchWsEvent', () => {
       message: '',
     });
   });
+
+  it('keeps the interruption notice when the reconnect cleanup cancel lands', () => {
+    const { context } = createPendingResponse();
+    appStore.setState((state) => ({ ...state, authInterrupted: true }));
+    dispatch('AUTH_FAILED', { error: 'cancelled' }, context);
+    expect(appStore.state.authInterrupted).toBe(true);
+    appStore.setState((state) => ({
+      ...state,
+      authInterrupted: false,
+      authLoading: true,
+    }));
+    dispatch('AUTH_FAILED', { error: 'cancelled' }, context);
+    expect(appStore.state.authInterrupted).toBe(false);
+    expect(appStore.state.authError).toBeNull();
+  });
 });

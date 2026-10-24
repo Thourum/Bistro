@@ -4,6 +4,7 @@ import {
   matchesKeyboardEvent,
 } from '@tanstack/hotkeys';
 import type { OverlayKind } from '../overlays/OverlayContext';
+import type { FirstRunScreen } from './authScreenState';
 import type { KeyBinding, RouteBase } from './keybindings';
 import { SANDBOX_ACTION_IDS, type SandboxPane } from './onboardingSandbox';
 
@@ -48,6 +49,24 @@ export function hotkeyOptions(
       ? { preventDefault: false }
       : {}),
   };
+}
+
+/** First-run screens on which each sign-in / engine action is meaningful. */
+const FIRST_RUN_ACTION_STATES: Readonly<
+  Record<string, readonly FirstRunScreen[]>
+> = {
+  'login.provider.github': ['idle', 'failed', 'interrupted', 'timedOut'],
+  'login.reopen': ['waiting'],
+  'login.copyLink': ['waiting'],
+  'login.cancel': ['waiting', 'timedOut'],
+  'login.retry': ['timedOut'],
+  'connecting.restart': ['crashed'],
+  'connecting.openLogs': ['slow', 'crashed'],
+  'connecting.report': ['crashed'],
+};
+
+function isFirstRunAction(actionId: string): boolean {
+  return actionId.startsWith('login.') || actionId.startsWith('connecting.');
 }
 
 /** A keydown seen by the dispatcher, kept to spot a sequence in progress. */
@@ -146,13 +165,35 @@ export function isBindingEnabled(
     routeBase,
     activeOverlay,
     sandboxPane,
+    screen,
+    isSpawned,
+    isConnected,
   }: {
     routeBase: RouteBase | null;
     activeOverlay: OverlayKind | null;
     sandboxPane: SandboxPane | null;
+    screen?: FirstRunScreen;
+    isSpawned?: boolean;
+    isConnected?: boolean;
   },
 ): boolean {
   const real = { routeBase, activeOverlay };
+  if (isFirstRunAction(binding.actionId)) {
+    if (!isActive(binding, real)) return false;
+    const allowed = FIRST_RUN_ACTION_STATES[binding.actionId];
+    if (
+      screen === undefined ||
+      allowed === undefined ||
+      !allowed.includes(screen)
+    )
+      return false;
+    if (binding.actionId === 'connecting.restart' && isSpawned !== true)
+      return false;
+    const needsEngine =
+      binding.actionId.startsWith('login.provider.') ||
+      binding.actionId === 'login.retry';
+    return !needsEngine || isConnected === true;
+  }
   if (routeBase !== 'onboarding') return isActive(binding, real);
   if (sandboxPane === null) {
     return (

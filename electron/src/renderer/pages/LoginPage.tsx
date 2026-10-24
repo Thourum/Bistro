@@ -1,136 +1,92 @@
-import React, { useCallback } from 'react';
+import type React from 'react';
 import { ProviderButton } from '../components/ProviderButton';
-import { useStore } from '../hooks/useStore';
+import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
+import { useSignInScreenData } from '../hooks/useSignInScreenData';
 import { AuthLayout } from '../layouts/AuthLayout';
-import type { ProviderId } from '../providers';
-import { PROVIDERS, parseAuthAction } from '../providers';
-import { wsClient } from '../services/ws/connection';
-import { appStore } from '../store';
-import type { UIState } from '../store/ui';
-import { createLogger } from '../utils/logger';
+import { PROVIDERS } from '../providers';
+import { startSignIn } from '../services/signIn';
+import { findActionKeys } from '../utils/legendPresets';
+import { SignInState } from './login/SignInState';
+import { TrustPanel } from './login/TrustPanel';
 
-const log = createLogger('LoginPage');
+export function LoginPage(): React.ReactElement {
+  const {
+    screen,
+    elapsed,
+    isConnected,
+    authLoading,
+    authError,
+    authExchange,
+    engineStatus,
+    appVersion,
+    lastSyncAt,
+    syncError,
+    platform,
+  } = useSignInScreenData();
+  const githubHint = findActionKeys(useEffectiveBindings(), [
+    'login.provider.github',
+  ]);
+  const isShowingHosts = screen !== 'waiting' && screen !== 'timedOut';
 
-export function LoginPage() {
-  const syncStatus = useStore(appStore, (s: UIState) => s.syncStatus);
-  const syncError = useStore(appStore, (s: UIState) => s.syncError);
-  const lastSyncAt = useStore(appStore, (s: UIState) => s.lastSyncAt);
-  const authLoading = useStore(appStore, (s: UIState) => s.authLoading);
-  const authError = useStore(appStore, (s: UIState) => s.authError);
-
-  const handleProviderClick = useCallback(
-    (provider: ProviderId): void => {
-      if (appStore.state.authLoading) {
-        log.warn({ provider }, 'AUTH_START ignored — already loading');
-        return;
-      }
-
-      appStore.setState((s) => ({ ...s, authLoading: true, authError: null }));
-
-      log.info({ provider, syncStatus }, 'provider clicked');
-
-      const msgId = wsClient.send('AUTH_START', { provider });
-
-      if (msgId === undefined) {
-        log.error(
-          { provider, syncStatus },
-          'send returned undefined — WebSocket not connected',
-        );
-        appStore.setState((s) => ({
-          ...s,
-          authLoading: false,
-          authError: `Cannot connect to sync engine (status: ${syncStatus}). Make sure the Go process is running.`,
-        }));
-        return;
-      }
-
-      log.info({ provider, msgId }, 'AUTH_START sent');
-    },
-    [syncStatus],
-  );
-
-  const confirmingAction = useStore(
-    appStore,
-    (s: UIState) => s.confirmingAction,
-  );
-
-  React.useEffect(() => {
-    if (confirmingAction === null) return;
-
-    const parsed = parseAuthAction(confirmingAction);
-    appStore.setState((s) => ({ ...s, confirmingAction: null }));
-
-    if (parsed === null) return;
-    if (authLoading) return;
-
-    const provider = PROVIDERS.find((entry) => entry.id === parsed.id);
-    if (provider !== undefined) handleProviderClick(provider.id);
-  }, [confirmingAction, authLoading, handleProviderClick]);
-
+  // AuthLayout grows with flex-1; RootShell's route slot is not a flex box.
   return (
-    <AuthLayout>
-      <div className="p-12">
-        <header className="mb-12">
-          <h1 className="text-4xl font-extrabold tracking-tighter text-on-background mb-4 uppercase">
-            BISTRO
-          </h1>
-          <p className="text-on-surface-variant text-sm font-medium tracking-tight">
-            Connect your platform to begin reviewing code
-          </p>
-        </header>
-
-        {authLoading ? (
-          <div className="text-center space-y-4 py-6">
-            <p className="text-sm text-on-surface-variant animate-pulse font-mono uppercase tracking-widest">
-              Waiting for authorization...
-            </p>
-            <p className="text-xs text-on-surface-variant">
-              Complete the sign-in in your browser, then return here.
-            </p>
-          </div>
-        ) : (
-          <>
+    <div className="flex h-full">
+      <AuthLayout isWide>
+        <div className="grid md:grid-cols-2">
+          <div className="flex flex-col gap-8 p-8 md:p-10">
+            <header className="space-y-3">
+              <p className="text-4xl font-extrabold uppercase tracking-tighter text-on-background">
+                BISTRO
+              </p>
+              <h1 className="text-sm font-medium tracking-tight text-on-surface-variant">
+                Connect your platform to begin reviewing code
+              </h1>
+            </header>
             <div className="space-y-4">
-              {PROVIDERS.map((p) => (
-                <ProviderButton
-                  key={p.id}
-                  provider={p.id}
-                  icon={p.icon}
-                  label={p.label}
-                  keyHint={p.key.toUpperCase()}
-                  onClick={() => {
-                    if (!authLoading) {
-                      handleProviderClick(p.id);
-                    }
-                  }}
-                />
-              ))}
+              {isShowingHosts && (
+                <div className="space-y-3">
+                  {PROVIDERS.map((provider) => (
+                    <ProviderButton
+                      key={provider.id}
+                      provider={provider.id}
+                      icon={provider.icon}
+                      label={provider.label}
+                      disabled={
+                        !provider.isAvailable || !isConnected || authLoading
+                      }
+                      autoFocus={provider.isAvailable}
+                      keyHint={provider.isAvailable ? githubHint : undefined}
+                      availabilityLabel={
+                        provider.isAvailable ? undefined : 'Coming soon'
+                      }
+                      onClick={() => startSignIn(provider.id)}
+                    />
+                  ))}
+                </div>
+              )}
+              <SignInState
+                screen={screen}
+                elapsed={elapsed}
+                error={authError}
+                isConnected={isConnected}
+                status={engineStatus}
+                syncError={syncError}
+                lastSyncAt={lastSyncAt}
+                version={appVersion}
+              />
             </div>
-
-            {authError !== null && (
-              <p className="mt-4 text-sm text-error">{authError}</p>
-            )}
-          </>
-        )}
-
-        <div className="mt-16 flex items-end justify-between">
-          <div className="font-mono text-[10px] text-outline-variant flex flex-col gap-0.5">
-            <span className="uppercase tracking-widest">
-              Status: {syncStatus.toUpperCase()}
-            </span>
-            {syncError !== null && (
-              <span className="text-error">{syncError}</span>
-            )}
-            {lastSyncAt !== null && (
-              <span>
-                Last sync: {new Date(lastSyncAt).toLocaleTimeString()}
-              </span>
-            )}
-            <span>v0.1.0-stable</span>
+            <p className="mt-auto font-mono text-[11px] text-outline">
+              Sign-in opens GitHub in your browser. Bistro never sees your
+              password.
+            </p>
           </div>
-          <div className="w-24 h-[1px] bg-outline-variant/30" />
+          <TrustPanel
+            exchange={authExchange}
+            isConnected={isConnected}
+            platform={platform}
+          />
         </div>
-      </div>
-    </AuthLayout>
+      </AuthLayout>
+    </div>
   );
 }

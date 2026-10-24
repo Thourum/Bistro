@@ -1,5 +1,5 @@
 import { Store } from '@tanstack/store';
-import type { AuthAction } from '../providers/provider';
+import type { EngineStatus } from '../../types/engine';
 import type {
   ActionResult,
   ExpertiseNudgePayload,
@@ -37,8 +37,7 @@ export type ConfirmingAction =
   | 'reply'
   | 'request_changes'
   | 'star'
-  | 'toggle-diff-style'
-  | AuthAction;
+  | 'toggle-diff-style';
 
 export interface UIState {
   selectedPRIndex: number;
@@ -80,6 +79,15 @@ export interface UIState {
   // OAuth auth state
   authLoading: boolean;
   authError: string | null;
+  authUrl: string | null;
+  authStartedAt: number | null;
+  authTimedOut: boolean;
+  authInterrupted: boolean;
+  /** Transport state; syncStatus 'error' can also mean an open socket. */
+  isWsOpen: boolean;
+  authExchange: 'proxy' | 'local' | null;
+  engineStatus: EngineStatus | null;
+  appVersion: string | null;
   authChecked: boolean;
   connectedProviders: Array<{ provider: string; username: string }>;
   /** Viewer login returned by the PR-list payload. */
@@ -200,6 +208,14 @@ export const initialUIState: UIState = {
   isOffline: false,
   authLoading: false,
   authError: null,
+  authUrl: null,
+  authStartedAt: null,
+  authTimedOut: false,
+  authInterrupted: false,
+  isWsOpen: false,
+  authExchange: null,
+  engineStatus: null,
+  appVersion: null,
   authChecked: false,
   connectedProviders: [],
   viewerLogin: '',

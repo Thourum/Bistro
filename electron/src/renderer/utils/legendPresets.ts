@@ -37,6 +37,7 @@ const FOOTER_LEGEND_PRESETS_BY_ROUTE = {
   // Login and onboarding footers show no legend (empty chrome).
   login: [],
   onboarding: [],
+  connecting: [],
 } as const satisfies Record<RouteBase, readonly string[]>;
 
 /** Per-overlay footer legend preset. */

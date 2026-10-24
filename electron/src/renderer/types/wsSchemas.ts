@@ -137,6 +137,7 @@ export const dataSchemas = Object.freeze({
   AUTH_REDIRECT: z.object({ provider: z.string(), url: z.string().url() }),
   AUTH_CHECK_RESULT: z.object({
     authenticated: z.boolean(),
+    exchange: z.enum(['proxy', 'local']).optional(),
     providers: z
       .array(z.object({ provider: z.string(), username: z.string() }))
       .nullable()

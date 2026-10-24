@@ -7,7 +7,7 @@ import {
   updateElectronApp,
 } from 'update-electron-app';
 
-const BISTRO_UPDATE_REPO = 'Itterno/Bistro';
+export const BISTRO_REPO = 'Thourum/Bistro';
 
 let updater: IUpdateElectronApp | null = null;
 
@@ -30,7 +30,7 @@ export function startAutoUpdates(logger: Logger): void {
   updater = updateElectronApp({
     updateSource: {
       type: UpdateSourceType.ElectronPublicUpdateService,
-      repo: BISTRO_UPDATE_REPO,
+      repo: BISTRO_REPO,
     },
     updateInterval: process.env.BISTRO_UPDATE_INTERVAL ?? '1 hour',
     logger,
@@ -44,7 +44,7 @@ export function startAutoUpdates(logger: Logger): void {
     }),
   });
 
-  logger.info(`Auto-update enabled via GitHub releases: ${BISTRO_UPDATE_REPO}`);
+  logger.info(`Auto-update enabled via GitHub releases: ${BISTRO_REPO}`);
 }
 
 export function stopAutoUpdates(): void {

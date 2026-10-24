@@ -33,26 +33,27 @@ type syncSettingsMsg = handler.SyncSettingsMsg
 
 // App is the top-level orchestrator for the bistro-sync process.
 type App struct {
-	log                *slog.Logger
-	db                 *store.DB
-	wsServer           *ws.Server
-	wsPort             int
-	dbPath             string
-	orchestrator       *sync.Orchestrator
-	prov               provider.Provider
-	activeProviderName string
-	gitClient          *git.Client
-	githubClientID     string
-	githubClientSecret string
-	repoLocks          *git.RepoLocks
-	providerCache      *cache.ProviderCache
-	tokenManager       *keychain.TokenManager
-	syncTrigger        chan string
-	syncSettings       chan syncSettingsMsg
-	provMu             stdsync.RWMutex
-	syncInterval       time.Duration
-	autoSync           bool
-	readyWriter        io.Writer
+	log                 *slog.Logger
+	db                  *store.DB
+	wsServer            *ws.Server
+	wsPort              int
+	dbPath              string
+	orchestrator        *sync.Orchestrator
+	prov                provider.Provider
+	activeProviderName  string
+	gitClient           *git.Client
+	githubClientID      string
+	githubClientSecret  string
+	authCallbackTimeout time.Duration
+	repoLocks           *git.RepoLocks
+	providerCache       *cache.ProviderCache
+	tokenManager        *keychain.TokenManager
+	syncTrigger         chan string
+	syncSettings        chan syncSettingsMsg
+	provMu              stdsync.RWMutex
+	syncInterval        time.Duration
+	autoSync            bool
+	readyWriter         io.Writer
 	// bridgeCancel cancels the event-bridge goroutine for the current orchestrator.
 	// Replaced each time a new orchestrator is wired up.
 	bridgeCancel context.CancelFunc
@@ -362,6 +363,11 @@ func (a *App) SetGitHubClientSecret(secret string) {
 	a.githubClientSecret = secret
 }
 
+// SetAuthCallbackTimeout overrides the OAuth callback deadline; zero uses the default.
+func (a *App) SetAuthCallbackTimeout(duration time.Duration) {
+	a.authCallbackTimeout = duration
+}
+
 func (a *App) githubToken() string {
 	token, err := a.tokenManager.GetGitHubToken()
 	if err != nil {
@@ -653,13 +659,16 @@ func (a *App) registerAuthHandlers(ctx context.Context, stores runStores) {
 		},
 		GetClientID:        func() string { return a.githubClientID },
 		GetClientSecret:    func() string { return a.githubClientSecret },
+		CallbackTimeout:    a.authCallbackTimeout,
 		CurrentUserWriter:  stores.currentUser,
 		CurrentUserClearer: stores.currentUser,
 	}
 
 	authCheck := handler.NewAuthCheckHandler(authDeps)
 
-	a.wsServer.RegisterHandler("AUTH_START", handler.NewAuthStartHandler(authDeps))
+	start, cancel := handler.NewAuthFlowHandlers(authDeps)
+	a.wsServer.RegisterHandler("AUTH_START", start)
+	a.wsServer.RegisterHandler("AUTH_CANCEL", cancel)
 	a.wsServer.RegisterHandler("AUTH_CHECK", authCheck)
 	a.wsServer.RegisterHandler("AUTH_DISCONNECT", handler.NewAuthDisconnectHandler(authDeps, authCheck))
 }

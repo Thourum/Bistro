@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { EngineReply, EngineStatus } from '../types/engine';
 import type {
   DBQueryRequest,
   DBQueryResponse,
@@ -13,11 +14,17 @@ import type {
   SyncActionResponse,
 } from '../types/ipc';
 import type { AppSettings } from '../types/settings';
+import type { ProcessExit } from './go-spawn';
 import type { SyncEvent } from './websocket-client';
 import { readWsPortFromArgv } from './ws-port';
 
 const VALID_SEND_CHANNELS = ['sync:subscribe'] as const;
-const VALID_EVENT_CHANNELS = ['sync:event', 'settings:changed'] as const;
+const VALID_EVENT_CHANNELS = [
+  'sync:event',
+  'settings:changed',
+  'engine:status',
+  'go:crashed',
+] as const;
 
 type ValidSendChannel = (typeof VALID_SEND_CHANNELS)[number];
 type ValidEventChannel = (typeof VALID_EVENT_CHANNELS)[number];
@@ -29,6 +36,19 @@ contextBridge.exposeInMainWorld('electron', {
    * additionalArguments at window creation (Go picks it dynamically).
    */
   wsPort: readWsPortFromArgv(process.argv),
+  platform: process.platform,
+  getEngineStatus: (): Promise<EngineReply<EngineStatus>> =>
+    ipcRenderer.invoke('engine:get-status'),
+  getAppVersion: (): Promise<EngineReply<string>> =>
+    ipcRenderer.invoke('app:get-version'),
+  restartEngine: (): Promise<EngineReply<boolean>> =>
+    ipcRenderer.invoke('engine:restart'),
+  getEngineLogTail: (lines: number): Promise<EngineReply<readonly string[]>> =>
+    ipcRenderer.invoke('engine:log-tail', { lines }),
+  openLogFolder: (): Promise<EngineReply<boolean>> =>
+    ipcRenderer.invoke('engine:open-log-folder'),
+  reportCrash: (): Promise<EngineReply<boolean>> =>
+    ipcRenderer.invoke('engine:report-crash'),
 
   async getWsPort(): Promise<number | null> {
     const response = (await ipcRenderer.invoke('engine:get-ws-port')) as {
@@ -105,7 +125,11 @@ contextBridge.exposeInMainWorld('electron', {
         ? SyncEvent
         : C extends 'settings:changed'
           ? AppSettings
-          : unknown,
+          : C extends 'engine:status'
+            ? EngineStatus
+            : C extends 'go:crashed'
+              ? ProcessExit
+              : unknown,
     ) => void,
   ): () => void {
     if (!(VALID_EVENT_CHANNELS as readonly string[]).includes(channel)) {
@@ -175,7 +199,16 @@ declare global {
   interface Window {
     electron: {
       wsPort: number | null;
+      readonly platform: string;
       getWsPort: () => Promise<number | null>;
+      getEngineStatus: () => Promise<EngineReply<EngineStatus>>;
+      getAppVersion: () => Promise<EngineReply<string>>;
+      restartEngine: () => Promise<EngineReply<boolean>>;
+      getEngineLogTail: (
+        lines: number,
+      ) => Promise<EngineReply<readonly string[]>>;
+      openLogFolder: () => Promise<EngineReply<boolean>>;
+      reportCrash: () => Promise<EngineReply<boolean>>;
       db: (request: DBQueryRequest) => Promise<DBQueryResponse | IPCError>;
       fs: (
         request: FSReadPatchRequest,
@@ -193,7 +226,11 @@ declare global {
             ? SyncEvent
             : C extends 'settings:changed'
               ? AppSettings
-              : unknown,
+              : C extends 'engine:status'
+                ? EngineStatus
+                : C extends 'go:crashed'
+                  ? ProcessExit
+                  : unknown,
         ) => void,
       ) => () => void;
       openExternal: (url: string) => Promise<{ ok: true } | { err: string }>;

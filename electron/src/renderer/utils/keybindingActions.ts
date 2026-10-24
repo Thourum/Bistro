@@ -3,9 +3,22 @@ import type {
   OverlayContextValue,
   OverlayKind,
 } from '../overlays/OverlayContext';
-import { authAction, PROVIDERS } from '../providers';
+import { PROVIDERS } from '../providers';
 import { router } from '../router';
+import {
+  openEngineLogFolder,
+  reportEngineCrash,
+  restartEngine,
+} from '../services/engine';
 import { cycleNavigationStyle } from '../services/navigationStyle';
+import {
+  cancelSignIn,
+  copySignInLink,
+  reopenSignIn,
+  retrySignIn,
+  startSignIn,
+} from '../services/signIn';
+import { appStore } from '../store';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import type { RouteBase } from './keybindings';
 import { createLogger } from './logger';
@@ -270,6 +283,16 @@ function scrollDiffToBottom(): void {
 }
 
 const ACTIONS: Readonly<Record<string, KeyAction>> = {
+  'connecting.restart': () => {
+    if (appStore.state.engineStatus?.state !== 'crashed') return;
+    void restartEngine();
+  },
+  'connecting.openLogs': () => openEngineLogFolder(),
+  'connecting.report': () => reportEngineCrash(),
+  'login.reopen': () => reopenSignIn(),
+  'login.copyLink': () => copySignInLink(),
+  'login.cancel': () => cancelSignIn(),
+  'login.retry': () => retrySignIn(),
   'global.help': openHelp,
   'global.escape': handleEscape,
   'global.cancel': handleEscape,
@@ -473,14 +496,8 @@ export function getBindingAction(actionId: string): KeyAction | undefined {
     };
   }
   const provider = PROVIDERS.find(
-    (entry) => `login.provider.${entry.id}` === actionId,
+    (entry) => entry.isAvailable && `login.provider.${entry.id}` === actionId,
   );
-  if (provider !== undefined) {
-    return (context) =>
-      context.store.setState((state) => ({
-        ...state,
-        confirmingAction: authAction(provider),
-      }));
-  }
+  if (provider !== undefined) return () => startSignIn(provider.id);
   return ACTIONS[actionId];
 }

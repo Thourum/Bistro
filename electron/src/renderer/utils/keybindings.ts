@@ -12,7 +12,8 @@ export type RouteBase =
   | 'diff'
   | 'settings'
   | 'login'
-  | 'onboarding';
+  | 'onboarding'
+  | 'connecting';
 
 export interface KeyBinding {
   /** Stable id used by settings overrides. */
@@ -61,6 +62,7 @@ const ALL_ROUTES: readonly RouteBase[] = [
   'settings',
   'login',
   'onboarding',
+  'connecting',
 ];
 const ALL_OVERLAYS: readonly OverlayKind[] = [
   'command',
@@ -129,13 +131,54 @@ const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
   },
 ];
 
-const LOGIN_BINDINGS: readonly BindingDefinition[] = PROVIDERS.map(
-  (provider) => ({
-    actionId: `login.provider.${provider.id}`,
-    description: `Login with ${provider.label}`,
+const LOGIN_BINDINGS: readonly BindingDefinition[] = PROVIDERS.filter(
+  (provider) => provider.isAvailable,
+).map((provider) => ({
+  actionId: `login.provider.${provider.id}`,
+  description: `Login with ${provider.label}`,
+  activation: { routes: ['login'] },
+}));
+
+const SIGN_IN_ACTIONS: readonly BindingDefinition[] = [
+  {
+    actionId: 'login.reopen',
+    description: 'Reopen browser',
     activation: { routes: ['login'] },
-  }),
-);
+  },
+  {
+    actionId: 'login.copyLink',
+    description: 'Copy sign-in link',
+    activation: { routes: ['login'] },
+  },
+  {
+    actionId: 'login.cancel',
+    description: 'Cancel / Back to hosts',
+    activation: { routes: ['login'] },
+  },
+  {
+    actionId: 'login.retry',
+    description: 'Try again',
+    activation: { routes: ['login'] },
+  },
+];
+
+const CONNECTING_BINDINGS: readonly BindingDefinition[] = [
+  {
+    actionId: 'connecting.restart',
+    description: 'Restart engine',
+    activation: { routes: ['connecting'] },
+  },
+  {
+    actionId: 'connecting.openLogs',
+    description: 'Open log folder',
+    activation: { routes: ['connecting'] },
+  },
+  {
+    actionId: 'connecting.report',
+    description: 'Report on GitHub',
+    activation: { routes: ['connecting'] },
+  },
+];
 
 const ONBOARDING_BINDINGS: readonly BindingDefinition[] = [
   {
@@ -542,6 +585,8 @@ const THREAD_BINDINGS: readonly BindingDefinition[] = [
 export const ACTION_CATALOG: readonly BindingDefinition[] = [
   ...GLOBAL_BINDINGS,
   ...LOGIN_BINDINGS,
+  ...SIGN_IN_ACTIONS,
+  ...CONNECTING_BINDINGS,
   ...ONBOARDING_BINDINGS,
   ...LIST_BINDINGS,
   ...DETAIL_BINDINGS,

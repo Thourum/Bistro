@@ -127,7 +127,12 @@ describe('isBindingEnabled on the onboarding route', () => {
       null,
     ] as const) {
       const context = { routeBase, activeOverlay: null };
-      for (const configuredBinding of getEffectiveBindings('vim', {})) {
+      // First-run actions are additionally gated on the derived screen.
+      const routeBindings = getEffectiveBindings('vim', {}).filter(
+        ({ actionId }) =>
+          !actionId.startsWith('login.') && !actionId.startsWith('connecting.'),
+      );
+      for (const configuredBinding of routeBindings) {
         expect(
           isBindingEnabled(configuredBinding, {
             ...context,
