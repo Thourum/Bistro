@@ -60,38 +60,6 @@ func NewValidateDevFolderHandler(log *slog.Logger) ws.MessageHandler {
 	}
 }
 
-// NewScanDevFolderHandler discovers checkouts and updates their location status.
-func NewScanDevFolderHandler(locations *store.RepoLocationStore, syncTrigger chan<- string, log *slog.Logger) ws.MessageHandler {
-	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		logger := repoLocationLogger(ctx, log, msg)
-		var data struct {
-			Path   string `json:"path"`
-			Reason string `json:"reason"`
-		}
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			return nil, fmt.Errorf("invalid SCAN_DEV_FOLDER payload: %w", err)
-		}
-		if isBistroRepoDirOverrideSet() {
-			return locationResponse(msg, scanDevFolderPayload{OK: true}), nil
-		}
-		canonicalPath, err := scan.ValidateDevFolder(data.Path)
-		if err != nil {
-			repoLocationLogger(ctx, log, msg).Warn("scan dev folder validation failed", "error", err)
-			return locationResponse(msg, locationError("", operationScanDevFolder, "invalid_path", "invalid development folder path")), nil
-		}
-		result, err := scan.Scan(ctx, canonicalPath)
-		if err != nil {
-			return nil, fmt.Errorf("scan dev folder %q: %w", canonicalPath, err)
-		}
-		healthy, degraded, err := updateScannedRepoLocations(ctx, locations, result.Found)
-		if err != nil {
-			return nil, err
-		}
-		triggerSync(syncTrigger, logger)
-		return locationResponse(msg, scanDevFolderPayload{OK: true, Discovered: len(result.Found), Healthy: healthy, Degraded: degraded, Skipped: result.Skipped, Partial: result.Partial}), nil
-	}
-}
-
 func updateScannedRepoLocations(ctx context.Context, locations *store.RepoLocationStore, found []scan.Found) (int, int, error) {
 	for _, repo := range found {
 		if err := locations.UpsertLocal(ctx, repo.Identity.Provider, repo.Identity.Owner, repo.Identity.Repo, repo.Path, false); err != nil {

@@ -141,7 +141,7 @@ func TestRepoLocationValidateDevFolderReturnsCanonicalPathAndEnvelope(t *testing
 
 func TestRepoLocationScanDevFolderReturnsInvalidPathEnvelope(t *testing.T) {
 	// Arrange
-	handler := NewScanDevFolderHandler(store.NewRepoLocationStore(newRepoLocationMigratedDB(t).DB), nil, testRepoLocationLogger())
+	handler := newTestScanDevFolderHandler(t, store.NewRepoLocationStore(newRepoLocationMigratedDB(t).DB), nil)
 	missing := filepath.Join(t.TempDir(), "missing")
 
 	// Act
@@ -162,7 +162,7 @@ func TestRepoLocationScanDevFolderNoopsWhenBistroRepoDirIsSet(t *testing.T) {
 		t.Fatalf("create dev repo: %v", err)
 	}
 	syncTrigger := make(chan string, 1)
-	handler := NewScanDevFolderHandler(store, syncTrigger, testRepoLocationLogger())
+	handler := newTestScanDevFolderHandler(t, store, syncTrigger)
 
 	// Act
 	resp := callRepoLocationHandler(t, handler, "SCAN_DEV_FOLDER", map[string]any{"path": dev, "reason": "test"})
@@ -226,7 +226,7 @@ func TestRepoLocationScanDevFolderReconcilesHealthAndTriggersSync(t *testing.T) 
 		t.Fatalf("upsert mismatch: %v", err)
 	}
 	syncTrigger := make(chan string, 1)
-	handler := NewScanDevFolderHandler(store, syncTrigger, testRepoLocationLogger())
+	handler := newTestScanDevFolderHandler(t, store, syncTrigger)
 
 	// Act
 	resp := callRepoLocationHandler(t, handler, "SCAN_DEV_FOLDER", map[string]any{"path": dev, "reason": "test"})
