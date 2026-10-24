@@ -699,7 +699,7 @@ By this point Bistro is feature-rich. Phase 5 makes it *fast to live in*.
 | `:open in browser` | done | Palette command wired to the existing `list.openBrowser` action |
 | `:diff split` / `:diff unified` | done | |
 | `:open in editor` | done | Checks out the PR head on mismatch (with a confirmation dialog) before opening in `$EDITOR` |
-| `:tour` | done | Re-opens the first-run tour |
+| `:tour` | done | Brings back the first-run rail on the inbox |
 | Command palette reachable from the diff route | done | `global.command` activation now includes `diff` (was list/detail only) |
 
 ### 5.4 Help / discoverability — done (tooltips won't-do)
@@ -707,7 +707,7 @@ By this point Bistro is feature-rich. Phase 5 makes it *fast to live in*.
 | Item | Status | Notes |
 |---|---|---|
 | `?` overlay with all bindings | done | `HelpOverlay.tsx`; diff-review shortcuts shown in their own section |
-| First-run tour | done | 5-screen guided intro (`TourOverlay.tsx`), auto-opens once after onboarding, re-runnable via `:tour` |
+| First-run tour | done | Non-modal first-review rail (`FirstRunRail.tsx`) after onboarding, re-runnable via `:tour`; replaced the 5-screen modal |
 | "Did you know?" tooltips | won't-do | Deferred indefinitely — no plan to revisit |
 
 ---
