@@ -97,7 +97,9 @@ function EngineDiagnostics(
         <div className={STATUS_ROW}>
           <dt className="uppercase tracking-widest text-outline">Last sync</dt>
           <dd className="text-on-surface-variant">
-            {props.lastSyncAt ?? 'Not yet synced'}
+            {props.lastSyncAt === null
+              ? 'Not yet synced'
+              : new Date(props.lastSyncAt).toLocaleString()}
           </dd>
         </div>
         <div className={STATUS_ROW}>
@@ -127,7 +129,10 @@ export function SignInState(props: SignInStateProps): React.ReactElement {
                 />
                 Waiting for authorization…
               </span>
-              <span className="text-outline">{`GITHUB // ${props.elapsed}`}</span>
+              <span
+                aria-live="off"
+                className="text-outline"
+              >{`GITHUB // ${props.elapsed}`}</span>
             </p>
             <p className="text-sm text-on-surface-variant">
               Complete the sign-in in your browser, then return here.

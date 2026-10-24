@@ -31,7 +31,7 @@ export function startSignIn(provider: ProviderId): void {
     appStore.setState((state) => ({
       ...state,
       authLoading: false,
-      authError: 'Cannot connect sync engine.',
+      authError: 'Cannot connect to sync engine.',
     }));
   }
 }
