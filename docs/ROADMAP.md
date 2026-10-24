@@ -21,7 +21,7 @@
 > completeness. BIS-31 resolved the changed-since-review strategy: FOSS records
 > **observed patchsets**. **Updated 2026-10-23:** changed-since-review now uses
 > per-file patch-ID triage and go-git interdiffs, with explicit unavailable reasons
-> when local data is insufficient (see the [current design](superpowers/specs/2026-10-23-since-last-review-rebases-design.md)). Complete push capture remains Team/server scope. (The audit record
+> when local data is insufficient (see the [current design](go-project-overview.md#internalsync----sync-engine)). Complete push capture remains Team/server scope. (The audit record
 > and BIS-31 spec were removed from `docs/` on 2026-07-11 — recover from git history.) The comment layer
 > can't feed Phase 2: only issue-level comments are fetched (not inline review
 > comments), and the schema stores no commit SHA / position / resolution state.
@@ -42,7 +42,7 @@
 > capture are wired behind a consent setting. Phases 3 (classification) and 4
 > (expertise) remain **not started** — zero code hits. **Updated 2026-10-23:**
 > patch-ID triage and go-git per-file interdiffs have shipped; the old comparison
-> degradation gap is cleared (see the [current design](superpowers/specs/2026-10-23-since-last-review-rebases-design.md)). Posting a
+> degradation gap is cleared (see the [current design](go-project-overview.md#internalsync----sync-engine)). Posting a
 > *new* line-level comment is still rejected even though thread replies work. Dev
 > plans/specs/audit docs were removed from `docs/` in this cleanup (git history keeps
 > them). A consolidated v1.0 checklist is at the end of this document.
@@ -217,7 +217,7 @@ Mentioned, FYI) approved during Phase 5 design and shipped 2026-08-09. See
 > merge-readiness badge (2.4); comment replies; current-user identity + per-account
 > namespacing (migration 022). **Updated 2026-10-23:** merge-base PR diffs,
 > observed-head pins, patch-ID file triage on `s`, and per-file interdiff on `i`
-> have shipped ([design](superpowers/specs/2026-10-23-since-last-review-rebases-design.md)).
+> have shipped ([design](go-project-overview.md#internalsync----sync-engine)).
 > Viewed marks now use rebase-stable patch fingerprints (pre-upgrade marks reset
 > once). **Remaining gap:** comment-level outdated-near-line display isn't wired
 > as a distinct UI state (thread-level lifecycle is).
@@ -232,7 +232,7 @@ The architectural principle: **same patchset model for every provider**. Even wh
 > Missing review baselines, pre-fingerprint patchsets, and unavailable heads have
 > explicit reasons rather than claiming a complete comparison. The old
 > `git range-diff` / bounded `os/exec` path has been removed. Current design:
-> [since-last-review across rebases and force-pushes](superpowers/specs/2026-10-23-since-last-review-rebases-design.md).
+> [since-last-review across rebases and force-pushes](go-project-overview.md#internalsync----sync-engine).
 
 > ⚠️ **Audit (2026-06-19) — Phase 2 needs design decisions before any implementation.**
 > This phase as originally written contained two *infeasible-as-specified* items and
@@ -244,7 +244,7 @@ The architectural principle: **same patchset model for every provider**. Even wh
 >    true push timestamps/complete before-after SHAs require the Team webhook server.
 >    **Comparison decision superseded (2026-10-23):** patch-ID triage and go-git
 >    per-file interdiffs replace the former bounded subprocess exception; see the
->    [current design](superpowers/specs/2026-10-23-since-last-review-rebases-design.md).
+>    [current design](go-project-overview.md#internalsync----sync-engine).
 > 3. **The comment layer can't feed 2.3/2.4.** Only *issue-level* comments are fetched
 >    (`Issues.ListComments`), never inline review comments (`PullRequests.ListComments`),
 >    and the `comments` schema stores no `commit_sha`/`position`/`side`/`resolved`/
@@ -322,7 +322,7 @@ CREATE TABLE patchsets (
 > remains the review key. `last_reviewed_sha` now stores review source and timestamp
 > as well as the head and known observed patchset. `files_viewed` uses file path +
 > login + normalized patch fingerprint. The former subprocess comparison policy
-> is replaced by [patch-ID triage and go-git interdiffs](superpowers/specs/2026-10-23-since-last-review-rebases-design.md).
+> is replaced by [patch-ID triage and go-git interdiffs](go-project-overview.md#internalsync----sync-engine).
 
 ### 2.3 Comment anchoring across rebase — mostly done (2026-07-11)
 

@@ -73,7 +73,6 @@ func TestGenerateDiffPatchIDSurvivesBudgetTruncation(t *testing.T) {
 		status string
 	}{
 		{name: "per-file budget", opts: DiffOptions{MaxFilePatchBytes: 1}, status: DiffStatusTruncated},
-		{name: "PR budget", opts: DiffOptions{MaxTotalPatchBytes: 1}, status: DiffStatusTooLarge},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			limited, err := client.GenerateDiff(dir, baseSHA, headSHA, test.opts)

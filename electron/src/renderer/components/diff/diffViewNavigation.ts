@@ -1,5 +1,11 @@
 import type { CodeViewHandle } from '@pierre/diffs/react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useStore } from '../../hooks/useStore';
 import { appStore } from '../../store';
 import type { ReviewThread } from '../../types';
@@ -211,16 +217,19 @@ export function useDiffFileNavigation({
     syncFileSelection,
   ]);
 
-  const selectFile = (id: string): void => {
-    setActiveId(id);
-    requestSelectedFileScroll(
-      codeViewRef.current,
-      pendingScrollFileIdRef,
-      id,
-      unrenderableFiles,
-    );
-    if (syncFileSelection) updateSelectedFileIndex(files, id);
-  };
+  const selectFile = useCallback(
+    (id: string): void => {
+      setActiveId(id);
+      requestSelectedFileScroll(
+        codeViewRef.current,
+        pendingScrollFileIdRef,
+        id,
+        unrenderableFiles,
+      );
+      if (syncFileSelection) updateSelectedFileIndex(files, id);
+    },
+    [files, unrenderableFiles, syncFileSelection],
+  );
 
   const activateVisibleFile = (id: string): void => {
     setActiveId(id);

@@ -7,7 +7,7 @@
 // diffFileKeys are cleared when prId changes to prevent stale key carryover.
 
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { DiffView } from '../components/diff/DiffView';
 import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
 import { OpenInEditorDialog } from '../components/OpenInEditorDialog';
@@ -23,6 +23,7 @@ import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { repoIdForPR } from '../utils/expertise';
+import { createLogger } from '../utils/logger';
 import { filterDiffToPaths, triageSummary } from '../utils/sinceLastReview';
 import { prBrowserUrl } from '../utils/triage';
 import {
@@ -33,6 +34,8 @@ import {
 import { InterdiffPane } from './DiffPageInterdiff';
 import { useDiffPageActions } from './useDiffPageActions';
 import { useDiffPageData } from './useDiffPageData';
+
+const log = createLogger('DiffPage');
 
 /**
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
@@ -86,8 +89,15 @@ export function DiffPage() {
   );
 
   const [findQuery, setFindQuery] = useState('');
-  const { diff, files, setFiles, loading, diffError, comments } =
-    useDiffPageData({ pr, isAwaitingHydration, commentsRevision });
+  const {
+    diff,
+    files,
+    oversizedPatchBytes,
+    setFiles,
+    loading,
+    diffError,
+    comments,
+  } = useDiffPageData({ pr, isAwaitingHydration, commentsRevision });
 
   // Review threads for inline annotations on the visible diff.
   const { threads } = useReviewThreads(pr?.id);
@@ -149,11 +159,14 @@ export function DiffPage() {
             ? null
             : triageSummary(triage, new Date());
 
+  // Start of the diff-open measurement; reset whenever the route's PR changes.
+  const openedAtRef = useRef(performance.now());
   // Clear stale diffFileKeys whenever the target PR changes.
   // This prevents keybindings from using keys from a previous PR's diff.
   // Collapse and whitespace settings are PR-scoped too; they reset here, not
   // on DiffView unmount, because the interdiff toggle swaps DiffViews mid-PR.
   useLayoutEffect(() => {
+    openedAtRef.current = performance.now();
     if (prId === '') return;
     appStore.setState((s) => ({
       ...s,
@@ -162,6 +175,25 @@ export function DiffPage() {
       hideWhitespaceHunks: false,
     }));
   }, [prId]);
+
+  // One line per diff open so big-PR regressions show up in user logs.
+  // rAF after commit ≈ the next frame with the diff committed (pre-paint,
+  // before highlighting).
+  useEffect(() => {
+    if (diff === '') return;
+    const frame = requestAnimationFrame(() =>
+      log.debug(
+        {
+          prId,
+          fileCount: files.length,
+          payloadChars: diff.length,
+          firstFileMs: Math.round(performance.now() - openedAtRef.current),
+        },
+        'diff opened',
+      ),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [prId, diff, files.length]);
 
   // Consume onFilesResolved via useLayoutEffect to ensure diffFileKeys
   // commits synchronously before the next user input (mirrors visiblePRIds pattern).
@@ -309,6 +341,7 @@ export function DiffPage() {
                     : null
                 }
                 viewedPaths={viewedPaths}
+                oversizedPatchBytes={oversizedPatchBytes}
               />
             </div>
           </div>

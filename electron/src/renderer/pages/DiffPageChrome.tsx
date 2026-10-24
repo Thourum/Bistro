@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import { StatusSquare } from '../components/StatusSquare';
 import type { DiffFile, PR } from '../types';
 
@@ -88,6 +88,8 @@ export function DiffPageStatusBar({
   currentFile,
   triageSummary,
 }: DiffPageStatusBarProps): React.ReactElement {
+  // The full diff can be ~19 MB; split it once per diff, never per render.
+  const diffLineCount = useMemo(() => diff.split('\n').length, [diff]);
   const viewedCount = files.filter((file) => file.viewed).length;
   return (
     <div className="shrink-0 h-6 px-4 flex items-center justify-between border-t border-outline-variant/30 bg-surface-container-low">
@@ -97,7 +99,7 @@ export function DiffPageStatusBar({
             {triageSummary}
           </span>
         )}
-        <span>{diff.split('\n').length} lines</span>
+        <span>{diffLineCount} lines</span>
         {currentFile !== undefined && (
           <span className="flex items-center gap-1.5">
             <StatusSquare

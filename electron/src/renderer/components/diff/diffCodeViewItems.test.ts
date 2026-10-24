@@ -224,6 +224,27 @@ describe('parseCodeViewFiles', () => {
     expect(unrenderableFiles[0]?.file.path).toBe('logo.png');
     expect(parsedFiles.map(({ file }) => file.path)).toEqual(['src/first.ts']);
   });
+
+  it('classifies an oversized file as too-large with its original size', () => {
+    const headerOnly = `diff --git a/huge.c b/huge.c
+diff --git a/src/first.ts b/src/first.ts
+--- a/src/first.ts
++++ b/src/first.ts
+@@ -1 +1 @@
+-old
++new
+`;
+    const { parsedFiles, unrenderableFiles } = parseCodeViewFiles(
+      splitUnifiedDiff(headerOnly),
+      new Map([['huge.c', 600 * 1024]]),
+    );
+
+    expect(unrenderableFiles).toEqual([
+      expect.objectContaining({ reason: 'too-large', patchBytes: 600 * 1024 }),
+    ]);
+    expect(unrenderableFiles[0]?.file.path).toBe('huge.c');
+    expect(parsedFiles.map(({ file }) => file.path)).toEqual(['src/first.ts']);
+  });
 });
 
 describe('findUnrenderableDiffFile', () => {
