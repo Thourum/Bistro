@@ -34,6 +34,8 @@ go/
 │   ├── auth/                           # OAuth authorization code flow
 │   │   ├── oauth.go                    #   ProviderConfig, BuildAuthURL
 │   │   ├── callback.go                 #   CallbackServer (temp HTTP server), ExchangeToken, scope validation
+│   │   ├── callback_page.go            #   Embedded browser callback page renderer
+│   │   ├── callback.html               #   Browser sign-in result page
 │   │   ├── oauth_test.go
 │   │   └── callback_test.go
 │   │
@@ -124,7 +126,7 @@ go/
 │   │   ├── repo_location_resolver.go   #   Chooses local clone vs Bistro cache for repo operations
 │   │   ├── syncloop.go                 #   Periodic sync loop and watched-repo sync
 │   │   └── handler/                    #   Domain WebSocket handlers
-│   │       ├── auth.go                 #     AUTH_START, AUTH_CHECK, AUTH_DISCONNECT
+│   │       ├── auth.go                 #     AUTH_START, AUTH_CANCEL, AUTH_CHECK, AUTH_DISCONNECT
 │   │       ├── comments.go             #     Comment CRUD / thread operations
 │   │       ├── diff.go                 #     REQUEST_DIFF → DIFF_READY handler
 │   │       ├── patchsets.go            #     Patchset metadata handlers
@@ -257,6 +259,8 @@ Handles approve/request-changes/post-comment actions through a `Handler` interfa
 
 ### `internal/auth` -- OAuth Flow
 `BuildAuthURL` constructs the authorization URL; `CallbackServer` is a temporary localhost HTTP server that receives the redirect, exchanges the code for a token, and validates scopes. `ExchangeToken` has two paths: with a client secret (dev builds) it form-posts to GitHub's token URL; without one (packaged builds) it posts JSON `{code, redirect_uri}` to `https://get-bistro.com/api/oauth/token`, which holds the secret.
+
+The `-auth-callback-timeout` flag controls how long the engine waits for the OAuth callback.
 
 ### `internal/events` -- Event System
 Simple pub/sub `EventEmitter` with buffered channels. Used by both sync and actions packages.
@@ -464,7 +468,7 @@ go/
 │   │   ├── app.go                   # App struct, constructors, Run(), wiring only
 │   │   ├── syncloop.go              # runSyncLoop, syncWatchedRepos, syncSingleRepo
 │   │   └── handler/
-│   │       ├── auth.go              # AUTH_START, AUTH_CHECK, AUTH_DISCONNECT
+│   │       ├── auth.go              # AUTH_START, AUTH_CANCEL, AUTH_CHECK, AUTH_DISCONNECT
 │   │       ├── diff.go              # REQUEST_DIFF
 │   │       ├── pr.go                # REQUEST_PR_LIST
 │   │       └── repo.go              # REQUEST_REPO_LIST, TOGGLE_WATCH_REPO
