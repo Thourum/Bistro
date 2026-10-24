@@ -2,6 +2,7 @@ import { appStore } from '../store';
 import {
   INITIAL_SANDBOX_STATE,
   reduceSandbox,
+  SANDBOX_PR_COUNT,
   type SandboxPane,
   selectSandboxPane,
 } from '../utils/onboardingSandbox';
@@ -50,5 +51,14 @@ export function selectOnboardingSandboxPane(pane: SandboxPane): void {
           ...state,
           onboardingSandbox: selectSandboxPane(state.onboardingSandbox, pane),
         },
+  );
+}
+
+/** Mouse-selects a fake inbox row without counting as a movement task. */
+export function selectOnboardingSandboxPr(cursor: number): void {
+  appStore.setState((state) =>
+    state.onboardingSandbox === null || cursor < 0 || cursor >= SANDBOX_PR_COUNT
+      ? state
+      : { ...state, onboardingSandbox: { ...state.onboardingSandbox, cursor } },
   );
 }
