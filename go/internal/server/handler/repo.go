@@ -8,8 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	storedb "github.com/itterno/bistro/internal/store/db"
@@ -118,12 +121,17 @@ func refreshRepoList(ctx context.Context, queries *storedb.Queries, prov provide
 	}
 	logger.Debug("provider returned repos", "count", len(repos), "duration_ms", time.Since(start).Milliseconds())
 	for _, repository := range repos {
+		identity, parseErr := git.ParseRemoteURL("https://github.com/" + repository.FullName)
+		if parseErr != nil {
+			logger.Error("parse discovered repo failed", "err", parseErr)
+			continue
+		}
 		if err := queries.InsertDiscoveredRepo(ctx, storedb.InsertDiscoveredRepoParams{
-			ID: githubProvider + ":" + repository.FullName, Provider: githubProvider,
-			Owner: repository.Owner, Repo: repository.Name,
+			ID: identity.ID(), Provider: identity.Provider,
+			Owner: strings.ToLower(identity.Owner), Repo: strings.ToLower(identity.Repo),
 		}); err != nil {
 			// One bad row must not hide the cached list from the caller.
-			logger.Error("upsert repo failed", "repo_id", githubProvider+":"+repository.FullName, "err", err)
+			logger.Error("upsert repo failed", "repo_id", identity.ID(), "err", err)
 		}
 	}
 	logger.Debug("repos upserted", "count", len(repos))
@@ -154,12 +162,18 @@ func nullableStringPtr(value sql.NullString) *string {
 	return &value.String
 }
 
+// WatchSyncTrigger retains a full watched-repo sync when the trigger queue overflows.
+type WatchSyncTrigger struct {
+	Queue   chan<- string
+	Pending *atomic.Bool
+}
+
 // NewToggleWatchHandler handles TOGGLE_WATCH_REPO messages.
 // It flips the watched state for the given repo_id and triggers an immediate
 // sync if the repo was just enabled for watching.
 func NewToggleWatchHandler(
 	db *sql.DB,
-	syncTrigger chan<- string,
+	syncTrigger WatchSyncTrigger,
 	log *slog.Logger,
 ) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
@@ -209,10 +223,16 @@ func NewToggleWatchHandler(
 
 		if newWatched && !wasWatched {
 			select {
-			case syncTrigger <- data.RepoID:
+			case syncTrigger.Queue <- data.RepoID:
 				logger.Debug("sync triggered", "repo_id", data.RepoID)
 			default:
-				logger.Warn("sync trigger channel full, skipping immediate sync", "repo_id", data.RepoID)
+				syncTrigger.Pending.Store(true)
+				// Wake the loop if it drained the queue before the flag was stored.
+				select {
+				case syncTrigger.Queue <- "":
+				default:
+				}
+				logger.Debug("sync trigger channel full, watched-repo sync pending", "repo_id", data.RepoID)
 			}
 		}
 

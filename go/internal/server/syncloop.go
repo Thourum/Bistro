@@ -82,6 +82,10 @@ func (a *App) runSyncLoop(ctx context.Context) {
 		if a.applyPendingSyncSettings(&settings) {
 			continue
 		}
+		if a.pendingWatchSync.Swap(false) {
+			a.syncPendingWatchedRepos(ctx)
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			a.log.Debug("sync loop stopping", "reason", ctx.Err())
@@ -105,6 +109,22 @@ func (a *App) runSyncLoop(ctx context.Context) {
 			}
 			a.applyPendingSyncSettings(&settings)
 		}
+	}
+}
+
+// Overflowed watch requests must sync watched repos, not just GitHub's inbox
+// discovery lane: a newly watched repo may have no PR involving the user yet.
+func (a *App) syncPendingWatchedRepos(ctx context.Context) {
+	repos, err := a.listWatchedRepos(ctx)
+	if err != nil {
+		a.log.Error("read pending watched repos failed", "err", err)
+		return
+	}
+	for _, repo := range repos {
+		if ctx.Err() != nil {
+			return
+		}
+		a.syncSingleRepo(ctx, repo.id)
 	}
 }
 

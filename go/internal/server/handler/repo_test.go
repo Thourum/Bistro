@@ -7,10 +7,12 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"sync/atomic"
 	"testing"
 
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
+	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -103,6 +105,34 @@ func TestRequestRepoListHandler_ReturnsRepos(t *testing.T) {
 	for _, repo := range repos {
 		if repo.Source != nil || repo.LocationStatus != nil || repo.LocationErrorCode != nil || repo.LocationError != nil {
 			t.Fatalf("expected empty location fields for provider-only repo, got %+v", repo)
+		}
+	}
+}
+
+func TestRepoListMixedCaseDiscoveryPreservesCanonicalWatchedClone(t *testing.T) {
+	database := setupRepoTestDB(t)
+	defer database.Close()
+	ctx := context.Background()
+	locations := store.NewRepoLocationStore(database)
+	if err := locations.UpsertLocal(ctx, "github", "Itterno", "Bistro", t.TempDir(), true); err != nil {
+		t.Fatal(err)
+	}
+	queueProvider := &queueOperationProvider{read: func(context.Context) (*provider.ReviewQueue, error) {
+		return &provider.ReviewQueue{Repositories: []*provider.Repo{{Owner: "Itterno", Name: "Bistro"}}}, nil
+	}}
+	if _, err := fetchAndPersistReviewQueue(ctx, database, queueProvider); err != nil {
+		t.Fatal(err)
+	}
+	prov := mock.NewMockProvider().WithRepos([]*provider.Repo{{Owner: "Itterno", Name: "Bistro", FullName: "Itterno/Bistro"}})
+	request := NewRequestRepoListHandler(func() provider.Provider { return prov }, database, testRepoLogger())
+	for range 2 {
+		reply, err := request(ctx, ws.InboundMessage{ID: "mixed-case", Type: "REQUEST_REPO_LIST"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		repos := reply.(map[string]interface{})["data"].(map[string]interface{})["repos"].([]repoRow)
+		if len(repos) != 1 || repos[0].ID != "github:itterno/bistro" || !repos[0].Watched || repos[0].LocalPath == nil {
+			t.Fatalf("discovery duplicated or replaced the watched clone: %+v", repos)
 		}
 	}
 }
@@ -208,7 +238,7 @@ func TestToggleWatchHandler_RespectsWatchedBooleanAndTriggersSyncWhenEnabled(t *
 	}
 
 	syncCh := make(chan string, 8)
-	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
+	handler := NewToggleWatchHandler(db, WatchSyncTrigger{Queue: syncCh, Pending: new(atomic.Bool)}, testRepoLogger())
 
 	payload, _ := json.Marshal(map[string]interface{}{"repo_id": "github:acme/api", "watched": true})
 	msg := ws.InboundMessage{ID: "req-4", Type: "TOGGLE_WATCH_REPO", Data: payload}
@@ -264,7 +294,7 @@ func TestToggleWatchHandler_MissingWatchedFallsBackToToggle(t *testing.T) {
 	}
 
 	syncCh := make(chan string, 8)
-	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
+	handler := NewToggleWatchHandler(db, WatchSyncTrigger{Queue: syncCh, Pending: new(atomic.Bool)}, testRepoLogger())
 
 	payload, _ := json.Marshal(map[string]string{"repo_id": "github:acme/api"})
 	msg := ws.InboundMessage{ID: "req-4c", Type: "TOGGLE_WATCH_REPO", Data: payload}
@@ -284,7 +314,7 @@ func TestToggleWatchHandler_MissingRepoID(t *testing.T) {
 	defer db.Close()
 
 	syncCh := make(chan string, 8)
-	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
+	handler := NewToggleWatchHandler(db, WatchSyncTrigger{Queue: syncCh, Pending: new(atomic.Bool)}, testRepoLogger())
 
 	payload, _ := json.Marshal(map[string]string{})
 	msg := ws.InboundMessage{ID: "req-5", Type: "TOGGLE_WATCH_REPO", Data: payload}
@@ -357,7 +387,7 @@ func TestToggleWatchHandler_InvalidPayload(t *testing.T) {
 	defer db.Close()
 
 	syncCh := make(chan string, 8)
-	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
+	handler := NewToggleWatchHandler(db, WatchSyncTrigger{Queue: syncCh, Pending: new(atomic.Bool)}, testRepoLogger())
 
 	msg := ws.InboundMessage{ID: "req-6", Type: "TOGGLE_WATCH_REPO", Data: json.RawMessage(`not-json`)}
 
