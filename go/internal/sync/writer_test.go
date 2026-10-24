@@ -777,32 +777,18 @@ func TestRecordPatchsetIfChanged_BaseOnlyChanged(t *testing.T) {
 		Title: "T", Author: "a", State: "open",
 		BaseBranch: "main", HeadBranch: "f", BaseSHA: "base-1", HeadSHA: "sha-same",
 	}
-	if err := w.WriteSyncResults([]*PRFetchResult{{PR: base}}); err != nil {
-		t.Fatalf("write P1: %v", err)
-	}
-	retargeted := *base
-	retargeted.BaseSHA = "base-2"
-	if err := w.WriteSyncResults([]*PRFetchResult{{PR: &retargeted}}); err != nil {
-		t.Fatalf("write P2: %v", err)
-	}
+	mustWritePR(t, w, base)
+	advanced := *base
+	advanced.BaseSHA = "base-2"
+	mustWritePR(t, w, &advanced)
 
-	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM patchsets WHERE pr_id=?`, base.ID).Scan(&count); err != nil {
-		t.Fatalf("count patchsets: %v", err)
+	patchsets, err := db.ListPatchsets(context.Background(), base.ID)
+	if err != nil || len(patchsets) != 1 {
+		t.Fatalf("base-tip move: got %d patchset rows (err %v), want 1", len(patchsets), err)
 	}
-	if count != 2 {
-		t.Fatalf("base-only diff change: got %d patchset rows want 2", count)
-	}
-
-	var num int
-	if err := db.QueryRow(
-		`SELECT number FROM patchsets WHERE pr_id=? AND head_sha=? AND base_sha=?`,
-		base.ID, "sha-same", "base-2",
-	).Scan(&num); err != nil {
-		t.Fatalf("base-2 patchset not found: %v", err)
-	}
-	if num != 2 {
-		t.Errorf("base-only P2 number: got %d want 2", num)
+	current, ok, err := db.CurrentPatchset(context.Background(), base.ID)
+	if err != nil || !ok || current.Number != 1 {
+		t.Fatalf("current patchset = %+v, ok=%v err=%v; want P1 despite changed base tip", current, ok, err)
 	}
 }
 

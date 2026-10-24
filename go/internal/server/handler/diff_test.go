@@ -219,13 +219,64 @@ func (s *stubViewedChecker) IsFileViewed(_ context.Context, prID, filePath, _, c
 	return s.viewed[key], nil
 }
 
+func TestRequestDiffHandler_UsesStoredPatchID(t *testing.T) {
+	const patchID = "full-patch-id"
+	stub := &stubDiffReader{
+		diffs: map[string]string{"pr-1": "truncated patch"},
+		files: map[string][]store.DiffFile{
+			"pr-1": {{FilePath: "a.go", Patch: "truncated patch", PatchID: patchID}},
+		},
+	}
+	handler := NewRequestDiffHandler(stub, nil)
+	response, err := handler(context.Background(), makeMsg(t, "stored-id", "pr-1"))
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	files := extractData(t, response)["files"].([]diffFileDetail)
+	if len(files) != 1 || files[0].ContentHash != patchID {
+		t.Fatalf("files = %+v, want content_hash %q", files, patchID)
+	}
+}
+
+func TestRequestDiffHandler_ViewedSurvivesLineShift(t *testing.T) {
+	const originalPatch = "@@ -1,2 +1,3 @@\n context\n+new line\n context\n"
+	const shiftedPatch = "@@ -10,2 +10,3 @@\n context\n+new line\n context\n"
+	stub := &stubDiffReader{
+		diffs: map[string]string{"pr-1": originalPatch},
+		files: map[string][]store.DiffFile{
+			"pr-1": {{FilePath: "a.go", Patch: originalPatch}},
+		},
+	}
+	viewed := &stubViewedChecker{viewed: make(map[string]bool)}
+	handler := NewRequestDiffHandlerWithDeps(DiffHandlerDeps{
+		DiffStore: stub, ViewedStore: viewed,
+		CurrentUser: &mockCurrentUserReader{login: "alice", found: true},
+	})
+	response, err := handler(context.Background(), makeMsg(t, "original", "pr-1"))
+	if err != nil {
+		t.Fatalf("original diff: %v", err)
+	}
+	originalHash := extractData(t, response)["files"].([]diffFileDetail)[0].ContentHash
+	viewed.viewed["pr-1|a.go|"+originalHash] = true
+	stub.files["pr-1"] = []store.DiffFile{{FilePath: "a.go", Patch: shiftedPatch}}
+
+	response, err = handler(context.Background(), makeMsg(t, "shifted", "pr-1"))
+	if err != nil {
+		t.Fatalf("shifted diff: %v", err)
+	}
+	file := extractData(t, response)["files"].([]diffFileDetail)[0]
+	if !file.Viewed || file.ContentHash != originalHash {
+		t.Fatalf("shifted file = %+v, want viewed with hash %q", file, originalHash)
+	}
+}
+
 func TestRequestDiffHandler_ContentHashIsDeterministic(t *testing.T) {
 	// The same patch must always produce the same content_hash.
 	patch := "@@ -1,2 +1,3 @@\n context\n+new line\n context\n"
-	hash1 := PatchContentHash(patch)
-	hash2 := PatchContentHash(patch)
+	hash1 := viewedHash(store.DiffFile{Patch: patch})
+	hash2 := viewedHash(store.DiffFile{Patch: patch})
 	if hash1 != hash2 {
-		t.Error("PatchContentHash is not deterministic")
+		t.Error("viewedHash is not deterministic")
 	}
 	if len(hash1) != 64 { // 32 bytes hex-encoded
 		t.Errorf("expected 64-char hex hash, got len %d: %q", len(hash1), hash1)
@@ -233,14 +284,14 @@ func TestRequestDiffHandler_ContentHashIsDeterministic(t *testing.T) {
 }
 
 func TestRequestDiffHandler_DifferentPatchesDifferentHash(t *testing.T) {
-	if PatchContentHash("patch-a") == PatchContentHash("patch-b") {
+	if viewedHash(store.DiffFile{Patch: "patch-a"}) == viewedHash(store.DiffFile{Patch: "patch-b"}) {
 		t.Error("different patches must produce different hashes")
 	}
 }
 
 func TestRequestDiffHandler_ViewedFlagTrueWhenFileViewed(t *testing.T) {
 	const patch = "--- a.go\n+++ a.go\n+added line\n"
-	hash := PatchContentHash(patch)
+	hash := viewedHash(store.DiffFile{Patch: patch})
 
 	stub := &stubDiffReader{
 		diffs: map[string]string{"pr-1": patch},
@@ -278,7 +329,7 @@ func TestRequestDiffHandler_ViewedFlagTrueWhenFileViewed(t *testing.T) {
 
 func TestRequestDiffHandler_ViewedFalseWhenHashMismatch(t *testing.T) {
 	const patch = "some patch content"
-	hash := PatchContentHash(patch)
+	hash := viewedHash(store.DiffFile{Patch: patch})
 
 	stub := &stubDiffReader{
 		diffs: map[string]string{"pr-2": patch},
@@ -287,7 +338,7 @@ func TestRequestDiffHandler_ViewedFalseWhenHashMismatch(t *testing.T) {
 		},
 	}
 	// Viewed with a STALE hash (different from current patch hash).
-	staleHash := PatchContentHash("old patch content")
+	staleHash := viewedHash(store.DiffFile{Patch: "old patch content"})
 	viewed := &stubViewedChecker{viewed: map[string]bool{
 		"pr-2|main.go|" + staleHash: true,
 		// Current hash is NOT in viewed store → viewed=false.

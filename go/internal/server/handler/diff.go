@@ -2,12 +2,11 @@ package handler
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 
+	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
@@ -36,8 +35,8 @@ type DiffHandlerDeps struct {
 }
 
 // diffFileDetail is the per-file entry in the DIFF_READY response.
-// content_hash is SHA-256 of the stored patch (server-computed, canonical).
-// viewed is true only when the current user has seen this exact patch.
+// content_hash is the patch ID of the file's change (server-computed, canonical).
+// viewed is true only when the current user has seen this change.
 type diffFileDetail struct {
 	Path        string `json:"path"`
 	Status      string `json:"status"`
@@ -53,13 +52,13 @@ type diffFileDetail struct {
 	Viewed      bool   `json:"viewed"`
 }
 
-// PatchContentHash computes the canonical content hash for a per-file diff patch.
-// Algorithm: SHA-256 of the raw patch string, hex-encoded.
-// This is the value that must appear in DIFF_READY content_hash and that clients
-// echo back in MARK_FILE_VIEWED content_hash.
-func PatchContentHash(patch string) string {
-	sum := sha256.Sum256([]byte(patch))
-	return hex.EncodeToString(sum[:])
+// viewedHash uses the patch ID so viewed state survives line-shift-only rebases.
+// Rows cached before migration 035 have no stored patch ID; compute it instead.
+func viewedHash(file store.DiffFile) string {
+	if file.PatchID != "" {
+		return file.PatchID
+	}
+	return git.PatchID(file.Patch)
 }
 
 // NewRequestDiffHandler returns a ws.MessageHandler that reads diffs from the
@@ -141,7 +140,7 @@ func newRequestDiffHandler(deps DiffHandlerDeps) ws.MessageHandler {
 			logger.Warn("failed to get diff file stats", "pr_id", data.PRID, "err", filesErr)
 		} else {
 			for _, f := range diffFiles {
-				hash := PatchContentHash(f.Patch)
+				hash := viewedHash(f)
 
 				viewed := false
 				if deps.ViewedStore != nil && login != "" {

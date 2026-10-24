@@ -1,5 +1,11 @@
 import type { CodeViewHandle } from '@pierre/diffs/react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useStore } from '../../hooks/useStore';
 import { appStore } from '../../store';
 import type { ReviewThread } from '../../types';
@@ -70,9 +76,6 @@ export function useInlineDiffAnnotations({
         inlineCommentThreadIds: [],
         activeInlineCommentThreadId: null,
         replyingInlineCommentThreadId: null,
-        // These settings are keyed to the diff and must not leak into the next PR.
-        diffCollapseOverrides: [],
-        hideWhitespaceHunks: false,
       }));
     };
   }, []);
@@ -133,6 +136,7 @@ interface FileNavigationOptions {
   unrenderableFiles: readonly UnrenderableDiffFile[];
   selectedFileKey: string | undefined;
   onFilesResolved: ((canonicalKeys: string[]) => void) | undefined;
+  syncFileSelection: boolean;
 }
 
 export function useDiffFileNavigation({
@@ -140,6 +144,7 @@ export function useDiffFileNavigation({
   unrenderableFiles,
   selectedFileKey,
   onFilesResolved,
+  syncFileSelection,
 }: FileNavigationOptions) {
   const [activeId, setActiveId] = useState<string | null>(files[0]?.id ?? null);
   const codeViewRef = useRef<CodeViewHandle<ReviewThread, unknown>>(null);
@@ -160,8 +165,9 @@ export function useDiffFileNavigation({
   }, [files, activeId]);
 
   useLayoutEffect(() => {
+    if (!syncFileSelection) return;
     onFilesResolved?.(files.map((file) => file.canonicalKey));
-  }, [files, onFilesResolved]);
+  }, [files, onFilesResolved, syncFileSelection]);
 
   useEffect(() => {
     if (files.length === 0 || selectedFileKey === undefined) return;
@@ -177,12 +183,12 @@ export function useDiffFileNavigation({
       matchedFile.id,
       unrenderableFiles,
     );
-    updateSelectedFileIndex(files, matchedFile.id);
+    if (syncFileSelection) updateSelectedFileIndex(files, matchedFile.id);
     // The URL, not scroll-driven activeId updates, drives this navigation.
-  }, [selectedFileKey, files, unrenderableFiles]);
+  }, [selectedFileKey, files, unrenderableFiles, syncFileSelection]);
 
   useEffect(() => {
-    if (files.length === 0) return;
+    if (!syncFileSelection || files.length === 0) return;
     const clampedIndex = Math.min(
       Math.max(selectedFileIndex, 0),
       files.length - 1,
@@ -203,22 +209,31 @@ export function useDiffFileNavigation({
       file.id,
       unrenderableFiles,
     );
-  }, [selectedFileIndex, files, activeId, unrenderableFiles]);
+  }, [
+    selectedFileIndex,
+    files,
+    activeId,
+    unrenderableFiles,
+    syncFileSelection,
+  ]);
 
-  const selectFile = (id: string): void => {
-    setActiveId(id);
-    requestSelectedFileScroll(
-      codeViewRef.current,
-      pendingScrollFileIdRef,
-      id,
-      unrenderableFiles,
-    );
-    updateSelectedFileIndex(files, id);
-  };
+  const selectFile = useCallback(
+    (id: string): void => {
+      setActiveId(id);
+      requestSelectedFileScroll(
+        codeViewRef.current,
+        pendingScrollFileIdRef,
+        id,
+        unrenderableFiles,
+      );
+      if (syncFileSelection) updateSelectedFileIndex(files, id);
+    },
+    [files, unrenderableFiles, syncFileSelection],
+  );
 
   const activateVisibleFile = (id: string): void => {
     setActiveId(id);
-    updateSelectedFileIndex(files, id);
+    if (syncFileSelection) updateSelectedFileIndex(files, id);
   };
 
   return {

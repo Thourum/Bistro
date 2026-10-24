@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	storedb "github.com/itterno/bistro/internal/store/db"
+	"github.com/itterno/bistro/internal/store"
 )
 
 func TestRequestPRListIncludesInboxSignals(t *testing.T) {
@@ -22,7 +22,6 @@ func TestRequestPRListIncludesInboxSignals(t *testing.T) {
 	insertPRListTestComment(t, db, "commented", "alice")
 	insertPRListTestComment(t, db, "other-comment", "bob")
 
-	queries := storedb.New(db)
 	for _, review := range []struct {
 		prID string
 		sha  string
@@ -30,12 +29,12 @@ func TestRequestPRListIncludesInboxSignals(t *testing.T) {
 		{prID: "commented", sha: "stale-sha"},
 		{prID: "other-comment", sha: "head-other"},
 	} {
-		if err := queries.UpsertLastReviewedSHA(context.Background(), storedb.UpsertLastReviewedSHAParams{
-			PrID:            review.prID,
-			AccountProvider: "github",
-			AccountLogin:    "alice",
-			Login:           "alice",
-			Sha:             review.sha,
+		if err := store.RecordLastReviewed(context.Background(), db, store.ReviewEvent{
+			PRID:       review.prID,
+			Login:      "alice",
+			HeadSHA:    review.sha,
+			ReviewedAt: updatedAt,
+			Source:     store.ReviewSourceBistroAction,
 		}); err != nil {
 			t.Fatalf("upsert last reviewed SHA for %s: %v", review.prID, err)
 		}

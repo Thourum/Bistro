@@ -478,7 +478,6 @@ type runStores struct {
 	repoLocation *store.RepoLocationStore
 	expertise    *expertise.Store
 	diff         *store.DiffStore
-	rangeDiffer  *git.RangeDiffer
 }
 
 func (a *App) openDatabase(ctx context.Context) error {
@@ -509,9 +508,7 @@ func (a *App) prepareStores() runStores {
 		repoLocation: store.NewRepoLocationStore(a.db.DB),
 		expertise:    expertise.NewStore(a.db.DB),
 		diff:         store.NewDiffStore(a.db.DB),
-		rangeDiffer:  git.NewRangeDiffer(a.log, a.gitClient),
 	}
-	a.log.Info("range-diff probe", "available", stores.rangeDiffer.Available(), "reason", stores.rangeDiffer.FallbackReason())
 	a.anchorResolver = git.NewAnchorResolver()
 	a.currentUserStore = stores.currentUser
 	a.configureRepoLocationStore(stores.repoLocation)
@@ -716,16 +713,18 @@ func (a *App) registerDiffAndCheckoutHandlers(stores runStores) {
 	// Phase 2.1+2.2 handlers.
 	a.wsServer.RegisterHandler("GET_PATCHSETS",
 		handler.NewListPatchsetsHandler(a.db, a.log))
-	a.wsServer.RegisterHandler("REQUEST_RANGE_DIFF",
-		handler.NewRangeDiffHandlerWithDeps(handler.RangeDiffHandlerDeps{
-			Runner:       stores.rangeDiffer,
-			Patchsets:    a.db,
-			LastReviewed: a.db,
-			CurrentUser:  stores.currentUser,
-			PlainDiff:    stores.diff,
-		}, a.log))
-	a.wsServer.RegisterHandler("MARK_FILE_VIEWED",
-		handler.NewMarkFileViewedHandlerWithDiffStore(a.db, stores.currentUser, stores.diff, a.log))
+	a.wsServer.RegisterHandler("REQUEST_TRIAGE", handler.NewTriageHandler(handler.TriageHandlerDeps{
+		Store: a.db, CurrentUser: stores.currentUser, Log: a.log,
+	}))
+	a.wsServer.RegisterHandler("REQUEST_INTERDIFF", handler.NewInterdiffHandler(handler.InterdiffHandlerDeps{
+		Patchsets: a.db,
+		Git:       a.gitClient,
+		RepoForPR: prRepoLocator{db: a.db, locations: stores.repoLocation}.RepoForPR,
+		Log:       a.log,
+	}))
+	a.wsServer.RegisterHandler("MARK_FILE_VIEWED", handler.NewMarkFileViewedHandlerWithDeps(handler.MarkFileViewedDeps{
+		Viewed: a.db, CurrentUser: stores.currentUser, DiffStore: stores.diff, Baseline: a.db, Log: a.log,
+	}))
 	a.wsServer.RegisterHandler("MARK_PRS_READ",
 		handler.NewMarkPRsReadHandler(a.db, stores.currentUser, a.wsServer, a.log))
 	// Phase 2.4 handlers.

@@ -19,7 +19,7 @@ func TestFetchPRDetailsPopulatesReviewStatus(t *testing.T) {
 	prov := mock.NewMockProvider().
 		WithPRs(prs).
 		WithReviews([]*provider.Review{
-			{PRID: "github:acme/api:1", Author: "alice", State: "approved", SubmittedAt: submitted},
+			{PRID: "github:acme/api:1", Author: "alice", State: "approved", CommitID: "reviewed-head", SubmittedAt: submitted},
 		})
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -33,6 +33,10 @@ func TestFetchPRDetailsPopulatesReviewStatus(t *testing.T) {
 		t.Fatalf("got %d results, want 1", len(results))
 	}
 
+	reviews := results[0].Reviews
+	if len(reviews) != 1 || reviews[0].CommitID != "reviewed-head" || !reviews[0].SubmittedAt.Equal(submitted) {
+		t.Fatalf("Reviews = %+v, want submitted review at reviewed-head", reviews)
+	}
 	pr := results[0].PR
 	if pr.ReviewStatus != "approved" {
 		t.Errorf("ReviewStatus = %q, want approved", pr.ReviewStatus)
