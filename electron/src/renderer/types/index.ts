@@ -402,14 +402,38 @@ export interface Toast {
 /**
  * Repository discovered from provider, optionally watched for PR sync.
  */
+export const repoInfoSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  owner: z.string(),
+  repo: z.string(),
+  watched: z.boolean(),
+  source: z.enum(['local', 'cache']).nullable().optional(),
+  local_path: z.string().nullable().optional(),
+  location_status: z.string().nullable().optional(),
+  location_error_code: z.string().nullable().optional(),
+  location_error: z.string().nullable().optional(),
+});
+export const repoListResponseSchema = z.object({
+  repos: z.array(repoInfoSchema),
+});
+export const reviewQueueSchema = z.object({
+  requested: z.array(
+    z.object({ repo_id: z.string(), count: z.number().int().nonnegative() }),
+  ),
+  recently_reviewed: z.array(z.string()),
+});
+export type ReviewQueue = z.infer<typeof reviewQueueSchema>;
+
 export interface RepoInfo {
   id: string;
   provider: string;
   owner: string;
   repo: string;
   watched: boolean;
-  source?: 'local' | 'cache' | null;
-  location_status?: string | null;
-  location_error_code?: string | null;
-  location_error?: string | null;
+  source?: 'local' | 'cache' | null | undefined;
+  local_path?: string | null | undefined;
+  location_status?: string | null | undefined;
+  location_error_code?: string | null | undefined;
+  location_error?: string | null | undefined;
 }

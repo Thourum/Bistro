@@ -19,16 +19,17 @@ const scanFailureSchema = z.object({
 const scanRepositoriesSchema = z.object({ repositories: z.array(z.unknown()) });
 const scanCountSchema = z.object({
   ok: z.literal(true),
-  // The previous guard accepted every number, including non-finite values.
-  discovered: z.custom<number>((value) => typeof value === 'number'),
+  discovered: z.number().int().nonnegative(),
+  partial: z.boolean(),
 });
 
 export interface ValidateDevFolderResult {
   canonicalPath: string;
 }
 
-interface ScanDevFolderResult {
+export interface ScanDevFolderResult {
   discovered: number;
+  partial: boolean;
 }
 
 function sendResultErrorMessage(response: unknown, fallback: string): string {
@@ -67,14 +68,21 @@ export function parseScanDevFolderResult(
 ): Result<ScanDevFolderResult, Fault> {
   const repositories = scanRepositoriesSchema.safeParse(response);
   if (repositories.success) {
-    return ok({ discovered: repositories.data.repositories.length });
+    return ok({
+      discovered: repositories.data.repositories.length,
+      partial: false,
+    });
   }
   const failure = scanFailureSchema.safeParse(response);
   if (failure.success) {
     return err(new Fault(failure.data.message).withTag('VALIDATION_ERROR'));
   }
   const parsed = scanCountSchema.safeParse(response);
-  if (parsed.success) return ok({ discovered: parsed.data.discovered });
+  if (parsed.success)
+    return ok({
+      discovered: parsed.data.discovered,
+      partial: parsed.data.partial,
+    });
   log.warn('invalid dev folder scan response');
   return err(
     new Fault('Dev folder scan returned an invalid response.').withTag(

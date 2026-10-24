@@ -1,5 +1,6 @@
 import { Store } from '@tanstack/store';
 import type { EngineStatus } from '../../types/engine';
+import type { FolderScanState } from '../services/onboardingSync';
 import type {
   ActionResult,
   ExpertiseNudgePayload,
@@ -10,7 +11,17 @@ import type {
   Toast,
 } from '../types';
 import type { LaneSection } from '../utils/lanes';
+import type { OnboardingSelection } from '../utils/onboardingRepos';
 import type { SandboxState } from '../utils/onboardingSandbox';
+
+export interface OnboardingSyncState {
+  readonly selection: OnboardingSelection;
+  readonly initialReposPending: boolean;
+  readonly repoError: string | null;
+  readonly queuePending: boolean;
+  readonly queueError: string | null;
+  readonly folder: FolderScanState;
+}
 
 interface SyncStats {
   prCount: number;
@@ -53,6 +64,9 @@ export interface UIState {
   filterState: 'open' | 'draft' | 'all' | 'needs_action' | 'touches_you';
   /** Onboarding style sandbox; null when the step isn't showing. */
   onboardingSandbox: SandboxState | null;
+  onboardingSync: OnboardingSyncState | null;
+  onboardingStep: 'sync' | 'practice' | null;
+  onboardingIntent: 'chooseFolder' | 'stopScan' | 'focusRepoFilter' | null;
   confirmingAction: ConfirmingAction | null;
   pendingAction: PendingAction | null;
   actionResult: ActionResult | null;
@@ -190,6 +204,9 @@ export const initialUIState: UIState = {
   sortBy: 'updated',
   filterState: 'open',
   onboardingSandbox: null,
+  onboardingSync: null,
+  onboardingStep: null,
+  onboardingIntent: null,
   confirmingAction: null,
   pendingAction: null,
   actionResult: null,

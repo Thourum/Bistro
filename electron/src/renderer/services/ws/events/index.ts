@@ -109,6 +109,7 @@ const eventHandlers: WsEventHandlers = {
   UNDISMISS_RESULT: resolveWsResponse,
   PR_LIST_READY: resolveWsResponse,
   REPO_LIST_READY: handleRepoListReady,
+  REVIEW_QUEUE_READY: resolveWsResponse,
   WATCH_REPO_RESULT: handleWatchRepoResult,
 } satisfies WsEventHandlers;
 
