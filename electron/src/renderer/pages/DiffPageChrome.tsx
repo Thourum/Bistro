@@ -1,13 +1,12 @@
 import { type ReactNode, useMemo } from 'react';
-import { RangeDiffView } from '../components/RangeDiffView';
 import { StatusSquare } from '../components/StatusSquare';
-import type { DiffFile, PR, RangeDiffResult } from '../types';
+import type { DiffFile, PR } from '../types';
 
 interface DiffPageToolbarProps {
   pr: PR | undefined;
-  showRangeDiff: boolean;
-  sinceLastReview: boolean;
-  selectedPatchsetPair: readonly [number, number] | null;
+  triageLabel: string | null;
+  interdiffLabel: string | null;
+  isRebased: boolean;
   findQuery: string;
   onFindQueryChange: (query: string) => void;
   onBack: () => void;
@@ -15,9 +14,9 @@ interface DiffPageToolbarProps {
 
 export function DiffPageToolbar({
   pr,
-  showRangeDiff,
-  sinceLastReview,
-  selectedPatchsetPair,
+  triageLabel,
+  interdiffLabel,
+  isRebased,
   findQuery,
   onFindQueryChange,
   onBack,
@@ -42,26 +41,32 @@ export function DiffPageToolbar({
               <span className="text-outline-variant"> → </span>
               {pr.base_branch}
             </span>
-            {showRangeDiff && (
+            {triageLabel !== null && (
               <span className="font-mono text-[10px] uppercase tracking-widest text-primary border border-primary/40 px-2 py-0.5">
-                {sinceLastReview
-                  ? 'Since last review'
-                  : `P${selectedPatchsetPair?.[0]} → P${selectedPatchsetPair?.[1]}`}
+                {triageLabel}
+              </span>
+            )}
+            {interdiffLabel !== null && (
+              <span className="font-mono text-[10px] uppercase tracking-widest text-primary border border-primary/40 px-2 py-0.5">
+                {interdiffLabel}
+              </span>
+            )}
+            {isRebased && (
+              <span className="font-mono text-[10px] uppercase tracking-widest text-tertiary border border-tertiary/40 px-2 py-0.5">
+                rebased: includes upstream changes
               </span>
             )}
           </>
         )}
       </div>
       <div className="flex items-center gap-3">
-        {!showRangeDiff && (
-          <input
-            type="text"
-            value={findQuery}
-            onChange={(event) => onFindQueryChange(event.target.value)}
-            placeholder="Find in diff…"
-            className="font-mono text-[11px] px-3 py-1 w-64 bg-surface border border-outline-variant/40 placeholder:text-outline-variant"
-          />
-        )}
+        <input
+          type="text"
+          value={findQuery}
+          onChange={(event) => onFindQueryChange(event.target.value)}
+          placeholder="Find in diff…"
+          className="font-mono text-[11px] px-3 py-1 w-64 bg-surface border border-outline-variant/40 placeholder:text-outline-variant"
+        />
         <span className="font-mono text-[10px] uppercase tracking-widest text-outline">
           ESC to exit
         </span>
@@ -74,30 +79,27 @@ interface DiffPageStatusBarProps {
   diff: string;
   files: DiffFile[];
   currentFile: DiffFile | undefined;
-  showRangeDiff: boolean;
-  rangeResult: RangeDiffResult | null;
+  triageSummary: string | null;
 }
 
 export function DiffPageStatusBar({
   diff,
   files,
   currentFile,
-  showRangeDiff,
-  rangeResult,
+  triageSummary,
 }: DiffPageStatusBarProps): React.ReactElement {
   // The full diff can be ~19 MB; split it once per diff, never per render.
   const diffLineCount = useMemo(() => diff.split('\n').length, [diff]);
-  const rangeLineCount = useMemo(
-    () => (rangeResult === null ? 0 : rangeResult.raw.split('\n').length),
-    [rangeResult],
-  );
   const viewedCount = files.filter((file) => file.viewed).length;
   return (
     <div className="shrink-0 h-6 px-4 flex items-center justify-between border-t border-outline-variant/30 bg-surface-container-low">
       <div className="flex items-center gap-4 font-mono text-[10px] uppercase tracking-widest text-outline">
-        <span>
-          {`${showRangeDiff && rangeResult !== null ? rangeLineCount : diffLineCount} lines`}
-        </span>
+        {triageSummary !== null && (
+          <span className="normal-case tracking-normal text-primary">
+            {triageSummary}
+          </span>
+        )}
+        <span>{diffLineCount} lines</span>
         {currentFile !== undefined && (
           <span className="flex items-center gap-1.5">
             <StatusSquare
@@ -132,10 +134,6 @@ interface DiffPageBodyProps {
   hydrationError: string | null;
   isHydrating: boolean;
   onRetry: () => void;
-  showRangeDiff: boolean;
-  rangeLoading: boolean;
-  rangeError: string | null;
-  rangeResult: RangeDiffResult | null;
   fullDiffLoading: boolean;
   fullDiffError: string | null;
   children: ReactNode;
@@ -146,10 +144,6 @@ export function DiffPageBody({
   hydrationError,
   isHydrating,
   onRetry,
-  showRangeDiff,
-  rangeLoading,
-  rangeError,
-  rangeResult,
   fullDiffLoading,
   fullDiffError,
   children,
@@ -162,16 +156,6 @@ export function DiffPageBody({
           isHydrating={isHydrating}
           onRetry={onRetry}
         />
-      ) : showRangeDiff ? (
-        rangeLoading ? (
-          <LoadingState label="Loading range diff…" />
-        ) : rangeError !== null ? (
-          <ErrorState message={`Failed to load range diff: ${rangeError}`} />
-        ) : rangeResult !== null ? (
-          <RangeDiffView result={rangeResult} />
-        ) : (
-          <LoadingState label="Loading range diff…" />
-        )
       ) : fullDiffLoading ? (
         <LoadingState label="Loading diff…" />
       ) : fullDiffError !== null ? (

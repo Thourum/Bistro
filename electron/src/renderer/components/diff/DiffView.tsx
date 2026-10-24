@@ -12,7 +12,12 @@ import { useEffect, useMemo } from 'react';
 import type { AppSettings } from '../../../types/settings';
 import { useStore } from '../../hooks/useStore';
 import { appStore } from '../../store';
-import type { Comment, ExpertiseFileData, ReviewThread } from '../../types';
+import type {
+  Comment,
+  ExpertiseFileData,
+  ReviewThread,
+  TriageFileStatus,
+} from '../../types';
 import { createLogger } from '../../utils/logger';
 import { openUrlInBrowser } from '../../utils/openUrl';
 import { hideWhitespaceOnlyHunks } from '../../utils/whitespaceDiff';
@@ -66,6 +71,8 @@ export interface DiffViewProps {
   findQuery?: string;
   selectedFileKey?: string;
   onFilesResolved?: (canonicalKeys: string[]) => void;
+  /** Interdiff disables this so its one-file view preserves the triage selection. */
+  syncFileSelection?: boolean;
   diffStyle?: AppSettings['diff']['style'];
   threads?: readonly ReviewThread[];
   comments?: readonly Comment[];
@@ -76,6 +83,8 @@ export interface DiffViewProps {
   prBrowserUrl?: string | null;
   /** Paths marked viewed (`v`) for the current user. */
   viewedPaths?: ReadonlySet<string>;
+  /** Since-last-review status per path, shown as sidebar badges. */
+  triageStatuses?: ReadonlyMap<string, TriageFileStatus>;
   /** Engine-capped files (no stored patch), keyed by path → original patch bytes. */
   oversizedPatchBytes?: ReadonlyMap<string, number>;
 }
@@ -87,6 +96,7 @@ export function DiffView({
   findQuery = '',
   selectedFileKey,
   onFilesResolved,
+  syncFileSelection = true,
   diffStyle = 'unified',
   threads = EMPTY_THREADS,
   comments = EMPTY_COMMENTS,
@@ -95,6 +105,7 @@ export function DiffView({
   expertiseError = null,
   prBrowserUrl = null,
   viewedPaths = EMPTY_VIEWED_PATHS,
+  triageStatuses,
   oversizedPatchBytes = EMPTY_OVERSIZED,
 }: DiffViewProps): React.ReactElement {
   const {
@@ -127,6 +138,7 @@ export function DiffView({
     unrenderableFiles,
     selectedFileKey,
     onFilesResolved,
+    syncFileSelection,
   });
   useInlineDiffAnnotations({
     orderedAnnotations,
@@ -174,6 +186,7 @@ export function DiffView({
           onSelect={selectFile}
           totalCount={files.length}
           viewedPaths={viewedPaths}
+          {...(triageStatuses !== undefined ? { triageStatuses } : {})}
         />
         <section className="flex-1 min-w-0 min-h-0 bg-surface-container-lowest overflow-hidden relative">
           {activeUnrenderableFile !== undefined ? (

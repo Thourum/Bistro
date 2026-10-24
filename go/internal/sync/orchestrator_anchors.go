@@ -44,13 +44,10 @@ func (o *Orchestrator) resolveAnchors(ctx context.Context, options anchorResolut
 
 	patchsets := o.anchorPatchsets(ctx, options)
 	storedPatchsetNums := o.storedAnchorPatchsetNumbers(ctx, options, candidates)
-	currentPatchsetNum := 0
-	for _, patchset := range patchsets {
-		if patchset.BaseSHA == options.prBaseSHA && patchset.HeadSHA == options.headSHA {
-			currentPatchsetNum = patchset.Number
-			break
-		}
-	}
+	_, currentPatchsetNum, _ := selectDiffBaseSHA(diffBaseSelection{
+		patchsets: patchsets, isCurrentPosition: true,
+		prBaseSHA: options.prBaseSHA, prHeadSHA: options.headSHA,
+	})
 
 	state := anchorResolutionState{
 		options: options, patchsets: patchsets,
@@ -176,18 +173,22 @@ func (o *Orchestrator) resolveCommentAnchor(comment *provider.Comment, state anc
 // Original-position comments require an exact patchset number, not a head match.
 func selectDiffBaseSHA(options diffBaseSelection) (diffBase string, resolvedPatchsetNum int, skip bool) {
 	if options.isCurrentPosition {
+		current := 0
 		for _, patchset := range options.patchsets {
-			if patchset.BaseSHA == options.prBaseSHA && patchset.HeadSHA == options.prHeadSHA {
-				return options.prBaseSHA, patchset.Number, false
+			if patchset.HeadSHA == options.prHeadSHA {
+				current = patchset.Number
 			}
 		}
-		return options.prBaseSHA, 0, false
+		return options.prBaseSHA, current, false
 	}
 	if options.patchsetNum <= 0 {
 		return "", 0, true
 	}
 	for _, patchset := range options.patchsets {
 		if patchset.Number == options.patchsetNum {
+			if patchset.MergeBaseSHA != "" {
+				return patchset.MergeBaseSHA, patchset.Number, false
+			}
 			return patchset.BaseSHA, patchset.Number, false
 		}
 	}

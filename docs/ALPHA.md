@@ -23,6 +23,8 @@ Auto-updates are off by default. To enable them for a build, set `BISTRO_ENABLE_
 
 ## Data and resets
 
+- Since this release, viewed marks are keyed on a rebase-stable patch fingerprint. Marks made before the upgrade reset once; mark files viewed again.
+
 - Data lives in `~/Library/Application Support/Bistro/`, including the SQLite cache and the `logs/` folder.
 - Alpha builds may change the schema or wipe the cache without a migration path. Expect to delete `~/Library/Application Support/Bistro/` to recover from a bad build. The cache holds no data that is not on GitHub, but local settings and rules are lost.
 

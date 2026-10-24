@@ -150,6 +150,12 @@ func renderDiffFile(filePatch fdiff.FilePatch, opts DiffOptions) (*DiffFile, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode patch for %s: %w", path, err)
 	}
+	patchID := PatchID(patchStr)
+	if isBinary {
+		// Binary patches render as "Binary files differ"; the blob IDs are
+		// what identify the content.
+		patchID = PatchID(fmt.Sprintf("binary %s %s\n", fileHash(from), fileHash(to)))
+	}
 	patchBytes := len(patchStr)
 	diffStatus := DiffStatusOK
 	patchToStore := patchStr
@@ -172,9 +178,19 @@ func renderDiffFile(filePatch fdiff.FilePatch, opts DiffOptions) (*DiffFile, err
 		PatchBytes:   patchBytes,
 		HunkCount:    countHunks(patchStr),
 		Patch:        patchToStore,
+		PatchID:      patchID,
 		AddedLines:   added,
 		RemovedLines: removed,
 	}, nil
+}
+
+// fileHash returns the blob ID of one side of a file patch; "" when the side
+// does not exist (added or deleted file).
+func fileHash(file fdiff.File) string {
+	if file == nil {
+		return ""
+	}
+	return file.Hash().String()
 }
 
 // countHunks counts unified diff hunk headers in a patch string.

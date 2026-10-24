@@ -232,12 +232,21 @@ describe('DEFAULT_KEYBINDINGS', () => {
     expect(byId('list.star').activation.routes).toEqual(['list']);
   });
 
-  it('s toggles the since-last-review intent flag', () => {
+  it('keeps the since-last-review filter active across marking viewed and changing style', () => {
     const store = makeStore({ confirmingAction: null });
-    invokeAction('diff.sinceLastReview', makeCtx(store, 'diff'));
-    expect(store.state.confirmingAction).toBe('since-last-review');
-    invokeAction('diff.sinceLastReview', makeCtx(store, 'diff'));
-    expect(store.state.confirmingAction).toBeNull();
+    const context = makeCtx(store, 'diff');
+    invokeAction('diff.sinceLastReview', context);
+    invokeAction('diff.markViewed', context);
+    expect(store.state.confirmingAction).toBe('mark-viewed');
+    expect(store.state.sinceLastReviewActive).toBe(true);
+    store.setState((state) => ({ ...state, confirmingAction: null }));
+    expect(store.state.sinceLastReviewActive).toBe(true);
+    invokeAction('diff.toggleStyle', context);
+    expect(store.state.confirmingAction).toBe('toggle-diff-style');
+    expect(store.state.sinceLastReviewActive).toBe(true);
+    invokeAction('diff.sinceLastReview', context);
+    expect(store.state.sinceLastReviewActive).toBe(false);
+    expect(store.state.confirmingAction).toBe('toggle-diff-style');
   });
 
   it('v sets the mark-viewed intent flag', () => {

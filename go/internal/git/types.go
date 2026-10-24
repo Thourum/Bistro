@@ -50,6 +50,7 @@ type DiffFile struct {
 	PatchBytes   int    // Byte count of the rendered patch before any truncation
 	HunkCount    int    // Count of unified diff hunks before any truncation
 	Patch        string // Unified diff content
+	PatchID      string // PatchID of the full patch (before budget truncation)
 	AddedLines   int    // Count of + lines
 	RemovedLines int    // Count of - lines
 }

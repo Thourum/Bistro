@@ -1,5 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { memo, useEffect, useRef } from 'react';
+import type { TriageFileStatus } from '../../types';
 import type { ParsedDiffFile } from './diffPathUtils';
 
 interface DiffFileSidebarProps {
@@ -9,6 +10,8 @@ interface DiffFileSidebarProps {
   totalCount: number;
   /** Paths marked viewed (`v`) for the current user. Empty when untracked. */
   viewedPaths?: ReadonlySet<string>;
+  /** Since-last-review status per path; badges are shown for non-unchanged files. */
+  triageStatuses?: ReadonlyMap<string, TriageFileStatus>;
 }
 
 // 32px wrapper: 28px h-full button + 4px pb-1 gap; rows must stay fixed-height.
@@ -22,6 +25,7 @@ export function DiffFileSidebar({
   onSelect,
   totalCount,
   viewedPaths = EMPTY_VIEWED_PATHS,
+  triageStatuses,
 }: DiffFileSidebarProps): React.ReactElement {
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -61,6 +65,7 @@ export function DiffFileSidebar({
                   file={file}
                   isActive={file.id === activeId}
                   isViewed={viewedPaths.has(file.path)}
+                  triageStatus={triageStatuses?.get(file.path)}
                   onSelect={onSelect}
                 />
               </div>
@@ -76,6 +81,7 @@ interface DiffFileRowProps {
   file: ParsedDiffFile;
   isActive: boolean;
   isViewed: boolean;
+  triageStatus: TriageFileStatus | undefined;
   onSelect: (id: string) => void;
 }
 
@@ -83,6 +89,7 @@ const DiffFileRow = memo(function DiffFileRow({
   file,
   isActive,
   isViewed,
+  triageStatus,
   onSelect,
 }: DiffFileRowProps) {
   return (
@@ -112,6 +119,11 @@ const DiffFileRow = memo(function DiffFileRow({
       >
         {file.path}
       </span>
+      {triageStatus !== undefined && triageStatus !== 'unchanged' && (
+        <span className="font-mono text-[9px] uppercase tracking-widest text-primary shrink-0">
+          {triageStatus}
+        </span>
+      )}
       <span className="font-mono text-[9px] text-outline shrink-0">
         +{file.additions}/-{file.deletions}
       </span>

@@ -78,6 +78,7 @@ const DIFF_IDS = new Set([
   'diff.nextComment',
   'diff.prevComment',
   'diff.sinceLastReview',
+  'diff.interdiff',
   'diff.toggleStyle',
   'diff.toggleWhitespace',
   'diff.toggleCollapse',

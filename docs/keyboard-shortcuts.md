@@ -1,6 +1,6 @@
 # Bistro keyboard shortcuts
 
-Generated from `electron/src/renderer/utils/keybindings.ts` (2026-08-09). This is
+Generated from `electron/src/renderer/utils/keybindings.ts` (updated 2026-10-23). This is
 the full surface for a help-menu redesign. Every key is user-overridable via
 settings, so the UI must render from config, never hardcode.
 
@@ -81,7 +81,8 @@ Only quit is truly global. The rest are inactive on login, onboarding and
 | `j` / `k` | Scroll down / up |
 | `Shift+J` / `Shift+K` | Next / previous file |
 | `n` / `p` | Next / previous inline comment |
-| `s` | Since-last-review range diff |
+| `s` | Since last review: show only files changed since your last review |
+| `i` | Interdiff: the current file since your last review |
 | `Shift+S` | Toggle side-by-side ↔ unified |
 | `w` | Hide whitespace-only hunks |
 | `z` | Collapse / expand focused file |
