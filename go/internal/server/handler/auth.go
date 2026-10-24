@@ -254,13 +254,23 @@ func NewAuthFlowHandlers(deps AuthDeps) (start, cancel ws.MessageHandler) {
 		authURL, state, err := auth.BuildAuthURL(cfg, auth.RedirectURI)
 		if err != nil {
 			mu.Unlock()
-			return nil, fmt.Errorf("building auth URL: %w", err)
+			logger.Error("building auth URL failed", "error", err)
+			return map[string]interface{}{
+				"id":   msg.ID,
+				"type": "AUTH_FAILED",
+				"data": map[string]string{"error": "authentication callback unavailable"},
+			}, nil
 		}
 
 		listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", auth.CallbackPort))
 		if err != nil {
 			mu.Unlock()
-			return nil, fmt.Errorf("listen for OAuth callback: %w", err)
+			logger.Error("listen for OAuth callback failed", "error", err)
+			return map[string]interface{}{
+				"id":   msg.ID,
+				"type": "AUTH_FAILED",
+				"data": map[string]string{"error": "authentication callback unavailable"},
+			}, nil
 		}
 		resultCh := make(chan auth.CallbackResult, 1)
 		ownServer := auth.NewCallbackServer(cfg, state, auth.RedirectURI, resultCh)

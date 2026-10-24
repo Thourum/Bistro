@@ -53,6 +53,43 @@ func (f *fakeUsernameCache) Set(provider, username string) {
 }
 func (f *fakeUsernameCache) Delete(provider string) { delete(f.usernames, provider) }
 
+func TestAuthStartCallbackPortUnavailable(t *testing.T) {
+	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", auth.CallbackPort))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	start, cancel := handler.NewAuthFlowHandlers(handler.AuthDeps{
+		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		GetClientID: func() string { return "id" },
+		Broadcast:   func(interface{}) {},
+	})
+	ctx := context.Background()
+	request := ws.InboundMessage{ID: "occupied-port", Type: "AUTH_START", Data: json.RawMessage(`{"provider":"github"}`)}
+	// Repeating the request also verifies that a failed start releases flow ownership.
+	for attempt := 0; attempt < 2; attempt++ {
+		response, err := start(ctx, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		envelope, ok := response.(map[string]interface{})
+		if !ok || envelope["type"] != "AUTH_FAILED" || envelope["id"] != request.ID {
+			t.Fatalf("start: %#v", response)
+		}
+		data, ok := envelope["data"].(map[string]string)
+		if !ok || data["error"] != "authentication callback unavailable" {
+			t.Fatalf("failure: %#v", envelope["data"])
+		}
+	}
+	if _, err := cancel(ctx, ws.InboundMessage{Type: "AUTH_CANCEL"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAuthCancelAllowsNextStart(t *testing.T) {
 	var mu sync.Mutex
 	var failures []string
