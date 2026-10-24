@@ -1,52 +1,14 @@
-import { err, Fault, ok, ResultAsync } from '@thourum/fault';
 import React from 'react';
 import { Button } from '../components/ui/button';
 import { Kbd } from '../components/ui/kbd';
 import { useStore } from '../hooks/useStore';
-import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import { getEffectiveBindings } from '../utils/keybindings';
 import { formatActionKeys } from '../utils/legendPresets';
 import { OnboardingDevFolderStep } from './OnboardingDevFolderStep';
 import { OnboardingNavigationStep } from './OnboardingNavigationStep';
-import {
-  parseScanDevFolderResult,
-  parseValidateDevFolderResult,
-  type ValidateDevFolderResult,
-} from './onboardingResults';
-
-function validationFault(error: unknown): Fault {
-  return new Fault(
-    error instanceof Error ? error.message : 'Unable to validate that folder.',
-  )
-    .withTag('VALIDATION_ERROR')
-    .withCause(error);
-}
-
-function persistDevFolderPath(
-  result: ValidateDevFolderResult,
-): ResultAsync<ValidateDevFolderResult, Fault> {
-  return ResultAsync.fromPromise(
-    window.electron.settings.set({
-      repositories: { devFolderPath: result.canonicalPath },
-    }),
-    validationFault,
-  ).andThen((settingsResult) => {
-    if ('err' in settingsResult) {
-      return err(
-        new Fault(
-          settingsResult.err.trim() === ''
-            ? 'Unable to write settings.'
-            : settingsResult.err,
-        ).withTag('SETTINGS_ERROR'),
-      );
-    }
-
-    settingsStore.setState(() => settingsResult.ok);
-    return ok(result);
-  });
-}
+import { useOnboardingSync } from './useOnboardingSync';
 
 /** One-time navigation practice, followed by the optional development folder. */
 export function OnboardingPage(): React.ReactElement {
@@ -57,9 +19,7 @@ export function OnboardingPage(): React.ReactElement {
     'navigation',
   );
   const [stepError, setStepError] = React.useState<string | null>(null);
-  const [discoveredCount, setDiscoveredCount] = React.useState<number | null>(
-    null,
-  );
+  const sync = useOnboardingSync();
 
   const continueKeys = React.useMemo(
     () =>
@@ -82,43 +42,6 @@ export function OnboardingPage(): React.ReactElement {
     );
   }, []);
 
-  const chooseDevFolder = React.useCallback(() => {
-    setStepError(null);
-    setDiscoveredCount(null);
-
-    ResultAsync.fromPromise(window.electron.pickFolder(), validationFault)
-      .andThen((path) => {
-        if (path === null) {
-          return err(
-            new Fault('Folder selection cancelled.').withTag('CANCELLED'),
-          );
-        }
-        return ok(path);
-      })
-      .andThen((path) =>
-        wsClient
-          .request('VALIDATE_DEV_FOLDER', { path })
-          .mapErr(validationFault)
-          .andThen(parseValidateDevFolderResult),
-      )
-      .andThen(persistDevFolderPath)
-      .andThen((result) =>
-        wsClient
-          .request('SCAN_DEV_FOLDER', {
-            path: result.canonicalPath,
-            reason: 'settings-change',
-          })
-          .mapErr(validationFault)
-          .andThen(parseScanDevFolderResult),
-      )
-      .match(
-        (result) => setDiscoveredCount(result.discovered),
-        (error) => {
-          if (error.tag !== 'CANCELLED') setStepError(error.message);
-        },
-      );
-  }, []);
-
   const advance = React.useCallback(() => {
     if (step === 'navigation') {
       setStepError(null);
@@ -137,7 +60,9 @@ export function OnboardingPage(): React.ReactElement {
   return (
     <div className="flex flex-col flex-1 min-h-0 h-full w-full bg-background text-on-surface">
       <main className="grow flex items-center justify-center p-6 min-h-0 w-full min-w-0 overflow-auto">
-        <div className="max-w-3xl w-full">
+        <div
+          className={`${step === 'navigation' ? 'max-w-3xl' : 'max-w-6xl'} w-full`}
+        >
           <header className="mb-8">
             <h1 className="text-5xl font-black tracking-tighter text-on-surface uppercase mb-2">
               BISTRO
@@ -145,18 +70,14 @@ export function OnboardingPage(): React.ReactElement {
             <p className="text-xl text-on-surface-variant font-medium max-w-lg leading-snug">
               {step === 'navigation'
                 ? 'Pick the keys your hands already know, then try them on a practice review.'
-                : 'Point Bistro at your projects folder, or skip and start reviewing.'}
+                : 'Choose what to sync. Bistro starts from the PRs already waiting on you.'}
             </p>
           </header>
 
           {step === 'navigation' ? (
             <OnboardingNavigationStep onErrorChange={setStepError} />
           ) : (
-            <OnboardingDevFolderStep
-              discoveredCount={discoveredCount}
-              onChooseFolder={chooseDevFolder}
-              onSkip={finish}
-            />
+            <OnboardingDevFolderStep sync={sync} />
           )}
           {stepError !== null && (
             <p className="mt-4 text-sm text-error font-medium" role="alert">
