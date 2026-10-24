@@ -1,4 +1,6 @@
+import type { ProcessExit } from '../../main/go-spawn';
 import type { SyncEvent } from '../../main/websocket-client';
+import type { EngineReply, EngineStatus } from '../../types/engine';
 import type {
   DBQueryRequest,
   DBQueryResponse,
@@ -14,13 +16,25 @@ import type {
 } from '../../types/ipc';
 import type { AppSettings } from '../../types/settings';
 
-type EventChannel = 'sync:event' | 'settings:changed';
+type EventChannel =
+  | 'sync:event'
+  | 'settings:changed'
+  | 'engine:status'
+  | 'go:crashed';
 
 declare global {
   interface Window {
     electron: {
       wsPort: number | null;
       getWsPort: () => Promise<number | null>;
+      getEngineStatus: () => Promise<EngineReply<EngineStatus>>;
+      getAppVersion: () => Promise<EngineReply<string>>;
+      restartEngine: () => Promise<EngineReply<boolean>>;
+      getEngineLogTail: (
+        lines: number,
+      ) => Promise<EngineReply<readonly string[]>>;
+      openLogFolder: () => Promise<EngineReply<boolean>>;
+      reportCrash: () => Promise<EngineReply<boolean>>;
       db: (request: DBQueryRequest) => Promise<DBQueryResponse | IPCError>;
       fs: (
         request: FSReadPatchRequest,
@@ -38,7 +52,11 @@ declare global {
             ? SyncEvent
             : C extends 'settings:changed'
               ? AppSettings
-              : unknown,
+              : C extends 'engine:status'
+                ? EngineStatus
+                : C extends 'go:crashed'
+                  ? ProcessExit
+                  : unknown,
         ) => void,
       ) => () => void;
       openExternal: (url: string) => Promise<{ ok: true } | { err: string }>;
