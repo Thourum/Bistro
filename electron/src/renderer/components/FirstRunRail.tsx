@@ -282,7 +282,7 @@ export function FirstRunRail({
           </button>
         </div>
         <p className="mt-3 font-mono text-[10px] text-outline">
-          {'// Run :tour for the full walkthrough.'}
+          {'// Run :tour to bring this guide back.'}
         </p>
       </div>
     </aside>

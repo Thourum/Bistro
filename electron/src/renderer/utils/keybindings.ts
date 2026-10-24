@@ -84,7 +84,6 @@ const ALL_OVERLAYS: readonly OverlayKind[] = [
   'repoPicker',
   'addRepo',
   'threads',
-  'tour',
 ];
 const LIST = { routes: ['list'] } as const;
 const DETAIL = { routes: ['detail'] } as const;

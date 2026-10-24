@@ -35,7 +35,6 @@ const OVERLAYS: readonly OverlayKind[] = [
   'repoPicker',
   'addRepo',
   'threads',
-  'tour',
 ];
 const ONBOARDING_CONTEXTS = [
   {

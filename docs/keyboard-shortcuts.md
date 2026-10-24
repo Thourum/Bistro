@@ -9,7 +9,7 @@ settings, so the UI must render from config, never hardcode.
 A binding is active in **one route** (a screen) or **one overlay** (a modal).
 When an overlay is open, ONLY that overlay's bindings fire. Routes: Inbox
 (`/prs`), PR detail, Diff, Settings. Overlays: command palette, help, search,
-filter, repo picker, add-repo, threads, tour.
+filter, repo picker, add-repo, threads.
 
 Note: the same key intentionally means different things per context (`s` = star
 in the inbox, since-last-review in a diff; `Shift+R` = mark lane read in the
@@ -116,11 +116,10 @@ instead — this is a deliberate context-dependent rebind, not a duplicate bug.
 | `u` | Unresolve |
 | `Esc` | Close |
 
-## Overlay: command palette, help, search, repo picker, add-repo, tour
+## Overlay: command palette, help, search, repo picker, add-repo
 
-`Esc` closes. Palette and search use typing + `↑`/`↓` + `Enter`. The first-run
-tour (5 screens) uses its own Back/Next/Finish controls; re-open any time with
-the `:tour` palette command.
+`Esc` closes. Palette and search use typing + `↑`/`↓` + `Enter`. The `:tour`
+palette command brings back the first-review guide on the inbox.
 
 ## Palette-only commands (no dedicated key)
 

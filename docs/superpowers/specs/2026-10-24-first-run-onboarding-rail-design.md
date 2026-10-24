@@ -11,7 +11,7 @@ the remaining three parts of that program in one plan:
 1. **Step 1/2 — choose what to sync** (design frames 1o–1s)
 2. **Step 2/2 — style + practice** (frames 1k–1n, 1w)
 3. **First-run rail** over the live inbox (frames 1t–1v). The 5-screen modal
-   stays as `:tour` (1x).
+   (1x) is dropped; `:tour` reopens the rail.
 
 The design bundle is git-excluded at `design/onboarding-flow/`. Rendered frames
 are in `/tmp/bistro-design-shots/<frame>.png` (regenerate with
@@ -282,7 +282,8 @@ reliable count today.
 
 ## First-run rail (frames 1t–1v)
 
-Replaces the auto-opening `TourOverlay`. `:tour` still opens the old modal.
+Replaces `TourOverlay`, which is deleted. `:tour` brings the rail back with its
+steps reset.
 
 - Shown on the PR list route while `appearance.tourComplete` is false and
   onboarding is complete. A non-modal right column (fixed width, full height
@@ -306,9 +307,9 @@ Replaces the auto-opening `TourOverlay`. `:tour` still opens the old modal.
 - Done (1v): `That's the loop.` "Everything else is one key away. This rail
   won't open again." and **Close** with its key.
 - Bottom section `EVERYTHING ELSE`: Command palette and Keyboard shortcuts
-  with their keys, and "Run :tour for the full walkthrough."
-- Hide/Close sets `appearance.tourComplete = true` (the existing flag; the
-  rail never shows again).
+  with their keys, and "Run :tour to bring this guide back."
+- Hide/Close sets `appearance.tourComplete = true` (the existing flag); the
+  rail stays hidden until `:tour` clears it.
 - The Needs Action lane tab gets a focus ring while the rail is visible.
 
 **Hide key — Ruling.** New action `firstRun.hide`, key `Escape` (shared),

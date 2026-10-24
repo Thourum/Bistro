@@ -2,7 +2,10 @@ import { type Fault, okAsync, type ResultAsync } from '@thourum/fault';
 import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
-import { reduceFirstRunRail } from '../utils/firstRunRail';
+import {
+  INITIAL_FIRST_RUN_RAIL,
+  reduceFirstRunRail,
+} from '../utils/firstRunRail';
 
 function setDismissPending(firstRunDismissPending: boolean): void {
   appStore.setState((state) => ({ ...state, firstRunDismissPending }));
@@ -38,6 +41,18 @@ export function dismissFirstRunRail(): ResultAsync<void, Fault> {
       setDismissPending(false);
       return error;
     });
+}
+
+/** `:tour`: brings the rail back with its steps reset. */
+export function showFirstRunRail(): ResultAsync<void, Fault> {
+  return updateSettings({
+    appearance: { ...settingsStore.state.appearance, tourComplete: false },
+  }).map(() =>
+    appStore.setState((state) => ({
+      ...state,
+      firstRunRail: INITIAL_FIRST_RUN_RAIL,
+    })),
+  );
 }
 
 /** Hide/Close from the rail's buttons or its key: one toast on failure, rail stays retryable. */
