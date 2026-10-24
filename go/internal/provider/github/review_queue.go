@@ -54,18 +54,20 @@ func collectReviewQueue(requested, recent []*gh.Issue) (*provider.ReviewQueue, e
 		Requested: []provider.RequestedRepo{}, RecentlyReviewed: []string{},
 		Repositories: []*provider.Repo{},
 	}
-	repositories := make(map[string]bool)
+	// Case-insensitive keys merge variants without changing GitHub's first spelling.
+	repositories := make(map[string]string)
 	counts := make(map[string]int)
 	for _, issue := range requested {
 		id, repository, err := reviewQueueRepository(issue)
 		if err != nil {
 			return nil, fmt.Errorf("read requested review repository: %w", err)
 		}
-		counts[id]++
-		if !repositories[id] {
-			repositories[id] = true
+		key := strings.ToLower(id)
+		if repositories[key] == "" {
+			repositories[key] = id
 			queue.Repositories = append(queue.Repositories, repository)
 		}
+		counts[repositories[key]]++
 	}
 	for id, count := range counts {
 		queue.Requested = append(queue.Requested, provider.RequestedRepo{RepoID: id, Count: count})
@@ -74,7 +76,7 @@ func collectReviewQueue(requested, recent []*gh.Issue) (*provider.ReviewQueue, e
 		if a.Count != b.Count {
 			return b.Count - a.Count
 		}
-		return strings.Compare(a.RepoID, b.RepoID)
+		return strings.Compare(strings.ToLower(a.RepoID), strings.ToLower(b.RepoID))
 	})
 	reviewed := make(map[string]bool)
 	for _, issue := range recent {
@@ -82,14 +84,15 @@ func collectReviewQueue(requested, recent []*gh.Issue) (*provider.ReviewQueue, e
 		if err != nil {
 			return nil, fmt.Errorf("read recent review repository: %w", err)
 		}
-		if !reviewed[id] && len(queue.RecentlyReviewed) < RECENT_REVIEW_REPO_LIMIT {
-			queue.RecentlyReviewed = append(queue.RecentlyReviewed, id)
-		}
-		reviewed[id] = true
-		if !repositories[id] {
-			repositories[id] = true
+		key := strings.ToLower(id)
+		if repositories[key] == "" {
+			repositories[key] = id
 			queue.Repositories = append(queue.Repositories, repository)
 		}
+		if !reviewed[key] && len(queue.RecentlyReviewed) < RECENT_REVIEW_REPO_LIMIT {
+			queue.RecentlyReviewed = append(queue.RecentlyReviewed, repositories[key])
+		}
+		reviewed[key] = true
 	}
 	return queue, nil
 }
@@ -106,8 +109,8 @@ func reviewQueueRepository(issue *gh.Issue) (string, *provider.Repo, error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("parse search repository identity: %w", err)
 	}
-	owner, name = strings.ToLower(identity.Owner), strings.ToLower(identity.Repo)
-	return identity.ID(), &provider.Repo{Owner: owner, Name: name, FullName: owner + "/" + name}, nil
+	owner, name = identity.Owner, identity.Repo
+	return identity.Provider + ":" + owner + "/" + name, &provider.Repo{Owner: owner, Name: name, FullName: owner + "/" + name}, nil
 }
 
 var _ provider.ReviewQueueProvider = (*Client)(nil)

@@ -12,7 +12,6 @@ import (
 
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
-	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -109,30 +108,29 @@ func TestRequestRepoListHandler_ReturnsRepos(t *testing.T) {
 	}
 }
 
-func TestRepoListMixedCaseDiscoveryPreservesCanonicalWatchedClone(t *testing.T) {
+func TestRepoListAndQueuePreserveMixedCaseWatchedRepo(t *testing.T) {
 	database := setupRepoTestDB(t)
 	defer database.Close()
 	ctx := context.Background()
-	locations := store.NewRepoLocationStore(database)
-	if err := locations.UpsertLocal(ctx, "github", "Itterno", "Bistro", t.TempDir(), true); err != nil {
+	if _, err := database.Exec(`INSERT INTO repos(id,provider,owner,repo,watched) VALUES('github:Itterno/Bistro','github','Itterno','Bistro',1)`); err != nil {
 		t.Fatal(err)
 	}
 	queueProvider := &queueOperationProvider{read: func(context.Context) (*provider.ReviewQueue, error) {
-		return &provider.ReviewQueue{Repositories: []*provider.Repo{{Owner: "Itterno", Name: "Bistro"}}}, nil
+		return &provider.ReviewQueue{Repositories: []*provider.Repo{{Owner: "Itterno", Name: "Bistro", FullName: "Itterno/Bistro"}}}, nil
 	}}
-	if _, err := fetchAndPersistReviewQueue(ctx, database, queueProvider); err != nil {
-		t.Fatal(err)
-	}
 	prov := mock.NewMockProvider().WithRepos([]*provider.Repo{{Owner: "Itterno", Name: "Bistro", FullName: "Itterno/Bistro"}})
 	request := NewRequestRepoListHandler(func() provider.Provider { return prov }, database, testRepoLogger())
 	for range 2 {
+		if _, err := fetchAndPersistReviewQueue(ctx, database, queueProvider); err != nil {
+			t.Fatal(err)
+		}
 		reply, err := request(ctx, ws.InboundMessage{ID: "mixed-case", Type: "REQUEST_REPO_LIST"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		repos := reply.(map[string]interface{})["data"].(map[string]interface{})["repos"].([]repoRow)
-		if len(repos) != 1 || repos[0].ID != "github:itterno/bistro" || !repos[0].Watched || repos[0].LocalPath == nil {
-			t.Fatalf("discovery duplicated or replaced the watched clone: %+v", repos)
+		if len(repos) != 1 || repos[0].ID != "github:Itterno/Bistro" || repos[0].Owner != "Itterno" || repos[0].Repo != "Bistro" || !repos[0].Watched {
+			t.Fatalf("discovery split the existing watch state: %+v", repos)
 		}
 	}
 }

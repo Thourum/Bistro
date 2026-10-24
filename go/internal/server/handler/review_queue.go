@@ -157,8 +157,8 @@ func fetchAndPersistReviewQueue(ctx context.Context, database *sql.DB, queueProv
 			return nil, errors.Join(fmt.Errorf("parse queue repository: %w", parseErr), transaction.Rollback())
 		}
 		if err := queries.InsertDiscoveredRepo(ctx, storedb.InsertDiscoveredRepoParams{
-			ID: identity.ID(), Provider: identity.Provider,
-			Owner: strings.ToLower(identity.Owner), Repo: strings.ToLower(identity.Repo),
+			ID: identity.Provider + ":" + identity.Owner + "/" + identity.Repo, Provider: identity.Provider,
+			Owner: identity.Owner, Repo: identity.Repo,
 		}); err != nil {
 			return nil, errors.Join(fmt.Errorf("insert queue repository: %w", err), transaction.Rollback())
 		}

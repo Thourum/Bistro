@@ -67,16 +67,21 @@ func TestReviewQueueMalformedSearchItemsReturnErrors(t *testing.T) {
 	}
 }
 
-func TestReviewQueueCanonicalRepositoryRows(t *testing.T) {
+func TestReviewQueuePreservesGitHubCasingAndMergesCaseVariants(t *testing.T) {
 	queue, err := collectReviewQueue([]*gh.Issue{
-		{RepositoryURL: gh.Ptr("https://api.github.com/repos/Acme/API")},
-		{HTMLURL: gh.Ptr("https://github.com/acme/api/pull/2")},
-	}, nil)
+		{RepositoryURL: gh.Ptr("https://api.github.com/repos/Itterno/Bistro")},
+		{HTMLURL: gh.Ptr("https://github.com/itterno/bistro/pull/2")},
+	}, []*gh.Issue{
+		{RepositoryURL: gh.Ptr("https://api.github.com/repos/ITTERNO/BISTRO")},
+		{RepositoryURL: gh.Ptr("https://api.github.com/repos/itterno/bistro")},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(queue.Requested) != 1 || queue.Requested[0].Count != 2 || len(queue.Repositories) != 1 || queue.Repositories[0].Owner != "acme" || queue.Repositories[0].Name != "api" || queue.Repositories[0].FullName != "acme/api" {
-		t.Fatalf("noncanonical queue: %+v repositories=%+v", queue, queue.Repositories)
+	wantRequested := []provider.RequestedRepo{{RepoID: "github:Itterno/Bistro", Count: 2}}
+	wantRepositories := []*provider.Repo{{Owner: "Itterno", Name: "Bistro", FullName: "Itterno/Bistro"}}
+	if !reflect.DeepEqual(queue.Requested, wantRequested) || !reflect.DeepEqual(queue.Repositories, wantRepositories) || !reflect.DeepEqual(queue.RecentlyReviewed, []string{"github:Itterno/Bistro"}) {
+		t.Fatalf("queue lost GitHub casing or duplicated case variants: %+v repositories=%+v", queue, queue.Repositories)
 	}
 }
 
@@ -214,11 +219,11 @@ func TestReviewQueueGroupsSortsAndCaps(t *testing.T) {
 				}
 				return
 			}
-			wantRequested := []provider.RequestedRepo{{RepoID: "github:acme/two", Count: 2}, {RepoID: "github:acme/one", Count: 1}, {RepoID: "github:zed/one", Count: 1}}
+			wantRequested := []provider.RequestedRepo{{RepoID: "github:Acme/two", Count: 2}, {RepoID: "github:Acme/one", Count: 1}, {RepoID: "github:Zed/one", Count: 1}}
 			if !reflect.DeepEqual(queue.Requested, wantRequested) {
 				t.Fatalf("requested = %+v", queue.Requested)
 			}
-			if len(queue.RecentlyReviewed) != 10 || queue.RecentlyReviewed[0] != "github:acme/two" || queue.RecentlyReviewed[9] != "github:acme/recent-08" {
+			if len(queue.RecentlyReviewed) != 10 || queue.RecentlyReviewed[0] != "github:Acme/two" || queue.RecentlyReviewed[9] != "github:Acme/recent-08" {
 				t.Fatalf("recent = %#v", queue.RecentlyReviewed)
 			}
 			if len(queue.Repositories) != 15 {

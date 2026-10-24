@@ -8,11 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	storedb "github.com/itterno/bistro/internal/store/db"
@@ -121,17 +119,12 @@ func refreshRepoList(ctx context.Context, queries *storedb.Queries, prov provide
 	}
 	logger.Debug("provider returned repos", "count", len(repos), "duration_ms", time.Since(start).Milliseconds())
 	for _, repository := range repos {
-		identity, parseErr := git.ParseRemoteURL("https://github.com/" + repository.FullName)
-		if parseErr != nil {
-			logger.Error("parse discovered repo failed", "err", parseErr)
-			continue
-		}
 		if err := queries.InsertDiscoveredRepo(ctx, storedb.InsertDiscoveredRepoParams{
-			ID: identity.ID(), Provider: identity.Provider,
-			Owner: strings.ToLower(identity.Owner), Repo: strings.ToLower(identity.Repo),
+			ID: githubProvider + ":" + repository.FullName, Provider: githubProvider,
+			Owner: repository.Owner, Repo: repository.Name,
 		}); err != nil {
 			// One bad row must not hide the cached list from the caller.
-			logger.Error("upsert repo failed", "repo_id", identity.ID(), "err", err)
+			logger.Error("upsert repo failed", "repo_id", githubProvider+":"+repository.FullName, "err", err)
 		}
 	}
 	logger.Debug("repos upserted", "count", len(repos))
