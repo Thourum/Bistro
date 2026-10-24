@@ -1,4 +1,9 @@
-import { type HotkeyOptions, normalizeHotkey } from '@tanstack/hotkeys';
+import {
+  type HotkeyOptions,
+  type HotkeySequence,
+  matchesKeyboardEvent,
+  normalizeHotkey,
+} from '@tanstack/hotkeys';
 import type { OverlayKind } from '../overlays/OverlayContext';
 import type { UIState } from '../store/ui';
 import type { FirstRunScreen } from './authScreenState';
@@ -130,6 +135,57 @@ const FIRST_RUN_ACTION_STATES: Readonly<
 
 function isFirstRunAction(actionId: string): boolean {
   return actionId.startsWith('login.') || actionId.startsWith('connecting.');
+}
+
+/** A keydown seen by the dispatcher, kept to spot a sequence in progress. */
+export interface KeyPress {
+  readonly event: KeyboardEvent;
+  readonly time: number;
+}
+
+const MODIFIER_KEYS: ReadonlySet<string> = new Set([
+  'Control',
+  'Shift',
+  'Alt',
+  'Meta',
+]);
+
+/** Holding a modifier for a chord is not a sequence step of its own. */
+export function isModifierPress(event: Pick<KeyboardEvent, 'key'>): boolean {
+  return MODIFIER_KEYS.has(event.key);
+}
+
+/**
+ * True when `current` is a later step of an enabled sequence that the recent
+ * presses started. TanStack runs single hotkeys and sequences as separate
+ * listeners, so without this check vim's `g 1` also fires `1` (jump to PR)
+ * and emacs `C-c C-v` also fires `C-v` (page down).
+ */
+export function continuesSequence(
+  recent: readonly KeyPress[],
+  current: KeyPress,
+  options: {
+    readonly sequences: readonly HotkeySequence[];
+    readonly timeoutMs: number;
+  },
+): boolean {
+  return options.sequences.some((sequence) =>
+    sequence.some((step, stepIndex) => {
+      if (stepIndex === 0 || !matchesKeyboardEvent(current.event, step))
+        return false;
+      const started = recent.slice(-stepIndex);
+      if (started.length !== stepIndex) return false;
+      return started.every((press, offset) => {
+        const expected = sequence[offset];
+        const next = started[offset + 1] ?? current;
+        return (
+          expected !== undefined &&
+          matchesKeyboardEvent(press.event, expected) &&
+          next.time - press.time <= options.timeoutMs
+        );
+      });
+    }),
+  );
 }
 
 /** Derive the route used for binding activation from the current pathname. */
