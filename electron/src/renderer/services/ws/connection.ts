@@ -284,6 +284,7 @@ function createWsClient(): Readonly<WsClient> {
 
   function disconnect(): void {
     state.isActive = false;
+    appStore.setState((previous) => ({ ...previous, isWsOpen: false }));
     if (state.reconnectTimer !== null) clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
     const socket = state.socket;
