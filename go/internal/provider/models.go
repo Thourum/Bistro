@@ -86,6 +86,19 @@ type ReviewThread struct {
 	Comments   []*Comment // ordered; first is the root
 }
 
+// RequestedRepo counts open pull requests awaiting the viewer's review.
+type RequestedRepo struct {
+	RepoID string `json:"repo_id"`
+	Count  int    `json:"count"`
+}
+
+// ReviewQueue contains display suggestions and all repositories to cache.
+type ReviewQueue struct {
+	Requested        []RequestedRepo `json:"requested"`
+	RecentlyReviewed []string        `json:"recently_reviewed"`
+	Repositories     []*Repo         `json:"-"`
+}
+
 // Repo represents a normalized repository
 type Repo struct {
 	Owner    string

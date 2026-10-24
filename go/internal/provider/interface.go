@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+// ReviewQueueProvider discovers repositories with requested or recent reviews.
+type ReviewQueueProvider interface {
+	GetReviewQueue(context.Context, time.Time) (*ReviewQueue, error)
+}
+
 // Provider abstracts operations for any Git service
 type Provider interface {
 	// Authenticate performs OAuth device flow

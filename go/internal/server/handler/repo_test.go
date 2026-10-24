@@ -295,6 +295,63 @@ func TestToggleWatchHandler_MissingRepoID(t *testing.T) {
 	}
 }
 
+func TestCacheOnlyRepoListIncludesCloneWithoutProvider(t *testing.T) {
+	database := setupRepoTestDB(t)
+	defer database.Close()
+	_, err := database.Exec(`INSERT INTO repos(id,provider,owner,repo,watched,local_path,source)
+        VALUES('github:acme/api','github','acme','api',1,'/projects/api','local')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	request := NewRequestRepoListHandler(func() provider.Provider { calls++; return nil }, database, testRepoLogger())
+	reply, err := request(context.Background(), ws.InboundMessage{ID: "cached", Type: "REQUEST_REPO_LIST", Data: json.RawMessage(`{"cache_only":true}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := reply.(map[string]interface{})["data"].(map[string]interface{})
+	repos := data["repos"].([]repoRow)
+	if calls != 0 || len(repos) != 1 || !repos[0].Watched || repos[0].LocalPath == nil || *repos[0].LocalPath != "/projects/api" {
+		t.Fatalf("not a local cache read: calls=%d repos=%+v", calls, repos)
+	}
+}
+
+func TestRepoListRejectsInvalidCacheFlagBeforeProvider(t *testing.T) {
+	for _, payload := range []string{`{`, `[]`, `null`, `{"cache_only":"true"}`, `{"cache_only":null}`} {
+		t.Run(payload, func(t *testing.T) {
+			database := setupRepoTestDB(t)
+			defer database.Close()
+			request := NewRequestRepoListHandler(func() provider.Provider {
+				t.Fatal("invalid payload must not reach provider")
+				return nil
+			}, database, testRepoLogger())
+			reply, err := request(context.Background(), ws.InboundMessage{ID: "invalid", Data: json.RawMessage(payload)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := reply.(map[string]interface{})["data"].(map[string]interface{})
+			if data["error"] != "unable to load repositories" {
+				t.Fatalf("unsafe error: %+v", data)
+			}
+		})
+	}
+}
+
+func TestRepoListFalseCacheFlagStillRefreshes(t *testing.T) {
+	database := setupRepoTestDB(t)
+	defer database.Close()
+	prov := mock.NewMockProvider().WithRepos([]*provider.Repo{{Owner: "acme", Name: "api", FullName: "acme/api"}})
+	request := NewRequestRepoListHandler(func() provider.Provider { return prov }, database, testRepoLogger())
+	reply, err := request(context.Background(), ws.InboundMessage{ID: "refresh", Data: json.RawMessage(`{"cache_only":false}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repos := reply.(map[string]interface{})["data"].(map[string]interface{})["repos"].([]repoRow)
+	if len(repos) != 1 || repos[0].ID != "github:acme/api" {
+		t.Fatalf("missing refresh: %+v", repos)
+	}
+}
+
 func TestToggleWatchHandler_InvalidPayload(t *testing.T) {
 	db := setupRepoTestDB(t)
 	defer db.Close()
