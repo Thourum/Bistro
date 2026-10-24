@@ -48,7 +48,8 @@ The first two screens should explain themselves and never leave the user stuck:
   There is no restart here. A slow engine is usually still migrating, and a
   restart would interrupt it.
 - **Crashed state (new, not in the design):** the engine has exited and the
-  automatic restarts (`MAX_RESTARTS = 3` in `go-spawn.ts`) are used up. It
+  automatic restarts (`MAX_RESTARTS = 3` in `go-spawn.ts`) are used up, or it
+  exited during startup, which is not retried. It
   replaces whatever screen is showing, because the app can't work without the
   engine. It shows:
   - "The sync engine stopped";
@@ -170,7 +171,7 @@ Below `md` the card stacks to one column, with the trust panel second.
 | 1f | waiting | "Waiting for authorization… GITHUB // 00:23", "Complete the sign-in in your browser, then return here." | `R` Reopen browser, `C` Copy sign-in link, `Esc` Cancel |
 | 1g | timed out | "No response after 5:00", "The browser hasn't reported back, and Bistro stopped waiting. Start again to get a fresh sign-in." | `↩` or `G` Try again, `Esc` Back to hosts |
 | — | failed | hosts plus an inline error with the engine's message | `G` |
-| — | interrupted | hosts plus "Sign-in was interrupted because the sync engine restarted. Start again." | `G` |
+| — | interrupted | hosts plus "Sign-in was interrupted because the connection to the sync engine dropped. Start again." | `G` |
 | 1h | engine down | hosts plus an inline alert ("Cannot connect to sync engine. Bistro is restarting it.") and a status block: engine state, error detail, last sync, version | `G` (disabled while down) |
 
 The engine-down state covers only the time while automatic restarts remain.
@@ -230,8 +231,9 @@ It lives in `utils/` and is unit-tested.
 
 ### Success (1i)
 
-- `AUTHORIZATION COMPLETE // GITHUB`, followed by "You're signed in."
-- "Close this tab and return to Bistro."
+- `AUTHORIZATION COMPLETE // GITHUB`, followed by "Almost done."
+- "GitHub approved Bistro. Return to Bistro to finish." The page is served
+  before the engine saves the token, so it doesn't claim the save happened.
 - A **Where the token went** block with the same three steps, in the past
   tense, OS- and mode-aware.
 - "Revoke any time: github.com/settings/applications."

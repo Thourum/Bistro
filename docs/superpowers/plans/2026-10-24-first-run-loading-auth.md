@@ -475,12 +475,12 @@ main{max-width:720px;margin:64px auto;padding:32px;background:var(--lowest);bord
 <div class="brand">BISTRO</div>
 {{if .Success}}
 <p class="code">AUTHORIZATION COMPLETE // GITHUB</p>
-<h1>You're signed in.</h1>
+<h1>Almost done.</h1>
 <p>Close this tab and return to Bistro.</p>
 <section><h2>Where the token went</h2><ol>
 <li>GitHub returned a one-time authorization code.</li>
 <li>{{.ExchangeStep}}</li>
-<li>Bistro saved the token in {{.Store}}.</li>
+<li>Bistro is saving the token to {{.Store}}. Return to Bistro to finish.</li>
 </ol></section>
 <p>Revoke any time: <a href="https://github.com/settings/applications">github.com/settings/applications</a>.</p>
 {{else}}
@@ -1625,7 +1625,7 @@ Change its `keyHint` prop to optional and add `availabilityLabel?: string`. Rend
 | waiting | “Waiting for authorization… GITHUB // {elapsed}”; “Complete the sign-in in your browser, then return here.”; Reopen browser, Copy sign-in link, Cancel |
 | timedOut | “No response after 5:00”; “The browser hasn't reported back, and Bistro stopped waiting. Start again to get a fresh sign-in.”; Try again, Back to hosts |
 | failed | Inline `authError` text (React-escaped), hosts remain |
-| interrupted | “Sign-in was interrupted because the sync engine restarted. Start again.”, hosts remain |
+| interrupted | “Sign-in was interrupted because the connection to the sync engine dropped. Start again.”, hosts remain |
 | disconnected | Alert “Cannot connect to sync engine. Bistro is restarting it.” and status block, hosts remain but disabled |
 
 Render the disconnected block based on `!isConnected`, not just `screen === 'engineDown'`, so disconnect-while-waiting shows both the interrupted explanation and engine diagnostics. Terminal crashed status is replaced by RootShell and therefore never shows a false restart promise here. The status block labels are Engine, Error, Last sync, Version; values come from `engineStatus.state`, `syncError ?? engineStatus.error`, `lastSyncAt` and `appVersion`, with readable unavailable values. No hard-coded `v0.1.0-stable`.
@@ -1680,7 +1680,7 @@ export function SignInState(props: SignInStateProps): React.ReactElement {
       })}
     </div>}
     {props.screen === 'failed' && props.error !== null && <p role="alert" className="text-sm text-error">{props.error}</p>}
-    {props.screen === 'interrupted' && <p role="alert" className="text-sm text-error">Sign-in was interrupted because the sync engine restarted. Start again.</p>}
+    {props.screen === 'interrupted' && <p role="alert" className="text-sm text-error">Sign-in was interrupted because the connection to the sync engine dropped. Start again.</p>}
     {!props.isConnected && <div role="alert" className="space-y-4 rounded-lg bg-surface-container p-4">
       <p className="text-sm text-error">Cannot connect to sync engine. Bistro is restarting it.</p>
       <dl className="space-y-2 font-mono text-xs text-on-surface-variant">
@@ -1784,3 +1784,10 @@ git commit -m "feat: explain GitHub sign-in and trust at first run"
 - Settings already load from main IPC and RootShell already owns hotkeys. Preserve these independent lifetimes; no WS readiness dependency for recovery keys.
 - The connecting route base is screen-derived (including pending root/deep-link routes), not a new navigable URL. Keep `routeBaseFromPath`'s existing route matching for normal screens.
 - No generic retry framework, new dependencies, settings redesign, documentation regeneration or sync orchestration is needed.
+
+
+## Controller rulings after plan logic review (binding; they override conflicting text above)
+
+1. **Interrupted sign-in recovery.** A WS drop does not always mean the engine restarted, and the engine-side attempt may still be alive. When the renderer reconnects (`onOpen`) while its auth slice is `interrupted`, it first sends `AUTH_CANCEL` (a no-op when nothing is pending, per Task 2), then the existing `AUTH_CHECK`. A fresh `G` therefore never hits `auth_already_in_progress`, and a stale browser tab can't complete a discarded attempt. The interrupted copy is "Sign-in was interrupted because the connection to the sync engine dropped. Start again." Task 6 owns the reconnect send; Task 2's cancel must accept a call when no attempt is pending.
+2. **Callback success page wording.** The page is served before the engine persists the token, so it must not claim "You're signed in" or "Bistro saved the token". The heading is "Almost done." with "GitHub approved Bistro. Return to Bistro to finish; it is saving the token to {{.Store}}." The token-path list uses present or future tense for step 3. The app's own success state stays the source of truth.
+3. **Two terminal-failure paths.** The crashed state means the engine has exited and won't be restarted automatically. That covers both cases: (a) the engine exits during startup, before ready, which today is not retried (keep that behaviour), and (b) the engine exits after ready and the `MAX_RESTARTS = 3` automatic restarts are used up. Task 5 emits `crashed` for both. Task 7 replaces the Outlet on `crashed` regardless of path; "only after retries are exhausted" refers to path (b) only.
