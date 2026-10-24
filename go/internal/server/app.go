@@ -21,6 +21,7 @@ import (
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/keychain"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/scan"
 	"github.com/itterno/bistro/internal/server/handler"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/sync"
@@ -600,6 +601,8 @@ func (a *App) initializeStartupProvider(ctx context.Context) {
 // Run initializes the database, starts the WebSocket server, and blocks until
 // a SIGTERM, SIGINT, or context cancellation, then shuts down.
 func (a *App) Run(ctx context.Context) (runErr error) {
+	ctx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
 	if err := a.openDatabase(ctx); err != nil {
 		return err
 	}
@@ -614,7 +617,12 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	a.registerReviewHandlers(stores)
 	a.registerDiffAndCheckoutHandlers(stores)
 	a.registerExpertiseHandlers(stores)
-	a.registerRepoLocationHandlers(stores)
+	waitScans := a.registerRepoLocationHandlers(ctx, stores)
+	defer func() {
+		runErr = errors.Join(runErr, a.wsServer.Stop())
+		cancelRun()
+		waitScans()
+	}()
 
 	wsAddr := wsListenAddr(a.wsPort)
 	if err := a.wsServer.Start(wsAddr); err != nil {
@@ -627,7 +635,7 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 		readyOut = os.Stdout
 	}
 	if err := emitReady(readyOut, actualPort); err != nil {
-		return errors.Join(fmt.Errorf("emit ready signal: %w", err), a.wsServer.Stop())
+		return fmt.Errorf("emit ready signal: %w", err)
 	}
 	go a.runSyncLoop(ctx)
 	sigChan := make(chan os.Signal, 1)
@@ -639,7 +647,7 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	case <-ctx.Done():
 		a.log.Info("context cancelled")
 	}
-	return a.wsServer.Stop()
+	return nil
 }
 
 func (a *App) registerAuthHandlers(ctx context.Context, stores runStores) {
@@ -761,7 +769,7 @@ func (a *App) registerExpertiseHandlers(stores runStores) {
 	a.wsServer.RegisterHandler("SET_EXPERTISE_SETTINGS", handler.NewSetExpertiseSettingsHandler(expertiseDeps))
 }
 
-func (a *App) registerRepoLocationHandlers(stores runStores) {
+func (a *App) registerRepoLocationHandlers(ctx context.Context, stores runStores) func() {
 	deleteCacheDir := func(path string) error {
 		return git.DeleteCacheDir(path)
 	}
@@ -773,7 +781,12 @@ func (a *App) registerRepoLocationHandlers(stores runStores) {
 		Log:            a.log,
 	}
 	a.wsServer.RegisterHandler("VALIDATE_DEV_FOLDER", handler.NewValidateDevFolderHandler(a.log))
-	a.wsServer.RegisterHandler("SCAN_DEV_FOLDER", handler.NewScanDevFolderHandler(stores.repoLocation, a.syncTrigger, a.log))
+	startScan, cancelScan, waitScans := handler.NewScanDevFolderHandlers(handler.ScanDevFolderDeps{
+		Context: ctx, Locations: stores.repoLocation, SyncTrigger: a.syncTrigger,
+		Broadcast: a.wsServer.Broadcast, Scan: scan.Scan, Log: a.log,
+	})
+	a.wsServer.RegisterHandler("SCAN_DEV_FOLDER", startScan)
+	a.wsServer.RegisterHandler("SCAN_CANCEL", cancelScan)
 	a.wsServer.RegisterHandler("ADD_REPO_BY_URL", handler.NewAddRepoByURLHandler(handler.AddRepoByURLDeps{
 		DB:        a.db.DB,
 		Store:     stores.repoLocation,
@@ -801,4 +814,5 @@ func (a *App) registerRepoLocationHandlers(stores runStores) {
 		DeleteCacheDir: deleteCacheDir,
 		Log:            a.log,
 	}))
+	return waitScans
 }
