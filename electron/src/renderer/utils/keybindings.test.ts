@@ -425,15 +425,12 @@ describe('first-run milestones from real keybinding handlers', () => {
       routeBase: 'diff',
       prId: 'pr-1',
     };
-    appStore.setState((state) => ({
-      ...state,
-      confirmingAction: 'since-last-review',
-    }));
+    appStore.setState((state) => ({ ...state, sinceLastReviewActive: true }));
     toggleRange(diffContext);
-    expect(appStore.state.confirmingAction).toBeNull();
+    expect(appStore.state.sinceLastReviewActive).toBe(false);
     expect(appStore.state.firstRunRail.completed).toEqual([]);
     toggleRange(diffContext);
-    expect(appStore.state.confirmingAction).toBe('since-last-review');
+    expect(appStore.state.sinceLastReviewActive).toBe(true);
     expect(appStore.state.firstRunRail.completed).toEqual(['range']);
   });
 });
