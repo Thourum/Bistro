@@ -25,9 +25,10 @@ func TestInterdiffRepoForPR(t *testing.T) {
 	assertLocation("", "", false)
 	if _, err := db.ExecContext(ctx, `INSERT INTO prs
 		(id, provider, owner, repo, number, title, author, state, created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
-		VALUES (?, 'github', 'acme', 'api', 1, 'test', 'alice', 'open', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'main', 'feature', 'base', 'head')`, prID); err != nil {
+		VALUES (?, 'github', 'Acme', 'API', 1, 'test', 'alice', 'open', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'main', 'feature', 'base', 'head')`, prID); err != nil {
 		t.Fatalf("insert PR: %v", err)
 	}
+	// GitHub keeps the owner's casing; repo-location IDs are lowercased.
 	// Get must treat an absent repo row as unavailable, not a failed lookup.
 	assertLocation("", "", false)
 	insertServerRepo(t, db, "github:acme/api", "github", "acme", "api")
@@ -37,7 +38,7 @@ func TestInterdiffRepoForPR(t *testing.T) {
 	if err := locations.SetCache(ctx, "github:acme/api", repoPath); err != nil {
 		t.Fatalf("set cache: %v", err)
 	}
-	assertLocation("https://github.com/acme/api.git", repoPath, true)
+	assertLocation("https://github.com/Acme/API.git", repoPath, true)
 	if err := locations.UpsertLocal(ctx, "github", "acme", "api", t.TempDir(), false); err != nil {
 		t.Fatalf("set local clone: %v", err)
 	}
@@ -45,7 +46,7 @@ func TestInterdiffRepoForPR(t *testing.T) {
 	if err != nil || location == nil {
 		t.Fatalf("get location = %v, err=%v", location, err)
 	}
-	assertLocation("https://github.com/acme/api.git", location.LocalPath, true)
+	assertLocation("https://github.com/Acme/API.git", location.LocalPath, true)
 
 	if _, err := db.ExecContext(ctx, `DROP TABLE repos`); err != nil {
 		t.Fatalf("drop repos: %v", err)
