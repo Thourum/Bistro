@@ -73,19 +73,19 @@ export const SANDBOX_TASKS: readonly SandboxTask[] = [
   {
     id: 'top',
     stage: 'navigate',
-    label: 'Jump to top',
+    label: 'Jump to the top',
     actionIds: ['list.top'],
   },
   {
     id: 'bottom',
     stage: 'navigate',
-    label: 'Jump to bottom',
+    label: 'Jump to the bottom',
     actionIds: ['list.bottom'],
   },
   {
     id: 'open',
     stage: 'navigate',
-    label: 'Open the PR that needs you',
+    label: 'Open a PR that needs you',
     actionIds: ['list.open'],
     reason:
       'Needs Action includes requested reviews and follow-ups that need your attention.',
@@ -99,7 +99,7 @@ export const SANDBOX_TASKS: readonly SandboxTask[] = [
   {
     id: 'undoFold',
     stage: 'review',
-    label: 'Undo fold',
+    label: 'Undo the fold',
     actionIds: ['detail.undoDismiss', 'detail.undoDismissAlt'],
   },
   {
@@ -126,7 +126,7 @@ export const SANDBOX_TASKS: readonly SandboxTask[] = [
   {
     id: 'viewDiff',
     stage: 'review',
-    label: 'Open diff',
+    label: 'Open the diff',
     actionIds: ['detail.viewDiff'],
   },
   {
@@ -144,7 +144,7 @@ export const SANDBOX_TASKS: readonly SandboxTask[] = [
   {
     id: 'replyThread',
     stage: 'diff',
-    label: 'Reply to thread',
+    label: 'Reply to the thread',
     actionIds: ['detail.inlineReply'],
   },
   {
@@ -157,7 +157,7 @@ export const SANDBOX_TASKS: readonly SandboxTask[] = [
   {
     id: 'back',
     stage: 'diff',
-    label: 'Back to PR',
+    label: 'Back to the PR',
     actionIds: ['global.escape', 'global.cancel'],
   },
 ];
@@ -218,11 +218,13 @@ const PANE_BACK: Readonly<Record<SandboxPane, SandboxPane | null>> = {
   diff: 'detail',
 };
 
+// The checklist's "Back to the PR" counts only diff → detail; detail → list
+// still navigates so the user can reopen a PR.
 function goBack(state: SandboxState): SandboxState {
   const previous = PANE_BACK[state.pane];
-  return previous === null
-    ? state
-    : complete({ ...state, pane: previous }, 'back');
+  if (previous === null) return state;
+  const next = { ...state, pane: previous };
+  return state.pane === 'diff' ? complete(next, 'back') : next;
 }
 
 function toggleSinceLastReview(state: SandboxState): SandboxState {

@@ -89,9 +89,42 @@ describe('reduceSandbox', () => {
     expect(undone.completed).toEqual(['foldBots', 'undoFold']);
   });
 
-  it('ticks back only when Escape leaves a pane', () => {
-    expect(run(['global.escape']).completed).not.toContain('back');
-    expect(run(['list.open', 'global.escape']).completed).toContain('back');
+  it('ticks back only on diff → detail, not on PR → list', () => {
+    const detail = selectSandboxPane(INITIAL_SANDBOX_STATE, 'detail');
+    const toList = run(['global.escape'], detail);
+    expect(toList.pane).toBe('list');
+    expect(toList.completed).not.toContain('back');
+    const diff = selectSandboxPane(detail, 'diff');
+    expect(run(['global.escape'], diff).completed).toContain('back');
+  });
+
+  it('moves stage at each boundary and keeps review decisions exclusive', () => {
+    const navigated = run([
+      'list.down',
+      'list.down',
+      'list.down',
+      'list.up',
+      'list.top',
+      'list.bottom',
+    ]);
+    expect(firstUnfinishedSandboxStage(navigated)).toBe('navigate');
+    const opened = run(['list.open'], navigated);
+    expect(firstUnfinishedSandboxStage(opened)).toBe('review');
+    const approved = run(['detail.approve'], opened);
+    const requested = run(['detail.requestChanges'], approved);
+    expect(requested.approved).toBe(false);
+    expect(requested.composer).toBe('requestChanges');
+    const reapproved = run(['detail.approve'], requested);
+    expect(reapproved.approved).toBe(true);
+    expect(reapproved.composer).toBeNull();
+    const reviewed = run(
+      ['detail.dismissBots', 'detail.undoDismiss', 'detail.comment'],
+      reapproved,
+    );
+    expect(firstUnfinishedSandboxStage(reviewed)).toBe('review');
+    expect(
+      firstUnfinishedSandboxStage(run(['detail.viewDiff'], reviewed)),
+    ).toBe('diff');
   });
 
   it('ticks sinceLastReview on entering the range, not on leaving it', () => {
