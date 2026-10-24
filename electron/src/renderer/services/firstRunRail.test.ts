@@ -1,5 +1,13 @@
-import { errAsync, Fault, okAsync } from '@thourum/fault';
-import { beforeEach, expect, it, vi } from 'vitest';
+import {
+  err,
+  errAsync,
+  Fault,
+  ok,
+  okAsync,
+  type Result,
+  ResultAsync,
+} from '@thourum/fault';
+import { assert, beforeEach, expect, it, vi } from 'vitest';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import { initialUIState } from '../store/ui';
@@ -36,6 +44,36 @@ it('does not count actions before onboarding completes or after dismissal', () =
   recordFirstRunAction('detail.comment');
   expect(appStore.state.firstRunRail.completed).toEqual(['open']);
 });
+
+it.each(['success', 'failure'])(
+  'blocks duplicate dismissal writes and clears pending after %s',
+  async (outcome) => {
+    let finishWrite: ((result: Result<void, Fault>) => void) | undefined;
+    const write = new ResultAsync<void, Fault>(
+      new Promise((resolve) => {
+        finishWrite = resolve;
+      }),
+    );
+    vi.mocked(updateSettings).mockReturnValueOnce(write);
+
+    const dismissal = dismissFirstRunRail();
+    expect(appStore.state.firstRunDismissPending).toBe(true);
+    expect(settingsStore.state.appearance.tourComplete).toBe(false);
+    expect((await dismissFirstRunRail()).isOk()).toBe(true);
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(appStore.state.firstRunDismissPending).toBe(true);
+
+    assert(finishWrite !== undefined);
+    const hasFailed = outcome === 'failure';
+    finishWrite(
+      hasFailed
+        ? err(new Fault('Disk unavailable').withTag('SETTINGS_ERROR'))
+        : ok(undefined),
+    );
+    expect((await dismissal).isErr()).toBe(hasFailed);
+    expect(appStore.state.firstRunDismissPending).toBe(false);
+  },
+);
 
 it('keeps dismissal retryable on IPC failure and writes only the existing appearance flag', async () => {
   vi.mocked(updateSettings).mockReturnValueOnce(

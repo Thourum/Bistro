@@ -1,11 +1,21 @@
 import { Store } from '@tanstack/store';
-import { assert, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  assert,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 vi.mock('../router', () => ({
   router: { navigate: vi.fn() },
 }));
 
 import type { OverlayContextValue } from '../overlays/OverlayContext';
+import { appStore } from '../store';
+import { settingsStore } from '../store/settings';
 import { initialUIState } from '../store/ui';
 import { getBindingAction, type KeyActionContext } from './keybindingActions';
 import {
@@ -346,6 +356,84 @@ describe('scoped onboarding and first-run actions', () => {
         isPracticeComplete: true,
       }),
     ).toBe(false);
+  });
+});
+
+describe('first-run milestones from real keybinding handlers', () => {
+  const previousAppearance = settingsStore.state.appearance;
+  const context: KeyActionContext = {
+    store: appStore,
+    routeBase: 'list',
+    activeOverlay: null,
+    overlays: {} as OverlayContextValue,
+    location: { pathname: '/prs' },
+  };
+
+  beforeEach(() => {
+    appStore.setState(() => ({ ...initialUIState }));
+    settingsStore.setState((state) => ({
+      ...state,
+      appearance: {
+        ...previousAppearance,
+        onboardingComplete: true,
+        tourComplete: false,
+      },
+    }));
+  });
+
+  afterEach(() => {
+    appStore.setState(() => ({ ...initialUIState }));
+    settingsStore.setState((state) => ({
+      ...state,
+      appearance: previousAppearance,
+    }));
+  });
+
+  it('records a real PR open but not a header or an empty list', () => {
+    const open = getBindingAction('list.open');
+    assert(open !== undefined);
+    open(context);
+    expect(appStore.state.firstRunRail.completed).toEqual([]);
+    appStore.setState((state) => ({
+      ...state,
+      visiblePRIds: [''],
+      visiblePRRepoKeys: ['acme/api'],
+    }));
+    open(context);
+    expect(appStore.state.firstRunRail.completed).toEqual([]);
+    appStore.setState((state) => ({ ...state, visiblePRIds: ['pr-1'] }));
+    open(context);
+    expect(appStore.state.firstRunRail.completed).toEqual(['open']);
+  });
+
+  it('records viewDiff only when it has a PR to open', () => {
+    const viewDiff = getBindingAction('detail.viewDiff');
+    assert(viewDiff !== undefined);
+    const detailContext: KeyActionContext = { ...context, routeBase: 'detail' };
+    viewDiff(detailContext);
+    expect(appStore.state.firstRunRail.completed).toEqual([]);
+    viewDiff({ ...detailContext, prId: 'pr-1' });
+    expect(appStore.state.firstRunRail.completed).toEqual(['range']);
+  });
+
+  it('records sinceLastReview only when turning the range on', () => {
+    const toggleRange = getBindingAction('diff.sinceLastReview');
+    assert(toggleRange !== undefined);
+    const diffContext: KeyActionContext = {
+      ...context,
+      routeBase: 'diff',
+      prId: 'pr-1',
+    };
+    appStore.setState((state) => ({
+      ...state,
+      confirmingAction: 'since-last-review',
+    }));
+    toggleRange(diffContext);
+    expect(appStore.state.confirmingAction).toBeNull();
+    expect(appStore.state.firstRunRail.completed).toEqual([]);
+    toggleRange(diffContext);
+    expect(appStore.state.confirmingAction).toBe('since-last-review');
+    expect(appStore.state.firstRunRail.completed).toEqual(['range']);
   });
 });
 
