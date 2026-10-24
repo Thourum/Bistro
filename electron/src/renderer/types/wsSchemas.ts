@@ -57,6 +57,8 @@ const scanDevFolderResultSchema = z.union([
     skipped: z.number(),
     partial: z.boolean(),
   }),
+  // The async scan worker reports failures on the same correlated result.
+  z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
 ]);
 
 export const dataSchemas = Object.freeze({

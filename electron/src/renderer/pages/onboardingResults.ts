@@ -12,6 +12,10 @@ const validationSuccessSchema = z.object({
   ok: z.literal(true),
   canonical_path: z.string(),
 });
+const scanFailureSchema = z.object({
+  ok: z.literal(false),
+  message: z.string(),
+});
 const scanRepositoriesSchema = z.object({ repositories: z.array(z.unknown()) });
 const scanCountSchema = z.object({
   ok: z.literal(true),
@@ -64,6 +68,10 @@ export function parseScanDevFolderResult(
   const repositories = scanRepositoriesSchema.safeParse(response);
   if (repositories.success) {
     return ok({ discovered: repositories.data.repositories.length });
+  }
+  const failure = scanFailureSchema.safeParse(response);
+  if (failure.success) {
+    return err(new Fault(failure.data.message).withTag('VALIDATION_ERROR'));
   }
   const parsed = scanCountSchema.safeParse(response);
   if (parsed.success) return ok({ discovered: parsed.data.discovered });

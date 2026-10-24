@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseWsMessage } from '../types/wsSchemas';
 import {
   parseScanDevFolderResult,
   parseValidateDevFolderResult,
@@ -76,5 +77,24 @@ describe('development folder result interpretation', () => {
         'Dev folder scan returned an invalid response.',
       );
     }
+  });
+
+  it('surfaces an async scan failure instead of dropping it in transport', () => {
+    const failure = {
+      ok: false,
+      repo_id: '',
+      operation: 'scan_dev_folder',
+      code: 'scan_failed',
+      message: 'Unable to scan development folder.',
+    };
+    const message = parseWsMessage(
+      JSON.stringify({
+        id: 'scan-1',
+        type: 'SCAN_DEV_FOLDER_RESULT',
+        data: failure,
+      }),
+    );
+    expect(message.isOk()).toBe(true);
+    expect(discoveryCount(failure)).toBe('Unable to scan development folder.');
   });
 });
