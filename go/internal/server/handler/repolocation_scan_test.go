@@ -401,6 +401,22 @@ func nullableString(value string) any {
 	return value
 }
 
+func TestTriggerSyncRequestsAllRepos(t *testing.T) {
+	triggers := make(chan string, 1)
+	triggerSync(triggers, testRepoLocationLogger())
+	select {
+	case repoID := <-triggers:
+		if repoID != "" {
+			t.Fatalf("got repo trigger %q, want full sync", repoID)
+		}
+	default:
+		t.Fatal("missing sync trigger")
+	}
+	triggers <- "already queued"
+	triggerSync(triggers, testRepoLocationLogger()) // Must not block a full queue.
+	triggerSync(nil, testRepoLocationLogger())
+}
+
 func testRepoLocationLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }

@@ -70,6 +70,7 @@ type AuthDeps struct {
 	Tokens             TokenStore
 	Cache              UsernameCache
 	Broadcast          func(msg interface{})
+	SyncTrigger        chan<- string
 	SetProvider        func(prov provider.Provider, name string)
 	GetClientID        func() string
 	GetClientSecret    func() string
@@ -163,6 +164,9 @@ func NewAuthFlowHandlers(deps AuthDeps) (start, cancel ws.MessageHandler) {
 			messageType, data = persistAuthResult(deps, flow.providerName, result.Token)
 		}
 		deps.Broadcast(map[string]interface{}{"type": messageType, "data": data})
+		if messageType == "AUTH_SUCCESS" {
+			triggerSync(deps.SyncTrigger, deps.Log)
+		}
 		close(flow.finished)
 		owner = nil
 	}

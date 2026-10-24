@@ -166,7 +166,7 @@ func triggerSync(syncTrigger chan<- string, logger *slog.Logger) {
 		return
 	}
 	select {
-	case syncTrigger <- "repo_locations":
+	case syncTrigger <- "":
 	default:
 		if logger != nil {
 			logger.Warn("sync trigger channel full, skipping repo location sync trigger")
