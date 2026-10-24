@@ -10,6 +10,10 @@ import type {
   RepoInfo,
   Toast,
 } from '../types';
+import {
+  type FirstRunRailState,
+  INITIAL_FIRST_RUN_RAIL,
+} from '../utils/firstRunRail';
 import type { LaneSection } from '../utils/lanes';
 import type { OnboardingSelection } from '../utils/onboardingRepos';
 import type { SandboxState } from '../utils/onboardingSandbox';
@@ -66,6 +70,10 @@ export interface UIState {
   onboardingSandbox: SandboxState | null;
   /** Sandbox's viewDiff or sinceLastReview task was done this session; never persisted. */
   onboardingPracticedDiff: boolean;
+  /** Live first-run rail steps done this session; only dismissal persists. */
+  firstRunRail: FirstRunRailState;
+  /** A rail dismissal write is in flight; blocks a duplicate write. */
+  firstRunDismissPending: boolean;
   onboardingSync: OnboardingSyncState | null;
   onboardingStep: 'sync' | 'practice' | null;
   onboardingIntent: 'chooseFolder' | 'stopScan' | 'focusRepoFilter' | null;
@@ -207,6 +215,8 @@ export const initialUIState: UIState = {
   filterState: 'open',
   onboardingSandbox: null,
   onboardingPracticedDiff: false,
+  firstRunRail: INITIAL_FIRST_RUN_RAIL,
+  firstRunDismissPending: false,
   onboardingSync: null,
   onboardingStep: null,
   onboardingIntent: null,

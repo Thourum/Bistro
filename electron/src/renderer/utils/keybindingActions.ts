@@ -10,6 +10,7 @@ import {
   reportEngineCrash,
   restartEngine,
 } from '../services/engine';
+import { recordFirstRunAction } from '../services/firstRunRail';
 import { cycleNavigationStyle } from '../services/navigationStyle';
 import {
   cancelSignIn,
@@ -157,6 +158,7 @@ function openSelectedPR(context: KeyActionContext): void {
       context.store.setState((state) => toggleRepoGroup(state, repoKey));
     return;
   }
+  recordFirstRunAction('list.open');
   void router.navigate({ to: '/prs/$prId', params: { prId } });
 }
 
@@ -218,6 +220,7 @@ function selectDiffFile(context: KeyActionContext, delta: 1 | -1): void {
 function viewDiff(context: KeyActionContext): void {
   if (context.prId === undefined) return;
   const { diffFileKeys, selectedFileIndex } = context.store.state;
+  recordFirstRunAction('detail.viewDiff');
   void router.navigate({
     to: '/prs/$prId/diff',
     params: { prId: context.prId },
@@ -231,6 +234,7 @@ function toggleApproval(context: KeyActionContext): void {
       ? 'approve_confirmed'
       : 'approve';
   context.store.setState((state) => ({ ...state, confirmingAction }));
+  recordFirstRunAction('detail.approve');
 }
 
 function toggleSinceLastReview(context: KeyActionContext): void {
@@ -239,6 +243,7 @@ function toggleSinceLastReview(context: KeyActionContext): void {
     ...state,
     confirmingAction: isActive ? null : 'since-last-review',
   }));
+  if (!isActive) recordFirstRunAction('diff.sinceLastReview');
 }
 
 function toggleDiffCollapse(context: KeyActionContext): void {
@@ -402,11 +407,13 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
       commentHumanOnly: false,
     })),
   'detail.approve': toggleApproval,
-  'detail.comment': (context) =>
+  'detail.comment': (context) => {
     context.store.setState((state) => ({
       ...state,
       confirmingAction: 'comment',
-    })),
+    }));
+    recordFirstRunAction('detail.comment');
+  },
   'detail.requestChanges': (context) =>
     context.store.setState((state) => ({
       ...state,

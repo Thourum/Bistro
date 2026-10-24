@@ -4,6 +4,7 @@ import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useStore } from '../hooks/useStore';
+import { recordFirstRunAction } from '../services/firstRunRail';
 import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
@@ -125,6 +126,7 @@ function PRRow({
   const isDegraded = degradedRepo !== null;
   const navigate = useNavigate();
   const open = (): void => {
+    recordFirstRunAction('list.open');
     // Navigate by stable pr.id — globalIndex is cursor only.
     void navigate({ to: '/prs/$prId', params: { prId: pr.id } });
     appStore.setState((s) => ({
