@@ -86,6 +86,8 @@ export interface UIState {
   authStartedAt: number | null;
   authTimedOut: boolean;
   authInterrupted: boolean;
+  /** Transport state; syncStatus 'error' can also mean an open socket. */
+  isWsOpen: boolean;
   authExchange: 'proxy' | 'local' | null;
   engineStatus: EngineStatus | null;
   appVersion: string | null;
@@ -209,6 +211,7 @@ export const initialUIState: UIState = {
   authStartedAt: null,
   authTimedOut: false,
   authInterrupted: false,
+  isWsOpen: false,
   authExchange: null,
   engineStatus: null,
   appVersion: null,

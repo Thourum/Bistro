@@ -32,7 +32,3 @@ export function getAuthScreenState(
   if (input.authError !== null) return 'failed';
   return 'idle';
 }
-
-export function isEngineConnected(status: string): boolean {
-  return ['connected', 'ready', 'syncing', 'rate_limited'].includes(status);
-}

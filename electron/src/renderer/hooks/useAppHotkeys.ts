@@ -15,7 +15,6 @@ import { settingsStore } from '../store/settings';
 import {
   type FirstRunScreen,
   getAuthScreenState,
-  isEngineConnected,
 } from '../utils/authScreenState';
 import {
   getBindingAction,
@@ -89,7 +88,7 @@ export function useAppHotkeys(): void {
   const authTimedOut = useStore(appStore, (s) => s.authTimedOut);
   const authInterrupted = useStore(appStore, (s) => s.authInterrupted);
   const authChecked = useStore(appStore, (s) => s.authChecked);
-  const syncStatus = useStore(appStore, (s) => s.syncStatus);
+  const isConnected = useStore(appStore, (s) => s.isWsOpen);
   const engineStatus = useStore(appStore, (s) => s.engineStatus);
   const routerState = useRouterState();
 
@@ -105,7 +104,6 @@ export function useAppHotkeys(): void {
 
   // Pre-auth and crashed screens render over any URL, so derive the route from state.
   const pathRouteBase = routeBaseFromPath(routerState.location.pathname);
-  const isConnected = isEngineConnected(syncStatus);
   const authScreen = getAuthScreenState({
     isConnected,
     authLoading,

@@ -94,7 +94,8 @@ export function handleAuthFailed({
     authUrl: null,
     authStartedAt: null,
     authTimedOut: isTimeout,
-    authInterrupted: false,
+    // The reconnect cleanup cancel must not erase the interruption notice.
+    authInterrupted: isCancelled && state.authInterrupted,
     authError: isCancelled || isTimeout ? null : data.error,
   }));
   if (!isCancelled && !isTimeout) {

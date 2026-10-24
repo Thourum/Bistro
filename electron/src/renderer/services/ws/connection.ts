@@ -177,6 +177,7 @@ function createWsClient(): Readonly<WsClient> {
     appStore.setState((previous) => ({
       ...previous,
       syncStatus: 'connected',
+      isWsOpen: true,
       syncError: null,
       lastSyncAt: new Date().toISOString(),
       isOffline: false,
@@ -206,6 +207,7 @@ function createWsClient(): Readonly<WsClient> {
     appStore.setState((previous) => ({
       ...previous,
       syncStatus: 'disconnected',
+      isWsOpen: false,
       isOffline: !isOnline,
       authInterrupted:
         previous.authInterrupted ||

@@ -2,7 +2,6 @@ import { Fault, fromThrowable, ResultAsync } from '@thourum/fault';
 import { addToast } from '../components/ToastContainer';
 import { PROVIDERS, type ProviderId } from '../providers';
 import { appStore } from '../store';
-import { isEngineConnected } from '../utils/authScreenState';
 import { openUrlInBrowser } from '../utils/openUrl';
 import { wsClient } from './ws/connection';
 
@@ -14,7 +13,7 @@ export function startSignIn(provider: ProviderId): void {
   const definition = PROVIDERS.find((entry) => entry.id === provider);
   if (
     !definition?.isAvailable ||
-    !isEngineConnected(appStore.state.syncStatus) ||
+    !appStore.state.isWsOpen ||
     appStore.state.authLoading
   )
     return;
@@ -59,7 +58,7 @@ export function copySignInLink(): void {
 
 export function cancelSignIn(): void {
   if (appStore.state.authLoading || appStore.state.authUrl !== null) {
-    if (!isEngineConnected(appStore.state.syncStatus)) return;
+    if (!appStore.state.isWsOpen) return;
     const sentId = wsClient.send('AUTH_CANCEL', {});
     if (sentId === undefined) {
       addToast({
