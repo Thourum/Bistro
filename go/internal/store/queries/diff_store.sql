@@ -15,9 +15,10 @@ INSERT INTO pr_diffs (
     patch,
     additions,
     deletions,
-    diff_status
+    diff_status,
+    patch_id
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ListDiffsForPR :many
 SELECT
@@ -31,7 +32,8 @@ SELECT
     patch,
     additions,
     deletions,
-    diff_status
+    diff_status,
+    patch_id
 FROM pr_diffs
 WHERE pr_id = ?
 ORDER BY file_path;

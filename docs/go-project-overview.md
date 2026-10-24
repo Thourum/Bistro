@@ -59,6 +59,10 @@ go/
 │   │   ├── types.go                    #   RepoEntry, CloneResult, DiffFile, DiffResult
 │   │   ├── clone.go                    #   Client.Clone (go-git based)
 │   │   ├── diff.go                     #   Client.GenerateDiff (unified diff from two SHAs)
+│   │   ├── patchid.go                  #   Rebase-stable per-file patch fingerprints
+│   │   ├── mergebase.go                #   MergeBase and shallow-clone deepening
+│   │   ├── retention.go                #   Pin observed PR heads across force-pushes
+│   │   ├── interdiff.go                #   Client.Interdiff (one file between patchset heads)
 │   │   ├── cache.go                    #   In-memory repo cache with TTL
 │   │   ├── cachemaint.go               #   Cache stats, orphan sweep, targeted cache deletion
 │   │   ├── identity.go                 #   ParseRemoteURL and SafeRepoID for stable repo identities
@@ -129,7 +133,8 @@ go/
 │   │       ├── diff.go                 #     REQUEST_DIFF → DIFF_READY handler
 │   │       ├── patchsets.go            #     Patchset metadata handlers
 │   │       ├── pr.go                   #     REQUEST_PR_LIST → PR_LIST_READY handler
-│   │       ├── rangediff.go            #     Range-diff handlers
+│   │       ├── triage.go               #     REQUEST_TRIAGE → TRIAGE_READY (since-last-review file triage)
+│   │       ├── interdiff.go             #     REQUEST_INTERDIFF → INTERDIFF_READY (per-file interdiff)
 │   │       ├── repo.go                 #     REQUEST_REPO_LIST + TOGGLE_WATCH_REPO handlers
 │   │       ├── repolocation.go         #     Repo-location scan/add/remove/recover/cache-maintenance handlers
 │   │       ├── sync.go                 #     Manual sync handlers
@@ -226,7 +231,7 @@ Parses CLI flags, configures logging, checks the OS keychain for an existing tok
 ### `internal/server` -- Application Core
 `app.go` owns the application dependency graph, lifecycle, WebSocket server setup, and handler registration. Background sync logic lives in `syncloop.go`; readiness payloads live in `ready.go`; repo path resolution lives in `repo_location_resolver.go`.
 
-The `handler/` subpackage contains focused `ws.MessageHandler` factories grouped by domain: auth, comments, diff, patchsets, PR list, range-diff, repos, repo-location management, sync, and review threads. Repo-location handlers cover dev-folder validation/scanning, add-by-URL, removal preflight/removal, local-path recovery, cache recovery, cache stats, prune, clear, and targeted cache deletion.
+The `handler/` subpackage contains focused `ws.MessageHandler` factories grouped by domain: auth, comments, diff, patchsets, PR list, triage, interdiff, repos, repo-location management, sync, and review threads. Repo-location handlers cover dev-folder validation/scanning, add-by-URL, removal preflight/removal, local-path recovery, cache recovery, cache stats, prune, clear, and targeted cache deletion.
 
 ### `internal/ws` -- WebSocket Transport
 Clean, focused package. `Server` manages connections and lifecycle; `Dispatcher` routes JSON messages to registered `MessageHandler` functions. No business logic.
@@ -252,6 +257,8 @@ Orchestrates the full sync cycle (list PRs, fetch details concurrently, write to
 - ActionQueue (offline queue with retry/cleanup)
 - Event aliases (thin wrappers around `events` package)
 
+A new observed patchset is recorded when the head or a known merge base changes, not when only the base tip moves. Patchsets store `merge_base_sha` and per-file `patch_id`s in `patchset_files`; `has_fingerprints` marks snapshots whose fingerprints were recorded after a merge-base diff. The since-last-review baseline is the newest of the user's submitted GitHub review (from any client), Bistro approve/request-changes/top-level comment, or mark-viewed action leaving no file unviewed.
+
 ### `internal/actions` -- PR Action Execution
 Handles approve/request-changes/post-comment actions through a `Handler` interface pattern with exponential backoff retry.
 
@@ -266,6 +273,8 @@ SQLite via `mattn/go-sqlite3`. `DB` is a thin wrapper applying pragmas (FK, WAL)
 
 ### `internal/git` -- Git Operations
 Uses `go-git` for cloning repos and generating unified diffs between two SHAs. Includes an in-memory cache with TTL for cloned repos, remote identity normalization (`ParseRemoteURL`, `SafeRepoID`), per-repo operation locks, local-clone PR ref fetching, and cache-maintenance helpers for stats, orphan sweeping, and safe deletion under the cache root.
+
+PR diffs use `merge-base(base, head)..head`; shallow clones deepen once, then fall back to the base tip with a log warning if no merge base is found. Sync pins observed heads in the repository it used as `refs/bistro/<safeID>/pull/<N>/heads/<sha>` (keyed by head SHA, not patchset number); cache clones refresh in place so pins survive force-pushes. `PatchID` is SHA-256 of the file patch with `index` lines removed and `@@` hunk headers normalized, preserving hunk boundaries and changed/context lines; viewed marks use the same fingerprint. Triage compares stored patch IDs; per-file interdiffs compare the two heads with go-git. `REQUEST_RANGE_DIFF` and the `git range-diff` / `os/exec` comparison path have been removed.
 
 ### `internal/expertise` -- Local Expertise Scoring
 Computes per-file expertise from user-owned local checkouts. The package wraps bounded system `git` calls for blame/log/check-attr, applies built-in and user exclude rules, scores surviving lines/recent substantial commits/original authorship, writes raw components to SQLite, performs incremental updates for PR-touched files, powers the `touches_you` resolver, and derives the opt-in enable nudge.

@@ -28,6 +28,7 @@ type DiffFile struct {
 	Additions   int
 	Deletions   int
 	DiffStatus  string // "ok", "truncated", "too_large"; empty string treated as "ok"
+	PatchID     string // git.PatchID of the full patch; empty for rows written before migration 035
 }
 
 // DiffStore provides persistence for per-file PR diffs in the pr_diffs table.
@@ -74,6 +75,7 @@ func (s *DiffStore) SaveDiffs(prID string, diffs []DiffFile) error {
 			Additions:   int64(d.Additions),
 			Deletions:   int64(d.Deletions),
 			DiffStatus:  storedDiffStatus(d.DiffStatus),
+			PatchID:     d.PatchID,
 		}); err != nil {
 			return fmt.Errorf("insert diff for %s/%s: %w", prID, d.FilePath, err)
 		}
@@ -159,6 +161,7 @@ func diffFileFromRow(row storedb.ListDiffsForPRRow) DiffFile {
 		Additions:   int(row.Additions),
 		Deletions:   int(row.Deletions),
 		DiffStatus:  row.DiffStatus,
+		PatchID:     row.PatchID,
 	}
 }
 

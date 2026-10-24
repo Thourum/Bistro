@@ -292,33 +292,25 @@ func (w *Writer) writeCriticalPRData(ctx context.Context, tx *sql.Tx, result *PR
 	if err := w.writePRRow(ctx, tx, pr, mode); err != nil {
 		return counts, err
 	}
-	if err := w.recordPatchsetIfChanged(ctx, tx, pr); err != nil {
+	var files []store.DiffFile
+	if result.DiffComputed {
+		files = result.DiffFiles
+		if files == nil {
+			files = []store.DiffFile{} // Computed-but-empty still records "no files".
+		}
+	}
+	number, err := w.recordPatchset(ctx, tx, patchsetWrite{pr: pr, mergeBase: result.MergeBaseSHA, files: files})
+	if err != nil {
 		return counts, err
 	}
+	counts.patchsetNumber = number
 	if result.DiffComputed {
 		if err := w.writeDiffs(ctx, tx, pr.ID, result.DiffFiles); err != nil {
 			return counts, err
 		}
 		counts.diffs = len(result.DiffFiles)
 	}
-	var err error
-	counts.patchsetNumber, err = readCurrentPatchsetNumber(ctx, tx, pr)
-	return counts, err
-}
-
-func readCurrentPatchsetNumber(ctx context.Context, tx *sql.Tx, pr *provider.PR) (int, error) {
-	var number int
-	err := tx.QueryRowContext(ctx,
-		`SELECT number FROM patchsets WHERE pr_id = ? AND head_sha = ? AND base_sha = ? LIMIT 1`,
-		pr.ID, pr.HeadSHA, pr.BaseSHA,
-	).Scan(&number)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, nil // No recorded patchset yet; comments cannot be stamped.
-	}
-	if err != nil {
-		return 0, fmt.Errorf("read current patchset for PR %s: %w", pr.ID, err)
-	}
-	return number, nil
+	return counts, nil
 }
 
 type commentBatch struct {
@@ -358,6 +350,7 @@ func commentPatchsetNumber(comment *provider.Comment, currentNumber int) int {
 }
 
 func (w *Writer) writeAfterSavepoint(ctx context.Context, batch *writerBatch, result *PRFetchResult, patchsetNumber int) {
+	w.recordGitHubReviewBaseline(ctx, batch, result)
 	if len(result.AnchorUpdates) > 0 {
 		w.writeAnchorUpdates(ctx, batch.tx, result.AnchorUpdates, patchsetNumber)
 	}

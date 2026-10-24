@@ -7,41 +7,47 @@
 // diffFileKeys are cleared when prId changes to prevent stale key carryover.
 
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { DiffView } from '../components/diff/DiffView';
+import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
 import { OpenInEditorDialog } from '../components/OpenInEditorDialog';
 import { useExpertise } from '../hooks/useExpertise';
+import { type InterdiffRequest, useInterdiff } from '../hooks/useInterdiff';
 import { usePRHydration } from '../hooks/usePRHydration';
-import { type RangeDiffRequest, useRangeDiff } from '../hooks/useRangeDiff';
 import { useReviewThreads } from '../hooks/useReviewThreads';
 import { useStore } from '../hooks/useStore';
+import { type TriageRequest, useTriage } from '../hooks/useTriage';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { replyComment } from '../services/prActions';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { repoIdForPR } from '../utils/expertise';
+import { createLogger } from '../utils/logger';
+import { filterDiffToPaths, triageSummary } from '../utils/sinceLastReview';
 import { prBrowserUrl } from '../utils/triage';
 import {
   DiffPageBody,
   DiffPageStatusBar,
   DiffPageToolbar,
 } from './DiffPageChrome';
+import { InterdiffPane } from './DiffPageInterdiff';
 import { useDiffPageActions } from './useDiffPageActions';
 import { useDiffPageData } from './useDiffPageData';
+
+const log = createLogger('DiffPage');
 
 /**
  * Full-screen diff view — matches `diff_view_minimal_light/code.html`.
  *
- * Two diff surfaces share this page:
- *   - the full PR diff (default), rendered by {@link DiffView}
- *   - a range diff (since-last-review or a timeline patchset pair), rendered
- *     by {@link RangeDiffView}
+ * One diff surface: the normal current PR diff, optionally filtered to files
+ * changed since your last review or between a timeline patchset pair.
  *
  * PR resolved by $prId route param; file resolved by ?file canonical key.
  *
  * Keyboard-first affordances (registered in `keybindings.ts`, driven here):
- *   - `s` toggles the since-last-review range diff
+ *   - `s` filters to files changed since your last review
+ *   - `i` toggles the current file's interdiff
  *   - `v` marks the current file viewed
  */
 export function DiffPage() {
@@ -50,7 +56,7 @@ export function DiffPage() {
   const { file: fileKey } = useSearch({ from: '/authed/prs/$prId/diff' });
   const navigate = useNavigate();
 
-  // Phase 2 store reads: range-diff intent and file-viewed tracking.
+  // Store reads: triage intent and file-viewed tracking.
   const selectedFileIndex = useStore(
     appStore,
     (s: UIState) => s.selectedFileIndex,
@@ -83,40 +89,111 @@ export function DiffPage() {
   );
 
   const [findQuery, setFindQuery] = useState('');
-  const { diff, files, setFiles, loading, diffError, comments } =
-    useDiffPageData({ pr, isAwaitingHydration, commentsRevision });
+  const {
+    diff,
+    files,
+    oversizedPatchBytes,
+    setFiles,
+    loading,
+    diffError,
+    comments,
+  } = useDiffPageData({ pr, isAwaitingHydration, commentsRevision });
 
-  // Review threads for inline annotations (full diff path only).
+  // Review threads for inline annotations on the visible diff.
   const { threads } = useReviewThreads(pr?.id);
 
-  // ── Range-diff intent ──────────────────────────────────────────────
-  const sinceLastReview = confirmingAction === 'since-last-review';
-
-  const rangeReq = useMemo<RangeDiffRequest | null>(() => {
+  // ── Triage (since last review, or an explicit patchset pair) ──────
+  const sinceLastReview = useStore(
+    appStore,
+    (s: UIState) => s.sinceLastReviewActive,
+  );
+  const triageReq = useMemo<TriageRequest | null>(() => {
     if (sinceLastReview) return { kind: 'sinceLastReview' };
     if (selectedPatchsetPair !== null) {
       const [from, to] = selectedPatchsetPair;
-      if (from !== to) {
+      if (from !== to)
         return { kind: 'pair', fromPatchset: from, toPatchset: to };
-      }
     }
     return null;
   }, [sinceLastReview, selectedPatchsetPair]);
-
   const {
-    result: rangeResult,
-    loading: rangeLoading,
-    error: rangeError,
-  } = useRangeDiff(pr?.id, rangeReq);
+    result: triage,
+    loading: triageLoading,
+    error: triageError,
+  } = useTriage(pr?.id, triageReq);
+  const triageOk = triage?.state === 'ok' ? triage : null;
 
-  const showRangeDiff = rangeReq !== null;
+  const triageStatuses = useMemo(
+    () =>
+      triageOk === null
+        ? undefined
+        : new Map(triageOk.files.map((file) => [file.path, file.status])),
+    [triageOk],
+  );
+  const visibleDiff = useMemo(() => {
+    if (triageOk === null) return diff;
+    const shown = triageOk.files
+      .filter((file) => file.status === 'changed' || file.status === 'new')
+      .map((file) => file.path);
+    return filterDiffToPaths(diff, new Set(shown));
+  }, [diff, triageOk]);
+  const removedPaths =
+    triageOk?.files
+      .filter((file) => file.status === 'removed')
+      .map((file) => file.path) ?? [];
 
+  const triageLabel =
+    triageReq === null
+      ? null
+      : triageReq.kind === 'sinceLastReview'
+        ? 'Since last review'
+        : `P${triageReq.fromPatchset} → P${triageReq.toPatchset}`;
+  const triageStatusText =
+    triageReq === null
+      ? null
+      : triageLoading
+        ? 'loading triage…'
+        : triageError !== null
+          ? `triage failed: ${triageError}`
+          : triage === null
+            ? null
+            : triageSummary(triage, new Date());
+
+  // Start of the diff-open measurement; reset whenever the route's PR changes.
+  const openedAtRef = useRef(performance.now());
   // Clear stale diffFileKeys whenever the target PR changes.
   // This prevents keybindings from using keys from a previous PR's diff.
+  // Collapse and whitespace settings are PR-scoped too; they reset here, not
+  // on DiffView unmount, because the interdiff toggle swaps DiffViews mid-PR.
   useLayoutEffect(() => {
+    openedAtRef.current = performance.now();
     if (prId === '') return;
-    appStore.setState((s) => ({ ...s, diffFileKeys: [] }));
+    appStore.setState((s) => ({
+      ...s,
+      diffFileKeys: [],
+      diffCollapseOverrides: [],
+      hideWhitespaceHunks: false,
+    }));
   }, [prId]);
+
+  // One line per diff open so big-PR regressions show up in user logs.
+  // rAF after commit ≈ the next frame with the diff committed (pre-paint,
+  // before highlighting).
+  useEffect(() => {
+    if (diff === '') return;
+    const frame = requestAnimationFrame(() =>
+      log.debug(
+        {
+          prId,
+          fileCount: files.length,
+          payloadChars: diff.length,
+          firstFileMs: Math.round(performance.now() - openedAtRef.current),
+        },
+        'diff opened',
+      ),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [prId, diff, files.length]);
 
   // Consume onFilesResolved via useLayoutEffect to ensure diffFileKeys
   // commits synchronously before the next user input (mirrors visiblePRIds pattern).
@@ -124,7 +201,53 @@ export function DiffPage() {
     appStore.setState((s) => ({ ...s, diffFileKeys: canonicalKeys }));
   };
 
-  const currentFile = files[selectedFileIndex];
+  const currentFile = useMemo(() => {
+    const path = splitUnifiedDiff(visibleDiff)[selectedFileIndex]?.path;
+    return files.find((file) => file.path === path);
+  }, [visibleDiff, selectedFileIndex, files]);
+  const interdiffActive = useStore(appStore, (s: UIState) => s.interdiffActive);
+  const canInterdiff =
+    triageOk !== null &&
+    currentFile !== undefined &&
+    triageStatuses?.get(currentFile.path) === 'changed';
+  const interdiffReq = useMemo<InterdiffRequest | null>(
+    () =>
+      interdiffActive &&
+      canInterdiff &&
+      triageOk !== null &&
+      currentFile !== undefined
+        ? {
+            path: currentFile.path,
+            fromPatchset: triageOk.from_patchset,
+            toPatchset: triageOk.to_patchset,
+          }
+        : null,
+    [interdiffActive, canInterdiff, triageOk, currentFile],
+  );
+  const interdiff = useInterdiff(pr?.id, interdiffReq);
+  // Sidebar and scroll selection only move the store index, so record the
+  // current file in ?file before the normal DiffView remounts on return.
+  const isShowingInterdiff = interdiffReq !== null;
+  useEffect(() => {
+    if (!isShowingInterdiff) return;
+    const { diffFileKeys, selectedFileIndex: index } = appStore.state;
+    const file = diffFileKeys[index];
+    if (file === undefined) return;
+    void navigate({
+      to: '/prs/$prId/diff',
+      params: { prId },
+      search: (prev) => ({ ...prev, file }),
+      replace: true,
+    });
+  }, [isShowingInterdiff, navigate, prId]);
+  const interdiffLabel =
+    interdiffReq === null
+      ? null
+      : `interdiff P${interdiffReq.fromPatchset} → P${triageOk?.to_patchset}`;
+  const interdiffHint =
+    interdiffActive && !canInterdiff
+      ? 'interdiff needs a changed file in triage (press s)'
+      : null;
   const {
     state: openInEditorState,
     checkoutAndOpen,
@@ -161,9 +284,9 @@ export function DiffPage() {
     <main className="flex-1 flex flex-col overflow-hidden bg-surface text-on-surface">
       <DiffPageToolbar
         pr={pr}
-        showRangeDiff={showRangeDiff}
-        sinceLastReview={sinceLastReview}
-        selectedPatchsetPair={selectedPatchsetPair}
+        triageLabel={triageLabel}
+        interdiffLabel={interdiffLabel}
+        isRebased={interdiff.result?.rebased === true && interdiffReq !== null}
         findQuery={findQuery}
         onFindQueryChange={setFindQuery}
         onBack={handleBack}
@@ -174,43 +297,62 @@ export function DiffPage() {
         hydrationError={hydrationError}
         isHydrating={isHydrating}
         onRetry={retry}
-        showRangeDiff={showRangeDiff}
-        rangeLoading={rangeLoading}
-        rangeError={rangeError}
-        rangeResult={rangeResult}
         fullDiffLoading={loading}
         fullDiffError={diffError}
       >
-        <DiffView
-          diff={diff}
-          theme={theme}
-          diffStyle={diffStyle}
-          findQuery={findQuery}
-          selectedFileKey={fileKey}
-          onFilesResolved={handleFilesResolved}
-          threads={threads}
-          comments={comments}
-          onThreadReply={(threadId, body) => {
-            if (pr === undefined) return;
-            replyComment(pr.id, body, { threadId });
-          }}
-          prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
-          expertiseFiles={expertise?.files ?? []}
-          expertiseError={
-            expertiseStatus?.status === 'error'
-              ? (expertiseStatus.message ?? expertiseStatus.code ?? 'unknown')
-              : null
-          }
-          viewedPaths={viewedPaths}
-        />
+        {isShowingInterdiff ? (
+          <InterdiffPane
+            result={interdiff.result}
+            loading={interdiff.loading}
+            error={interdiff.error}
+            theme={theme}
+            diffStyle={diffStyle}
+          />
+        ) : (
+          <div className="h-full flex flex-col">
+            {removedPaths.length > 0 && (
+              <div className="shrink-0 px-4 py-1.5 border-b border-outline-variant/30 bg-surface-container-low font-mono text-[10px] text-outline">
+                Removed since P{triageOk?.from_patchset}:{' '}
+                {removedPaths.join(', ')}
+              </div>
+            )}
+            <div className="flex-1 min-h-0">
+              <DiffView
+                diff={visibleDiff}
+                {...(triageStatuses !== undefined ? { triageStatuses } : {})}
+                theme={theme}
+                diffStyle={diffStyle}
+                findQuery={findQuery}
+                selectedFileKey={fileKey}
+                onFilesResolved={handleFilesResolved}
+                threads={threads}
+                comments={comments}
+                onThreadReply={(threadId, body) => {
+                  if (pr === undefined) return;
+                  replyComment(pr.id, body, { threadId });
+                }}
+                prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
+                expertiseFiles={expertise?.files ?? []}
+                expertiseError={
+                  expertiseStatus?.status === 'error'
+                    ? (expertiseStatus.message ??
+                      expertiseStatus.code ??
+                      'unknown')
+                    : null
+                }
+                viewedPaths={viewedPaths}
+                oversizedPatchBytes={oversizedPatchBytes}
+              />
+            </div>
+          </div>
+        )}
       </DiffPageBody>
 
       <DiffPageStatusBar
-        diff={diff}
+        diff={visibleDiff}
         files={files}
         currentFile={currentFile}
-        showRangeDiff={showRangeDiff}
-        rangeResult={rangeResult}
+        triageSummary={interdiffHint ?? triageStatusText}
       />
 
       <OpenInEditorDialog

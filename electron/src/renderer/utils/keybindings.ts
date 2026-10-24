@@ -349,7 +349,12 @@ const DETAIL_BINDINGS: readonly BindingDefinition[] = [
   },
   {
     actionId: 'diff.sinceLastReview',
-    description: 'Since last review',
+    description: 'Since last review: changed files',
+    activation: DIFF,
+  },
+  {
+    actionId: 'diff.interdiff',
+    description: 'Interdiff: this file since last review',
     activation: DIFF,
   },
   {

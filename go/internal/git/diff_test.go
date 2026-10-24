@@ -305,7 +305,7 @@ func TestGenerateDiff_PerFileBudget(t *testing.T) {
 		map[string][]byte{"big.go": []byte("package main\n" + strings.Repeat("// line\n", 20))},
 	)
 
-	opts := DiffOptions{MaxFilePatchBytes: 50, MaxTotalPatchBytes: 0}
+	opts := DiffOptions{MaxFilePatchBytes: 50}
 	result, err := NewClient(NewCache()).GenerateDiff(repoPath, baseSHA, headSHA, opts)
 	if err != nil {
 		t.Fatalf("GenerateDiff: %v", err)
@@ -339,46 +339,35 @@ func TestGenerateDiff_PerFileBudget(t *testing.T) {
 	}
 }
 
-func TestGenerateDiff_PRBudget(t *testing.T) {
-	// Two files; PR budget is very small so the second file gets too_large
-	repoPath, baseSHA, headSHA := makeDiffTestRepo(t,
-		map[string][]byte{
-			"a.go": []byte("package main\n"),
-			"b.go": []byte("package main\n"),
-		},
-		map[string][]byte{
-			"a.go": []byte("package main\n" + strings.Repeat("// line\n", 30)),
-			"b.go": []byte("package main\n" + strings.Repeat("// line\n", 30)),
-		},
-	)
+// Regression: a 4 MB per-PR budget used to blank every file after the first
+// ~4 MB of patch, so large PRs rendered empty bodies past that point.
+func TestGenerateDiff_LargePRKeepsEveryFile(t *testing.T) {
+	const fileCount = 1000
+	// ~5 KB patch per file → ~5 MB total, above the old 4 MB PR budget.
+	body := strings.Repeat("// changed line\n", 320)
+	base := make(map[string][]byte, fileCount)
+	head := make(map[string][]byte, fileCount)
+	for i := range fileCount {
+		name := fmt.Sprintf("src/file_%04d.go", i)
+		base[name] = []byte("package main\n")
+		head[name] = []byte("package main\n" + body)
+	}
+	repoPath, baseSHA, headSHA := makeDiffTestRepo(t, base, head)
 
-	// per-file limit large enough to pass each file alone, but PR budget tiny
-	opts := DiffOptions{MaxFilePatchBytes: 0, MaxTotalPatchBytes: 50}
-	result, err := NewClient(NewCache()).GenerateDiff(repoPath, baseSHA, headSHA, opts)
+	result, err := NewClient(NewCache()).GenerateDiff(repoPath, baseSHA, headSHA, DefaultDiffOptions())
 	if err != nil {
 		t.Fatalf("GenerateDiff: %v", err)
 	}
-	if len(result.Files) < 2 {
-		t.Fatalf("expected manifest for both files, got %d", len(result.Files))
+	if len(result.Files) != fileCount {
+		t.Fatalf("expected %d files, got %d", fileCount, len(result.Files))
 	}
-	// At least one file must be too_large (PR budget exhausted)
-	var tooLarge int
+	if result.Size <= 4*1024*1024 {
+		t.Fatalf("fixture too small to cover the old budget: %d bytes", result.Size)
+	}
 	for _, f := range result.Files {
-		if f.DiffStatus == DiffStatusTooLarge {
-			tooLarge++
-			if f.Patch != "" {
-				t.Errorf("expected empty patch for too_large file %s", f.Path)
-			}
-			if f.PatchBytes <= 50 {
-				t.Errorf("expected patch_bytes to retain original size above PR budget for %s, got %d", f.Path, f.PatchBytes)
-			}
+		if f.DiffStatus != DiffStatusOK || f.Patch == "" {
+			t.Fatalf("%s: diff_status=%q patch=%d bytes, want ok with patch", f.Path, f.DiffStatus, len(f.Patch))
 		}
-	}
-	if tooLarge == 0 {
-		t.Error("expected at least one too_large file when PR budget exhausted")
-	}
-	if result.Profile.TooLargeFiles == 0 {
-		t.Error("expected TooLargeFiles > 0 in profile")
 	}
 }
 

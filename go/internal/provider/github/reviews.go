@@ -172,6 +172,7 @@ func (c *Client) listReviews(ctx context.Context, owner, repo string, number int
 				PRID:        prID,
 				Author:      ghReview.GetUser().GetLogin(),
 				State:       strings.ToLower(ghReview.GetState()),
+				CommitID:    ghReview.GetCommitID(),
 				SubmittedAt: ghReview.GetSubmittedAt().Time,
 			})
 		}

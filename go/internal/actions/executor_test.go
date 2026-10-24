@@ -166,19 +166,11 @@ func (s *stubLoginGetter) GetCurrentUser(_ context.Context, _ string) (string, b
 
 // stubSHAWriter implements ReviewSHAWriter and captures calls for assertions.
 type stubSHAWriter struct {
-	calls []patchsetReviewCall
+	calls []store.ReviewEvent
 }
 
-type patchsetReviewCall struct {
-	prID        string
-	login       string
-	patchsetNum int
-	sha         string
-	baseSHA     string
-}
-
-func (s *stubSHAWriter) SetLastReviewedPatchset(_ context.Context, prID, login string, patchsetNum int, headSHA, baseSHA string) error {
-	s.calls = append(s.calls, patchsetReviewCall{prID, login, patchsetNum, headSHA, baseSHA})
+func (s *stubSHAWriter) RecordLastReviewed(_ context.Context, event store.ReviewEvent) error {
+	s.calls = append(s.calls, event)
 	return nil
 }
 
@@ -226,17 +218,17 @@ func TestExecutor_ReviewTracking_ApproveRecordsLastReviewedSHA(t *testing.T) {
 	}
 
 	if len(shaWriter.calls) != 1 {
-		t.Fatalf("expected 1 SetLastReviewedPatchset call, got %d", len(shaWriter.calls))
+		t.Fatalf("expected 1 RecordLastReviewed call, got %d", len(shaWriter.calls))
 	}
 	call := shaWriter.calls[0]
-	if call.prID != prID {
-		t.Errorf("prID: got %q want %q", call.prID, prID)
+	if call.PRID != prID {
+		t.Errorf("prID: got %q want %q", call.PRID, prID)
 	}
-	if call.login != "alice" {
-		t.Errorf("login: got %q want alice", call.login)
+	if call.Login != "alice" {
+		t.Errorf("login: got %q want alice", call.Login)
 	}
-	if call.sha != "sha-head" {
-		t.Errorf("sha: got %q want sha-head", call.sha)
+	if call.HeadSHA != "sha-head" {
+		t.Errorf("sha: got %q want sha-head", call.HeadSHA)
 	}
 	// patchsetNum may be 0 here (patchset row not yet recorded in test DB) — that is correct.
 }
@@ -247,7 +239,7 @@ func TestExecutor_ReviewTracking_NoUserSkips(t *testing.T) {
 	mockProv := mock.NewMockProvider()
 	emitter := events.NewEventEmitter()
 
-	// No current user → should not call SetLastReviewedSHA.
+	// No current user → should not record a review baseline.
 	loginGetter := &stubLoginGetter{found: false}
 	shaWriter := &stubSHAWriter{}
 
@@ -287,8 +279,7 @@ func TestExecutor_ReviewTracking_NilTrackerNoOp(t *testing.T) {
 }
 
 func TestExecutor_ReviewTracking_RecordsPatchsetNumber(t *testing.T) {
-	// When a patchset row exists for the PR's current head+base, the executor
-	// must record that patchset_number in SetLastReviewedPatchset.
+	// The newest patchset at the current head wins even after the base tip moves.
 	ctx := context.Background()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	mockProv := mock.NewMockProvider()
@@ -311,9 +302,10 @@ func TestExecutor_ReviewTracking_RecordsPatchsetNumber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert pr: %v", err)
 	}
-	// Insert a patchset row that matches the PR's current base+head.
+	// A moving base tip must not hide the latest patchset at the same head.
 	_, err = db.ExecContext(ctx, `INSERT INTO patchsets (pr_id, number, head_sha, base_sha, pushed_at)
-		VALUES (?, 2, 'HEAD-SHA', 'BASE-SHA', CURRENT_TIMESTAMP)`, prID)
+		VALUES (?, 1, 'HEAD-SHA', 'BASE-SHA', CURRENT_TIMESTAMP),
+		       (?, 2, 'HEAD-SHA', 'OLD-BASE-SHA', CURRENT_TIMESTAMP)`, prID, prID)
 	if err != nil {
 		t.Fatalf("insert patchset: %v", err)
 	}
@@ -334,14 +326,17 @@ func TestExecutor_ReviewTracking_RecordsPatchsetNumber(t *testing.T) {
 		t.Fatalf("expected 1 call, got %d", len(shaWriter.calls))
 	}
 	call := shaWriter.calls[0]
-	if call.patchsetNum != 2 {
-		t.Errorf("patchsetNum: got %d want 2 (must record exact patchset number)", call.patchsetNum)
+	if call.PatchsetNum != 2 {
+		t.Errorf("patchsetNum: got %d want 2 (must record exact patchset number)", call.PatchsetNum)
 	}
-	if call.sha != "HEAD-SHA" {
-		t.Errorf("sha: got %q want HEAD-SHA", call.sha)
+	if call.HeadSHA != "HEAD-SHA" {
+		t.Errorf("sha: got %q want HEAD-SHA", call.HeadSHA)
 	}
-	if call.baseSHA != "BASE-SHA" {
-		t.Errorf("baseSHA: got %q want BASE-SHA", call.baseSHA)
+	if call.Source != store.ReviewSourceBistroAction {
+		t.Errorf("source: got %q want bistro_action", call.Source)
+	}
+	if call.ReviewedAt.IsZero() {
+		t.Error("reviewedAt must record the action time")
 	}
 }
 

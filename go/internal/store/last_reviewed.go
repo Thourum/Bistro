@@ -5,90 +5,95 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
 const localReviewAccountProvider = "github"
 
-// LastReviewedRecord holds the full patchset identity stored for a last-reviewed entry.
-// PatchsetNum == 0 means the record was written without a patchset number (legacy/unknown).
-type LastReviewedRecord struct {
-	SHA         string // head_sha at time of review
-	PatchsetNum int    // 0 = legacy (NULL in DB); > 0 = authoritative patchset number
-	BaseSHA     string // base_sha at time of review; empty for legacy rows
+// reviewedAtLayout is UTC at second precision so stored strings sort
+// chronologically; it matches the strftime format migration 035 backfills.
+const reviewedAtLayout = "2006-01-02T15:04:05Z"
+
+// ReviewSource names the event that set a since-last-review baseline.
+type ReviewSource string
+
+const (
+	ReviewSourceGitHubReview ReviewSource = "github_review"
+	ReviewSourceBistroAction ReviewSource = "bistro_action"
+	ReviewSourceAllViewed    ReviewSource = "all_viewed"
+)
+
+// ReviewEvent is one candidate since-last-review baseline.
+// PatchsetNum 0 means unknown; readers then match the patchset by HeadSHA.
+type ReviewEvent struct {
+	PRID        string
+	Login       string
+	HeadSHA     string
+	PatchsetNum int
+	ReviewedAt  time.Time
+	Source      ReviewSource
 }
 
-// SetLastReviewedPatchset upserts full patchset identity for (prID, login).
-// PatchsetNum > 0 is authoritative for since-last-review resolution; 0 writes NULL.
-// Supersedes SetLastReviewedSHA for new code — legacy callers may still use SetLastReviewedSHA.
-func (db *DB) SetLastReviewedPatchset(ctx context.Context, prID, login string, patchsetNum int, headSHA, baseSHA string) error {
-	if err := storedb.New(db).UpsertLastReviewedPatchset(ctx, storedb.UpsertLastReviewedPatchsetParams{
-		PrID:            prID,
-		AccountProvider: localReviewAccountProvider,
-		AccountLogin:    login,
-		Login:           login,
-		Sha:             headSHA,
-		PatchsetNumber:  nullablePositiveInt(patchsetNum),
-		BaseSha:         sql.NullString{String: baseSHA, Valid: true},
-	}); err != nil {
-		return fmt.Errorf("set last reviewed patchset (%s, %s): %w", prID, login, err)
+// LastReviewedRecord is the stored baseline for one PR and login.
+type LastReviewedRecord struct {
+	SHA         string
+	PatchsetNum int
+	ReviewedAt  time.Time
+	Source      ReviewSource
+}
+
+// RecordLastReviewed stores event as the baseline unless a newer one is
+// already stored. q is a *DB or the sync writer's *sql.Tx.
+func RecordLastReviewed(ctx context.Context, q storedb.DBTX, event ReviewEvent) error {
+	const query = `
+		INSERT INTO last_reviewed_sha (
+			pr_id, account_provider, account_login, login, sha,
+			patchset_number, reviewed_at, source, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+		ON CONFLICT(pr_id, account_provider, account_login, login) DO UPDATE SET
+			sha             = excluded.sha,
+			patchset_number = excluded.patchset_number,
+			reviewed_at     = excluded.reviewed_at,
+			source          = excluded.source,
+			updated_at      = excluded.updated_at
+		WHERE last_reviewed_sha.reviewed_at IS NULL
+		   OR excluded.reviewed_at > last_reviewed_sha.reviewed_at`
+	if _, err := q.ExecContext(ctx, query,
+		event.PRID, localReviewAccountProvider, event.Login, event.Login, event.HeadSHA,
+		nullablePositiveInt(event.PatchsetNum), event.ReviewedAt.UTC().Format(reviewedAtLayout),
+		string(event.Source),
+	); err != nil {
+		return fmt.Errorf("record last reviewed (%s, %s, %s): %w", event.PRID, event.Login, event.Source, err)
 	}
 	return nil
 }
 
-// GetLastReviewedPatchset returns the full patchset identity for (prID, login).
-// Returns (LastReviewedRecord{}, false, nil) when no record exists.
-// PatchsetNum == 0 in the returned record means the number was not stored (legacy).
-func (db *DB) GetLastReviewedPatchset(ctx context.Context, prID, login string) (LastReviewedRecord, bool, error) {
-	row, err := storedb.New(db).GetLastReviewedPatchset(ctx, storedb.GetLastReviewedPatchsetParams{
-		PrID:            prID,
-		AccountProvider: localReviewAccountProvider,
-		AccountLogin:    login,
-		Login:           login,
+// RecordLastReviewed stores event as the baseline unless a newer one exists.
+func (db *DB) RecordLastReviewed(ctx context.Context, event ReviewEvent) error {
+	return RecordLastReviewed(ctx, db, event)
+}
+
+// GetLastReviewed returns the stored baseline for (prID, login).
+func (db *DB) GetLastReviewed(ctx context.Context, prID, login string) (LastReviewedRecord, bool, error) {
+	row, err := storedb.New(db).GetLastReviewed(ctx, storedb.GetLastReviewedParams{
+		PrID: prID, AccountProvider: localReviewAccountProvider, AccountLogin: login, Login: login,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return LastReviewedRecord{}, false, nil
 	}
 	if err != nil {
-		return LastReviewedRecord{}, false, fmt.Errorf("get last reviewed patchset (%s, %s): %w", prID, login, err)
+		return LastReviewedRecord{}, false, fmt.Errorf("get last reviewed (%s, %s): %w", prID, login, err)
 	}
-	return LastReviewedRecord{SHA: row.Sha, PatchsetNum: int(row.PatchsetNumber), BaseSHA: row.BaseSha}, true, nil
-}
-
-// SetLastReviewedSHA upserts the SHA that login last reviewed for pr_id.
-// Writes patchset_number=NULL and base_sha=NULL (legacy path).
-// Prefer SetLastReviewedPatchset for new code so full patchset identity is captured.
-func (db *DB) SetLastReviewedSHA(ctx context.Context, prID, login, sha string) error {
-	if err := storedb.New(db).UpsertLastReviewedSHA(ctx, storedb.UpsertLastReviewedSHAParams{
-		PrID:            prID,
-		AccountProvider: localReviewAccountProvider,
-		AccountLogin:    login,
-		Login:           login,
-		Sha:             sha,
-	}); err != nil {
-		return fmt.Errorf("set last reviewed sha (%s, %s): %w", prID, login, err)
-	}
-	return nil
-}
-
-// GetLastReviewedSHA returns the last-reviewed SHA for (prID, login).
-// Returns ("", false, nil) when no record exists.
-// Prefer GetLastReviewedPatchset for new code.
-func (db *DB) GetLastReviewedSHA(ctx context.Context, prID, login string) (string, bool, error) {
-	sha, err := storedb.New(db).GetLastReviewedSHA(ctx, storedb.GetLastReviewedSHAParams{
-		PrID:            prID,
-		AccountProvider: localReviewAccountProvider,
-		AccountLogin:    login,
-		Login:           login,
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", false, nil
-	}
+	reviewedAt, err := time.Parse(reviewedAtLayout, row.ReviewedAt.String)
 	if err != nil {
-		return "", false, fmt.Errorf("get last reviewed sha (%s, %s): %w", prID, login, err)
+		return LastReviewedRecord{}, false, fmt.Errorf("parse last reviewed time (%s, %s): %w", prID, login, err)
 	}
-	return sha, true, nil
+	return LastReviewedRecord{
+		SHA: row.Sha, PatchsetNum: int(row.PatchsetNumber.Int64),
+		ReviewedAt: reviewedAt, Source: ReviewSource(row.Source),
+	}, true, nil
 }
 
 func nullablePositiveInt(n int) sql.NullInt64 {
