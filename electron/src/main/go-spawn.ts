@@ -406,9 +406,16 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
     level: 'info' | 'warn',
     prefix: string,
     onLine: (line: string) => void,
-  ): ((data: Buffer) => void) => {
+  ): { onData: (data: Buffer) => void; flush: () => void } => {
     let remainder = '';
-    return (data) => {
+    const flush = (): void => {
+      if (remainder.length === 0) return;
+      const line = remainder;
+      remainder = '';
+      logger[level](`${prefix}${line}`);
+      onLine(line);
+    };
+    const onData = (data: Buffer): void => {
       const chunks = `${remainder}${data.toString()}`.split('\n');
       remainder = chunks.pop() ?? '';
       for (const line of chunks) {
@@ -419,31 +426,30 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
         onLine(line);
       }
     };
+    return { onData, flush };
   };
 
-  spawnedProcess.stdout?.on(
-    'data',
-    logProcessLines('info', '[go] ', (line) => {
-      const readyPort = parseReadyLine(line);
-      if (readyPort !== null) {
-        markReady(readyPort, 'ready signal');
-        return;
-      }
-      if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
-        markReady(config.wsPort, 'log line');
-      }
-    }),
-  );
+  const stdoutLines = logProcessLines('info', '[go] ', (line) => {
+    const readyPort = parseReadyLine(line);
+    if (readyPort !== null) {
+      markReady(readyPort, 'ready signal');
+      return;
+    }
+    if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
+      markReady(config.wsPort, 'log line');
+    }
+  });
+  spawnedProcess.stdout?.on('data', stdoutLines.onData);
+  spawnedProcess.stdout?.once('end', stdoutLines.flush);
 
-  spawnedProcess.stderr?.on(
-    'data',
-    logProcessLines('warn', '[go:stderr] ', (line) => {
-      stderrTail.append(line);
-      if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
-        markReady(config.wsPort, 'stderr log line');
-      }
-    }),
-  );
+  const stderrLines = logProcessLines('warn', '[go:stderr] ', (line) => {
+    stderrTail.append(line);
+    if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
+      markReady(config.wsPort, 'stderr log line');
+    }
+  });
+  spawnedProcess.stderr?.on('data', stderrLines.onData);
+  spawnedProcess.stderr?.once('end', stderrLines.flush);
 
   spawnedProcess.nodeChildProcess.once('spawn', () => {
     logger.info('Go process spawned');

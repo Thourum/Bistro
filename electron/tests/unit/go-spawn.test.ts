@@ -1,5 +1,51 @@
-import { describe, expect, it } from 'vitest';
-import { parseReadyLine } from '../../src/main/go-spawn';
+import type { Logger } from 'electron-log';
+import { execa } from 'execa';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  getStderrTail,
+  parseReadyLine,
+  spawnGoProcess,
+} from '../../src/main/go-spawn';
+
+vi.mock('execa', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('execa')>();
+  return { ...actual, execa: vi.fn(actual.execa) };
+});
+
+it('captures startup stderr without a trailing newline at EOF', async () => {
+  const actual = await vi.importActual<typeof import('execa')>('execa');
+  vi.mocked(execa).mockImplementationOnce(() =>
+    actual.execa(
+      process.execPath,
+      [
+        '-e',
+        'process.stderr.write("fatal startup failure"); process.exitCode = 1;',
+      ],
+      { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', buffer: false },
+    ),
+  );
+  const logger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  } as unknown as Logger;
+  await expect(
+    spawnGoProcess({
+      logger,
+      config: {
+        binaryPath: 'unused',
+        dbPath: 'unused',
+        wsPort: 0,
+        logLevel: 'info',
+        logFile: '',
+        replayQueue: true,
+        syncInterval: 30,
+        autoSync: false,
+      },
+    }),
+  ).rejects.toBeDefined();
+  expect(getStderrTail()).toContain('fatal startup failure');
+});
 
 describe('parseReadyLine', () => {
   it('parses a valid ready signal', () => {

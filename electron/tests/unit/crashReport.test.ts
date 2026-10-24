@@ -38,6 +38,16 @@ describe('buildCrashIssueUrl', () => {
     expect(body).not.toContain(line);
   });
 
+  it('redacts Windows home paths escaped in quoted Go errors', () => {
+    const home = String.raw`C:\Users\reviewer`;
+    const line = String.raw`error="open C:\\Users\\reviewer\\sync.db: access denied"`;
+    const body = new URL(
+      buildCrashIssueUrl({ ...base, home, logs: [line] }),
+    ).searchParams.get('body');
+    expect(body).toContain(String.raw`~\\sync.db`);
+    expect(body).not.toContain('reviewer');
+  });
+
   it('drops oldest lines and preserves readable metadata and the newest tail', () => {
     const logs = Array.from(
       { length: 60 },

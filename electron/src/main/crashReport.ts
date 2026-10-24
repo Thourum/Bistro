@@ -21,7 +21,12 @@ function redactLog(line: string, home: string): string {
     )
     .replace(/(Authorization:\s*)[^\r\n]+/gi, '$1[redacted]')
     .replace(/([?&](?:code|state)=)[^&#\s]*/gi, '$1[redacted]');
-  return home === '' ? redacted : redacted.split(home).join('~');
+  if (home === '') return redacted;
+  return redacted
+    .split(home.replaceAll('\\', '\\\\'))
+    .join('~')
+    .split(home)
+    .join('~');
 }
 
 export function buildCrashIssueUrl(input: Readonly<CrashReportInput>): string {
