@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  firstUnfinishedSandboxStage,
   INITIAL_SANDBOX_STATE,
   reduceSandbox,
   SANDBOX_COMMENT_COUNT,
   SANDBOX_FILE_COUNT,
   SANDBOX_PR_COUNT,
+  SANDBOX_TASKS,
   type SandboxState,
+  selectSandboxPane,
 } from './onboardingSandbox';
 
 const run = (
@@ -28,30 +31,77 @@ describe('reduceSandbox', () => {
     expect(many.cursor).toBe(SANDBOX_PR_COUNT - 1);
   });
 
-  it('walks list → detail → diff and back with Escape or C-g, ticking each task once', () => {
+  it('tracks 5 navigate, 6 review, 5 diff tasks through actual action IDs', () => {
     const state = run([
+      'list.down',
+      'list.downArrow',
+      'list.down',
+      'list.upArrow',
+      'list.top',
       'list.bottom',
       'list.open',
-      'detail.approve',
+      'detail.dismissBots',
+      'detail.undoDismissAlt',
+      'detail.comment',
+      'detail.requestChanges',
       'detail.approve',
       'detail.viewDiff',
       'diff.nextFile',
       'diff.nextComment',
-      'global.escape',
+      'detail.inlineReply',
+      'diff.sinceLastReview',
       'global.cancel',
     ]);
-    expect(state.pane).toBe('list');
-    expect([...state.completed].sort()).toEqual(
-      [
-        'approve',
-        'back',
-        'bottom',
-        'nextComment',
-        'nextFile',
-        'open',
-        'viewDiff',
-      ].sort(),
+    const inStage = (stage: string) =>
+      SANDBOX_TASKS.filter((task) => task.stage === stage);
+    expect(SANDBOX_TASKS).toHaveLength(16);
+    expect(inStage('navigate')).toHaveLength(5);
+    expect(inStage('review')).toHaveLength(6);
+    expect(inStage('diff')).toHaveLength(5);
+    expect(new Set(state.completed).size).toBe(16);
+    expect(state.approved).toBe(true);
+    expect(state.botsFolded).toBe(false);
+    expect(state.sinceLastReview).toBe(true);
+    expect(state.pane).toBe('detail');
+    expect(firstUnfinishedSandboxStage(state)).toBeNull();
+    expect(INITIAL_SANDBOX_STATE.completed).toEqual([]);
+  });
+
+  it('completes nothing on pane tabs and ignores wrong-pane actions', () => {
+    const diff = selectSandboxPane(INITIAL_SANDBOX_STATE, 'diff');
+    expect(diff.completed).toEqual([]);
+    expect(reduceSandbox(INITIAL_SANDBOX_STATE, 'diff.nextFile')).toBe(
+      INITIAL_SANDBOX_STATE,
     );
+    expect(reduceSandbox(diff, 'detail.approve')).toBe(diff);
+    expect(
+      firstUnfinishedSandboxStage(reduceSandbox(diff, 'diff.nextFile')),
+    ).toBe('navigate');
+  });
+
+  it('ticks undoFold only after a fold', () => {
+    const detail = selectSandboxPane(INITIAL_SANDBOX_STATE, 'detail');
+    expect(run(['detail.undoDismiss'], detail).completed).not.toContain(
+      'undoFold',
+    );
+    const undone = run(['detail.dismissBots', 'detail.undoDismiss'], detail);
+    expect(undone.botsFolded).toBe(false);
+    expect(undone.completed).toEqual(['foldBots', 'undoFold']);
+  });
+
+  it('ticks back only when Escape leaves a pane', () => {
+    expect(run(['global.escape']).completed).not.toContain('back');
+    expect(run(['list.open', 'global.escape']).completed).toContain('back');
+  });
+
+  it('ticks sinceLastReview on entering the range, not on leaving it', () => {
+    const inDiff = selectSandboxPane(INITIAL_SANDBOX_STATE, 'diff');
+    const toggledTwice = run(
+      ['diff.sinceLastReview', 'diff.sinceLastReview'],
+      inDiff,
+    );
+    expect(toggledTwice.sinceLastReview).toBe(false);
+    expect(toggledTwice.completed).toEqual(['sinceLastReview']);
   });
 
   it('ignores Escape on the list pane and open outside it', () => {
@@ -63,7 +113,7 @@ describe('reduceSandbox', () => {
   it('clamps up aliases and top at the first PR without ticking moveDown', () => {
     const state = run(['list.bottom', 'list.up', 'list.upArrow', 'list.top']);
     expect(state.cursor).toBe(0);
-    expect(state.completed).toEqual(['bottom']);
+    expect(state.completed).toEqual(['bottom', 'moveUp', 'top']);
     expect(run(['list.up', 'list.upArrow']).cursor).toBe(0);
   });
 
@@ -97,10 +147,14 @@ describe('reduceSandbox', () => {
   it('resets the fake PR on open without losing checklist progress or mutating its input', () => {
     const reviewed = run([
       'list.open',
+      'detail.dismissBots',
       'detail.approve',
+      'detail.comment',
       'detail.viewDiff',
       'diff.nextFile',
       'diff.nextComment',
+      'detail.inlineReply',
+      'diff.sinceLastReview',
       'global.cancel',
       'global.escape',
     ]);
@@ -110,6 +164,10 @@ describe('reduceSandbox', () => {
       ...reviewed,
       pane: 'detail',
       approved: false,
+      botsFolded: false,
+      composer: null,
+      inlineReplyOpen: false,
+      sinceLastReview: false,
       fileIndex: 0,
       commentIndex: 0,
     });

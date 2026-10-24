@@ -64,6 +64,8 @@ export interface UIState {
   filterState: 'open' | 'draft' | 'all' | 'needs_action' | 'touches_you';
   /** Onboarding style sandbox; null when the step isn't showing. */
   onboardingSandbox: SandboxState | null;
+  /** Sandbox's viewDiff or sinceLastReview task was done this session; never persisted. */
+  onboardingPracticedDiff: boolean;
   onboardingSync: OnboardingSyncState | null;
   onboardingStep: 'sync' | 'practice' | null;
   onboardingIntent: 'chooseFolder' | 'stopScan' | 'focusRepoFilter' | null;
@@ -204,6 +206,7 @@ export const initialUIState: UIState = {
   sortBy: 'updated',
   filterState: 'open',
   onboardingSandbox: null,
+  onboardingPracticedDiff: false,
   onboardingSync: null,
   onboardingStep: null,
   onboardingIntent: null,
