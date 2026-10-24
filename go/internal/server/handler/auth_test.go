@@ -288,7 +288,9 @@ func TestAuthExchangeStopsOnCancelAndTimeout(t *testing.T) {
 			defer func() { http.DefaultTransport = originalTransport }()
 			var broadcasts []interface{}
 			terminal := make(chan struct{})
+			triggers := make(chan string, 1)
 			deps := handler.AuthDeps{
+				SyncTrigger:     triggers,
 				Log:             slog.New(slog.NewTextHandler(io.Discard, nil)),
 				Tokens:          &fakeTokenStore{},
 				Cache:           &fakeUsernameCache{},
@@ -374,7 +376,91 @@ func TestAuthExchangeStopsOnCancelAndTimeout(t *testing.T) {
 			if event["type"] != "AUTH_FAILED" || event["data"].(map[string]string)["error"] != outcome {
 				t.Fatalf("terminal outcome: %#v", event)
 			}
+			select {
+			case repoID := <-triggers:
+				t.Fatalf("failed authentication triggered sync: %q", repoID)
+			default:
+			}
 		})
+	}
+}
+
+func TestAuthSuccessBroadcastsBeforeFullSync(t *testing.T) {
+	const deadline = 2 * time.Second
+	original := http.DefaultTransport
+	http.DefaultTransport = authRoundTripper(func(r *http.Request) (*http.Response, error) {
+		body := `{"access_token":"test-token","token_type":"bearer","scope":"repo,read:user"}`
+		if r.URL.Path == "/user" {
+			body = `{"login":"octocat"}`
+		}
+		return &http.Response{StatusCode: http.StatusOK,
+			Header: http.Header{"Content-Type": {"application/json"}},
+			Body:   io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})
+	t.Cleanup(func() { http.DefaultTransport = original })
+	triggers := make(chan string, 1)
+	terminal := make(chan string, 1)
+	var providerInstalled bool
+	var triggeredBeforeBroadcast bool
+	tokens := &fakeTokenStore{}
+	deps := handler.AuthDeps{
+		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Tokens: tokens, Cache: &fakeUsernameCache{},
+		GetClientID:     func() string { return "test-client" },
+		CallbackTimeout: deadline, SyncTrigger: triggers,
+		SetProvider: func(provider.Provider, string) { providerInstalled = true },
+		Broadcast: func(message interface{}) {
+			select {
+			case <-triggers:
+				triggeredBeforeBroadcast = true
+			default:
+			}
+			terminal <- message.(map[string]interface{})["type"].(string)
+		},
+	}
+	start, cancel := handler.NewAuthFlowHandlers(deps)
+	ctx, stop := context.WithTimeout(context.Background(), deadline)
+	defer stop()
+	t.Cleanup(func() {
+		if _, err := cancel(context.Background(), ws.InboundMessage{Type: "AUTH_CANCEL"}); err != nil {
+			t.Error(err)
+		}
+	})
+	response, err := start(ctx, ws.InboundMessage{Type: "AUTH_START",
+		Data: json.RawMessage(`{"provider":"github"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope := response.(map[string]interface{})
+	authorize, err := url.Parse(envelope["data"].(map[string]interface{})["url"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callbackURL := auth.RedirectURI + "?code=test-code&state=" + url.QueryEscape(authorize.Query().Get("state"))
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, callbackURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, err := (&http.Client{Transport: original, Timeout: deadline}).Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reply.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case repoID := <-triggers:
+		if repoID != "" {
+			t.Fatalf("trigger = %q", repoID)
+		}
+	case <-ctx.Done():
+		t.Fatal("successful OAuth did not trigger sync")
+	}
+	if got := <-terminal; got != "AUTH_SUCCESS" {
+		t.Fatalf("terminal = %s", got)
+	}
+	if triggeredBeforeBroadcast || !providerInstalled || tokens.tokens["github"] != "test-token" {
+		t.Fatalf("wrong finalization order: early=%v installed=%v", triggeredBeforeBroadcast, providerInstalled)
 	}
 }
 

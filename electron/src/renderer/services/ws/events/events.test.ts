@@ -30,6 +30,26 @@ beforeEach(() => {
 });
 
 describe('dispatchWsEvent', () => {
+  it('resolves queue and structured scan failures instead of dropping the responses', () => {
+    const queue = createPendingResponse();
+    const payload = {
+      requested: [{ repo_id: 'github:acme/api', count: 2 }],
+      recently_reviewed: [],
+    };
+    dispatch('REVIEW_QUEUE_READY', payload, queue.context);
+    expect(queue.responses).toEqual([payload]);
+    const scan = createPendingResponse();
+    const failure = {
+      ok: false,
+      repo_id: '',
+      operation: 'scan_dev_folder',
+      code: 'invalid_path',
+      message: 'invalid development folder path',
+    };
+    dispatch('SCAN_DEV_FOLDER_RESULT', failure, scan.context);
+    expect(scan.responses).toEqual([failure]);
+  });
+
   it('does not resolve a response id carried by a push event', () => {
     const { context, responses, pendingIds } = createPendingResponse();
     dispatch('SYNC_COMPLETE', {}, context);

@@ -2,10 +2,18 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider/mock"
+	"github.com/itterno/bistro/internal/server/handler"
+	gosync "github.com/itterno/bistro/internal/sync"
+	"github.com/itterno/bistro/internal/ws"
 )
 
 func newTestApp() *App {
@@ -16,6 +24,57 @@ func newTestApp() *App {
 		syncSettings: make(chan syncSettingsMsg, 4),
 		syncInterval: 5 * time.Minute,
 		autoSync:     true,
+	}
+}
+
+func TestWatchTriggerOverflowSyncsEveryNewlyWatchedRepo(t *testing.T) {
+	app := newTestApp()
+	app.autoSync = false
+	app.db = openTestServerDB(t)
+	app.wsServer = ws.NewServerWithLogger(app.log)
+	app.prov = mock.NewMockProvider().WithInboxDiscovery(&provider.InboxDiscoveryResult{}, nil)
+	app.orchestrator = gosync.NewOrchestrator(app.log, app.prov, app.db, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	app.provCtx = ctx
+	const repoCount = 20
+	for i := range repoCount {
+		repo := fmt.Sprintf("repo-%d", i)
+		if _, err := app.db.Exec(`INSERT INTO repos(id,provider,owner,repo) VALUES(?,?,?,?)`, "github:acme/"+repo, "github", "acme", repo); err != nil {
+			t.Fatal(err)
+		}
+	}
+	watch := handler.NewToggleWatchHandler(app.db.DB, handler.WatchSyncTrigger{Queue: app.syncTrigger, Pending: &app.pendingWatchSync}, app.log)
+	// The loop is busy: fill its buffer before allowing it to receive.
+	for i := range repoCount {
+		payload := json.RawMessage(fmt.Sprintf(`{"repo_id":"github:acme/repo-%d","watched":true}`, i))
+		if _, err := watch(ctx, ws.InboundMessage{Type: "TOGGLE_WATCH_REPO", Data: payload}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	eventStream := app.orchestrator.GetEventChannel()
+	defer app.orchestrator.UnsubscribeEventChannel(eventStream)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		app.runSyncLoop(ctx)
+	}()
+	defer func() { cancel(); <-done }()
+	seen := make(map[string]bool)
+	for len(seen) < repoCount {
+		select {
+		case event := <-eventStream:
+			if event.Type != "sync_started" {
+				continue
+			}
+			repo, ok := event.Data["repo"].(string)
+			if !ok {
+				t.Fatalf("sync event missing repo: %+v", event)
+			}
+			seen[repo] = true
+		case <-ctx.Done():
+			t.Fatalf("synced %d of %d newly watched repos after overflow", len(seen), repoCount)
+		}
 	}
 }
 

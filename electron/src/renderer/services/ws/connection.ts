@@ -21,8 +21,16 @@ const PR_SYNC_RESPONSE_MARGIN_MS = 15000;
 const PR_SYNC_REQUEST_TIMEOUT_MS = 2 * 60 * 1000 + PR_SYNC_RESPONSE_MARGIN_MS;
 // Checkout fetches and mutates HEAD; the generic budget expires mid-checkout.
 const CHECKOUT_REQUEST_TIMEOUT_MS = 60 * 1000;
+// The engine caps a scan at 30 s, then persists for up to 5 s.
+const SCAN_REQUEST_TIMEOUT_MS = 45 * 1000;
+// Queue and repo discovery have 30 s engine deadlines plus a reply margin.
+const REPO_LIST_REQUEST_TIMEOUT_MS = 35_000;
+const REVIEW_QUEUE_REQUEST_TIMEOUT_MS = 35_000;
 const REQUEST_TIMEOUTS: Readonly<Record<string, number>> = Object.freeze({
   REQUEST_PR_SYNC: PR_SYNC_REQUEST_TIMEOUT_MS,
+  REQUEST_REPO_LIST: REPO_LIST_REQUEST_TIMEOUT_MS,
+  REQUEST_REVIEW_QUEUE: REVIEW_QUEUE_REQUEST_TIMEOUT_MS,
+  SCAN_DEV_FOLDER: SCAN_REQUEST_TIMEOUT_MS,
   CHECKOUT_PR_HEAD: CHECKOUT_REQUEST_TIMEOUT_MS,
 });
 const CONNECT_WAIT_INTERVAL_MS = 250;
