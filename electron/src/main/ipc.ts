@@ -276,6 +276,12 @@ function trackSettingsPatch(
   if (patch.prList !== undefined) {
     void telemetry?.track('settings_updated', { section: 'prList' });
   }
+  if (patch.navigation !== undefined) {
+    void telemetry?.track('settings_updated', {
+      section: 'navigation',
+      style: next.navigation.style,
+    });
+  }
   if (patch.sync !== undefined) {
     void telemetry?.track('settings_updated', { section: 'sync' });
   }

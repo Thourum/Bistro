@@ -19,6 +19,11 @@ const classificationSchema = z.object({
   endpoint: z.string(),
 });
 
+export const NAVIGATION_STYLES = ['vim', 'emacs', 'standard'] as const;
+const navigationSchema = z.object({ style: z.enum(NAVIGATION_STYLES) });
+export type NavigationStyle = (typeof NAVIGATION_STYLES)[number];
+export type NavigationSettings = z.infer<typeof navigationSchema>;
+
 const appearanceSchema = z.object({
   theme: z.enum(['light', 'dark']),
   uiFont: z.string(),
@@ -76,6 +81,7 @@ export const appSettingsSchema = z.object({
   privacy: privacySchema,
   repositories: repositoriesSchema,
   classification: classificationSchema,
+  navigation: navigationSchema,
   keybindings: z.record(z.string(), z.array(z.string())),
 });
 
@@ -121,6 +127,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     model: '',
     endpoint: '',
   },
+  navigation: { style: 'vim' },
   keybindings: {},
 };
 

@@ -2,6 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Fault } from '@thourum/fault';
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useStore } from '../hooks/useStore';
 import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
@@ -10,6 +11,7 @@ import type { UIState } from '../store/ui';
 import { toggleRepoGroup } from '../store/ui';
 import type { PR, RepoInfo } from '../types';
 import { LANES, laneSections } from '../utils/lanes';
+import { findActionKeys } from '../utils/legendPresets';
 import { RepoRecoveryDialog } from './RepoRecoveryDialog';
 
 export type PRRepoGroup = readonly [repoKey: string, prs: PR[]];
@@ -276,6 +278,9 @@ function PRGroup({
 }: PRGroupProps): React.ReactElement {
   // A collapsed group is a single cursor row; highlight its header.
   const headerSelected = collapsed && selectedIndex === startIndex;
+  const toggleKeys = findActionKeys(useEffectiveBindings(), [
+    'list.toggleGroup',
+  ]);
   const toggle = (e: React.MouseEvent): void => {
     // The store owns open/collapsed state — block the native <details> toggle
     // so mouse clicks and the Space keybinding share one code path.
@@ -308,9 +313,11 @@ function PRGroup({
             {prs.length} {prs.length === 1 ? 'PR' : 'PRS'}
           </span>
         </div>
-        <span className="font-mono text-[10px] text-outline">
-          TOGGLE [SPACE]
-        </span>
+        {toggleKeys !== undefined && (
+          <span className="font-mono text-[10px] text-outline uppercase">
+            Toggle [{toggleKeys}]
+          </span>
+        )}
       </summary>
       <div className="mt-2">
         {!collapsed &&
@@ -352,6 +359,9 @@ export function PRListTable({
   const viewerLogin = useStore(appStore, (state: UIState) => state.viewerLogin);
   const view = useStore(settingsStore, (state) => state.prList.view);
   const [recoveryRepo, setRecoveryRepo] = useState<RepoInfo | null>(null);
+  const commandKeys = findActionKeys(useEffectiveBindings(), [
+    'global.command',
+  ]);
   const sections = useMemo(
     () => laneSections(visiblePRs, viewerLogin),
     [viewerLogin, visiblePRs],
@@ -400,11 +410,17 @@ export function PRListTable({
       <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant space-y-2">
         <p className="text-lg font-semibold">No repositories watched</p>
         <p className="text-sm">
-          Press{' '}
-          <kbd className="px-1 py-0.5 bg-surface-container text-xs font-mono">
-            :
-          </kbd>{' '}
-          then type{' '}
+          {commandKeys === undefined ? (
+            'Open the command palette and type '
+          ) : (
+            <>
+              Press{' '}
+              <kbd className="px-1 py-0.5 bg-surface-container text-xs font-mono">
+                {commandKeys}
+              </kbd>{' '}
+              then type{' '}
+            </>
+          )}
           <kbd className="px-1 py-0.5 bg-surface-container text-xs font-mono">
             repos
           </kbd>{' '}

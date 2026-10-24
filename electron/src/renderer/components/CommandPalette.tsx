@@ -2,6 +2,7 @@ import { useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useOverlays } from '../overlays/OverlayContext';
@@ -12,6 +13,7 @@ import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
+import { findActionKeys } from '../utils/legendPresets';
 import { createLogger } from '../utils/logger';
 import { openUrlInBrowser } from '../utils/openUrl';
 import { prBrowserUrl } from '../utils/triage';
@@ -26,7 +28,8 @@ interface CommandItem {
   readonly name: string;
   readonly description?: string;
   readonly icon: Icon;
-  readonly shortcut?: readonly string[];
+  /** Action whose effective keys render as the row's shortcut hint. */
+  readonly shortcutActionId?: string;
   readonly dev?: boolean;
   /** Only listed on the diff route — DiffPage is the sole consumer of the intent. */
   readonly diffOnly?: boolean;
@@ -39,7 +42,7 @@ const COMMANDS: readonly CommandItem[] = [
     id: 'help',
     name: 'Show keyboard shortcuts',
     icon: 'keyboard',
-    shortcut: ['?'],
+    shortcutActionId: 'global.help',
   },
   {
     id: 'tour',
@@ -51,7 +54,7 @@ const COMMANDS: readonly CommandItem[] = [
     id: 'settings',
     name: 'Open project settings',
     icon: 'settings',
-    shortcut: ['⌘', ','],
+    shortcutActionId: 'global.settings',
   },
   {
     id: 'sync',
@@ -81,21 +84,21 @@ const COMMANDS: readonly CommandItem[] = [
     name: ':open in browser',
     description: 'Open the focused PR on GitHub',
     icon: 'open_in_new',
-    shortcut: ['o'],
+    shortcutActionId: 'list.openBrowser',
   },
   {
     id: 'diff-split',
     name: ':diff split',
     description: 'Show diffs side by side',
     icon: 'vertical_split',
-    shortcut: ['⇧', 'S'],
+    shortcutActionId: 'diff.toggleStyle',
   },
   {
     id: 'diff-unified',
     name: ':diff unified',
     description: 'Show diffs in a single column',
     icon: 'view_stream',
-    shortcut: ['⇧', 'S'],
+    shortcutActionId: 'diff.toggleStyle',
   },
   {
     id: 'open-editor',
@@ -170,6 +173,7 @@ export function CommandPalette(): React.ReactElement | null {
     (state: UIState) => state.visiblePRIds[state.selectedPRIndex] || undefined,
   );
   const prList = useStore(settingsStore, (state) => state.prList);
+  const bindings = useEffectiveBindings();
   const recentPRs = useMemo(() => prs.slice(0, 5), [prs]);
 
   const filteredPRs = useMemo(() => {
@@ -436,6 +440,11 @@ export function CommandPalette(): React.ReactElement | null {
                 <CommandRow
                   key={cmd.id}
                   command={cmd}
+                  shortcut={
+                    cmd.shortcutActionId === undefined
+                      ? undefined
+                      : findActionKeys(bindings, [cmd.shortcutActionId])
+                  }
                   onSelect={() => handleExecuteCommand(cmd)}
                 />
               ))}
@@ -510,9 +519,11 @@ function PRResultRow({ pr, onSelect }: { pr: PR; onSelect: () => void }) {
 
 function CommandRow({
   command,
+  shortcut,
   onSelect,
 }: {
   command: CommandItem;
+  shortcut: string | undefined;
   onSelect: () => void;
 }) {
   return (
@@ -536,17 +547,10 @@ function CommandRow({
           )}
         </div>
       </div>
-      {command.shortcut !== undefined && (
-        <div className="flex items-center gap-1 shrink-0 ml-4 opacity-40 group-hover:opacity-100 group-data-[selected=true]:opacity-100 transition-opacity">
-          {command.shortcut.map((k) => (
-            <kbd
-              key={`${command.id}-${k}`}
-              className="font-mono text-[10px] px-1.5 py-0.5 bg-surface border border-outline-variant text-on-surface-variant"
-            >
-              {k}
-            </kbd>
-          ))}
-        </div>
+      {shortcut !== undefined && (
+        <kbd className="font-mono text-[10px] px-1.5 py-0.5 shrink-0 ml-4 opacity-40 group-hover:opacity-100 group-data-[selected=true]:opacity-100 transition-opacity bg-surface border border-outline-variant text-on-surface-variant">
+          {shortcut}
+        </kbd>
       )}
     </Command.Item>
   );

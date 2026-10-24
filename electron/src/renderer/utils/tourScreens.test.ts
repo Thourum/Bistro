@@ -4,12 +4,12 @@ vi.mock('../router', () => ({
   router: { navigate: vi.fn() },
 }));
 
-import { DEFAULT_KEYBINDINGS } from './keybindings';
+import { getEffectiveBindings } from './keybindings';
 import { resolveTourScreens, TOUR_SCREENS } from './tourScreens';
 
 describe('resolveTourScreens', () => {
   it('resolves 5 screens with formatted key labels from live bindings', () => {
-    const resolved = resolveTourScreens(DEFAULT_KEYBINDINGS);
+    const resolved = resolveTourScreens(getEffectiveBindings('vim', {}));
     expect(resolved).toHaveLength(TOUR_SCREENS.length);
     expect(resolved.every((s) => s.keys.length > 0)).toBe(true);
     // Spot-check one route-dependent context label renders through.

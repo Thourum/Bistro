@@ -1,9 +1,11 @@
 import { formatForDisplay } from '@tanstack/react-hotkeys';
 import { Fault, ResultAsync } from '@thourum/fault';
 import { useMemo } from 'react';
+import { NavigationStylePicker } from '../../components/NavigationStylePicker';
 import { Button } from '../../components/ui/button';
 import { Kbd } from '../../components/ui/kbd';
 import { useStore } from '../../hooks/useStore';
+import { setNavigationStyle } from '../../services/navigationStyle';
 import { openSettingsFile, settingsStore } from '../../store/settings';
 import {
   getEffectiveBindings,
@@ -13,8 +15,9 @@ import { Section, showSettingsError } from './SettingsComponents';
 
 export function KeyboardSection() {
   const overrides = useStore(settingsStore, (s) => s.keybindings);
+  const style = useStore(settingsStore, (s) => s.navigation.style);
   const groups = useMemo(() => {
-    const bindings = getEffectiveBindings(overrides);
+    const bindings = getEffectiveBindings(style, overrides);
     const map = new Map<string, typeof bindings>();
     for (const b of bindings) {
       const modeKey =
@@ -24,10 +27,19 @@ export function KeyboardSection() {
       map.set(modeKey, bucket);
     }
     return Array.from(map.entries());
-  }, [overrides]);
+  }, [style, overrides]);
 
   return (
     <Section id="keyboard" title="Keyboard">
+      <NavigationStylePicker
+        selected={style}
+        onSelect={(next) =>
+          void setNavigationStyle(next).match(
+            () => undefined,
+            showSettingsError,
+          )
+        }
+      />
       <p className="font-mono text-[11px] text-on-surface-variant tracking-wide">
         Rebinding UI is coming in the next release. Until then, edit{' '}
         <Button

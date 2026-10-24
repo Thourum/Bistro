@@ -6,8 +6,9 @@ import {
   useHotkeys,
 } from '@tanstack/react-hotkeys';
 import { useRouterState } from '@tanstack/react-router';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useOverlays } from '../overlays/OverlayContext';
+import { dispatchSandboxAction } from '../services/onboardingSandbox';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import {
@@ -15,19 +16,35 @@ import {
   type KeyActionContext,
 } from '../utils/keybindingActions';
 import {
+  continuesSequence,
+  hotkeyOptions,
+  isEscape,
+  isModifierPress,
+  type KeyPress,
+  yieldsToFocusedControl,
+} from '../utils/keybindingActivation';
+import {
   getEffectiveBindings,
-  isActive,
+  isBindingEnabled,
   isSequenceBinding,
   routeBaseFromPath,
 } from '../utils/keybindings';
+import { SEQUENCE_TIMEOUT_MS } from '../utils/keymaps';
+import { SANDBOX_ACTION_IDS } from '../utils/onboardingSandbox';
 import { useStore } from './useStore';
 
-/** Sequence steps must follow each other within this window (was 500ms before the migration). */
-const SEQUENCE_TIMEOUT_MS = 500;
-
-/** Escape needs different event handling than every other binding — see below. */
-function isEscape(binding: { keys: string | readonly string[] }): boolean {
-  return binding.keys === 'Escape';
+/** Sandbox actions on the onboarding route drive the fake PR, not the app. */
+function runBinding(actionId: string, context: KeyActionContext): void {
+  if (
+    context.routeBase === 'onboarding' &&
+    context.activeOverlay === null &&
+    appStore.state.onboardingSandbox !== null &&
+    SANDBOX_ACTION_IDS.has(actionId)
+  ) {
+    dispatchSandboxAction(actionId);
+    return;
+  }
+  getBindingAction(actionId)?.(context);
 }
 
 function routePrId(
@@ -55,6 +72,11 @@ function routePrId(
 export function useAppHotkeys(): void {
   const overlays = useOverlays();
   const overrides = useStore(settingsStore, (s) => s.keybindings);
+  const style = useStore(settingsStore, (s) => s.navigation.style);
+  const sandboxPane = useStore(
+    appStore,
+    (s) => s.onboardingSandbox?.pane ?? null,
+  );
   const routerState = useRouterState();
 
   const routeBase = routeBaseFromPath(routerState.location.pathname);
@@ -72,6 +94,8 @@ export function useAppHotkeys(): void {
   locationRef.current = routerState.location;
   const matchesRef = useRef(routerState.matches);
   matchesRef.current = routerState.matches;
+  // A keydown that advanced an enabled sequence; its single-key binding skips it.
+  const midSequenceEventRef = useRef<KeyboardEvent | null>(null);
 
   // Stable makeCtx that always reads current values from refs.
   const makeCtx = useCallback((): KeyActionContext => {
@@ -86,7 +110,10 @@ export function useAppHotkeys(): void {
     return prId === undefined ? ctx : { ...ctx, prId };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bindings = useMemo(() => getEffectiveBindings(overrides), [overrides]);
+  const bindings = useMemo(
+    () => getEffectiveBindings(style, overrides),
+    [style, overrides],
+  );
 
   const hotkeyDefs = useMemo<UseHotkeyDefinition[]>(
     () =>
@@ -114,35 +141,70 @@ export function useAppHotkeys(): void {
             // calls preventDefault() itself before every callback, which would
             // make this flag always true.
             if (isEscape(binding) && event.defaultPrevented) return;
-            getBindingAction(binding.actionId)?.(makeCtx());
+            if (event === midSequenceEventRef.current) return;
+            if (yieldsToFocusedControl(binding, event.target)) return;
+            // Continue opts out of the manager's preventDefault (see
+            // `hotkeyOptions`), so stop Space scrolling the page here.
+            if (binding.actionId === 'onboarding.continue')
+              event.preventDefault();
+            runBinding(binding.actionId, makeCtx());
           },
           options: {
-            enabled: isActive(binding, { routeBase, activeOverlay }),
-            ignoreInputs: !isEscape(binding),
-            // Keep `defaultPrevented` meaningful as "already handled".
-            // Escape has no default browser action worth suppressing.
-            ...(isEscape(binding) ? { preventDefault: false } : {}),
+            enabled: isBindingEnabled(binding, {
+              routeBase,
+              activeOverlay,
+              sandboxPane,
+            }),
+            ...hotkeyOptions(binding),
           },
         })),
-    [bindings, routeBase, activeOverlay, makeCtx],
+    [bindings, routeBase, activeOverlay, sandboxPane, makeCtx],
   );
 
   const sequenceDefs = useMemo<UseHotkeySequenceDefinition[]>(
     () =>
       bindings.filter(isSequenceBinding).map((binding) => ({
         sequence: [...binding.keys] as HotkeySequence,
-        callback: () => getBindingAction(binding.actionId)?.(makeCtx()),
+        callback: () => runBinding(binding.actionId, makeCtx()),
         options: {
-          enabled: isActive(binding, { routeBase, activeOverlay }),
+          enabled: isBindingEnabled(binding, {
+            routeBase,
+            activeOverlay,
+            sandboxPane,
+          }),
           ignoreInputs: true,
         },
       })),
-    [bindings, routeBase, activeOverlay, makeCtx],
+    [bindings, routeBase, activeOverlay, sandboxPane, makeCtx],
   );
+
+  const enabledSequencesRef = useRef<readonly HotkeySequence[]>([]);
+  enabledSequencesRef.current = sequenceDefs
+    .filter((definition) => definition.options?.enabled === true)
+    .map((definition) => definition.sequence);
+  const timeoutMs = SEQUENCE_TIMEOUT_MS[style];
+
+  // Capture phase runs before both TanStack listeners on document, so the
+  // single-key callback can tell a key that continues a sequence.
+  useEffect(() => {
+    let recent: readonly KeyPress[] = [];
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.repeat || isModifierPress(event)) return;
+      const press = { event, time: event.timeStamp };
+      const sequences = enabledSequencesRef.current;
+      if (continuesSequence(recent, press, { sequences, timeoutMs }))
+        midSequenceEventRef.current = event;
+      const longest = Math.max(1, ...sequences.map((steps) => steps.length));
+      recent = [...recent, press].slice(-longest);
+    };
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
+  }, [timeoutMs]);
 
   useHotkeys(hotkeyDefs, { conflictBehavior: 'allow' });
   useHotkeySequences(sequenceDefs, {
     conflictBehavior: 'allow',
-    timeout: SEQUENCE_TIMEOUT_MS,
+    timeout: SEQUENCE_TIMEOUT_MS[style],
   });
 }

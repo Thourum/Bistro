@@ -6,89 +6,164 @@ description: Default keyboard shortcuts for reviewing pull requests in Bistro.
 # Keybindings
 
 Bistro is designed for keyboard-first GitHub pull request review. The defaults
-below match `electron/src/renderer/utils/keybindings.ts`; if you remap keys in
-settings, the in-app help overlay and footer legend show your effective bindings.
+below come from `electron/src/renderer/utils/keymaps.ts`; the action catalog lives
+in `utils/keybindings.ts`. The in-app help overlay and footer legend show your
+effective bindings, including overrides.
+
+## Navigation styles
+
+- **Vim** (default): `j` / `k` movement and short sequences such as `g g`.
+- **Emacs**: `Ctrl+n` / `Ctrl+p` movement, `Alt` shortcuts, and `Ctrl+c` prefix sequences.
+- **Standard**: arrow keys, Home / End, PageUp / PageDown, and familiar modifier shortcuts.
+
+Choose a style during onboarding or at the top of **Settings → Keyboard**. You
+can also set it directly in `settings.json`:
+
+```json
+{
+  "navigation": { "style": "emacs" }
+}
+```
+
+`keybindings` overrides apply on top of the chosen style. Switching styles keeps
+your overrides; an empty override array disables that action.
+
+In the tables, `Mod` means `Cmd` on macOS and `Ctrl` on Windows/Linux. `Alt` means
+Option on macOS. Space-separated keys are a sequence, not a simultaneous chord:
+`Ctrl+c Ctrl+a` means press `Ctrl+c`, then `Ctrl+a`. The gap between
+sequence steps is up to 500 ms for Vim/Standard and 1,500 ms for Emacs.
+
+:::caution
+On Windows/Linux, Emacs's `Ctrl+c` prefix and `Ctrl+x u` undo sequence use the
+usual copy/cut shortcuts outside text inputs. In a focused text input, copy and
+cut keep their normal behavior; on macOS they remain `Cmd+c` / `Cmd+x`.
+:::
 
 :::tip
-Press `?` anywhere in the app to see all bindings — including your overrides.
+Open help with `?` (Vim), `Ctrl+h` (Emacs), or `F1` (Standard) in the inbox,
+PR detail, or diff to see your current bindings, including overrides.
 :::
 
 ## Global
 
-| Key | Action |
-| --- | --- |
-| `?` | Open help |
-| `:` | Open command palette |
-| `Esc` | Back, close overlay, or cancel current action |
-| `Cmd+,` / `Ctrl+,` | Open settings |
-| `Cmd+/` / `Ctrl+/` | Search |
-| `Cmd+Q` / `Alt+F4` | Quit |
+| Action | Vim | Emacs | Standard |
+| --- | --- | --- | --- |
+| Open help | `?` | `Ctrl+h` | `F1` |
+| Open command palette | `:` | `Alt+x` | `Mod+k` |
+| Back, close overlay, or cancel current action | `Esc` | `Esc` / `Ctrl+g` | `Esc` |
+| Open settings (inbox / PR detail) | `Mod+,` | `Mod+,` | `Mod+,` |
+| Search (inbox / PR detail) | `Mod+/` | `Ctrl+c /` | `Mod+/` |
+| Quit (macOS / Windows/Linux) | `Cmd+q` / `Alt+F4` | `Cmd+q` / `Alt+F4` | `Cmd+q` / `Alt+F4` |
 
 ## PR inbox
 
-| Key | Action |
-| --- | --- |
-| `j` / `k` | Move down / up |
-| `↑` / `↓` | Move up / down |
-| `g g` | Jump to top |
-| `G` | Jump to bottom |
-| `1`–`9` | Jump to visible PR row |
-| `Enter` | Open selected PR |
-| `/` | Search the inbox |
-| `f` | Open or close filters |
-| `Ctrl+d` / `Ctrl+u` | Move down / up five PRs |
-| `Space` | Preview selected PR |
-| `o` | Stage opening selected PR in browser |
-| `d` | Stage draft toggle |
-| `m` | Stage mute |
-| `s` | Stage star |
+| Action | Vim | Emacs | Standard |
+| --- | --- | --- | --- |
+| Move down / up | `j` / `k`, or `↓` / `↑` | `Ctrl+n` / `Ctrl+p`, or `↓` / `↑` | `↓` / `↑` |
+| Jump to top | `g g` | `Alt+Shift+,` | `Home` |
+| Jump to bottom | `G` | `Alt+Shift+.` | `End` |
+| Jump to visible PR row 1–9 | `1`–`9` | `Alt+1`–`Alt+9` | `1`–`9` |
+| Jump to lane 1–6 | `g 1`–`g 6` | `Ctrl+c 1`–`Ctrl+c 6` | `Mod+1`–`Mod+6` |
+| Open selected PR | `Enter` | `Enter` | `Enter` |
+| Search the inbox | `/` | `Ctrl+s` | `Mod+f` |
+| Open or close filters | `f` | `Ctrl+c Ctrl+f` | `Mod+Shift+f` |
+| Move down / up five PRs | `Ctrl+d` / `Ctrl+u` | `Ctrl+v` / `Alt+v` | `PageDown` / `PageUp` |
+| Mark lane read | `R` | `Ctrl+c Ctrl+r` | `R` |
+| Toggle selected group | `Space` | `Tab` | `Space` |
+| Open selected PR in browser | `o` | `Ctrl+c Ctrl+o` | `o` |
+| Stage draft toggle | `d` | `Ctrl+c Ctrl+d` | `d` |
+| Stage mute | `m` | `Ctrl+c Ctrl+m` | `m` |
+| Stage star | `s` | `Ctrl+c Ctrl+s` | `s` |
 
 ### Filter overlay
 
-| Key | Action |
-| --- | --- |
-| `n` | Show Needs Action |
-| `o` | Show Open |
-| `d` | Show Draft |
-| `a` | Show All |
-| `f` / `Esc` | Close filters |
+| Action | Vim | Emacs | Standard |
+| --- | --- | --- | --- |
+| Show Needs Action | `n` | `n` | `n` |
+| Show Touches Your Code | `y` | `y` | `y` |
+| Show Open | `o` | `o` | `o` |
+| Show Draft | `d` | `d` | `d` |
+| Show All | `a` | `a` | `a` |
+| Close filters | `f` / `Esc` | `Ctrl+c Ctrl+f` / `Esc` / `Ctrl+g` | `Mod+Shift+f` / `Esc` |
 
 ## PR detail and diff
 
-| Key | Action |
-| --- | --- |
-| `n` / `p` | Next / previous file |
-| `Space` | Open diff from PR detail |
-| `h` / `j` / `k` / `l` | Scroll left / down / up / right in diff |
-| `←` / `↓` / `↑` / `→` | Scroll left / down / up / right in diff |
-| `Ctrl+d` / `Ctrl+u` | Page down / up in diff |
-| `0` / `$` | Jump to top / bottom of diff |
-| `Enter` | Reply to selected inline comment in diff |
-| `c` | Start a PR comment from detail |
-| `r` | Reply from detail |
-| `g u` | Open review threads |
-| `a a` | Approve with double-tap confirmation |
-| `R` | Request changes |
-| `s` | Since last review: show only files changed since your last review |
-| `i` | Interdiff: the current file since your last review |
-| `v` | Mark current diff file viewed |
+The first table applies to PR detail. Scrolling shortcuts work in both PR detail
+and the diff; diff-only file and comment navigation is listed separately below.
+
+| Action | Vim | Emacs | Standard |
+| --- | --- | --- | --- |
+| Next / previous file in PR detail | `n` / `p` | `Alt+n` / `Alt+p` | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
+| Open diff from PR detail | `Space` | `Enter` | `Enter` |
+| Start PR comment | `c` | `Ctrl+c Ctrl+c` | `c` |
+| Reply from detail | `r` | `Ctrl+c Ctrl+r` | `r` |
+| Open review threads | `g u` | `Ctrl+c Ctrl+t` | `t` |
+| Initiate approval (asks for confirmation) | `a a` | `Ctrl+c Ctrl+a` | `a` |
+| Request changes | `R` | `Ctrl+c Ctrl+w` | `R` |
+| Dismiss nits + info | `d n` | `Ctrl+c Ctrl+d n` | `d n` |
+| Dismiss bot comments | `d b` | `Ctrl+c Ctrl+d b` | `d b` |
+| Undo last dismissal | `u` | `Ctrl+/` / `Ctrl+x u` | `Mod+z` |
+| Filter ≥ critical | `f c` | `Ctrl+c Ctrl+f c` | `f c` |
+| Filter ≥ warning | `f w` | `Ctrl+c Ctrl+f w` | `f w` |
+| Filter ≥ suggestion | `f s` | `Ctrl+c Ctrl+f s` | `f s` |
+| Filter ≥ nit | `f n` | `Ctrl+c Ctrl+f n` | `f n` |
+| Show human comments only | `f h` | `Ctrl+c Ctrl+f h` | `f h` |
+| Clear comment filters | `f f` | `Ctrl+c Ctrl+f f` | `f f` |
+
+| Action | Vim | Emacs | Standard |
+| --- | --- | --- | --- |
+| Scroll left / down / up / right | `h` / `j` / `k` / `l`, or `←` / `↓` / `↑` / `→` | `Ctrl+b` / `Ctrl+n` / `Ctrl+p` / `Ctrl+f`, or `←` / `↓` / `↑` / `→` | `←` / `↓` / `↑` / `→` |
+| Page down / up | `Ctrl+d` / `Ctrl+u` | `Ctrl+v` / `Alt+v` | `PageDown` / `PageUp` |
+| Jump to top / bottom | `0` / `$` | `Alt+Shift+,` / `Alt+Shift+.` | `Home` / `End` |
+
+These shortcuts apply only in the diff:
+
+| Action | Vim | Emacs | Standard |
+| --- | --- | --- | --- |
+| Next / previous file | `J` / `K` | `Ctrl+Alt+n` / `Ctrl+Alt+p` | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
+| Next / previous inline comment | `n` / `p` | `Alt+n` / `Alt+p` | `n` / `p` |
+| Reply to selected inline comment | `Enter` | `Enter` | `Enter` |
+| Since last review: show only files changed since your last review | `s` | `Ctrl+c Ctrl+l` | `s` |
+| Interdiff: the current file since your last review | `i` | `Ctrl+c Ctrl+i` | `i` |
+| Toggle side-by-side diff | `S` | `Ctrl+c Ctrl+s` | `S` |
+| Open current file in browser | `o` | `Ctrl+c Ctrl+o` | `o` |
+| Collapse / expand file | `z` | `Tab` | `z` |
+| Hide whitespace-only hunks | `w` | `Ctrl+c Ctrl+w` | `w` |
+| Mark current file viewed | `v` | `Ctrl+c Ctrl+v` | `v` |
 
 ## Review threads overlay
 
-| Key | Action |
-| --- | --- |
-| `j` / `k` | Next / previous thread |
-| `r` | Resolve thread |
-| `u` | Unresolve thread |
+| Action | Vim | Emacs | Standard |
+| --- | --- | --- | --- |
+| Next / previous thread | `j` / `k` | `Ctrl+n` / `Ctrl+p` | `↓` / `↑` |
+| Resolve thread | `r` | `r` | `r` |
+| Unresolve thread | `u` | `u` | `u` |
+
+## Onboarding
+
+| Action | Vim | Emacs | Standard |
+| --- | --- | --- | --- |
+| Continue to development folder / finish onboarding (`onboarding.continue`) | `Space` | `Space` | `Space` |
+| Next navigation style (style step only) | `Tab` | `Tab` | `Tab` |
+| Previous navigation style (style step only) | `Shift+Tab` | `Shift+Tab` | `Shift+Tab` |
+
+The first step includes a practice sandbox using your chosen style and overrides.
+Its checklist is optional; click **Continue** when ready. In the sandbox inbox,
+`Space` also continues unless a button has focus; inside an opened practice PR,
+it follows the sandbox's bindings instead (for example, Vim's `Space` opens the
+diff). The second step configures your development folder, where `Space` finishes
+onboarding unless a button has focus.
 
 ## Remapping keys
 
-Open settings with `Cmd+,` / `Ctrl+,` or run `:settings` from the command
-palette. Keybinding overrides are stored locally in `settings.json` as action ids
-mapped to key arrays:
+Open settings with `Cmd+,` / `Ctrl+,` or run `settings` in the command palette
+(`:`, `Alt+x`, or `Mod+k`, depending on your style). **Settings → Keyboard** shows
+the style picker above your shortcuts. Keybinding overrides are stored locally
+in `settings.json` as action ids mapped to key arrays:
 
 ```json
 {
+  "navigation": { "style": "emacs" },
   "keybindings": {
     "list.down": ["x"],
     "list.top": ["g", "g"],
@@ -98,6 +173,8 @@ mapped to key arrays:
 ```
 
 :::info
-An empty array disables a binding. Defaults and action ids live in
-`electron/src/renderer/utils/keybindings.ts`.
+An empty array disables a binding. Default keys live in
+`electron/src/renderer/utils/keymaps.ts`; action ids live in
+`utils/keybindings.ts`, and activation rules live in
+`electron/src/renderer/utils/keybindingActivation.ts`.
 :::
