@@ -8,7 +8,8 @@ import {
   reportEngineCrash,
   restartEngine,
 } from '../services/engine';
-import { KeyHint } from './ConnectingScreen';
+import { ActionKeyHint } from './ui/action-key-hint';
+import { Button } from './ui/button';
 
 const CRASH_LOG_LINES = 60;
 
@@ -36,7 +37,7 @@ export function EngineCrashedScreen(): React.ReactElement {
       label: 'Restart engine',
       onClick: () => {
         setRestartedFrom(status);
-        restartEngine();
+        void restartEngine().mapErr(() => setRestartedFrom(null));
       },
     },
     {
@@ -59,7 +60,7 @@ export function EngineCrashedScreen(): React.ReactElement {
     <div className="flex h-full">
       <AuthLayout>
         <div className="p-8 space-y-6">
-          <header className="space-y-2">
+          <div role="alert" className="space-y-2">
             <p className="text-sm font-black tracking-tighter text-on-surface uppercase">
               BISTRO
             </p>
@@ -67,24 +68,23 @@ export function EngineCrashedScreen(): React.ReactElement {
               The sync engine stopped
             </h1>
             <p className="font-mono text-sm text-error">{formatExit(status)}</p>
-          </header>
-          <pre className="max-h-64 overflow-auto rounded-lg bg-surface-container p-4 font-mono text-xs text-on-surface-variant">
+          </div>
+          <pre className="max-h-64 overflow-auto bg-surface-container p-4 font-mono text-xs text-on-surface-variant">
             {logs.join('\n') || 'No engine log output was captured.'}
           </pre>
           <div className="flex flex-wrap gap-3">
             {actions.map((action) => (
-              <button
+              <Button
                 key={action.actionId}
-                type="button"
+                variant="outline"
                 onClick={action.onClick}
                 disabled={
                   action.actionId === 'connecting.restart' && isRestarting
                 }
-                className="rounded-lg border border-outline-variant px-4 py-2 text-sm text-on-surface disabled:opacity-50"
               >
                 {action.label}
-                <KeyHint actionId={action.actionId} />
-              </button>
+                <ActionKeyHint actionId={action.actionId} />
+              </Button>
             ))}
           </div>
           <p className="text-xs text-on-surface-variant">

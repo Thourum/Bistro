@@ -1,27 +1,12 @@
 // Shared loading screens — used by router pending states and App.tsx init gate.
 
 import type React from 'react';
-import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useEngineScreenData } from '../hooks/useEngineScreenData';
 import { openEngineLogFolder } from '../services/engine';
-import { findActionKeys } from '../utils/legendPresets';
+import { ActionKeyHint } from './ui/action-key-hint';
+import { Button } from './ui/button';
 
 const SLOW_LOG_LINES = 3;
-
-interface KeyHintProps {
-  readonly actionId: string;
-}
-
-/** Effective key for `actionId`, or nothing when the user unbound it. */
-export function KeyHint({ actionId }: KeyHintProps): React.ReactElement | null {
-  const keys = findActionKeys(useEffectiveBindings(), [actionId]);
-  if (keys === undefined) return null;
-  return (
-    <kbd className="ml-3 font-mono text-[10px] px-1.5 py-0.5 bg-surface border border-outline-variant text-on-surface-variant">
-      {keys}
-    </kbd>
-  );
-}
 
 /** Shown while the WebSocket auth check is in-flight. */
 export function ConnectingScreen(): React.ReactElement {
@@ -52,18 +37,14 @@ export function ConnectingScreen(): React.ReactElement {
             Taking longer than usual. This can happen after an update or on
             first launch.
           </p>
-          <pre className="overflow-x-auto rounded-lg bg-surface-container p-4 font-mono text-xs text-on-surface-variant">
+          <pre className="overflow-x-auto border-t border-outline-variant bg-surface-container p-4 font-mono text-xs text-on-surface-variant">
             {logs.join('\n') || 'Waiting for engine log output…'}
           </pre>
         </div>
-        <button
-          type="button"
-          onClick={openEngineLogFolder}
-          className="rounded-lg border border-outline-variant px-4 py-2 text-sm text-on-surface"
-        >
+        <Button variant="outline" onClick={openEngineLogFolder}>
           Open log folder
-          <KeyHint actionId="connecting.openLogs" />
-        </button>
+          <ActionKeyHint actionId="connecting.openLogs" />
+        </Button>
       </div>
     </div>
   );

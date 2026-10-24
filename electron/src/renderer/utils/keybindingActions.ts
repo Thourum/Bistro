@@ -276,7 +276,9 @@ function scrollDiffToBottom(): void {
 }
 
 const ACTIONS: Readonly<Record<string, KeyAction>> = {
-  'connecting.restart': () => restartEngine(),
+  'connecting.restart': () => {
+    void restartEngine();
+  },
   'connecting.openLogs': () => openEngineLogFolder(),
   'connecting.report': () => reportEngineCrash(),
   'login.reopen': () => reopenSignIn(),

@@ -55,16 +55,17 @@ export function getEngineLogTail(
   return engineRequest(() => api.getEngineLogTail(lines), engineLogTailSchema);
 }
 
-export function restartEngine(): void {
+/** Toasts its own fault; the result only tells the caller whether it failed. */
+export function restartEngine(): ResultAsync<boolean, Fault> {
   const api = window.electron;
-  if (api?.restartEngine === undefined) {
-    showEngineError(unavailableFault());
-    return;
-  }
-  void engineRequest(() => api.restartEngine(), z.boolean()).match(
-    () => undefined,
-    showEngineError,
-  );
+  const request =
+    api?.restartEngine === undefined
+      ? errAsync<boolean, Fault>(unavailableFault())
+      : engineRequest(() => api.restartEngine(), z.boolean());
+  return request.mapErr((fault) => {
+    showEngineError(fault);
+    return fault;
+  });
 }
 
 export function openEngineLogFolder(): void {
