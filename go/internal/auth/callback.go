@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -34,20 +35,24 @@ type CallbackServer struct {
 	redirectURI string
 	resultCh    chan<- CallbackResult
 	server      *http.Server
+	cancel      context.CancelFunc
 }
 
 // NewCallbackServer creates a callback server. The state parameter is validated
 // against the incoming request. Results are sent to resultCh.
 func NewCallbackServer(cfg ProviderConfig, state, redirectURI string, resultCh chan<- CallbackResult) *CallbackServer {
+	ctx, cancel := context.WithCancel(context.Background())
 	cs := &CallbackServer{
+		cancel:      cancel,
 		cfg:         cfg,
 		state:       state,
 		redirectURI: redirectURI,
 		resultCh:    resultCh,
 	}
 	cs.server = &http.Server{
-		Addr:    fmt.Sprintf("localhost:%d", CallbackPort),
-		Handler: cs.handler(),
+		Addr:        fmt.Sprintf("localhost:%d", CallbackPort),
+		Handler:     cs.handler(),
+		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
 	return cs
 }
@@ -114,17 +119,18 @@ func (cs *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request)
 	cs.sendResult(CallbackResult{Token: token})
 }
 
-// ListenAndServe starts the callback server. It blocks until the server is shut down.
-func (cs *CallbackServer) ListenAndServe() error {
-	return cs.server.ListenAndServe()
+// Serve handles callbacks on an already-bound listener until shutdown.
+func (cs *CallbackServer) Serve(listener net.Listener) error {
+	return cs.server.Serve(listener)
 }
 
-// Shutdown gracefully shuts down the callback server.
+// Shutdown cancels token exchanges and drains callbacks, forcing close on timeout.
 func (cs *CallbackServer) Shutdown(ctx context.Context) error {
-	if cs.server == nil {
-		return nil
+	cs.cancel()
+	if err := cs.server.Shutdown(ctx); err != nil {
+		return errors.Join(err, cs.server.Close())
 	}
-	return cs.server.Shutdown(ctx)
+	return nil
 }
 
 // tokenResponse represents the JSON body returned by the token endpoint.

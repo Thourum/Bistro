@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -104,119 +105,87 @@ func exchangeMode(deps AuthDeps) string {
 	return "proxy"
 }
 
+func persistAuthResult(deps AuthDeps, providerName, token string) (string, map[string]string) {
+	if err := deps.Tokens.Store(providerName, token); err != nil {
+		deps.Log.Error("failed to store token", "error", err)
+		return "AUTH_FAILED", map[string]string{"error": "failed to persist token"}
+	}
+	deps.SetProvider(github.NewClient(token), providerName)
+	username := ""
+	if login, err := fetchUsername(providerName, token); err == nil {
+		username = login
+		deps.Cache.Set(providerName, login)
+		if deps.CurrentUserWriter != nil {
+			if err := deps.CurrentUserWriter.SetCurrentUser(context.Background(), providerName, login); err != nil {
+				deps.Log.Warn("failed to persist current user", "provider", providerName, "error", err)
+			}
+		}
+	} else {
+		deps.Log.Warn("failed to fetch username after OAuth", "error", err)
+	}
+	deps.Log.Info("OAuth authorization code flow completed", "provider", providerName)
+	return "AUTH_SUCCESS", map[string]string{"provider": providerName, "username": username}
+}
+
 // NewAuthFlowHandlers returns AUTH_START and AUTH_CANCEL handlers sharing one
 // OAuth lifetime. Start returns AUTH_REDIRECT; cancel closes the listener before
 // returning without a response. AUTH_SUCCESS / AUTH_FAILED are broadcast.
 func NewAuthFlowHandlers(deps AuthDeps) (start, cancel ws.MessageHandler) {
-	var (
-		mu             sync.Mutex
-		callbackServer *auth.CallbackServer
-		cancelFlow     chan struct{}
-	)
-
 	type authCodeFlow struct {
 		providerName string
 		server       *auth.CallbackServer
 		results      <-chan auth.CallbackResult
-		cancelled    <-chan struct{}
+		serveDone    <-chan struct{}
+		finished     chan struct{}
 	}
-	runAuthCodeFlow := func(flow authCodeFlow) {
-		providerName, ownServer := flow.providerName, flow.server
-		resultCh, cancelCh := flow.results, flow.cancelled
-		serverErrCh := make(chan error, 1)
-		go func() {
-			if err := ownServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				serverErrCh <- err
-			}
-		}()
+	var mu sync.Mutex
+	var owner *authCodeFlow
 
-		var cleanupOnce sync.Once
-		cleanup := func() {
-			cleanupOnce.Do(func() {
-				ctx, cancel := context.WithTimeout(context.Background(), callbackShutdownTimeout)
-				defer cancel()
-				if err := ownServer.Shutdown(ctx); err != nil {
-					deps.Log.Warn("callback server shutdown failed", "error", err)
-				}
-				mu.Lock()
-				defer mu.Unlock()
-				if callbackServer == ownServer {
-					callbackServer = nil
-				}
-			})
+	finish := func(flow *authCodeFlow, result auth.CallbackResult) {
+		mu.Lock()
+		defer mu.Unlock()
+		if owner != flow {
+			return
 		}
-		defer cleanup()
+		// Cancel wins before finalization takes this lock; after that it is a no-op.
+		shutdownCtx, stop := context.WithTimeout(context.Background(), callbackShutdownTimeout)
+		if err := flow.server.Shutdown(shutdownCtx); err != nil {
+			deps.Log.Warn("callback server shutdown failed", "error", err)
+		}
+		stop()
+		<-flow.serveDone
 
+		messageType := "AUTH_FAILED"
+		data := map[string]string{}
+		if result.Err != nil {
+			data["error"] = result.Err.Error()
+		} else {
+			messageType, data = persistAuthResult(deps, flow.providerName, result.Token)
+		}
+		deps.Broadcast(map[string]interface{}{"type": messageType, "data": data})
+		close(flow.finished)
+		owner = nil
+	}
+
+	runAuthCodeFlow := func(flow *authCodeFlow) {
 		timeout := deps.CallbackTimeout
 		if timeout <= 0 {
 			timeout = auth.CallbackTimeout
 		}
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
 		select {
-		case result := <-resultCh:
-			cleanup()
-			select {
-			case <-cancelCh:
-				return
-			default:
-			}
+		case result := <-flow.results:
 			if result.Err != nil {
 				deps.Log.Error("auth callback failed", "error", result.Err)
-				deps.Broadcast(map[string]interface{}{
-					"type": "AUTH_FAILED",
-					"data": map[string]string{"error": "authentication failed"},
-				})
-				return
+				result.Err = errors.New("authentication failed")
 			}
-
-			if err := deps.Tokens.Store(providerName, result.Token); err != nil {
-				deps.Log.Error("failed to store token", "error", err)
-				deps.Broadcast(map[string]interface{}{
-					"type": "AUTH_FAILED",
-					"data": map[string]string{"error": "failed to persist token"},
-				})
-				return
-			}
-
-			client := github.NewClient(result.Token)
-			deps.SetProvider(client, providerName)
-
-			username := ""
-			if u, err := fetchUsername(providerName, result.Token); err == nil {
-				username = u
-				deps.Cache.Set(providerName, u)
-				if deps.CurrentUserWriter != nil {
-					if werr := deps.CurrentUserWriter.SetCurrentUser(context.Background(), providerName, u); werr != nil {
-						deps.Log.Warn("failed to persist current user", "provider", providerName, "error", werr)
-						// non-fatal: auth still succeeds
-					}
-				}
-			} else {
-				deps.Log.Warn("failed to fetch username after OAuth", "error", err)
-			}
-
-			deps.Broadcast(map[string]interface{}{
-				"type": "AUTH_SUCCESS",
-				"data": map[string]string{"provider": providerName, "username": username},
-			})
-			deps.Log.Info("OAuth authorization code flow completed", "provider", providerName)
-
-		case err := <-serverErrCh:
-			cleanup()
-			deps.Log.Error("callback server error", "error", err)
-			deps.Broadcast(map[string]interface{}{
-				"type": "AUTH_FAILED",
-				"data": map[string]string{"error": "authentication callback unavailable"},
-			})
-
-		case <-time.After(timeout):
-			cleanup()
-			deps.Log.Warn("auth callback timed out")
-			deps.Broadcast(map[string]interface{}{
-				"type": "AUTH_FAILED",
-				"data": map[string]string{"error": "timeout"},
-			})
-		case <-cancelCh:
-			return
+			finish(flow, result)
+		case <-flow.serveDone:
+			finish(flow, auth.CallbackResult{Err: errors.New("authentication callback unavailable")})
+		case <-timer.C:
+			finish(flow, auth.CallbackResult{Err: errors.New("timeout")})
+		case <-flow.finished:
 		}
 	}
 
@@ -245,7 +214,7 @@ func NewAuthFlowHandlers(deps AuthDeps) (start, cancel ws.MessageHandler) {
 		}
 
 		mu.Lock()
-		if callbackServer != nil {
+		if owner != nil {
 			mu.Unlock()
 			logger.Info("auth already in progress", "provider", data.Provider)
 			return map[string]interface{}{
@@ -288,21 +257,33 @@ func NewAuthFlowHandlers(deps AuthDeps) (start, cancel ws.MessageHandler) {
 			return nil, fmt.Errorf("building auth URL: %w", err)
 		}
 
+		listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", auth.CallbackPort))
+		if err != nil {
+			mu.Unlock()
+			return nil, fmt.Errorf("listen for OAuth callback: %w", err)
+		}
 		resultCh := make(chan auth.CallbackResult, 1)
 		ownServer := auth.NewCallbackServer(cfg, state, auth.RedirectURI, resultCh)
-		callbackServer = ownServer
-		cancelFlow = make(chan struct{})
-		cancelCh := cancelFlow
-		mu.Unlock()
-
-		logger.Info("starting oauth flow", "provider", data.Provider, "redirect_uri", auth.RedirectURI)
-
-		go runAuthCodeFlow(authCodeFlow{
+		serveDone := make(chan struct{})
+		flow := &authCodeFlow{
 			providerName: data.Provider,
 			server:       ownServer,
 			results:      resultCh,
-			cancelled:    cancelCh,
-		})
+			serveDone:    serveDone,
+			finished:     make(chan struct{}),
+		}
+		owner = flow
+		go func() {
+			err := ownServer.Serve(listener)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				deps.Log.Error("callback server error", "error", err)
+			}
+			close(serveDone)
+		}()
+		go runAuthCodeFlow(flow)
+		mu.Unlock()
+
+		logger.Info("starting oauth flow", "provider", data.Provider, "redirect_uri", auth.RedirectURI)
 
 		return map[string]interface{}{
 			"id":   msg.ID,
@@ -315,24 +296,11 @@ func NewAuthFlowHandlers(deps AuthDeps) (start, cancel ws.MessageHandler) {
 	}
 	cancel = func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		mu.Lock()
-		ownServer := callbackServer
-		if ownServer == nil {
-			mu.Unlock()
-			return nil, nil
-		}
-		close(cancelFlow)
-		shutdownCtx, stop := context.WithTimeout(context.Background(), callbackShutdownTimeout)
-		err := ownServer.Shutdown(shutdownCtx)
-		stop()
-		callbackServer = nil
+		flow := owner
 		mu.Unlock()
-		if err != nil {
-			return nil, fmt.Errorf("cancel OAuth callback: %w", err)
+		if flow != nil {
+			finish(flow, auth.CallbackResult{Err: errors.New("cancelled")})
 		}
-		deps.Broadcast(map[string]interface{}{
-			"type": "AUTH_FAILED",
-			"data": map[string]string{"error": "cancelled"},
-		})
 		return nil, nil
 	}
 	return start, cancel
