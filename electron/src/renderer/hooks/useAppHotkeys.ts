@@ -21,8 +21,11 @@ import {
   type KeyActionContext,
 } from '../utils/keybindingActions';
 import {
+  continuesSequence,
   hotkeyOptions,
   isEscape,
+  isModifierPress,
+  type KeyPress,
   yieldsToFocusedControl,
 } from '../utils/keybindingActivation';
 import {
@@ -139,6 +142,8 @@ export function useAppHotkeys(): void {
   locationRef.current = routerState.location;
   const matchesRef = useRef(routerState.matches);
   matchesRef.current = routerState.matches;
+  // A keydown that advanced an enabled sequence; its single-key binding skips it.
+  const midSequenceEventRef = useRef<KeyboardEvent | null>(null);
 
   // Stable makeCtx that always reads current values from refs.
   const makeCtx = useCallback((): KeyActionContext => {
@@ -184,6 +189,7 @@ export function useAppHotkeys(): void {
             // calls preventDefault() itself before every callback, which would
             // make this flag always true.
             if (isEscape(binding) && event.defaultPrevented) return;
+            if (event === midSequenceEventRef.current) return;
             if (yieldsToFocusedControl(binding, event.target)) return;
             // Continue opts out of the manager's preventDefault (see
             // `hotkeyOptions`), so stop Space scrolling the page here.
@@ -243,6 +249,30 @@ export function useAppHotkeys(): void {
       makeCtx,
     ],
   );
+
+  const enabledSequencesRef = useRef<readonly HotkeySequence[]>([]);
+  enabledSequencesRef.current = sequenceDefs
+    .filter((definition) => definition.options?.enabled === true)
+    .map((definition) => definition.sequence);
+  const timeoutMs = SEQUENCE_TIMEOUT_MS[style];
+
+  // Capture phase runs before both TanStack listeners on document, so the
+  // single-key callback can tell a key that continues a sequence.
+  useEffect(() => {
+    let recent: readonly KeyPress[] = [];
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.repeat || isModifierPress(event)) return;
+      const press = { event, time: event.timeStamp };
+      const sequences = enabledSequencesRef.current;
+      if (continuesSequence(recent, press, { sequences, timeoutMs }))
+        midSequenceEventRef.current = event;
+      const longest = Math.max(1, ...sequences.map((steps) => steps.length));
+      recent = [...recent, press].slice(-longest);
+    };
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
+  }, [timeoutMs]);
 
   useHotkeys(hotkeyDefs, { conflictBehavior: 'allow' });
   useHotkeySequences(sequenceDefs, {
