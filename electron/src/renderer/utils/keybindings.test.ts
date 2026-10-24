@@ -70,6 +70,7 @@ describe('hotkeyOptions', () => {
     expect(hotkeyOptions(binding('onboarding.continue'))).toEqual({
       ignoreInputs: true,
       preventDefault: false,
+      requireReset: true,
     });
   });
 });

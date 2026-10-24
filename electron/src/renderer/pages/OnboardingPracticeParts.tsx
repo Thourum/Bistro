@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { keepFocus } from '../components/NavigationStylePicker';
 import { Kbd } from '../components/ui/kbd';
 import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
@@ -203,11 +203,15 @@ export function FakeComposer({
 }): ReactElement {
   const [body, setBody] = useState('');
   const [preview, setPreview] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Mounts only when its key opens it, so the draft is ready to type into.
+  useEffect(() => textareaRef.current?.focus(), []);
   return (
     <div className="space-y-2">
       <label className="block space-y-1">
         <span className={LABEL}>{label}</span>
         <textarea
+          ref={textareaRef}
           value={body}
           onChange={(event) => setBody(event.target.value)}
           rows={2}

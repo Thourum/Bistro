@@ -144,11 +144,14 @@ export function OnboardingFooter({
         <OnboardingSyncStatus />
       </div>
       <div className="flex items-center gap-3 shrink-0">
-        {isKeyEnabled && continueKeys !== undefined && (
-          <span className="flex items-center gap-2 mono-text text-[10px] text-outline">
-            or press <Kbd>{continueKeys}</Kbd>
-          </span>
-        )}
+        {isKeyEnabled &&
+          canContinue &&
+          !isFinishing &&
+          continueKeys !== undefined && (
+            <span className="flex items-center gap-2 mono-text text-[10px] text-outline">
+              or press <Kbd>{continueKeys}</Kbd>
+            </span>
+          )}
         <Button
           className={`bg-primary! text-on-primary! border-primary! hover:bg-on-primary-fixed-variant!${highlight}`}
           disabled={!canContinue || isFinishing}

@@ -68,7 +68,7 @@ export function isEscape(binding: Pick<KeyBinding, 'keys'>): boolean {
 /** Input handling for single hotkeys; Escape and continue manage defaults themselves. */
 export function hotkeyOptions(
   binding: Pick<KeyBinding, 'keys' | 'actionId'>,
-): Pick<HotkeyOptions, 'ignoreInputs' | 'preventDefault'> {
+): Pick<HotkeyOptions, 'ignoreInputs' | 'preventDefault' | 'requireReset'> {
   return {
     // Composers cancel locally on Escape only; C-g must not bypass that cleanup.
     ignoreInputs: !isEscape(binding),
@@ -76,6 +76,8 @@ export function hotkeyOptions(
     ...(isEscape(binding) || binding.actionId === CONTINUE_ACTION_ID
       ? { preventDefault: false }
       : {}),
+    // A held key auto-repeats; without a reset it would chain Continue into Finish.
+    ...(binding.actionId === CONTINUE_ACTION_ID ? { requireReset: true } : {}),
   };
 }
 

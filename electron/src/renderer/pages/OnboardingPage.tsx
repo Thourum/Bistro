@@ -38,15 +38,17 @@ export function OnboardingPage(): React.ReactElement {
       continueFromSync();
       return;
     }
+    setStepError(null);
     setIsFinishing(true);
-    // Success flips onboardingComplete; Bootstrap's router invalidation leaves.
+    // Success flips onboardingComplete; Bootstrap's router invalidation leaves,
+    // so isFinishing stays true until this page unmounts.
     void updateSettings({
       appearance: {
         ...settingsStore.state.appearance,
         onboardingComplete: true,
       },
     }).match(
-      () => setIsFinishing(false),
+      () => undefined,
       (fault) => {
         setIsFinishing(false);
         setStepError(`Onboarding could not be completed: ${fault.message}`);
