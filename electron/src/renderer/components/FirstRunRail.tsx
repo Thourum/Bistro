@@ -56,6 +56,8 @@ function RailStep({
     <li
       aria-current={isCurrent ? 'step' : undefined}
       className={cn(
+        // -mx-6 bleeds the row to the rail edge; 22px + the 2px accent
+        // border lines the content up with the rail's p-6.
         'flex items-start gap-4 border-l-2 py-4 pr-6 pl-[22px] -mx-6',
         isCurrent
           ? 'border-primary bg-surface-container-low'

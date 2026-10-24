@@ -4,7 +4,7 @@ import { FooterCenterSlot } from '../components/FooterSlot';
 import { PRListTable, visiblePRListRows } from '../components/PRListTable';
 import { useInboxReadActions } from '../hooks/useInboxReadActions';
 import { useStore } from '../hooks/useStore';
-import { useVisiblePRs } from '../hooks/useVisiblePRs';
+import { orderPRs, useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
@@ -113,15 +113,15 @@ export function PRListPage({
     settingsStore,
     (s) => s.appearance.onboardingComplete && !s.appearance.tourComplete,
   );
-  // The rail counts the full open list, so filtering the table never shrinks it.
+  // Counted from the full open list, so filtering the table never shrinks it;
+  // ordered like the table so the rail's top PR is the lane's first row.
   const needsAction = React.useMemo(() => {
     const needsActionLane = LANES.find((lane) => lane.key === 'needs_action');
-    return needsActionLane === undefined
-      ? []
-      : openPRs.filter(
-          (pr) => laneForPR(pr, viewerLogin) === needsActionLane.id,
-        );
-  }, [openPRs, viewerLogin]);
+    if (needsActionLane === undefined) return [];
+    return orderPRs(openPRs, { sort: sortBy, view, viewerLogin }).filter(
+      (pr) => laneForPR(pr, viewerLogin) === needsActionLane.id,
+    );
+  }, [openPRs, sortBy, view, viewerLogin]);
   const hasHeaderRing = isRailVisible && view === 'grouped';
 
   return (
@@ -153,7 +153,7 @@ export function PRListPage({
                 <span
                   className={`text-primary font-bold ${hasHeaderRing ? 'ring-2 ring-primary px-1' : ''}`}
                 >
-                  NEEDS ACTION: {triage.needsAction}
+                  NEEDS ACTION: {needsAction.length}
                 </span>
                 {' · '}WAITING: {triage.waitingAuthor}
                 {' · '}FYI: {triage.fyi}
