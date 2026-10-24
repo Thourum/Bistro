@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bistro — GitHub sign-in</title>
+<style>
+:root{--surface:#f8f9fa;--lowest:#fff;--container:#edeeef;--primary:#004ac6;--outline-variant:#c3c6d7;--on-surface:#191c1d;--on-surface-variant:#434655;--error:#ba1a1a}
+*{box-sizing:border-box}body{margin:0;background:var(--surface);color:var(--on-surface);font:16px/1.6 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:720px;margin:64px auto;padding:32px;background:var(--lowest);border:1px solid var(--outline-variant);border-radius:8px}
+.brand{font-weight:700;letter-spacing:.08em}.code{font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--primary);margin-top:32px}
+.failure{color:var(--error)}h1{font-size:32px;line-height:1.2}h2{font-size:16px}section{margin-top:24px;padding:24px;background:var(--container)}li{margin:12px 0}dt{font:13px ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--on-surface-variant)}dd{margin:0 0 16px;overflow-wrap:anywhere}a{color:var(--primary)}kbd{font:inherit}
+@media(max-width:600px){main{margin:24px 16px;padding:24px}h1{font-size:28px}}
+</style>
+</head>
+<body><main>
+<div class="brand">BISTRO</div>
+{{if .Success}}
+<p class="code">AUTHORIZATION COMPLETE // GITHUB</p>
+<h1>Almost done.</h1>
+<p>GitHub approved Bistro. Return to Bistro to finish; it is saving the token to {{.Store}}.</p>
+<section><h2>Where the token went</h2><ol>
+<li>GitHub returned a one-time authorization code.</li>
+<li>{{.ExchangeStep}}</li>
+<li>Bistro is saving the token to {{.Store}}. Return to Bistro to finish.</li>
+</ol></section>
+<p>Revoke any time: <a href="https://github.com/settings/applications">github.com/settings/applications</a>.</p>
+{{else}}
+<p class="code failure">{{.Code}}</p>
+<h1>Sign-in didn't finish.</h1>
+<p>{{.Sentence}}</p>
+<p>Nothing was saved. Return to Bistro and press <kbd>G</kbd> to try again.</p>
+<section><h2>Detail</h2><dl>
+<dt>error</dt><dd>{{.Error}}</dd>
+<dt>description</dt><dd>{{.Description}}</dd>
+<dt>at</dt><dd>{{.At}}</dd>
+</dl></section>
+{{end}}
+</main></body></html>
