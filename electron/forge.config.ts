@@ -122,7 +122,7 @@ const config: ForgeConfig = {
   publishers: [
     new PublisherGitHub({
       repository: {
-        owner: 'Itterno',
+        owner: 'Thourum',
         name: 'Bistro',
       },
       draft: true,

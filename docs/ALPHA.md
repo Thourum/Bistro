@@ -30,7 +30,7 @@ Auto-updates are off by default. To enable them for a build, set `BISTRO_ENABLE_
 
 - Engine log: `~/Library/Application Support/Bistro/logs/bistro-sync.log`.
 - App (Electron) log: `~/Library/Logs/Bistro/` (electron-log default; confirm the file name on your build).
-- Report bugs at https://github.com/Itterno/Bistro/issues. Attach the relevant log excerpt and your macOS version. Remove tokens and repo names you do not want public.
+- Report bugs at https://github.com/Thourum/Bistro/issues. Attach the relevant log excerpt and your macOS version. Remove tokens and repo names you do not want public.
 
 ## Telemetry
 

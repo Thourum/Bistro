@@ -5,7 +5,7 @@
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/Itterno/Bistro.git"
+    "url": "https://github.com/Thourum/Bistro.git"
   },
   "main": ".vite/build/index.cjs",
   "scripts": {

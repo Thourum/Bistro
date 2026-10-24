@@ -60,7 +60,7 @@ release packaging work is complete.
 ### Setup
 
 ```bash
-git clone https://github.com/Itterno/Bistro.git
+git clone https://github.com/Thourum/Bistro.git
 cd Bistro/electron
 pnpm install
 cp .env.example .env.local
