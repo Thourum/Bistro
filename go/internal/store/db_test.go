@@ -181,13 +181,7 @@ func TestMigrationsRerunAfterGooseVersionMetadataLoss(t *testing.T) {
 		t.Fatal("comment_classification_state table does not exist")
 	}
 
-	var appliedCount int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT version_id) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
-		t.Fatalf("query applied goose versions: %v", err)
-	}
-	if appliedCount != 33 {
-		t.Errorf("applied goose version count = %d, want 33", appliedCount)
-	}
+	assertAllEmbeddedVersionsApplied(t, ctx, db.DB)
 
 	if exists, err := tableExists(ctx, db.DB, "pr_read_state"); err != nil {
 		t.Fatalf("check pr_read_state table: %v", err)
@@ -423,8 +417,11 @@ func assertAllEmbeddedVersionsApplied(t *testing.T, ctx context.Context, db *sql
 	if err != nil {
 		t.Fatalf("schemaMigrationVersions() error = %v", err)
 	}
-	if len(versions) != 33 {
-		t.Fatalf("embedded migration count = %d, want 33 through version 34 excluding version 13", len(versions))
+	// Version 13 was removed before goose adoption; all other versions remain embedded.
+	const removedMigrationCount = 1
+	wantCount := int(reconcileBaselineVersion) - removedMigrationCount
+	if len(versions) != wantCount {
+		t.Fatalf("embedded migration count = %d, want %d through version %d excluding version 13", len(versions), wantCount, reconcileBaselineVersion)
 	}
 	for _, version := range versions {
 		var appliedCount int
@@ -576,18 +573,20 @@ func TestMigrationRunnerSeedsGooseFromLegacySchemaMigrations(t *testing.T) {
 	mustExec(t, db, `CREATE TABLE prs (id TEXT PRIMARY KEY)`)
 	mustExec(t, db, `CREATE TABLE comments (id TEXT PRIMARY KEY)`)
 	mustExec(t, db, `CREATE TABLE files (id TEXT PRIMARY KEY)`)
+	mustExec(t, db, `CREATE TABLE patchsets (
+		pr_id TEXT NOT NULL, number INTEGER NOT NULL, head_sha TEXT NOT NULL,
+		base_sha TEXT NOT NULL, pushed_at TIMESTAMP NOT NULL, PRIMARY KEY (pr_id, number)
+	)`)
+	mustExec(t, db, `CREATE TABLE pr_diffs (pr_id TEXT NOT NULL, file_path TEXT NOT NULL)`)
+	mustExec(t, db, `CREATE TABLE last_reviewed_sha (
+		pr_id TEXT NOT NULL, login TEXT NOT NULL, sha TEXT NOT NULL, updated_at TIMESTAMP NOT NULL
+	)`)
 
 	if err := NewMigrationRunner(nil, db.DB).Run(ctx); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	var appliedCount int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+goose.DefaultTablename+` WHERE version_id > 0 AND is_applied = 1`).Scan(&appliedCount); err != nil {
-		t.Fatalf("query applied goose versions: %v", err)
-	}
-	if appliedCount != 33 {
-		t.Errorf("applied goose version count = %d, want 33", appliedCount)
-	}
+	assertAllEmbeddedVersionsApplied(t, ctx, db.DB)
 
 	var prsSQL string
 	if err := db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type='table' AND name='prs'`).Scan(&prsSQL); err != nil {

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/itterno/bistro/internal/classify"
 	"github.com/itterno/bistro/internal/git"
@@ -193,36 +192,6 @@ func provisionalThreadIDs(thread *provider.ReviewThread) []string {
 	return ids
 }
 
-// recordPatchsetIfChanged upserts a patchset when the diff endpoints change.
-// UNIQUE(pr_id, base_sha, head_sha) and INSERT OR IGNORE make it idempotent.
-func (w *Writer) recordPatchsetIfChanged(ctx context.Context, tx *sql.Tx, pr *provider.PR) error {
-	prID, headSHA, baseSHA := pr.ID, pr.HeadSHA, pr.BaseSHA
-	var latestNum int
-	var latestHead, latestBase string
-	err := tx.QueryRowContext(ctx,
-		`SELECT number, head_sha, base_sha FROM patchsets WHERE pr_id = ? ORDER BY number DESC LIMIT 1`,
-		prID,
-	).Scan(&latestNum, &latestHead, &latestBase)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("query latest patchset for PR %s: %w", prID, err)
-	}
-	var nextNum int
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		nextNum = 1
-	case latestHead == headSHA && latestBase == baseSHA:
-		return nil
-	default:
-		nextNum = latestNum + 1
-	}
-	const query = `INSERT OR IGNORE INTO patchsets (pr_id, number, head_sha, base_sha, pushed_at)
-		VALUES (?, ?, ?, ?, ?)`
-	if _, err := tx.ExecContext(ctx, query, prID, nextNum, headSHA, baseSHA, time.Now()); err != nil {
-		return fmt.Errorf("insert patchset %s P%d: %w", prID, nextNum, err)
-	}
-	return nil
-}
-
 // writeDiffs replaces a PR's diff cache in the same savepoint as the PR row and
 // patchset, preserving the old cache if any critical insert fails.
 func (w *Writer) writeDiffs(ctx context.Context, tx *sql.Tx, prID string, diffs []store.DiffFile) (writeErr error) {
@@ -235,8 +204,8 @@ func (w *Writer) writeDiffs(ctx context.Context, tx *sql.Tx, prID string, diffs 
 	const query = `
 		INSERT INTO pr_diffs (
 			pr_id, file_path, status, old_path, is_binary, is_truncated,
-			patch_bytes, hunk_count, patch, additions, deletions, diff_status
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			patch_bytes, hunk_count, patch, additions, deletions, diff_status, patch_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	stmt, err := tx.PrepareContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("prepare pr_diffs insert for %s: %w", prID, err)
@@ -252,7 +221,7 @@ func (w *Writer) writeDiffs(ctx context.Context, tx *sql.Tx, prID string, diffs 
 		if _, err := stmt.ExecContext(ctx, prID, diff.FilePath, diffStatus(diff.Status),
 			nullableString(diff.OldPath), diff.IsBinary, diff.IsTruncated,
 			diff.PatchBytes, diff.HunkCount, diff.Patch, diff.Additions, diff.Deletions,
-			storedDiffStatus(diff.DiffStatus)); err != nil {
+			storedDiffStatus(diff.DiffStatus), diff.PatchID); err != nil {
 			return fmt.Errorf("insert pr_diff %s/%s: %w", prID, diff.FilePath, err)
 		}
 	}

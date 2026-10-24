@@ -19,10 +19,9 @@ export interface ParsedCodeViewFile {
   patchVersion: number;
 }
 
-export interface UnrenderableDiffFile {
-  file: ParsedDiffFile;
-  reason: 'parse-failed' | 'binary';
-}
+export type UnrenderableDiffFile =
+  | { file: ParsedDiffFile; reason: 'parse-failed' | 'binary' }
+  | { file: ParsedDiffFile; reason: 'too-large'; patchBytes: number };
 
 const BINARY_MARKERS = [/^Binary files .* differ$/m, /^GIT binary patch$/m];
 
@@ -39,12 +38,21 @@ export interface CodeViewFileParseResult {
   unrenderableFiles: UnrenderableDiffFile[];
 }
 
+const NO_OVERSIZED_FILES: ReadonlyMap<string, number> = new Map();
+
 export function parseCodeViewFiles(
   files: readonly ParsedDiffFile[],
+  oversizedPatchBytes: ReadonlyMap<string, number> = NO_OVERSIZED_FILES,
 ): CodeViewFileParseResult {
   const parsedFiles: ParsedCodeViewFile[] = [];
   const unrenderableFiles: UnrenderableDiffFile[] = [];
   for (const file of files) {
+    // The engine stores no patch for files over its per-file cap.
+    const patchBytes = oversizedPatchBytes.get(file.path);
+    if (patchBytes !== undefined) {
+      unrenderableFiles.push({ file, reason: 'too-large', patchBytes });
+      continue;
+    }
     // Binary patches parse "successfully" into zero hunks, so classify first.
     const isBinary = isBinaryPatch(file.patch);
     const fileDiff = isBinary ? undefined : processFile(file.patch);

@@ -259,10 +259,16 @@ function toggleApproval(context: KeyActionContext): void {
 }
 
 function toggleSinceLastReview(context: KeyActionContext): void {
-  const isActive = context.store.state.confirmingAction === 'since-last-review';
   context.store.setState((state) => ({
     ...state,
-    confirmingAction: isActive ? null : 'since-last-review',
+    sinceLastReviewActive: !state.sinceLastReviewActive,
+  }));
+}
+
+function toggleInterdiff(context: KeyActionContext): void {
+  context.store.setState((state) => ({
+    ...state,
+    interdiffActive: !state.interdiffActive,
   }));
   if (!isActive) recordFirstRunAction('diff.sinceLastReview');
 }
@@ -468,6 +474,7 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
       confirmingAction: 'request_changes',
     })),
   'diff.sinceLastReview': toggleSinceLastReview,
+  'diff.interdiff': toggleInterdiff,
   'diff.toggleStyle': (context) =>
     context.store.setState((state) => ({
       ...state,

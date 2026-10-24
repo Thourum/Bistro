@@ -3,92 +3,144 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 )
 
-func TestSetGetLastReviewedSHA_RoundTrip(t *testing.T) {
+func TestRecordLastReviewedKeepsNewestEventAcrossSources(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
-
-	sha, ok, err := db.GetLastReviewedSHA(ctx, "pr-lr-1", "alice")
-	if err != nil {
-		t.Fatalf("get on empty: %v", err)
-	}
-	if ok || sha != "" {
-		t.Fatalf("empty store: got (%q, %v)", sha, ok)
-	}
-
-	mustInsertPR(t, db, "pr-lr-1")
-	if err := db.SetLastReviewedSHA(ctx, "pr-lr-1", "alice", "sha-abc"); err != nil {
-		t.Fatalf("set: %v", err)
-	}
-	sha, ok, err = db.GetLastReviewedSHA(ctx, "pr-lr-1", "alice")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if !ok || sha != "sha-abc" {
-		t.Fatalf("after set: got (%q, %v)", sha, ok)
+	mustInsertPR(t, db, "pr-lr-newest")
+	start := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	record := func(source ReviewSource, head string, offset time.Duration) {
+		t.Helper()
+		event := ReviewEvent{PRID: "pr-lr-newest", Login: "alice", HeadSHA: head,
+			ReviewedAt: start.Add(offset), Source: source}
+		if err := db.RecordLastReviewed(ctx, event); err != nil {
+			t.Fatalf("record %s: %v", source, err)
+		}
 	}
 
-	if err := db.SetLastReviewedSHA(ctx, "pr-lr-1", "alice", "sha-xyz"); err != nil {
-		t.Fatalf("overwrite: %v", err)
+	record(ReviewSourceGitHubReview, "h1", 0)
+	record(ReviewSourceBistroAction, "h3", 3*time.Hour)
+	record(ReviewSourceAllViewed, "h2", 2*time.Hour)
+
+	got, ok, err := db.GetLastReviewed(ctx, "pr-lr-newest", "alice")
+	if err != nil || !ok {
+		t.Fatalf("GetLastReviewed: ok=%v err=%v", ok, err)
 	}
-	sha, ok, _ = db.GetLastReviewedSHA(ctx, "pr-lr-1", "alice")
-	if !ok || sha != "sha-xyz" {
-		t.Fatalf("after overwrite: got (%q, %v)", sha, ok)
+	if got.Source != ReviewSourceBistroAction || got.SHA != "h3" || !got.ReviewedAt.Equal(start.Add(3*time.Hour)) {
+		t.Fatalf("after older all_viewed: got %+v, want bistro_action h3", got)
+	}
+
+	record(ReviewSourceGitHubReview, "h4", 4*time.Hour)
+	got, ok, err = db.GetLastReviewed(ctx, "pr-lr-newest", "alice")
+	if err != nil || !ok {
+		t.Fatalf("GetLastReviewed after newer event: ok=%v err=%v", ok, err)
+	}
+	if got.Source != ReviewSourceGitHubReview || got.SHA != "h4" {
+		t.Fatalf("after newer github_review: got %+v, want github_review h4", got)
 	}
 }
 
-func TestGetLastReviewedSHA_DifferentLogins(t *testing.T) {
+func TestGetLastReviewedMissing(t *testing.T) {
+	db := newTestDB(t)
+	if _, ok, err := db.GetLastReviewed(context.Background(), "pr-none", "alice"); err != nil || ok {
+		t.Fatalf("missing record: ok=%v err=%v, want ok=false err=nil", ok, err)
+	}
+}
+
+func TestRecordLastReviewedRoundTrip(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	record, ok, err := db.GetLastReviewed(ctx, "pr-lr-1", "alice")
+	if err != nil || ok || record.SHA != "" {
+		t.Fatalf("empty store: record=%+v ok=%v err=%v", record, ok, err)
+	}
+
+	mustInsertPR(t, db, "pr-lr-1")
+	event := ReviewEvent{PRID: "pr-lr-1", Login: "alice", HeadSHA: "sha-abc",
+		ReviewedAt: time.Now(), Source: ReviewSourceBistroAction}
+	if err := db.RecordLastReviewed(ctx, event); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	record, ok, err = db.GetLastReviewed(ctx, event.PRID, event.Login)
+	if err != nil || !ok || record.SHA != event.HeadSHA {
+		t.Fatalf("after record: record=%+v ok=%v err=%v", record, ok, err)
+	}
+
+	event.HeadSHA = "sha-xyz"
+	event.ReviewedAt = event.ReviewedAt.Add(time.Hour)
+	if err := db.RecordLastReviewed(ctx, event); err != nil {
+		t.Fatalf("overwrite: %v", err)
+	}
+	record, ok, err = db.GetLastReviewed(ctx, event.PRID, event.Login)
+	if err != nil || !ok || record.SHA != event.HeadSHA {
+		t.Fatalf("after overwrite: record=%+v ok=%v err=%v", record, ok, err)
+	}
+}
+
+func TestGetLastReviewedDifferentLogins(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 	mustInsertPR(t, db, "pr-lr-2")
 
-	if err := db.SetLastReviewedSHA(ctx, "pr-lr-2", "alice", "sha-alice"); err != nil {
-		t.Fatalf("set alice: %v", err)
+	for _, login := range []string{"alice", "bob"} {
+		event := ReviewEvent{PRID: "pr-lr-2", Login: login, HeadSHA: "sha-" + login,
+			ReviewedAt: time.Now(), Source: ReviewSourceBistroAction}
+		if err := db.RecordLastReviewed(ctx, event); err != nil {
+			t.Fatalf("record %s: %v", login, err)
+		}
+		record, found, err := db.GetLastReviewed(ctx, event.PRID, login)
+		if err != nil || !found || record.SHA != event.HeadSHA {
+			t.Fatalf("login %s: record=%+v found=%v err=%v", login, record, found, err)
+		}
 	}
-	if err := db.SetLastReviewedSHA(ctx, "pr-lr-2", "bob", "sha-bob"); err != nil {
-		t.Fatalf("set bob: %v", err)
-	}
-
-	shaA, _, _ := db.GetLastReviewedSHA(ctx, "pr-lr-2", "alice")
-	shaB, _, _ := db.GetLastReviewedSHA(ctx, "pr-lr-2", "bob")
-	if shaA != "sha-alice" || shaB != "sha-bob" {
-		t.Fatalf("login isolation: alice=%q bob=%q", shaA, shaB)
+	alice, found, err := db.GetLastReviewed(ctx, "pr-lr-2", "alice")
+	if err != nil || !found || alice.SHA != "sha-alice" {
+		t.Fatalf("alice after bob: record=%+v found=%v err=%v", alice, found, err)
 	}
 }
 
-func TestGetLastReviewedSHA_PRIsolation(t *testing.T) {
+func TestGetLastReviewedPRIsolation(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 	mustInsertPR(t, db, "pr-lr-3")
 	mustInsertPR(t, db, "pr-lr-4")
 
-	if err := db.SetLastReviewedSHA(ctx, "pr-lr-3", "alice", "sha-3"); err != nil {
-		t.Fatalf("set: %v", err)
+	event := ReviewEvent{PRID: "pr-lr-3", Login: "alice", HeadSHA: "sha-3",
+		ReviewedAt: time.Now(), Source: ReviewSourceBistroAction}
+	if err := db.RecordLastReviewed(ctx, event); err != nil {
+		t.Fatalf("record: %v", err)
 	}
 
-	_, ok, _ := db.GetLastReviewedSHA(ctx, "pr-lr-4", "alice")
+	_, ok, err := db.GetLastReviewed(ctx, "pr-lr-4", "alice")
+	if err != nil {
+		t.Fatalf("get other PR: %v", err)
+	}
 	if ok {
 		t.Fatal("pr isolation: pr-lr-4 should have no record")
 	}
 }
 
-// ---- Full patchset identity tests (Blocker 1 fix) ----
+// ---- Patchset identity tests ----
 
-func TestSetGetLastReviewedPatchset_RoundTrip(t *testing.T) {
+func TestRecordLastReviewedPatchsetRoundTrip(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 	mustInsertPR(t, db, "pr-p1")
 
-	_, found, err := db.GetLastReviewedPatchset(ctx, "pr-p1", "alice")
+	_, found, err := db.GetLastReviewed(ctx, "pr-p1", "alice")
 	if err != nil || found {
 		t.Fatalf("empty: found=%v err=%v", found, err)
 	}
 
-	if err := db.SetLastReviewedPatchset(ctx, "pr-p1", "alice", 2, "sha-head", "sha-base"); err != nil {
+	event := ReviewEvent{PRID: "pr-p1", Login: "alice", HeadSHA: "sha-head", PatchsetNum: 2,
+		ReviewedAt: time.Now(), Source: ReviewSourceBistroAction}
+	if err := db.RecordLastReviewed(ctx, event); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	rec, found, err := db.GetLastReviewedPatchset(ctx, "pr-p1", "alice")
+	rec, found, err := db.GetLastReviewed(ctx, "pr-p1", "alice")
 	if err != nil || !found {
 		t.Fatalf("after set: found=%v err=%v", found, err)
 	}
@@ -98,22 +150,23 @@ func TestSetGetLastReviewedPatchset_RoundTrip(t *testing.T) {
 	if rec.SHA != "sha-head" {
 		t.Errorf("SHA: got %q want sha-head", rec.SHA)
 	}
-	if rec.BaseSHA != "sha-base" {
-		t.Errorf("BaseSHA: got %q want sha-base", rec.BaseSHA)
+	if rec.Source != event.Source || !rec.ReviewedAt.Equal(event.ReviewedAt.UTC().Truncate(time.Second)) {
+		t.Errorf("event metadata: got %+v want %+v", rec, event)
 	}
 }
 
-func TestSetGetLastReviewedPatchset_LegacyPath(t *testing.T) {
-	// SetLastReviewedSHA writes patchset_number=NULL (legacy).
-	// GetLastReviewedPatchset should return PatchsetNum==0 for such rows.
+func TestRecordLastReviewedUnknownPatchset(t *testing.T) {
+	// A review without a known patchset number must remain resolvable by head.
 	db := newTestDB(t)
 	ctx := context.Background()
 	mustInsertPR(t, db, "pr-leg")
 
-	if err := db.SetLastReviewedSHA(ctx, "pr-leg", "alice", "sha-legacy"); err != nil {
+	event := ReviewEvent{PRID: "pr-leg", Login: "alice", HeadSHA: "sha-legacy",
+		ReviewedAt: time.Now(), Source: ReviewSourceBistroAction}
+	if err := db.RecordLastReviewed(ctx, event); err != nil {
 		t.Fatalf("set legacy: %v", err)
 	}
-	rec, found, err := db.GetLastReviewedPatchset(ctx, "pr-leg", "alice")
+	rec, found, err := db.GetLastReviewed(ctx, "pr-leg", "alice")
 	if err != nil || !found {
 		t.Fatalf("get patchset for legacy row: found=%v err=%v", found, err)
 	}
@@ -125,29 +178,39 @@ func TestSetGetLastReviewedPatchset_LegacyPath(t *testing.T) {
 	}
 }
 
-func TestSetLastReviewedPatchset_Upsert(t *testing.T) {
+func TestRecordLastReviewedPatchsetReplacement(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 	mustInsertPR(t, db, "pr-ups")
 
-	if err := db.SetLastReviewedPatchset(ctx, "pr-ups", "alice", 1, "sha-1", "base-1"); err != nil {
-		t.Fatalf("first set: %v", err)
+	event := ReviewEvent{PRID: "pr-ups", Login: "alice", HeadSHA: "sha-1", PatchsetNum: 1,
+		ReviewedAt: time.Now(), Source: ReviewSourceBistroAction}
+	if err := db.RecordLastReviewed(ctx, event); err != nil {
+		t.Fatalf("first record: %v", err)
 	}
-	if err := db.SetLastReviewedPatchset(ctx, "pr-ups", "alice", 3, "sha-3", "base-2"); err != nil {
-		t.Fatalf("second set: %v", err)
+	event.HeadSHA = "sha-3"
+	event.PatchsetNum = 3
+	event.ReviewedAt = event.ReviewedAt.Add(time.Hour)
+	if err := db.RecordLastReviewed(ctx, event); err != nil {
+		t.Fatalf("second record: %v", err)
 	}
-	rec, _, _ := db.GetLastReviewedPatchset(ctx, "pr-ups", "alice")
+	rec, found, err := db.GetLastReviewed(ctx, "pr-ups", "alice")
+	if err != nil || !found {
+		t.Fatalf("get replacement: found=%v err=%v", found, err)
+	}
 	if rec.PatchsetNum != 3 || rec.SHA != "sha-3" {
 		t.Errorf("after upsert: got num=%d sha=%q", rec.PatchsetNum, rec.SHA)
 	}
 }
 
-func TestLastReviewedSHA_StoresExplicitAccountNamespace(t *testing.T) {
+func TestRecordLastReviewedStoresExplicitAccountNamespace(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 	mustInsertPR(t, db, "pr-account-lr")
 
-	if err := db.SetLastReviewedSHA(ctx, "pr-account-lr", "alice", "sha-alice"); err != nil {
+	event := ReviewEvent{PRID: "pr-account-lr", Login: "alice", HeadSHA: "sha-alice",
+		ReviewedAt: time.Now(), Source: ReviewSourceBistroAction}
+	if err := db.RecordLastReviewed(ctx, event); err != nil {
 		t.Fatalf("set alice: %v", err)
 	}
 

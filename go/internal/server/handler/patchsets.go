@@ -16,6 +16,16 @@ type patchsetLister interface {
 	ListPatchsets(ctx context.Context, prID string) ([]store.Patchset, error)
 }
 
+// patchsetByNumber finds a patchset by its number in an ordered slice.
+func patchsetByNumber(patchsets []store.Patchset, number int) *store.Patchset {
+	for i := range patchsets {
+		if patchsets[i].Number == number {
+			return &patchsets[i]
+		}
+	}
+	return nil
+}
+
 // fileViewedMarker is the DB subset required by NewMarkFileViewedHandler.
 type fileViewedMarker interface {
 	MarkFileViewed(ctx context.Context, prID, filePath, login, contentHash string) error
@@ -87,21 +97,29 @@ func NewListPatchsetsHandler(ps patchsetLister, log *slog.Logger) ws.MessageHand
 // Response type: FILE_VIEWED_ACK
 // Response data: {"pr_id": "...", "file_path": "...", "ok": true/false, "reason"?: "..."}
 //
-// The handler validates the client-supplied content_hash against the server's
-// canonical hash (SHA-256 of the stored patch). Mismatched hashes are rejected.
-// Use NewMarkFileViewedHandlerWithDiffStore to enable hash validation.
+// Use NewMarkFileViewedHandlerWithDeps to enable canonical patch ID validation
+// and all-viewed baselines.
 func NewMarkFileViewedHandler(db fileViewedMarker, cu currentUserReader, log *slog.Logger) ws.MessageHandler {
-	return newMarkFileViewedHandler(db, cu, nil, log)
+	return newMarkFileViewedHandler(MarkFileViewedDeps{Viewed: db, CurrentUser: cu, Log: log})
 }
 
-// NewMarkFileViewedHandlerWithDiffStore creates the handler with a DiffStore for
-// server-side hash validation. The client-supplied content_hash is checked against
-// SHA-256(stored patch); mismatched hashes are rejected with ok=false.
-func NewMarkFileViewedHandlerWithDiffStore(db fileViewedMarker, cu currentUserReader, ds diffReader, log *slog.Logger) ws.MessageHandler {
-	return newMarkFileViewedHandler(db, cu, ds, log)
+// MarkFileViewedDeps bundles MARK_FILE_VIEWED dependencies. DiffStore enables
+// hash validation; Baseline enables all-viewed baselines. Both are optional.
+type MarkFileViewedDeps struct {
+	Viewed      fileViewedMarker
+	CurrentUser currentUserReader
+	DiffStore   diffReader
+	Baseline    viewedBaselineStore
+	Log         *slog.Logger
 }
 
-func newMarkFileViewedHandler(db fileViewedMarker, cu currentUserReader, ds diffReader, log *slog.Logger) ws.MessageHandler {
+// NewMarkFileViewedHandlerWithDeps creates the MARK_FILE_VIEWED handler.
+func NewMarkFileViewedHandlerWithDeps(deps MarkFileViewedDeps) ws.MessageHandler {
+	return newMarkFileViewedHandler(deps)
+}
+
+func newMarkFileViewedHandler(deps MarkFileViewedDeps) ws.MessageHandler {
+	log := deps.Log
 	if log == nil {
 		log = slog.Default()
 	}
@@ -123,7 +141,7 @@ func newMarkFileViewedHandler(db fileViewedMarker, cu currentUserReader, ds diff
 			return nil, fmt.Errorf("MARK_FILE_VIEWED requires pr_id, file_path, and content_hash")
 		}
 
-		login, ok, lookupErr := cu.GetCurrentUser(ctx, githubProvider)
+		login, ok, lookupErr := deps.CurrentUser.GetCurrentUser(ctx, githubProvider)
 		if lookupErr != nil {
 			logger.Warn("MARK_FILE_VIEWED: failed to resolve current user", "error", lookupErr)
 			return fileViewedACK(msg.ID, req.PRID, req.FilePath, false, "unable to check authenticated user"), nil
@@ -135,19 +153,21 @@ func newMarkFileViewedHandler(db fileViewedMarker, cu currentUserReader, ds diff
 		}
 
 		// Server-side hash validation when DiffStore is available.
-		if ds != nil {
-			if valid, reason := validateFileHash(logging.WithLogger(ctx, logger), ds, req.PRID, req.FilePath, req.ContentHash); !valid {
+		if deps.DiffStore != nil {
+			if valid, reason := validateFileHash(logging.WithLogger(ctx, logger), deps.DiffStore, req.PRID, req.FilePath, req.ContentHash); !valid {
 				logger.Warn("MARK_FILE_VIEWED: hash validation failed",
 					"pr_id", req.PRID, "file_path", req.FilePath, "reason", reason)
 				return fileViewedACK(msg.ID, req.PRID, req.FilePath, false, reason), nil
 			}
 		}
 
-		if err := db.MarkFileViewed(ctx, req.PRID, req.FilePath, login, req.ContentHash); err != nil {
+		if err := deps.Viewed.MarkFileViewed(ctx, req.PRID, req.FilePath, login, req.ContentHash); err != nil {
 			logger.Error("mark file viewed failed",
 				"pr_id", req.PRID, "file_path", req.FilePath, "error", err)
 			return fileViewedACK(msg.ID, req.PRID, req.FilePath, false, "unable to mark file viewed"), nil
 		}
+
+		recordAllViewedBaseline(logging.WithLogger(ctx, logger), deps, req.PRID, login)
 
 		logger.Debug("file viewed marked",
 			"pr_id", req.PRID, "file_path", req.FilePath, "login", login)
@@ -168,7 +188,7 @@ func validateFileHash(ctx context.Context, ds diffReader, prID, filePath, client
 	}
 	for _, f := range diffs {
 		if f.FilePath == filePath {
-			canonical := PatchContentHash(f.Patch)
+			canonical := viewedHash(f)
 			if canonical != clientHash {
 				prefix := func(s string) string {
 					if len(s) > 8 {

@@ -243,6 +243,7 @@ func (c *Client) WithPRClone(ctx context.Context, repoURL, baseSHA, headSHA stri
 		if err != nil {
 			return err
 		}
+		pinPRHead(log, clone.LocalPath, repoURL, opts, headSHA)
 		return use(clone)
 	}
 	if c.locks == nil {
@@ -284,6 +285,9 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 	}
 
 	if result, ok := c.reuseOnDiskClone(log, repoURL, baseSHA, headSHA, opts); ok {
+		return result, nil
+	}
+	if result, ok := c.refreshOnDiskClone(ctx, log, repoURL, baseSHA, headSHA, opts); ok {
 		return result, nil
 	}
 

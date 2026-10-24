@@ -246,8 +246,7 @@ func NewRequestCommentsHandlerWithLLMKick(db commentsStore, log *slog.Logger, pr
 			 LEFT JOIN prs p  ON p.id = c.pr_id
 			 LEFT JOIN patchsets ps
 			        ON ps.pr_id    = c.pr_id
-			       AND ps.head_sha = p.head_sha
-			       AND ps.base_sha = p.base_sha
+			       AND ps.number = (SELECT MAX(x.number) FROM patchsets x WHERE x.pr_id = c.pr_id AND x.head_sha = p.head_sha)
 			 LEFT JOIN comment_dismissals d
 			        ON d.comment_id = c.id
 			       AND (d.account_provider, d.account_login) IN (SELECT provider, login FROM current_user)

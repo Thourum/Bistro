@@ -34,6 +34,7 @@ type Review struct {
 	PRID        string
 	Author      string
 	State       string // "approved", "changes_requested", "commented", "dismissed", "pending"
+	CommitID    string // Head commit the review was submitted against.
 	SubmittedAt time.Time
 }
 

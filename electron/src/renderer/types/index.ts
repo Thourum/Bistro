@@ -254,36 +254,59 @@ export const patchsetSchema = z.object({
   pushed_at: z.string(),
 }) satisfies z.ZodType<Patchset>;
 
-/**
- * Result of a `REQUEST_RANGE_DIFF` → `RANGE_DIFF_READY` round-trip.
- *
- * `raw` is the diff text to render. When `degraded` is true the engine fell
- * back from `git range-diff` (absent or too old); `fallback_reason` explains
- * why and may be shown to the reviewer. `raw` can be empty even when
- * `degraded` is true — render a no-content state in that case, never a fake
- * diff.
- */
-export interface RangeDiffResult {
-  pr_id: string;
-  from_patchset: number;
-  to_patchset: number;
-  from_sha: string;
-  to_sha: string;
-  raw: string;
-  degraded: boolean;
-  fallback_reason: string;
-}
+const triageFileStatusSchema = z.enum([
+  'changed',
+  'new',
+  'removed',
+  'unchanged',
+]);
 
-export const rangeDiffSchema = z.object({
+/**
+ * Result of a `REQUEST_TRIAGE` → `TRIAGE_READY` round-trip: each file's status
+ * in `to_patchset` relative to `from_patchset`. `baseline` is the review event
+ * the engine chose for since-last-review, `null` for an explicit pair. When
+ * `state` is not `ok`, `files` is empty and `reason` says why.
+ */
+export const triageResultSchema = z.object({
   pr_id: z.string(),
+  state: z.enum(['ok', 'no_patchsets', 'no_baseline', 'no_fingerprints']),
+  reason: z.string(),
   from_patchset: z.number(),
   to_patchset: z.number(),
-  from_sha: z.string(),
-  to_sha: z.string(),
-  raw: z.string(),
-  degraded: z.boolean(),
-  fallback_reason: z.string(),
-}) satisfies z.ZodType<RangeDiffResult>;
+  baseline: z
+    .object({
+      source: z.enum(['github_review', 'bistro_action', 'all_viewed']),
+      reviewed_at: z.string(),
+    })
+    .nullable(),
+  files: z.array(
+    z.object({ path: z.string(), status: triageFileStatusSchema }),
+  ),
+  changed_count: z.number(),
+  total_count: z.number(),
+});
+export type TriageResult = z.infer<typeof triageResultSchema>;
+export type TriageFileStatus = z.infer<typeof triageFileStatusSchema>;
+export type TriageBaselineSource = NonNullable<
+  TriageResult['baseline']
+>['source'];
+
+/**
+ * Result of a `REQUEST_INTERDIFF` → `INTERDIFF_READY` round-trip: one file at
+ * the `from_patchset` head vs. the `to_patchset` head. `patch` is empty when
+ * the file is identical at both heads; `available: false` carries a `reason`.
+ */
+export const interdiffResultSchema = z.object({
+  pr_id: z.string(),
+  path: z.string(),
+  from_patchset: z.number(),
+  to_patchset: z.number(),
+  available: z.boolean(),
+  reason: z.string(),
+  patch: z.string(),
+  rebased: z.boolean(),
+});
+export type InterdiffResult = z.infer<typeof interdiffResultSchema>;
 
 /**
  * Acknowledgement of a `MARK_FILE_VIEWED` request.

@@ -20,12 +20,10 @@ type ReviewLoginGetter interface {
 	GetCurrentUser(ctx context.Context, providerName string) (string, bool, error)
 }
 
-// ReviewSHAWriter persists full patchset identity for the last-reviewed record.
+// ReviewSHAWriter records the since-last-review baseline.
 // Satisfied by *store.DB.
 type ReviewSHAWriter interface {
-	// SetLastReviewedPatchset upserts patchset identity (sha, patchset_number, base_sha).
-	// PatchsetNum > 0 is authoritative; 0 writes NULL (legacy/unknown).
-	SetLastReviewedPatchset(ctx context.Context, prID, login string, patchsetNum int, headSHA, baseSHA string) error
+	RecordLastReviewed(ctx context.Context, event store.ReviewEvent) error
 }
 
 // ActionExecutor coordinates action execution with provider, store, and events.
@@ -333,28 +331,31 @@ func (ae *ActionExecutor) recordLastReviewedSHA(ctx context.Context, prID string
 		return
 	}
 
-	// Fetch current head_sha and base_sha from the PR row.
-	var headSHA, baseSHA string
+	var headSHA string
 	if err := ae.store.QueryRowContext(ctx,
-		`SELECT head_sha, base_sha FROM prs WHERE id = ?`, prID,
-	).Scan(&headSHA, &baseSHA); err != nil {
+		`SELECT head_sha FROM prs WHERE id = ?`, prID,
+	).Scan(&headSHA); err != nil {
 		ae.log.Warn("recordLastReviewedSHA: could not fetch PR SHAs",
 			"pr_id", prID, "login", login, "error", err)
 		return
 	}
 
-	// Look up the patchset number for (pr_id, head_sha, base_sha).
+	// The base tip moves without changing the PR's patchset identity.
 	// Best-effort: patchsetNum stays 0 (unknown) if the patchset row doesn't exist yet.
 	var patchsetNum int
 	if err := ae.store.QueryRowContext(ctx,
-		`SELECT number FROM patchsets WHERE pr_id = ? AND head_sha = ? AND base_sha = ?`,
-		prID, headSHA, baseSHA,
+		`SELECT number FROM patchsets WHERE pr_id = ? AND head_sha = ? ORDER BY number DESC LIMIT 1`,
+		prID, headSHA,
 	).Scan(&patchsetNum); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		ae.log.Warn("recordLastReviewedSHA: could not fetch patchset number", "pr_id", prID, "error", err)
 	}
 
-	if err := ae.reviewSHAWriter.SetLastReviewedPatchset(ctx, prID, login, patchsetNum, headSHA, baseSHA); err != nil {
-		ae.log.Warn("recordLastReviewedSHA: SetLastReviewedPatchset failed",
+	event := store.ReviewEvent{
+		PRID: prID, Login: login, HeadSHA: headSHA, PatchsetNum: patchsetNum,
+		ReviewedAt: time.Now(), Source: store.ReviewSourceBistroAction,
+	}
+	if err := ae.reviewSHAWriter.RecordLastReviewed(ctx, event); err != nil {
+		ae.log.Warn("recordLastReviewedSHA: RecordLastReviewed failed",
 			"pr_id", prID, "login", login, "patchset_num", patchsetNum, "error", err)
 	}
 }

@@ -19,9 +19,9 @@
 > record: `docs/ROADMAP-AUDIT-2026-06-19.md` (removed 2026-07-11; in git history). Inline `> ⚠️ Audit:` notes below mark
 > affected items. **Headlines:** Phase 2's original wording overpromised FOSS
 > completeness. BIS-31 resolved the changed-since-review strategy: FOSS records
-> **observed patchsets**, uses system `git range-diff` as a best-effort enhancement,
-> and clearly degrades to current file diff/unavailable states when local data is
-> insufficient. Complete push capture remains Team/server scope. (The audit record
+> **observed patchsets**. **Updated 2026-10-23:** changed-since-review now uses
+> per-file patch-ID triage and go-git interdiffs, with explicit unavailable reasons
+> when local data is insufficient (see the [current design](go-project-overview.md#internalsync----sync-engine)). Complete push capture remains Team/server scope. (The audit record
 > and BIS-31 spec were removed from `docs/` on 2026-07-11 — recover from git history.) The comment layer
 > can't feed Phase 2: only issue-level comments are fetched (not inline review
 > comments), and the schema stores no commit SHA / position / resolution state.
@@ -40,8 +40,9 @@
 > of PR bodies/comments and a Bistro design-system primitives pass shipped
 > (2026-06-24/25) — neither was on the roadmap. Opt-in usage telemetry + Sentry crash
 > capture are wired behind a consent setting. Phases 3 (classification) and 4
-> (expertise) remain **not started** — zero code hits. Notable partials: range-diff
-> always degrades today (the WS handler has no repo path at query time), and posting a
+> (expertise) remain **not started** — zero code hits. **Updated 2026-10-23:**
+> patch-ID triage and go-git per-file interdiffs have shipped; the old comparison
+> degradation gap is cleared (see the [current design](go-project-overview.md#internalsync----sync-engine)). Posting a
 > *new* line-level comment is still rejected even though thread replies work. Dev
 > plans/specs/audit docs were removed from `docs/` in this cleanup (git history keeps
 > them). A consolidated v1.0 checklist is at the end of this document.
@@ -205,7 +206,7 @@ Mentioned, FYI) approved during Phase 5 design and shipped 2026-08-09. See
 
 ---
 
-## Phase 2 — Patchset Semantics (the architectural unlock) — **status: largely done (2026-07-11)**
+## Phase 2 — Patchset Semantics (the architectural unlock) — **status: largely done (updated 2026-10-23)**
 
 > ✅ **Built (verified 2026-07-11):** patchsets table + observed-snapshot capture +
 > timeline UI with diff-pair selector (2.1); last-reviewed identity recorded on review
@@ -214,22 +215,24 @@ Mentioned, FYI) approved during Phase 5 design and shipped 2026-08-09. See
 > (migrations 015–020, 023), re-anchoring backend (2.3); unresolved-threads `gu`
 > overlay with Open/Resolved/Outdated lifecycle, GraphQL resolve/unresolve, and a
 > merge-readiness badge (2.4); comment replies; current-user identity + per-account
-> namespacing (migration 022). **Remaining gaps:** the range-diff WS handler never
-> gets a repo path, so range-diff *always* degrades today; comment-level
-> outdated-near-line display isn't wired as a distinct UI state (thread-level
-> lifecycle is).
+> namespacing (migration 022). **Updated 2026-10-23:** merge-base PR diffs,
+> observed-head pins, patch-ID file triage on `s`, and per-file interdiff on `i`
+> have shipped ([design](go-project-overview.md#internalsync----sync-engine)).
+> Viewed marks now use rebase-stable patch fingerprints (pre-upgrade marks reset
+> once). **Remaining gap:** comment-level outdated-near-line display isn't wired
+> as a distinct UI state (thread-level lifecycle is).
 
 This is where Bistro starts having features that GitHub structurally cannot match, within an honest FOSS boundary: Bistro can reason over locally observed patchsets quickly, but it cannot claim server-grade capture of pushes it never observed.
 
 The architectural principle: **same patchset model for every provider**. Even where a provider exposes patchsets natively (GitLab), FOSS uses its own observed local model so behavior and storage stay consistent. Provider/webhook-enriched complete history belongs in `docs/STAGE-2-TEAM.md`.
 
-> ✅ **BIS-31 decision (2026-06-29).** FOSS changed-since-review is **best-effort and
-> honest**: record observed patchsets; record the reviewer's last reviewed observed
-> patchset; prefer system `git range-diff` when available and when required objects
-> are present locally; degrade to labeled current file diff or an unavailable reason
-> instead of implying complete force-push history. Full decision:
-> `docs/superpowers/specs/2026-06-29-foss-changed-since-review-strategy.md`
-> (removed 2026-07-11; in git history).
+> ✅ **BIS-31 comparison strategy superseded (2026-10-23).** FOSS still records
+> observed patchsets, not complete push history. Since-last-review now compares
+> per-file patch IDs, with go-git interdiffs between retained heads on demand.
+> Missing review baselines, pre-fingerprint patchsets, and unavailable heads have
+> explicit reasons rather than claiming a complete comparison. The old
+> `git range-diff` / bounded `os/exec` path has been removed. Current design:
+> [since-last-review across rebases and force-pushes](go-project-overview.md#internalsync----sync-engine).
 
 > ⚠️ **Audit (2026-06-19) — Phase 2 needs design decisions before any implementation.**
 > This phase as originally written contained two *infeasible-as-specified* items and
@@ -239,9 +242,9 @@ The architectural principle: **same patchset model for every provider**. Even wh
 > 1. **Patchset capture by polling is lossy** (2.1). FOSS records observed patchsets,
 >    not every push. `pushed_at` is the best available observed timestamp in FOSS;
 >    true push timestamps/complete before-after SHAs require the Team webhook server.
-> 2. **`git range-diff` is not in go-git v5.17.2** (2.1, 2.2). FOSS permits one
->    bounded `os/exec` exception for system `git range-diff >= 2.19`, with graceful
->    fallback. A pure-Go range-diff engine is deferred to Team/server scope.
+>    **Comparison decision superseded (2026-10-23):** patch-ID triage and go-git
+>    per-file interdiffs replace the former bounded subprocess exception; see the
+>    [current design](go-project-overview.md#internalsync----sync-engine).
 > 3. **The comment layer can't feed 2.3/2.4.** Only *issue-level* comments are fetched
 >    (`Issues.ListComments`), never inline review comments (`PullRequests.ListComments`),
 >    and the `comments` schema stores no `commit_sha`/`position`/`side`/`resolved`/
@@ -253,13 +256,12 @@ The architectural principle: **same patchset model for every provider**. Even wh
 > Full detail with `file:line` evidence: `docs/ROADMAP-AUDIT-2026-06-19.md`
 > (removed 2026-07-11; in git history).
 
-### 2.1 Patchset timeline — done (2026-07-11); range-diff partial
+### 2.1 Patchset timeline — done (updated 2026-10-23)
 
-> Shipped: migrations 012/016, capture in `sync/writer.go`, `GET_PATCHSETS`,
-> `PatchsetTimeline.tsx` with diff-pair selection. System `git range-diff` wrapper
-> exists (`git/rangediff.go`) with graceful degradation, but the handler currently
-> has no local repo path at query time, so it always degrades — wiring the clone
-> path through is the remaining work.
+> Shipped: observed patchset capture, `GET_PATCHSETS`, and `PatchsetTimeline.tsx`
+> with diff-pair selection. The pair picker now drives patch-ID file triage and
+> per-file go-git interdiffs. Merge-base diffs and pinned heads retain meaningful
+> comparisons across observed rebases and force-pushes; unavailable heads say so.
 
 **Why it matters.** The most-cited reason developers say they "miss" Gerrit is the patchset model — pushes become reviewable snapshots, comments can be anchored to snapshots, and reviewers can compare iterations. GitHub's "Changes since last review" button breaks under rebase ([daisy.wtf](https://daisy.wtf/writing/github-changes-since-last-review/), [community/3478](https://github.com/orgs/community/discussions/3478)).
 
@@ -269,10 +271,11 @@ The architectural principle: **same patchset model for every provider**. Even wh
 
 **Acceptance.**
 
-- Each distinct PR head SHA observed during sync is recorded as a patchset with a sequential number, head SHA, base SHA, and best-available observed timestamp.
-- Observed patchsets persist after later rebases/force-pushes if Bistro has already stored them; FOSS does not promise to recover intermediate heads it never observed.
+- A patchset is recorded when the observed PR head or a known merge base changes, not when only the base tip moves. It stores a sequential number, head SHA, base SHA, `merge_base_sha`, and best-available observed timestamp.
+- Per-file `patch_id`s are stored in `patchset_files`; `has_fingerprints` distinguishes a recorded fingerprint snapshot from a pre-feature or pending snapshot.
+- Observed patchsets persist after later rebases/force-pushes if Bistro has already stored them; FOSS does not promise to recover intermediate heads it never observed. Sync pins observed heads by SHA, and cache clones refresh in place.
 - A timeline UI in the PR detail shows P1 / P2 / P3 as **observed patchsets** with a diff-pair selector.
-- Diffing a pair prefers `git range-diff` semantics when system git and required local objects are available; otherwise it degrades to a labeled current file diff for the current pair or an unavailable reason for unsafe pairs.
+- Comparing a pair triages files by patch ID and offers per-file go-git interdiffs on `i`. If a head is unavailable locally, the interdiff shows an explicit reason.
 
 **Schema.**
 
@@ -293,12 +296,13 @@ CREATE TABLE patchsets (
 -- comments table (which patchset a comment was made against) so 2.3 can detect "outdated".
 ```
 
-### 2.2 "Since I last reviewed" — done (2026-07-11)
+### 2.2 "Since I last reviewed" — done (updated 2026-10-23)
 
-> Shipped: migrations 014/017/022, last-reviewed recorded on approve /
-> request-changes / top-level comment (replies deliberately excluded), `s` view in
-> the diff page with labeled degraded states, `v` mark-viewed keyed by patch
-> content hash (survives rebase).
+> Shipped: rebase-stable patch-ID file triage on `s`, a status-bar summary,
+> per-file go-git interdiff on `i`, and `v` viewed marks keyed by the same patch
+> fingerprint. Baselines include GitHub reviews from any client, Bistro review
+> actions, and marking all files viewed. The `s` falls-back-after-force-push
+> release blocker is cleared; missing comparison data is reported explicitly.
 
 **Why it matters.** GitHub's button works only if commits aren't rebased. As AI agents increasingly force-push every iteration, this gets worse, not better.
 
@@ -308,16 +312,17 @@ CREATE TABLE patchsets (
 
 **Acceptance.**
 
-- A last-reviewed observed patchset identity per `(pr_id, reviewer_login)` is recorded on every review submission: patchset number, head SHA, and base SHA when available.
-- "Since last review" prefers `git range-diff` between the last reviewed observed patchset and the current observed patchset when system git and local objects make that safe.
-- When range-diff is unavailable, the UI shows a labeled degraded current file diff only for a safe current pair; otherwise it explains that pair-specific changed-since-review is unavailable.
-- "Files viewed" state survives rebase if the file content hash is unchanged.
+- The baseline per `(pr_id, reviewer_login)` is the newest of a submitted GitHub review (from any client), a Bistro approve/request-changes/top-level comment (not a reply), or a mark-viewed action leaving no file unviewed. It records the reviewed head, patchset number when known, timestamp, and source.
+- Triage compares per-file patch IDs between the baseline and target patchsets, classifying files as changed, new, removed, or unchanged. `s` filters the current PR diff to changed/new files, not to a replacement whole-PR diff; removed paths are listed in a separate notice.
+- The status bar summarizes the changed/total file count and baseline. No comparable prior review, no observed patchsets, or missing fingerprints produce an explicit message; they do not masquerade as a successful comparison.
+- `i` toggles an interdiff for the current file between the two patchset heads. A `rebased: includes upstream changes` label warns when that file differs between the merge bases (or recorded merge bases cannot be read); missing heads show an unavailable reason.
+- "Files viewed" state survives line-shift-only rebases when the normalized patch fingerprint is unchanged. Marks made before the upgrade reset once.
 
-> ✅ **BIS-31 update (2026-06-29).** Use `reviewer_login`/current-user identity, not an
-> integer `user_id`. `last_reviewed_sha` should store the observed patchset identity
-> as well as the SHA. `files_viewed` remains keyed by file path + login + content hash.
-> System `git range-diff` is allowed only as the bounded best-effort path described
-> above; absence of range-diff is a degraded UI state, not a blocker.
+> ✅ **BIS-31 update superseded (2026-10-23).** `reviewer_login`/current-user identity
+> remains the review key. `last_reviewed_sha` now stores review source and timestamp
+> as well as the head and known observed patchset. `files_viewed` uses file path +
+> login + normalized patch fingerprint. The former subprocess comparison policy
+> is replaced by [patch-ID triage and go-git interdiffs](go-project-overview.md#internalsync----sync-engine).
 
 ### 2.3 Comment anchoring across rebase — mostly done (2026-07-11)
 
@@ -830,7 +835,7 @@ Everything left between here and FOSS v1.0, in rough dependency order. Done work
 - [ ] macOS signing + notarization (secrets not yet configured; alpha ships unsigned); decide auto-update hosting (open question #5)
 - [ ] Windows MSI, Linux AppImage/`.deb`, Homebrew cask (7.2)
 - [ ] Post *new* line-level review comments (`PostReviewComment` with path/commitSHA/side) — replies already work (1.3)
-- [ ] Wire a local repo path into the range-diff handler so 2.1/2.2 stop always degrading
+- [x] Former range-diff handler wiring blocker superseded (2026-10-23): patch-ID triage and go-git interdiffs shipped; `s` no longer falls back after an observed force-push when comparable fingerprints exist (2.1/2.2)
 
 **Phase 3 — classification (implemented 2026-07-12, the wedge)**
 - [x] 3.1 schema + 3.2 bot identification + 3.3 rules engine + 3.4 heuristics
