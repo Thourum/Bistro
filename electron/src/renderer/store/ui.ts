@@ -1,4 +1,5 @@
 import { Store } from '@tanstack/store';
+import type { EngineStatus } from '../../types/engine';
 import type { AuthAction } from '../providers/provider';
 import type {
   ActionResult,
@@ -81,6 +82,13 @@ export interface UIState {
   // OAuth auth state
   authLoading: boolean;
   authError: string | null;
+  authUrl: string | null;
+  authStartedAt: number | null;
+  authTimedOut: boolean;
+  authInterrupted: boolean;
+  authExchange: 'proxy' | 'local' | null;
+  engineStatus: EngineStatus | null;
+  appVersion: string | null;
   authChecked: boolean;
   connectedProviders: Array<{ provider: string; username: string }>;
   /** Viewer login returned by the PR-list payload. */
@@ -197,6 +205,13 @@ export const initialUIState: UIState = {
   isOffline: false,
   authLoading: false,
   authError: null,
+  authUrl: null,
+  authStartedAt: null,
+  authTimedOut: false,
+  authInterrupted: false,
+  authExchange: null,
+  engineStatus: null,
+  appVersion: null,
   authChecked: false,
   connectedProviders: [],
   viewerLogin: '',

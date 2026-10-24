@@ -1,4 +1,12 @@
-import { afterEach, assert, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  assert,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import {
   closeSandbox,
   dispatchSandboxAction,
@@ -30,6 +38,8 @@ vi.mock('react', () => ({
   useMemo: (factory: () => unknown) => factory(),
   useCallback: (callback: unknown) => callback,
   useRef: (value: unknown) => ({ current: value }),
+  useState: (initial: () => unknown) => [initial(), () => undefined],
+  useEffect: () => undefined,
 }));
 vi.mock('@tanstack/react-hotkeys', () => ({
   useHotkeys: (definitions: CapturedHotkey[]) => {
@@ -63,6 +73,11 @@ vi.mock('./useStore', () => ({
 
 const initialSettings = settingsStore.state;
 
+// Past startup: route-derived bindings apply only once auth was checked.
+beforeEach(() => {
+  appStore.setState((state) => ({ ...state, authChecked: true }));
+});
+
 afterEach(() => {
   appStore.setState(() => initialUIState);
   settingsStore.setState(() => initialSettings);
@@ -71,7 +86,8 @@ afterEach(() => {
 
 function findHotkey(keys: string): CapturedHotkey {
   const hotkey = captured.hotkeys.find(
-    (definition) => definition.hotkey === keys,
+    // Keys are shared across contexts; only the enabled binding would fire.
+    (definition) => definition.hotkey === keys && definition.options.enabled,
   );
   assert(hotkey !== undefined, `Expected hotkey ${keys}`);
   return hotkey;

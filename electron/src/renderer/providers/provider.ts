@@ -4,6 +4,7 @@ export interface ProviderDef {
   readonly key: string;
   readonly label: string;
   readonly icon: string;
+  readonly isAvailable: boolean;
 }
 
 const AUTH_ACTION_PREFIX = 'auth_' as const;

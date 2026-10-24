@@ -36,8 +36,15 @@ const SHARED_KEYS: KeyTable = {
   'onboarding.continue': 'Space',
   'onboarding.nextStyle': 'Tab',
   'onboarding.prevStyle': 'Shift+Tab',
+  'connecting.restart': 'r',
+  'connecting.openLogs': 'l',
+  'connecting.report': 'i',
+  'login.reopen': 'r',
+  'login.copyLink': 'c',
+  'login.cancel': 'Escape',
+  'login.retry': 'Enter',
   ...Object.fromEntries(
-    PROVIDERS.map((provider) => [
+    PROVIDERS.filter((provider) => provider.isAvailable).map((provider) => [
       `login.provider.${provider.id}`,
       provider.key,
     ]),

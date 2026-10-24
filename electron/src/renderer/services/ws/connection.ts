@@ -182,6 +182,7 @@ function createWsClient(): Readonly<WsClient> {
       isOffline: false,
       authChecked: false,
     }));
+    if (appStore.state.authInterrupted) send('AUTH_CANCEL', {});
     send('AUTH_CHECK', {});
     sendStartupDevFolderScan();
   }
@@ -206,7 +207,15 @@ function createWsClient(): Readonly<WsClient> {
       ...previous,
       syncStatus: 'disconnected',
       isOffline: !isOnline,
+      authInterrupted:
+        previous.authInterrupted ||
+        previous.authLoading ||
+        previous.authUrl !== null,
       authLoading: false,
+      authUrl: null,
+      authStartedAt: null,
+      authTimedOut: false,
+      authExchange: null,
     }));
     if (!state.isActive) return;
     const delay = Math.min(
