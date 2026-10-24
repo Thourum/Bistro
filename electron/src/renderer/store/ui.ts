@@ -1,6 +1,5 @@
 import { Store } from '@tanstack/store';
 import type { EngineStatus } from '../../types/engine';
-import type { AuthAction } from '../providers/provider';
 import type {
   ActionResult,
   ExpertiseNudgePayload,
@@ -39,8 +38,7 @@ export type ConfirmingAction =
   | 'request_changes'
   | 'since-last-review'
   | 'star'
-  | 'toggle-diff-style'
-  | AuthAction;
+  | 'toggle-diff-style';
 
 export interface UIState {
   selectedPRIndex: number;

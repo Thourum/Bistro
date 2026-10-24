@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('electron', {
    * additionalArguments at window creation (Go picks it dynamically).
    */
   wsPort: readWsPortFromArgv(process.argv),
+  platform: process.platform,
   getEngineStatus: (): Promise<EngineReply<EngineStatus>> =>
     ipcRenderer.invoke('engine:get-status'),
   getAppVersion: (): Promise<EngineReply<string>> =>
@@ -198,6 +199,7 @@ declare global {
   interface Window {
     electron: {
       wsPort: number | null;
+      readonly platform: string;
       getWsPort: () => Promise<number | null>;
       getEngineStatus: () => Promise<EngineReply<EngineStatus>>;
       getAppVersion: () => Promise<EngineReply<string>>;

@@ -26,6 +26,7 @@ declare global {
   interface Window {
     electron: {
       wsPort: number | null;
+      readonly platform: string;
       getWsPort: () => Promise<number | null>;
       getEngineStatus: () => Promise<EngineReply<EngineStatus>>;
       getAppVersion: () => Promise<EngineReply<string>>;
