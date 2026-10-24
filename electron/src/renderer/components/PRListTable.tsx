@@ -209,6 +209,7 @@ interface PRLaneSectionProps {
   selectedIndex: number;
   repoByKey: ReadonlyMap<string, RepoInfo>;
   onRecover: (repo: RepoInfo) => void;
+  hasRing: boolean;
 }
 
 function PRLaneSection({
@@ -219,10 +220,13 @@ function PRLaneSection({
   selectedIndex,
   repoByKey,
   onRecover,
+  hasRing,
 }: PRLaneSectionProps): React.ReactElement {
   return (
     <section className="mt-8 first:mt-0">
-      <div className="py-4 px-2 -mx-2 border-b border-outline-variant/30 text-[10px] font-mono text-outline uppercase tracking-widest">
+      <div
+        className={`py-4 px-2 -mx-2 border-b border-outline-variant/30 text-[10px] font-mono uppercase tracking-widest ${hasRing ? 'ring-2 ring-primary text-on-surface' : 'text-outline'}`}
+      >
         {lane} {label} — {prs.length}
       </div>
       {prs.length === 0 ? (
@@ -342,12 +346,15 @@ export interface PRListTableProps {
   prs: PR[];
   isLoading: boolean;
   error: Error | null;
+  /** Rings the Needs Action lane heading while the first-run rail points at it. */
+  showNeedsActionRing?: boolean;
 }
 
 export function PRListTable({
   prs: visiblePRs,
   isLoading,
   error,
+  showNeedsActionRing = false,
 }: PRListTableProps) {
   const selectedIndex = useStore(
     appStore,
@@ -457,6 +464,7 @@ export function PRListTable({
                   selectedIndex={selectedIndex}
                   repoByKey={repoByKey}
                   onRecover={setRecoveryRepo}
+                  hasRing={showNeedsActionRing && lane?.key === 'needs_action'}
                 />
               );
             })

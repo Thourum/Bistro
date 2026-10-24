@@ -1,68 +1,30 @@
 import type React from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../hooks/useStore';
 import { useOverlays } from '../overlays/OverlayContext';
-import { settingsStore, updateSettings } from '../store/settings';
+import { settingsStore } from '../store/settings';
 import { getEffectiveBindings } from '../utils/keybindings';
 import { resolveTourScreens } from '../utils/tourScreens';
-import { addToast } from './ToastContainer';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Kbd } from './ui/kbd';
 
-function persistTourComplete(): void {
-  const { appearance } = settingsStore.state;
-  if (appearance.tourComplete) return;
-  void updateSettings({
-    appearance: { ...appearance, tourComplete: true },
-  }).match(
-    () => undefined,
-    (error) =>
-      addToast({
-        type: 'error',
-        message: `Tour completion could not be saved: ${error.message}`,
-        dismissible: true,
-      }),
-  );
-}
-
 /**
- * 5-screen first-run tour (spec §5.4). Shows once (`appearance.tourComplete`),
- * re-runnable via `:tour`. The flag is set on ANY exit — finishing screen 5,
- * Esc mid-tour, or the shell unmounting while open all persist it (Esc is
- * handled by the global overlay-close binding, which doesn't know about tour
- * completion, so this component observes the open→closed transition rather
- * than any specific close path).
+ * 5-screen keyboard tour (spec §5.4), opened manually via `:tour`. It never
+ * opens itself and never writes `appearance.tourComplete`: that flag records
+ * the first-run rail's Hide/Close, so replaying the tour can't dismiss it.
  */
 export function TourOverlay(): React.ReactElement | null {
-  const { activeOverlay, openTour, closeOverlay } = useOverlays();
+  const { activeOverlay, closeOverlay } = useOverlays();
   const overrides = useStore(settingsStore, (s) => s.keybindings);
   const style = useStore(settingsStore, (s) => s.navigation.style);
-  const tourComplete = useStore(
-    settingsStore,
-    (s) => s.appearance.tourComplete,
-  );
   const isOpen = activeOverlay === 'tour';
   const [screenIndex, setScreenIndex] = useState(0);
-  const hasAutoOpened = useRef(false);
 
-  // Auto-open once, right after onboarding completes (AuthedRouteShell only
-  // mounts once authed+onboarded). Waits for any other overlay to close so it
-  // never steals focus; the ref stops it re-opening a tour the user dismissed
-  // before the completion write has round-tripped through settings.
-  useEffect(() => {
-    if (hasAutoOpened.current || tourComplete || activeOverlay !== null) return;
-    hasAutoOpened.current = true;
-    openTour();
-  }, [tourComplete, activeOverlay, openTour]);
-
-  // Cleanup fires on open→closed and on unmount-while-open alike.
+  // Restart from the first screen on every open→closed transition.
   useEffect(() => {
     if (!isOpen) return;
-    return () => {
-      setScreenIndex(0);
-      persistTourComplete();
-    };
+    return () => setScreenIndex(0);
   }, [isOpen]);
 
   const screens = useMemo(

@@ -1,4 +1,5 @@
 import React from 'react';
+import { FirstRunRail } from '../components/FirstRunRail';
 import { FooterCenterSlot } from '../components/FooterSlot';
 import { PRListTable, visiblePRListRows } from '../components/PRListTable';
 import { useInboxReadActions } from '../hooks/useInboxReadActions';
@@ -9,7 +10,7 @@ import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { touchesYouCount } from '../utils/expertise';
-import { laneSections } from '../utils/lanes';
+import { LANES, laneForPR, laneSections } from '../utils/lanes';
 import { countTriageLanes, prBrowserUrl } from '../utils/triage';
 
 const FILTER_TITLES: Record<UIState['filterState'], string> = {
@@ -108,66 +109,96 @@ export function PRListPage({
   const triage = countTriageLanes(openPRs, username);
   const touchesYou = touchesYouCount(openPRs);
 
+  const isRailVisible = useStore(
+    settingsStore,
+    (s) => s.appearance.onboardingComplete && !s.appearance.tourComplete,
+  );
+  // The rail counts the full open list, so filtering the table never shrinks it.
+  const needsAction = React.useMemo(() => {
+    const needsActionLane = LANES.find((lane) => lane.key === 'needs_action');
+    return needsActionLane === undefined
+      ? []
+      : openPRs.filter(
+          (pr) => laneForPR(pr, viewerLogin) === needsActionLane.id,
+        );
+  }, [openPRs, viewerLogin]);
+  const hasHeaderRing = isRailVisible && view === 'grouped';
+
   return (
     <main
       data-testid="pr-list-page"
-      className="flex-1 overflow-y-auto bg-surface-container-lowest text-on-surface relative"
+      className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-surface-container-lowest text-on-surface"
     >
-      <FooterCenterSlot>
-        <span className="text-primary font-bold">
-          {`FILTER:${filterState.toUpperCase()} // SORT:${sortBy.toUpperCase()}`}
-        </span>
-      </FooterCenterSlot>
+      <div className="flex-1 min-w-0 relative lg:overflow-y-auto">
+        <FooterCenterSlot>
+          <span className="text-primary font-bold">
+            {`FILTER:${filterState.toUpperCase()} // SORT:${sortBy.toUpperCase()}`}
+          </span>
+        </FooterCenterSlot>
 
-      <div className="max-w-5xl mx-auto px-8 pt-12 pb-20">
-        <header className="mb-12">
-          <div className="flex items-center space-x-2 text-outline font-medium tracking-tight text-sm">
-            <span className="hover:text-primary cursor-pointer transition-colors">
-              bistro
-            </span>
-            <span className="text-outline-variant">/</span>
-            <span className="text-on-surface font-bold">inbox</span>
-          </div>
-          <div className="mt-4 flex items-baseline justify-between border-b border-outline-variant/30 pb-2">
-            <h1 className="text-xs font-mono uppercase tracking-[0.2em] text-outline">
-              {FILTER_TITLES[filterState]}
-            </h1>
-            <span className="text-xs font-mono text-outline-variant">
-              <span className="text-primary font-bold">
-                NEEDS ACTION: {triage.needsAction}
+        <div className="max-w-5xl mx-auto px-8 pt-12 pb-20">
+          <header className="mb-12">
+            <div className="flex items-center space-x-2 text-outline font-medium tracking-tight text-sm">
+              <span className="hover:text-primary cursor-pointer transition-colors">
+                bistro
               </span>
-              {' · '}WAITING: {triage.waitingAuthor}
-              {' · '}FYI: {triage.fyi}
-              {' · '}TOUCHES YOUR CODE: {touchesYou}
-              {' · '}TOTAL: {prs.length}
-            </span>
-          </div>
-        </header>
-
-        <PRListTable prs={prs} isLoading={isLoading} error={error} />
-      </div>
-
-      {/* Floating filter / sort card */}
-      <div className="fixed top-8 right-8 flex flex-col items-end gap-2 z-20 pointer-events-none">
-        <div className="bg-surface-container-lowest border border-outline-variant/30 p-4 shadow-ambient pointer-events-auto">
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-8">
-              <span className="font-mono text-[10px] text-outline">
-                FILTER:
-              </span>
-              <span className="font-mono text-[10px] text-on-surface font-bold">
-                IS:{filterState.toUpperCase()}
+              <span className="text-outline-variant">/</span>
+              <span className="text-on-surface font-bold">inbox</span>
+            </div>
+            <div className="mt-4 flex items-baseline justify-between border-b border-outline-variant/30 pb-2">
+              <h1 className="text-xs font-mono uppercase tracking-[0.2em] text-outline">
+                {FILTER_TITLES[filterState]}
+              </h1>
+              <span className="text-xs font-mono text-outline-variant">
+                <span
+                  className={`text-primary font-bold ${hasHeaderRing ? 'ring-2 ring-primary px-1' : ''}`}
+                >
+                  NEEDS ACTION: {triage.needsAction}
+                </span>
+                {' · '}WAITING: {triage.waitingAuthor}
+                {' · '}FYI: {triage.fyi}
+                {' · '}TOUCHES YOUR CODE: {touchesYou}
+                {' · '}TOTAL: {prs.length}
               </span>
             </div>
-            <div className="flex items-center justify-between gap-8">
-              <span className="font-mono text-[10px] text-outline">SORT:</span>
-              <span className="font-mono text-[10px] text-on-surface">
-                {sortBy === 'updated' ? 'UPDATED_FIRST' : 'CREATED_FIRST'}
-              </span>
+          </header>
+
+          <PRListTable
+            prs={prs}
+            isLoading={isLoading}
+            error={error}
+            showNeedsActionRing={isRailVisible}
+          />
+        </div>
+
+        {/* Floating filter / sort card; pinned inside the inbox while the rail
+          is open so it never covers the rail's controls. */}
+        <div
+          className={`${isRailVisible ? 'absolute' : 'fixed'} top-8 right-8 flex flex-col items-end gap-2 z-20 pointer-events-none`}
+        >
+          <div className="bg-surface-container-lowest border border-outline-variant/30 p-4 shadow-ambient pointer-events-auto">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-8">
+                <span className="font-mono text-[10px] text-outline">
+                  FILTER:
+                </span>
+                <span className="font-mono text-[10px] text-on-surface font-bold">
+                  IS:{filterState.toUpperCase()}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-8">
+                <span className="font-mono text-[10px] text-outline">
+                  SORT:
+                </span>
+                <span className="font-mono text-[10px] text-on-surface">
+                  {sortBy === 'updated' ? 'UPDATED_FIRST' : 'CREATED_FIRST'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
       </div>
+      {isRailVisible && <FirstRunRail needsAction={needsAction} />}
     </main>
   );
 }

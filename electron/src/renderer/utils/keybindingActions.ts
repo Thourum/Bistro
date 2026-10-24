@@ -11,7 +11,7 @@ import {
   restartEngine,
 } from '../services/engine';
 import {
-  dismissFirstRunRail,
+  hideFirstRunRail,
   recordFirstRunAction,
 } from '../services/firstRunRail';
 import { cycleNavigationStyle } from '../services/navigationStyle';
@@ -347,16 +347,7 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
     })),
   'onboarding.stopScan': () =>
     appStore.setState((state) => ({ ...state, onboardingIntent: 'stopScan' })),
-  'firstRun.hide': () => {
-    void dismissFirstRunRail().match(
-      () => undefined,
-      (error) =>
-        log.error(
-          { tag: error.tag, error: error.message },
-          'failed to hide first-run rail',
-        ),
-    );
-  },
+  'firstRun.hide': hideFirstRunRail,
   'onboarding.nextStyle': () => cycleNavigationStyle(1),
   'onboarding.prevStyle': () => cycleNavigationStyle(-1),
   'global.command': (context) => context.overlays.openCommand(),

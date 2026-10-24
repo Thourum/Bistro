@@ -1,4 +1,5 @@
 import { type Fault, okAsync, type ResultAsync } from '@thourum/fault';
+import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import { reduceFirstRunRail } from '../utils/firstRunRail';
@@ -37,4 +38,17 @@ export function dismissFirstRunRail(): ResultAsync<void, Fault> {
       setDismissPending(false);
       return error;
     });
+}
+
+/** Hide/Close from the rail's buttons or its key: one toast on failure, rail stays retryable. */
+export function hideFirstRunRail(): void {
+  void dismissFirstRunRail().match(
+    () => undefined,
+    (error) =>
+      addToast({
+        type: 'error',
+        message: `Couldn't hide the first-review rail: ${error.message}`,
+        dismissible: true,
+      }),
+  );
 }
