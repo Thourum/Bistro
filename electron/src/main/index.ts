@@ -343,7 +343,12 @@ app.on('ready', () => {
       });
     },
     onCrash: (code, signal) => {
-      publishEngineStatus({ state: 'starting', code, signal });
+      publishEngineStatus({
+        state: 'starting',
+        code,
+        signal,
+        startedAt: Date.now(),
+      });
       log.error(`Go process crashed: code=${code}, signal=${signal}`);
       captureSentryException(
         ServiceError('GO_PROCESS_ERROR', 'Go sync engine crashed'),

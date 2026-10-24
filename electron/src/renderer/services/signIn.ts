@@ -57,7 +57,7 @@ export function copySignInLink(): void {
 }
 
 export function cancelSignIn(): void {
-  if (appStore.state.authLoading || appStore.state.authUrl !== null) {
+  if (appStore.state.authUrl !== null) {
     if (!appStore.state.isWsOpen) return;
     const sentId = wsClient.send('AUTH_CANCEL', {});
     if (sentId === undefined) {
@@ -71,6 +71,7 @@ export function cancelSignIn(): void {
   }
   appStore.setState((state) => ({
     ...state,
+    authLoading: false,
     authTimedOut: false,
     authInterrupted: false,
     authError: null,

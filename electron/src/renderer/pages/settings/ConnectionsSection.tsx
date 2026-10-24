@@ -57,11 +57,11 @@ export function ConnectionsSection() {
               ) : (
                 <Button
                   size="sm"
-                  disabled={authLoading}
+                  disabled={authLoading || !provider.isAvailable}
                   onClick={() => handleConnect(provider.id)}
                   className="px-5"
                 >
-                  Connect
+                  {provider.isAvailable ? 'Connect' : 'Coming soon'}
                 </Button>
               )}
             </div>

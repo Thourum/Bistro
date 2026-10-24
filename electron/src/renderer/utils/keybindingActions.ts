@@ -18,6 +18,7 @@ import {
   retrySignIn,
   startSignIn,
 } from '../services/signIn';
+import { appStore } from '../store';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import type { RouteBase } from './keybindings';
 import { createLogger } from './logger';
@@ -277,6 +278,7 @@ function scrollDiffToBottom(): void {
 
 const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'connecting.restart': () => {
+    if (appStore.state.engineStatus?.state !== 'crashed') return;
     void restartEngine();
   },
   'connecting.openLogs': () => openEngineLogFolder(),

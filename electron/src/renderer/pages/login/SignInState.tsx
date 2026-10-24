@@ -77,7 +77,9 @@ function EngineDiagnostics(
   return (
     <div role="alert" className="space-y-4">
       <p className="text-sm text-error">
-        Cannot connect to sync engine. Bistro is restarting it.
+        {props.status?.isSpawned
+          ? 'Cannot connect to sync engine. Bistro is restarting it.'
+          : 'Cannot connect to sync engine. Start it, then Bistro reconnects automatically.'}
       </p>
       <dl className="space-y-1 border-t border-outline-variant/40 pt-4 font-mono text-[11px]">
         <div className={STATUS_ROW}>
