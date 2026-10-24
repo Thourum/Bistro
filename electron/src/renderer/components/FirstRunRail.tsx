@@ -1,11 +1,12 @@
 import type React from 'react';
+import { useBindingEnabled } from '../hooks/useAppHotkeys';
 import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useStore } from '../hooks/useStore';
+import { useNeedsActionPRs } from '../hooks/useVisiblePRs';
 import { cn } from '../lib/utils';
 import { useOverlays } from '../overlays/OverlayContext';
 import { hideFirstRunRail } from '../services/firstRunRail';
 import { appStore } from '../store';
-import type { PR } from '../types';
 import type { FirstRunStep } from '../utils/firstRunRail';
 import type { KeyBinding } from '../utils/keybindings';
 import { findActionKeys } from '../utils/legendPresets';
@@ -111,11 +112,9 @@ function RailStep({
  * instructional: steps complete from dispatched live actions, and only
  * Hide/Close (or the firstRun.hide key) persists its dismissal.
  */
-export function FirstRunRail({
-  needsAction,
-}: {
-  readonly needsAction: readonly PR[];
-}): React.ReactElement {
+/** Stays beside the inbox, PR and diff so the guide follows the review loop. */
+export function FirstRunRail(): React.ReactElement {
+  const needsAction = useNeedsActionPRs();
   const completed = useStore(appStore, (s) => s.firstRunRail.completed);
   const isDismissPending = useStore(appStore, (s) => s.firstRunDismissPending);
   const hasPracticedDiff = useStore(appStore, (s) => s.onboardingPracticedDiff);
@@ -131,7 +130,13 @@ export function FirstRunRail({
     return step === STEP_ORDER[currentIndex] ? 'current' : 'upcoming';
   };
   const topPR = needsAction[0];
-  const hideKeys = findActionKeys(bindings, ['firstRun.hide']);
+  // The hide key is list-only: on PR and diff the same key goes back.
+  const isHideKeyEnabled = useBindingEnabled(
+    bindings.find((binding) => binding.actionId === 'firstRun.hide'),
+  );
+  const hideKeys = isHideKeyEnabled
+    ? findActionKeys(bindings, ['firstRun.hide'])
+    : undefined;
   const sinceLastReviewKeys = findActionKeys(bindings, [
     'diff.sinceLastReview',
   ]);

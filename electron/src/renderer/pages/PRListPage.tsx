@@ -1,16 +1,15 @@
 import React from 'react';
-import { FirstRunRail } from '../components/FirstRunRail';
 import { FooterCenterSlot } from '../components/FooterSlot';
 import { PRListTable, visiblePRListRows } from '../components/PRListTable';
 import { useInboxReadActions } from '../hooks/useInboxReadActions';
 import { useStore } from '../hooks/useStore';
-import { orderPRs, useVisiblePRs } from '../hooks/useVisiblePRs';
+import { useNeedsActionPRs, useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { touchesYouCount } from '../utils/expertise';
-import { LANES, laneForPR, laneSections } from '../utils/lanes';
+import { laneSections } from '../utils/lanes';
 import { countTriageLanes, prBrowserUrl } from '../utils/triage';
 
 const FILTER_TITLES: Record<UIState['filterState'], string> = {
@@ -113,15 +112,7 @@ export function PRListPage({
     settingsStore,
     (s) => s.appearance.onboardingComplete && !s.appearance.tourComplete,
   );
-  // Counted from the full open list, so filtering the table never shrinks it;
-  // ordered like the table so the rail's top PR is the lane's first row.
-  const needsAction = React.useMemo(() => {
-    const needsActionLane = LANES.find((lane) => lane.key === 'needs_action');
-    if (needsActionLane === undefined) return [];
-    return orderPRs(openPRs, { sort: sortBy, view, viewerLogin }).filter(
-      (pr) => laneForPR(pr, viewerLogin) === needsActionLane.id,
-    );
-  }, [openPRs, sortBy, view, viewerLogin]);
+  const needsAction = useNeedsActionPRs();
   const hasHeaderRing = isRailVisible && view === 'grouped';
 
   return (
@@ -198,7 +189,6 @@ export function PRListPage({
           </div>
         </div>
       </div>
-      {isRailVisible && <FirstRunRail needsAction={needsAction} />}
     </main>
   );
 }

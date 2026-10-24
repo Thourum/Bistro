@@ -3,7 +3,7 @@ import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import type { PR } from '../types';
-import { laneForPR } from '../utils/lanes';
+import { LANES, laneForPR } from '../utils/lanes';
 import { useStore } from './useStore';
 import { useWebSocketPRList } from './useWebSocketPRList';
 
@@ -131,4 +131,22 @@ export function useVisiblePRs(
   }, [rawPRs, repoFilter, q, sort, view, viewerLogin]);
 
   return { prs, isLoading, error };
+}
+
+/**
+ * Needs Action PRs from the full open list, so filtering the table never
+ * shrinks it; ordered like the table so the top PR is the lane's first row.
+ */
+export function useNeedsActionPRs(): readonly PR[] {
+  const { data: openPRs = [] } = useWebSocketPRList('open');
+  const sortBy = useStore(appStore, (s) => s.sortBy);
+  const viewerLogin = useStore(appStore, (s) => s.viewerLogin);
+  const view = useStore(settingsStore, (s) => s.prList.view);
+  return useMemo(() => {
+    const needsActionLane = LANES.find((lane) => lane.key === 'needs_action');
+    if (needsActionLane === undefined) return [];
+    return orderPRs(openPRs, { sort: sortBy, view, viewerLogin }).filter(
+      (pr) => laneForPR(pr, viewerLogin) === needsActionLane.id,
+    );
+  }, [openPRs, sortBy, view, viewerLogin]);
 }
