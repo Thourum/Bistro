@@ -91,7 +91,7 @@ const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
     actionId: 'global.escape',
     description: 'Back / Cancel',
     activation: {
-      routes: ['list', 'detail', 'diff', 'settings'],
+      routes: ['list', 'detail', 'diff', 'settings', 'onboarding'],
       overlays: ALL_OVERLAYS,
     },
   },
@@ -99,7 +99,7 @@ const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
     actionId: 'global.cancel',
     description: 'Back / Cancel',
     activation: {
-      routes: ['list', 'detail', 'diff', 'settings'],
+      routes: ['list', 'detail', 'diff', 'settings', 'onboarding'],
       overlays: ALL_OVERLAYS,
     },
     hidden: true,
@@ -181,6 +181,51 @@ const CONNECTING_BINDINGS: readonly BindingDefinition[] = [
 ];
 
 const ONBOARDING_BINDINGS: readonly BindingDefinition[] = [
+  {
+    actionId: 'onboarding.repoDown',
+    description: 'Next repository',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.repoUp',
+    description: 'Previous repository',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.repoToggle',
+    description: 'Toggle repository sync',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.repoAll',
+    description: 'Sync all repositories',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.repoNone',
+    description: 'Sync no repositories',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.repoFilter',
+    description: 'Filter repositories',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.chooseFolder',
+    description: 'Choose clone folder',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.stopScan',
+    description: 'Stop folder scan',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'firstRun.hide',
+    description: 'Hide first-run rail',
+    activation: LIST,
+  },
   {
     actionId: 'onboarding.continue',
     description: 'Continue',

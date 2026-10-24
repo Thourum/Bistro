@@ -21,6 +21,9 @@ import {
   type KeyActionContext,
 } from '../utils/keybindingActions';
 import {
+  type BindingActivationContext,
+  blurOnboardingRepoFilter,
+  hasListEscapeWork,
   hotkeyOptions,
   isEscape,
   yieldsToFocusedControl,
@@ -29,10 +32,11 @@ import {
   getEffectiveBindings,
   isBindingEnabled,
   isSequenceBinding,
+  type KeyBinding,
   routeBaseFromPath,
 } from '../utils/keybindings';
 import { SEQUENCE_TIMEOUT_MS } from '../utils/keymaps';
-import { SANDBOX_ACTION_IDS } from '../utils/onboardingSandbox';
+import { SANDBOX_ACTION_IDS, SANDBOX_TASKS } from '../utils/onboardingSandbox';
 import { useStore } from './useStore';
 
 // Re-evaluates the slow-start threshold without a store push.
@@ -43,6 +47,7 @@ function runBinding(actionId: string, context: KeyActionContext): void {
   if (
     context.routeBase === 'onboarding' &&
     context.activeOverlay === null &&
+    appStore.state.onboardingStep === 'practice' &&
     appStore.state.onboardingSandbox !== null &&
     SANDBOX_ACTION_IDS.has(actionId)
   ) {
@@ -63,21 +68,15 @@ function routePrId(
   return undefined;
 }
 
-/**
- * Registers every effective keybinding (defaults + settings overrides)
- * through TanStack Hotkeys. Bindings are route+overlay-gated via the `enabled`
- * option; overlapping keys across contexts are intentional, hence
- * `conflictBehavior: 'allow'`.
- *
- * Must be rendered inside both OverlayProvider and a TanStack RouterProvider.
- *
- * `Escape` stays active while typing (`ignoreInputs: false`) so it can exit
- * search and comment inputs; everything else is suppressed in form fields.
- */
-export function useAppHotkeys(): void {
+/** Shared subscriptions keep footer hints and keyboard dispatch on the same gate. */
+function useBindingActivationContext(
+  continueKeys: KeyBinding['keys'] | undefined,
+): {
+  activation: BindingActivationContext;
+  overlays: ReturnType<typeof useOverlays>;
+  routerState: ReturnType<typeof useRouterState>;
+} {
   const overlays = useOverlays();
-  const overrides = useStore(settingsStore, (s) => s.keybindings);
-  const style = useStore(settingsStore, (s) => s.navigation.style);
   const sandboxPane = useStore(
     appStore,
     (s) => s.onboardingSandbox?.pane ?? null,
@@ -126,6 +125,99 @@ export function useAppHotkeys(): void {
       : authScreen;
   const isSpawned = engineStatus?.isSpawned === true;
   const { activeOverlay } = overlays;
+  const onboardingStep = useStore(appStore, (s) => s.onboardingStep);
+  const isScanning = useStore(
+    appStore,
+    (s) => s.onboardingSync?.folder.status === 'scanning',
+  );
+  const isChoosingFolder = useStore(
+    appStore,
+    (s) => s.onboardingSync?.folder.status === 'choosing',
+  );
+  const isPracticeComplete = useStore(
+    appStore,
+    (s) =>
+      s.onboardingSandbox !== null &&
+      SANDBOX_TASKS.every((task) =>
+        s.onboardingSandbox?.completed.includes(task.id),
+      ),
+  );
+  const listEscapeWork = useStore(appStore, hasListEscapeWork);
+  const onboardingComplete = useStore(
+    settingsStore,
+    (s) => s.appearance.onboardingComplete,
+  );
+  const tourComplete = useStore(
+    settingsStore,
+    (s) => s.appearance.tourComplete,
+  );
+  const isFirstRunRailVisible = onboardingComplete && !tourComplete;
+  const activation = useMemo<BindingActivationContext>(
+    () => ({
+      routeBase,
+      activeOverlay,
+      sandboxPane,
+      screen,
+      isSpawned,
+      isConnected,
+      onboardingStep,
+      isScanning,
+      isChoosingFolder,
+      isPracticeComplete,
+      continueKeys,
+      isFirstRunRailVisible,
+      hasListEscapeWork: listEscapeWork,
+    }),
+    [
+      routeBase,
+      activeOverlay,
+      sandboxPane,
+      screen,
+      isSpawned,
+      isConnected,
+      onboardingStep,
+      isScanning,
+      isChoosingFolder,
+      isPracticeComplete,
+      continueKeys,
+      isFirstRunRailVisible,
+      listEscapeWork,
+    ],
+  );
+  return { activation, overlays, routerState };
+}
+
+/** Allows footer hints to use exactly the same runtime gate as registration. */
+export function useBindingEnabled(binding: KeyBinding | undefined): boolean {
+  const overrides = useStore(settingsStore, (s) => s.keybindings);
+  const style = useStore(settingsStore, (s) => s.navigation.style);
+  const bindings = useMemo(
+    () => getEffectiveBindings(style, overrides),
+    [style, overrides],
+  );
+  const continueKeys = bindings.find(
+    (candidate) => candidate.actionId === 'onboarding.continue',
+  )?.keys;
+  const { activation } = useBindingActivationContext(continueKeys);
+  return binding !== undefined && isBindingEnabled(binding, activation);
+}
+
+/** Registers all effective bindings; runtime gates give overlapping keys one owner. */
+export function useAppHotkeys(): void {
+  const overrides = useStore(settingsStore, (s) => s.keybindings);
+  const style = useStore(settingsStore, (s) => s.navigation.style);
+  const bindings = useMemo(
+    () => getEffectiveBindings(style, overrides),
+    [style, overrides],
+  );
+  const continueKeys = bindings.find(
+    (binding) => binding.actionId === 'onboarding.continue',
+  )?.keys;
+  const { activation, overlays, routerState } =
+    useBindingActivationContext(continueKeys);
+  const { routeBase, activeOverlay } = activation;
+  const activationRef = useRef(activation);
+  activationRef.current = activation;
 
   // Use refs so callbacks always read current values without needing to
   // be recreated on every render (prevents stale closure issues).
@@ -153,11 +245,6 @@ export function useAppHotkeys(): void {
     return prId === undefined ? ctx : { ...ctx, prId };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bindings = useMemo(
-    () => getEffectiveBindings(style, overrides),
-    [style, overrides],
-  );
-
   const hotkeyDefs = useMemo<UseHotkeyDefinition[]>(
     () =>
       bindings
@@ -184,64 +271,49 @@ export function useAppHotkeys(): void {
             // calls preventDefault() itself before every callback, which would
             // make this flag always true.
             if (isEscape(binding) && event.defaultPrevented) return;
+            const currentActivation = activationRef.current;
+            if (!isBindingEnabled(binding, currentActivation)) return;
+            if (
+              isEscape(binding) &&
+              currentActivation.routeBase === 'onboarding' &&
+              currentActivation.activeOverlay === null &&
+              currentActivation.onboardingStep === 'sync' &&
+              blurOnboardingRepoFilter(event.target)
+            ) {
+              event.preventDefault();
+              return;
+            }
             if (yieldsToFocusedControl(binding, event.target)) return;
             // Continue opts out of the manager's preventDefault (see
             // `hotkeyOptions`), so stop Space scrolling the page here.
             if (binding.actionId === 'onboarding.continue')
               event.preventDefault();
             runBinding(binding.actionId, makeCtx());
+            // A store update can re-enable another Escape owner during this event.
+            if (isEscape(binding)) event.preventDefault();
           },
           options: {
-            enabled: isBindingEnabled(binding, {
-              routeBase,
-              activeOverlay,
-              sandboxPane,
-              screen,
-              isSpawned,
-              isConnected,
-            }),
+            enabled: isBindingEnabled(binding, activation),
             ...hotkeyOptions(binding),
           },
         })),
-    [
-      bindings,
-      routeBase,
-      activeOverlay,
-      sandboxPane,
-      screen,
-      isSpawned,
-      isConnected,
-      makeCtx,
-    ],
+    [bindings, activation, makeCtx],
   );
 
   const sequenceDefs = useMemo<UseHotkeySequenceDefinition[]>(
     () =>
       bindings.filter(isSequenceBinding).map((binding) => ({
         sequence: [...binding.keys] as HotkeySequence,
-        callback: () => runBinding(binding.actionId, makeCtx()),
+        callback: () => {
+          if (isBindingEnabled(binding, activationRef.current))
+            runBinding(binding.actionId, makeCtx());
+        },
         options: {
-          enabled: isBindingEnabled(binding, {
-            routeBase,
-            activeOverlay,
-            sandboxPane,
-            screen,
-            isSpawned,
-            isConnected,
-          }),
+          enabled: isBindingEnabled(binding, activation),
           ignoreInputs: true,
         },
       })),
-    [
-      bindings,
-      routeBase,
-      activeOverlay,
-      sandboxPane,
-      screen,
-      isSpawned,
-      isConnected,
-      makeCtx,
-    ],
+    [bindings, activation, makeCtx],
   );
 
   useHotkeys(hotkeyDefs, { conflictBehavior: 'allow' });

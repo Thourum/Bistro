@@ -13,7 +13,7 @@ import type { OverlayKind } from '../overlays/OverlayContext';
 import {
   ACTION_CATALOG,
   getEffectiveBindings,
-  isActive,
+  isBindingEnabled,
   type RouteBase,
 } from './keybindings';
 import { KEYMAPS, SEQUENCE_TIMEOUT_MS } from './keymaps';
@@ -37,12 +37,66 @@ const OVERLAYS: readonly OverlayKind[] = [
   'threads',
   'tour',
 ];
+const ONBOARDING_CONTEXTS = [
+  {
+    routeBase: 'onboarding' as const,
+    activeOverlay: null,
+    sandboxPane: null,
+    onboardingStep: 'sync' as const,
+    isScanning: false,
+  },
+  {
+    routeBase: 'onboarding' as const,
+    activeOverlay: null,
+    sandboxPane: null,
+    onboardingStep: 'sync' as const,
+    isScanning: true,
+  },
+  ...(['list', 'detail', 'diff'] as const).flatMap((sandboxPane) =>
+    [false, true].map((isPracticeComplete) => ({
+      routeBase: 'onboarding' as const,
+      activeOverlay: null,
+      sandboxPane,
+      onboardingStep: 'practice' as const,
+      isPracticeComplete,
+    })),
+  ),
+  ...[false, true].map((hasListEscapeWork) => ({
+    routeBase: 'list' as const,
+    activeOverlay: null,
+    sandboxPane: null,
+    isFirstRunRailVisible: true,
+    hasListEscapeWork,
+  })),
+];
 const CONTEXTS = [
-  ...ROUTES.map((routeBase) => ({ routeBase, activeOverlay: null })),
+  ...ROUTES.map((routeBase) => ({
+    routeBase,
+    activeOverlay: null,
+    sandboxPane: null,
+  })),
   ...OVERLAYS.map((activeOverlay) => ({
     routeBase: 'list' as const,
     activeOverlay,
+    sandboxPane: null,
   })),
+  ...ONBOARDING_CONTEXTS,
+  ...(['idle', 'waiting'] as const).map((screen) => ({
+    routeBase: 'login' as const,
+    activeOverlay: null,
+    sandboxPane: null,
+    screen,
+    isSpawned: true,
+    isConnected: true,
+  })),
+  {
+    routeBase: 'connecting' as const,
+    activeOverlay: null,
+    sandboxPane: null,
+    screen: 'crashed' as const,
+    isSpawned: true,
+    isConnected: true,
+  },
 ];
 /** Pairs that intentionally share a key in one context. */
 const ALLOWED_SHARED = new Set(['filter.close|global.escape']);
@@ -88,9 +142,13 @@ describe.each(NAVIGATION_STYLES)('%s keymap', (style) => {
   it.each(PLATFORMS)(
     'has no ambiguous keys in any context on %s',
     (platform) => {
+      const effectiveBindings = getEffectiveBindings(style, {});
+      const continueKeys = effectiveBindings.find(
+        (binding) => binding.actionId === 'onboarding.continue',
+      )?.keys;
       for (const context of CONTEXTS) {
-        const bindings = getEffectiveBindings(style, {}).filter((binding) =>
-          isActive(binding, context),
+        const bindings = effectiveBindings.filter((binding) =>
+          isBindingEnabled(binding, { ...context, continueKeys }),
         );
         const byKey = new Map<string, string[]>();
         for (const binding of bindings) {

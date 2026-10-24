@@ -9,9 +9,11 @@ import type { OverlayContextValue } from '../overlays/OverlayContext';
 import { initialUIState } from '../store/ui';
 import { getBindingAction, type KeyActionContext } from './keybindingActions';
 import {
+  hasListEscapeWork,
   hotkeyOptions,
   isBindingEnabled,
   isEscape,
+  sameBindingKeys,
 } from './keybindingActivation';
 import {
   ACTION_CATALOG,
@@ -67,6 +69,8 @@ describe('isBindingEnabled on the onboarding route', () => {
     routeBase: 'onboarding' as const,
     activeOverlay: null,
     sandboxPane,
+    onboardingStep:
+      sandboxPane === null ? ('sync' as const) : ('practice' as const),
   });
 
   it('activates sandbox actions by the sandbox pane, not the real route', () => {
@@ -130,7 +134,9 @@ describe('isBindingEnabled on the onboarding route', () => {
       // First-run actions are additionally gated on the derived screen.
       const routeBindings = getEffectiveBindings('vim', {}).filter(
         ({ actionId }) =>
-          !actionId.startsWith('login.') && !actionId.startsWith('connecting.'),
+          !actionId.startsWith('login.') &&
+          !actionId.startsWith('connecting.') &&
+          !actionId.startsWith('firstRun.'),
       );
       for (const configuredBinding of routeBindings) {
         expect(
@@ -150,6 +156,196 @@ describe('isBindingEnabled on the onboarding route', () => {
       expect(isBindingEnabled(styleBinding, onboarding('list'))).toBe(true);
       expect(isBindingEnabled(styleBinding, onboarding('detail'))).toBe(true);
     }
+  });
+});
+
+describe('scoped onboarding and first-run actions', () => {
+  it('clears pending intent before list filters, preserves sort, and never hides the rail', () => {
+    const store = new Store({
+      ...initialUIState,
+      confirmingAction: 'approve' as const,
+      searchQuery: 'review',
+      repoFilter: 'acme/api',
+      filterState: 'all' as const,
+    });
+    const context: KeyActionContext = {
+      store,
+      routeBase: 'list',
+      activeOverlay: null,
+      overlays: {} as OverlayContextValue,
+      location: { pathname: '/prs' },
+    };
+    expect(hasListEscapeWork(store.state)).toBe(true);
+    getBindingAction('global.escape')?.(context);
+    expect(store.state.confirmingAction).toBeNull();
+    expect(store.state.searchQuery).toBe('review');
+    getBindingAction('global.escape')?.(context);
+    expect(hasListEscapeWork(store.state)).toBe(false);
+    expect(store.state.searchQuery).toBe('');
+    expect(store.state.repoFilter).toBeNull();
+    expect(store.state.filterState).toBe('open');
+    expect(store.state.sortBy).toBe(initialUIState.sortBy);
+    expect(store.state.firstRunDismissPending).toBe(false);
+  });
+
+  it('compares normalized keys without erasing sequence boundaries', () => {
+    expect(sameBindingKeys('ctrl+n', 'Control+N')).toBe(true);
+    expect(sameBindingKeys(['ctrl+n', 'a'], ['Control+N', 'A'])).toBe(true);
+    expect(sameBindingKeys('Space', ['Space'])).toBe(true);
+    expect(sameBindingKeys(['g', 'g'], 'g')).toBe(false);
+    const diff = binding('detail.viewDiff');
+    expect(
+      isBindingEnabled(diff, {
+        routeBase: 'onboarding',
+        activeOverlay: null,
+        sandboxPane: 'detail',
+        onboardingStep: 'practice',
+        isPracticeComplete: true,
+        continueKeys: 'Enter',
+      }),
+    ).toBe(true);
+  });
+  it('separates sync controls, practice, and scan cancellation', () => {
+    const base = {
+      routeBase: 'onboarding' as const,
+      activeOverlay: null,
+      sandboxPane: null,
+    };
+    expect(
+      isBindingEnabled(binding('onboarding.repoToggle'), {
+        ...base,
+        onboardingStep: 'sync',
+      }),
+    ).toBe(true);
+    expect(
+      isBindingEnabled(binding('onboarding.nextStyle'), {
+        ...base,
+        onboardingStep: 'sync',
+      }),
+    ).toBe(false);
+    expect(
+      isBindingEnabled(binding('onboarding.stopScan'), {
+        ...base,
+        onboardingStep: 'sync',
+        isScanning: false,
+      }),
+    ).toBe(false);
+    expect(
+      isBindingEnabled(binding('onboarding.stopScan'), {
+        ...base,
+        onboardingStep: 'sync',
+        isScanning: true,
+      }),
+    ).toBe(true);
+    expect(
+      isBindingEnabled(binding('global.escape'), {
+        ...base,
+        onboardingStep: 'sync',
+        isScanning: true,
+      }),
+    ).toBe(false);
+    expect(
+      isBindingEnabled(
+        {
+          ...binding('global.escape'),
+          actionId: 'global.cancel',
+          keys: 'Control+G',
+        },
+        {
+          ...base,
+          onboardingStep: 'sync',
+          isScanning: true,
+        },
+      ),
+    ).toBe(false);
+    expect(
+      isBindingEnabled(binding('onboarding.chooseFolder'), {
+        ...base,
+        onboardingStep: 'sync',
+        isChoosingFolder: true,
+      }),
+    ).toBe(false);
+    expect(
+      isBindingEnabled(binding('onboarding.repoToggle'), {
+        ...base,
+        onboardingStep: 'practice',
+        sandboxPane: 'list',
+      }),
+    ).toBe(false);
+  });
+
+  it('gives list Escape cleanup priority over rail dismissal and overlays priority over both', () => {
+    const base = {
+      routeBase: 'list' as const,
+      activeOverlay: null,
+      sandboxPane: null,
+      isFirstRunRailVisible: true,
+    };
+    expect(
+      isBindingEnabled(binding('firstRun.hide'), {
+        ...base,
+        hasListEscapeWork: false,
+      }),
+    ).toBe(true);
+    expect(
+      isBindingEnabled(binding('global.escape'), {
+        ...base,
+        hasListEscapeWork: false,
+      }),
+    ).toBe(false);
+    expect(
+      isBindingEnabled(binding('firstRun.hide'), {
+        ...base,
+        hasListEscapeWork: true,
+      }),
+    ).toBe(false);
+    expect(
+      isBindingEnabled(binding('global.escape'), {
+        ...base,
+        hasListEscapeWork: true,
+      }),
+    ).toBe(true);
+    expect(
+      isBindingEnabled(binding('firstRun.hide'), {
+        ...base,
+        activeOverlay: 'search',
+        hasListEscapeWork: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps Space on fake PR diff opening until practice complete, then allows Finish', () => {
+    const base = {
+      routeBase: 'onboarding' as const,
+      activeOverlay: null,
+      sandboxPane: 'detail' as const,
+      onboardingStep: 'practice' as const,
+      continueKeys: 'Space',
+    };
+    expect(
+      isBindingEnabled(binding('onboarding.continue'), {
+        ...base,
+        isPracticeComplete: false,
+      }),
+    ).toBe(false);
+    expect(
+      isBindingEnabled(binding('detail.viewDiff'), {
+        ...base,
+        isPracticeComplete: false,
+      }),
+    ).toBe(true);
+    expect(
+      isBindingEnabled(binding('onboarding.continue'), {
+        ...base,
+        isPracticeComplete: true,
+      }),
+    ).toBe(true);
+    expect(
+      isBindingEnabled(binding('detail.viewDiff'), {
+        ...base,
+        isPracticeComplete: true,
+      }),
+    ).toBe(false);
   });
 });
 

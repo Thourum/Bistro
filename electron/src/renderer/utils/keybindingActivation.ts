@@ -1,18 +1,31 @@
-import type { HotkeyOptions } from '@tanstack/hotkeys';
+import { type HotkeyOptions, normalizeHotkey } from '@tanstack/hotkeys';
 import type { OverlayKind } from '../overlays/OverlayContext';
+import type { UIState } from '../store/ui';
 import type { FirstRunScreen } from './authScreenState';
 import type { KeyBinding, RouteBase } from './keybindings';
 import { SANDBOX_ACTION_IDS, type SandboxPane } from './onboardingSandbox';
 
-/** Onboarding actions that only make sense while the sandbox step is showing. */
 const SANDBOX_STEP_ACTION_IDS: ReadonlySet<string> = new Set([
   'onboarding.nextStyle',
   'onboarding.prevStyle',
 ]);
-
+const SYNC_ACTION_IDS: ReadonlySet<string> = new Set([
+  'onboarding.repoDown',
+  'onboarding.repoUp',
+  'onboarding.repoToggle',
+  'onboarding.repoAll',
+  'onboarding.repoNone',
+  'onboarding.repoFilter',
+  'onboarding.chooseFolder',
+  'onboarding.stopScan',
+]);
+const BACK_ACTION_IDS: ReadonlySet<string> = new Set([
+  'global.escape',
+  'global.cancel',
+]);
 const CONTINUE_ACTION_ID = 'onboarding.continue';
-// Controls whose native Space activation must win over `onboarding.continue`.
 const NATIVELY_ACTIVATED_SELECTOR = 'button, summary, [role="button"]';
+const ONBOARDING_REPO_FILTER_SELECTOR = '[data-onboarding-repo-filter]';
 
 /** `onboarding.continue` steps aside while a button-like control has focus. */
 export function yieldsToFocusedControl(
@@ -27,6 +40,16 @@ export function yieldsToFocusedControl(
   );
 }
 
+/** Step-1 Escape blurs the filter before stopping a scan or doing anything else. */
+export function blurOnboardingRepoFilter(target: EventTarget | null): boolean {
+  if (typeof HTMLElement === 'undefined' || !(target instanceof HTMLElement))
+    return false;
+  const filter = target.closest(ONBOARDING_REPO_FILTER_SELECTOR);
+  if (!(filter instanceof HTMLElement)) return false;
+  filter.blur();
+  return true;
+}
+
 /** Only literal Escape participates in Radix's dismissal handling. */
 export function isEscape(binding: Pick<KeyBinding, 'keys'>): boolean {
   return binding.keys === 'Escape';
@@ -39,15 +62,47 @@ export function hotkeyOptions(
   return {
     // Composers cancel locally on Escape only; C-g must not bypass that cleanup.
     ignoreInputs: !isEscape(binding),
-    // Escape keeps `defaultPrevented` meaningful as "already handled";
-    // continue must not cancel a focused button's native Space click.
+    // Keep Radix's defaultPrevented meaningful and focused buttons' native Space click.
     ...(isEscape(binding) || binding.actionId === CONTINUE_ACTION_ID
       ? { preventDefault: false }
       : {}),
   };
 }
 
-/** First-run screens on which each sign-in / engine action is meaningful. */
+/** Cleanup owns list Escape before the first-run rail can be hidden. */
+export function hasListEscapeWork(
+  state: Pick<
+    UIState,
+    'confirmingAction' | 'searchQuery' | 'repoFilter' | 'filterState'
+  >,
+): boolean {
+  return (
+    state.confirmingAction !== null ||
+    state.searchQuery !== '' ||
+    state.repoFilter !== null ||
+    state.filterState !== 'open'
+  );
+}
+
+/** Compare normalized hotkey steps, including user-overridden sequences. */
+export function sameBindingKeys(
+  left: KeyBinding['keys'],
+  right: KeyBinding['keys'],
+): boolean {
+  const leftSteps = typeof left === 'string' ? [left] : left;
+  const rightSteps = typeof right === 'string' ? [right] : right;
+  return (
+    leftSteps.length === rightSteps.length &&
+    leftSteps.every((step, index) => {
+      const rightStep = rightSteps[index];
+      return (
+        rightStep !== undefined &&
+        normalizeHotkey(step) === normalizeHotkey(rightStep)
+      );
+    })
+  );
+}
+
 const FIRST_RUN_ACTION_STATES: Readonly<
   Record<string, readonly FirstRunScreen[]>
 > = {
@@ -84,15 +139,13 @@ export function isActive(
     activeOverlay,
   }: { routeBase: RouteBase | null; activeOverlay: OverlayKind | null },
 ): boolean {
-  if (activeOverlay !== null) {
+  if (activeOverlay !== null)
     return binding.activation.overlays?.includes(activeOverlay) === true;
-  }
   if (
     binding.activation.overlays !== undefined &&
     binding.activation.routes === undefined
-  ) {
+  )
     return false;
-  }
   const routes = binding.activation.routes;
   if (routes !== undefined && routes.length === 0) return false;
   return (
@@ -100,57 +153,109 @@ export function isActive(
   );
 }
 
-/**
- * `isActive`, plus the onboarding sandbox: while it is mounted, sandbox
- * actions activate as if the app were on the sandbox's pane.
- */
+export interface BindingActivationContext {
+  routeBase: RouteBase | null;
+  activeOverlay: OverlayKind | null;
+  sandboxPane: SandboxPane | null;
+  screen?: FirstRunScreen;
+  isSpawned?: boolean;
+  isConnected?: boolean;
+  onboardingStep?: 'sync' | 'practice' | null;
+  isScanning?: boolean;
+  isChoosingFolder?: boolean;
+  isPracticeComplete?: boolean;
+  continueKeys?: KeyBinding['keys'] | undefined;
+  isFirstRunRailVisible?: boolean;
+  hasListEscapeWork?: boolean;
+}
+
+function isAuthBindingEnabled(
+  binding: KeyBinding,
+  context: BindingActivationContext,
+): boolean {
+  if (!isActive(binding, context)) return false;
+  const allowed = FIRST_RUN_ACTION_STATES[binding.actionId];
+  if (
+    context.screen === undefined ||
+    allowed === undefined ||
+    !allowed.includes(context.screen)
+  )
+    return false;
+  if (binding.actionId === 'connecting.restart' && context.isSpawned !== true)
+    return false;
+  const needsEngine =
+    binding.actionId.startsWith('login.provider.') ||
+    binding.actionId === 'login.retry';
+  return !needsEngine || context.isConnected === true;
+}
+
+/** Runtime ownership on top of route activation: overlays, sync, practice and rail. */
 export function isBindingEnabled(
   binding: KeyBinding,
-  {
-    routeBase,
-    activeOverlay,
-    sandboxPane,
-    screen,
-    isSpawned,
-    isConnected,
-  }: {
-    routeBase: RouteBase | null;
-    activeOverlay: OverlayKind | null;
-    sandboxPane: SandboxPane | null;
-    screen?: FirstRunScreen;
-    isSpawned?: boolean;
-    isConnected?: boolean;
-  },
+  context: BindingActivationContext,
 ): boolean {
-  const real = { routeBase, activeOverlay };
-  if (isFirstRunAction(binding.actionId)) {
-    if (!isActive(binding, real)) return false;
-    const allowed = FIRST_RUN_ACTION_STATES[binding.actionId];
-    if (
-      screen === undefined ||
-      allowed === undefined ||
-      !allowed.includes(screen)
-    )
-      return false;
-    if (binding.actionId === 'connecting.restart' && isSpawned !== true)
-      return false;
-    const needsEngine =
-      binding.actionId.startsWith('login.provider.') ||
-      binding.actionId === 'login.retry';
-    return !needsEngine || isConnected === true;
-  }
-  if (routeBase !== 'onboarding') return isActive(binding, real);
-  if (sandboxPane === null) {
+  const { routeBase, activeOverlay, onboardingStep } = context;
+  if (isFirstRunAction(binding.actionId))
+    return isAuthBindingEnabled(binding, context);
+  if (activeOverlay !== null) return isActive(binding, context);
+  if (binding.actionId === 'firstRun.hide') {
     return (
-      !SANDBOX_STEP_ACTION_IDS.has(binding.actionId) && isActive(binding, real)
+      routeBase === 'list' &&
+      context.isFirstRunRailVisible === true &&
+      !context.hasListEscapeWork
     );
   }
-  // In an opened fake PR, Space belongs to the PR (vim detail.viewDiff).
+  if (
+    routeBase === 'list' &&
+    BACK_ACTION_IDS.has(binding.actionId) &&
+    context.isFirstRunRailVisible &&
+    !context.hasListEscapeWork
+  )
+    return false;
+  if (SYNC_ACTION_IDS.has(binding.actionId)) {
+    if (routeBase !== 'onboarding' || onboardingStep !== 'sync') return false;
+    if (binding.actionId === 'onboarding.chooseFolder')
+      return !context.isChoosingFolder;
+    if (binding.actionId === 'onboarding.stopScan')
+      return context.isScanning === true;
+    return true;
+  }
+  if (routeBase !== 'onboarding') return isActive(binding, context);
+  return isOnboardingBindingEnabled(binding, context);
+}
+
+function isOnboardingBindingEnabled(
+  binding: KeyBinding,
+  context: BindingActivationContext,
+): boolean {
+  const { activeOverlay, sandboxPane, onboardingStep } = context;
+  if (
+    BACK_ACTION_IDS.has(binding.actionId) &&
+    (onboardingStep === 'sync' || sandboxPane === null)
+  ) {
+    return onboardingStep === 'sync' && !context.isScanning;
+  }
+  if (SANDBOX_STEP_ACTION_IDS.has(binding.actionId)) {
+    return onboardingStep === 'practice' && sandboxPane !== null;
+  }
   if (binding.actionId === CONTINUE_ACTION_ID) {
-    return sandboxPane === 'list' && isActive(binding, real);
+    return (
+      (onboardingStep === 'sync' ||
+        (onboardingStep === 'practice' &&
+          sandboxPane !== null &&
+          (sandboxPane === 'list' || context.isPracticeComplete === true))) &&
+      isActive(binding, context)
+    );
   }
   if (SANDBOX_ACTION_IDS.has(binding.actionId)) {
+    if (onboardingStep !== 'practice' || sandboxPane === null) return false;
+    if (
+      context.isPracticeComplete &&
+      context.continueKeys !== undefined &&
+      sameBindingKeys(binding.keys, context.continueKeys)
+    )
+      return false;
     return isActive(binding, { routeBase: sandboxPane, activeOverlay });
   }
-  return isActive(binding, real);
+  return isActive(binding, context);
 }
