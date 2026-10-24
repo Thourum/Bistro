@@ -327,6 +327,13 @@ func (a *App) getProvider() provider.Provider {
 	return a.prov
 }
 
+// currentProviderSnapshot pairs a provider with its account generation lifetime.
+func (a *App) currentProviderSnapshot() (provider.Provider, context.Context) {
+	a.provMu.RLock()
+	defer a.provMu.RUnlock()
+	return a.prov, a.provCtx
+}
+
 // currentApplier returns the live orchestrator as an ActionApplier under a
 // read lock, or nil when no provider is authenticated. Satisfies
 // handler.ApplierGetter so SUBMIT_ACTION always routes to the current
@@ -614,13 +621,14 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	a.prepareLLMTier(ctx)
 	a.initializeStartupProvider(ctx)
 	a.registerAuthHandlers(ctx, stores)
-	a.registerReviewHandlers(stores)
+	waitReviewQueue := a.registerReviewHandlers(ctx, stores)
 	a.registerDiffAndCheckoutHandlers(stores)
 	a.registerExpertiseHandlers(stores)
 	waitScans := a.registerRepoLocationHandlers(ctx, stores)
 	defer func() {
 		runErr = errors.Join(runErr, a.wsServer.Stop())
 		cancelRun()
+		waitReviewQueue()
 		waitScans()
 	}()
 
@@ -685,7 +693,12 @@ func (a *App) registerAuthHandlers(ctx context.Context, stores runStores) {
 	a.wsServer.RegisterHandler("AUTH_DISCONNECT", handler.NewAuthDisconnectHandler(authDeps, authCheck))
 }
 
-func (a *App) registerReviewHandlers(stores runStores) {
+func (a *App) registerReviewHandlers(ctx context.Context, stores runStores) func() {
+	requestQueue, waitQueue := handler.NewRequestReviewQueueHandler(handler.ReviewQueueDeps{
+		Context: ctx, GetProvider: a.currentProviderSnapshot, DB: a.db.DB,
+		Broadcast: a.wsServer.Broadcast, Log: a.log,
+	})
+	a.wsServer.RegisterHandler("REQUEST_REVIEW_QUEUE", requestQueue)
 	// REQUEST_DIFF: enriched with per-file content_hash and viewed flag.
 	a.wsServer.RegisterHandler("REQUEST_DIFF", handler.NewRequestDiffHandlerWithDeps(handler.DiffHandlerDeps{
 		DiffStore:   stores.diff,
@@ -719,6 +732,7 @@ func (a *App) registerReviewHandlers(stores runStores) {
 	a.wsServer.RegisterHandler("FORCE_SYNC", handler.NewForceSyncHandler(a.syncTrigger, a.log))
 	a.wsServer.RegisterHandler("REQUEST_PR_SYNC", handler.NewRequestPRSyncHandler(a.currentPRSyncer, a.log))
 	a.wsServer.RegisterHandler("SET_SYNC_SETTINGS", handler.NewSetSyncSettingsHandler(a.syncSettings, a.log))
+	return waitQueue
 }
 
 func (a *App) registerDiffAndCheckoutHandlers(stores runStores) {
