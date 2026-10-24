@@ -644,10 +644,11 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 
 func (a *App) registerAuthHandlers(ctx context.Context, stores runStores) {
 	authDeps := handler.AuthDeps{
-		Log:       a.log,
-		Tokens:    a.tokenManager,
-		Cache:     a.providerCache,
-		Broadcast: a.wsServer.Broadcast,
+		Log:         a.log,
+		Tokens:      a.tokenManager,
+		Cache:       a.providerCache,
+		Broadcast:   a.wsServer.Broadcast,
+		SyncTrigger: a.syncTrigger,
 		SetProvider: func(prov provider.Provider, name string) {
 			a.provMu.Lock()
 			defer a.provMu.Unlock()
