@@ -1,55 +1,58 @@
 import React from 'react';
-import { Button } from '../components/ui/button';
-import { Kbd } from '../components/ui/kbd';
 import { useStore } from '../hooks/useStore';
+import { setOnboardingStep } from '../services/onboardingSync';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
-import { getEffectiveBindings } from '../utils/keybindings';
-import { formatActionKeys } from '../utils/legendPresets';
+import { isSandboxComplete } from '../utils/onboardingSandbox';
 import { OnboardingDevFolderStep } from './OnboardingDevFolderStep';
+import { OnboardingFooter } from './OnboardingFooter';
 import { OnboardingNavigationStep } from './OnboardingNavigationStep';
 import { useOnboardingSync } from './useOnboardingSync';
 
-/** One-time navigation practice, followed by the optional development folder. */
+const SUBTITLE = {
+  sync: 'Choose what to sync. Your inbox starts filling while you practise.',
+  practice: 'Pick the keys your hands already know, then try the review loop.',
+} as const satisfies Record<'sync' | 'practice', string>;
+
+/** First run: choose what to sync, then practise the keys, then Finish. */
 export function OnboardingPage(): React.ReactElement {
   const confirmingAction = useStore(appStore, (s) => s.confirmingAction);
-  const style = useStore(settingsStore, (s) => s.navigation.style);
-  const overrides = useStore(settingsStore, (s) => s.keybindings);
-  const [step, setStep] = React.useState<'navigation' | 'devFolder'>(
-    'navigation',
+  const step = useStore(appStore, (s) => s.onboardingStep) ?? 'sync';
+  const isPracticeComplete = useStore(appStore, (s) =>
+    isSandboxComplete(s.onboardingSandbox),
   );
+  const [isFinishing, setIsFinishing] = React.useState(false);
   const [stepError, setStepError] = React.useState<string | null>(null);
   const sync = useOnboardingSync();
+  const { canContinue, continueFromSync } = sync;
 
-  const continueKeys = React.useMemo(
-    () =>
-      formatActionKeys(getEffectiveBindings(style, overrides), [
-        'onboarding.continue',
-      ]),
-    [style, overrides],
-  );
+  React.useEffect(() => {
+    setOnboardingStep('sync');
+    return () => setOnboardingStep(null);
+  }, []);
 
-  const finish = React.useCallback(() => {
+  const advance = React.useCallback(() => {
+    if (isFinishing) return;
+    if (appStore.state.onboardingStep === 'sync') {
+      if (!canContinue) return;
+      continueFromSync();
+      return;
+    }
+    setIsFinishing(true);
+    // Success flips onboardingComplete; Bootstrap's router invalidation leaves.
     void updateSettings({
       appearance: {
         ...settingsStore.state.appearance,
         onboardingComplete: true,
       },
     }).match(
-      () => undefined,
-      (error) =>
-        setStepError(`Onboarding could not be completed: ${error.message}`),
+      () => setIsFinishing(false),
+      (fault) => {
+        setIsFinishing(false);
+        setStepError(`Onboarding could not be completed: ${fault.message}`);
+      },
     );
-  }, []);
-
-  const advance = React.useCallback(() => {
-    if (step === 'navigation') {
-      setStepError(null);
-      setStep('devFolder');
-      return;
-    }
-    finish();
-  }, [step, finish]);
+  }, [isFinishing, canContinue, continueFromSync]);
 
   React.useEffect(() => {
     if (confirmingAction !== 'onboarding_continue') return;
@@ -59,25 +62,29 @@ export function OnboardingPage(): React.ReactElement {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 h-full w-full bg-background text-on-surface">
-      <main className="grow flex items-center justify-center p-6 min-h-0 w-full min-w-0 overflow-auto">
-        <div
-          className={`${step === 'navigation' ? 'max-w-3xl' : 'max-w-screen-2xl self-stretch flex flex-col'} w-full`}
-        >
-          <header className="mb-8">
-            <h1 className="text-5xl font-black tracking-tighter text-on-surface uppercase mb-2">
-              BISTRO
+      <main className="grow min-h-0 min-w-0 w-full overflow-auto p-6 md:px-12 md:py-8">
+        <div className="max-w-screen-2xl mx-auto w-full min-h-full flex flex-col">
+          <header className="mb-6">
+            <h1 className="flex items-center gap-3 mb-3">
+              <span
+                aria-hidden="true"
+                className="flex w-9 h-9 items-center justify-center border-2 border-on-surface text-xl font-black text-on-surface"
+              >
+                B
+              </span>
+              <span className="text-2xl font-black tracking-tight text-on-surface uppercase">
+                BISTRO
+              </span>
             </h1>
-            <p className="text-xl text-on-surface-variant font-medium max-w-lg leading-snug">
-              {step === 'navigation'
-                ? 'Pick the keys your hands already know, then try them on a practice review.'
-                : 'Choose what to sync. Bistro starts from the PRs already waiting on you.'}
+            <p className="text-base text-on-surface-variant leading-snug">
+              {SUBTITLE[step]}
             </p>
           </header>
 
-          {step === 'navigation' ? (
-            <OnboardingNavigationStep onErrorChange={setStepError} />
-          ) : (
+          {step === 'sync' ? (
             <OnboardingDevFolderStep sync={sync} />
+          ) : (
+            <OnboardingNavigationStep onErrorChange={setStepError} />
           )}
           {stepError !== null && (
             <p className="mt-4 text-sm text-error font-medium" role="alert">
@@ -87,23 +94,13 @@ export function OnboardingPage(): React.ReactElement {
         </div>
       </main>
 
-      <footer className="bg-surface-container-lowest py-8 flex flex-col items-center border-t border-outline-variant/20 shrink-0">
-        <div className="flex items-center gap-4">
-          <span className="mono-text text-xs text-outline">
-            <span className="sr-only">Step </span>
-            {step === 'navigation' ? '1 / 2' : '2 / 2'}
-          </span>
-          <Button
-            className="bg-primary! text-on-primary! border-primary! hover:bg-on-primary-fixed-variant!"
-            onClick={advance}
-          >
-            {step === 'navigation' ? 'Continue' : 'Finish'}
-          </Button>
-          <span className="flex items-center gap-2 mono-text text-[10px] text-outline uppercase tracking-widest">
-            or press <Kbd>{continueKeys}</Kbd>
-          </span>
-        </div>
-      </footer>
+      <OnboardingFooter
+        step={step}
+        canContinue={step === 'practice' || canContinue}
+        isFinishing={isFinishing}
+        isPracticeComplete={isPracticeComplete}
+        onContinue={advance}
+      />
     </div>
   );
 }

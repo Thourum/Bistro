@@ -149,6 +149,11 @@ export function advanceOnboardingToPractice(): void {
   appStore.setState((state) => ({ ...state, onboardingStep: 'practice' }));
 }
 
+/** Gates the onboarding hotkeys; the page sets it on mount and clears it on unmount. */
+export function setOnboardingStep(step: UIState['onboardingStep']): void {
+  appStore.setState((state) => ({ ...state, onboardingStep: step }));
+}
+
 /** Clears a handled keyboard intent without consuming another intent. */
 export function consumeOnboardingIntent(
   intent: UIState['onboardingIntent'],
