@@ -1,5 +1,8 @@
 import { type ReactElement, useMemo, useState } from 'react';
-import { NAVIGATION_STYLE_CARDS } from '../components/NavigationStylePicker';
+import {
+  keepFocus,
+  NAVIGATION_STYLE_CARDS,
+} from '../components/NavigationStylePicker';
 import { Kbd } from '../components/ui/kbd';
 import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useStore } from '../hooks/useStore';
@@ -15,12 +18,10 @@ import {
   type SandboxPane,
   type SandboxState,
   type SandboxTaskId,
+  sandboxTaskDisplayIds,
 } from '../utils/onboardingSandbox';
-import {
-  FAKE_FILES,
-  FAKE_PRS,
-  OnboardingPracticePanes,
-} from './OnboardingPracticePanes';
+import { OnboardingPracticePanes } from './OnboardingPracticePanes';
+import { FAKE_FILES, FAKE_PRS } from './OnboardingPracticeParts';
 
 const PANE_TABS = [
   { pane: 'list', label: 'List' },
@@ -86,7 +87,7 @@ function PaneTabs({ state }: OnboardingSandboxProps): ReactElement {
             type="button"
             role="tab"
             aria-selected={isSelected}
-            onMouseDown={(event) => event.preventDefault()}
+            onMouseDown={keepFocus}
             onClick={() => selectOnboardingSandboxPane(tab.pane)}
             className={cn(
               LABEL,
@@ -109,9 +110,9 @@ function MovementBar({ state }: OnboardingSandboxProps): ReactElement {
     () =>
       SANDBOX_TASKS.map((task) => ({
         task,
-        keys: findActionKeys(bindings, task.actionIds),
+        keys: findActionKeys(bindings, sandboxTaskDisplayIds(task, style)),
       })),
-    [bindings],
+    [bindings, style],
   );
   const next = SANDBOX_TASKS.find((task) => !state.completed.includes(task.id));
   const keysFor = (id: SandboxTaskId) =>
@@ -134,7 +135,7 @@ function MovementBar({ state }: OnboardingSandboxProps): ReactElement {
                   key={id}
                   type="button"
                   aria-label={entry?.task.label}
-                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseDown={keepFocus}
                   onClick={() => {
                     const actionId = entry?.task.actionIds[0];
                     if (actionId !== undefined) dispatchSandboxAction(actionId);
@@ -158,7 +159,7 @@ function MovementBar({ state }: OnboardingSandboxProps): ReactElement {
           type="button"
           aria-expanded={isReferenceOpen}
           aria-controls="practice-all-keys"
-          onMouseDown={(event) => event.preventDefault()}
+          onMouseDown={keepFocus}
           onClick={() => setIsReferenceOpen((open) => !open)}
           className={cn(LABEL, 'text-outline hover:text-primary')}
         >
@@ -196,7 +197,7 @@ export function OnboardingSandbox({
     >
       <Breadcrumb state={state} />
       <PaneTabs state={state} />
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="flex flex-1 flex-col min-h-0 overflow-auto">
         <OnboardingPracticePanes state={state} />
       </div>
       <MovementBar state={state} />

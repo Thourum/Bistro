@@ -38,7 +38,7 @@ export function OnboardingNavigationStep({
 
   return (
     <section className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-6">
-      <div className="space-y-8 min-w-0">
+      <div className="flex flex-col gap-8 min-w-0">
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="mono-text text-[10px] text-outline uppercase tracking-widest">

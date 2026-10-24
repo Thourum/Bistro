@@ -1,3 +1,5 @@
+import type { NavigationStyle } from '../../types/settings';
+
 export type SandboxPane = 'list' | 'detail' | 'diff';
 export type SandboxStage = 'navigate' | 'review' | 'diff';
 export type SandboxTaskId =
@@ -350,4 +352,45 @@ export function selectSandboxPane(
   pane: SandboxPane,
 ): SandboxState {
   return state.pane === pane ? state : { ...state, pane };
+}
+
+/** Mouse-selects a fake inbox row without counting as a movement task. */
+export function selectSandboxPr(
+  state: SandboxState,
+  cursor: number,
+): SandboxState {
+  return cursor < 0 || cursor >= SANDBOX_PR_COUNT || state.cursor === cursor
+    ? state
+    : { ...state, cursor };
+}
+
+/** Escape inside a fake composer closes it instead of going back. */
+export function closeSandboxComposer(state: SandboxState): SandboxState {
+  return state.composer === null && !state.inlineReplyOpen
+    ? state
+    : { ...state, composer: null, inlineReplyOpen: false };
+}
+
+export function isSandboxComplete(state: SandboxState | null): boolean {
+  return (
+    state !== null &&
+    SANDBOX_TASKS.every((task) => state.completed.includes(task.id))
+  );
+}
+
+/** Aliases a style's users expect to see first, e.g. Emacs's C-g for back. */
+const DISPLAY_ACTION_IDS: Readonly<
+  Partial<
+    Record<NavigationStyle, Partial<Record<SandboxTaskId, readonly string[]>>>
+  >
+> = {
+  emacs: { back: ['global.cancel', 'global.escape'] },
+};
+
+/** Action ids whose effective keys a hint should show for this task. */
+export function sandboxTaskDisplayIds(
+  task: SandboxTask,
+  style: NavigationStyle,
+): readonly string[] {
+  return DISPLAY_ACTION_IDS[style]?.[task.id] ?? task.actionIds;
 }

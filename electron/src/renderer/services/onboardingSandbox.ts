@@ -1,10 +1,12 @@
 import { appStore } from '../store';
 import {
+  closeSandboxComposer,
   INITIAL_SANDBOX_STATE,
   reduceSandbox,
-  SANDBOX_PR_COUNT,
   type SandboxPane,
+  type SandboxState,
   selectSandboxPane,
+  selectSandboxPr,
 } from '../utils/onboardingSandbox';
 
 /** Mounts (or resets) the onboarding sandbox. */
@@ -56,9 +58,18 @@ export function selectOnboardingSandboxPane(pane: SandboxPane): void {
 
 /** Mouse-selects a fake inbox row without counting as a movement task. */
 export function selectOnboardingSandboxPr(cursor: number): void {
+  applySandbox((state) => selectSandboxPr(state, cursor));
+}
+
+/** Closes the fake composer the user pressed Escape in. */
+export function closeOnboardingSandboxComposer(): void {
+  applySandbox(closeSandboxComposer);
+}
+
+function applySandbox(update: (state: SandboxState) => SandboxState): void {
   appStore.setState((state) =>
-    state.onboardingSandbox === null || cursor < 0 || cursor >= SANDBOX_PR_COUNT
+    state.onboardingSandbox === null
       ? state
-      : { ...state, onboardingSandbox: { ...state.onboardingSandbox, cursor } },
+      : { ...state, onboardingSandbox: update(state.onboardingSandbox) },
   );
 }

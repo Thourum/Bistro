@@ -9,7 +9,10 @@ import { useRouterState } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SLOW_ENGINE_MS } from '../../types/engine';
 import { useOverlays } from '../overlays/OverlayContext';
-import { dispatchSandboxAction } from '../services/onboardingSandbox';
+import {
+  closeOnboardingSandboxComposer,
+  dispatchSandboxAction,
+} from '../services/onboardingSandbox';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import {
@@ -26,6 +29,7 @@ import {
   hasListEscapeWork,
   hotkeyOptions,
   isEscape,
+  isSandboxComposerTarget,
   yieldsToFocusedControl,
 } from '../utils/keybindingActivation';
 import {
@@ -280,6 +284,17 @@ export function useAppHotkeys(): void {
               currentActivation.onboardingStep === 'sync' &&
               blurOnboardingRepoFilter(event.target)
             ) {
+              event.preventDefault();
+              return;
+            }
+            // Escape in a fake composer cancels it, not the sandbox's Back.
+            if (
+              isEscape(binding) &&
+              currentActivation.routeBase === 'onboarding' &&
+              currentActivation.onboardingStep === 'practice' &&
+              isSandboxComposerTarget(event.target)
+            ) {
+              closeOnboardingSandboxComposer();
               event.preventDefault();
               return;
             }

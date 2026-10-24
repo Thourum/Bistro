@@ -44,8 +44,8 @@ const ACTIVE_CARD_ACTION_IDS: readonly (readonly string[])[] = [
   ['detail.approve'],
 ];
 
-// Mouse clicks must not take focus: a focused card would swallow Space.
-const keepFocus = (event: { preventDefault: () => void }): void =>
+/** Mouse clicks must not take focus: a focused button would swallow Space. */
+export const keepFocus = (event: { preventDefault: () => void }): void =>
   event.preventDefault();
 
 export function NavigationStylePicker({

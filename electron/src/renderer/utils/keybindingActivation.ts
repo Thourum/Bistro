@@ -26,6 +26,7 @@ const BACK_ACTION_IDS: ReadonlySet<string> = new Set([
 const CONTINUE_ACTION_ID = 'onboarding.continue';
 const NATIVELY_ACTIVATED_SELECTOR = 'button, summary, [role="button"]';
 const ONBOARDING_REPO_FILTER_SELECTOR = '[data-onboarding-repo-filter]';
+const SANDBOX_COMPOSER_SELECTOR = '[data-onboarding-sandbox-composer]';
 
 /** `onboarding.continue` steps aside while a button-like control has focus. */
 export function yieldsToFocusedControl(
@@ -48,6 +49,15 @@ export function blurOnboardingRepoFilter(target: EventTarget | null): boolean {
   if (!(filter instanceof HTMLElement)) return false;
   filter.blur();
   return true;
+}
+
+/** Whether a key event came from a fake practice composer's textarea. */
+export function isSandboxComposerTarget(target: EventTarget | null): boolean {
+  return (
+    typeof Element !== 'undefined' &&
+    target instanceof Element &&
+    target.closest(SANDBOX_COMPOSER_SELECTOR) !== null
+  );
 }
 
 /** Only literal Escape participates in Radix's dismissal handling. */

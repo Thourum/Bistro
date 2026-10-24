@@ -1,26 +1,25 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
+import { keepFocus } from '../components/NavigationStylePicker';
 import { Kbd } from '../components/ui/kbd';
 import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
+import { useStore } from '../hooks/useStore';
 import { cn } from '../lib/utils';
 import { selectOnboardingSandboxPane } from '../services/onboardingSandbox';
+import { settingsStore } from '../store/settings';
 import { findActionKeys } from '../utils/legendPresets';
 import {
   firstUnfinishedSandboxStage,
+  isSandboxComplete,
   SANDBOX_STAGES,
   SANDBOX_TASKS,
   type SandboxStage,
   type SandboxState,
+  sandboxTaskDisplayIds,
 } from '../utils/onboardingSandbox';
 
 const LABEL = 'mono-text text-[10px] uppercase tracking-widest';
 const MS_PER_SECOND = 1_000;
 const SECONDS_PER_MINUTE = 60;
-
-/** A stage the user clicked, kept until a new task completes. */
-interface ManualStage {
-  readonly stage: SandboxStage;
-  readonly completedCount: number;
-}
 
 function formatElapsed(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / MS_PER_SECOND));
@@ -38,39 +37,48 @@ export function OnboardingPracticeTasks({
   readonly startedAt: number;
 }): ReactElement {
   const bindings = useEffectiveBindings();
-  const [manual, setManual] = useState<ManualStage | null>(null);
+  const style = useStore(settingsStore, (s) => s.navigation.style);
+  // A clicked stage stays shown while it still has unfinished tasks.
+  const [manual, setManual] = useState<SandboxStage | null>(null);
   const [completedAt, setCompletedAt] = useState<number | null>(null);
   const { completed } = state;
-  const isComplete = completed.length === SANDBOX_TASKS.length;
+  const isComplete = isSandboxComplete(state);
 
   // Frozen once: the elapsed time is from entering Step 2 to the last task.
   useEffect(() => {
     if (isComplete) setCompletedAt((at) => at ?? Date.now());
   }, [isComplete]);
 
-  const automatic = firstUnfinishedSandboxStage(state);
-  const activeStage =
+  const isManualOpen =
     manual !== null &&
-    (manual.completedCount === completed.length || automatic === null)
-      ? manual.stage
-      : (automatic ?? 'diff');
+    SANDBOX_TASKS.some(
+      (task) => task.stage === manual && !completed.includes(task.id),
+    );
+  const activeStage = isManualOpen
+    ? manual
+    : (firstUnfinishedSandboxStage(state) ?? manual ?? 'diff');
 
   const tasks = useMemo(
     () =>
       SANDBOX_TASKS.map((task) => ({
         task,
-        keys: findActionKeys(bindings, task.actionIds),
+        keys: findActionKeys(bindings, sandboxTaskDisplayIds(task, style)),
       })),
-    [bindings],
+    [bindings, style],
   );
   const stageTasks = tasks.filter((entry) => entry.task.stage === activeStage);
   const currentId = stageTasks.find(
     (entry) => !completed.includes(entry.task.id),
   )?.task.id;
+  const activeStageLabel =
+    SANDBOX_STAGES.find((stage) => stage.id === activeStage)?.label ?? '';
   const continueKeys = findActionKeys(bindings, ['onboarding.continue']);
 
   return (
-    <section aria-label="Practice checklist" className="space-y-3">
+    <section
+      aria-label="Practice checklist"
+      className="flex flex-1 flex-col gap-3"
+    >
       <div className="flex items-baseline justify-between">
         <h2 className={cn(LABEL, 'text-outline')}>TRY_IT</h2>
         <span
@@ -79,6 +87,12 @@ export function OnboardingPracticeTasks({
             isComplete ? 'text-green-600' : 'text-outline',
           )}
         >
+          {isComplete && (
+            <span
+              aria-hidden="true"
+              className="inline-block size-2 mr-1.5 bg-green-500"
+            />
+          )}
           {completed.length} / {SANDBOX_TASKS.length}
         </span>
       </div>
@@ -103,12 +117,9 @@ export function OnboardingPracticeTasks({
               type="button"
               role="tab"
               aria-selected={isActive}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={keepFocus}
               onClick={() => {
-                setManual({
-                  stage: stage.id,
-                  completedCount: completed.length,
-                });
+                setManual(stage.id);
                 selectOnboardingSandboxPane(stage.pane);
               }}
               className={cn(
@@ -148,7 +159,7 @@ export function OnboardingPracticeTasks({
         })}
       </div>
 
-      <ol aria-label={`${activeStage} tasks`}>
+      <ol aria-label={`${activeStageLabel} tasks`}>
         {stageTasks.map(({ task, keys }, index) => {
           const isDone = completed.includes(task.id);
           const isCurrent = task.id === currentId;
@@ -224,7 +235,7 @@ export function OnboardingPracticeTasks({
         </div>
       )}
 
-      <p className="mono-text text-[11px] text-outline leading-relaxed">
+      <p className="mt-auto mono-text text-[11px] text-outline leading-relaxed">
         {'// '}Practice is optional and every stage can be skipped. Nothing here
         reaches GitHub.
       </p>
