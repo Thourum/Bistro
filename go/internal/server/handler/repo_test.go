@@ -366,3 +366,26 @@ func TestToggleWatchHandler_InvalidPayload(t *testing.T) {
 		t.Error("expected error for invalid payload")
 	}
 }
+
+func TestRequestRepoListHandler_InsertFailureStillReturnsOtherRepos(t *testing.T) {
+	db := setupRepoTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TRIGGER reject_bad BEFORE INSERT ON repos WHEN NEW.id = 'github:acme/bad'
+		BEGIN SELECT RAISE(ABORT, 'boom'); END`); err != nil {
+		t.Fatal(err)
+	}
+	prov := mock.NewMockProvider().WithRepos([]*provider.Repo{
+		{Owner: "acme", Name: "bad", FullName: "acme/bad"},
+		{Owner: "acme", Name: "api", FullName: "acme/api"},
+	})
+	handler := NewRequestRepoListHandler(func() provider.Provider { return prov }, db, testRepoLogger())
+	resp, err := handler(context.Background(), ws.InboundMessage{ID: "req-bad", Type: "REQUEST_REPO_LIST"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := resp.(map[string]interface{})["data"].(map[string]interface{})
+	repos, ok := data["repos"].([]repoRow)
+	if !ok || len(repos) != 1 || repos[0].ID != "github:acme/api" || data["error"] != nil {
+		t.Fatalf("data = %+v", data)
+	}
+}

@@ -122,7 +122,8 @@ func refreshRepoList(ctx context.Context, queries *storedb.Queries, prov provide
 			ID: githubProvider + ":" + repository.FullName, Provider: githubProvider,
 			Owner: repository.Owner, Repo: repository.Name,
 		}); err != nil {
-			return fmt.Errorf("insert provider repo: %w", err)
+			// One bad row must not hide the cached list from the caller.
+			logger.Error("upsert repo failed", "repo_id", githubProvider+":"+repository.FullName, "err", err)
 		}
 	}
 	logger.Debug("repos upserted", "count", len(repos))
