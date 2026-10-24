@@ -30,6 +30,9 @@ vi.mock('react', () => ({
   useMemo: (factory: () => unknown) => factory(),
   useCallback: (callback: unknown) => callback,
   useRef: (value: unknown) => ({ current: value }),
+  // The capture-phase sequence tracker needs a window; these tests drive
+  // the TanStack callbacks directly.
+  useEffect: () => undefined,
 }));
 vi.mock('@tanstack/react-hotkeys', () => ({
   useHotkeys: (definitions: CapturedHotkey[]) => {
