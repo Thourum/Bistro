@@ -39,12 +39,17 @@ type CallbackServer struct {
 // NewCallbackServer creates a callback server. The state parameter is validated
 // against the incoming request. Results are sent to resultCh.
 func NewCallbackServer(cfg ProviderConfig, state, redirectURI string, resultCh chan<- CallbackResult) *CallbackServer {
-	return &CallbackServer{
+	cs := &CallbackServer{
 		cfg:         cfg,
 		state:       state,
 		redirectURI: redirectURI,
 		resultCh:    resultCh,
 	}
+	cs.server = &http.Server{
+		Addr:    fmt.Sprintf("localhost:%d", CallbackPort),
+		Handler: cs.handler(),
+	}
+	return cs
 }
 
 // handler returns the HTTP handler for the callback endpoint.
@@ -111,11 +116,6 @@ func (cs *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request)
 
 // ListenAndServe starts the callback server. It blocks until the server is shut down.
 func (cs *CallbackServer) ListenAndServe() error {
-	addr := fmt.Sprintf("localhost:%d", CallbackPort)
-	cs.server = &http.Server{
-		Addr:    addr,
-		Handler: cs.handler(),
-	}
 	return cs.server.ListenAndServe()
 }
 

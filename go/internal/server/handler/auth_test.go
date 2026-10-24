@@ -3,9 +3,15 @@ package handler_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log/slog"
+	"net"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/itterno/bistro/internal/auth"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/server/handler"
 	"github.com/itterno/bistro/internal/ws"
@@ -43,6 +49,64 @@ func (f *fakeUsernameCache) Set(provider, username string) {
 	f.usernames[provider] = username
 }
 func (f *fakeUsernameCache) Delete(provider string) { delete(f.usernames, provider) }
+
+func TestAuthCancelAllowsNextStart(t *testing.T) {
+	var mu sync.Mutex
+	var failures []string
+	deps := handler.AuthDeps{
+		Tokens:      &fakeTokenStore{tokens: map[string]string{}},
+		Cache:       &fakeUsernameCache{usernames: map[string]string{}},
+		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		GetClientID: func() string { return "id" },
+		Broadcast: func(message interface{}) {
+			mu.Lock()
+			defer mu.Unlock()
+			if envelope, ok := message.(map[string]interface{}); ok {
+				if data, ok := envelope["data"].(map[string]string); ok {
+					failures = append(failures, data["error"])
+				}
+			}
+		},
+	}
+	start, cancel := handler.NewAuthFlowHandlers(deps)
+	ctx := context.Background()
+	cancelRequest := ws.InboundMessage{Type: "AUTH_CANCEL"}
+	t.Cleanup(func() {
+		if _, err := cancel(ctx, cancelRequest); err != nil {
+			t.Errorf("cleanup cancel: %v", err)
+		}
+	})
+	request := ws.InboundMessage{Type: "AUTH_START", Data: json.RawMessage(`{"provider":"github"}`)}
+	for attempt := 0; attempt < 2; attempt++ {
+		response, err := start(ctx, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		envelope, ok := response.(map[string]interface{})
+		if !ok || envelope["type"] != "AUTH_REDIRECT" {
+			t.Fatalf("start: %#v", response)
+		}
+		response, err = cancel(ctx, cancelRequest)
+		if err != nil || response != nil {
+			t.Fatalf("cancel: %#v, %v", response, err)
+		}
+		connection, dialErr := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", auth.CallbackPort), time.Second)
+		if dialErr == nil {
+			// Closing this probe is best-effort; reaching the listener already fails the test.
+			_ = connection.Close()
+			t.Fatal("callback listener still open after cancellation")
+		}
+	}
+	response, err := cancel(ctx, cancelRequest)
+	if err != nil || response != nil {
+		t.Fatalf("idle cancel: %#v, %v", response, err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(failures) != 2 || failures[0] != "cancelled" || failures[1] != "cancelled" {
+		t.Fatalf("failures: %#v", failures)
+	}
+}
 
 func TestAuthSuccess_CurrentUserWriterNotNil(t *testing.T) {
 	deps := handler.AuthDeps{
@@ -97,6 +161,9 @@ func TestAuthCheck_FirstRunNoTokenReportsRequiresAuth(t *testing.T) {
 	if data["requires_auth"] != true {
 		t.Fatalf("requires_auth = %v, want true", data["requires_auth"])
 	}
+	if data["exchange"] != "proxy" {
+		t.Fatalf("exchange = %v, want proxy without a client secret", data["exchange"])
+	}
 	if currentUserWrites != 0 {
 		t.Fatalf("current_user writes = %d, want 0 for unauthenticated first run", currentUserWrites)
 	}
@@ -105,9 +172,10 @@ func TestAuthCheck_FirstRunNoTokenReportsRequiresAuth(t *testing.T) {
 func TestAuthCheck_CachedStoredTokenReportsAuthenticated(t *testing.T) {
 	var wroteProvider, wroteLogin string
 	deps := handler.AuthDeps{
-		Log:    slog.Default(),
-		Tokens: &fakeTokenStore{tokens: map[string]string{"github": "stored-token"}},
-		Cache:  &fakeUsernameCache{usernames: map[string]string{"github": "octocat"}},
+		Log:             slog.Default(),
+		Tokens:          &fakeTokenStore{tokens: map[string]string{"github": "stored-token"}},
+		Cache:           &fakeUsernameCache{usernames: map[string]string{"github": "octocat"}},
+		GetClientSecret: func() string { return "test-client-secret" },
 		CurrentUserWriter: handler.CurrentUserWriterFunc(func(_ context.Context, provider, login string) error {
 			wroteProvider = provider
 			wroteLogin = login
@@ -136,6 +204,9 @@ func TestAuthCheck_CachedStoredTokenReportsAuthenticated(t *testing.T) {
 	}
 	if data["requires_auth"] != false {
 		t.Fatalf("requires_auth = %v, want false", data["requires_auth"])
+	}
+	if data["exchange"] != "local" {
+		t.Fatalf("exchange = %v, want local with a client secret", data["exchange"])
 	}
 	if wroteProvider != "github" || wroteLogin != "octocat" {
 		t.Fatalf("current_user write = (%q, %q), want (github, octocat)", wroteProvider, wroteLogin)

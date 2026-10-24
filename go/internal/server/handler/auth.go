@@ -72,6 +72,7 @@ type AuthDeps struct {
 	SetProvider        func(prov provider.Provider, name string)
 	GetClientID        func() string
 	GetClientSecret    func() string
+	CallbackTimeout    time.Duration      // zero defaults to auth.CallbackTimeout
 	CurrentUserWriter  CurrentUserWriter  // optional; nil → skip
 	CurrentUserClearer CurrentUserClearer // optional; nil → skip
 }
@@ -89,40 +90,75 @@ func fetchUsername(providerName, token string) (string, error) {
 	}
 }
 
-// NewAuthStartHandler returns a handler for AUTH_START messages that begins
-// the OAuth authorization code flow and returns AUTH_REDIRECT to the caller.
-// AUTH_SUCCESS / AUTH_FAILED are broadcast to all clients.
-func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
+func clientSecret(deps AuthDeps) string {
+	if deps.GetClientSecret == nil {
+		return ""
+	}
+	return deps.GetClientSecret()
+}
+
+func exchangeMode(deps AuthDeps) string {
+	if clientSecret(deps) != "" {
+		return "local"
+	}
+	return "proxy"
+}
+
+// NewAuthFlowHandlers returns AUTH_START and AUTH_CANCEL handlers sharing one
+// OAuth lifetime. Start returns AUTH_REDIRECT; cancel closes the listener before
+// returning without a response. AUTH_SUCCESS / AUTH_FAILED are broadcast.
+func NewAuthFlowHandlers(deps AuthDeps) (start, cancel ws.MessageHandler) {
 	var (
 		mu             sync.Mutex
 		callbackServer *auth.CallbackServer
+		cancelFlow     chan struct{}
 	)
 
-	runAuthCodeFlow := func(providerName string, resultCh <-chan auth.CallbackResult) {
+	type authCodeFlow struct {
+		providerName string
+		server       *auth.CallbackServer
+		results      <-chan auth.CallbackResult
+		cancelled    <-chan struct{}
+	}
+	runAuthCodeFlow := func(flow authCodeFlow) {
+		providerName, ownServer := flow.providerName, flow.server
+		resultCh, cancelCh := flow.results, flow.cancelled
 		serverErrCh := make(chan error, 1)
 		go func() {
-			if err := callbackServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			if err := ownServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				serverErrCh <- err
 			}
-			close(serverErrCh)
 		}()
 
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), callbackShutdownTimeout)
-			defer cancel()
-			mu.Lock()
-			if callbackServer != nil {
-				// Shutdown is best-effort after an auth outcome has already been broadcast.
-				if err := callbackServer.Shutdown(ctx); err != nil {
+		var cleanupOnce sync.Once
+		cleanup := func() {
+			cleanupOnce.Do(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), callbackShutdownTimeout)
+				defer cancel()
+				if err := ownServer.Shutdown(ctx); err != nil {
 					deps.Log.Warn("callback server shutdown failed", "error", err)
 				}
-			}
-			callbackServer = nil
-			mu.Unlock()
-		}()
+				mu.Lock()
+				defer mu.Unlock()
+				if callbackServer == ownServer {
+					callbackServer = nil
+				}
+			})
+		}
+		defer cleanup()
 
+		timeout := deps.CallbackTimeout
+		if timeout <= 0 {
+			timeout = auth.CallbackTimeout
+		}
 		select {
 		case result := <-resultCh:
+			cleanup()
+			select {
+			case <-cancelCh:
+				return
+			default:
+			}
 			if result.Err != nil {
 				deps.Log.Error("auth callback failed", "error", result.Err)
 				deps.Broadcast(map[string]interface{}{
@@ -165,22 +201,26 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 			deps.Log.Info("OAuth authorization code flow completed", "provider", providerName)
 
 		case err := <-serverErrCh:
+			cleanup()
 			deps.Log.Error("callback server error", "error", err)
 			deps.Broadcast(map[string]interface{}{
 				"type": "AUTH_FAILED",
 				"data": map[string]string{"error": "authentication callback unavailable"},
 			})
 
-		case <-time.After(auth.CallbackTimeout):
+		case <-time.After(timeout):
+			cleanup()
 			deps.Log.Warn("auth callback timed out")
 			deps.Broadcast(map[string]interface{}{
 				"type": "AUTH_FAILED",
 				"data": map[string]string{"error": "timeout"},
 			})
+		case <-cancelCh:
+			return
 		}
 	}
 
-	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
+	start = func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		logger := logging.FromContext(ctx)
 		if deps.Log != nil {
 			logger = deps.Log.With("request_id", msg.ID, "msg_type", msg.Type)
@@ -216,7 +256,7 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 		}
 
 		clientID := deps.GetClientID()
-		clientSecret := deps.GetClientSecret()
+		clientSecret := clientSecret(deps)
 		if clientID == "" {
 			mu.Unlock()
 			logger.Error("oauth client ID missing")
@@ -249,12 +289,20 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 		}
 
 		resultCh := make(chan auth.CallbackResult, 1)
-		callbackServer = auth.NewCallbackServer(cfg, state, auth.RedirectURI, resultCh)
+		ownServer := auth.NewCallbackServer(cfg, state, auth.RedirectURI, resultCh)
+		callbackServer = ownServer
+		cancelFlow = make(chan struct{})
+		cancelCh := cancelFlow
 		mu.Unlock()
 
 		logger.Info("starting oauth flow", "provider", data.Provider, "redirect_uri", auth.RedirectURI)
 
-		go runAuthCodeFlow(data.Provider, resultCh)
+		go runAuthCodeFlow(authCodeFlow{
+			providerName: data.Provider,
+			server:       ownServer,
+			results:      resultCh,
+			cancelled:    cancelCh,
+		})
 
 		return map[string]interface{}{
 			"id":   msg.ID,
@@ -265,6 +313,29 @@ func NewAuthStartHandler(deps AuthDeps) ws.MessageHandler {
 			},
 		}, nil
 	}
+	cancel = func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
+		mu.Lock()
+		ownServer := callbackServer
+		if ownServer == nil {
+			mu.Unlock()
+			return nil, nil
+		}
+		close(cancelFlow)
+		shutdownCtx, stop := context.WithTimeout(context.Background(), callbackShutdownTimeout)
+		err := ownServer.Shutdown(shutdownCtx)
+		stop()
+		callbackServer = nil
+		mu.Unlock()
+		if err != nil {
+			return nil, fmt.Errorf("cancel OAuth callback: %w", err)
+		}
+		deps.Broadcast(map[string]interface{}{
+			"type": "AUTH_FAILED",
+			"data": map[string]string{"error": "cancelled"},
+		})
+		return nil, nil
+	}
+	return start, cancel
 }
 
 // NewAuthCheckHandler returns a handler for AUTH_CHECK messages that responds
@@ -333,6 +404,7 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 				"auth_status":   authStatus(authenticated),
 				"auth_reason":   authReason,
 				"requires_auth": !authenticated,
+				"exchange":      exchangeMode(deps),
 			},
 		}, nil
 	}
