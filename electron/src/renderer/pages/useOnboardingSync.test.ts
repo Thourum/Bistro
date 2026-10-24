@@ -115,10 +115,11 @@ it('shows clone cache immediately, waits for queue defaults, and keeps scans ali
   expect(hook.latest.sync?.state.selection.selected['github:acme/api']).toBe(
     true,
   );
-  expect(hook.latest.sync?.canContinue).toBe(true);
+  expect(hook.latest.sync?.canContinue).toBe(false);
   await act(async () => {
     refreshed.resolve({ repos: [repo('api'), repo('clone', '/dev/clone')] });
   });
+  expect(hook.latest.sync?.canContinue).toBe(true);
   await act(async () => {
     hook.latest.sync?.scanAgain();
   });
@@ -145,6 +146,41 @@ it('shows clone cache immediately, waits for queue defaults, and keeps scans ali
   });
   expect(appStore.state.onboardingSync).toBeNull();
   expect(wsClient.request).toHaveBeenCalledTimes(requests);
+});
+
+it('keeps Continue disabled until the post-queue read delivers queue-discovered repos', async () => {
+  const list = deferredResponse();
+  const review = deferredResponse();
+  const refreshed = deferredResponse();
+  vi.mocked(wsClient.request)
+    .mockReturnValueOnce(list.result)
+    .mockReturnValueOnce(review.result)
+    .mockReturnValueOnce(refreshed.result);
+  const hook = await mountSync();
+  await act(async () => {
+    list.resolve({ repos: [repo('clone', '/dev/clone')] });
+    review.resolve(queue);
+  });
+  expect(hook.latest.sync?.canContinue).toBe(false);
+  await act(async () => {
+    hook.latest.sync?.continueFromSync();
+  });
+  expect(appStore.state.onboardingStep).toBeNull();
+  await act(async () => {
+    refreshed.resolve({ repos: [repo('api'), repo('clone', '/dev/clone')] });
+  });
+  expect(hook.latest.sync?.state.selection.selected['github:acme/api']).toBe(
+    true,
+  );
+  vi.mocked(wsClient.request).mockReturnValue(deferredResponse().result);
+  await act(async () => {
+    hook.latest.sync?.continueFromSync();
+  });
+  expect(wsClient.request).toHaveBeenCalledWith('TOGGLE_WATCH_REPO', {
+    repo_id: 'github:acme/api',
+    watched: true,
+  });
+  await hook.unmount();
 });
 
 it('reveals held nonlocal cache and permits an empty failed read once the queue fails', async () => {

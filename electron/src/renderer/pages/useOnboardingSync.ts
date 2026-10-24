@@ -175,6 +175,7 @@ function startOnboardingLifecycle(initial: OnboardingSyncState): {
                 ...state,
                 initialReposPending: false,
                 repoError: null,
+                ...(queueSettled ? { queuePending: false } : {}),
                 selection: mergeOnboardingRepos(
                   state.selection,
                   queueSettled ? cached : localRepos(cached),
@@ -191,6 +192,7 @@ function startOnboardingLifecycle(initial: OnboardingSyncState): {
                 ...state,
                 initialReposPending: false,
                 repoError: error.message,
+                ...(queueSettled ? { queuePending: false } : {}),
               },
         );
       },
@@ -207,12 +209,12 @@ function startOnboardingLifecycle(initial: OnboardingSyncState): {
     (queue) => {
       if (disposed) return;
       queueSettled = true;
+      // Continue waits for this refresh so queue-discovered repos get defaults.
       updateOnboardingSyncState((state) =>
         state === null
           ? null
           : {
               ...state,
-              queuePending: false,
               queueError: null,
               selection: mergeOnboardingRepos(
                 mergeOnboardingQueue(state.selection, queue),
