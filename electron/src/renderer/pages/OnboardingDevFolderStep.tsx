@@ -4,7 +4,10 @@ import { Button } from '../components/ui/button';
 import type { FolderScanState } from '../services/onboardingSync';
 import type { RepoInfo } from '../types';
 import { countOnboardingFolderMatches } from '../utils/onboardingRepos';
-import { OnboardingRepoTable } from './OnboardingRepoTable';
+import {
+  OnboardingRepoTable,
+  withoutTrailingPeriod,
+} from './OnboardingRepoTable';
 import type { useOnboardingSync } from './useOnboardingSync';
 
 type OnboardingSync = ReturnType<typeof useOnboardingSync>;
@@ -67,9 +70,9 @@ function FolderControls({
           <div
             role="progressbar"
             aria-label={`Scanning ${folder.path}`}
-            className="h-1 bg-surface-container-high"
+            className="h-1 overflow-hidden bg-surface-container-high"
           >
-            <div className="h-full w-1/3 bg-primary motion-safe:animate-pulse" />
+            <div className="h-full w-1/3 bg-primary motion-safe:animate-indeterminate" />
           </div>
           <span>
             <Button size="sm" variant="ghost" onClick={sync.stopScan}>
@@ -116,8 +119,9 @@ function FolderControls({
               error
             </span>
             <span className="min-w-0 break-words">
-              Couldn't read {folder.path || 'that folder'}: {folder.reason}.
-              Repos will clone on first open instead.
+              Couldn't read {folder.path || 'that folder'}:{' '}
+              {withoutTrailingPeriod(folder.reason)}. Repos will clone on first
+              open instead.
             </span>
           </p>
           <span>
@@ -143,8 +147,8 @@ export function OnboardingDevFolderStep({
 }): ReactElement {
   const { state } = sync;
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-      <section className="bg-surface-container-lowest border border-outline-variant/30">
+    <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-6 items-stretch grow">
+      <section className="self-start bg-surface-container-lowest border border-outline-variant/30">
         <div className="p-6">
           <span
             aria-hidden="true"

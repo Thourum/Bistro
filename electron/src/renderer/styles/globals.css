@@ -5,6 +5,17 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
+  /* Indeterminate progress: a bar sweeping its track, no invented percent. */
+  --animate-indeterminate: indeterminate 1.4s ease-in-out infinite;
+  @keyframes indeterminate {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(300%);
+    }
+  }
+
   /* ── Surface hierarchy ─────────────────────────────────────── */
   --color-surface: #f8f9fa;
   --color-surface-bright: #f8f9fa;

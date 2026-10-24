@@ -61,7 +61,7 @@ export function OnboardingPage(): React.ReactElement {
     <div className="flex flex-col flex-1 min-h-0 h-full w-full bg-background text-on-surface">
       <main className="grow flex items-center justify-center p-6 min-h-0 w-full min-w-0 overflow-auto">
         <div
-          className={`${step === 'navigation' ? 'max-w-3xl' : 'max-w-6xl'} w-full`}
+          className={`${step === 'navigation' ? 'max-w-3xl' : 'max-w-screen-2xl self-stretch flex flex-col'} w-full`}
         >
           <header className="mb-8">
             <h1 className="text-5xl font-black tracking-tighter text-on-surface uppercase mb-2">

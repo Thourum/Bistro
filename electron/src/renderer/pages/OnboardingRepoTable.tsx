@@ -31,11 +31,17 @@ interface RowContext {
 
 function queueStatus(state: OnboardingSyncState): string {
   if (state.queuePending) return 'Reading…';
+  if (state.queueError !== null) return 'Unavailable';
   const queue = state.selection.queue;
   if (queue === null) return '';
   if (queue.requested.length === 0) return '0 waiting on you';
   const prs = queue.requested.reduce((sum, request) => sum + request.count, 0);
   return `${prs} PRs need you // ${queue.requested.length} repos`;
+}
+
+/** Messages often end with a period; the sentence around them adds its own. */
+export function withoutTrailingPeriod(message: string): string {
+  return message.replace(/\.+$/, '');
 }
 
 function isSelected(state: OnboardingSyncState, repo: RepoInfo): boolean {
@@ -114,7 +120,7 @@ function RepoRow({
   return (
     <tr
       ref={rowRef}
-      aria-selected={isFocused}
+      aria-current={isFocused ? 'true' : undefined}
       className={`border-b border-outline-variant/20 ${isFocused ? 'bg-surface-container-low' : ''}`}
       onClick={() => setCursor(index)}
     >
@@ -312,7 +318,7 @@ function RepoToolbar({
     );
   return (
     <div className="flex flex-wrap items-center gap-4 px-4 py-3 border-b border-outline-variant/30">
-      <label className="flex items-center gap-2 grow max-w-xs bg-surface-container-low px-3 py-2">
+      <label className="flex items-center gap-2 grow max-w-xs bg-surface-container-low px-3 py-2 focus-within:ring-2 focus-within:ring-primary">
         <span
           aria-hidden="true"
           className="material-symbols-outlined text-base text-outline"
@@ -325,6 +331,7 @@ function RepoToolbar({
           aria-label="Filter repositories"
           placeholder="Filter repos…"
           value={selection.filter}
+          disabled={selection.repos.length === 0}
           className="w-full bg-transparent text-sm text-on-surface placeholder:text-outline focus:outline-none"
           onChange={(event) => {
             const filter = event.currentTarget.value;
@@ -344,7 +351,7 @@ function RepoToolbar({
         <Button
           size="sm"
           variant="ghost"
-          disabled={selection.sealed}
+          disabled={selection.sealed || selection.repos.length === 0}
           onClick={() => selectAll(true)}
         >
           All <ActionKeyHint actionId="onboarding.repoAll" />
@@ -352,7 +359,7 @@ function RepoToolbar({
         <Button
           size="sm"
           variant="ghost"
-          disabled={selection.sealed}
+          disabled={selection.sealed || selection.repos.length === 0}
           onClick={() => selectAll(false)}
         >
           None <ActionKeyHint actionId="onboarding.repoNone" />
@@ -372,37 +379,42 @@ function PanelBody({
     selection.repos.length === 0 &&
     state.repoError === null &&
     (state.initialReposPending || state.queuePending);
-  if (isLoading)
-    return (
-      <div className="flex grow flex-col items-center justify-center gap-3 p-8 text-center">
-        <span
-          className={`flex items-center gap-2 font-bold text-on-surface ${LABEL}`}
-        >
-          <StatusSquare status="running" size="w-2 h-2" label="Reading" />
-          Reading your review requests…
-        </span>
-        <p className="max-w-sm text-sm text-on-surface-variant">
-          Repos with PRs waiting on you will be switched on. You can change any
-          of them before you continue.
-        </p>
-      </div>
-    );
+  const isEmpty = selection.repos.length === 0;
   const hasNoMatches =
     selection.filter !== '' &&
     groupOnboardingRepos(selection).length === 0 &&
-    selection.repos.length > 0;
+    !isEmpty;
   return (
     <>
-      {selection.repos.length > 0 && <RepoToolbar state={state} />}
-      <div className="min-h-0 grow overflow-auto">
-        {hasNoMatches ? (
-          <p className="p-6 text-sm text-on-surface-variant">
-            No repositories match this filter.
+      <RepoToolbar state={state} />
+      {isLoading ? (
+        <div className="flex grow flex-col items-center justify-center gap-3 p-8 text-center">
+          <span
+            className={`flex items-center gap-2 font-bold text-on-surface ${LABEL}`}
+          >
+            <StatusSquare status="running" size="w-2 h-2" label="Reading" />
+            Reading your review requests…
+          </span>
+          <p className="max-w-sm text-sm text-on-surface-variant">
+            Repos with PRs waiting on you will be switched on. You can change
+            any of them before you continue.
           </p>
-        ) : (
-          <RepoRows state={state} />
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="min-h-0 grow overflow-auto">
+          {isEmpty && (
+            <p className="p-6 text-sm text-on-surface-variant">
+              No repositories yet. They appear after the first sync.
+            </p>
+          )}
+          {hasNoMatches && (
+            <p className="p-6 text-sm text-on-surface-variant">
+              No repositories match this filter.
+            </p>
+          )}
+          {!isEmpty && !hasNoMatches && <RepoRows state={state} />}
+        </div>
+      )}
     </>
   );
 }
@@ -432,7 +444,8 @@ export function OnboardingRepoTable({
           role="alert"
           className="px-4 py-3 text-sm text-error border-b border-outline-variant/30"
         >
-          Couldn't read your review requests: {state.queueError}.
+          Couldn't read your review requests:{' '}
+          {withoutTrailingPeriod(state.queueError)}.
         </p>
       )}
       {state.repoError !== null && (
