@@ -55,6 +55,18 @@ export function isTextareaSubmit(event: {
   return (event.metaKey || event.ctrlKey) && event.key === 'Enter';
 }
 
+/** Leaves a practice comment in the onboarding sandbox; handled locally like TEXTAREA_SUBMIT_HOTKEY. */
+export const SANDBOX_COMPOSER_SUBMIT_HOTKEY = 'Shift+Space';
+
+export function isSandboxComposerSubmit(event: {
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  key: string;
+}): boolean {
+  return (event.shiftKey && event.key === ' ') || isTextareaSubmit(event);
+}
+
 const ALL_ROUTES: readonly RouteBase[] = [
   'list',
   'detail',

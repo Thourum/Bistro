@@ -1,8 +1,13 @@
+import { formatForDisplay } from '@tanstack/react-hotkeys';
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { keepFocus } from '../components/NavigationStylePicker';
 import { Kbd } from '../components/ui/kbd';
 import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { cn } from '../lib/utils';
+import {
+  isSandboxComposerSubmit,
+  SANDBOX_COMPOSER_SUBMIT_HOTKEY,
+} from '../utils/keybindings';
 import { findActionKeys } from '../utils/legendPresets';
 
 export type CheckStatus = 'pass' | 'pending' | 'fail';
@@ -195,17 +200,28 @@ export function CommentCard({
   );
 }
 
-/** Local-only draft: typing and previewing never leaves the sandbox. */
+/** Local-only draft: typing and leaving a comment never leaves the sandbox. */
 export function FakeComposer({
   label,
 }: {
   readonly label: string;
 }): ReactElement {
   const [body, setBody] = useState('');
-  const [preview, setPreview] = useState<string | null>(null);
+  const [left, setLeft] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Mounts only when its key opens it, so the draft is ready to type into.
   useEffect(() => textareaRef.current?.focus(), []);
+  const leaveComment = (): void => {
+    if (body.trim() !== '') setLeft(body.trim());
+  };
+  if (left !== null) {
+    return (
+      <CommentCard
+        comment={{ author: 'you', body: left }}
+        meta="Practice // not sent"
+      />
+    );
+  }
   return (
     <div className="space-y-2">
       <label className="block space-y-1">
@@ -214,27 +230,34 @@ export function FakeComposer({
           ref={textareaRef}
           value={body}
           onChange={(event) => setBody(event.target.value)}
+          onKeyDown={(event) => {
+            if (!isSandboxComposerSubmit(event)) return;
+            event.preventDefault();
+            leaveComment();
+          }}
           rows={2}
           data-onboarding-sandbox-composer
           placeholder="Practice text stays on this screen."
           className="block w-full resize-none border border-primary bg-surface-container-lowest p-2 text-sm text-on-surface focus:outline-none"
         />
       </label>
-      <button
-        type="button"
-        disabled={body.trim() === ''}
-        onMouseDown={keepFocus}
-        onClick={() => setPreview(body.trim())}
-        className="mono-text text-[10px] uppercase tracking-widest text-primary disabled:text-outline"
-      >
-        Preview
-      </button>
-      {preview !== null && (
-        <CommentCard
-          comment={{ author: 'you', body: preview }}
-          meta="Preview // not sent"
-        />
-      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          disabled={body.trim() === ''}
+          onMouseDown={keepFocus}
+          onClick={leaveComment}
+          className="mono-text flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-primary disabled:text-outline"
+        >
+          Leave comment
+          <Kbd className="shrink-0">
+            {formatForDisplay(SANDBOX_COMPOSER_SUBMIT_HOTKEY)}
+          </Kbd>
+        </button>
+        <span className="mono-text flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-outline">
+          <Kbd className="shrink-0">Esc</Kbd> to close
+        </span>
+      </div>
     </div>
   );
 }
