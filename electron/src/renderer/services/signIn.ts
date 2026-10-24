@@ -69,6 +69,10 @@ export function cancelSignIn(): void {
     }
     return;
   }
+  // Before AUTH_REDIRECT the engine may still start an attempt; cancel it too (no-op when none).
+  if (appStore.state.authLoading && appStore.state.isWsOpen) {
+    wsClient.send('AUTH_CANCEL', {});
+  }
   appStore.setState((state) => ({
     ...state,
     authLoading: false,
