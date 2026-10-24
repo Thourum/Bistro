@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	stdsync "sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -50,6 +51,7 @@ type App struct {
 	providerCache       *cache.ProviderCache
 	tokenManager        *keychain.TokenManager
 	syncTrigger         chan string
+	pendingWatchSync    atomic.Bool
 	syncSettings        chan syncSettingsMsg
 	provMu              stdsync.RWMutex
 	syncInterval        time.Duration
@@ -728,7 +730,7 @@ func (a *App) registerReviewHandlers(ctx context.Context, stores runStores) func
 	a.wsServer.RegisterHandler("REQUEST_REPO_LIST",
 		handler.NewRequestRepoListHandler(a.getProvider, a.db.DB, a.log))
 	a.wsServer.RegisterHandler("TOGGLE_WATCH_REPO",
-		handler.NewToggleWatchHandler(a.db.DB, a.syncTrigger, a.log))
+		handler.NewToggleWatchHandler(a.db.DB, handler.WatchSyncTrigger{Queue: a.syncTrigger, Pending: &a.pendingWatchSync}, a.log))
 	a.wsServer.RegisterHandler("FORCE_SYNC", handler.NewForceSyncHandler(a.syncTrigger, a.log))
 	a.wsServer.RegisterHandler("REQUEST_PR_SYNC", handler.NewRequestPRSyncHandler(a.currentPRSyncer, a.log))
 	a.wsServer.RegisterHandler("SET_SYNC_SETTINGS", handler.NewSetSyncSettingsHandler(a.syncSettings, a.log))
