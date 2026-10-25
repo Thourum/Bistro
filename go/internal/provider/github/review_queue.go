@@ -110,7 +110,7 @@ func reviewQueueRepository(issue *gh.Issue) (string, *provider.Repo, error) {
 		return "", nil, fmt.Errorf("parse search repository identity: %w", err)
 	}
 	owner, name = identity.Owner, identity.Repo
-	return identity.Provider + ":" + owner + "/" + name, &provider.Repo{Owner: owner, Name: name, FullName: owner + "/" + name}, nil
+	return identity.ID(), &provider.Repo{Owner: owner, Name: name, FullName: owner + "/" + name}, nil
 }
 
 var _ provider.ReviewQueueProvider = (*Client)(nil)

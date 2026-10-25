@@ -16,6 +16,7 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
+	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -87,6 +88,43 @@ func TestReviewQueueCancellationPreventsPersistenceAndLateWorkers(t *testing.T) 
 			default:
 			}
 		})
+	}
+}
+
+func TestReviewQueueDiscoveryMergesWithLocalRepository(t *testing.T) {
+	database := setupRepoTestDB(t)
+	defer database.Close()
+	ctx := context.Background()
+	p := &queueOperationProvider{read: func(context.Context) (*provider.ReviewQueue, error) {
+		return &provider.ReviewQueue{Repositories: []*provider.Repo{{Owner: "Itterno", Name: "Bistro"}}}, nil
+	}}
+	if _, err := fetchAndPersistReviewQueue(ctx, database, p); err != nil {
+		t.Fatal(err)
+	}
+	var id, owner, repo string
+	if err := database.QueryRow(`SELECT id, owner, repo FROM repos`).Scan(&id, &owner, &repo); err != nil {
+		t.Fatal(err)
+	}
+	if id != "github:itterno/bistro" || owner != "Itterno" || repo != "Bistro" {
+		t.Fatalf("discovery identity or display casing lost: %s %s/%s", id, owner, repo)
+	}
+	localPath := t.TempDir()
+	if err := store.NewRepoLocationStore(database).UpsertLocal(ctx, "github", "Itterno", "Bistro", localPath, false); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := database.QueryRow(`SELECT count(*) FROM repos`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("queue discovery and scan created %d rows", count)
+	}
+	var storedPath string
+	if err := database.QueryRow(`SELECT local_path FROM repos WHERE id = ?`, id).Scan(&storedPath); err != nil {
+		t.Fatal(err)
+	}
+	if storedPath != localPath {
+		t.Fatalf("local path = %q, want %q", storedPath, localPath)
 	}
 }
 

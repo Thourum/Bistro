@@ -78,9 +78,9 @@ func TestReviewQueuePreservesGitHubCasingAndMergesCaseVariants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantRequested := []provider.RequestedRepo{{RepoID: "github:Itterno/Bistro", Count: 2}}
+	wantRequested := []provider.RequestedRepo{{RepoID: "github:itterno/bistro", Count: 2}}
 	wantRepositories := []*provider.Repo{{Owner: "Itterno", Name: "Bistro", FullName: "Itterno/Bistro"}}
-	if !reflect.DeepEqual(queue.Requested, wantRequested) || !reflect.DeepEqual(queue.Repositories, wantRepositories) || !reflect.DeepEqual(queue.RecentlyReviewed, []string{"github:Itterno/Bistro"}) {
+	if !reflect.DeepEqual(queue.Requested, wantRequested) || !reflect.DeepEqual(queue.Repositories, wantRepositories) || !reflect.DeepEqual(queue.RecentlyReviewed, []string{"github:itterno/bistro"}) {
 		t.Fatalf("queue lost GitHub casing or duplicated case variants: %+v repositories=%+v", queue, queue.Repositories)
 	}
 }
@@ -219,11 +219,11 @@ func TestReviewQueueGroupsSortsAndCaps(t *testing.T) {
 				}
 				return
 			}
-			wantRequested := []provider.RequestedRepo{{RepoID: "github:Acme/two", Count: 2}, {RepoID: "github:Acme/one", Count: 1}, {RepoID: "github:Zed/one", Count: 1}}
+			wantRequested := []provider.RequestedRepo{{RepoID: "github:acme/two", Count: 2}, {RepoID: "github:acme/one", Count: 1}, {RepoID: "github:zed/one", Count: 1}}
 			if !reflect.DeepEqual(queue.Requested, wantRequested) {
 				t.Fatalf("requested = %+v", queue.Requested)
 			}
-			if len(queue.RecentlyReviewed) != 10 || queue.RecentlyReviewed[0] != "github:Acme/two" || queue.RecentlyReviewed[9] != "github:Acme/recent-08" {
+			if len(queue.RecentlyReviewed) != 10 || queue.RecentlyReviewed[0] != "github:acme/two" || queue.RecentlyReviewed[9] != "github:acme/recent-08" {
 				t.Fatalf("recent = %#v", queue.RecentlyReviewed)
 			}
 			if len(queue.Repositories) != 15 {
