@@ -1,4 +1,4 @@
-import type { KeyBinding } from './keybindings';
+import { findPrimaryBinding, type KeyBinding } from './keybindings';
 import { formatBindingKeys } from './legendPresets';
 
 /** One key hint rendered on a tour screen: the formatted keys plus a label. */
@@ -112,7 +112,7 @@ export function resolveTourScreens(
     title: screen.title,
     keys: screen.keys.flatMap(
       ({ actionId, throughActionId, label, context }) => {
-        const binding = byId.get(actionId);
+        const binding = findPrimaryBinding(bindings, actionId);
         if (binding === undefined) return [];
         const through =
           throughActionId === undefined ? undefined : byId.get(throughActionId);

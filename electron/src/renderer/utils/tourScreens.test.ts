@@ -21,6 +21,16 @@ describe('resolveTourScreens', () => {
     expect(laneJump?.keys).toBe('G 1–6');
   });
 
+  it('shows Standard arrow movement on the navigation tour screen', () => {
+    const navigation = resolveTourScreens(
+      getEffectiveBindings('standard', {}),
+    ).find((screen) => screen.title === 'Navigation');
+    expect(navigation?.keys.slice(0, 2)).toEqual([
+      { keys: '↓', label: 'Move down' },
+      { keys: '↑', label: 'Move up' },
+    ]);
+  });
+
   it('drops a key hint whose actionId has no matching binding', () => {
     const resolved = resolveTourScreens([]);
     expect(resolved.every((s) => s.keys.length === 0)).toBe(true);

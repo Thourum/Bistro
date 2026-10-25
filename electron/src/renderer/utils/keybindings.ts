@@ -556,7 +556,7 @@ export function getEffectiveBindings(
   overrides: KeybindingOverrides,
 ): KeyBinding[] {
   const table = KEYMAPS[style];
-  return ACTION_CATALOG.flatMap((definition) => {
+  const bindings = ACTION_CATALOG.flatMap((definition) => {
     const override = overrides[definition.actionId];
     if (override !== undefined) {
       if (override.length === 0) return [];
@@ -566,4 +566,39 @@ export function getEffectiveBindings(
     const keys = table[definition.actionId];
     return keys === undefined ? [] : [{ ...definition, keys }];
   });
+  // Arrow aliases are primary movement when the style (or override) omits hjkl.
+  return bindings.map((binding) => {
+    const primaryId = MOVEMENT_PRIMARY_IDS[binding.actionId];
+    return primaryId === undefined
+      ? binding
+      : {
+          ...binding,
+          hidden: bindings.some(
+            (candidate) =>
+              candidate.actionId === primaryId && candidate.hidden !== true,
+          ),
+        };
+  });
+}
+
+const MOVEMENT_PRIMARY_IDS: Readonly<Record<string, string>> = {
+  'list.downArrow': 'list.down',
+  'list.upArrow': 'list.up',
+  'detail.scrollDownArrow': 'detail.scrollDown',
+  'detail.scrollUpArrow': 'detail.scrollUp',
+  'detail.scrollLeftArrow': 'detail.scrollLeft',
+  'detail.scrollRightArrow': 'detail.scrollRight',
+};
+
+/** Resolve a primary movement action, falling back to its arrow alias. */
+export function findPrimaryBinding(
+  bindings: readonly KeyBinding[],
+  actionId: string,
+): KeyBinding | undefined {
+  return (
+    bindings.find((binding) => binding.actionId === actionId) ??
+    bindings.find(
+      (binding) => MOVEMENT_PRIMARY_IDS[binding.actionId] === actionId,
+    )
+  );
 }
