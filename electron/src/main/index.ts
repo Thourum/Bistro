@@ -453,6 +453,8 @@ app.on('ready', () => {
   ).match(
     (port) => {
       connectMainToEngine(port);
+      // Port discovery may have stopped in an existing slow-start window.
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.reload();
       fromThrowable(
         () => createWindow(runtimeConfig ?? appConfig, log),
         mainFault,
