@@ -88,14 +88,15 @@ export function chooseOnboardingFolder(): ResultAsync<
 
 export function scanOnboardingFolder(
   path: string,
+  onSent: (scanID: string) => void,
 ): ResultAsync<ScanDevFolderResult, Fault> {
   return wsClient
-    .request('SCAN_DEV_FOLDER', { path, reason: 'settings-change' })
+    .request('SCAN_DEV_FOLDER', { path, reason: 'settings-change' }, { onSent })
     .andThen(parseScanDevFolderResult);
 }
 
-export function stopOnboardingScan(): void {
-  wsClient.send('SCAN_CANCEL', {});
+export function stopOnboardingScan(scanID: string): void {
+  wsClient.send('SCAN_CANCEL', { scan_id: scanID });
 }
 
 export function commitOnboardingSelection(

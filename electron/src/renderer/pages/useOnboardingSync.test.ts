@@ -224,7 +224,19 @@ it('only explicit Stop cancels and partial completion refreshes clone metadata',
     hook.latest.sync?.scanAgain();
     hook.latest.sync?.stopScan();
   });
-  expect(wsClient.send).toHaveBeenCalledExactlyOnceWith('SCAN_CANCEL', {});
+  expect(wsClient.send).not.toHaveBeenCalled();
+  const options = vi
+    .mocked(wsClient.request)
+    .mock.calls.find(([type]) => type === 'SCAN_DEV_FOLDER')?.[2];
+  expect(options?.onSent).toBeDefined();
+  options?.onSent?.('this-window-scan');
+  // Another window/startup scan can replace this one before its reply arrives.
+  wsClient.send('SCAN_DEV_FOLDER', { path: '/other', reason: 'startup' });
+  vi.mocked(wsClient.send).mockClear();
+  await act(async () => hook.latest.sync?.stopScan());
+  expect(wsClient.send).toHaveBeenCalledExactlyOnceWith('SCAN_CANCEL', {
+    scan_id: 'this-window-scan',
+  });
   await act(async () => {
     scan.resolve({
       ok: true,

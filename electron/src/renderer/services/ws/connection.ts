@@ -40,11 +40,19 @@ const MAX_PORT_POLL_ATTEMPTS = 10;
 const MAX_RECONNECT_BACKOFF_STEPS = 5;
 const BROWSER_WS_URL = 'ws://127.0.0.1:8080/ws';
 
+interface RequestOptions {
+  readonly onSent?: (id: string) => void;
+}
+
 interface WsClient {
   connect(): void;
   disconnect(): void;
   send(type: string, data: unknown): string | undefined;
-  request(type: string, data: unknown): ResultAsync<unknown, Fault>;
+  request(
+    type: string,
+    data: unknown,
+    options?: RequestOptions,
+  ): ResultAsync<unknown, Fault>;
 }
 
 function isValidWsPort(port: unknown): port is number {
@@ -343,7 +351,11 @@ function createWsClient(): Readonly<WsClient> {
     });
   }
 
-  function request(type: string, data: unknown): ResultAsync<unknown, Fault> {
+  function request(
+    type: string,
+    data: unknown,
+    options?: RequestOptions,
+  ): ResultAsync<unknown, Fault> {
     return new ResultAsync(
       new Promise<Result<unknown, Fault>>((resolve) => {
         const connectDeadline = Date.now() + REQUEST_TIMEOUT_MS;
@@ -375,6 +387,7 @@ function createWsClient(): Readonly<WsClient> {
             return;
           }
           registerRequest(type, id, resolve);
+          options?.onSent?.(id);
         };
         trySend();
       }),

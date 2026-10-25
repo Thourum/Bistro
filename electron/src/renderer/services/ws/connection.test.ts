@@ -141,6 +141,23 @@ describe('wsClient.request', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('reports the sent request ID only once the socket opens', async () => {
+    const socket = installSocket();
+    wsClient.connect();
+    const onSent = vi.fn();
+    const response = wsClient.request('REQUEST_DIFF', {}, { onSent });
+    expect(onSent).not.toHaveBeenCalled();
+    socket.open();
+    await vi.advanceTimersByTimeAsync(CONNECT_WAIT_INTERVAL_MS);
+    const request = socket.sent.find(
+      (message) => message.type === 'REQUEST_DIFF',
+    );
+    expect(request).toBeDefined();
+    expect(onSent).toHaveBeenCalledExactlyOnceWith(request?.id);
+    socket.respond('DIFF_READY', { files: [] });
+    expect((await response)._unsafeUnwrap()).toEqual({ files: [] });
+  });
+
   it('returns the engine error as an EXTERNAL_ERROR without rejecting', async () => {
     const socket = installSocket();
     wsClient.connect();

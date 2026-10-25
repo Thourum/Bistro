@@ -62,6 +62,7 @@ function startFolderLifecycle(
   options: FolderLifecycleOptions,
 ): OnboardingSyncControls {
   let scanAttempt = 0;
+  let scanID: string | undefined;
   let choiceAttempt = 0;
   let previousFolder = options.initialFolder;
 
@@ -77,13 +78,16 @@ function startFolderLifecycle(
 
   function scanFolder(path: string): void {
     const attempt = ++scanAttempt;
+    scanID = undefined;
     updateOnboardingSyncState((state) =>
       state === null
         ? null
         : { ...state, folder: { status: 'scanning', path } },
     );
     // A new engine scan serializes old persistence without a separate Stop.
-    void scanOnboardingFolder(path).match(
+    void scanOnboardingFolder(path, (id) => {
+      if (!options.isDisposed() && attempt === scanAttempt) scanID = id;
+    }).match(
       (result) => {
         if (options.isDisposed() || attempt !== scanAttempt) return;
         setFolder({ status: 'done', path, partial: result.partial });
@@ -134,8 +138,11 @@ function startFolderLifecycle(
   return {
     chooseFolder,
     stopScan: () => {
-      if (appStore.state.onboardingSync?.folder.status === 'scanning')
-        stopOnboardingScan();
+      if (
+        appStore.state.onboardingSync?.folder.status === 'scanning' &&
+        scanID !== undefined
+      )
+        stopOnboardingScan(scanID);
     },
     scanAgain: () => {
       const folder = appStore.state.onboardingSync?.folder;
