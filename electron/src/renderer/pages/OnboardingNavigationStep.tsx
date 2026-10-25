@@ -53,7 +53,7 @@ export function OnboardingNavigationStep({
         <p className="flex items-center gap-2 mono-text text-[10px] text-outline uppercase tracking-widest">
           <Kbd>{keys.nextStyle}</Kbd>
           <Kbd>{keys.prevStyle}</Kbd>
-          <span>to switch styles</span>
+          <span>in the picker to switch styles; Tab also moves focus</span>
         </p>
         <NavigationStylePicker
           selected={style}
@@ -67,7 +67,7 @@ export function OnboardingNavigationStep({
             )
           }
         />
-        {/* Tab / Shift+Tab switch styles without moving focus, so announce it. */}
+        {/* Selection can change while Tab moves focus, so announce it. */}
         <p className="sr-only" aria-live="polite">
           {NAVIGATION_STYLE_CARDS[style].label} navigation selected
         </p>
