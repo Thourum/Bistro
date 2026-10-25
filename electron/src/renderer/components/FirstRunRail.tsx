@@ -1,3 +1,4 @@
+import { useRouterState } from '@tanstack/react-router';
 import type React from 'react';
 import { useBindingEnabled } from '../hooks/useAppHotkeys';
 import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
@@ -8,7 +9,7 @@ import { useOverlays } from '../overlays/OverlayContext';
 import { hideFirstRunRail } from '../services/firstRunRail';
 import { appStore } from '../store';
 import type { FirstRunStep } from '../utils/firstRunRail';
-import type { KeyBinding } from '../utils/keybindings';
+import { type KeyBinding, routeBaseFromPath } from '../utils/keybindings';
 import { findActionKeys } from '../utils/legendPresets';
 import { Button } from './ui/button';
 import { Kbd } from './ui/kbd';
@@ -120,6 +121,11 @@ export function FirstRunRail(): React.ReactElement {
   const hasPracticedDiff = useStore(appStore, (s) => s.onboardingPracticedDiff);
   const bindings = useEffectiveBindings();
   const { openCommand, openHelp } = useOverlays();
+  const routeBase = useRouterState({
+    select: (state) => routeBaseFromPath(state.location.pathname),
+  });
+  const helpSource =
+    routeBase === 'detail' || routeBase === 'diff' ? routeBase : 'list';
 
   const currentIndex = STEP_ORDER.findIndex(
     (step) => !completed.includes(step),
@@ -279,7 +285,7 @@ export function FirstRunRail(): React.ReactElement {
           </button>
           <button
             type="button"
-            onClick={() => openHelp('list')}
+            onClick={() => openHelp(helpSource)}
             className="flex items-center gap-3 text-sm text-on-surface hover:text-primary"
           >
             {helpKeys !== undefined && <Kbd>{helpKeys}</Kbd>}
