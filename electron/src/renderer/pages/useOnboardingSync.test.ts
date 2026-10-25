@@ -75,7 +75,7 @@ async function mountSync() {
   };
 }
 
-it('shows clone cache immediately, waits for queue defaults, and keeps scans alive after Continue and unmount', async () => {
+it('shows clone cache immediately and keeps scans alive after Continue and unmount', async () => {
   const list = deferredResponse();
   const review = deferredResponse();
   const refreshed = deferredResponse();
@@ -91,7 +91,7 @@ it('shows clone cache immediately, waits for queue defaults, and keeps scans ali
       (repository) => repository.repo,
     ),
   ).toEqual(['clone']);
-  expect(hook.latest.sync?.canContinue).toBe(false);
+  expect(hook.latest.sync?.canContinue).toBe(true);
   expect(hook.latest.sync?.state.folder).toEqual({
     status: 'done',
     path: '/dev',
@@ -115,7 +115,7 @@ it('shows clone cache immediately, waits for queue defaults, and keeps scans ali
   expect(hook.latest.sync?.state.selection.selected['github:acme/api']).toBe(
     true,
   );
-  expect(hook.latest.sync?.canContinue).toBe(false);
+  expect(hook.latest.sync?.canContinue).toBe(true);
   await act(async () => {
     refreshed.resolve({ repos: [repo('api'), repo('clone', '/dev/clone')] });
   });
@@ -148,7 +148,7 @@ it('shows clone cache immediately, waits for queue defaults, and keeps scans ali
   expect(wsClient.request).toHaveBeenCalledTimes(requests);
 });
 
-it('keeps Continue disabled until the post-queue read delivers queue-discovered repos', async () => {
+it('continues from cached clones while queue discovery is pending and seals choices against late defaults', async () => {
   const list = deferredResponse();
   const review = deferredResponse();
   const refreshed = deferredResponse();
@@ -159,27 +159,54 @@ it('keeps Continue disabled until the post-queue read delivers queue-discovered 
   const hook = await mountSync();
   await act(async () => {
     list.resolve({ repos: [repo('clone', '/dev/clone')] });
-    review.resolve(queue);
   });
+  expect(hook.latest.sync?.state.queuePending).toBe(true);
+  expect(hook.latest.sync?.canContinue).toBe(true);
+  const selection = hook.latest.sync?.state.selection.selected;
+  await act(async () => hook.latest.sync?.continueFromSync());
+  expect(appStore.state.onboardingStep).toBe('practice');
+  expect(hook.latest.sync?.state.selection.sealed).toBe(true);
+  await act(async () => {
+    review.resolve({
+      requested: [
+        ...queue.requested,
+        { repo_id: 'github:acme/clone', count: 1 },
+      ],
+      recently_reviewed: [],
+    });
+  });
+  await act(async () => {
+    refreshed.resolve({
+      repos: [
+        { ...repo('api'), watched: true },
+        { ...repo('clone', '/dev/clone'), watched: true },
+      ],
+    });
+  });
+  expect(hook.latest.sync?.state.selection.selected).toBe(selection);
+  expect(hook.latest.sync?.state.selection.repos[0]?.watched).toBe(true);
   expect(hook.latest.sync?.canContinue).toBe(false);
-  await act(async () => {
-    hook.latest.sync?.continueFromSync();
-  });
-  expect(appStore.state.onboardingStep).toBeNull();
-  await act(async () => {
-    refreshed.resolve({ repos: [repo('api'), repo('clone', '/dev/clone')] });
-  });
-  expect(hook.latest.sync?.state.selection.selected['github:acme/api']).toBe(
-    true,
-  );
-  vi.mocked(wsClient.request).mockReturnValue(deferredResponse().result);
-  await act(async () => {
-    hook.latest.sync?.continueFromSync();
-  });
-  expect(wsClient.request).toHaveBeenCalledWith('TOGGLE_WATCH_REPO', {
-    repo_id: 'github:acme/api',
-    watched: true,
-  });
+  expect(vi.mocked(wsClient.request).mock.calls.map(([type]) => type)).toEqual([
+    'REQUEST_REPO_LIST',
+    'REQUEST_REVIEW_QUEUE',
+    'REQUEST_REPO_LIST',
+  ]);
+  await hook.unmount();
+});
+
+it('blocks only the initial empty repo read, not pending queue enrichment', async () => {
+  appStore.setState((state) => ({ ...state, repos: [] }));
+  const list = deferredResponse();
+  vi.mocked(wsClient.request)
+    .mockReturnValueOnce(list.result)
+    .mockReturnValueOnce(deferredResponse().result);
+  const hook = await mountSync();
+  expect(hook.latest.sync?.canContinue).toBe(false);
+  await act(async () => list.resolve({ repos: [] }));
+  expect(hook.latest.sync?.state.queuePending).toBe(true);
+  expect(hook.latest.sync?.canContinue).toBe(true);
+  await act(async () => hook.latest.sync?.continueFromSync());
+  expect(appStore.state.onboardingStep).toBe('practice');
   await hook.unmount();
 });
 

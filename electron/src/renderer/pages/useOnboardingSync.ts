@@ -216,7 +216,7 @@ function startOnboardingLifecycle(initial: OnboardingSyncState): {
     (queue) => {
       if (disposed) return;
       queueSettled = true;
-      // Continue waits for this refresh so queue-discovered repos get defaults.
+      // Refresh queue-discovered rows without delaying Continue from local ones.
       updateOnboardingSyncState((state) =>
         state === null
           ? null
@@ -282,7 +282,6 @@ export function useOnboardingSync(): OnboardingSync {
 
   const state = stored ?? initial;
   const canContinue =
-    !state.queuePending &&
     !state.selection.sealed &&
     !(state.initialReposPending && state.selection.repos.length === 0);
   const continueFromSync = useCallback(() => {

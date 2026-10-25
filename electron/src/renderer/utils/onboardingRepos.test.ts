@@ -130,9 +130,10 @@ describe('onboarding repository choices', () => {
       mergeOnboardingQueue(sealed, queue),
       [
         { ...repo('api'), source: 'local', local_path: '/projects/api' },
-        repo('web'),
+        repo('web', true),
       ],
     );
+    expect(refreshed.selected).toBe(sealed.selected);
     expect(refreshed.selected['github:acme/api']).toBe(false);
     expect(refreshed.repos[0]?.local_path).toBe('/projects/api');
     expect(buildOnboardingWatchChanges(refreshed)).toEqual([]);

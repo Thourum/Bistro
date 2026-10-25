@@ -100,15 +100,17 @@ export function mergeOnboardingRepos(
   const requestedIds = new Set(
     state.queue?.requested.map((request) => request.repo_id),
   );
-  const selected = Object.fromEntries(
-    merged.map((repo) => [
-      repo.id,
-      !state.sealed && !state.touched.includes(repo.id) && repo.watched
-        ? true
-        : (state.selected[repo.id] ??
-          (!state.sealed && requestedIds.has(repo.id) ? true : repo.watched)),
-    ]),
-  );
+  const selected = state.sealed
+    ? state.selected
+    : Object.fromEntries(
+        merged.map((repo) => [
+          repo.id,
+          !state.touched.includes(repo.id) && repo.watched
+            ? true
+            : (state.selected[repo.id] ??
+              (requestedIds.has(repo.id) ? true : repo.watched)),
+        ]),
+      );
   return clampOnboardingCursor({ ...state, repos: merged, selected });
 }
 
@@ -119,16 +121,17 @@ export function mergeOnboardingQueue(
   const requestedIds = new Set(
     queue.requested.map((request) => request.repo_id),
   );
-  const selected = Object.fromEntries(
-    state.repos.map((repository) => [
-      repository.id,
-      !state.sealed &&
-      !state.touched.includes(repository.id) &&
-      requestedIds.has(repository.id)
-        ? true
-        : (state.selected[repository.id] ?? repository.watched),
-    ]),
-  );
+  const selected = state.sealed
+    ? state.selected
+    : Object.fromEntries(
+        state.repos.map((repository) => [
+          repository.id,
+          !state.touched.includes(repository.id) &&
+          requestedIds.has(repository.id)
+            ? true
+            : (state.selected[repository.id] ?? repository.watched),
+        ]),
+      );
   return clampOnboardingCursor({ ...state, queue, selected });
 }
 
