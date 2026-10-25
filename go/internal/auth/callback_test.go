@@ -85,11 +85,19 @@ func TestCallbackServer_StateMismatch(t *testing.T) {
 
 	select {
 	case result := <-resultCh:
-		if result.Err == nil {
-			t.Fatal("expected error for state mismatch")
+		t.Fatalf("stale callback completed the current attempt: %+v", result)
+	default:
+	}
+
+	current := httptest.NewRecorder()
+	handler.ServeHTTP(current, httptest.NewRequest(http.MethodGet, "/callback?state=correct-state&error=access_denied", nil))
+	select {
+	case result := <-resultCh:
+		if result.Err == nil || result.Err.Error() != "GitHub did not authorize this sign-in" {
+			t.Fatalf("expected the current callback's result, got %+v", result)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for result")
+	default:
+		t.Fatal("current callback did not complete the attempt")
 	}
 }
 
@@ -160,11 +168,16 @@ func TestCallbackFailurePage(t *testing.T) {
 			}
 			select {
 			case result := <-results:
+				if test.name == "state" {
+					t.Fatal("stale state completed the auth flow")
+				}
 				if result.Err == nil {
 					t.Fatal("failure did not reach auth flow")
 				}
-			case <-time.After(time.Second):
-				t.Fatal("missing callback result")
+			default:
+				if test.name != "state" {
+					t.Fatal("missing callback result")
+				}
 			}
 		})
 	}
