@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import {
@@ -6,7 +6,8 @@ import {
   Fault,
   fromPromise,
   okAsync,
-  type ResultAsync,
+  type Result,
+  ResultAsync,
   ServiceError,
 } from '@thourum/fault';
 import { app, ipcMain, shell } from 'electron';
@@ -26,11 +27,11 @@ function engineFault(cause: unknown): Fault {
     .withCause(cause);
 }
 
-function readLogTail(
-  logFile: string,
-  count: number,
-): ResultAsync<readonly string[], Fault> {
-  return fromPromise(readFile(logFile, 'utf8'), (cause) => {
+// Bound allocations even when years of append-only logs precede the tail.
+const MAX_LOG_TAIL_BYTES = 64 * 1024;
+
+function readLogSuffix(logFile: string): ResultAsync<string, Fault> {
+  return fromPromise(open(logFile, 'r'), (cause) => {
     if (cause instanceof Error && 'code' in cause && cause.code === 'ENOENT') {
       return ServiceError(
         'LOG_MISSING',
@@ -39,13 +40,42 @@ function readLogTail(
     }
     return engineFault(cause);
   })
+    .andThen((file) => {
+      const suffix = fromPromise(file.stat(), engineFault).andThen(
+        ({ size }) => {
+          const start = Math.max(0, size - MAX_LOG_TAIL_BYTES);
+          const buffer = Buffer.alloc(size - start);
+          return fromPromise(
+            file.read(buffer, 0, buffer.length, start),
+            engineFault,
+          ).map(({ bytesRead }) => {
+            const text = buffer.subarray(0, bytesRead).toString('utf8');
+            // Drop the cut line (including any partial UTF-8 character).
+            if (start === 0) return text;
+            const firstNewline = text.indexOf('\n');
+            return firstNewline < 0 ? '' : text.slice(firstNewline + 1);
+          });
+        },
+      );
+      return ResultAsync.fromSafePromise(
+        suffix.then<Result<string, Fault>, never>((result) => result),
+      ).andThen((result) =>
+        fromPromise(file.close(), engineFault).andThen(() => result),
+      );
+    })
     .orElse((fault) =>
       fault.tag === 'LOG_MISSING' ? okAsync('') : errAsync(fault),
-    )
-    .map((text) => {
-      const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
-      return (lines.length > 0 ? lines : getStderrTail()).slice(-count);
-    });
+    );
+}
+
+function readLogTail(
+  logFile: string,
+  count: number,
+): ResultAsync<readonly string[], Fault> {
+  return readLogSuffix(logFile).map((text) => {
+    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
+    return [...lines, ...getStderrTail()].slice(-count);
+  });
 }
 
 export function registerEngineIPC(options: EngineIPCOptions): void {
