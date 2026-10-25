@@ -27,6 +27,10 @@ export function startSignIn(provider: ProviderId): void {
     authStartedAt: null,
   }));
   const sentId = wsClient.send('AUTH_START', { provider });
+  appStore.setState((state) => ({
+    ...state,
+    authStartRequestId: sentId ?? null,
+  }));
   if (sentId === undefined) {
     appStore.setState((state) => ({
       ...state,
@@ -69,6 +73,7 @@ export function cancelSignIn(): void {
     }
     return;
   }
+  appStore.setState((state) => ({ ...state, authStartRequestId: null }));
   // Before AUTH_REDIRECT the engine may still start an attempt; cancel it too (no-op when none).
   if (appStore.state.authLoading && appStore.state.isWsOpen) {
     wsClient.send('AUTH_CANCEL', {});

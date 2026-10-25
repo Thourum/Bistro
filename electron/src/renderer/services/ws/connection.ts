@@ -230,6 +230,7 @@ function createWsClient(): Readonly<WsClient> {
         previous.authLoading ||
         previous.authUrl !== null,
       authLoading: false,
+      authStartRequestId: null,
       authUrl: null,
       authStartedAt: null,
       authTimedOut: false,

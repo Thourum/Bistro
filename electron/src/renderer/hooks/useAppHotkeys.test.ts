@@ -27,12 +27,22 @@ import { useAppHotkeys, useBindingEnabled } from './useAppHotkeys';
 interface CapturedHotkey {
   hotkey: string;
   callback(event: KeyboardEvent): void;
-  options: { enabled: boolean };
+  options: {
+    enabled: boolean;
+    ignoreInputs?: boolean;
+    preventDefault?: boolean;
+    requireReset?: boolean;
+  };
 }
 interface CapturedSequence {
   sequence: readonly string[];
   callback(): void;
-  options: { enabled: boolean };
+  options: {
+    enabled: boolean;
+    ignoreInputs?: boolean;
+    preventDefault?: boolean;
+    requireReset?: boolean;
+  };
 }
 
 const captured = vi.hoisted(() => ({
@@ -95,6 +105,7 @@ afterEach(() => {
   settingsStore.setState(() => initialSettings);
   captured.overlay = null;
   captured.pathname = '/onboarding';
+  vi.unstubAllGlobals();
 });
 
 function findHotkey(keys: string): CapturedHotkey {
@@ -343,9 +354,84 @@ describe('scoped onboarding actions', () => {
   });
 });
 
-describe('onboarding continue', () => {
-  afterEach(() => vi.unstubAllGlobals());
+describe('dispatch safety', () => {
+  it('requires a fresh approval gesture, not a key repeat', () => {
+    captured.pathname = '/prs/1';
+    settingsStore.setState((settings) => ({
+      ...settings,
+      navigation: { ...settings.navigation, style: 'standard' },
+    }));
+    useAppHotkeys();
+    const approve = findHotkey('a');
+    expect(approve.options.requireReset).toBe(true);
+    approve.callback({ ...unconsumedEvent, repeat: false } as KeyboardEvent);
+    expect(appStore.state.confirmingAction).toBe('approve');
+    approve.callback({ ...unconsumedEvent, repeat: true } as KeyboardEvent);
+    expect(appStore.state.confirmingAction).toBe('approve');
+    approve.callback({ ...unconsumedEvent, repeat: false } as KeyboardEvent);
+    expect(appStore.state.confirmingAction).toBe('approve_confirmed');
+  });
 
+  it('allows C-g in an overlay input but not in a review composer', () => {
+    settingsStore.setState((settings) => ({
+      ...settings,
+      navigation: { ...settings.navigation, style: 'emacs' },
+    }));
+    captured.pathname = '/prs/1';
+    captured.overlay = 'command';
+    useAppHotkeys();
+    const cancel = findHotkey('Control+G');
+    expect(cancel.options.ignoreInputs).toBe(false);
+    cancel.callback(unconsumedEvent);
+    expect(captured.overlay).toBeNull();
+    useAppHotkeys();
+    expect(findHotkey('Control+G').options.ignoreInputs).toBe(true);
+  });
+
+  it.each(['standard', 'emacs'] as const)(
+    'leaves %s Enter activation to focused buttons before opening a diff',
+    (style) => {
+      class FakeElement {
+        closest(): FakeElement {
+          return this;
+        }
+      }
+      vi.stubGlobal('Element', FakeElement);
+      settingsStore.setState((settings) => ({
+        ...settings,
+        navigation: { ...settings.navigation, style },
+      }));
+      openSandbox();
+      dispatchSandboxAction('list.open');
+      useAppHotkeys();
+      const enter = captured.hotkeys.find(
+        (definition) =>
+          definition.hotkey === 'Enter' && definition.options.enabled,
+      );
+      assert(enter !== undefined);
+      expect(enter.options.preventDefault).toBe(false);
+      const preventDefault = vi.fn();
+      enter.callback({ target: new FakeElement(), preventDefault } as never);
+      expect(appStore.state.onboardingSandbox?.pane).toBe('detail');
+      expect(preventDefault).not.toHaveBeenCalled();
+      enter.callback({ target: null, preventDefault } as never);
+      expect(appStore.state.onboardingSandbox?.pane).toBe('diff');
+      expect(preventDefault).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('keeps Tab traversal native while the sandbox is open', () => {
+    openSandbox();
+    useAppHotkeys();
+    expect(findHotkey('Tab').options.preventDefault).toBe(false);
+    const preventDefault = vi.fn();
+    findHotkey('Tab').callback({ target: null, preventDefault } as never);
+    expect(settingsStore.state.navigation.style).toBe('vim');
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+});
+
+describe('onboarding continue', () => {
   it('lets a focused button handle Space natively instead of continuing', () => {
     class FakeElement {
       closest(selector: string): FakeElement | null {

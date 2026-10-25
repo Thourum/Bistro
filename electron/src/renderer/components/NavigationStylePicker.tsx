@@ -58,6 +58,7 @@ export function NavigationStylePicker({
   return (
     <fieldset
       aria-label="Navigation style"
+      data-navigation-style-picker
       className="grid grid-cols-1 md:grid-cols-3 gap-4 min-w-0"
     >
       {NAVIGATION_STYLES.map((style) => {

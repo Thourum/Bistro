@@ -88,7 +88,7 @@ func (cs *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request)
 			Code: "INVALID_STATE", Sentence: "The sign-in response did not match this attempt.",
 			Error: "INVALID_STATE", Description: "state mismatch",
 		}))
-		cs.sendResult(CallbackResult{Err: errors.New("state mismatch")})
+		// A stale browser tab must not complete the current sign-in attempt.
 		return
 	}
 

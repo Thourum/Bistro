@@ -102,6 +102,7 @@ export interface UIState {
   isOffline: boolean;
   // OAuth auth state
   authLoading: boolean;
+  authStartRequestId: string | null;
   authError: string | null;
   authUrl: string | null;
   authStartedAt: number | null;
@@ -237,6 +238,7 @@ export const initialUIState: UIState = {
   toasts: [],
   isOffline: false,
   authLoading: false,
+  authStartRequestId: null,
   authError: null,
   authUrl: null,
   authStartedAt: null,

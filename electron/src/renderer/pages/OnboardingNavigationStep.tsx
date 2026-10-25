@@ -65,7 +65,7 @@ export function OnboardingNavigationStep({
               )
             }
           />
-          {/* Tab / Shift+Tab switch styles without moving focus, so announce it. */}
+          {/* Selection can change while Tab moves focus, so announce it. */}
           <p className="sr-only" aria-live="polite">
             {NAVIGATION_STYLE_CARDS[style].label} navigation selected
           </p>

@@ -3,7 +3,11 @@ import {
   formatForDisplay,
 } from '@tanstack/react-hotkeys';
 import type { OverlayKind } from '../overlays/OverlayContext';
-import type { KeyBinding, RouteBase } from './keybindings';
+import {
+  findPrimaryBinding,
+  type KeyBinding,
+  type RouteBase,
+} from './keybindings';
 
 /**
  * Per-route footer legend preset.
@@ -165,9 +169,8 @@ export function buildLegendForRouteBase(
         : [];
   if (preset.length === 0) return [];
 
-  const byId = new Map(bindings.map((binding) => [binding.actionId, binding]));
   return preset.flatMap((actionId) => {
-    const binding = byId.get(actionId);
+    const binding = findPrimaryBinding(bindings, actionId);
     return binding === undefined || binding.keys.length === 0
       ? []
       : [

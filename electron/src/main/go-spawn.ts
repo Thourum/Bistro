@@ -48,14 +48,10 @@ const readyLineSchema = z.object({
   wsPort: z.number().int().min(1).max(MAX_WS_PORT),
 });
 
-function waitForPort(
-  port: number,
-  timeoutMs: number,
-): ResultAsync<void, Fault> {
+function waitForPort(port: number): ResultAsync<void, Fault> {
   return fromPromise(
     waitOn({
       resources: [`tcp:127.0.0.1:${port}`],
-      timeout: timeoutMs,
       interval: 250,
       tcpTimeout: 300,
       window: 0,
@@ -331,13 +327,19 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
       'BISTRO_SKIP_GO_SPAWN=1 — waiting for external Go process on port ' +
         externalPort,
     );
-    return toPortPromise(
-      waitForPort(externalPort, GO_READY_TIMEOUT_MS).map(() => {
+    const readyWaiter = createGoReadyWaiter(GO_READY_TIMEOUT_MS, () => {
+      options.onStillStarting?.();
+    });
+    // A slow external launch has not exited; keep observing its port.
+    void waitForPort(externalPort).match(
+      () => {
         lastKnownPort = externalPort;
         options.onReady?.(externalPort);
-        return externalPort;
-      }),
+        readyWaiter.markReady(externalPort);
+      },
+      (fault) => readyWaiter.markFailed(fault),
     );
+    return toPortPromise(readyWaiter.wait());
   }
 
   if (goProcess) {

@@ -1,4 +1,8 @@
-import type { HotkeySequence, RegisterableHotkey } from '@tanstack/hotkeys';
+import {
+  getSequenceManager,
+  type HotkeySequence,
+  type RegisterableHotkey,
+} from '@tanstack/hotkeys';
 import {
   type UseHotkeyDefinition,
   type UseHotkeySequenceDefinition,
@@ -30,9 +34,9 @@ import {
   hasListEscapeWork,
   hotkeyOptions,
   isEscape,
-  isModifierPress,
   isSandboxComposerTarget,
-  type KeyPress,
+  isStyleCycle,
+  isStylePickerTarget,
   yieldsToFocusedControl,
 } from '../utils/keybindingActivation';
 import {
@@ -238,8 +242,8 @@ export function useAppHotkeys(): void {
   locationRef.current = routerState.location;
   const matchesRef = useRef(routerState.matches);
   matchesRef.current = routerState.matches;
-  // A keydown that advanced an enabled sequence; its single-key binding skips it.
-  const midSequenceEventRef = useRef<KeyboardEvent | null>(null);
+  // Weak membership identifies this dispatch without retaining DOM targets.
+  const midSequenceEventsRef = useRef(new WeakSet<KeyboardEvent>());
 
   // Stable makeCtx that always reads current values from refs.
   const makeCtx = useCallback((): KeyActionContext => {
@@ -280,7 +284,7 @@ export function useAppHotkeys(): void {
             // calls preventDefault() itself before every callback, which would
             // make this flag always true.
             if (isEscape(binding) && event.defaultPrevented) return;
-            if (event === midSequenceEventRef.current) return;
+            if (midSequenceEventsRef.current.has(event)) return;
             const currentActivation = activationRef.current;
             if (!isBindingEnabled(binding, currentActivation)) return;
             if (
@@ -304,18 +308,31 @@ export function useAppHotkeys(): void {
               event.preventDefault();
               return;
             }
-            if (yieldsToFocusedControl(binding, event.target)) return;
-            // Continue opts out of the manager's preventDefault (see
-            // `hotkeyOptions`), so stop Space scrolling the page here.
-            if (binding.actionId === 'onboarding.continue')
-              event.preventDefault();
+            if (binding.actionId === 'detail.approve' && event.repeat) return;
+            if (isStyleCycle(binding)) {
+              if (!isStylePickerTarget(event.target)) return;
+              // Tab selects a style but still moves focus to the next control.
+            } else {
+              if (yieldsToFocusedControl(binding, event.target)) return;
+              // These opt out of the manager's preventDefault (see
+              // `hotkeyOptions`), so stop the native scroll/activation here.
+              if (
+                binding.actionId === 'onboarding.continue' ||
+                binding.keys === 'Enter' ||
+                binding.keys === 'Space' ||
+                binding.keys === 'Tab' ||
+                binding.keys === 'Shift+Tab'
+              )
+                event.preventDefault();
+            }
             runBinding(binding.actionId, makeCtx());
             // A store update can re-enable another Escape owner during this event.
             if (isEscape(binding)) event.preventDefault();
           },
           options: {
             enabled: isBindingEnabled(binding, activation),
-            ...hotkeyOptions(binding),
+            ...hotkeyOptions(binding, activation.activeOverlay),
+            ...(isStyleCycle(binding) ? { stopPropagation: false } : {}),
           },
         })),
     [bindings, activation, makeCtx],
@@ -337,28 +354,26 @@ export function useAppHotkeys(): void {
     [bindings, activation, makeCtx],
   );
 
-  const enabledSequencesRef = useRef<readonly HotkeySequence[]>([]);
-  enabledSequencesRef.current = sequenceDefs
-    .filter((definition) => definition.options?.enabled === true)
-    .map((definition) => definition.sequence);
   const timeoutMs = SEQUENCE_TIMEOUT_MS[style];
 
-  // Capture phase runs before both TanStack listeners on document, so the
-  // single-key callback can tell a key that continues a sequence.
+  // Read TanStack's public progress before its document listeners dispatch.
+  // Unlike a parallel history, this never counts keys the manager ignored.
   useEffect(() => {
-    let recent: readonly KeyPress[] = [];
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.repeat || isModifierPress(event)) return;
-      const press = { event, time: event.timeStamp };
-      const sequences = enabledSequencesRef.current;
-      if (continuesSequence(recent, press, { sequences, timeoutMs }))
-        midSequenceEventRef.current = event;
-      const longest = Math.max(1, ...sequences.map((steps) => steps.length));
-      recent = [...recent, press].slice(-longest);
+      if (
+        continuesSequence(event, {
+          sequences: [...getSequenceManager().registrations.state.values()],
+          timeoutMs,
+          now: Date.now(),
+        })
+      )
+        midSequenceEventsRef.current.add(event);
     };
     window.addEventListener('keydown', onKeyDown, { capture: true });
-    return () =>
+    return () => {
       window.removeEventListener('keydown', onKeyDown, { capture: true });
+      midSequenceEventsRef.current = new WeakSet();
+    };
   }, [timeoutMs]);
 
   useHotkeys(hotkeyDefs, { conflictBehavior: 'allow' });
