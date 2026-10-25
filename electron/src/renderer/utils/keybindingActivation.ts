@@ -1,7 +1,7 @@
 import {
   type HotkeyOptions,
-  type HotkeySequence,
   matchesKeyboardEvent,
+  type SequenceRegistrationView,
 } from '@tanstack/hotkeys';
 import type { OverlayKind } from '../overlays/OverlayContext';
 import type { KeyBinding, RouteBase } from './keybindings';
@@ -14,19 +14,39 @@ const SANDBOX_STEP_ACTION_IDS: ReadonlySet<string> = new Set([
 ]);
 
 const CONTINUE_ACTION_ID = 'onboarding.continue';
-// Controls whose native Space activation must win over `onboarding.continue`.
-const NATIVELY_ACTIVATED_SELECTOR = 'button, summary, [role="button"]';
+const NATIVELY_ACTIVATED_SELECTOR =
+  'button, summary, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]';
 
-/** `onboarding.continue` steps aside while a button-like control has focus. */
+/** Native activation must win over route-level Enter/Space bindings. */
 export function yieldsToFocusedControl(
-  binding: Pick<KeyBinding, 'actionId'>,
+  binding: Pick<KeyBinding, 'keys'>,
   target: EventTarget | null,
 ): boolean {
+  if (typeof Element === 'undefined' || !(target instanceof Element))
+    return false;
+  if (binding.keys === 'Tab' || binding.keys === 'Shift+Tab')
+    return (
+      target.closest(`${NATIVELY_ACTIVATED_SELECTOR}, a[href], [tabindex]`) !==
+      null
+    );
+  if (binding.keys !== 'Enter' && binding.keys !== 'Space') return false;
+  const selector =
+    binding.keys === 'Enter'
+      ? `${NATIVELY_ACTIVATED_SELECTOR}, a[href]`
+      : NATIVELY_ACTIVATED_SELECTOR;
+  return target.closest(selector) !== null;
+}
+
+/** Style cycling is local to the picker, never a global Tab focus trap. */
+export function isStyleCycle(binding: Pick<KeyBinding, 'actionId'>): boolean {
+  return SANDBOX_STEP_ACTION_IDS.has(binding.actionId);
+}
+
+export function isStylePickerTarget(target: EventTarget | null): boolean {
   return (
-    binding.actionId === CONTINUE_ACTION_ID &&
     typeof Element !== 'undefined' &&
     target instanceof Element &&
-    target.closest(NATIVELY_ACTIVATED_SELECTOR) !== null
+    target.closest('[data-navigation-style-picker]') !== null
   );
 }
 
@@ -35,70 +55,54 @@ export function isEscape(binding: Pick<KeyBinding, 'keys'>): boolean {
   return binding.keys === 'Escape';
 }
 
-/** Input handling for single hotkeys; Escape and continue manage defaults themselves. */
+/** Escape, native activation and picker traversal manage defaults at dispatch. */
 export function hotkeyOptions(
   binding: Pick<KeyBinding, 'keys' | 'actionId'>,
-): Pick<HotkeyOptions, 'ignoreInputs' | 'preventDefault'> {
+  activeOverlay: OverlayKind | null = null,
+): Pick<HotkeyOptions, 'ignoreInputs' | 'preventDefault' | 'requireReset'> {
   return {
-    // Composers cancel locally on Escape only; C-g must not bypass that cleanup.
-    ignoreInputs: !isEscape(binding),
-    // Escape keeps `defaultPrevented` meaningful as "already handled";
-    // continue must not cancel a focused button's native Space click.
-    ...(isEscape(binding) || binding.actionId === CONTINUE_ACTION_ID
+    // C-g can exit overlay inputs, but must not bypass composer cleanup.
+    ignoreInputs: !(
+      isEscape(binding) ||
+      (binding.actionId === 'global.cancel' && activeOverlay !== null)
+    ),
+    ...(binding.actionId === 'detail.approve' ? { requireReset: true } : {}),
+    ...(isEscape(binding) ||
+    isStyleCycle(binding) ||
+    binding.keys === 'Enter' ||
+    binding.keys === 'Space' ||
+    binding.keys === 'Tab' ||
+    binding.keys === 'Shift+Tab'
       ? { preventDefault: false }
       : {}),
   };
 }
 
-/** A keydown seen by the dispatcher, kept to spot a sequence in progress. */
-export interface KeyPress {
-  readonly event: KeyboardEvent;
-  readonly time: number;
-}
-
-const MODIFIER_KEYS: ReadonlySet<string> = new Set([
-  'Control',
-  'Shift',
-  'Alt',
-  'Meta',
-]);
-
-/** Holding a modifier for a chord is not a sequence step of its own. */
-export function isModifierPress(event: Pick<KeyboardEvent, 'key'>): boolean {
-  return MODIFIER_KEYS.has(event.key);
-}
-
 /**
- * True when `current` is a later step of an enabled sequence that the recent
- * presses started. TanStack runs single hotkeys and sequences as separate
+ * True when the event advances an enabled sequence's actual manager progress.
+ * TanStack runs single hotkeys and sequences as separate
  * listeners, so without this check vim's `g 1` also fires `1` (jump to PR)
  * and emacs `C-c C-v` also fires `C-v` (page down).
  */
 export function continuesSequence(
-  recent: readonly KeyPress[],
-  current: KeyPress,
+  event: KeyboardEvent,
   options: {
-    readonly sequences: readonly HotkeySequence[];
+    readonly sequences: readonly SequenceRegistrationView[];
     readonly timeoutMs: number;
+    readonly now: number;
   },
 ): boolean {
-  return options.sequences.some((sequence) =>
-    sequence.some((step, stepIndex) => {
-      if (stepIndex === 0 || !matchesKeyboardEvent(current.event, step))
-        return false;
-      const started = recent.slice(-stepIndex);
-      if (started.length !== stepIndex) return false;
-      return started.every((press, offset) => {
-        const expected = sequence[offset];
-        const next = started[offset + 1] ?? current;
-        return (
-          expected !== undefined &&
-          matchesKeyboardEvent(press.event, expected) &&
-          next.time - press.time <= options.timeoutMs
-        );
-      });
-    }),
-  );
+  if (event.repeat || event.isComposing) return false;
+  return options.sequences.some((registration) => {
+    const next = registration.sequence[registration.matchedStepCount];
+    return (
+      registration.options.enabled === true &&
+      registration.matchedStepCount > 0 &&
+      next !== undefined &&
+      options.now - registration.partialMatchLastKeyTime <= options.timeoutMs &&
+      matchesKeyboardEvent(event, next)
+    );
+  });
 }
 
 /** Derive the route used for binding activation from the current pathname. */
