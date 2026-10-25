@@ -112,7 +112,7 @@ func TestRepoListAndQueuePreserveMixedCaseWatchedRepo(t *testing.T) {
 	database := setupRepoTestDB(t)
 	defer database.Close()
 	ctx := context.Background()
-	if _, err := database.Exec(`INSERT INTO repos(id,provider,owner,repo,watched) VALUES('github:Itterno/Bistro','github','Itterno','Bistro',1)`); err != nil {
+	if _, err := database.Exec(`INSERT INTO repos(id,provider,owner,repo,watched) VALUES('github:itterno/bistro','github','Itterno','Bistro',1)`); err != nil {
 		t.Fatal(err)
 	}
 	queueProvider := &queueOperationProvider{read: func(context.Context) (*provider.ReviewQueue, error) {
@@ -129,7 +129,7 @@ func TestRepoListAndQueuePreserveMixedCaseWatchedRepo(t *testing.T) {
 			t.Fatal(err)
 		}
 		repos := reply.(map[string]interface{})["data"].(map[string]interface{})["repos"].([]repoRow)
-		if len(repos) != 1 || repos[0].ID != "github:Itterno/Bistro" || repos[0].Owner != "Itterno" || repos[0].Repo != "Bistro" || !repos[0].Watched {
+		if len(repos) != 1 || repos[0].ID != "github:itterno/bistro" || repos[0].Owner != "Itterno" || repos[0].Repo != "Bistro" || !repos[0].Watched {
 			t.Fatalf("discovery split the existing watch state: %+v", repos)
 		}
 	}
