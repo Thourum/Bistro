@@ -21,11 +21,15 @@ export function handleAuthExpired({
 }
 
 export function handleAuthRedirect({
+  id,
   data,
 }: Readonly<WSInboundMessage<'AUTH_REDIRECT'>>): void {
+  if (!appStore.state.authLoading || id !== appStore.state.authStartRequestId)
+    return;
   appStore.setState((state) => ({
     ...state,
     authUrl: data.url,
+    authStartRequestId: null,
     authStartedAt: Date.now(),
     authLoading: true,
     authError: null,
@@ -69,6 +73,7 @@ export function handleAuthSuccess({
     isAuthenticated: true,
     authChecked: true,
     authLoading: false,
+    authStartRequestId: null,
     authUrl: null,
     authStartedAt: null,
     authTimedOut: false,
@@ -91,6 +96,7 @@ export function handleAuthFailed({
   appStore.setState((state) => ({
     ...state,
     authLoading: false,
+    authStartRequestId: null,
     authUrl: null,
     authStartedAt: null,
     authTimedOut: isTimeout,
