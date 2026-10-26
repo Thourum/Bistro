@@ -58,80 +58,46 @@ func TestExecute_UnknownAction_NotAmbiguous(t *testing.T) {
 
 // ── Blocker 1: recoverable transport failure on non-idempotent actions ────
 
-// TestExecute_PostComment_RecoverableTransportError_IsAmbiguous verifies that
-// a recoverable transport error (e.g. 503, connection reset) from post_comment
-// is classified as ErrAmbiguousRemoteSuccess rather than left retryable.
-// GitHub may have already created the comment before the error was observed.
-func TestExecute_PostComment_RecoverableTransportError_IsAmbiguous(t *testing.T) {
-	ctx := context.Background() // live context — NOT cancelled
-
-	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	// Provider returns a 503 / "service unavailable" transient error.
-	mockProv := mock.NewMockProvider().
-		WithError(&provider.ProviderError{Message: "503 service unavailable"})
-	emitter := events.NewEventEmitter()
-	executor := NewActionExecutor(lg, mockProv, nil, emitter)
-
-	result, err := executor.Execute(ctx, &ActionRequest{
-		PRID:   "github:o/r:5",
-		Action: PostCommentCommand,
-		Body:   "please fix",
-	})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
+// TestExecute_RecoverableTransportError_IsAmbiguous covers non-idempotent
+// mutations: GitHub may have created the comment or review before returning an error.
+func TestExecute_RecoverableTransportError_IsAmbiguous(t *testing.T) {
+	tests := []struct {
+		name    string
+		request ActionRequest
+		message string
+	}{
+		{
+			name:    "post_comment",
+			request: ActionRequest{PRID: "github:o/r:5", Action: PostCommentCommand, Body: "please fix"},
+			message: "503 service unavailable",
+		},
+		{
+			name:    "request_changes",
+			request: ActionRequest{PRID: "github:o/r:6", Action: RequestChangesCommand, Body: "needs work"},
+			message: "500 internal server error",
+		},
+		{
+			name:    "approve",
+			request: ActionRequest{PRID: "github:o/r:7", Action: ApproveCommand},
+			message: "503 service unavailable",
+		},
 	}
-	if result.Success {
-		t.Error("must not be success on transport error")
-	}
-	if !result.IsAmbiguousRemoteSuccess() {
-		t.Errorf("post_comment recoverable transport error must be ambiguous; got: %q", result.Error)
-	}
-}
-
-// TestExecute_RequestChanges_RecoverableTransportError_IsAmbiguous verifies
-// that request_changes with a recoverable error is also ambiguous.
-func TestExecute_RequestChanges_RecoverableTransportError_IsAmbiguous(t *testing.T) {
-	ctx := context.Background()
-
-	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	mockProv := mock.NewMockProvider().
-		WithError(&provider.ProviderError{Message: "500 internal server error"})
-	executor := NewActionExecutor(lg, mockProv, nil, events.NewEventEmitter())
-
-	result, err := executor.Execute(ctx, &ActionRequest{
-		PRID:   "github:o/r:6",
-		Action: RequestChangesCommand,
-		Body:   "needs work",
-	})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if !result.IsAmbiguousRemoteSuccess() {
-		t.Errorf("request_changes recoverable error must be ambiguous; got: %q", result.Error)
-	}
-}
-
-// TestExecute_Approve_RecoverableTransportError_IsAmbiguous verifies that
-// approve with a recoverable transport error IS marked ambiguous — approve
-// uses CreateReview (non-idempotent) so we cannot safely retry without risk
-// of creating a duplicate review.
-func TestExecute_Approve_RecoverableTransportError_IsAmbiguous(t *testing.T) {
-	ctx := context.Background()
-
-	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	mockProv := mock.NewMockProvider().
-		WithError(&provider.ProviderError{Message: "503 service unavailable"})
-	executor := NewActionExecutor(lg, mockProv, nil, events.NewEventEmitter())
-
-	result, err := executor.Execute(ctx, &ActionRequest{
-		PRID:   "github:o/r:7",
-		Action: ApproveCommand,
-	})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if !result.IsAmbiguousRemoteSuccess() {
-		t.Errorf("approve recoverable error must be ambiguous (CreateReview is non-idempotent); got: %q", result.Error)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+			mockProv := mock.NewMockProvider().WithError(&provider.ProviderError{Message: tt.message})
+			executor := NewActionExecutor(lg, mockProv, nil, events.NewEventEmitter())
+			result, err := executor.Execute(context.Background(), &tt.request)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if result.Success {
+				t.Error("must not be success on transport error")
+			}
+			if !result.IsAmbiguousRemoteSuccess() {
+				t.Errorf("%s recoverable transport error must be ambiguous; got: %q", tt.request.Action, result.Error)
+			}
+		})
 	}
 }
 
@@ -269,70 +235,47 @@ func TestExecute_PostComment_PR429_ConnectionReset_IsAmbiguous(t *testing.T) {
 
 // ── Adversarial blocker: go-github ": NNN" error format ───────────────────
 
-// TestExecute_PostComment_GoGithub500_IsAmbiguous verifies that a go-github
-// ErrorResponse formatted as "POST ...: 500  []" is recognized as a recoverable
-// 5xx error and therefore becomes ambiguous terminal for post_comment.
-func TestExecute_PostComment_GoGithub500_IsAmbiguous(t *testing.T) {
-	ctx := context.Background()
-	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	mockProv := mock.NewMockProvider().
-		WithError(&provider.ProviderError{
-			Message: "POST https://api.github.com/repos/owner/repo/issues/1/comments: 500  []",
+// TestExecute_GoGithub5xx_IsAmbiguous covers go-github's status format before
+// and after the non-idempotent ambiguous-success guard.
+func TestExecute_GoGithub5xx_IsAmbiguous(t *testing.T) {
+	tests := []struct {
+		name    string
+		request ActionRequest
+		message string
+	}{
+		{
+			name:    "post_comment_500",
+			request: ActionRequest{PRID: "github:owner/repo:1", Action: PostCommentCommand, Body: "nit"},
+			message: "POST https://api.github.com/repos/owner/repo/issues/1/comments: 500  []",
+		},
+		{
+			name:    "request_changes_502",
+			request: ActionRequest{PRID: "github:owner/repo:1", Action: RequestChangesCommand, Body: "needs work"},
+			message: "POST https://api.github.com/repos/owner/repo/pulls/1/reviews: 502  []",
+		},
+		{
+			name:    "post_comment_503",
+			request: ActionRequest{PRID: "github:owner/repo:1", Action: PostCommentCommand, Body: "nit"},
+			message: "POST https://api.github.com/repos/owner/repo/issues/1/comments: 503  []",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+			mockProv := mock.NewMockProvider().WithError(&provider.ProviderError{Message: tt.message})
+			executor := NewActionExecutor(lg, mockProv, nil, events.NewEventEmitter())
+			result, err := executor.Execute(context.Background(), &tt.request)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if !result.IsAmbiguousRemoteSuccess() {
+				t.Errorf("%s go-github 5xx must be ambiguous; got: %q", tt.request.Action, result.Error)
+			}
+			raw := &ActionResult{Success: false, Error: "handler error: " + tt.message}
+			if !raw.IsRecoverable() {
+				t.Error("go-github 5xx must be recoverable before ambiguous override")
+			}
 		})
-	executor := NewActionExecutor(lg, mockProv, nil, events.NewEventEmitter())
-
-	result, err := executor.Execute(ctx, &ActionRequest{
-		PRID: "github:owner/repo:1", Action: PostCommentCommand, Body: "nit",
-	})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	// Guard 1b overrides recoverable 500 to ambiguous for non-idempotent actions.
-	// Verify the final result is the ambiguous sentinel (not just a plain failure).
-	if !result.IsAmbiguousRemoteSuccess() {
-		t.Errorf("post_comment go-github 500 must be ambiguous; got: %q", result.Error)
-	}
-	// Verify directly that the raw 500 error string IS recoverable (confirms
-	// Guard 1b triggered rather than a permanent/unknown classification).
-	raw := &ActionResult{Success: false, Error: "handler error: POST https://api.github.com/repos/owner/repo/issues/1/comments: 500  []"}
-	if !raw.IsRecoverable() {
-		t.Error("go-github ': 500' error must be recoverable before ambiguous override")
-	}
-}
-
-// TestExecute_PostComment_GoGithub502_IsAmbiguous covers 502.
-func TestExecute_PostComment_GoGithub502_IsAmbiguous(t *testing.T) {
-	ctx := context.Background()
-	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	mockProv := mock.NewMockProvider().
-		WithError(&provider.ProviderError{
-			Message: "POST https://api.github.com/repos/owner/repo/pulls/1/reviews: 502  []",
-		})
-	executor := NewActionExecutor(lg, mockProv, nil, events.NewEventEmitter())
-
-	result, _ := executor.Execute(ctx, &ActionRequest{ //nolint:errcheck
-		PRID: "github:owner/repo:1", Action: RequestChangesCommand, Body: "needs work",
-	})
-	if !result.IsAmbiguousRemoteSuccess() {
-		t.Errorf("request_changes go-github 502 must be ambiguous; got: %q", result.Error)
-	}
-}
-
-// TestExecute_PostComment_GoGithub503_IsAmbiguous covers 503.
-func TestExecute_PostComment_GoGithub503_IsAmbiguous(t *testing.T) {
-	ctx := context.Background()
-	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	mockProv := mock.NewMockProvider().
-		WithError(&provider.ProviderError{
-			Message: "POST https://api.github.com/repos/owner/repo/issues/1/comments: 503  []",
-		})
-	executor := NewActionExecutor(lg, mockProv, nil, events.NewEventEmitter())
-
-	result, _ := executor.Execute(ctx, &ActionRequest{ //nolint:errcheck
-		PRID: "github:owner/repo:1", Action: PostCommentCommand, Body: "nit",
-	})
-	if !result.IsAmbiguousRemoteSuccess() {
-		t.Errorf("post_comment go-github 503 must be ambiguous; got: %q", result.Error)
 	}
 }
 
