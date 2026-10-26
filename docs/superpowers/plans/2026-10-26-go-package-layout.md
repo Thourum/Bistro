@@ -98,6 +98,8 @@ These are the "After" items from the split spec. One commit per item. These are 
 5. Compare `NullAnchorPatchsetNumber_Stale` and `…_AlwaysStale`. Merge them only if they assert the same thing; otherwise leave both and say why in the report.
 6. `replay_ambiguous_test.go` (3 cancellation tests): they mark the queue terminal by hand after the replay aborts, so a broken replay would still pass. Drive an ambiguous provider result instead, and assert the queue state that replay itself produced.
 7. `writer_anchors_test.go`: ignored `Scan` errors leave nil pointers that satisfy the NULL assertions even when the row is missing. Check every setup, query and Scan error before asserting.
+8. Delete placeholder tests that can't fail (user rule: no useless tests): `writer/writer_test.go` `TestWriterCreation` (always skips), `TestFetchedPRValidation` and `TestSyncResultAggregation` (only check local fixtures); `workerpool/pool_test.go` `TestContextCancellation` (never uses Pool). In `TestConcurrentGoroutinePool`, call `Wait` or register cleanup so workers don't leak.
+9. `store/migration_029_test.go` and `migration_classification_test.go`: register `Close` cleanup for the DBs that lost it when `openTestDBForQueue` was replaced (Task 11).
 
 ## Task 15: Docs
 
