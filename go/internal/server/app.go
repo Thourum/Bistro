@@ -9,7 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	stdsync "sync"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -24,12 +24,12 @@ import (
 	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/keychain"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/prsync"
 	"github.com/itterno/bistro/internal/server/handler"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/currentuser"
 	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/store/repolocation"
-	"github.com/itterno/bistro/internal/sync"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -44,7 +44,7 @@ type App struct {
 	wsServer            *ws.Server
 	wsPort              int
 	dbPath              string
-	orchestrator        *sync.Orchestrator
+	orchestrator        *prsync.Orchestrator
 	prov                provider.Provider
 	activeProviderName  string
 	gitClient           *git.Client
@@ -57,7 +57,7 @@ type App struct {
 	syncTrigger         chan string
 	pendingWatchSync    atomic.Bool
 	syncSettings        chan syncSettingsMsg
-	provMu              stdsync.RWMutex
+	provMu              sync.RWMutex
 	syncInterval        time.Duration
 	autoSync            bool
 	readyWriter         io.Writer
@@ -96,7 +96,7 @@ type App struct {
 	// and sync/review hooks.
 	expertiseEngine *expertise.Engine
 	// resolveRepoPath maps repo IDs to local checkout paths for expertise hooks.
-	resolveRepoPath sync.RepoPathResolver
+	resolveRepoPath prsync.RepoPathResolver
 }
 
 // New returns a new App configured with the given WebSocket port and database path.

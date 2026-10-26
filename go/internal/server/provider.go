@@ -4,10 +4,10 @@ import (
 	"context"
 
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/prsync"
 	"github.com/itterno/bistro/internal/server/handler"
 	"github.com/itterno/bistro/internal/store/actionqueue"
 	"github.com/itterno/bistro/internal/store/prdiff"
-	"github.com/itterno/bistro/internal/sync"
 )
 
 // teardownProviderLocked clears the active provider, orchestrator, and all
@@ -50,7 +50,7 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 	a.provCtx, a.provCtxCancel = context.WithCancel(runCtx)
 
 	diffStore := prdiff.New(a.db.DB)
-	a.orchestrator = sync.NewOrchestrator(a.log, prov, a.db, a.gitClient).
+	a.orchestrator = prsync.NewOrchestrator(a.log, prov, a.db, a.gitClient).
 		WithDiffStore(diffStore).
 		WithReviewTracking(a.currentUserStore, a.db).
 		WithAnchorResolver(a.anchorResolver).

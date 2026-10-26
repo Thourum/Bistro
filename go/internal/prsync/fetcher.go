@@ -1,4 +1,4 @@
-package sync
+package prsync
 
 import (
 	"context"
@@ -12,9 +12,9 @@ import (
 	gitdiff "github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/prsync/workerpool"
+	"github.com/itterno/bistro/internal/prsync/writer"
 	"github.com/itterno/bistro/internal/store/prdiff"
-	"github.com/itterno/bistro/internal/sync/workerpool"
-	"github.com/itterno/bistro/internal/sync/writer"
 )
 
 // perPRFetchTimeout caps how long the detail fetch (comments, reviews, CI,

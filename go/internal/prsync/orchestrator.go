@@ -1,4 +1,4 @@
-package sync
+package prsync
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	gosync "sync"
+	"sync"
 	"time"
 
 	"github.com/itterno/bistro/internal/actions"
@@ -17,10 +17,10 @@ import (
 	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/prsync/writer"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/actionqueue"
 	"github.com/itterno/bistro/internal/store/prdiff"
-	"github.com/itterno/bistro/internal/sync/writer"
 )
 
 // ExpertiseHook receives successful PR diff sync notifications for incremental expertise updates.
@@ -38,7 +38,7 @@ type Orchestrator struct {
 	store           *store.DB
 	git             *git.Client
 	emitter         *events.EventEmitter
-	rateLimitMu     gosync.RWMutex
+	rateLimitMu     sync.RWMutex
 	rateLimitState  *provider.RateLimitState
 	queue           *actionqueue.Queue
 	diffStore       *prdiff.Store

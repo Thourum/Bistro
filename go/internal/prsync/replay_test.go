@@ -1,10 +1,10 @@
-package sync
+package prsync
 
 import (
 	"context"
 	"encoding/json"
 	"github.com/itterno/bistro/internal/store/actionqueue"
-	stdsync "sync"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -204,7 +204,7 @@ type blockingPostCommentProvider struct {
 	*mock.MockProvider
 	entered chan struct{}
 	release chan struct{}
-	once    stdsync.Once
+	once    sync.Once
 	calls   atomic.Int32
 }
 

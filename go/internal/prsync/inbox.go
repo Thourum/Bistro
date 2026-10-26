@@ -1,4 +1,4 @@
-package sync
+package prsync
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/prsync/writer"
 	"github.com/itterno/bistro/internal/store"
-	"github.com/itterno/bistro/internal/sync/writer"
 )
 
 // SupportsInboxDiscovery reports whether the provider can discover relevant PRs

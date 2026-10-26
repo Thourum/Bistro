@@ -1,4 +1,4 @@
-package sync
+package prsync
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/provider"
-	"github.com/itterno/bistro/internal/sync/writer"
+	"github.com/itterno/bistro/internal/prsync/writer"
 )
 
 func TestGenerateDiffUsesMergeBaseForDiffAndAnchors(t *testing.T) {

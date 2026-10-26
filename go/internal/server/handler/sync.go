@@ -125,7 +125,7 @@ func NewSetSyncSettingsHandler(settings chan SyncSettingsMsg, log *slog.Logger) 
 }
 
 // PRSyncer hydrates a single PR's details on demand.
-// Satisfied by *sync.Orchestrator.
+// Satisfied by *prsync.Orchestrator.
 type PRSyncer interface {
 	SyncPR(ctx context.Context, prID string) error
 }

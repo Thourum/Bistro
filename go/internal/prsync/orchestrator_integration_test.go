@@ -1,4 +1,4 @@
-package sync
+package prsync
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
 
+	"github.com/itterno/bistro/internal/prsync/writer"
 	"github.com/itterno/bistro/internal/store/storetest"
-	"github.com/itterno/bistro/internal/sync/writer"
 )
 
 // TestOrchestratorRateLimitDetection verifies that a 429 ProviderError from

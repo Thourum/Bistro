@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itterno/bistro/internal/sync"
+	"github.com/itterno/bistro/internal/prsync"
 )
 
 // broadcastSyncError surfaces a sync failure to every connected UI instead of
@@ -182,7 +182,7 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 			a.log.Debug("syncWatchedRepos: provider changed, aborting pass")
 			return
 		}
-		req := &sync.SyncRequest{
+		req := &prsync.SyncRequest{
 			Provider:        r.provider,
 			Owner:           r.owner,
 			Repo:            r.repo,
@@ -283,7 +283,7 @@ func (a *App) syncSingleRepo(ctx context.Context, repoID string) {
 		return
 	}
 
-	req := &sync.SyncRequest{
+	req := &prsync.SyncRequest{
 		Provider:        providerName,
 		Owner:           owner,
 		Repo:            repo,

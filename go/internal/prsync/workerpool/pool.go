@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	gosync "sync"
+	"sync"
 )
 
 // DefaultWorkers is the default number of concurrent workers used in the pool.
@@ -16,8 +16,8 @@ const workerQueueFactor = 2
 // Pool manages a pool of goroutines that process submitted tasks concurrently.
 type Pool struct {
 	taskCh    chan func()
-	wg        gosync.WaitGroup
-	closeOnce gosync.Once
+	wg        sync.WaitGroup
+	closeOnce sync.Once
 	log       *slog.Logger
 }
 

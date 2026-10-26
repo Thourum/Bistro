@@ -7,8 +7,8 @@ import (
 
 	"github.com/itterno/bistro/internal/actions"
 	"github.com/itterno/bistro/internal/provider/mock"
+	"github.com/itterno/bistro/internal/prsync"
 	"github.com/itterno/bistro/internal/store/storetest"
-	gosync "github.com/itterno/bistro/internal/sync"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -34,7 +34,7 @@ func TestTeardownProviderLocked_NameMatch(t *testing.T) {
 	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
 	app.provMu.Lock()
 	app.prov = mock.NewMockProvider()
-	app.orchestrator = gosync.NewOrchestrator(nil, nil, nil, nil)
+	app.orchestrator = prsync.NewOrchestrator(nil, nil, nil, nil)
 	app.activeProviderName = "github"
 	app.bridgeCancel = bridgeCancel
 	app.provMu.Unlock()
@@ -63,7 +63,7 @@ func TestTeardownProviderLocked_NameMismatch(t *testing.T) {
 	app := newFullTestApp(t)
 	app.provMu.Lock()
 	app.prov = mock.NewMockProvider()
-	app.orchestrator = gosync.NewOrchestrator(nil, nil, nil, nil)
+	app.orchestrator = prsync.NewOrchestrator(nil, nil, nil, nil)
 	app.activeProviderName = "github"
 	app.provMu.Unlock()
 
@@ -99,7 +99,7 @@ func TestKeychainStartup_DisconnectByName(t *testing.T) {
 	// Simulate what Run's startup block leaves in App.
 	app.provMu.Lock()
 	app.prov = mock.NewMockProvider()
-	app.orchestrator = gosync.NewOrchestrator(nil, nil, nil, nil)
+	app.orchestrator = prsync.NewOrchestrator(nil, nil, nil, nil)
 	app.provMu.Unlock()
 
 	// AUTH_DISCONNECT fires with name="github" — must clear everything.
@@ -154,7 +154,7 @@ func TestAttachOrchestratorLocked_LivenessWired(t *testing.T) {
 // orchestrator reference (captured before disconnect) is rejected cleanly.
 func TestApplyAction_LivenessRejected(t *testing.T) {
 	liveCtx, cancelLiveness := context.WithCancel(context.Background())
-	orch := gosync.NewOrchestrator(nil, nil, nil, nil).
+	orch := prsync.NewOrchestrator(nil, nil, nil, nil).
 		WithLiveness(liveCtx)
 
 	cancelLiveness() // simulate disconnect after handler captured orch
@@ -181,7 +181,7 @@ func TestProvCtx_CancelledOnDisconnect(t *testing.T) {
 
 	app.provMu.Lock()
 	app.prov = mock.NewMockProvider()
-	app.orchestrator = gosync.NewOrchestrator(nil, nil, nil, nil)
+	app.orchestrator = prsync.NewOrchestrator(nil, nil, nil, nil)
 	app.activeProviderName = "github"
 	capturedCtx := app.provCtx
 	app.provMu.Unlock()

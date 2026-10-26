@@ -1,4 +1,4 @@
-package sync
+package prsync
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/provider"
 	ghprovider "github.com/itterno/bistro/internal/provider/github"
+	"github.com/itterno/bistro/internal/prsync/writer"
 	"github.com/itterno/bistro/internal/store"
-	"github.com/itterno/bistro/internal/sync/writer"
 )
 
 const (
