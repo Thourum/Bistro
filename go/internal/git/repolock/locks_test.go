@@ -1,4 +1,4 @@
-package git
+package repolock
 
 import (
 	"sync"
@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-func TestRepoLocksSameRepoSerializes(t *testing.T) {
+func TestLocksSameRepoSerializes(t *testing.T) {
 	// Arrange
-	locks := NewRepoLocks()
+	locks := New()
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	secondAttempted := make(chan struct{})
@@ -73,9 +73,9 @@ func TestRepoLocksSameRepoSerializes(t *testing.T) {
 	}
 }
 
-func TestRepoLocksDifferentReposRunConcurrently(t *testing.T) {
+func TestLocksDifferentReposRunConcurrently(t *testing.T) {
 	// Arrange
-	locks := NewRepoLocks()
+	locks := New()
 	firstStarted := make(chan struct{})
 	secondEntered := make(chan struct{})
 	releaseFirst := make(chan struct{})
@@ -117,9 +117,9 @@ func TestRepoLocksDifferentReposRunConcurrently(t *testing.T) {
 	wg.Wait()
 }
 
-func TestRepoLocksMaintenanceWaitsForInFlightRepo(t *testing.T) {
+func TestLocksMaintenanceWaitsForInFlightRepo(t *testing.T) {
 	// Arrange
-	locks := NewRepoLocks()
+	locks := New()
 	repoStarted := make(chan struct{})
 	releaseRepo := make(chan struct{})
 	maintenanceEntered := make(chan struct{})

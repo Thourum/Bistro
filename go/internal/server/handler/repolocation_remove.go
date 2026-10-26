@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
 )
@@ -15,7 +15,7 @@ import (
 type RemoveRepoDeps struct {
 	DB             *sql.DB
 	Store          *store.RepoLocationStore
-	Locks          *git.RepoLocks
+	Locks          *repolock.Locks
 	DeleteCacheDir func(path string) error
 	Log            *slog.Logger
 }

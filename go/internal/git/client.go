@@ -4,6 +4,8 @@ import (
 	"os"
 
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+
+	"github.com/itterno/bistro/internal/git/repolock"
 )
 
 // LocalRepoResolver reports a registered local checkout for a repo URL.
@@ -28,7 +30,7 @@ type Client struct {
 	// keychain). Queried per operation so token rotation is picked up.
 	tokenSource   func() string
 	localResolver LocalRepoResolver
-	locks         *RepoLocks
+	locks         *repolock.Locks
 }
 
 // NewClient creates a new git client with cache
@@ -36,7 +38,7 @@ func NewClient(cache *Cache) *Client {
 	if cache == nil {
 		cache = NewCache()
 	}
-	return &Client{cache: cache, locks: NewRepoLocks()}
+	return &Client{cache: cache, locks: repolock.New()}
 }
 
 // SetTokenSource configures where clone/fetch auth tokens come from.
@@ -51,7 +53,7 @@ func (c *Client) SetLocalResolver(r LocalRepoResolver) {
 }
 
 // SetLocks configures repo-level operation locks.
-func (c *Client) SetLocks(l *RepoLocks) {
+func (c *Client) SetLocks(l *repolock.Locks) {
 	c.locks = l
 }
 

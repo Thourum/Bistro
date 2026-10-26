@@ -1,25 +1,30 @@
-package git
+package repolock
 
-import "sync"
+import (
+	"os"
+	"sync"
 
-// RepoLocks provides a mutex per repo identity plus one global
+	"github.com/itterno/bistro/internal/git/remote"
+)
+
+// Locks provides a mutex per repo identity plus one global
 // cache-maintenance lock that excludes ALL per-repo operations.
 // ponytail: RWMutex-over-map; fine for a desktop app's repo counts.
-type RepoLocks struct {
+type Locks struct {
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex
 	maint sync.RWMutex // per-repo ops take RLock; clear-all takes Lock
 }
 
-// NewRepoLocks creates a lock manager for repo operations and cache maintenance.
-func NewRepoLocks() *RepoLocks {
-	return &RepoLocks{
+// New creates a lock manager for repo operations and cache maintenance.
+func New() *Locks {
+	return &Locks{
 		locks: make(map[string]*sync.Mutex),
 	}
 }
 
 // WithRepo runs fn holding the repo's mutex AND maint.RLock.
-func (l *RepoLocks) WithRepo(repoID string, fn func() error) error {
+func (l *Locks) WithRepo(repoID string, fn func() error) error {
 	l.maint.RLock()
 	defer l.maint.RUnlock()
 
@@ -31,14 +36,14 @@ func (l *RepoLocks) WithRepo(repoID string, fn func() error) error {
 }
 
 // WithMaintenance runs fn holding the exclusive maintenance lock.
-func (l *RepoLocks) WithMaintenance(fn func() error) error {
+func (l *Locks) WithMaintenance(fn func() error) error {
 	l.maint.Lock()
 	defer l.maint.Unlock()
 
 	return fn()
 }
 
-func (l *RepoLocks) lockForRepo(repoID string) *sync.Mutex {
+func (l *Locks) lockForRepo(repoID string) *sync.Mutex {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -50,4 +55,16 @@ func (l *RepoLocks) lockForRepo(repoID string) *sync.Mutex {
 	repoLock = &sync.Mutex{}
 	l.locks[repoID] = repoLock
 	return repoLock
+}
+
+// Key returns the normalized repository identity, or the raw URL for overrides and invalid remotes.
+func Key(repoURL string) string {
+	if os.Getenv("BISTRO_REPO_DIR") != "" {
+		return repoURL
+	}
+	identity, err := remote.ParseURL(repoURL)
+	if err != nil {
+		return repoURL
+	}
+	return identity.ID()
 }

@@ -11,6 +11,8 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/itterno/bistro/internal/git/repolock"
 )
 
 // testRepoID is the repos.id-shaped lock key used by checkout tests.
@@ -171,7 +173,7 @@ func TestCheckoutPRHead_ShaAbsentNoRemoteFails(t *testing.T) {
 
 // TestCheckoutPRHead_SerializesOnRepoLock proves CheckoutPRHead participates in
 // the shared per-repo lock. Sync's local fetch path (FetchIntoLocal, via
-// cloneWithOptions) already holds RepoLocks.WithRepo(identity.ID()) while it
+// cloneWithOptions) already holds repolock.Locks.WithRepo(identity.ID()) while it
 // writes packfiles and refs into the very same on-disk repository that
 // CheckoutPRHead fetches into and checks out. Without the lock, a background
 // sync tick and an open-in-editor checkout mutate one .git concurrently.
@@ -179,7 +181,7 @@ func TestCheckoutPRHead_SerializesOnRepoLock(t *testing.T) {
 	dir := t.TempDir()
 	shaA, _ := buildCheckoutTestRepo(t, dir)
 
-	locks := NewRepoLocks()
+	locks := repolock.New()
 	c := NewClient(nil)
 	c.SetLocks(locks)
 
@@ -231,7 +233,7 @@ func TestCheckoutPRHead_SerializesOnRepoLock(t *testing.T) {
 }
 
 // TestCheckoutPRHead_NoLocksConfigured keeps CheckoutPRHead usable when the
-// client has no RepoLocks (unit tests, standalone use).
+// client has no repolock.Locks (unit tests, standalone use).
 func TestCheckoutPRHead_NoLocksConfigured(t *testing.T) {
 	dir := t.TempDir()
 	shaA, _ := buildCheckoutTestRepo(t, dir)
@@ -259,8 +261,8 @@ func TestCheckoutPRHead_LockKeyMatchesSyncKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := repoLockKey(tt.repoURL); got != tt.repoID {
-				t.Errorf("repoLockKey(%q) = %q, want %q (the repos.id CheckoutPRHead locks on)", tt.repoURL, got, tt.repoID)
+			if got := repolock.Key(tt.repoURL); got != tt.repoID {
+				t.Errorf("repolock.Key(%q) = %q, want %q (the repos.id CheckoutPRHead locks on)", tt.repoURL, got, tt.repoID)
 			}
 		})
 	}

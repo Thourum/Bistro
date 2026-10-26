@@ -12,6 +12,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	bistrogit "github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
@@ -60,7 +61,7 @@ func TestRepoLocationCacheMutationHandlersHandleMissingDeleteDependency(t *testi
 	mustMkdirAll(cachePath)
 	mustWriteFile(filepath.Join(cachePath, "payload"), "bytes")
 	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "cache", cachePath, &stale)
-	deps := CacheMaintenanceDeps{Store: store.NewRepoLocationStore(db.DB), Locks: bistrogit.NewRepoLocks(), Log: testRepoLocationLogger()}
+	deps := CacheMaintenanceDeps{Store: store.NewRepoLocationStore(db.DB), Locks: repolock.New(), Log: testRepoLocationLogger()}
 
 	// Act
 	pruneResp := callRepoLocationHandler(t, NewPruneCacheHandler(deps), "PRUNE_CACHE", map[string]any{})
@@ -88,7 +89,7 @@ func TestRepoLocationCacheMutationHandlersReturnEnvelopeForOperationFailures(t *
 			operation: "prune_cache",
 			handler:   NewPruneCacheHandler,
 			deps: func(locations *store.RepoLocationStore) CacheMaintenanceDeps {
-				return CacheMaintenanceDeps{Store: locations, Locks: bistrogit.NewRepoLocks(), DeleteCacheDir: func(string) error { return nil }, Log: testRepoLocationLogger()}
+				return CacheMaintenanceDeps{Store: locations, Locks: repolock.New(), DeleteCacheDir: func(string) error { return nil }, Log: testRepoLocationLogger()}
 			},
 		},
 		{
@@ -97,7 +98,7 @@ func TestRepoLocationCacheMutationHandlersReturnEnvelopeForOperationFailures(t *
 			operation: "clear_cache",
 			handler:   NewClearCacheHandler,
 			deps: func(locations *store.RepoLocationStore) CacheMaintenanceDeps {
-				return CacheMaintenanceDeps{Store: locations, Locks: bistrogit.NewRepoLocks(), DeleteCacheDir: func(string) error { return nil }, Log: testRepoLocationLogger()}
+				return CacheMaintenanceDeps{Store: locations, Locks: repolock.New(), DeleteCacheDir: func(string) error { return nil }, Log: testRepoLocationLogger()}
 			},
 		},
 	}
@@ -131,7 +132,7 @@ func TestRepoLocationClearCacheOrphanSweepFailureKeepsPartialResults(t *testing.
 	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "cache", cachePath, nil)
 	deps := CacheMaintenanceDeps{
 		Store:          locations,
-		Locks:          bistrogit.NewRepoLocks(),
+		Locks:          repolock.New(),
 		DeleteCacheDir: func(string) error { return nil },
 		SweepOrphans:   (&fakeRepoLocationSweeper{err: errors.New("sweep failed")}).SweepOrphans,
 		Log:            testRepoLocationLogger(),
@@ -258,7 +259,7 @@ func TestRepoLocationCacheMaintenance(t *testing.T) {
 	}
 	deleter := &fakeRepoLocationCacheDeleter{failed: map[string]error{canonicalFailedPath: deleteErr}}
 	sweeper := &fakeRepoLocationSweeper{removed: []string{filepath.Join(root, "cache", "orphan")}}
-	locks := bistrogit.NewRepoLocks()
+	locks := repolock.New()
 	deps := CacheMaintenanceDeps{
 		Store:          store.NewRepoLocationStore(db.DB),
 		Locks:          locks,
@@ -357,7 +358,7 @@ func TestRepoLocationDeleteCacheRepoRereadsAfterWaitingForLock(t *testing.T) {
 	mustWriteFile(filepath.Join(cachePath, "cached"), "cache payload")
 	mustMkdirAll(localPath)
 	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "cache", cachePath, nil)
-	locks := bistrogit.NewRepoLocks()
+	locks := repolock.New()
 	lockHeld := make(chan struct{})
 	lockRelease := make(chan struct{})
 	go func() {

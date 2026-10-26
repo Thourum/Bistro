@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
@@ -15,7 +16,7 @@ import (
 // CacheMaintenanceDeps supplies cache persistence, locking, and deletion.
 type CacheMaintenanceDeps struct {
 	Store          *store.RepoLocationStore
-	Locks          *git.RepoLocks
+	Locks          *repolock.Locks
 	DeleteCacheDir func(path string) error
 	SweepOrphans   func(known map[string]bool) ([]string, error)
 	Log            *slog.Logger
@@ -150,7 +151,7 @@ func NewDeleteCacheRepoHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
 	}
 }
 
-func runCacheMaintenance(locks *git.RepoLocks, operation func() error) error {
+func runCacheMaintenance(locks *repolock.Locks, operation func() error) error {
 	if locks != nil {
 		return locks.WithMaintenance(operation)
 	}

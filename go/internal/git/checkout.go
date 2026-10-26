@@ -56,7 +56,7 @@ var ErrWorktreeDirty = errors.New("worktree dirty")
 // silently discarded.
 //
 // repoID is the repos.id value ("<provider>:<owner>/<repo>") — the same key
-// sync's fetch/clone paths lock on via repoLockKey. The whole
+// sync's fetch/clone paths lock on via repolock.Key. The whole
 // status → fetch → checkout sequence runs under that lock, so a background
 // sync tick writing refs and packfiles into this repository can never
 // interleave with the checkout. The dirty-worktree check is only meaningful

@@ -8,6 +8,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
+	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/logging"
 )
 
@@ -35,7 +36,7 @@ type InterdiffResult struct {
 // Interdiff diffs req.Path from FromHead to ToHead.
 func (c *Client) Interdiff(req InterdiffRequest) (InterdiffResult, error) {
 	var result InterdiffResult
-	err := c.locks.WithRepo(repoLockKey(req.RepoURL), func() error {
+	err := c.locks.WithRepo(repolock.Key(req.RepoURL), func() error {
 		repo, err := gitlib.PlainOpen(req.RepoPath)
 		if err != nil {
 			return fmt.Errorf("open repo %s: %w", req.RepoPath, err)

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/itterno/bistro/internal/git/remote"
+	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/logging"
 )
 
@@ -229,8 +230,8 @@ func TestCloneUsesNormalizedIdentityForRepoLockKey(t *testing.T) {
 	const sshURL = "git@github.com:acme/api.git"
 
 	// Act
-	httpsKey := repoLockKey(httpsURL)
-	sshKey := repoLockKey(sshURL)
+	httpsKey := repolock.Key(httpsURL)
+	sshKey := repolock.Key(sshURL)
 
 	// Assert
 	if httpsKey != sshKey {
@@ -248,7 +249,7 @@ func TestCloneUsesRawRepoURLForLockKeyWithBistroRepoDir(t *testing.T) {
 	const repoURL = "git@github.com:acme/api.git"
 
 	// Act
-	lockKey := repoLockKey(repoURL)
+	lockKey := repolock.Key(repoURL)
 
 	// Assert
 	if lockKey != repoURL {

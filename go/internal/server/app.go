@@ -19,6 +19,7 @@ import (
 	"github.com/itterno/bistro/internal/classify/llm"
 	"github.com/itterno/bistro/internal/expertise"
 	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/keychain"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/server/handler"
@@ -45,7 +46,7 @@ type App struct {
 	githubClientID      string
 	githubClientSecret  string
 	authCallbackTimeout time.Duration
-	repoLocks           *git.RepoLocks
+	repoLocks           *repolock.Locks
 	providerCache       *cache.ProviderCache
 	tokenManager        *keychain.TokenManager
 	syncTrigger         chan string
@@ -117,7 +118,7 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 		dbPath:              dbPath,
 		providerCache:       cache.NewProviderCache(cachePath),
 		tokenManager:        keychain.NewTokenManager(),
-		repoLocks:           git.NewRepoLocks(),
+		repoLocks:           repolock.New(),
 		syncTrigger:         make(chan string, 8),
 		syncSettings:        make(chan syncSettingsMsg, 4),
 		syncInterval:        5 * time.Minute,
@@ -150,7 +151,7 @@ func (a *App) openDatabase(ctx context.Context) error {
 
 func (a *App) prepareStores() runStores {
 	if a.repoLocks == nil {
-		a.repoLocks = git.NewRepoLocks()
+		a.repoLocks = repolock.New()
 	}
 	if a.gitClient == nil {
 		a.gitClient = git.NewClient(git.NewCache())

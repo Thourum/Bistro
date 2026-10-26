@@ -10,6 +10,7 @@ import (
 	gitlib "github.com/go-git/go-git/v5"
 
 	"github.com/itterno/bistro/internal/git/remote"
+	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/logging"
 )
 
@@ -71,7 +72,7 @@ func (c *Client) CloneRepoToPath(ctx context.Context, repoURL, destination strin
 	if c.locks == nil {
 		return operation()
 	}
-	return c.locks.WithRepo(repoLockKey(repoURL), operation)
+	return c.locks.WithRepo(repolock.Key(repoURL), operation)
 }
 
 // Clone fetches both baseSHA and headSHA into a local clone using the broad
@@ -182,18 +183,7 @@ func (c *Client) WithPRClone(ctx context.Context, repoURL, baseSHA, headSHA stri
 	if c.locks == nil {
 		return operation()
 	}
-	return c.locks.WithRepo(repoLockKey(repoURL), operation)
-}
-
-func repoLockKey(repoURL string) string {
-	if os.Getenv("BISTRO_REPO_DIR") != "" {
-		return repoURL
-	}
-	identity, err := remote.ParseURL(repoURL)
-	if err != nil {
-		return repoURL
-	}
-	return identity.ID()
+	return c.locks.WithRepo(repolock.Key(repoURL), operation)
 }
 
 func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, error) {
