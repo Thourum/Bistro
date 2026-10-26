@@ -135,7 +135,7 @@ Approve (with the `a a` two-key sequence), request changes, post line/thread com
 | Sub-feature | Status | Notes |
 |---|---|---|
 | Approve / request changes / PR-level comment | done | |
-| **Line-level / inline review comment** | done (2026-10-23) | “Review Without Leaving Keyboard” Phase 1 shipped: `c` enters line-comment mode; line/range drafts persist locally, can be edited with `Enter` or deleted with `d d`, and submit via `SubmitReview` / GitHub `CreateReview` with `path`/`commitSHA`/`side`. Approve / request changes include pending drafts; the palette also offers Submit review / Discard drafts. Phase 2 key-remap UI is in progress |
+| **Line-level / inline review comment** | done (2026-10-23) | “Review Without Leaving Keyboard” Phase 1 shipped: `c` enters line-comment mode; line/range drafts persist locally, can be edited with `Enter` or deleted with `d d`, and submit via `SubmitReview` / GitHub `CreateReview` with `path`/`commitSHA`/`side`. Approve / request changes include pending drafts; the palette also offers Submit review / Discard drafts. Phase 2 shipped (2026-10-23): Settings → Keyboard rebinds an action with `Enter` (records a key or chord), restores the default with `Backspace`, and rejects keys that conflict in the same route/overlay scope |
 | `a a` approve sequence | done | Two-key sequence in `utils/keybindings.ts`; approves immediately and includes pending drafts |
 | Exponential backoff retry | done | `actions/executor.go` |
 | Offline action queue with replay | done | ⚠️ Audit (FIXED 2026-06-19): re-enqueuing the same `(PR, action)` hit a `PRIMARY KEY` collision and silently dropped the retry. `Enqueue` now uses `ON CONFLICT(id) DO UPDATE … status='pending', retry_count=0` |
