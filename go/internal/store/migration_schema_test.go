@@ -257,8 +257,10 @@ func TestMigration016_UpgradesOldPatchsetsHeadOnlyIdentity(t *testing.T) {
 		watched  INTEGER NOT NULL DEFAULT 0,
 		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 	)`)
-	mustExec(t, db, `CREATE TABLE prs (id TEXT PRIMARY KEY)`)
+	mustExec(t, db, `CREATE TABLE prs (id TEXT PRIMARY KEY, owner TEXT NOT NULL DEFAULT '', repo TEXT NOT NULL DEFAULT '', repo_id TEXT NOT NULL DEFAULT '')`)
 	mustExec(t, db, `INSERT INTO prs (id) VALUES ('p-old')`)
+	mustExec(t, db, `CREATE TABLE files (id TEXT PRIMARY KEY, pr_id TEXT NOT NULL)`)
+	mustExec(t, db, `CREATE TABLE review_threads (id TEXT PRIMARY KEY, pr_id TEXT NOT NULL)`)
 	mustExec(t, db, `CREATE TABLE pr_diffs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		pr_id TEXT NOT NULL,

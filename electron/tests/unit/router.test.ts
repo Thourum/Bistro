@@ -41,6 +41,28 @@ describe('router smoke tests', () => {
     ).toBe(true);
   });
 
+  it('canonicalizes mixed-case PR IDs in encoded detail links', () => {
+    const matches = router.matchRoutes('/prs/github%3AThourum%2FTesting%2342', {});
+    const detailMatch = matches.find(
+      (match) => match.routeId === '/authed/prs/$prId',
+    );
+
+    expect(detailMatch?.params.prId).toBe('github:thourum/testing#42');
+  });
+
+  it('canonicalizes mixed-case PR IDs in encoded diff links without changing file casing', () => {
+    const matches = router.matchRoutes(
+      '/prs/github%3AThourum%2FTesting%2342/diff',
+      { file: 'src/MixedCase.ts', side: 'right' },
+    );
+    const diffMatch = matches.find(
+      (match) => match.routeId === '/authed/prs/$prId/diff',
+    );
+
+    expect(diffMatch?.params.prId).toBe('github:thourum/testing#42');
+    expect(diffMatch?.search.file).toBe('src/MixedCase.ts');
+  });
+
   it('router can navigate to /prs when authed', async () => {
     // Seed auth so the requireAuthedAndOnboarded guard passes without waiting.
     appStore.setState((s) => ({

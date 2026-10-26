@@ -295,9 +295,10 @@ func assertAllEmbeddedVersionsApplied(t *testing.T, ctx context.Context, db *sql
 	}
 	// Version 13 was removed before goose adoption; all other versions remain embedded.
 	const removedMigrationCount = 1
-	wantCount := int(reconcileBaselineVersion) - removedMigrationCount
+	latestVersion := versions[len(versions)-1]
+	wantCount := int(latestVersion) - removedMigrationCount
 	if len(versions) != wantCount {
-		t.Fatalf("embedded migration count = %d, want %d through version %d excluding version 13", len(versions), wantCount, reconcileBaselineVersion)
+		t.Fatalf("embedded migration count = %d, want %d through version %d excluding version 13", len(versions), wantCount, latestVersion)
 	}
 	for _, version := range versions {
 		var appliedCount int
@@ -446,9 +447,18 @@ func TestMigrationRunnerSeedsGooseFromLegacySchemaMigrations(t *testing.T) {
 		}
 		mustExec(t, db, `INSERT INTO schema_migrations (version, description) VALUES (?, ?)`, version, "pre-applied")
 	}
-	mustExec(t, db, `CREATE TABLE prs (id TEXT PRIMARY KEY)`)
-	mustExec(t, db, `CREATE TABLE comments (id TEXT PRIMARY KEY)`)
-	mustExec(t, db, `CREATE TABLE files (id TEXT PRIMARY KEY)`)
+	mustExec(t, db, `CREATE TABLE prs (id TEXT PRIMARY KEY, owner TEXT NOT NULL DEFAULT '', repo TEXT NOT NULL DEFAULT '', repo_id TEXT NOT NULL DEFAULT '')`)
+	mustExec(t, db, `CREATE TABLE repos (
+		id TEXT PRIMARY KEY, provider TEXT NOT NULL, owner TEXT NOT NULL, repo TEXT NOT NULL,
+		watched INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '',
+		local_path TEXT, source TEXT, last_used_at DATETIME,
+		location_status TEXT, location_error_code TEXT, location_error TEXT
+	)`)
+	mustExec(t, db, `CREATE TABLE comments (id TEXT PRIMARY KEY, pr_id TEXT NOT NULL)`)
+	mustExec(t, db, `CREATE TABLE files (id TEXT PRIMARY KEY, pr_id TEXT NOT NULL)`)
+	mustExec(t, db, `CREATE TABLE review_threads (id TEXT PRIMARY KEY, pr_id TEXT NOT NULL)`)
+	mustExec(t, db, `CREATE TABLE files_viewed (pr_id TEXT NOT NULL)`)
+	mustExec(t, db, `CREATE TABLE action_queue (id TEXT PRIMARY KEY, action_type TEXT NOT NULL, pr_id TEXT NOT NULL, payload TEXT NOT NULL)`)
 	mustExec(t, db, `CREATE TABLE patchsets (
 		pr_id TEXT NOT NULL, number INTEGER NOT NULL, head_sha TEXT NOT NULL,
 		base_sha TEXT NOT NULL, pushed_at TIMESTAMP NOT NULL, PRIMARY KEY (pr_id, number)
@@ -471,7 +481,7 @@ func TestMigrationRunnerSeedsGooseFromLegacySchemaMigrations(t *testing.T) {
 	// Migrations past the legacy seed (00032 adds hydrated and 00033 adds
 	// mentioned) still apply, but the table must not have been dropped and
 	// re-created.
-	if prsSQL != "CREATE TABLE prs (id TEXT PRIMARY KEY, hydrated INTEGER NOT NULL DEFAULT 1, mentioned INTEGER NOT NULL DEFAULT 0)" {
+	if prsSQL != "CREATE TABLE prs (id TEXT PRIMARY KEY, owner TEXT NOT NULL DEFAULT '', repo TEXT NOT NULL DEFAULT '', repo_id TEXT NOT NULL DEFAULT '', hydrated INTEGER NOT NULL DEFAULT 1, mentioned INTEGER NOT NULL DEFAULT 0)" {
 		t.Errorf("prs table was re-migrated; schema = %q", prsSQL)
 	}
 }
