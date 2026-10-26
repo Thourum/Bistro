@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/logging"
@@ -21,7 +22,7 @@ import (
 
 func TestInterdiffAfterForcePush(t *testing.T) {
 	fixture := newForcePushFixture(t)
-	client := git.NewClient(git.NewCache())
+	client := git.NewClient(clonecache.New())
 	locks := repolock.New()
 	client.SetLocks(locks)
 	syncHead(t, client, fixture, fixture.head1)
@@ -154,7 +155,7 @@ func newForcePushFixture(t *testing.T) forcePushFixture {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("GITHUB_TOKEN", "")
-	root, err := git.CacheRoot()
+	root, err := clonecache.Root()
 	if err != nil {
 		t.Fatalf("CacheRoot: %v", err)
 	}

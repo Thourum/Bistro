@@ -19,6 +19,7 @@ import (
 	"github.com/itterno/bistro/internal/classify/llm"
 	"github.com/itterno/bistro/internal/expertise"
 	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/keychain"
 	"github.com/itterno/bistro/internal/provider"
@@ -154,7 +155,7 @@ func (a *App) prepareStores() runStores {
 		a.repoLocks = repolock.New()
 	}
 	if a.gitClient == nil {
-		a.gitClient = git.NewClient(git.NewCache())
+		a.gitClient = git.NewClient(clonecache.New())
 	}
 	a.gitClient.SetLocks(a.repoLocks)
 	a.gitClient.SetTokenSource(a.githubToken)

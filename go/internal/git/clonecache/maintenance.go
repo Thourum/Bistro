@@ -1,4 +1,4 @@
-package git
+package clonecache
 
 import (
 	"errors"
@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// CacheRepoStat describes a cached repository's size, age, and safety checks.
-type CacheRepoStat struct {
+// RepoStat describes a cached repository's size, age, and safety checks.
+type RepoStat struct {
 	RepoID     string
 	Path       string
 	SizeBytes  int64
@@ -21,8 +21,8 @@ type CacheRepoStat struct {
 	Error      string
 }
 
-// CacheEntryInput identifies a registered cache directory for maintenance.
-type CacheEntryInput struct {
+// EntryInput identifies a registered cache directory for maintenance.
+type EntryInput struct {
 	RepoID     string
 	Path       string
 	LastUsedAt *time.Time
@@ -31,16 +31,16 @@ type CacheEntryInput struct {
 // StaleAfter is the age at which an unused cache entry becomes eligible for pruning.
 const StaleAfter = 30 * 24 * time.Hour
 
-// CacheStats measures registered cache entries without deleting them.
-func CacheStats(repos []CacheEntryInput) ([]CacheRepoStat, error) {
-	root, err := canonicalCacheRoot()
+// Stats measures registered cache entries without deleting them.
+func Stats(repos []EntryInput) ([]RepoStat, error) {
+	root, err := canonicalRoot()
 	if err != nil {
 		return nil, err
 	}
 
-	stats := make([]CacheRepoStat, 0, len(repos))
+	stats := make([]RepoStat, 0, len(repos))
 	for _, repo := range repos {
-		stat := CacheRepoStat{
+		stat := RepoStat{
 			RepoID:     repo.RepoID,
 			Path:       filepath.Clean(repo.Path),
 			LastUsedAt: repo.LastUsedAt,
@@ -67,10 +67,10 @@ func CacheStats(repos []CacheEntryInput) ([]CacheRepoStat, error) {
 	return stats, nil
 }
 
-// DeleteCacheDir removes a safe cache directory under CacheRoot.
+// DeleteDir removes a safe cache directory under Root.
 // Registered legacy directories can be supplied when they lack owner/repo depth.
-func DeleteCacheDir(path string, registeredLegacyPaths ...map[string]bool) error {
-	root, err := canonicalCacheRoot()
+func DeleteDir(path string, registeredLegacyPaths ...map[string]bool) error {
+	root, err := canonicalRoot()
 	if err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func DeleteCacheDir(path string, registeredLegacyPaths ...map[string]bool) error
 // SweepOrphans removes owner/repo cache directories absent from known.
 // Callers must hold the maintenance lock while sweeping live cache entries.
 func SweepOrphans(known map[string]bool) ([]string, error) {
-	root, err := canonicalCacheRoot()
+	root, err := canonicalRoot()
 	if err != nil {
 		return nil, err
 	}
@@ -147,8 +147,8 @@ func SweepOrphans(known map[string]bool) ([]string, error) {
 	return removed, errors.Join(skipped...)
 }
 
-func skippedCacheStat(stat CacheRepoStat, err error) CacheRepoStat {
-	return CacheRepoStat{
+func skippedCacheStat(stat RepoStat, err error) RepoStat {
+	return RepoStat{
 		RepoID:     stat.RepoID,
 		Path:       stat.Path,
 		SizeBytes:  0,
@@ -192,8 +192,8 @@ func isStale(lastUsedAt *time.Time) bool {
 	return time.Since(*lastUsedAt) > StaleAfter
 }
 
-func canonicalCacheRoot() (string, error) {
-	root, err := CacheRoot()
+func canonicalRoot() (string, error) {
+	root, err := Root()
 	if err != nil {
 		return "", fmt.Errorf("get cache root: %w", err)
 	}

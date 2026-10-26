@@ -31,6 +31,8 @@ Within `go/internal/server/`, `app.go` owns the App struct, constructors, store 
 
 Local diff generation, interdiff, and patch fingerprints live in `internal/git/diff` (`Generate`, `Interdiff`, `PatchID`). Interdiff takes the shared `*repolock.Locks` used by clone/fetch; it does not depend on `git.Client`. See the [Go package layout spec](docs/superpowers/specs/2026-10-26-go-package-layout-design.md) for the package boundaries.
 
+Clone cache entries, path/staging helpers, maintenance, and PR-head retention live in `internal/git/clonecache`; it depends on `remote`, never the parent `git` package. See [Go package layout spec](docs/superpowers/specs/2026-10-26-go-package-layout-design.md) for the cache API and boundaries.
+
 Go tests outside package `store` share migrated in-memory databases via `internal/store/storetest.Open(t)`; `store`'s own internal tests keep local helpers to avoid an import cycle. See the [Go package layout spec](docs/superpowers/specs/2026-10-26-go-package-layout-design.md) for the shared-leaf refactor.
 
 ## Tech stack

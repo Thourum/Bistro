@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	bistrogit "github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
 )
 
 func TestScanFindsDepthOneAndTwoAndIgnoresDepthThree(t *testing.T) {
@@ -263,7 +264,7 @@ func TestScanFindsNonBareCloneCreatedForDevFolderDestination(t *testing.T) {
 			createCloneableRepo(t, remoteDir, "origin", "https://github.com/acme/api.git")
 			devFolder := t.TempDir()
 			destination := filepath.Join(devFolder, "acme", "api")
-			client := bistrogit.NewClient(bistrogit.NewCache())
+			client := bistrogit.NewClient(clonecache.New())
 
 			// Act
 			cloneErr := client.CloneRepoToPath(context.Background(), "file://"+remoteDir, destination, tt.bare)

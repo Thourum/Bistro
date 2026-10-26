@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/store"
@@ -158,16 +158,16 @@ func runCacheMaintenance(locks *repolock.Locks, operation func() error) error {
 	return operation()
 }
 
-func cacheStats(ctx context.Context, locations *store.RepoLocationStore) ([]git.CacheRepoStat, error) {
+func cacheStats(ctx context.Context, locations *store.RepoLocationStore) ([]clonecache.RepoStat, error) {
 	cacheRows, err := locations.ListBySource(ctx, "cache")
 	if err != nil {
 		return nil, err
 	}
-	inputs := make([]git.CacheEntryInput, 0, len(cacheRows))
+	inputs := make([]clonecache.EntryInput, 0, len(cacheRows))
 	for _, row := range cacheRows {
-		inputs = append(inputs, git.CacheEntryInput{RepoID: row.RepoID, Path: row.LocalPath, LastUsedAt: row.LastUsedAt})
+		inputs = append(inputs, clonecache.EntryInput{RepoID: row.RepoID, Path: row.LocalPath, LastUsedAt: row.LastUsedAt})
 	}
-	return git.CacheStats(inputs)
+	return clonecache.Stats(inputs)
 }
 
 func requireDeleteCacheDir(deleteCacheDir func(path string) error) func(path string) error {

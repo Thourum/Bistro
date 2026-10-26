@@ -18,6 +18,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/remote"
 )
 
@@ -29,7 +30,7 @@ func TestFetchIntoLocal_WritesOnlyBistroRefs(t *testing.T) {
 	headSHA := fixture.commitUpstream(t, "feature.txt", "feature\n", "feature")
 	fixture.setUpstreamPRRef(t, 123, headSHA)
 
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 
 	// Act
 	err := client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), nil)
@@ -61,7 +62,7 @@ func TestFetchIntoLocal_NeverTouchesUserState(t *testing.T) {
 	fixture.setUpstreamPRRef(t, 123, headSHA)
 	before := captureUserState(t, fixture.userPath)
 
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 
 	// Act
 	err := client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), nil)
@@ -90,7 +91,7 @@ func TestFetchIntoLocal_RemoteMismatch(t *testing.T) {
 	fixture := newLocalFetchFixture(t)
 	fixture.replaceOriginURLs(t, "file://"+fixture.upstreamPath, "https://github.com/other/repo.git")
 	headSHA := fixture.commitUpstream(t, "feature.txt", "feature\n", "feature")
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 
 	// Act
 	err := client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), nil)
@@ -122,7 +123,7 @@ func TestFetchIntoLocal_FetchesFromMatchingRemote(t *testing.T) {
 
 	fixture.replaceOriginURLs(t, "file://"+wrongRemotePath, "https://github.com/other/repo.git")
 	fixture.addRemote(t, "upstream", "file://"+fixture.upstreamPath, localFetchRemoteURL)
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 
 	// Act
 	err = client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), nil)
@@ -140,7 +141,7 @@ func TestFetchIntoLocal_FetchesFromMatchingRemote(t *testing.T) {
 func TestFetchIntoLocal_SkipsWhenPresent(t *testing.T) {
 	// Arrange
 	fixture := newLocalFetchFixture(t)
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 	beforeRefs := allRefNames(t, fixture.openUserRepo(t))
 
 	// Act
@@ -162,7 +163,7 @@ func TestFetchIntoLocal_TargetedRefspecsOnly(t *testing.T) {
 	fixture.setUpstreamPRRef(t, prNumber, headSHA)
 	unrelatedSHA := fixture.commitUpstreamBranch(t, "unrelated", "unrelated.txt", "unrelated\n", "unrelated")
 
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 
 	// Act
 	err := client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), &CloneOptions{
@@ -207,7 +208,7 @@ func TestFetchIntoLocal_TargetedFetchDoesNotWriteShallowMetadata(t *testing.T) {
 		t.Fatalf("expected fixture to start without shallow metadata, stat err=%v", err)
 	}
 
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 
 	// Act
 	err := client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), &CloneOptions{

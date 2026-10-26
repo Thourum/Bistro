@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	gogit "github.com/go-git/go-git/v5"
+
+	"github.com/itterno/bistro/internal/git/clonecache"
 )
 
 func TestNewClient(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	if client == nil {
 		t.Error("expected non-nil client")
@@ -18,7 +20,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestClientHasCache(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	if client.cache == nil {
 		t.Error("expected cache to be set")
@@ -26,7 +28,7 @@ func TestClientHasCache(t *testing.T) {
 }
 
 func TestCloneEmptyURL(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	ctx := context.Background()
 
@@ -37,7 +39,7 @@ func TestCloneEmptyURL(t *testing.T) {
 }
 
 func TestCloneEmptyBaseSHA(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	ctx := context.Background()
 
@@ -48,7 +50,7 @@ func TestCloneEmptyBaseSHA(t *testing.T) {
 }
 
 func TestCloneEmptyHeadSHA(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	ctx := context.Background()
 
@@ -61,11 +63,11 @@ func TestCloneEmptyHeadSHA(t *testing.T) {
 func TestCloneWithCachedRepo(t *testing.T) {
 	remoteDir := t.TempDir()
 	_, baseSHA, headSHA := buildRemoteWithPRRef(t, remoteDir, 1)
-	cache := NewCache()
+	cache := clonecache.New()
 
 	// Cache hits are only honored when the path still exists on disk and contains
 	// the requested commits, so point at a real repo that has both SHAs.
-	entry := &RepoEntry{
+	entry := &clonecache.RepoEntry{
 		URL:       "file://" + remoteDir,
 		LocalPath: remoteDir,
 		BaseSHA:   baseSHA,
@@ -92,10 +94,10 @@ func TestCloneWithCachedRepo(t *testing.T) {
 // hit pointing at a now-missing directory must NOT be returned — go-git would
 // then fail with the misleading "repository does not exist".
 func TestCloneCacheHitMissingDirNotReturned(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	const url = "https://github.com/org/repo"
 	deadDir := t.TempDir()
-	cache.Set(url, "base1", "head1", &RepoEntry{
+	cache.Set(url, "base1", "head1", &clonecache.RepoEntry{
 		URL:       url,
 		LocalPath: deadDir,
 		BaseSHA:   "base1",
@@ -143,9 +145,9 @@ func TestLocalRepoExists(t *testing.T) {
 func TestCloneCachesResult(t *testing.T) {
 	remoteDir := t.TempDir()
 	_, baseSHA, headSHA := buildRemoteWithPRRef(t, remoteDir, 2)
-	cache := NewCache()
+	cache := clonecache.New()
 
-	entry := &RepoEntry{
+	entry := &clonecache.RepoEntry{
 		URL:       "file://" + remoteDir,
 		LocalPath: remoteDir,
 		BaseSHA:   baseSHA,
@@ -171,11 +173,11 @@ func TestCloneCachesResult(t *testing.T) {
 
 // TestCloneDifferentSHAsMissCache verifies that a cache hit requires both SHAs to match
 func TestCloneDifferentSHAsMissCache(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	url := "https://github.com/org/repo"
 
 	// Cache entry for old headSHA
-	cache.Set(url, "base1", "oldhead", &RepoEntry{
+	cache.Set(url, "base1", "oldhead", &clonecache.RepoEntry{
 		URL:       url,
 		LocalPath: "/tmp/old",
 		BaseSHA:   "base1",
@@ -190,7 +192,7 @@ func TestCloneDifferentSHAsMissCache(t *testing.T) {
 }
 
 func TestFetchRefsEmptyPath(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	ctx := context.Background()
 
@@ -201,7 +203,7 @@ func TestFetchRefsEmptyPath(t *testing.T) {
 }
 
 func TestFetchRefsEmptyBaseSHA(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	ctx := context.Background()
 
@@ -212,7 +214,7 @@ func TestFetchRefsEmptyBaseSHA(t *testing.T) {
 }
 
 func TestFetchRefsEmptyHeadSHA(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	ctx := context.Background()
 
@@ -223,7 +225,7 @@ func TestFetchRefsEmptyHeadSHA(t *testing.T) {
 }
 
 func TestFetchRefsInvalidPath(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	ctx := context.Background()
 
@@ -248,7 +250,7 @@ func TestCloneRepoToPathNonBareCreatesOpenableWorktree(t *testing.T) {
 			remoteDir := t.TempDir()
 			buildRemoteWithPRRef(t, remoteDir, 1)
 			destination := filepath.Join(t.TempDir(), "acme", "api")
-			client := NewClient(NewCache())
+			client := NewClient(clonecache.New())
 
 			// Act
 			err := client.CloneRepoToPath(context.Background(), "file://"+remoteDir, destination, tt.bare)

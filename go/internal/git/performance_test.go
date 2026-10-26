@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/memory"
 
+	"github.com/itterno/bistro/internal/git/clonecache"
 	gitdiff "github.com/itterno/bistro/internal/git/diff"
 )
 
@@ -81,11 +82,11 @@ func benchT3CodeLivePRFixture(b *testing.B) benchT3CodePRFixture {
 }
 
 func BenchmarkCloneCacheHitT3Code(b *testing.B) {
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	localPath := b.TempDir()
 
-	cache.Set(benchT3CodeRepoURL, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA, &RepoEntry{
+	cache.Set(benchT3CodeRepoURL, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA, &clonecache.RepoEntry{
 		URL:       benchT3CodeRepoURL,
 		LocalPath: localPath,
 		BaseSHA:   benchT3CodeRangeBaseSHA,
@@ -112,7 +113,7 @@ func BenchmarkCloneColdMissT3Code(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		client := NewClient(NewCache())
+		client := NewClient(clonecache.New())
 		result, err := client.Clone(context.Background(), benchT3CodeRepoURL, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA)
 		if err != nil {
 			b.Fatalf("Clone cold miss: %v", err)
@@ -125,7 +126,7 @@ func BenchmarkCloneColdMissT3Code(b *testing.B) {
 
 func BenchmarkGenerateDiffT3CodeWarmClone(b *testing.B) {
 	b.Setenv("BISTRO_REPO_DIR", b.TempDir())
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 	cloneResult, err := client.Clone(context.Background(), benchT3CodeRepoURL, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA)
 	if err != nil {
 		b.Fatalf("setup clone: %v", err)
@@ -148,7 +149,7 @@ func BenchmarkCloneAndGenerateDiffT3Code(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		client := NewClient(NewCache())
+		client := NewClient(clonecache.New())
 		cloneResult, err := client.Clone(context.Background(), benchT3CodeRepoURL, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA)
 		if err != nil {
 			b.Fatalf("Clone: %v", err)
@@ -173,7 +174,7 @@ func BenchmarkCloneForPRTargetedColdMissT3Code(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		client := NewClient(NewCache())
+		client := NewClient(clonecache.New())
 		result, err := client.CloneForPR(context.Background(), benchT3CodeRepoURL,
 			fixture.BaseSHA, fixture.HeadSHA, benchT3CodeOpts())
 		if err != nil {
@@ -194,7 +195,7 @@ func BenchmarkCloneForPRTargetedAndGenerateDiffT3Code(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		client := NewClient(NewCache())
+		client := NewClient(clonecache.New())
 		result, err := client.CloneForPR(context.Background(), benchT3CodeRepoURL,
 			fixture.BaseSHA, fixture.HeadSHA, benchT3CodeOpts())
 		if err != nil {

@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/scan"
 	"github.com/itterno/bistro/internal/server/handler"
 	"github.com/itterno/bistro/internal/store"
@@ -22,13 +22,13 @@ func (a *App) cloneRepoLocationRepo(ctx context.Context, repoURL, destination st
 
 func (a *App) registerRepoLocationHandlers(ctx context.Context, stores runStores) func() {
 	deleteCacheDir := func(path string) error {
-		return git.DeleteCacheDir(path)
+		return clonecache.DeleteDir(path)
 	}
 	cacheDeps := handler.CacheMaintenanceDeps{
 		Store:          stores.repoLocation,
 		Locks:          a.repoLocks,
 		DeleteCacheDir: deleteCacheDir,
-		SweepOrphans:   git.SweepOrphans,
+		SweepOrphans:   clonecache.SweepOrphans,
 		Log:            a.log,
 	}
 	a.wsServer.RegisterHandler("VALIDATE_DEV_FOLDER", handler.NewValidateDevFolderHandler(a.log))
@@ -42,7 +42,7 @@ func (a *App) registerRepoLocationHandlers(ctx context.Context, stores runStores
 		DB:        a.db.DB,
 		Store:     stores.repoLocation,
 		Clone:     a.cloneRepoLocationRepo,
-		CacheRoot: git.CacheRoot,
+		CacheRoot: clonecache.Root,
 		Log:       a.log,
 	}))
 	a.wsServer.RegisterHandler("REMOVE_REPO_PREFLIGHT", handler.NewRemoveRepoPreflightHandler(a.db.DB, a.log))
@@ -55,7 +55,7 @@ func (a *App) registerRepoLocationHandlers(ctx context.Context, stores runStores
 		DB:        a.db.DB,
 		Store:     stores.repoLocation,
 		Clone:     a.cloneRepoLocationRepo,
-		CacheRoot: git.CacheRoot,
+		CacheRoot: clonecache.Root,
 		Log:       a.log,
 	}))
 	a.wsServer.RegisterHandler("REMOVE_REPO", handler.NewRemoveRepoHandler(handler.RemoveRepoDeps{

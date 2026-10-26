@@ -9,6 +9,7 @@ import (
 
 	gitlib "github.com/go-git/go-git/v5"
 
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/logging"
@@ -184,7 +185,11 @@ func (c *Client) WithPRClone(ctx context.Context, repoURL, baseSHA, headSHA stri
 		if err != nil {
 			return err
 		}
-		pinPRHead(log, clone.LocalPath, repoURL, opts, headSHA)
+		prNumber := 0
+		if opts != nil {
+			prNumber = opts.PRNumber
+		}
+		clonecache.PinPRHead(log, clone.LocalPath, repoURL, prNumber, headSHA)
 		return use(clone)
 	}
 	if c.locks == nil {

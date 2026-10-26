@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/logging"
 )
 
@@ -77,7 +78,7 @@ func TestCloneForPR_TargetedSuccess(t *testing.T) {
 	// intended purpose, not repurposed).
 	t.Setenv("BISTRO_REPO_DIR", t.TempDir())
 
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 
 	result, err := client.CloneForPR(context.Background(), "file://"+remoteDir, baseSHA, headSHA,
@@ -125,7 +126,7 @@ func TestCloneForPR_FallbackOnMissingBase(t *testing.T) {
 
 	t.Setenv("BISTRO_REPO_DIR", t.TempDir())
 
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 
 	const bogusBase = "0000000000000000000000000000000000000000"
@@ -143,11 +144,11 @@ func TestCloneForPR_FallbackOnMissingBase(t *testing.T) {
 // TestCloneForPR_NilOptsDelegatesToClone verifies CloneForPR with nil opts
 // behaves like Clone (e.g. honors the on-disk cache hit without any fetch).
 func TestCloneForPR_NilOptsDelegatesToClone(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	remoteDir := t.TempDir()
 	_, baseSHA, headSHA := buildRemoteWithPRRef(t, remoteDir, 11)
 	url := "file://" + remoteDir
-	cache.Set(url, baseSHA, headSHA, &RepoEntry{
+	cache.Set(url, baseSHA, headSHA, &clonecache.RepoEntry{
 		URL: url, LocalPath: remoteDir, BaseSHA: baseSHA, HeadSHA: headSHA,
 	})
 
@@ -164,11 +165,11 @@ func TestCloneForPR_NilOptsDelegatesToClone(t *testing.T) {
 // TestCloneForPR_EmptyOptsSkipsTargeted verifies that opts with no PR number
 // and no base branch does not engage the targeted path (cache hit still works).
 func TestCloneForPR_EmptyOptsSkipsTargeted(t *testing.T) {
-	cache := NewCache()
+	cache := clonecache.New()
 	remoteDir := t.TempDir()
 	_, baseSHA, headSHA := buildRemoteWithPRRef(t, remoteDir, 12)
 	url := "file://" + remoteDir
-	cache.Set(url, baseSHA, headSHA, &RepoEntry{
+	cache.Set(url, baseSHA, headSHA, &clonecache.RepoEntry{
 		URL: url, LocalPath: remoteDir, BaseSHA: baseSHA, HeadSHA: headSHA,
 	})
 
@@ -247,7 +248,7 @@ func TestCloneForPR_DepthMissFallsBackToBroad(t *testing.T) {
 
 	t.Setenv("BISTRO_REPO_DIR", t.TempDir())
 
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	log := logging.FromContext(context.Background())
 
@@ -293,7 +294,7 @@ func TestCloneForPR_RequiredSHAMissingFallsBack(t *testing.T) {
 
 	t.Setenv("BISTRO_REPO_DIR", t.TempDir())
 
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	log := logging.FromContext(context.Background())
 
@@ -344,7 +345,7 @@ func TestCloneForPR_RequiredSHAPresentTargetedSucceeds(t *testing.T) {
 
 	t.Setenv("BISTRO_REPO_DIR", t.TempDir())
 
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 	log := logging.FromContext(context.Background())
 
@@ -378,8 +379,8 @@ func TestCloneForPR_CacheHitRequiredSHAPresent(t *testing.T) {
 	_, baseSHA, headSHA := buildRemoteWithPRRef(t, remoteDir, prNumber)
 	url := "file://" + remoteDir
 
-	cache := NewCache()
-	cache.Set(url, baseSHA, headSHA, &RepoEntry{
+	cache := clonecache.New()
+	cache.Set(url, baseSHA, headSHA, &clonecache.RepoEntry{
 		URL: url, LocalPath: remoteDir, BaseSHA: baseSHA, HeadSHA: headSHA,
 	})
 	client := NewClient(cache)
@@ -412,8 +413,8 @@ func TestCloneForPR_CacheHitMissingRequiredSHACleared(t *testing.T) {
 	}
 	t.Setenv("BISTRO_REPO_DIR", t.TempDir())
 
-	cache := NewCache()
-	cache.Set(url, baseSHA, headSHA, &RepoEntry{
+	cache := clonecache.New()
+	cache.Set(url, baseSHA, headSHA, &clonecache.RepoEntry{
 		URL: url, LocalPath: staleDir, BaseSHA: baseSHA, HeadSHA: headSHA,
 	})
 	client := NewClient(cache)
@@ -458,8 +459,8 @@ func TestCloneForPR_CacheHitNoRequiredSHAs(t *testing.T) {
 	}
 	t.Setenv("BISTRO_REPO_DIR", t.TempDir())
 
-	cache := NewCache()
-	cache.Set(url, baseSHA, headSHA, &RepoEntry{
+	cache := clonecache.New()
+	cache.Set(url, baseSHA, headSHA, &clonecache.RepoEntry{
 		URL: url, LocalPath: staleDir, BaseSHA: baseSHA, HeadSHA: headSHA,
 	})
 	client := NewClient(cache)

@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/logging"
 )
 
@@ -33,12 +34,12 @@ func requiredSHAs(baseSHA, headSHA string, opts *CloneOptions) []string {
 func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, bool, error) {
 	start := time.Now()
 
-	tmpDir, err := prepareTargetedCloneDir(repoURL)
+	tmpDir, err := clonecache.PrepareTargetedDir(repoURL)
 	if err != nil {
 		log.Warn("targeted fetch fallback: cannot prepare clone dir", "error", err)
 		return nil, false, nil
 	}
-	cleanup, err := stageTargetedCloneDir(repoURL, tmpDir)
+	cleanup, err := clonecache.StageTargetedDir(repoURL, tmpDir)
 	if err != nil {
 		log.Warn("targeted fetch fallback: cannot stage clone dir", "error", err)
 		return nil, false, nil
@@ -47,7 +48,7 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 	// Avoid PlainClone's default-branch download before fetching targeted refs.
 	repo, err := initTargetedRepo(tmpDir, repoURL)
 	if err != nil {
-		if cleanupErr := cleanup.rollback(); cleanupErr != nil {
+		if cleanupErr := cleanup.Rollback(); cleanupErr != nil {
 			return nil, false, errors.Join(err, fmt.Errorf("restore previous clone: %w", cleanupErr))
 		}
 		log.Warn("targeted fetch fallback: cannot initialize repository", "error", err)
@@ -56,7 +57,7 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 
 	depth := targetedDepth(opts)
 	if err := c.fetchTargetedRefs(ctx, repo, opts, depth); err != nil {
-		if cleanupErr := cleanup.rollback(); cleanupErr != nil {
+		if cleanupErr := cleanup.Rollback(); cleanupErr != nil {
 			return nil, false, errors.Join(err, fmt.Errorf("restore previous clone: %w", cleanupErr))
 		}
 		log.Debug("targeted fetch fallback: fetch failed",
@@ -78,7 +79,7 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 	// comment commit; when any required commit is missing we fall back to the
 	// broad clone rather than cache an incomplete repo.
 	if missing := verifyRequiredCommits(repo, baseSHA, headSHA, opts); missing != "" {
-		if cleanupErr := cleanup.rollback(); cleanupErr != nil {
+		if cleanupErr := cleanup.Rollback(); cleanupErr != nil {
 			return nil, false, fmt.Errorf("restore previous clone after missing commit %s: %w", missing, cleanupErr)
 		}
 		log.Debug("targeted fetch fallback: required commit missing in shallow fetch",
@@ -86,11 +87,11 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 		return nil, false, nil
 	}
 
-	if err := cleanup.commit(); err != nil {
+	if err := cleanup.Commit(); err != nil {
 		log.Warn("failed to remove previous clone backup", "error", err)
 	}
 
-	c.cache.Set(repoURL, baseSHA, headSHA, &RepoEntry{
+	c.cache.Set(repoURL, baseSHA, headSHA, &clonecache.RepoEntry{
 		URL:       repoURL,
 		LocalPath: tmpDir,
 		BaseSHA:   baseSHA,

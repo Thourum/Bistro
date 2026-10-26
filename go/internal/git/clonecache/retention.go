@@ -1,4 +1,4 @@
-package git
+package clonecache
 
 import (
 	"crypto/sha256"
@@ -28,18 +28,18 @@ func refSafeID(repoURL string) string {
 	return hex.EncodeToString(sum[:])[:remote.SafeIDLength]
 }
 
-// pinPRHead writes the pin for headSHA. Best-effort: a missing pin only makes
+// PinPRHead writes the pin for headSHA. Best-effort: a missing pin only makes
 // a later interdiff unavailable, so it never fails the sync.
-func pinPRHead(log *slog.Logger, localPath, repoURL string, opts *CloneOptions, headSHA string) {
-	if opts == nil || opts.PRNumber <= 0 {
+func PinPRHead(log *slog.Logger, localPath, repoURL string, prNumber int, headSHA string) {
+	if prNumber <= 0 {
 		return
 	}
 	repo, err := gitlib.PlainOpen(localPath)
 	if err == nil {
-		ref := plumbing.NewHashReference(pinnedHeadRef(repoURL, opts.PRNumber, headSHA), plumbing.NewHash(headSHA))
+		ref := plumbing.NewHashReference(pinnedHeadRef(repoURL, prNumber, headSHA), plumbing.NewHash(headSHA))
 		err = repo.Storer.SetReference(ref)
 	}
 	if err != nil {
-		log.Warn("pin PR head failed", "local_path", localPath, "pr_number", opts.PRNumber, "error", err)
+		log.Warn("pin PR head failed", "local_path", localPath, "pr_number", prNumber, "error", err)
 	}
 }

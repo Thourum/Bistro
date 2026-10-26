@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	bistrogit "github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/storetest"
@@ -26,7 +27,7 @@ func TestConfigureRepoLocationStoreWiresGitClientLocalResolver(t *testing.T) {
 		t.Fatalf("upsert local repo: %v", err)
 	}
 
-	client := bistrogit.NewClient(bistrogit.NewCache())
+	client := bistrogit.NewClient(clonecache.New())
 	app := &App{log: testRepoLocationResolverLogger(), gitClient: client}
 
 	// Act

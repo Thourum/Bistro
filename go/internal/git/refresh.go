@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/logging"
 )
 
@@ -50,10 +51,10 @@ func (c *Client) refreshOnDiskClone(
 	repoURL, baseSHA, headSHA string,
 	opts *CloneOptions,
 ) (*CloneResult, bool) {
-	if needsFreshTempDir(repoURL) {
+	if clonecache.NeedsFreshTempDir(repoURL) {
 		return nil, false
 	}
-	repoDir, err := repoCacheDir(repoURL)
+	repoDir, err := clonecache.RepoDir(repoURL)
 	if err != nil || !localRepoExists(repoDir) {
 		return nil, false
 	}
@@ -67,7 +68,7 @@ func (c *Client) refreshOnDiskClone(
 			"missing_sha", logging.ShortSHA(missing), "error", err)
 		return nil, false
 	}
-	c.cache.Set(repoURL, baseSHA, headSHA, &RepoEntry{
+	c.cache.Set(repoURL, baseSHA, headSHA, &clonecache.RepoEntry{
 		URL: repoURL, LocalPath: repoDir, BaseSHA: baseSHA, HeadSHA: headSHA, FetchedAt: time.Now(),
 	})
 	c.recordCacheCloned(repoURL, repoDir)

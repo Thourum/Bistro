@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/provider"
 	ghprovider "github.com/itterno/bistro/internal/provider/github"
 	"github.com/itterno/bistro/internal/store"
@@ -144,7 +145,7 @@ func fetchBenchmarkPRDetails(tb testing.TB) []*PRFetchResult {
 	prov := newReadOnlyBenchmarkProvider()
 	pr := fetchBenchmarkPR(tb, prov)
 	tb.Setenv("BISTRO_REPO_DIR", tb.TempDir())
-	orch := NewOrchestrator(benchmarkLogger(), prov, nil, git.NewClient(git.NewCache()))
+	orch := NewOrchestrator(benchmarkLogger(), prov, nil, git.NewClient(clonecache.New()))
 	results, err := orch.FetchPRDetails(context.Background(), []*provider.PR{pr}, true, true, true)
 	if err != nil {
 		tb.Fatalf("FetchPRDetails setup: %v", err)
@@ -168,7 +169,7 @@ func BenchmarkFetchPRDetailsT3CodeXXLPRLive(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		orch := NewOrchestrator(benchmarkLogger(), prov, nil, git.NewClient(git.NewCache()))
+		orch := NewOrchestrator(benchmarkLogger(), prov, nil, git.NewClient(clonecache.New()))
 		results, err := orch.FetchPRDetails(context.Background(), []*provider.PR{pr}, true, true, true)
 		if err != nil {
 			b.Fatalf("FetchPRDetails: %v", err)
@@ -207,7 +208,7 @@ func BenchmarkTypicalSyncT3CodeXXLPRLive(b *testing.B) {
 	b.StopTimer()
 	for i := 0; i < b.N; i++ {
 		db := openBenchmarkDB(b)
-		orch := NewOrchestrator(benchmarkLogger(), prov, db, git.NewClient(git.NewCache()))
+		orch := NewOrchestrator(benchmarkLogger(), prov, db, git.NewClient(clonecache.New()))
 		b.StartTimer()
 		result, err := orch.Sync(context.Background(), &SyncRequest{
 			Provider:        "github",

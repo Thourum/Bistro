@@ -11,7 +11,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	bistrogit "github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/storetest"
@@ -33,7 +33,7 @@ func TestRepoLocationAddRepoByURLUsesCacheRootWhenBistroRepoDirIsSet(t *testing.
 		DB:        db.DB,
 		Store:     store.NewRepoLocationStore(db.DB),
 		Clone:     cloner.CloneRepo,
-		CacheRoot: bistrogit.CacheRoot,
+		CacheRoot: clonecache.Root,
 		Log:       testRepoLocationLogger(),
 	})
 

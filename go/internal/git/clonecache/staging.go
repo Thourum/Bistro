@@ -1,4 +1,4 @@
-package git
+package clonecache
 
 import (
 	"errors"
@@ -10,8 +10,9 @@ import (
 	"github.com/itterno/bistro/internal/git/remote"
 )
 
-func repoCacheDir(repoURL string) (string, error) {
-	root, err := CacheRoot()
+// RepoDir resolves the cache directory for repoURL.
+func RepoDir(repoURL string) (string, error) {
+	root, err := Root()
 	if err != nil {
 		return "", err
 	}
@@ -75,21 +76,22 @@ func ensureContainedPath(root, child string) error {
 	return nil
 }
 
-func prepareTargetedCloneDir(repoURL string) (string, error) {
-	repoDir, err := repoCacheDir(repoURL)
+// PrepareTargetedDir resolves a targeted clone path, using a temp dir when needed.
+func PrepareTargetedDir(repoURL string) (string, error) {
+	repoDir, err := RepoDir(repoURL)
 	if err != nil {
 		return "", err
 	}
-	if needsFreshTempDir(repoURL) {
+	if NeedsFreshTempDir(repoURL) {
 		return os.MkdirTemp(repoDir, "repo-*")
 	}
 	return repoDir, nil
 }
 
-// needsFreshTempDir reports whether a clone must go into a throwaway temp dir
+// NeedsFreshTempDir reports whether a clone must go into a throwaway temp dir
 // instead of the canonical cache dir: either the BISTRO_REPO_DIR override is
 // active, or the URL cannot be parsed into a stable identity.
-func needsFreshTempDir(repoURL string) bool {
+func NeedsFreshTempDir(repoURL string) bool {
 	if os.Getenv("BISTRO_REPO_DIR") != "" {
 		return true
 	}
@@ -97,47 +99,51 @@ func needsFreshTempDir(repoURL string) bool {
 	return err != nil
 }
 
-type cloneCleanup struct {
-	commit   func() error
-	rollback func() error
+// Cleanup commits or rolls back a staged clone directory.
+type Cleanup struct {
+	// Commit removes any backup after a successful clone.
+	Commit func() error
+	// Rollback removes the incomplete clone and restores any backup.
+	Rollback func() error
 }
 
-func stageCacheCloneDir(repoURL string) (string, cloneCleanup, error) {
-	repoDir, err := repoCacheDir(repoURL)
+// StageCloneDir prepares a fresh clone directory while preserving any existing clone.
+func StageCloneDir(repoURL string) (string, Cleanup, error) {
+	repoDir, err := RepoDir(repoURL)
 	if err != nil {
-		return "", cloneCleanup{}, err
+		return "", Cleanup{}, err
 	}
-	if needsFreshTempDir(repoURL) {
+	if NeedsFreshTempDir(repoURL) {
 		return makeTemporaryCloneDir(repoDir)
 	}
 	return createFreshCacheCloneDir(repoDir)
 }
 
-func makeTemporaryCloneDir(parentDir string) (string, cloneCleanup, error) {
+func makeTemporaryCloneDir(parentDir string) (string, Cleanup, error) {
 	tmpDir, err := os.MkdirTemp(parentDir, "repo-*")
 	if err != nil {
-		return "", cloneCleanup{}, err
+		return "", Cleanup{}, err
 	}
-	return tmpDir, cloneCleanup{
-		commit: func() error { return nil },
-		rollback: func() error {
+	return tmpDir, Cleanup{
+		Commit: func() error { return nil },
+		Rollback: func() error {
 			return os.RemoveAll(tmpDir)
 		},
 	}, nil
 }
 
-func createFreshCacheCloneDir(repoDir string) (path string, cleanup cloneCleanup, err error) {
+func createFreshCacheCloneDir(repoDir string) (path string, cleanup Cleanup, err error) {
 	parentDir := filepath.Dir(repoDir)
 	if err := os.MkdirAll(parentDir, cacheDirPerm); err != nil {
-		return "", cloneCleanup{}, err
+		return "", Cleanup{}, err
 	}
 	if err := rejectSymlink(parentDir); err != nil {
-		return "", cloneCleanup{}, err
+		return "", Cleanup{}, err
 	}
 
 	stagingDir, err := os.MkdirTemp(parentDir, filepath.Base(repoDir)+"-staging-*")
 	if err != nil {
-		return "", cloneCleanup{}, err
+		return "", Cleanup{}, err
 	}
 	shouldRemoveStaging := true
 	defer func() {
@@ -147,21 +153,21 @@ func createFreshCacheCloneDir(repoDir string) (path string, cleanup cloneCleanup
 		}
 	}()
 	if err := ensureNonSymlinkDir(stagingDir); err != nil {
-		return "", cloneCleanup{}, err
+		return "", Cleanup{}, err
 	}
 
 	backupDir, err := moveExistingCacheDirAside(repoDir)
 	if err != nil {
-		return "", cloneCleanup{}, err
+		return "", Cleanup{}, err
 	}
-	cleanup = cloneCleanup{
-		commit: func() error {
+	cleanup = Cleanup{
+		Commit: func() error {
 			if backupDir == "" {
 				return nil
 			}
 			return os.RemoveAll(backupDir)
 		},
-		rollback: func() error {
+		Rollback: func() error {
 			removeErr := os.RemoveAll(repoDir)
 			if backupDir == "" {
 				return removeErr
@@ -175,11 +181,11 @@ func createFreshCacheCloneDir(repoDir string) (path string, cleanup cloneCleanup
 	}
 
 	if renameErr := os.Rename(stagingDir, repoDir); renameErr != nil {
-		return "", cloneCleanup{}, errors.Join(renameErr, cleanup.rollback())
+		return "", Cleanup{}, errors.Join(renameErr, cleanup.Rollback())
 	}
 	shouldRemoveStaging = false
 	if inspectErr := ensureNonSymlinkDir(repoDir); inspectErr != nil {
-		return "", cloneCleanup{}, errors.Join(inspectErr, cleanup.rollback())
+		return "", Cleanup{}, errors.Join(inspectErr, cleanup.Rollback())
 	}
 	return repoDir, cleanup, nil
 }
@@ -222,37 +228,38 @@ func ensureNonSymlinkDir(path string) error {
 	return nil
 }
 
-func stageTargetedCloneDir(repoURL, repoDir string) (cloneCleanup, error) {
-	removeOnFailure := cloneCleanup{
-		commit:   func() error { return nil },
-		rollback: func() error { return os.RemoveAll(repoDir) },
+// StageTargetedDir preserves an existing clone before a targeted clone attempt.
+func StageTargetedDir(repoURL, repoDir string) (Cleanup, error) {
+	removeOnFailure := Cleanup{
+		Commit:   func() error { return nil },
+		Rollback: func() error { return os.RemoveAll(repoDir) },
 	}
-	if needsFreshTempDir(repoURL) {
+	if NeedsFreshTempDir(repoURL) {
 		return removeOnFailure, nil
 	}
 	if _, err := os.Stat(repoDir); err != nil {
 		if os.IsNotExist(err) {
 			return removeOnFailure, nil
 		}
-		return cloneCleanup{}, err
+		return Cleanup{}, err
 	}
 
 	backupDir, err := os.MkdirTemp(filepath.Dir(repoDir), filepath.Base(repoDir)+"-backup-*")
 	if err != nil {
-		return cloneCleanup{}, err
+		return Cleanup{}, err
 	}
 	if err := os.RemoveAll(backupDir); err != nil {
-		return cloneCleanup{}, err
+		return Cleanup{}, err
 	}
 	if err := os.Rename(repoDir, backupDir); err != nil {
-		return cloneCleanup{}, err
+		return Cleanup{}, err
 	}
 
-	return cloneCleanup{
-		commit: func() error {
+	return Cleanup{
+		Commit: func() error {
 			return os.RemoveAll(backupDir)
 		},
-		rollback: func() error {
+		Rollback: func() error {
 			// Keep the backup if the incomplete clone cannot be removed.
 			if err := os.RemoveAll(repoDir); err != nil {
 				return fmt.Errorf("remove incomplete clone %s: %w", repoDir, err)

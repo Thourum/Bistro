@@ -1,4 +1,4 @@
-package git
+package clonecache
 
 import (
 	"os"
@@ -24,21 +24,21 @@ func TestCacheStatsSumsNestedFilesAndMarksStaleRepos(t *testing.T) {
 	writeTestFile(t, filepath.Join(staleRepo, "objects", "pack", "pack-2"), []byte("1234567"))
 	writeTestFile(t, filepath.Join(neverUsedRepo, "HEAD"), []byte("ref: refs/heads/main\n"))
 
-	repos := []CacheEntryInput{
+	repos := []EntryInput{
 		{RepoID: "github:acme/api", Path: freshRepo, LastUsedAt: &freshUsedAt},
 		{RepoID: "github:acme/old", Path: staleRepo, LastUsedAt: &staleUsedAt},
 		{RepoID: "github:acme/never", Path: neverUsedRepo},
 	}
 
 	// Act
-	stats, err := CacheStats(repos)
+	stats, err := Stats(repos)
 
 	// Assert
 	if err != nil {
-		t.Fatalf("CacheStats() error = %v", err)
+		t.Fatalf("Stats() error = %v", err)
 	}
 	if len(stats) != 3 {
-		t.Fatalf("CacheStats() returned %d stats, want 3", len(stats))
+		t.Fatalf("Stats() returned %d stats, want 3", len(stats))
 	}
 	assertCacheStat(t, stats[0], "github:acme/api", freshRepo, 8, false)
 	assertCacheStat(t, stats[1], "github:acme/old", staleRepo, 7, true)
@@ -61,32 +61,32 @@ func TestCacheStatsSkipsUnsafeRowsWithoutSizingTargets(t *testing.T) {
 		t.Fatalf("create symlink: %v", err)
 	}
 
-	repos := []CacheEntryInput{
+	repos := []EntryInput{
 		{RepoID: "github:acme/api", Path: validRepo},
 		{RepoID: "github:acme/linked", Path: symlinkRepo},
 		{RepoID: "github:acme/tampered", Path: outsideRepo},
 	}
 
 	// Act
-	stats, err := CacheStats(repos)
+	stats, err := Stats(repos)
 
 	// Assert
 	if err != nil {
-		t.Fatalf("CacheStats() error = %v", err)
+		t.Fatalf("Stats() error = %v", err)
 	}
 	if len(stats) != 3 {
-		t.Fatalf("CacheStats() returned %d stats, want 3", len(stats))
+		t.Fatalf("Stats() returned %d stats, want 3", len(stats))
 	}
 	assertCacheStat(t, stats[0], "github:acme/api", validRepo, 5, true)
 	for _, stat := range stats[1:] {
 		if !stat.Skipped {
-			t.Fatalf("CacheStats() stat for %s Skipped = false, want true", stat.RepoID)
+			t.Fatalf("Stats() stat for %s Skipped = false, want true", stat.RepoID)
 		}
 		if stat.SizeBytes != 0 {
-			t.Fatalf("CacheStats() stat for %s SizeBytes = %d, want 0", stat.RepoID, stat.SizeBytes)
+			t.Fatalf("Stats() stat for %s SizeBytes = %d, want 0", stat.RepoID, stat.SizeBytes)
 		}
 		if stat.Error == "" {
-			t.Fatalf("CacheStats() stat for %s Error = empty, want safety error", stat.RepoID)
+			t.Fatalf("Stats() stat for %s Error = empty, want safety error", stat.RepoID)
 		}
 	}
 }
@@ -169,23 +169,23 @@ func TestCacheDeleteDirSafetyChecks(t *testing.T) {
 			}
 
 			// Act
-			err := DeleteCacheDir(path, known)
+			err := DeleteDir(path, known)
 
 			// Assert
 			if tt.wantDeleted {
 				if err != nil {
-					t.Fatalf("DeleteCacheDir() error = %v", err)
+					t.Fatalf("DeleteDir() error = %v", err)
 				}
 				if _, statErr := os.Lstat(path); !os.IsNotExist(statErr) {
-					t.Fatalf("DeleteCacheDir() left %q on disk, stat err = %v", path, statErr)
+					t.Fatalf("DeleteDir() left %q on disk, stat err = %v", path, statErr)
 				}
 				return
 			}
 			if err == nil {
-				t.Fatal("DeleteCacheDir() error = nil, want safety error")
+				t.Fatal("DeleteDir() error = nil, want safety error")
 			}
 			if _, statErr := os.Lstat(path); statErr != nil {
-				t.Fatalf("DeleteCacheDir() removed/refused path unexpectedly, stat err = %v", statErr)
+				t.Fatalf("DeleteDir() removed/refused path unexpectedly, stat err = %v", statErr)
 			}
 		})
 	}
@@ -243,7 +243,7 @@ func TestCacheSweepOrphansRemovesUnknownKeepsKnownAndReportsSkippedEntries(t *te
 	}
 }
 
-func assertCacheStat(t *testing.T, got CacheRepoStat, repoID, path string, sizeBytes int64, stale bool) {
+func assertCacheStat(t *testing.T, got RepoStat, repoID, path string, sizeBytes int64, stale bool) {
 	t.Helper()
 	if got.RepoID != repoID {
 		t.Fatalf("RepoID = %q, want %q", got.RepoID, repoID)

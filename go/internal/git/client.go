@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/repolock"
 )
 
@@ -25,7 +26,7 @@ type LocalRepoResolver interface {
 
 // Client handles git operations
 type Client struct {
-	cache *Cache
+	cache *clonecache.Cache
 	// tokenSource supplies the auth token for clone/fetch (e.g. from the OS
 	// keychain). Queried per operation so token rotation is picked up.
 	tokenSource   func() string
@@ -34,9 +35,9 @@ type Client struct {
 }
 
 // NewClient creates a new git client with cache
-func NewClient(cache *Cache) *Client {
+func NewClient(cache *clonecache.Cache) *Client {
 	if cache == nil {
-		cache = NewCache()
+		cache = clonecache.New()
 	}
 	return &Client{cache: cache, locks: repolock.New()}
 }

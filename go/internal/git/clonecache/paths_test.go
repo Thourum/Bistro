@@ -1,4 +1,4 @@
-package git
+package clonecache
 
 import (
 	"os"
@@ -10,7 +10,7 @@ func TestCacheRoot(t *testing.T) {
 	// Unset env var to test default behaviour
 	t.Setenv("BISTRO_REPO_DIR", "")
 
-	dir, err := CacheRoot()
+	dir, err := Root()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestEnvVarOverrideRepoDir(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("BISTRO_REPO_DIR", tmp)
 
-	dir, err := CacheRoot()
+	dir, err := Root()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

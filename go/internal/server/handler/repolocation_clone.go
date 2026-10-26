@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/scan"
 	"github.com/itterno/bistro/internal/store"
@@ -155,7 +155,7 @@ func cleanupBistroCreated(path string, createdByBistro bool, source, root string
 }
 
 func validateCacheRepoPathInsideRoot(path string) error {
-	root, err := git.CacheRoot()
+	root, err := clonecache.Root()
 	if err != nil {
 		return fmt.Errorf("get cache root: %w", err)
 	}

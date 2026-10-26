@@ -18,6 +18,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/file"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/diff"
 )
 
@@ -153,7 +154,7 @@ func runConcurrentPRDiffs(t *testing.T, buildRemote func(*testing.T, string) []r
 	t.Cleanup(func() { client.InstallProtocol("https", githttp.DefaultClient) })
 
 	const repoURL = "https://github.com/bistro-test/race-repo.git"
-	gitClient := NewClient(NewCache())
+	gitClient := NewClient(clonecache.New())
 	const rounds = 5
 	errs := make(chan error, len(prs)*rounds)
 	var wg sync.WaitGroup

@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 
 	gitclient "github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
 )
@@ -24,7 +25,7 @@ func TestFetchPRDetailsCallsExpertiseHookAfterSuccessfulDiff(t *testing.T) {
 
 	hook := &recordingExpertiseHook{calls: make(chan expertiseHookCall, 1)}
 	localResolver := &expertiseHookLocalResolver{repoURL: "https://github.com/org/repo.git", path: repoPath}
-	gitClient := gitclient.NewClient(gitclient.NewCache())
+	gitClient := gitclient.NewClient(clonecache.New())
 	gitClient.SetLocalResolver(localResolver)
 
 	orch := NewOrchestrator(nil, mock.NewMockProvider(), nil, gitClient).

@@ -1,12 +1,30 @@
-package git
+package clonecache
 
 import (
 	"testing"
 	"time"
 )
 
+func TestCacheClearAll(t *testing.T) {
+	cache := New()
+
+	cache.Set("https://github.com/org/repo1", "base1", "head1", &RepoEntry{URL: "https://github.com/org/repo1", BaseSHA: "base1", HeadSHA: "head1"})
+	cache.Set("https://github.com/org/repo2", "base2", "head2", &RepoEntry{URL: "https://github.com/org/repo2", BaseSHA: "base2", HeadSHA: "head2"})
+	cache.Set("https://github.com/org/repo3", "base3", "head3", &RepoEntry{URL: "https://github.com/org/repo3", BaseSHA: "base3", HeadSHA: "head3"})
+
+	if cache.Size() != 3 {
+		t.Errorf("expected 3 entries, got %d", cache.Size())
+	}
+
+	cache.ClearAll()
+
+	if cache.Size() != 0 {
+		t.Error("cache should be empty after ClearAll")
+	}
+}
+
 func TestNewCache(t *testing.T) {
-	cache := NewCache()
+	cache := New()
 	if cache == nil {
 		t.Error("expected non-nil cache")
 	}
@@ -16,7 +34,7 @@ func TestNewCache(t *testing.T) {
 }
 
 func TestCacheSetGet(t *testing.T) {
-	cache := NewCache()
+	cache := New()
 	entry := &RepoEntry{
 		URL:       "https://github.com/org/repo",
 		LocalPath: "/tmp/repo",
@@ -37,7 +55,7 @@ func TestCacheSetGet(t *testing.T) {
 }
 
 func TestCacheEntriesAreNotShared(t *testing.T) {
-	cache := NewCache()
+	cache := New()
 	entry := &RepoEntry{URL: "https://github.com/org/repo", BaseSHA: "base", HeadSHA: "head", LocalPath: "/original"}
 	cache.Set(entry.URL, entry.BaseSHA, entry.HeadSHA, entry)
 	entry.LocalPath = "/changed-after-set"
@@ -54,7 +72,7 @@ func TestCacheEntriesAreNotShared(t *testing.T) {
 }
 
 func TestCacheSetNilEvictsEntry(t *testing.T) {
-	cache := NewCache()
+	cache := New()
 	cache.Set("url", "base", "head", &RepoEntry{LocalPath: "/clone"})
 	cache.Set("url", "base", "head", nil)
 	if entry, ok := cache.Get("url", "base", "head"); ok || entry != nil || cache.Size() != 0 {
@@ -63,7 +81,7 @@ func TestCacheSetNilEvictsEntry(t *testing.T) {
 }
 
 func TestCacheClear(t *testing.T) {
-	cache := NewCache()
+	cache := New()
 	entry := &RepoEntry{
 		URL:     "https://github.com/org/repo",
 		BaseSHA: "aaa",
@@ -80,7 +98,7 @@ func TestCacheClear(t *testing.T) {
 }
 
 func TestCacheSize(t *testing.T) {
-	cache := NewCache()
+	cache := New()
 	if cache.Size() != 0 {
 		t.Error("expected empty cache")
 	}
@@ -102,7 +120,7 @@ func TestCacheSize(t *testing.T) {
 }
 
 func TestCacheThreadSafety(t *testing.T) {
-	cache := NewCache()
+	cache := New()
 
 	// Verifies no race conditions — run with `go test -race` to detect issues
 	entry := &RepoEntry{URL: "https://github.com/org/repo", BaseSHA: "aaa", HeadSHA: "bbb"}
@@ -114,7 +132,7 @@ func TestCacheThreadSafety(t *testing.T) {
 
 // TestCacheKeyWithDifferentSHAs verifies that same URL with different SHAs produces distinct entries
 func TestCacheKeyWithDifferentSHAs(t *testing.T) {
-	cache := NewCache()
+	cache := New()
 	url := "https://github.com/org/repo"
 
 	entryA := &RepoEntry{URL: url, LocalPath: "/tmp/a", BaseSHA: "aaa", HeadSHA: "bbb"}
@@ -141,7 +159,7 @@ func TestCacheKeyWithDifferentSHAs(t *testing.T) {
 // TestCacheKeyCollisionPrevented ensures a force-push (same URL, new headSHA) doesn't
 // return a stale cache entry
 func TestCacheKeyCollisionPrevented(t *testing.T) {
-	cache := NewCache()
+	cache := New()
 	url := "https://github.com/org/repo"
 
 	// Original head

@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/logging"
 )
 
@@ -18,19 +19,19 @@ func (c *Client) broadClone(ctx context.Context, log *slog.Logger, repoURL, base
 	log.Debug("git clone start")
 	overallStart := time.Now()
 
-	tmpDir, cleanupCloneDir, err := stageCacheCloneDir(repoURL)
+	tmpDir, cleanupCloneDir, err := clonecache.StageCloneDir(repoURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare clone directory: %w", err)
 	}
 	cloneSucceeded := false
 	defer func() {
 		if cloneSucceeded {
-			if cleanupErr := cleanupCloneDir.commit(); cleanupErr != nil {
+			if cleanupErr := cleanupCloneDir.Commit(); cleanupErr != nil {
 				log.Warn("failed to remove previous clone backup", "error", cleanupErr)
 			}
 			return
 		}
-		if cleanupErr := cleanupCloneDir.rollback(); cleanupErr != nil {
+		if cleanupErr := cleanupCloneDir.Rollback(); cleanupErr != nil {
 			result = nil
 			err = errors.Join(err, fmt.Errorf("restore previous clone after failure: %w", cleanupErr))
 		}
@@ -82,7 +83,7 @@ func (c *Client) broadClone(ctx context.Context, log *slog.Logger, repoURL, base
 		HeadSHA:   headSHA,
 	}
 
-	c.cache.Set(repoURL, baseSHA, headSHA, &RepoEntry{
+	c.cache.Set(repoURL, baseSHA, headSHA, &clonecache.RepoEntry{
 		URL:       repoURL,
 		LocalPath: tmpDir,
 		BaseSHA:   baseSHA,
@@ -110,10 +111,10 @@ func (c *Client) reuseOnDiskClone(
 	headSHA string,
 	opts *CloneOptions,
 ) (*CloneResult, bool) {
-	if needsFreshTempDir(repoURL) {
+	if clonecache.NeedsFreshTempDir(repoURL) {
 		return nil, false
 	}
-	repoDir, err := repoCacheDir(repoURL)
+	repoDir, err := clonecache.RepoDir(repoURL)
 	if err != nil || !localRepoExists(repoDir) {
 		return nil, false
 	}
@@ -123,7 +124,7 @@ func (c *Client) reuseOnDiskClone(
 	}
 
 	log.Debug("git clone reusing on-disk repo (commits verified)", "local_path", repoDir)
-	c.cache.Set(repoURL, baseSHA, headSHA, &RepoEntry{
+	c.cache.Set(repoURL, baseSHA, headSHA, &clonecache.RepoEntry{
 		URL:       repoURL,
 		LocalPath: repoDir,
 		BaseSHA:   baseSHA,
@@ -139,7 +140,7 @@ func (c *Client) validateCacheHit(
 	repoURL string,
 	baseSHA string,
 	headSHA string,
-	cached *RepoEntry,
+	cached *clonecache.RepoEntry,
 	opts *CloneOptions,
 ) bool {
 	if !localRepoExists(cached.LocalPath) {

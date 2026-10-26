@@ -1,9 +1,19 @@
-package git
+package clonecache
 
 import (
 	"fmt"
 	"sync"
+	"time"
 )
+
+// RepoEntry represents a cached repository
+type RepoEntry struct {
+	URL       string    // GitHub repository URL
+	LocalPath string    // Local filesystem path
+	BaseSHA   string    // Base commit SHA
+	HeadSHA   string    // Head commit SHA
+	FetchedAt time.Time // When it was cached
+}
 
 // Cache stores cloned repositories in memory
 type Cache struct {
@@ -11,8 +21,8 @@ type Cache struct {
 	repos map[string]*RepoEntry
 }
 
-// NewCache creates a new repository cache
-func NewCache() *Cache {
+// New creates a new repository cache
+func New() *Cache {
 	return &Cache{
 		repos: make(map[string]*RepoEntry),
 	}

@@ -1,4 +1,4 @@
-package git
+package clonecache
 
 import (
 	"os"
@@ -9,9 +9,9 @@ import (
 // existing cache layout and preserving permissions of previously created dirs.
 const cacheDirPerm = 0755
 
-// CacheRoot returns the absolute directory for cloned repos.
+// Root returns the absolute directory for cloned repos.
 // Priority: BISTRO_REPO_DIR env var > user cache dir / bistro/repos.
-func CacheRoot() (string, error) {
+func Root() (string, error) {
 	if envDir := os.Getenv("BISTRO_REPO_DIR"); envDir != "" {
 		if err := os.MkdirAll(envDir, cacheDirPerm); err != nil {
 			return "", err
