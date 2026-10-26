@@ -4,6 +4,7 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { ShortcutBadge } from '../components/ui/shortcut-badge';
 import { Textarea } from '../components/ui/textarea';
+import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useStore } from '../hooks/useStore';
 import { isDraftOutdated } from '../services/reviewDrafts';
 import { appStore } from '../store';
@@ -17,6 +18,7 @@ import {
 } from '../utils/classification';
 import { formatWhy } from '../utils/expertise';
 import { isTextareaSubmit, TEXTAREA_SUBMIT_HOTKEY } from '../utils/keybindings';
+import { findActionKeys } from '../utils/legendPresets';
 
 function formatTimestamp(iso: string): string {
   return iso
@@ -47,7 +49,12 @@ export function PendingDraftsNotice({
   drafts,
   headSha,
 }: PendingDraftsNoticeProps): React.ReactElement | null {
+  const bindings = useEffectiveBindings();
   if (drafts.length === 0) return null;
+  const approveKeys = findActionKeys(bindings, ['detail.approve']);
+  const requestChangesKeys = findActionKeys(bindings, [
+    'detail.requestChanges',
+  ]);
   const outdated = drafts.filter((draft) =>
     isDraftOutdated(draft, headSha),
   ).length;
@@ -55,7 +62,10 @@ export function PendingDraftsNotice({
     <p className="font-mono text-[10px] uppercase tracking-widest text-primary">
       {drafts.length} pending {drafts.length === 1 ? 'draft' : 'drafts'}
       {outdated > 0 ? ` (${outdated} outdated)` : ''} — sent with your next
-      approve (a a) or request changes (⇧R), or submit from the command palette
+      approve{approveKeys !== undefined ? ` (${approveKeys})` : ''} or request
+      changes
+      {requestChangesKeys !== undefined ? ` (${requestChangesKeys})` : ''}, or
+      submit from the command palette
     </p>
   );
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/store"
@@ -50,7 +51,7 @@ func (r draftSaveRequest) validate() error {
 		return errors.New("pr_id is required")
 	case body == "":
 		return errors.New("body is required")
-	case len(body) > maxDraftBodyLength:
+	case utf8.RuneCountInString(body) > maxDraftBodyLength:
 		return fmt.Errorf("body exceeds %d characters", maxDraftBodyLength)
 	case r.ID != "":
 		return nil // edits only replace the body

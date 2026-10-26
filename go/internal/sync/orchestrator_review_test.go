@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	gosync "sync"
 	"testing"
 	"time"
 
@@ -310,5 +311,38 @@ func TestApplyAction_AmbiguousReviewResultIsNotReportedAsUnsubmitted(t *testing.
 
 	if !result.IsAmbiguousRemoteSuccess() || strings.Contains(result.Error, "not submitted") {
 		t.Fatalf("result = %+v, want the ambiguous result unchanged", result)
+	}
+}
+
+// slowReviewRecorder holds each submission open so concurrent callers overlap.
+type slowReviewRecorder struct {
+	*mock.MockProvider
+	mu       gosync.Mutex
+	comments int
+}
+
+func (r *slowReviewRecorder) SubmitReview(_ context.Context, _ string, sub provider.ReviewSubmission) error {
+	time.Sleep(50 * time.Millisecond)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.comments += len(sub.Comments)
+	return nil
+}
+
+func TestApplyAction_ConcurrentSubmitsSendDraftsOnce(t *testing.T) {
+	prov := &slowReviewRecorder{MockProvider: mock.NewMockProvider()}
+	orch, drafts := newReviewTestOrchestrator(t, prov)
+	mustDraft(t, drafts, store.ReviewDraft{Path: "a.go", Side: "RIGHT", Line: 1, Body: "one", CommitSHA: "head"})
+
+	var wg gosync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			orch.ApplyAction(context.Background(), &actions.ActionRequest{PRID: "pr-r", Action: actions.SubmitReviewCommand, ReviewEvent: actions.ReviewEventComment})
+		})
+	}
+	wg.Wait()
+
+	if prov.comments != 1 {
+		t.Fatalf("comments sent = %d, want the draft sent once", prov.comments)
 	}
 }

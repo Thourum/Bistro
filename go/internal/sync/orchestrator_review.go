@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	gosync "sync"
 	"time"
 
 	"github.com/itterno/bistro/internal/actions"
@@ -52,6 +53,10 @@ func (o *Orchestrator) applyReviewWithDrafts(ctx context.Context, req *actions.A
 		}
 		return nil, false
 	}
+	lock, _ := o.reviewLocks.LoadOrStore(req.PRID, &gosync.Mutex{})
+	mu := lock.(*gosync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
 	drafts, err := o.drafts.List(ctx, req.PRID, login)
 	if err != nil {
 		return failedActionResult(req, fmt.Sprintf("load review drafts: %v", err)), true

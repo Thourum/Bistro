@@ -47,6 +47,9 @@ type Orchestrator struct {
 	// drafts is optional; when set, approve/request_changes absorb the current
 	// user's line-comment drafts and submit_review can run.
 	drafts reviewDraftStore
+	// reviewLocks holds one *gosync.Mutex per PR id so concurrent submissions
+	// from separate WebSocket connections can't both submit the same drafts.
+	reviewLocks gosync.Map
 	// anchorResolver is optional; when set it runs on each clone after diff
 	// generation and populates PRFetchResult.AnchorUpdates.
 	anchorResolver *git.AnchorResolver

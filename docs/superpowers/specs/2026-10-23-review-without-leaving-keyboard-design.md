@@ -42,10 +42,13 @@ the active thread; and a **key-remapping UI** (phase 2, can ship separately).
 
 ### 2. Submitting
 
-- New `submit_review` action: **one** `CreateReview` call with `event`
-  (`APPROVE` | `REQUEST_CHANGES` | `COMMENT`), optional body, `comments[]`
-  from the drafts (`path`, `side`, `line`, `start_side`/`start_line` for
-  ranges), and `commit_id` = the drafts' `commit_sha`.
+- New `submit_review` action: one `CreateReview` call per draft commit group
+  (GitHub anchors every comment in a review to its single `commit_id`). Groups
+  on older commits go first as `COMMENT` reviews; the head group carries the
+  `event` (`APPROVE` | `REQUEST_CHANGES` | `COMMENT`) and optional body. Each
+  call sends `comments[]` from its drafts (`path`, `side`, `line`,
+  `start_side`/`start_line` for ranges) with `commit_id` = the group's
+  `commit_sha`.
 - Success deletes the submitted drafts. Failure keeps them, and the error names
   the drafts GitHub rejected (e.g. a 422 on a stale line).
 - **Existing approve (`a a`) and request-changes (`Shift+R`) absorb pending
@@ -65,8 +68,8 @@ the active thread; and a **key-remapping UI** (phase 2, can ship separately).
   (overriding the diff's next/prev-file bindings while the overlay is open); a
   range stays within one file and one side, as GitHub requires. In split view
   `h`/`l` switch sides. `Enter` opens the composer, `Esc` exits.
-- Highlighting uses @pierre/diffs `setSelectedLines` / `SelectedLineRange`
-  (`enableLineSelection`).
+- Highlighting uses the diff view's controlled `selectedLines` prop; mouse
+  line selection stays disabled.
 - Composer: `TEXTAREA_SUBMIT_HOTKEY` saves the draft; `Esc` discards.
 - Drafts render inline as annotations with a **DRAFT** badge and are included
   in `n`/`p`. On a draft, `Enter` edits and `d d` deletes.
