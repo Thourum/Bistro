@@ -8,6 +8,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 
 	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/provider"
 )
@@ -67,7 +68,7 @@ func TestGenerateDiffUsesMergeBaseForDiffAndAnchors(t *testing.T) {
 					FilePath: "src/app.go", Side: "LEFT", Position: &deletionPosition,
 				}},
 			}
-			orchestrator := &Orchestrator{git: git.NewClient(nil), anchorResolver: git.NewAnchorResolver()}
+			orchestrator := &Orchestrator{git: git.NewClient(nil), anchorResolver: anchor.NewResolver()}
 			if err := orchestrator.generateDiff(context.Background(), result, &git.CloneResult{LocalPath: localPath}, silentLog()); err != nil {
 				t.Fatalf("generateDiff: %v", err)
 			}

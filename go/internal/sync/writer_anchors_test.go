@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store/storetest"
 )
@@ -39,7 +39,7 @@ func TestWriteAnchorUpdates_WritesAnchoredLine(t *testing.T) {
 	// Now write with AnchorUpdates: anchored at line 12.
 	if err := w.WriteSyncResults([]*PRFetchResult{{
 		PR: makePR("github:o/r:50", 50, "sha-head", "sha-base"),
-		AnchorUpdates: []git.AnchorResult{{
+		AnchorUpdates: []anchor.Result{{
 			CommentID:    "rc-1",
 			AnchoredLine: 12,
 			HeadSHA:      "sha-head",
@@ -82,7 +82,7 @@ func TestWriteAnchorUpdates_OutdatedComment(t *testing.T) {
 
 	w.WriteSyncResults([]*PRFetchResult{{
 		PR: makePR("github:o/r:51", 51, "sha-h51", "sha-b51"),
-		AnchorUpdates: []git.AnchorResult{{
+		AnchorUpdates: []anchor.Result{{
 			CommentID:        "rc-2",
 			HeadSHA:          "sha-h51",
 			Outdated:         true,
@@ -144,7 +144,7 @@ func TestWriteAnchorUpdates_ErrorSkippedSilently(t *testing.T) {
 
 	results := []*PRFetchResult{{
 		PR: makePR("github:o/r:53", 53, "sha-h53", "sha-b53"),
-		AnchorUpdates: []git.AnchorResult{{
+		AnchorUpdates: []anchor.Result{{
 			CommentID:    "nonexistent-comment",
 			AnchoredLine: 5,
 			HeadSHA:      "sha-h53",
@@ -185,7 +185,7 @@ func TestWriteAnchorUpdates_FirstSync_GetsCurrentPatchsetNum(t *testing.T) {
 		}},
 		// PatchsetNumber=0: simulates first sync where patchset row didn't exist
 		// during fetch (resolveAnchors returned resolvedPatchsetNum=0).
-		AnchorUpdates: []git.AnchorResult{{
+		AnchorUpdates: []anchor.Result{{
 			CommentID:      "rc-first-sync",
 			AnchoredLine:   5,
 			Anchored:       true,
@@ -260,7 +260,7 @@ func TestWriteAnchorUpdates_OriginalPosition_KeepsOriginalPatchsetNum(t *testing
 	// The comment is now outdated (original-position), anchor was resolved for P1.
 	if err := w.WriteSyncResults([]*PRFetchResult{{
 		PR: pr, // sha-head-81, sha-base-81 → P2
-		AnchorUpdates: []git.AnchorResult{{
+		AnchorUpdates: []anchor.Result{{
 			CommentID:        "rc-orig-ps",
 			Outdated:         true,
 			OutdatedNearLine: 3,
@@ -298,7 +298,7 @@ func TestWriteAnchorUpdates_BothZero_WritesNull(t *testing.T) {
 	// Directly call writeAnchorUpdates with currentPatchsetNum=0 (both zero).
 	ctx := context.Background()
 	tx, _ := db.BeginTx(ctx, nil)
-	w.writeAnchorUpdates(ctx, tx, []git.AnchorResult{{
+	w.writeAnchorUpdates(ctx, tx, []anchor.Result{{
 		CommentID:      "rc-zero-ps",
 		AnchoredLine:   7,
 		Anchored:       true,

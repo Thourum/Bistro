@@ -14,6 +14,7 @@ import (
 	"github.com/itterno/bistro/internal/classify"
 	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
@@ -46,7 +47,7 @@ type Orchestrator struct {
 	reviewSHAWriter actions.ReviewSHAWriter
 	// anchorResolver is optional; when set it runs on each clone after diff
 	// generation and populates PRFetchResult.AnchorUpdates.
-	anchorResolver *git.AnchorResolver
+	anchorResolver *anchor.Resolver
 	// liveness is cancelled when this orchestrator is superseded (provider
 	// replaced or disconnected). ApplyAction checks it before executing so
 	// stale orchestrators self-reject even if captured before disconnect.
@@ -137,9 +138,9 @@ func (o *Orchestrator) WithReviewTracking(loginGetter actions.ReviewLoginGetter,
 	return o
 }
 
-// WithAnchorResolver attaches an AnchorResolver so inline review comment
+// WithAnchorResolver attaches an anchor.Resolver so inline review comment
 // anchors are resolved and cached after each successful diff clone.
-func (o *Orchestrator) WithAnchorResolver(r *git.AnchorResolver) *Orchestrator {
+func (o *Orchestrator) WithAnchorResolver(r *anchor.Resolver) *Orchestrator {
 	o.anchorResolver = r
 	return o
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/itterno/bistro/internal/classify/llm"
 	"github.com/itterno/bistro/internal/expertise"
 	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/keychain"
@@ -73,7 +74,7 @@ type App struct {
 	// currentUserStore is set in Run() and shared across all orchestrators.
 	currentUserStore *store.CurrentUserStore
 	// anchorResolver is set in Run() and shared across all orchestrators.
-	anchorResolver *git.AnchorResolver
+	anchorResolver *anchor.Resolver
 	// classifier is the Phase 3 comment-classification engine provider,
 	// shared by the sync writer and the comments handler. Its mode getter
 	// reads classificationState, so a mode change lazily invalidates the
@@ -166,7 +167,7 @@ func (a *App) prepareStores() runStores {
 		expertise:    expertise.NewStore(a.db.DB),
 		diff:         store.NewDiffStore(a.db.DB),
 	}
-	a.anchorResolver = git.NewAnchorResolver()
+	a.anchorResolver = anchor.NewResolver()
 	a.currentUserStore = stores.currentUser
 	a.configureRepoLocationStore(stores.repoLocation)
 	a.resolveRepoPath = func(repoID string) (string, bool) {

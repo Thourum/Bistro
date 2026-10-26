@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/anchor"
 	gitdiff "github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
@@ -71,7 +72,7 @@ type PRFetchResult struct {
 	// Populated only when the clone was available and anchoring ran without a
 	// fatal error. Each entry is written back to the comments table after the
 	// per-PR savepoint releases (best-effort; never blocks PR/patchset commit).
-	AnchorUpdates []git.AnchorResult
+	AnchorUpdates []anchor.Result
 	// ListOnly marks a result written without a detail fetch (very active
 	// repo over the hydration threshold). The PR row is stored hydrated=0 and
 	// details are fetched on demand; an already-hydrated row is never

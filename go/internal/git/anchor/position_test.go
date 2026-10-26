@@ -1,4 +1,4 @@
-package git
+package anchor
 
 import (
 	"fmt"
@@ -55,7 +55,7 @@ func TestPositionToLine_RootCommit(t *testing.T) {
 	content := "line1\nline2\nline3\nline4\nline5\n"
 	// commit B slightly different (must avoid empty-commit error)
 	_, sha_A, _ := buildTwoCommitRepo(t, dir, content, content+"extra\n")
-	r := NewAnchorResolver()
+	r := NewResolver()
 
 	// Root commit: all lines are additions; position == line number.
 	for wantLine := 1; wantLine <= 5; wantLine++ {
@@ -77,7 +77,7 @@ func TestPositionToLine_ChangedLine(t *testing.T) {
 		"line1\nline2\nline3\nline4\nline5\n",
 		"line1\nline2\nline3\nLINE4_CHANGED\nline5\n",
 	)
-	r := NewAnchorResolver()
+	r := NewResolver()
 
 	// The diff baseSHA..headSHA for 5-line file changing line4:
 	// 3 context lines (1,2,3), 1 delete (line4), 1 add (LINE4_CHANGED), 1 context (line5)
@@ -103,7 +103,7 @@ func TestPositionToLine_ChangedLine(t *testing.T) {
 func TestPositionToLine_OutOfRange(t *testing.T) {
 	dir := t.TempDir()
 	_, sha_A, _ := buildTwoCommitRepo(t, dir, "a\nb\nc\n", "a\nb\nc\nd\n")
-	r := NewAnchorResolver()
+	r := NewResolver()
 	_, err := r.PositionToLine(dir, plumbing.ZeroHash.String(), sha_A, "foo.go", "RIGHT", 9999)
 	if err == nil {
 		t.Error("expected error for out-of-range position")
@@ -130,7 +130,7 @@ func TestPositionToLine_HunkFarFromStart(t *testing.T) {
 	}
 	dir := t.TempDir()
 	_, baseSHA, headSHA := buildTwoCommitRepo(t, dir, orig.String(), changed.String())
-	r := NewAnchorResolver()
+	r := NewResolver()
 
 	// The hunk rendered by go-git with 3 context lines:
 	//   @@ -12,7 +12,7 @@
@@ -232,7 +232,7 @@ func TestPositionToLine_MultiCommitPR_CorrectGeometry(t *testing.T) {
 
 	dir := t.TempDir()
 	shaA, _, shaC := buildThreeCommitRepo(t, dir, contentA, contentB, contentC)
-	r := NewAnchorResolver()
+	r := NewResolver()
 
 	// With correct geometry (DiffBaseSHA=A): pos 4 RIGHT = new line 4 in C ("INSERTED").
 	t.Run("correct_base_A_pos4_right", func(t *testing.T) {

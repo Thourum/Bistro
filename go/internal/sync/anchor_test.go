@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/storetest"
@@ -202,7 +202,7 @@ func TestResolveAnchors_OutdatedCommentIsCandidate(t *testing.T) {
 func TestResolveAnchors_OriginalPosition_NoPatchsetNumber_Skipped(t *testing.T) {
 	origPos := 4
 	o := &Orchestrator{
-		anchorResolver: git.NewAnchorResolver(),
+		anchorResolver: anchor.NewResolver(),
 		// store is nil → no patchset lookup → patchsetNum stays 0 → skipped
 	}
 	comments := []*provider.Comment{{
@@ -229,7 +229,7 @@ func TestResolveAnchors_OriginalPosition_PatchsetNumberSetButNotInDB_Skipped(t *
 	origPos := 4
 	psNum := 5 // will not match any patchset in DB
 	o := &Orchestrator{
-		anchorResolver: git.NewAnchorResolver(),
+		anchorResolver: anchor.NewResolver(),
 		// store nil → patchsets empty, so patchset 5 not found
 	}
 	comments := []*provider.Comment{{
@@ -265,7 +265,7 @@ func TestResolveAnchors_OriginalPosition_WithDB_PatchsetFound_AttemptedNotSkippe
 	}
 
 	o := &Orchestrator{
-		anchorResolver: git.NewAnchorResolver(),
+		anchorResolver: anchor.NewResolver(),
 		store:          db,
 	}
 	comments := []*provider.Comment{{
@@ -303,7 +303,7 @@ func TestResolveAnchors_OriginalPosition_DBLookup_AttemptedNotSkipped(t *testing
 		VALUES ('c-db-lookup', 'pr-anc-3', 'alice', 'body', '2026-01-01', '2026-01-01', 'review', 2)`) //nolint:errcheck
 
 	o := &Orchestrator{
-		anchorResolver: git.NewAnchorResolver(),
+		anchorResolver: anchor.NewResolver(),
 		store:          db,
 	}
 	comments := []*provider.Comment{{
@@ -330,7 +330,7 @@ func TestResolveAnchors_OriginalPosition_DBLookup_AttemptedNotSkipped(t *testing
 func TestResolveAnchors_CurrentPosition_NotSkipped(t *testing.T) {
 	pos := 3
 	o := &Orchestrator{
-		anchorResolver: git.NewAnchorResolver(),
+		anchorResolver: anchor.NewResolver(),
 	}
 	comments := []*provider.Comment{{
 		ID:        "c-current",
@@ -352,7 +352,7 @@ func TestResolveAnchors_CurrentPosition_NotSkipped(t *testing.T) {
 // TestResolveAnchors_NoPositionSkipped verifies a comment with no position is excluded.
 func TestResolveAnchors_NoPositionSkipped(t *testing.T) {
 	o := &Orchestrator{
-		anchorResolver: git.NewAnchorResolver(),
+		anchorResolver: anchor.NewResolver(),
 	}
 	comments := []*provider.Comment{{
 		ID:          "c-nopos",

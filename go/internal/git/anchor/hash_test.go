@@ -1,4 +1,4 @@
-package git
+package anchor
 
 import "testing"
 
@@ -8,7 +8,7 @@ func TestFileLineHash_Basic(t *testing.T) {
 	dir := t.TempDir()
 	content := "alpha\nbeta\ngamma\ndelta\nepsilon\n"
 	_, sha_A, _ := buildTwoCommitRepo(t, dir, content, content+"zeta\n")
-	r := NewAnchorResolver()
+	r := NewResolver()
 
 	lh, ch, err := r.FileLineHash(dir, sha_A, "foo.go", 3) // "gamma"
 	if err != nil {
@@ -35,7 +35,7 @@ func TestFileLineHash_ContextWindow(t *testing.T) {
 	content2b := "x\ny\ntarget\nw\nz\nv\n"
 	_, sha1, _ := buildTwoCommitRepo(t, dir1, content1, content1b)
 	_, sha2, _ := buildTwoCommitRepo(t, dir2, content2, content2b)
-	r := NewAnchorResolver()
+	r := NewResolver()
 
 	lh1, ch1, _ := r.FileLineHash(dir1, sha1, "foo.go", 3)
 	lh2, ch2, _ := r.FileLineHash(dir2, sha2, "foo.go", 3)

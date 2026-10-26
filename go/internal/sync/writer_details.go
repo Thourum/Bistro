@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/itterno/bistro/internal/classify"
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
 )
@@ -244,7 +244,7 @@ func storedDiffStatus(status string) string {
 
 // writeAnchorUpdates runs after releasing the PR savepoint: anchor failures
 // cannot roll back the PR row, patchset, or diff. Each comment is best-effort.
-func (w *Writer) writeAnchorUpdates(ctx context.Context, tx *sql.Tx, updates []git.AnchorResult, currentPatchsetNum int) {
+func (w *Writer) writeAnchorUpdates(ctx context.Context, tx *sql.Tx, updates []anchor.Result, currentPatchsetNum int) {
 	const query = `
 		UPDATE comments
 		SET anchored_line                  = ?,

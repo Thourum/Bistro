@@ -1,4 +1,4 @@
-package git
+package anchor
 
 import (
 	"fmt"
@@ -73,11 +73,11 @@ func TestAnchorResolver_Resolve(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			_, commitSHA, headSHA := buildTwoCommitRepo(t, dir, tc.contentA, tc.contentB)
-			r := NewAnchorResolver()
+			r := NewResolver()
 
 			// Root commit: position == line number (all additions, no parent).
 			pos := tc.commentLine
-			res, err := r.Resolve(ResolveRequest{
+			res, err := r.Resolve(Request{
 				LocalPath:   dir,
 				CommitSHA:   commitSHA,
 				HeadSHA:     headSHA,
@@ -135,8 +135,8 @@ func TestAnchorResolver_FileDeleted(t *testing.T) {
 	wt.Remove("foo.go")                                  //nolint:errcheck
 	hashB, _ := wt.Commit("B", &gogit.CommitOptions{Author: sig, All: true})
 
-	r := NewAnchorResolver()
-	res, _ := r.Resolve(ResolveRequest{
+	r := NewResolver()
+	res, _ := r.Resolve(Request{
 		LocalPath:   dir,
 		CommitSHA:   hashA.String(),
 		HeadSHA:     hashB.String(),
@@ -165,8 +165,8 @@ func TestAnchorResolver_SamePatchset_FastPath(t *testing.T) {
 		"a\nb\ntarget\nd\ne\n",
 		"x\ny\nz\nd\ne\n", // contentB entirely different; fast path never reads it
 	)
-	r := NewAnchorResolver()
-	res, err := r.Resolve(ResolveRequest{
+	r := NewResolver()
+	res, err := r.Resolve(Request{
 		LocalPath:   dir,
 		CommitSHA:   commitSHA,
 		HeadSHA:     headSHA,
@@ -189,8 +189,8 @@ func TestAnchorResolver_SamePatchset_FastPath(t *testing.T) {
 }
 
 func TestAnchorResolver_CloneMissing(t *testing.T) {
-	r := NewAnchorResolver()
-	res, err := r.Resolve(ResolveRequest{
+	r := NewResolver()
+	res, err := r.Resolve(Request{
 		LocalPath:   "/tmp/bistro-nonexistent-clone-99999",
 		CommitSHA:   fmt.Sprintf("%040d", 1),
 		HeadSHA:     fmt.Sprintf("%040d", 2),
@@ -221,9 +221,9 @@ func TestAnchorResolver_IdenticalContentDifferentContext(t *testing.T) {
 	contentB := "a\nb\nc\ntarget\nd\ne\nf\ntarget\ng\nh\ni\n"
 	dir := t.TempDir()
 	_, commitSHA, headSHA := buildTwoCommitRepo(t, dir, contentA, contentB)
-	r := NewAnchorResolver()
+	r := NewResolver()
 
-	res, err := r.Resolve(ResolveRequest{
+	res, err := r.Resolve(Request{
 		LocalPath:   dir,
 		CommitSHA:   commitSHA,
 		HeadSHA:     headSHA,
@@ -249,7 +249,7 @@ func TestAnchorResolver_IdenticalContentDifferentContext(t *testing.T) {
 }
 
 // TestResolve_WithDiffBaseSHA_CorrectGeometry verifies end-to-end that a
-// ResolveRequest with DiffBaseSHA produces the correct AnchoredLine using the
+// Request with DiffBaseSHA produces the correct AnchoredLine using the
 // patchset geometry rather than parent-of-commit geometry.
 func TestResolve_WithDiffBaseSHA_CorrectGeometry(t *testing.T) {
 	// 3-commit repo: A→B→C.  PR base=A, head=C.
@@ -264,11 +264,11 @@ func TestResolve_WithDiffBaseSHA_CorrectGeometry(t *testing.T) {
 
 	dir := t.TempDir()
 	shaA, _, shaC := buildThreeCommitRepo(t, dir, contentA, contentB, contentC)
-	r := NewAnchorResolver()
+	r := NewResolver()
 
 	// CommitSHA = HeadSHA = C: fast path returns originalLine directly.
 	// This lets us verify the position→line mapping without needing the hash scan.
-	res, err := r.Resolve(ResolveRequest{
+	res, err := r.Resolve(Request{
 		LocalPath:   dir,
 		CommitSHA:   shaC,
 		HeadSHA:     shaC, // same commit → fast path

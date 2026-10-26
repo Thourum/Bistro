@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
 )
@@ -36,7 +36,7 @@ type anchorResolutionState struct {
 
 // resolveAnchors uses exact patchset identity for original-position comments;
 // matching only the head SHA would be ambiguous after a base retarget.
-func (o *Orchestrator) resolveAnchors(ctx context.Context, options anchorResolutionOptions) []git.AnchorResult {
+func (o *Orchestrator) resolveAnchors(ctx context.Context, options anchorResolutionOptions) []anchor.Result {
 	candidates := anchorCandidates(options.comments, options.threads)
 	if len(candidates) == 0 {
 		return nil
@@ -53,7 +53,7 @@ func (o *Orchestrator) resolveAnchors(ctx context.Context, options anchorResolut
 		options: options, patchsets: patchsets,
 		storedPatchsetNumbers: storedPatchsetNums, currentPatchsetNumber: currentPatchsetNum,
 	}
-	results := make([]git.AnchorResult, 0, len(candidates))
+	results := make([]anchor.Result, 0, len(candidates))
 	for _, comment := range candidates {
 		if resolved := o.resolveCommentAnchor(comment, state); resolved != nil {
 			results = append(results, *resolved)
@@ -117,7 +117,7 @@ func (o *Orchestrator) storedAnchorPatchsetNumbers(ctx context.Context, options 
 	return loaded
 }
 
-func (o *Orchestrator) resolveCommentAnchor(comment *provider.Comment, state anchorResolutionState) *git.AnchorResult {
+func (o *Orchestrator) resolveCommentAnchor(comment *provider.Comment, state anchorResolutionState) *anchor.Result {
 	isCurrentPosition := comment.Position != nil && *comment.Position > 0
 	commitSHA := comment.CommitSHA
 	position := 0
@@ -153,7 +153,7 @@ func (o *Orchestrator) resolveCommentAnchor(comment *provider.Comment, state anc
 	if side == "" {
 		side = "RIGHT"
 	}
-	resolved, err := o.anchorResolver.Resolve(git.ResolveRequest{
+	resolved, err := o.anchorResolver.Resolve(anchor.Request{
 		LocalPath: state.options.localPath, CommitSHA: commitSHA, HeadSHA: state.options.headSHA,
 		DiffBaseSHA: diffBaseSHA, FilePath: comment.FilePath, Side: side,
 		Position: position, CommentID: comment.ID,
