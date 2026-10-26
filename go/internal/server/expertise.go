@@ -36,7 +36,7 @@ func (a *App) broadcastExpertiseNudge(ctx context.Context, prID string) {
 		a.log.Warn("expertise nudge skipped: PR repo lookup failed", "pr_id", prID, "error", err)
 		return
 	}
-	login, ok, err := a.currentUserStore.GetCurrentUser(ctx, "github")
+	login, ok, err := a.currentUserStore.Get(ctx, "github")
 	if err != nil || !ok || login == "" {
 		if err != nil {
 			a.log.Warn("expertise nudge skipped: current user lookup failed", "pr_id", prID, "error", err)
@@ -61,7 +61,7 @@ func (a *App) broadcastExpertiseNudge(ctx context.Context, prID string) {
 
 func (a *App) currentExpertiseIdentity(stores *expertise.Store) func(context.Context) expertise.Identity {
 	return func(identityCtx context.Context) expertise.Identity {
-		login, ok, err := a.currentUserStore.GetCurrentUser(identityCtx, "github")
+		login, ok, err := a.currentUserStore.Get(identityCtx, "github")
 		if err != nil || !ok {
 			if err != nil {
 				a.log.Warn("expertise identity current user lookup failed", "error", err)

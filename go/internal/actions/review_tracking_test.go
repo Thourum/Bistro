@@ -19,7 +19,7 @@ type stubLoginGetter struct {
 	found bool
 }
 
-func (s *stubLoginGetter) GetCurrentUser(_ context.Context, _ string) (string, bool, error) {
+func (s *stubLoginGetter) Get(_ context.Context, _ string) (string, bool, error) {
 	return s.login, s.found, nil
 }
 

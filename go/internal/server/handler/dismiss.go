@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/itterno/bistro/internal/store/currentuser"
 	"log/slog"
 	"strings"
 
@@ -25,7 +26,7 @@ type DismissalScopeGetter func() string
 type DismissDeps struct {
 	DB          *sql.DB
 	Dismissals  *store.Dismissals
-	CurrentUser *store.CurrentUserStore
+	CurrentUser *currentuser.Store
 	// GetApplier returns the current ActionApplier for provider write-back
 	// (same contract as SUBMIT_ACTION). Nil applier = write-back silently
 	// skipped; the local dismissal always stands.

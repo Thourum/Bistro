@@ -124,7 +124,7 @@ func newRequestDiffHandler(deps DiffHandlerDeps) ws.MessageHandler {
 		// Resolve the current user login for viewed-file lookup.
 		login := ""
 		if deps.CurrentUser != nil {
-			if l, ok, err := deps.CurrentUser.GetCurrentUser(ctx, githubProvider); err != nil {
+			if l, ok, err := deps.CurrentUser.Get(ctx, githubProvider); err != nil {
 				// Viewed status is optional enrichment, so keep the diff available.
 				logger.Warn("failed to resolve current user for viewed status", "error", err)
 			} else if ok {

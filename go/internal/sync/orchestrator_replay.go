@@ -168,7 +168,7 @@ func (o *Orchestrator) pendingReplayActions(ctx context.Context) ([]*actionqueue
 		}
 		return pending, nil
 	}
-	login, ok, err := o.reviewLogin.GetCurrentUser(ctx, provider.GitHub)
+	login, ok, err := o.reviewLogin.Get(ctx, provider.GitHub)
 	if err != nil {
 		return nil, fmt.Errorf("resolve current account for queue replay: %w", err)
 	}

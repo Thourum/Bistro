@@ -33,7 +33,7 @@ type fileViewedMarker interface {
 
 // currentUserReader is the subset used to resolve the authenticated login.
 type currentUserReader interface {
-	GetCurrentUser(ctx context.Context, provider string) (string, bool, error)
+	Get(ctx context.Context, provider string) (string, bool, error)
 }
 
 // NewListPatchsetsHandler returns a WS handler for GET_PATCHSETS.
@@ -141,7 +141,7 @@ func newMarkFileViewedHandler(deps MarkFileViewedDeps) ws.MessageHandler {
 			return nil, fmt.Errorf("MARK_FILE_VIEWED requires pr_id, file_path, and content_hash")
 		}
 
-		login, ok, lookupErr := deps.CurrentUser.GetCurrentUser(ctx, githubProvider)
+		login, ok, lookupErr := deps.CurrentUser.Get(ctx, githubProvider)
 		if lookupErr != nil {
 			logger.Warn("MARK_FILE_VIEWED: failed to resolve current user", "error", lookupErr)
 			return fileViewedACK(msg.ID, req.PRID, req.FilePath, false, "unable to check authenticated user"), nil

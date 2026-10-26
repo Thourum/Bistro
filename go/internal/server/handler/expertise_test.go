@@ -127,7 +127,7 @@ type fakeExpertiseIdentityReader struct {
 	err   error
 }
 
-func (f *fakeExpertiseIdentityReader) GetCurrentUser(_ context.Context, _ string) (string, bool, error) {
+func (f *fakeExpertiseIdentityReader) Get(_ context.Context, _ string) (string, bool, error) {
 	return f.login, f.found, f.err
 }
 

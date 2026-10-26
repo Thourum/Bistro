@@ -150,7 +150,7 @@ func (w *Writer) recordGitHubReviewBaseline(ctx context.Context, batch *writerBa
 	if w.currentUser == nil || len(result.Reviews) == 0 {
 		return
 	}
-	login, ok, err := w.currentUser.GetCurrentUser(ctx, "github")
+	login, ok, err := w.currentUser.Get(ctx, "github")
 	if err != nil || !ok || login == "" {
 		return // No user means no baseline to attribute; mentions handle the logging.
 	}

@@ -106,7 +106,7 @@ func (o *Orchestrator) queueRateLimitedAction(ctx context.Context, req *actions.
 	accountLogin := ""
 	queueID := queuedActionID(req)
 	if o.reviewLogin != nil {
-		login, ok, err := o.reviewLogin.GetCurrentUser(ctx, provider.GitHub)
+		login, ok, err := o.reviewLogin.Get(ctx, provider.GitHub)
 		if err != nil {
 			return failedActionResult(req, fmt.Sprintf("rate limited: could not resolve current GitHub account for queueing: %v", err))
 		}

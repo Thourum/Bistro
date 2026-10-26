@@ -35,7 +35,7 @@ type Writer struct {
 }
 
 type currentUserReader interface {
-	GetCurrentUser(ctx context.Context, provider string) (string, bool, error)
+	Get(ctx context.Context, provider string) (string, bool, error)
 }
 
 // NewWriter creates a database writer, using the default logger if log is nil.
@@ -397,7 +397,7 @@ func (w *Writer) mentionPattern(ctx context.Context) (*regexp.Regexp, error) {
 	if w.currentUser == nil {
 		return nil, nil
 	}
-	login, ok, err := w.currentUser.GetCurrentUser(ctx, provider.GitHub)
+	login, ok, err := w.currentUser.Get(ctx, provider.GitHub)
 	if err != nil {
 		return nil, fmt.Errorf("get current user for mention detection: %w", err)
 	}

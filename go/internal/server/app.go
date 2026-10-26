@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/itterno/bistro/internal/store/currentuser"
 	"io"
 	"log/slog"
 	"os"
@@ -72,7 +73,7 @@ type App struct {
 	provCtx       context.Context
 	provCtxCancel context.CancelFunc
 	// currentUserStore is set in Run() and shared across all orchestrators.
-	currentUserStore *store.CurrentUserStore
+	currentUserStore *currentuser.Store
 	// anchorResolver is set in Run() and shared across all orchestrators.
 	anchorResolver *anchor.Resolver
 	// classifier is the Phase 3 comment-classification engine provider,
@@ -132,7 +133,7 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 }
 
 type runStores struct {
-	currentUser  *store.CurrentUserStore
+	currentUser  *currentuser.Store
 	repoLocation *store.RepoLocationStore
 	expertise    *expertise.Store
 	diff         *store.DiffStore
@@ -162,7 +163,7 @@ func (a *App) prepareStores() runStores {
 	a.gitClient.SetTokenSource(a.githubToken)
 
 	stores := runStores{
-		currentUser:  store.NewCurrentUserStore(a.db),
+		currentUser:  currentuser.New(a.db),
 		repoLocation: store.NewRepoLocationStore(a.db.DB),
 		expertise:    expertise.NewStore(a.db.DB),
 		diff:         store.NewDiffStore(a.db.DB),

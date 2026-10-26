@@ -16,7 +16,7 @@ type mentionedTestCurrentUserReader struct {
 	err   error
 }
 
-func (r mentionedTestCurrentUserReader) GetCurrentUser(context.Context, string) (string, bool, error) {
+func (r mentionedTestCurrentUserReader) Get(context.Context, string) (string, bool, error) {
 	return r.login, r.ok, r.err
 }
 

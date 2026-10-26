@@ -40,7 +40,7 @@ type mockCurrentUserReader struct {
 	found bool
 }
 
-func (m *mockCurrentUserReader) GetCurrentUser(_ context.Context, _ string) (string, bool, error) {
+func (m *mockCurrentUserReader) Get(_ context.Context, _ string) (string, bool, error) {
 	return m.login, m.found, nil
 }
 

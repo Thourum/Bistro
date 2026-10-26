@@ -36,12 +36,12 @@ func knownProviders() []string { return []string{githubProvider, "gitlab", "gite
 
 // CurrentUserWriter is the narrow persistence interface used by auth handlers.
 type CurrentUserWriter interface {
-	SetCurrentUser(ctx context.Context, provider, login string) error
+	Set(ctx context.Context, provider, login string) error
 }
 
 // CurrentUserClearer is the narrow persistence interface used on sign-out.
 type CurrentUserClearer interface {
-	DeleteCurrentUser(ctx context.Context, provider string) error
+	Delete(ctx context.Context, provider string) error
 }
 
 const (
@@ -59,8 +59,8 @@ const (
 // CurrentUserWriterFunc adapts a function to CurrentUserWriter.
 type CurrentUserWriterFunc func(ctx context.Context, provider, login string) error
 
-// SetCurrentUser persists the authenticated login through the wrapped function.
-func (f CurrentUserWriterFunc) SetCurrentUser(ctx context.Context, prov, login string) error {
+// Set persists the authenticated login through the wrapped function.
+func (f CurrentUserWriterFunc) Set(ctx context.Context, prov, login string) error {
 	return f(ctx, prov, login)
 }
 
@@ -117,7 +117,7 @@ func persistAuthResult(deps AuthDeps, providerName, token string) (string, map[s
 		username = login
 		deps.Cache.Set(providerName, login)
 		if deps.CurrentUserWriter != nil {
-			if err := deps.CurrentUserWriter.SetCurrentUser(context.Background(), providerName, login); err != nil {
+			if err := deps.CurrentUserWriter.Set(context.Background(), providerName, login); err != nil {
 				deps.Log.Warn("failed to persist current user", "provider", providerName, "error", err)
 			}
 		}
@@ -351,7 +351,7 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 			if found && !expired {
 				logger.Debug("username cache hit", "provider", p)
 				if deps.CurrentUserWriter != nil {
-					if werr := deps.CurrentUserWriter.SetCurrentUser(ctx, p, username); werr != nil {
+					if werr := deps.CurrentUserWriter.Set(ctx, p, username); werr != nil {
 						logger.Warn("failed to persist current user", "provider", p, "error", werr)
 					}
 				}
@@ -368,7 +368,7 @@ func NewAuthCheckHandler(deps AuthDeps) ws.MessageHandler {
 			}
 			deps.Cache.Set(p, fetched)
 			if deps.CurrentUserWriter != nil {
-				if werr := deps.CurrentUserWriter.SetCurrentUser(ctx, p, fetched); werr != nil {
+				if werr := deps.CurrentUserWriter.Set(ctx, p, fetched); werr != nil {
 					logger.Warn("failed to persist current user", "provider", p, "error", werr)
 				}
 			}
@@ -422,7 +422,7 @@ func NewAuthDisconnectHandler(deps AuthDeps, checkHandler ws.MessageHandler) ws.
 		}
 		deps.Cache.Delete(data.Provider)
 		if deps.CurrentUserClearer != nil {
-			if err := deps.CurrentUserClearer.DeleteCurrentUser(ctx, data.Provider); err != nil {
+			if err := deps.CurrentUserClearer.Delete(ctx, data.Provider); err != nil {
 				logger.Warn("failed to clear current user", "provider", data.Provider, "error", err)
 			}
 		}
