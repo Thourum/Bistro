@@ -159,3 +159,56 @@ func TestReplyCommentCommandValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestIsRateLimit_AnchoredPatterns verifies that the anchored rate-limit
+// patterns correctly classify HTTP 429 responses and not PR-number matches.
+func TestIsRateLimit_AnchoredPatterns(t *testing.T) {
+	cases := []struct {
+		errMsg      string
+		wantIsRL    bool
+		description string
+	}{
+		// Must be rate-limit.
+		{"status 429: too many requests", true, "status 429"},
+		{"status: 429 rate limit exceeded", true, "status: 429"},
+		{"HTTP 429 Too Many Requests", true, "HTTP 429 (case insensitive)"},
+		{"429 Too Many Requests from GitHub", true, "429 too many"},
+		{"429 rate limit hit", true, "429 rate prefix"},
+		{"GitHub API rate limit exceeded", true, "rate limit text"},
+		// Must NOT be rate-limit.
+		{"failed to post comment on PR owner/repo#429: connection reset", false, "PR number #429 in message"},
+		{"error on PR github:o/r:429: timeout", false, "PR number :429 in message"},
+		{"post comment PR-429 timed out", false, "PR-429 identifier"},
+		{"connection reset by peer", false, "plain transport error"},
+		{"503 service unavailable", false, "5xx not rate limit"},
+	}
+
+	for _, tc := range cases {
+		ar := &ActionResult{Success: false, Error: tc.errMsg}
+		got := ar.IsRateLimit()
+		if got != tc.wantIsRL {
+			t.Errorf("[%s] IsRateLimit(%q) = %v, want %v", tc.description, tc.errMsg, got, tc.wantIsRL)
+		}
+	}
+}
+
+// TestIsRateLimit_GoGithubFormat covers ": 429" and verifies ": 500" is NOT rate-limit.
+func TestIsRateLimit_GoGithubFormat(t *testing.T) {
+	cases := []struct {
+		errMsg   string
+		wantIsRL bool
+		desc     string
+	}{
+		{"POST https://api.github.com/...: 429  []", true, "go-github ': 429'"},
+		{"POST https://api.github.com/...: 500  []", false, "go-github ': 500' is not rate-limit"},
+		{"POST https://api.github.com/...: 503  []", false, "go-github ': 503' is not rate-limit"},
+		{"owner/repo#429: connection reset", false, "PR#429 not rate-limit"},
+		{"owner/repo#500: connection reset", false, "PR#500 not rate-limit"},
+	}
+	for _, tc := range cases {
+		ar := &ActionResult{Success: false, Error: tc.errMsg}
+		if got := ar.IsRateLimit(); got != tc.wantIsRL {
+			t.Errorf("[%s] IsRateLimit(%q) = %v, want %v", tc.desc, tc.errMsg, got, tc.wantIsRL)
+		}
+	}
+}
