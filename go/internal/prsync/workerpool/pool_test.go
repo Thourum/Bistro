@@ -8,11 +8,12 @@ import (
 )
 
 func TestConcurrentGoroutinePool(t *testing.T) {
-	// Test goroutine pool can be created
 	pool := New(4, nil)
-	if pool == nil {
-		t.Error("expected non-nil pool")
-	}
+	t.Cleanup(func() {
+		if err := pool.Wait(context.Background()); err != nil {
+			t.Fatalf("wait for idle workers: %v", err)
+		}
+	})
 }
 
 func TestWorkerPoolSubmitTask(t *testing.T) {
@@ -39,15 +40,6 @@ func TestWorkerPoolSubmitTask(t *testing.T) {
 
 	if err := pool.Wait(ctx); err != nil {
 		t.Errorf("unexpected wait error: %v", err)
-	}
-}
-
-func TestContextCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-
-	if ctx.Err() == nil {
-		t.Error("expected context to be cancelled")
 	}
 }
 

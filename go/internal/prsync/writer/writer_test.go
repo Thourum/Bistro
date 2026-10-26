@@ -19,55 +19,6 @@ func mustWritePR(t *testing.T, w *Writer, pr *provider.PR) {
 	}
 }
 
-func TestWriterCreation(t *testing.T) {
-	// Just verify the method exists
-	if true {
-		t.Skip("requires database")
-	}
-}
-
-func TestFetchedPRValidation(t *testing.T) {
-	result := &FetchedPR{
-		PR: &provider.PR{
-			ID:     "github:org/repo:123",
-			Number: 123,
-			Title:  "Test PR",
-		},
-		Comments: []*provider.Comment{
-			{ID: "comment-1", Author: "alice", Body: "Good work"},
-		},
-	}
-
-	if result.PR == nil {
-		t.Error("PR should not be nil")
-	}
-	if len(result.Comments) != 1 {
-		t.Error("expected 1 comment")
-	}
-}
-
-func TestSyncResultAggregation(t *testing.T) {
-	results := []*FetchedPR{
-		{
-			PR:       &provider.PR{ID: "1", Number: 1},
-			Comments: []*provider.Comment{{ID: "c1"}},
-		},
-		{
-			PR:       &provider.PR{ID: "2", Number: 2},
-			Comments: []*provider.Comment{{ID: "c2"}, {ID: "c3"}},
-		},
-	}
-
-	totalComments := 0
-	for _, r := range results {
-		totalComments += len(r.Comments)
-	}
-
-	if totalComments != 3 {
-		t.Errorf("expected 3 comments total, got %d", totalComments)
-	}
-}
-
 func TestWriterSkipsNilResults(t *testing.T) {
 	writer := New(nil, nil)
 	results := []*FetchedPR{nil, nil}
