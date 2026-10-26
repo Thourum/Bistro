@@ -96,6 +96,8 @@ These are the "After" items from the split spec. One commit per item. These are 
 3. Parameterize the duplicate executor transport-error tests into table tests (`actions/transport_errors_test.go`) without dropping any case.
 4. Keep one of `mustExecDB` (handler) and `mustExec` (`dismiss_test.go`).
 5. Compare `NullAnchorPatchsetNumber_Stale` and `…_AlwaysStale`. Merge them only if they assert the same thing; otherwise leave both and say why in the report.
+     6. `replay_ambiguous_test.go` (3 cancellation tests): they mark the queue terminal by hand after the replay aborts, so a broken replay would still pass. Drive an ambiguous provider result instead, and assert the queue state that replay itself produced.
+     7. `writer_anchors_test.go`: ignored `Scan` errors leave nil pointers that satisfy the NULL assertions even when the row is missing. Check every setup, query and Scan error before asserting.
 
 ## Task 15: Docs
 
