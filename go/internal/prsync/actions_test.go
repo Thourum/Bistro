@@ -156,9 +156,6 @@ func TestApplyAction_ThreadStateKnownPassesValidation(t *testing.T) {
 	}
 }
 
-// Ensure time import is used.
-var _ = time.Now
-
 // ── Blocker 2: liveness cancellation during execution ────────────────────
 
 // TestExecuteAction_LivenessCancelsBeforeProviderMutation verifies that when
