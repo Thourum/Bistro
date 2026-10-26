@@ -200,7 +200,7 @@ Indexes user-owned local checkouts using bounded system-git blame/log/check-attr
 
 ### `internal/scan` -- Developer Folder Scanner
 
-Validates developer-folder input, scans immediate child repositories, rejects unsafe/system folders, skips symlinks, and returns canonical remote identities for matching local clones to provider repos.
+Validates developer-folder input, scans child directories and one nested level for repositories, rejects unsafe/system folders, skips symlinks, and returns canonical remote identities for matching local clones to provider repos.
 
 ### `internal/keychain` -- Token Storage
 
