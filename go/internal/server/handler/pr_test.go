@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func TestRequestPRListIncludesInboxSignals(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	viewer := &mockCurrentUserReader{login: "alice", found: true}
 	updatedAt := time.Now().UTC().Add(-time.Minute)
 
@@ -72,7 +73,7 @@ func TestRequestPRListIncludesInboxSignals(t *testing.T) {
 }
 
 func TestRequestPRListUsesAnonymousDefaultsWithoutCurrentUser(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	updatedAt := time.Now().UTC()
 	insertPRListTestPR(t, db, "mentioned", 1, "head-mentioned", true, updatedAt)
 	insertPRListTestComment(t, db, "mentioned", "alice")
@@ -95,7 +96,7 @@ func TestRequestPRListUsesAnonymousDefaultsWithoutCurrentUser(t *testing.T) {
 }
 
 func TestRequestPRListReturnsErrorWhenRowScanFails(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	updatedAt := time.Now().UTC()
 	if _, err := db.Exec(`INSERT INTO prs (
 		id, provider, owner, repo, number, title, author, state,

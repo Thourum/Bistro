@@ -5,25 +5,9 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
-	_ "github.com/mattn/go-sqlite3"
 )
-
-// newHandlerTestDB opens an :memory: SQLite DB with all migrations applied.
-// Returns the underlying *sql.DB because handler code expects *sql.DB (via prLister).
-func newHandlerTestDB(t *testing.T) *sql.DB {
-	t.Helper()
-	db, err := store.OpenDB(":memory:")
-	if err != nil {
-		t.Fatalf("newHandlerTestDB open: %v", err)
-	}
-	if err := store.NewMigrationRunner(nil, db.DB).Run(context.Background()); err != nil {
-		t.Fatalf("newHandlerTestDB migrate: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db.DB
-}
 
 // mustExecDB is a test helper for handler tests that use a *sql.DB.
 func mustExecDB(t *testing.T, db *sql.DB, q string, args ...interface{}) {
@@ -34,7 +18,7 @@ func mustExecDB(t *testing.T, db *sql.DB, q string, args ...interface{}) {
 }
 
 func TestRequestComments_ReturnsNewColumns(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	if _, err := db.Exec(`INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
 		VALUES ('p1','github','o','r',1,'T','a','open','2026-01-01','2026-01-01','main','f','b','h')`); err != nil {
@@ -98,7 +82,7 @@ func TestRequestComments_ReturnsNewColumns(t *testing.T) {
 // ── Anchor fields in COMMENTS_READY (Phase 2.3) ───────────────────────────
 
 func TestRequestComments_AnchoredTrueWhenHeadSHAMatches(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	// Insert a PR at head sha2.
 	if _, err := db.Exec(`INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
@@ -149,7 +133,7 @@ func TestRequestComments_AnchoredTrueWhenHeadSHAMatches(t *testing.T) {
 }
 
 func TestRequestComments_AnchoredFalseWhenHeadSHAStale(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	// PR at head 'sha3' but comment cached at 'sha2' (old head).
 	if _, err := db.Exec(`INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
@@ -181,7 +165,7 @@ func TestRequestComments_AnchoredFalseWhenHeadSHAStale(t *testing.T) {
 }
 
 func TestRequestComments_AnchoredFalseWhenNullAnchor(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	// Comment with no anchor yet (anchored_line is NULL).
 	if _, err := db.Exec(`INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
@@ -210,7 +194,7 @@ func TestRequestComments_AnchoredFalseWhenNullAnchor(t *testing.T) {
 }
 
 func TestRequestComments_OutdatedComment(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	if _, err := db.Exec(`INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
 		VALUES ('pa4','github','o','r',4,'T','a','open','2026-01-01','2026-01-01','main','f','b','sha5')`); err != nil {

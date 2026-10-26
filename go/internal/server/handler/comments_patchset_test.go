@@ -4,11 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
 func TestRequestCommentsCurrentPatchsetIgnoresBaseTip(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
 		VALUES ('pr-head-only','github','o','r',1,'T','a','open','2026-01-01','2026-01-01','main','f','tip-3','h1')`)

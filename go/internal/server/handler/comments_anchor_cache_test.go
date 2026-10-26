@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -14,7 +15,7 @@ import (
 // anchor-derived fields are zeroed in the response — including a stale outdated=true
 // that must not leak to the client.
 func TestRequestComments_StaleCacheSuppressesAllAnchorFields(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	// PR is currently at sha-NEW but comment was anchored against sha-OLD.
 	if _, err := db.Exec(`INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
@@ -65,7 +66,7 @@ func TestRequestComments_StaleCacheSuppressesAllAnchorFields(t *testing.T) {
 // (anchor_head_sha == prs.head_sha AND anchor_patchset_number == current patchset)
 // exposes all anchor fields correctly.
 func TestRequestComments_FreshCacheShowsAnchorFields(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	if _, err := db.Exec(`INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
 		VALUES ('pf1','github','o','r',1,'T','a','open','2026-01-01','2026-01-01','main','f','b','sha-X')`); err != nil {
@@ -110,7 +111,7 @@ func TestRequestComments_FreshCacheShowsAnchorFields(t *testing.T) {
 // a comment that was marked outdated=true in a prior sync (anchor_head_sha='sha-OLD')
 // must show outdated=false after a force-push moves the PR head to 'sha-FORCE'.
 func TestRequestComments_StaleOutdatedTrue_NotLeaked(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	if _, err := db.Exec(`INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
 		VALUES ('pl1','github','o','r',1,'T','a','open','2026-01-01','2026-01-01','main','f','b','sha-FORCE')`); err != nil {
@@ -153,7 +154,7 @@ func TestRequestComments_StaleOutdatedTrue_NotLeaked(t *testing.T) {
 // P2: base=sha-BASE-NEW, head=sha-HEAD (retarget, new patchset number=2)
 // PR now at P2. Anchor anchor_patchset_number=1 but current patchset=2 → stale.
 func TestRequestComments_RetargetStaleAnchor_Suppressed(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 
 	// PR retargeted: same head, new base → new patchset.
 	mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
@@ -202,7 +203,7 @@ func TestRequestComments_RetargetStaleAnchor_Suppressed(t *testing.T) {
 // TestRequestComments_FreshAnchorAfterRetarget_Passes verifies that after a retarget
 // and re-resolution on the new patchset, the anchor IS returned as fresh.
 func TestRequestComments_FreshAnchorAfterRetarget_Passes(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 
 	mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)

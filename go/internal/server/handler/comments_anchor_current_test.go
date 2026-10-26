@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -19,7 +20,7 @@ func TestRequestComments_NullAnchorPatchsetNumber_Stale(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db := newHandlerTestDB(t)
+			db := storetest.Open(t).DB
 			mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 				created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
 				VALUES ('pr-null','github','o','r',1,'T','a','open','2026-01-01','2026-01-01','main','f',
@@ -57,7 +58,7 @@ func TestRequestComments_NullAnchorPatchsetNumber_Stale(t *testing.T) {
 // TestRequestComments_CurrentPositionAnchor_Fresh confirms Case A still works:
 // current-position comment with anchor_patchset_number == current_patchset_number.
 func TestRequestComments_CurrentPositionAnchor_Fresh(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 
 	mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
@@ -96,7 +97,7 @@ func TestRequestComments_CurrentPositionAnchor_Fresh(t *testing.T) {
 // Case A (current-position) still suppresses anchors after a retarget.
 // Same head, new base → new patchset number; old anchor was computed on P1.
 func TestRequestComments_SameHeadRetarget_CurrentPosition_Stale(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 
 	mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
@@ -139,7 +140,7 @@ func TestRequestComments_SameHeadRetarget_CurrentPosition_Stale(t *testing.T) {
 // anchor_current_patchset_number=NULL is always stale, for both original- and
 // current-position comments (pre-migration 019 data).
 func TestRequestComments_NullCurrentPatchsetNumber_Stale(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 
 	mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)

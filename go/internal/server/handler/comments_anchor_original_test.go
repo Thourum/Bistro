@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -17,7 +18,7 @@ import (
 // (was made on P1). Anchor was re-resolved against P2.head with correct P1
 // geometry, so anchor_patchset_number=1 and anchor_head_sha=sha-P2.
 func TestRequestComments_OriginalPositionAnchor_Fresh(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 
 	mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
@@ -64,7 +65,7 @@ func TestRequestComments_OriginalPositionAnchor_Fresh(t *testing.T) {
 // that an original-position comment is suppressed when anchor_patchset_number
 // doesn't match comments.patchset_number (wrong geometry was used for anchor).
 func TestRequestComments_OriginalPositionAnchor_WrongAnchorPatchset_Stale(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 
 	mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
@@ -112,7 +113,7 @@ func TestRequestComments_OriginalPositionAnchor_WrongAnchorPatchset_Stale(t *tes
 //   - PR retargeted: same head sha-H, new base → P2 is now current.
 //   - Anchor must be STALE because anchor_current_patchset_number=1 != current=2.
 func TestRequestComments_OriginalPositionAnchor_BeforeRetarget_Stale(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 
 	mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
@@ -155,7 +156,7 @@ func TestRequestComments_OriginalPositionAnchor_BeforeRetarget_Stale(t *testing.
 // that after a retarget and re-resolution, the anchor IS fresh:
 // anchor_patchset_number=1 (source), anchor_current_patchset_number=2 (current P2).
 func TestRequestComments_OriginalPositionAnchor_AfterRetarget_Fresh(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 
 	mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
 		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
