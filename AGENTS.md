@@ -27,6 +27,8 @@ Process lifecycle: Electron Forge spawns `bistro-sync`, or connects to an alread
 
 Where things live: Go engine in `go/` (entry `go/cmd/bistro-sync/`, packages under `go/internal/`); Electron UI in `electron/src/` (`main/` = process + spawn + IPC + settings, `renderer/` = React app).
 
+Within `go/internal/server/`, `app.go` owns the App struct, constructors, store preparation, and Run lifecycle; provider lifecycle, configuration, LLM setup, expertise, event bridging, repo-location wiring, and handler registration live in `provider.go`, `config.go`, `llm.go`, `expertise.go`, `bridge.go`, `repo_location.go`, and `handlers.go` respectively. All remain in package `server`.
+
 ## Tech stack
 
 - **Go 1.26** — go-git, go-github, gorilla/websocket, mattn/go-sqlite3, go-keyring, x/oauth2.
