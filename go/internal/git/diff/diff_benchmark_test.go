@@ -1,4 +1,4 @@
-package git
+package diff
 
 import (
 	"fmt"
@@ -14,12 +14,11 @@ import (
 
 func BenchmarkGenerateDiffLarge(b *testing.B) {
 	repoPath, baseSHA, headSHA := makeBenchmarkRepo(b, 1000, 10)
-	client := NewClient(NewCache())
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		result, err := client.GenerateDiff(repoPath, baseSHA, headSHA, DiffOptions{})
+		result, err := Generate(repoPath, baseSHA, headSHA, Options{})
 		if err != nil {
 			b.Fatalf("GenerateDiff: %v", err)
 		}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/git"
+	gitdiff "github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
@@ -273,7 +274,7 @@ func (o *Orchestrator) generateDiff(ctx context.Context, result *PRFetchResult, 
 	if mergeBase != "" {
 		diffBase = mergeBase
 	}
-	diff, err := o.git.GenerateDiff(clone.LocalPath, diffBase, pr.HeadSHA, git.DefaultDiffOptions())
+	diff, err := gitdiff.Generate(clone.LocalPath, diffBase, pr.HeadSHA, gitdiff.DefaultOptions())
 	if err != nil {
 		return fmt.Errorf("diff: %w", err)
 	}
@@ -321,7 +322,7 @@ func (o *Orchestrator) resolveMergeBase(ctx context.Context, clone *git.CloneRes
 	return mergeBase
 }
 
-func storeDiffFiles(diff *git.DiffResult) []store.DiffFile {
+func storeDiffFiles(diff *gitdiff.Result) []store.DiffFile {
 	files := make([]store.DiffFile, 0, len(diff.Files))
 	for _, file := range diff.Files {
 		files = append(files, store.DiffFile{

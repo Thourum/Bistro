@@ -1,4 +1,4 @@
-package git
+package diff
 
 import (
 	"bytes"
@@ -18,7 +18,11 @@ func TestGenerateDiffOnBareClone(t *testing.T) {
 	srcDir := t.TempDir()
 	contentA := "line1\nline2\nline3\n"
 	contentB := "line1\nCHANGED\nline3\nline4\n"
-	_, baseSHA, headSHA := buildTwoCommitRepo(t, srcDir, contentA, contentB)
+	_, worktree := initDiffTestRepo(t, srcDir)
+	writeDiffTestFiles(t, srcDir, map[string][]byte{"foo.go": []byte(contentA)})
+	baseSHA := commitDiffTestRepo(t, worktree, "commit A")
+	writeDiffTestFiles(t, srcDir, map[string][]byte{"foo.go": []byte(contentB)})
+	headSHA := commitDiffTestRepo(t, worktree, "commit B")
 
 	// Bare clone the source repo into a fresh dir (no working tree).
 	bareDir := t.TempDir()
@@ -28,8 +32,7 @@ func TestGenerateDiffOnBareClone(t *testing.T) {
 		t.Fatalf("bare PlainClone: %v", err)
 	}
 
-	client := NewClient(NewCache())
-	result, err := client.GenerateDiff(bareDir, baseSHA, headSHA, DefaultDiffOptions())
+	result, err := Generate(bareDir, baseSHA, headSHA, DefaultOptions())
 	if err != nil {
 		t.Fatalf("GenerateDiff on bare clone: %v", err)
 	}
@@ -80,7 +83,7 @@ func TestCountLinesEmpty(t *testing.T) {
 }
 
 func TestDiffFileCreation(t *testing.T) {
-	file := &DiffFile{
+	file := &File{
 		Path:         "main.go",
 		Status:       "modified",
 		Patch:        "patch content",
@@ -105,13 +108,13 @@ func TestDiffFileCreation(t *testing.T) {
 }
 
 func TestDiffResultCreation(t *testing.T) {
-	result := &DiffResult{
-		Files: []*DiffFile{
+	result := &Result{
+		Files: []*File{
 			{Path: "file1.go", Status: "added"},
 			{Path: "file2.go", Status: "modified"},
 		},
 		Size:    1024,
-		Profile: DiffProfile{FileCount: 2, PatchBytes: 1024},
+		Profile: Profile{FileCount: 2, PatchBytes: 1024},
 	}
 
 	if len(result.Files) != 2 {
@@ -133,7 +136,7 @@ func TestGenerateDiffProfileMetrics(t *testing.T) {
 		"src/new.go": []byte("package main\n"),
 	})
 
-	result, err := NewClient(NewCache()).GenerateDiff(repoPath, baseSHA, headSHA, DiffOptions{})
+	result, err := Generate(repoPath, baseSHA, headSHA, Options{})
 	if err != nil {
 		t.Fatalf("GenerateDiff: %v", err)
 	}
@@ -165,12 +168,11 @@ func TestGenerateDiffForcePushHeadRecomputesPatchBytes(t *testing.T) {
 	headTwoSHA := commitDiffTestRepo(t, worktree, "head two")
 	_ = repo
 
-	client := NewClient(NewCache())
-	first, err := client.GenerateDiff(dir, baseSHA, headOneSHA, DiffOptions{})
+	first, err := Generate(dir, baseSHA, headOneSHA, Options{})
 	if err != nil {
 		t.Fatalf("GenerateDiff first head: %v", err)
 	}
-	second, err := client.GenerateDiff(dir, baseSHA, headTwoSHA, DiffOptions{})
+	second, err := Generate(dir, baseSHA, headTwoSHA, Options{})
 	if err != nil {
 		t.Fatalf("GenerateDiff force-pushed head: %v", err)
 	}
@@ -190,7 +192,7 @@ func TestGenerateDiffBinaryFileProfilesWithoutFailure(t *testing.T) {
 		"assets/blob.bin": binaryBytes(16, 1),
 	})
 
-	result, err := NewClient(NewCache()).GenerateDiff(repoPath, baseSHA, headSHA, DiffOptions{})
+	result, err := Generate(repoPath, baseSHA, headSHA, Options{})
 	if err != nil {
 		t.Fatalf("GenerateDiff binary file: %v", err)
 	}
@@ -209,8 +211,8 @@ func TestGenerateDiffBinaryFileProfilesWithoutFailure(t *testing.T) {
 	if result.Files[0].Status != "binary" {
 		t.Fatalf("binary file status=%q, want binary", result.Files[0].Status)
 	}
-	if result.Files[0].DiffStatus != DiffStatusOK {
-		t.Fatalf("binary file DiffStatus=%q, want %q", result.Files[0].DiffStatus, DiffStatusOK)
+	if result.Files[0].DiffStatus != StatusOK {
+		t.Fatalf("binary file DiffStatus=%q, want %q", result.Files[0].DiffStatus, StatusOK)
 	}
 	if result.Files[0].Patch != "" || result.Size != 0 || result.Profile.PatchBytes != 0 {
 		t.Fatalf("binary file should store no patch bytes: file=%+v size=%d profile=%+v", result.Files[0], result.Size, result.Profile)
@@ -282,7 +284,7 @@ func TestGenerateDiffProfilesRenameShape(t *testing.T) {
 		"new_name.go": []byte("package main\n// renamed copy\n"),
 	})
 
-	result, err := NewClient(NewCache()).GenerateDiff(repoPath, baseSHA, headSHA, DiffOptions{})
+	result, err := Generate(repoPath, baseSHA, headSHA, Options{})
 	if err != nil {
 		t.Fatalf("GenerateDiff rename-shaped change: %v", err)
 	}
@@ -305,8 +307,8 @@ func TestGenerateDiff_PerFileBudget(t *testing.T) {
 		map[string][]byte{"big.go": []byte("package main\n" + strings.Repeat("// line\n", 20))},
 	)
 
-	opts := DiffOptions{MaxFilePatchBytes: 50}
-	result, err := NewClient(NewCache()).GenerateDiff(repoPath, baseSHA, headSHA, opts)
+	opts := Options{MaxFilePatchBytes: 50}
+	result, err := Generate(repoPath, baseSHA, headSHA, opts)
 	if err != nil {
 		t.Fatalf("GenerateDiff: %v", err)
 	}
@@ -317,8 +319,8 @@ func TestGenerateDiff_PerFileBudget(t *testing.T) {
 	for _, f := range result.Files {
 		if f.Path == "big.go" {
 			found = true
-			if f.DiffStatus != DiffStatusTruncated {
-				t.Errorf("expected DiffStatus %q, got %q", DiffStatusTruncated, f.DiffStatus)
+			if f.DiffStatus != StatusTruncated {
+				t.Errorf("expected DiffStatus %q, got %q", StatusTruncated, f.DiffStatus)
 			}
 			if f.Patch != "" {
 				t.Errorf("expected empty patch for truncated file, got %d bytes", len(f.Patch))
@@ -354,7 +356,7 @@ func TestGenerateDiff_LargePRKeepsEveryFile(t *testing.T) {
 	}
 	repoPath, baseSHA, headSHA := makeDiffTestRepo(t, base, head)
 
-	result, err := NewClient(NewCache()).GenerateDiff(repoPath, baseSHA, headSHA, DefaultDiffOptions())
+	result, err := Generate(repoPath, baseSHA, headSHA, DefaultOptions())
 	if err != nil {
 		t.Fatalf("GenerateDiff: %v", err)
 	}
@@ -365,7 +367,7 @@ func TestGenerateDiff_LargePRKeepsEveryFile(t *testing.T) {
 		t.Fatalf("fixture too small to cover the old budget: %d bytes", result.Size)
 	}
 	for _, f := range result.Files {
-		if f.DiffStatus != DiffStatusOK || f.Patch == "" {
+		if f.DiffStatus != StatusOK || f.Patch == "" {
 			t.Fatalf("%s: diff_status=%q patch=%d bytes, want ok with patch", f.Path, f.DiffStatus, len(f.Patch))
 		}
 	}
@@ -377,13 +379,13 @@ func TestGenerateDiff_NoBudget(t *testing.T) {
 		map[string][]byte{"c.go": []byte("package main\n")},
 		map[string][]byte{"c.go": []byte("package main\n// added\n")},
 	)
-	opts := DiffOptions{} // zero = unlimited
-	result, err := NewClient(NewCache()).GenerateDiff(repoPath, baseSHA, headSHA, opts)
+	opts := Options{} // zero = unlimited
+	result, err := Generate(repoPath, baseSHA, headSHA, opts)
 	if err != nil {
 		t.Fatalf("GenerateDiff: %v", err)
 	}
 	for _, f := range result.Files {
-		if f.DiffStatus != DiffStatusOK {
+		if f.DiffStatus != StatusOK {
 			t.Errorf("expected DiffStatus ok, got %q for %s", f.DiffStatus, f.Path)
 		}
 	}

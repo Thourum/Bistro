@@ -163,7 +163,7 @@ func TestDefaultTargetsUseCurrentPatchsetAfterForcePushBack(t *testing.T) {
 	}
 	gitClient := &interdiffGitStub{}
 	interdiff := buildInterdiff(ctx, InterdiffHandlerDeps{
-		Patchsets: db, Git: gitClient,
+		Patchsets: db, Interdiff: gitClient.Interdiff,
 		RepoForPR: func(context.Context, string) (string, string, bool, error) {
 			return "https://github.com/o/r.git", "/local/repo", true, nil
 		},

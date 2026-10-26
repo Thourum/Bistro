@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 
+	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/server/handler"
 	"github.com/itterno/bistro/internal/store"
@@ -94,7 +95,9 @@ func (a *App) registerDiffAndCheckoutHandlers(stores runStores) {
 	}))
 	a.wsServer.RegisterHandler("REQUEST_INTERDIFF", handler.NewInterdiffHandler(handler.InterdiffHandlerDeps{
 		Patchsets: a.db,
-		Git:       a.gitClient,
+		Interdiff: func(req diff.InterdiffRequest) (diff.InterdiffResult, error) {
+			return diff.Interdiff(a.repoLocks, req)
+		},
 		RepoForPR: prRepoLocator{db: a.db, locations: stores.repoLocation}.RepoForPR,
 		Log:       a.log,
 	}))

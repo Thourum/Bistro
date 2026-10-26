@@ -10,6 +10,8 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/memory"
+
+	gitdiff "github.com/itterno/bistro/internal/git/diff"
 )
 
 const (
@@ -131,7 +133,7 @@ func BenchmarkGenerateDiffT3CodeWarmClone(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		result, err := client.GenerateDiff(cloneResult.LocalPath, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA, DefaultDiffOptions())
+		result, err := gitdiff.Generate(cloneResult.LocalPath, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA, gitdiff.DefaultOptions())
 		if err != nil {
 			b.Fatalf("GenerateDiff: %v", err)
 		}
@@ -151,7 +153,7 @@ func BenchmarkCloneAndGenerateDiffT3Code(b *testing.B) {
 		if err != nil {
 			b.Fatalf("Clone: %v", err)
 		}
-		result, err := client.GenerateDiff(cloneResult.LocalPath, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA, DefaultDiffOptions())
+		result, err := gitdiff.Generate(cloneResult.LocalPath, benchT3CodeRangeBaseSHA, benchT3CodeRangeHeadSHA, gitdiff.DefaultOptions())
 		if err != nil {
 			b.Fatalf("GenerateDiff: %v", err)
 		}
@@ -199,7 +201,7 @@ func BenchmarkCloneForPRTargetedAndGenerateDiffT3Code(b *testing.B) {
 			b.Fatalf("CloneForPR targeted: %v", err)
 		}
 		assertBenchmarkPRRefMatchesHead(b, result.LocalPath, fixture.HeadSHA)
-		diff, err := client.GenerateDiff(result.LocalPath, fixture.BaseSHA, fixture.HeadSHA, DefaultDiffOptions())
+		diff, err := gitdiff.Generate(result.LocalPath, fixture.BaseSHA, fixture.HeadSHA, gitdiff.DefaultOptions())
 		if err != nil {
 			b.Fatalf("GenerateDiff: %v", err)
 		}

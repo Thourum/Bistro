@@ -2,6 +2,8 @@ package git
 
 import (
 	"testing"
+
+	"github.com/itterno/bistro/internal/git/diff"
 )
 
 func TestFullIntegration(t *testing.T) {
@@ -62,6 +64,6 @@ func TestAllTypesAvailable(t *testing.T) {
 	// Verify all types are accessible
 	var _ *RepoEntry
 	var _ *CloneResult
-	var _ *DiffFile
-	var _ *DiffResult
+	var _ *diff.File
+	var _ *diff.Result
 }

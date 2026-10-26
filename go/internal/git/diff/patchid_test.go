@@ -1,4 +1,4 @@
-package git
+package diff
 
 import (
 	"strings"
@@ -35,12 +35,11 @@ func TestGenerateDiffBinaryPatchIDTracksContent(t *testing.T) {
 	base := map[string][]byte{"img.bin": {0, 1, 2}}
 	firstDir, firstBase, firstHead := makeDiffTestRepo(t, base, map[string][]byte{"img.bin": {0, 1, 3}})
 	secondDir, secondBase, secondHead := makeDiffTestRepo(t, base, map[string][]byte{"img.bin": {0, 1, 4}})
-	client := NewClient(nil)
-	first, err := client.GenerateDiff(firstDir, firstBase, firstHead, DefaultDiffOptions())
+	first, err := Generate(firstDir, firstBase, firstHead, DefaultOptions())
 	if err != nil {
 		t.Fatalf("GenerateDiff first: %v", err)
 	}
-	second, err := client.GenerateDiff(secondDir, secondBase, secondHead, DefaultDiffOptions())
+	second, err := Generate(secondDir, secondBase, secondHead, DefaultOptions())
 	if err != nil {
 		t.Fatalf("GenerateDiff second: %v", err)
 	}
@@ -55,8 +54,7 @@ func TestGenerateDiffPatchIDSurvivesBudgetTruncation(t *testing.T) {
 		map[string][]byte{"f.go": []byte("package main\n")},
 		map[string][]byte{"f.go": []byte("package main\n// added\n")},
 	)
-	client := NewClient(nil)
-	full, err := client.GenerateDiff(dir, baseSHA, headSHA, DiffOptions{})
+	full, err := Generate(dir, baseSHA, headSHA, Options{})
 	if err != nil {
 		t.Fatalf("GenerateDiff full: %v", err)
 	}
@@ -69,13 +67,13 @@ func TestGenerateDiffPatchIDSurvivesBudgetTruncation(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name   string
-		opts   DiffOptions
+		opts   Options
 		status string
 	}{
-		{name: "per-file budget", opts: DiffOptions{MaxFilePatchBytes: 1}, status: DiffStatusTruncated},
+		{name: "per-file budget", opts: Options{MaxFilePatchBytes: 1}, status: StatusTruncated},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			limited, err := client.GenerateDiff(dir, baseSHA, headSHA, test.opts)
+			limited, err := Generate(dir, baseSHA, headSHA, test.opts)
 			if err != nil {
 				t.Fatalf("GenerateDiff limited: %v", err)
 			}

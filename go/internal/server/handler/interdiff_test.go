@@ -8,18 +8,18 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
 )
 
 type interdiffGitStub struct {
-	request git.InterdiffRequest
-	result  git.InterdiffResult
+	request diff.InterdiffRequest
+	result  diff.InterdiffResult
 	err     error
 }
 
-func (s *interdiffGitStub) Interdiff(req git.InterdiffRequest) (git.InterdiffResult, error) {
+func (s *interdiffGitStub) Interdiff(req diff.InterdiffRequest) (diff.InterdiffResult, error) {
 	s.request = req
 	return s.result, s.err
 }
@@ -43,12 +43,12 @@ func TestInterdiffHandlerContract(t *testing.T) {
 		repoErr      error
 		hasRepo      bool
 		gitErr       error
-		gitResult    git.InterdiffResult
+		gitResult    diff.InterdiffResult
 		wantTo       int
 		wantReason   string
 		wantReady    bool
 	}{
-		{name: "latest patchset", patchsets: patchsets, hasRepo: true, gitResult: git.InterdiffResult{Patch: "head-to-head patch", Rebased: true}, wantTo: 5, wantReady: true},
+		{name: "latest patchset", patchsets: patchsets, hasRepo: true, gitResult: diff.InterdiffResult{Patch: "head-to-head patch", Rebased: true}, wantTo: 5, wantReady: true},
 		{name: "explicit identical pair", toPatchset: 3, patchsets: patchsets, hasRepo: true, wantTo: 3, wantReady: true},
 		{name: "load failure", patchsetsErr: failure, wantReason: "could not load patchsets"},
 		{name: "no patchsets", wantReason: "patchset is not recorded"},
@@ -56,14 +56,14 @@ func TestInterdiffHandlerContract(t *testing.T) {
 		{name: "missing target", toPatchset: 4, patchsets: patchsets, wantTo: 4, wantReason: "patchset is not recorded"},
 		{name: "repo lookup failed", patchsets: patchsets, repoErr: failure, wantTo: 5, wantReason: "could not locate the repository"},
 		{name: "repo not cached", patchsets: patchsets, wantTo: 5, wantReason: "no local copy of this repository yet"},
-		{name: "target head lost", patchsets: patchsets, hasRepo: true, gitErr: fmt.Errorf("%w: h5", git.ErrHeadUnavailable), wantTo: 5, wantReason: "could not load a patchset head (P3 or P5): patchset head unavailable locally: h5"},
+		{name: "target head lost", patchsets: patchsets, hasRepo: true, gitErr: fmt.Errorf("%w: h5", diff.ErrHeadUnavailable), wantTo: 5, wantReason: "could not load a patchset head (P3 or P5): patchset head unavailable locally: h5"},
 		{name: "diff failed", patchsets: patchsets, hasRepo: true, gitErr: failure, wantTo: 5, wantReason: "could not compute the interdiff"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			gitClient := &interdiffGitStub{result: tt.gitResult, err: tt.gitErr}
 			h := NewInterdiffHandler(InterdiffHandlerDeps{
 				Patchsets: &mockPatchsetLister{patchsets: tt.patchsets, err: tt.patchsetsErr},
-				Git:       gitClient,
+				Interdiff: gitClient.Interdiff,
 				RepoForPR: func(_ context.Context, gotPRID string) (string, string, bool, error) {
 					if gotPRID != prID {
 						t.Errorf("repo lookup pr_id = %q, want %q", gotPRID, prID)
@@ -108,7 +108,7 @@ func TestInterdiffHandlerContract(t *testing.T) {
 			if tt.wantTo == 3 {
 				toHead, toMergeBase = "h3", "b3"
 			}
-			wantRequest := git.InterdiffRequest{
+			wantRequest := diff.InterdiffRequest{
 				RepoURL: repoURL, RepoPath: repoPath, Path: filePath,
 				FromHead: "h3", ToHead: toHead, FromMergeBase: "b3", ToMergeBase: toMergeBase,
 			}

@@ -1,4 +1,4 @@
-package git
+package diff
 
 import (
 	"errors"
@@ -34,18 +34,18 @@ type InterdiffResult struct {
 }
 
 // Interdiff diffs req.Path from FromHead to ToHead.
-func (c *Client) Interdiff(req InterdiffRequest) (InterdiffResult, error) {
+func Interdiff(locks *repolock.Locks, req InterdiffRequest) (InterdiffResult, error) {
 	var result InterdiffResult
-	err := c.locks.WithRepo(repolock.Key(req.RepoURL), func() error {
+	err := locks.WithRepo(repolock.Key(req.RepoURL), func() error {
 		repo, err := gitlib.PlainOpen(req.RepoPath)
 		if err != nil {
 			return fmt.Errorf("open repo %s: %w", req.RepoPath, err)
 		}
-		fromTree, err := headTree(repo, req.FromHead)
+		fromTree, err := HeadTree(repo, req.FromHead)
 		if err != nil {
 			return err
 		}
-		toTree, err := headTree(repo, req.ToHead)
+		toTree, err := HeadTree(repo, req.ToHead)
 		if err != nil {
 			return err
 		}
@@ -58,7 +58,8 @@ func (c *Client) Interdiff(req InterdiffRequest) (InterdiffResult, error) {
 	return result, err
 }
 
-func headTree(repo *gitlib.Repository, sha string) (*object.Tree, error) {
+// HeadTree loads the tree at sha, returning ErrHeadUnavailable for a missing head.
+func HeadTree(repo *gitlib.Repository, sha string) (*object.Tree, error) {
 	commit, err := repo.CommitObject(plumbing.NewHash(sha))
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
 		return nil, fmt.Errorf("%w: %s", ErrHeadUnavailable, logging.ShortSHA(sha))

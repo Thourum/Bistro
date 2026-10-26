@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
@@ -58,7 +58,7 @@ func viewedHash(file store.DiffFile) string {
 	if file.PatchID != "" {
 		return file.PatchID
 	}
-	return git.PatchID(file.Patch)
+	return diff.PatchID(file.Patch)
 }
 
 // NewRequestDiffHandler returns a ws.MessageHandler that reads diffs from the

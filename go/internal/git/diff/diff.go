@@ -1,4 +1,4 @@
-package git
+package diff
 
 import (
 	"bufio"
@@ -13,27 +13,30 @@ import (
 	fdiff "github.com/go-git/go-git/v5/plumbing/format/diff"
 )
 
-// singleFilePatch wraps a FilePatch to implement the fdiff.Patch interface
-type singleFilePatch struct {
-	fp fdiff.FilePatch
+// SingleFilePatch wraps a FilePatch to implement the fdiff.Patch interface.
+type SingleFilePatch struct {
+	FilePatch fdiff.FilePatch
 }
 
-func (s *singleFilePatch) FilePatches() []fdiff.FilePatch { return []fdiff.FilePatch{s.fp} }
-func (s *singleFilePatch) Message() string                { return "" }
+// FilePatches returns the wrapped file patch.
+func (s *SingleFilePatch) FilePatches() []fdiff.FilePatch { return []fdiff.FilePatch{s.FilePatch} }
+
+// Message returns an empty message for the per-file patch.
+func (s *SingleFilePatch) Message() string { return "" }
 
 // filePatchToString renders a single FilePatch as a unified diff string
 func filePatchToString(fp fdiff.FilePatch) (string, error) {
 	buf := bytes.NewBuffer(nil)
 	enc := fdiff.NewUnifiedEncoder(buf, fdiff.DefaultContextLines)
-	if err := enc.Encode(&singleFilePatch{fp: fp}); err != nil {
+	if err := enc.Encode(&SingleFilePatch{FilePatch: fp}); err != nil {
 		return "", fmt.Errorf("failed to encode file patch: %w", err)
 	}
 	return buf.String(), nil
 }
 
-// GenerateDiff creates per-file diffs between two commits in the on-disk
+// Generate creates per-file diffs between two commits in the on-disk
 // repository at localPath.
-func (c *Client) GenerateDiff(localPath, baseSHA, headSHA string, opts DiffOptions) (*DiffResult, error) {
+func Generate(localPath, baseSHA, headSHA string, opts Options) (*Result, error) {
 	if localPath == "" || baseSHA == "" || headSHA == "" {
 		return nil, errors.New("localPath, baseSHA, and headSHA cannot be empty")
 	}
@@ -47,7 +50,7 @@ func (c *Client) GenerateDiff(localPath, baseSHA, headSHA string, opts DiffOptio
 }
 
 // generateDiffFromRepo computes per-file diffs using an already-open repository.
-func generateDiffFromRepo(repo *gitlib.Repository, baseSHA, headSHA string, opts DiffOptions) (*DiffResult, error) {
+func generateDiffFromRepo(repo *gitlib.Repository, baseSHA, headSHA string, opts Options) (*Result, error) {
 	totalStart := time.Now()
 	if repo == nil {
 		return nil, errors.New("repository cannot be nil")
@@ -75,43 +78,43 @@ func generateDiffFromRepo(repo *gitlib.Repository, baseSHA, headSHA string, opts
 	return result, nil
 }
 
-func loadDiffPatch(repo *gitlib.Repository, baseSHA, headSHA string) (fdiff.Patch, DiffProfile, error) {
+func loadDiffPatch(repo *gitlib.Repository, baseSHA, headSHA string) (fdiff.Patch, Profile, error) {
 	commitStart := time.Now()
 	baseCommit, err := repo.CommitObject(plumbing.NewHash(baseSHA))
 	if err != nil {
-		return nil, DiffProfile{}, fmt.Errorf("failed to get base commit: %w", err)
+		return nil, Profile{}, fmt.Errorf("failed to get base commit: %w", err)
 	}
 	headCommit, err := repo.CommitObject(plumbing.NewHash(headSHA))
 	if err != nil {
-		return nil, DiffProfile{}, fmt.Errorf("failed to get head commit: %w", err)
+		return nil, Profile{}, fmt.Errorf("failed to get head commit: %w", err)
 	}
 	commitDuration := time.Since(commitStart)
 
 	treeStart := time.Now()
 	baseTree, err := baseCommit.Tree()
 	if err != nil {
-		return nil, DiffProfile{}, fmt.Errorf("failed to get base tree: %w", err)
+		return nil, Profile{}, fmt.Errorf("failed to get base tree: %w", err)
 	}
 	headTree, err := headCommit.Tree()
 	if err != nil {
-		return nil, DiffProfile{}, fmt.Errorf("failed to get head tree: %w", err)
+		return nil, Profile{}, fmt.Errorf("failed to get head tree: %w", err)
 	}
 	treeDuration := time.Since(treeStart)
 
 	patchStart := time.Now()
 	patch, err := baseTree.Patch(headTree)
 	if err != nil {
-		return nil, DiffProfile{}, fmt.Errorf("failed to create patch: %w", err)
+		return nil, Profile{}, fmt.Errorf("failed to create patch: %w", err)
 	}
-	return patch, DiffProfile{
+	return patch, Profile{
 		LoadCommits: commitDuration,
 		LoadTrees:   treeDuration,
 		BuildPatch:  time.Since(patchStart),
 	}, nil
 }
 
-func renderDiffFiles(patch fdiff.Patch, opts DiffOptions) (*DiffResult, error) {
-	result := &DiffResult{Files: make([]*DiffFile, 0)}
+func renderDiffFiles(patch fdiff.Patch, opts Options) (*Result, error) {
+	result := &Result{Files: make([]*File, 0)}
 	for _, filePatch := range patch.FilePatches() {
 		diffFile, err := renderDiffFile(filePatch, opts)
 		if err != nil {
@@ -122,14 +125,14 @@ func renderDiffFiles(patch fdiff.Patch, opts DiffOptions) (*DiffResult, error) {
 		switch {
 		case diffFile.Binary:
 			result.Profile.BinaryFileCount++
-		case diffFile.DiffStatus == DiffStatusTruncated:
+		case diffFile.DiffStatus == StatusTruncated:
 			result.Profile.TruncatedFiles++
 		}
 	}
 	return result, nil
 }
 
-func renderDiffFile(filePatch fdiff.FilePatch, opts DiffOptions) (*DiffFile, error) {
+func renderDiffFile(filePatch fdiff.FilePatch, opts Options) (*File, error) {
 	from, to := filePatch.Files()
 	var path, oldPath, status string
 	switch {
@@ -157,24 +160,24 @@ func renderDiffFile(filePatch fdiff.FilePatch, opts DiffOptions) (*DiffFile, err
 		patchID = PatchID(fmt.Sprintf("binary %s %s\n", fileHash(from), fileHash(to)))
 	}
 	patchBytes := len(patchStr)
-	diffStatus := DiffStatusOK
+	diffStatus := StatusOK
 	patchToStore := patchStr
 	switch {
 	case isBinary:
 		patchToStore = ""
 	case opts.MaxFilePatchBytes > 0 && int64(patchBytes) > opts.MaxFilePatchBytes:
-		diffStatus, patchToStore = DiffStatusTruncated, ""
+		diffStatus, patchToStore = StatusTruncated, ""
 	}
 
 	// Count from the full patch so truncated/binary files retain line stats.
 	added, removed := countLines(patchStr)
-	return &DiffFile{
+	return &File{
 		Path:         path,
 		Status:       status,
 		DiffStatus:   diffStatus,
 		OldPath:      oldPath,
 		Binary:       isBinary,
-		Truncated:    diffStatus == DiffStatusTruncated,
+		Truncated:    diffStatus == StatusTruncated,
 		PatchBytes:   patchBytes,
 		HunkCount:    countHunks(patchStr),
 		Patch:        patchToStore,

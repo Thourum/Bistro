@@ -28,7 +28,7 @@ type DiffFile struct {
 	Additions   int
 	Deletions   int
 	DiffStatus  string // "ok", "truncated", "too_large"; empty string treated as "ok"
-	PatchID     string // git.PatchID of the full patch; empty for rows written before migration 035
+	PatchID     string // diff.PatchID of the full patch; empty for rows written before migration 035
 }
 
 // DiffStore provides persistence for per-file PR diffs in the pr_diffs table.

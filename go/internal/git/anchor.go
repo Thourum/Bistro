@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	dmp "github.com/sergi/go-diff/diffmatchpatch"
 
+	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/logging"
 )
 
@@ -290,7 +291,7 @@ func positionInRootCommit(repo *gogit.Repository, commitSHA, filePath, side stri
 func positionToLineInPatch(fp fdiff.FilePatch, side string, target int) (int, error) {
 	var buf bytes.Buffer
 	enc := fdiff.NewUnifiedEncoder(&buf, fdiff.DefaultContextLines)
-	if err := enc.Encode(&singleFilePatch{fp: fp}); err != nil {
+	if err := enc.Encode(&diff.SingleFilePatch{FilePatch: fp}); err != nil {
 		return 0, fmt.Errorf("render file patch: %w", err)
 	}
 	return positionFromRenderedDiff(buf.String(), side, target)

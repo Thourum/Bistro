@@ -31,6 +31,13 @@ const (
 	locationCloneFailedCode      = "clone_failed"
 )
 
+// CloneResult tracks a successful clone
+type CloneResult struct {
+	LocalPath string // Where the repo is stored
+	BaseSHA   string // Base commit SHA
+	HeadSHA   string // Head commit SHA
+}
+
 // CloneOptions carries PR-specific hints that enable a targeted shallow fetch.
 // All fields are optional; a zero value disables the targeted path and behaves
 // identically to a plain Clone (broad fetch / full clone).

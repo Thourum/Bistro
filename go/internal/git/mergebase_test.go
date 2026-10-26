@@ -7,6 +7,8 @@ import (
 
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+
+	gitdiff "github.com/itterno/bistro/internal/git/diff"
 )
 
 // Upstream-only changes must not leak into the PR diff.
@@ -37,7 +39,7 @@ func TestMergeBaseDiffShowsOnlyPRChanges(t *testing.T) {
 	if mergeBase != root.String() {
 		t.Fatalf("MergeBase = %s, want root %s", mergeBase, root)
 	}
-	diff, err := NewClient(nil).GenerateDiff(dir, mergeBase, head.String(), DefaultDiffOptions())
+	diff, err := gitdiff.Generate(dir, mergeBase, head.String(), gitdiff.DefaultOptions())
 	if err != nil {
 		t.Fatalf("GenerateDiff: %v", err)
 	}
