@@ -9,11 +9,10 @@ import (
 	"os"
 
 	gogit "github.com/go-git/go-git/v5"
-
 	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/scan"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -60,7 +59,7 @@ func NewValidateDevFolderHandler(log *slog.Logger) ws.MessageHandler {
 	}
 }
 
-func updateScannedRepoLocations(ctx context.Context, locations *store.RepoLocationStore, found []scan.Found) (int, int, error) {
+func updateScannedRepoLocations(ctx context.Context, locations *repolocation.Store, found []scan.Found) (int, int, error) {
 	for _, repo := range found {
 		if err := locations.UpsertLocal(ctx, repo.Identity.Provider, repo.Identity.Owner, repo.Identity.Repo, repo.Path, false); err != nil {
 			return 0, 0, fmt.Errorf("upsert scanned repo %s: %w", repo.Identity.ID(), err)
@@ -142,7 +141,7 @@ func triggerSync(syncTrigger chan<- string, logger *slog.Logger) {
 	}
 }
 
-func healthCheckLocalRepo(ctx context.Context, row store.RepoLocation) (string, string, string) {
+func healthCheckLocalRepo(ctx context.Context, row repolocation.Location) (string, string, string) {
 	info, err := os.Stat(row.LocalPath)
 	if err != nil {
 		logging.FromContext(ctx).Warn("local repo path stat failed", "error", err)

@@ -32,6 +32,11 @@ const (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// MigrationFS returns the embedded SQL migrations rooted at their filenames.
+func MigrationFS() (fs.FS, error) {
+	return fs.Sub(migrationsFS, migrationsDir)
+}
+
 // MigrationRunner handles embedded goose migrations.
 type MigrationRunner struct {
 	log *slog.Logger

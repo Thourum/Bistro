@@ -10,14 +10,14 @@ import (
 	"path/filepath"
 
 	"github.com/itterno/bistro/internal/git/remote"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/ws"
 )
 
 // AddRepoByURLDeps supplies repository persistence, cloning, and logging.
 type AddRepoByURLDeps struct {
 	DB        *sql.DB
-	Store     *store.RepoLocationStore
+	Store     *repolocation.Store
 	Clone     func(ctx context.Context, repoURL, destination string, bare bool) error
 	CacheRoot func() (string, error)
 	Log       *slog.Logger
@@ -26,7 +26,7 @@ type AddRepoByURLDeps struct {
 // RecoverRepoToCacheDeps supplies repository persistence and cache cloning.
 type RecoverRepoToCacheDeps struct {
 	DB        *sql.DB
-	Store     *store.RepoLocationStore
+	Store     *repolocation.Store
 	Clone     func(ctx context.Context, repoURL, destination string, bare bool) error
 	CacheRoot func() (string, error)
 	Log       *slog.Logger
@@ -129,7 +129,7 @@ func NewAddRepoByURLHandler(deps AddRepoByURLDeps) ws.MessageHandler {
 }
 
 // NewRecoverRepoPathHandler re-links a repository to a matching local checkout.
-func NewRecoverRepoPathHandler(locations *store.RepoLocationStore, log *slog.Logger) ws.MessageHandler {
+func NewRecoverRepoPathHandler(locations *repolocation.Store, log *slog.Logger) ws.MessageHandler {
 	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
 		var data struct {
 			RepoID string `json:"repo_id"`

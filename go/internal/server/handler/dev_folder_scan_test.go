@@ -12,14 +12,14 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/scan"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
 // newTestScanDevFolderHandler joins the worker and adapts its broadcast for the
 // existing repo-location assertions, while leaving synchronous validation intact.
-func newTestScanDevFolderHandler(t *testing.T, locations *store.RepoLocationStore, syncs chan<- string) ws.MessageHandler {
+func newTestScanDevFolderHandler(t *testing.T, locations *repolocation.Store, syncs chan<- string) ws.MessageHandler {
 	t.Helper()
 	responses := make(chan any, 1)
 	start, _, wait := NewScanDevFolderHandlers(ScanDevFolderDeps{
@@ -56,7 +56,7 @@ func TestScanCancelOnSameSocketPreservesDiscoveries(t *testing.T) {
 	syncs := make(chan string, 1)
 	server := ws.NewServer()
 	start, cancel, wait := NewScanDevFolderHandlers(ScanDevFolderDeps{
-		Context: ctx, Locations: store.NewRepoLocationStore(database.DB),
+		Context: ctx, Locations: repolocation.New(database.DB),
 		SyncTrigger: syncs, Broadcast: server.Broadcast, Log: testRepoLocationLogger(),
 		Scan: func(scanCtx context.Context, _ string) (scan.Result, error) {
 			close(entered)
@@ -148,7 +148,7 @@ func TestScanDevFolderContextErrorsPreserveDiscoveries(t *testing.T) {
 			}
 			responses := make(chan any, 1)
 			start, _, wait := NewScanDevFolderHandlers(ScanDevFolderDeps{
-				Context: context.Background(), Locations: store.NewRepoLocationStore(database.DB),
+				Context: context.Background(), Locations: repolocation.New(database.DB),
 				Broadcast: func(response any) { responses <- response }, Log: testRepoLocationLogger(),
 				Scan: func(context.Context, string) (scan.Result, error) {
 					return scan.Result{Found: []scan.Found{{Identity: remote.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}}, fmt.Errorf("walk interrupted: %w", scanErr)
@@ -162,7 +162,7 @@ func TestScanDevFolderContextErrorsPreserveDiscoveries(t *testing.T) {
 			if data["ok"] != true || data["partial"] != true || data["discovered"] != float64(1) {
 				t.Fatalf("unexpected partial response: %#v", response)
 			}
-			assertLocationStatus(t, store.NewRepoLocationStore(database.DB), "github:acme/api", "ok", "")
+			assertLocationStatus(t, repolocation.New(database.DB), "github:acme/api", "ok", "")
 		})
 	}
 }
@@ -179,7 +179,7 @@ func TestScanDevFolderErrorsAreCorrelated(t *testing.T) {
 			responses := make(chan any, 1)
 			syncs := make(chan string, 1)
 			start, _, wait := NewScanDevFolderHandlers(ScanDevFolderDeps{
-				Context: context.Background(), Locations: store.NewRepoLocationStore(database.DB), SyncTrigger: syncs,
+				Context: context.Background(), Locations: repolocation.New(database.DB), SyncTrigger: syncs,
 				Broadcast: func(response any) { responses <- response }, Log: testRepoLocationLogger(),
 				Scan: func(context.Context, string) (scan.Result, error) {
 					if failure == "scan_failed" {
@@ -207,7 +207,7 @@ func TestScanDevFolderErrorsAreCorrelated(t *testing.T) {
 
 func TestScanDevFolderReplacementWaitsForPredecessor(t *testing.T) {
 	database := storetest.Open(t)
-	locations := store.NewRepoLocationStore(database.DB)
+	locations := repolocation.New(database.DB)
 	root := t.TempDir()
 	clone := filepath.Join(root, "api")
 	if err := createRepo(clone, "origin", "https://github.com/acme/api.git"); err != nil {
@@ -298,7 +298,7 @@ func TestScanDevFolderShutdownJoinsAndRejectsStarts(t *testing.T) {
 			entered := make(chan struct{}, 1)
 			responses := make(chan any, 2)
 			start, _, wait := NewScanDevFolderHandlers(ScanDevFolderDeps{
-				Context: ctx, Locations: store.NewRepoLocationStore(database.DB), Log: testRepoLocationLogger(),
+				Context: ctx, Locations: repolocation.New(database.DB), Log: testRepoLocationLogger(),
 				Broadcast: func(response any) { responses <- response },
 				Scan: func(scanCtx context.Context, _ string) (scan.Result, error) {
 					entered <- struct{}{}

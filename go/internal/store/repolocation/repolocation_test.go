@@ -1,11 +1,13 @@
-package store
+package repolocation
 
 import (
 	"context"
+	"database/sql"
 	"io/fs"
 	"testing"
 	"time"
 
+	"github.com/itterno/bistro/internal/store"
 	"github.com/pressly/goose/v3"
 )
 
@@ -15,7 +17,7 @@ func TestMigration026AddsLocationColumns(t *testing.T) {
 	// Existing row survives migration 026 and new columns are readable with NULL defaults.
 	mustExec(t, db, `INSERT INTO repos (id, provider, owner, repo) VALUES ('github:acme/api','github','acme','api')`)
 
-	if err := NewMigrationRunner(nil, db.DB).Run(context.Background()); err != nil {
+	if err := store.NewMigrationRunner(nil, db.DB).Run(context.Background()); err != nil {
 		t.Fatalf("run remaining migrations: %v", err)
 	}
 
@@ -42,7 +44,7 @@ func TestRepoLocationStoreUpsertLocalCreatesWatchedRepo(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	db := newTestDBMigratedThrough(t, 26)
-	store := NewRepoLocationStore(db.DB)
+	store := New(db.DB)
 	path := t.TempDir()
 
 	// Act
@@ -76,7 +78,7 @@ func TestRepoLocationStoreUpsertLocalUpdatesUnhealthyPath(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	db := newTestDBMigratedThrough(t, 26)
-	store := NewRepoLocationStore(db.DB)
+	store := New(db.DB)
 	oldPath := t.TempDir()
 	newPath := t.TempDir()
 	mustExec(t, db, `
@@ -108,7 +110,7 @@ func TestRepoLocationStoreUpsertLocalWithoutWatchDoesNotWatchNewRepo(t *testing.
 	// Arrange
 	ctx := context.Background()
 	db := newTestDBMigratedThrough(t, 26)
-	store := NewRepoLocationStore(db.DB)
+	store := New(db.DB)
 	path := t.TempDir()
 
 	// Act — dev-folder scans register locations without watching.
@@ -129,7 +131,7 @@ func TestRepoLocationStoreUpsertLocalWithoutWatchPreservesWatchedRepo(t *testing
 	// Arrange
 	ctx := context.Background()
 	db := newTestDBMigratedThrough(t, 26)
-	store := NewRepoLocationStore(db.DB)
+	store := New(db.DB)
 	path := t.TempDir()
 	mustExec(t, db, `
 		INSERT INTO repos (id, provider, owner, repo, watched)
@@ -150,7 +152,7 @@ func TestRepoLocationStoreUpsertLocalPreservesExistingHealthyPathThatExists(t *t
 	// Arrange
 	ctx := context.Background()
 	db := newTestDBMigratedThrough(t, 26)
-	store := NewRepoLocationStore(db.DB)
+	store := New(db.DB)
 	existingPath := t.TempDir()
 	duplicatePath := t.TempDir()
 	mustExec(t, db, `
@@ -178,7 +180,7 @@ func TestRepoLocationStoreSetCacheMarksRepoAsCacheCloned(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	db := newTestDBMigratedThrough(t, 26)
-	store := NewRepoLocationStore(db.DB)
+	store := New(db.DB)
 	mustInsertRepo(t, db, "github:acme/api")
 	path := t.TempDir()
 
@@ -206,7 +208,7 @@ func TestRepoLocationStoreTouchSetsLastUsedAt(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	db := newTestDBMigratedThrough(t, 26)
-	store := NewRepoLocationStore(db.DB)
+	store := New(db.DB)
 	mustInsertRepo(t, db, "github:acme/api")
 
 	// Act
@@ -224,7 +226,7 @@ func TestRepoLocationStoreMarkDegradedAndClearDegradedRoundTrip(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	db := newTestDBMigratedThrough(t, 26)
-	store := NewRepoLocationStore(db.DB)
+	store := New(db.DB)
 	path := t.TempDir()
 	mustExec(t, db, `
 		INSERT INTO repos (id, provider, owner, repo, local_path, source, location_status)
@@ -262,14 +264,14 @@ func TestRepoLocationStoreClearCacheLocationNullsLocationFields(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	db := newTestDBMigratedThrough(t, 26)
-	store := NewRepoLocationStore(db.DB)
+	store := New(db.DB)
 	mustExec(t, db, `
 		INSERT INTO repos (id, provider, owner, repo, local_path, source, last_used_at, location_status, location_error_code, location_error)
 		VALUES ('github:acme/api', 'github', 'acme', 'api', '/tmp/cache', 'cache', '2026-01-01T00:00:00Z', 'missing', 'gone', 'not found')
 	`)
 
 	// Act
-	err := store.ClearCacheLocation(ctx, "github:acme/api")
+	err := store.ClearCache(ctx, "github:acme/api")
 
 	// Assert
 	if err != nil {
@@ -285,7 +287,7 @@ func TestRepoLocationStoreGetReturnsNilWhenAbsent(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	db := newTestDBMigratedThrough(t, 26)
-	store := NewRepoLocationStore(db.DB)
+	store := New(db.DB)
 
 	// Act
 	location, err := store.Get(ctx, "github:acme/api")
@@ -303,7 +305,7 @@ func TestRepoLocationStoreListBySourceFiltersRows(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	db := newTestDBMigratedThrough(t, 26)
-	store := NewRepoLocationStore(db.DB)
+	store := New(db.DB)
 	mustExec(t, db, `
 		INSERT INTO repos (id, provider, owner, repo, local_path, source, location_status)
 		VALUES
@@ -327,10 +329,10 @@ func TestRepoLocationStoreListBySourceFiltersRows(t *testing.T) {
 	}
 }
 
-func newTestDBMigratedThrough(t *testing.T, throughVersion int) *DB {
+func newTestDBMigratedThrough(t *testing.T, throughVersion int) *store.DB {
 	t.Helper()
 
-	db, err := OpenDB(":memory:")
+	db, err := store.OpenDB(":memory:")
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
@@ -350,19 +352,19 @@ func newTestDBMigratedThrough(t *testing.T, throughVersion int) *DB {
 
 func mustSubMigrationsFS(t *testing.T) fs.FS {
 	t.Helper()
-	migrationFS, err := fs.Sub(migrationsFS, migrationsDir)
+	migrationFS, err := store.MigrationFS()
 	if err != nil {
 		t.Fatalf("sub migrations fs: %v", err)
 	}
 	return migrationFS
 }
 
-func mustInsertRepo(t *testing.T, db *DB, repoID string) {
+func mustInsertRepo(t *testing.T, db *store.DB, repoID string) {
 	t.Helper()
 	mustExec(t, db, `INSERT INTO repos (id, provider, owner, repo) VALUES (?, 'github', 'acme', 'api')`, repoID)
 }
 
-func mustGetRepoLocation(t *testing.T, store *RepoLocationStore, repoID string) *RepoLocation {
+func mustGetRepoLocation(t *testing.T, store *Store, repoID string) *Location {
 	t.Helper()
 	location, err := store.Get(context.Background(), repoID)
 	if err != nil {
@@ -374,7 +376,7 @@ func mustGetRepoLocation(t *testing.T, store *RepoLocationStore, repoID string) 
 	return location
 }
 
-func assertWatched(t *testing.T, db *DB, repoID string, expected bool) {
+func assertWatched(t *testing.T, db *store.DB, repoID string, expected bool) {
 	t.Helper()
 	var watched int
 	if err := db.QueryRow(`SELECT watched FROM repos WHERE id = ?`, repoID).Scan(&watched); err != nil {
@@ -395,5 +397,15 @@ func assertRecentTime(t *testing.T, got *time.Time) {
 	}
 	if time.Until(*got) > time.Minute {
 		t.Fatalf("expected timestamp not far in future, got %s", got.Format(time.RFC3339Nano))
+	}
+}
+
+// mustExec executes a SQL statement, failing the test on error.
+func mustExec(t *testing.T, db interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+}, query string, args ...interface{}) {
+	t.Helper()
+	if _, err := db.Exec(query, args...); err != nil {
+		t.Fatalf("mustExec(%q): %v", query, err)
 	}
 }

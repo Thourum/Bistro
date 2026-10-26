@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
-
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/store/storetest"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type fakeRepoLocationCloner struct {
@@ -142,7 +142,7 @@ func TestRepoLocationValidateDevFolderReturnsCanonicalPathAndEnvelope(t *testing
 
 func TestRepoLocationScanDevFolderReturnsInvalidPathEnvelope(t *testing.T) {
 	// Arrange
-	handler := newTestScanDevFolderHandler(t, store.NewRepoLocationStore(storetest.Open(t).DB), nil)
+	handler := newTestScanDevFolderHandler(t, repolocation.New(storetest.Open(t).DB), nil)
 	missing := filepath.Join(t.TempDir(), "missing")
 
 	// Act
@@ -157,7 +157,7 @@ func TestRepoLocationScanDevFolderNoopsWhenBistroRepoDirIsSet(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("BISTRO_REPO_DIR", filepath.Join(root, "cache"))
 	db := storetest.Open(t)
-	store := store.NewRepoLocationStore(db.DB)
+	store := repolocation.New(db.DB)
 	dev := filepath.Join(root, "dev")
 	if err := createRepo(filepath.Join(dev, "acme", "api"), "origin", "https://github.com/acme/api.git"); err != nil {
 		t.Fatalf("create dev repo: %v", err)
@@ -196,7 +196,7 @@ func TestRepoLocationScanDevFolderReconcilesHealthAndTriggersSync(t *testing.T) 
 	}
 	// Arrange
 	db := storetest.Open(t)
-	store := store.NewRepoLocationStore(db.DB)
+	store := repolocation.New(db.DB)
 	dev := filepath.Join(t.TempDir(), "dev")
 	mustMkdirAll(dev)
 
@@ -304,7 +304,7 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 				if err := createRepo(localPath, "origin", "https://github.com/acme/api.git"); err != nil {
 					t.Fatalf("create local repo: %v", err)
 				}
-				if err := store.NewRepoLocationStore(db.DB).UpsertLocal(context.Background(), "github", "acme", "api", localPath, true); err != nil {
+				if err := repolocation.New(db.DB).UpsertLocal(context.Background(), "github", "acme", "api", localPath, true); err != nil {
 					t.Fatalf("upsert local: %v", err)
 				}
 			},
@@ -319,7 +319,7 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 			arrange: func(t *testing.T, db *store.DB, root string, cloner *fakeRepoLocationCloner) {
 				localPath := filepath.Join(root, "dev", "acme", "api")
 				insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "local", localPath, nil)
-				if err := store.NewRepoLocationStore(db.DB).MarkDegraded(context.Background(), "github:acme/api", "missing", "path_missing", "folder not found"); err != nil {
+				if err := repolocation.New(db.DB).MarkDegraded(context.Background(), "github:acme/api", "missing", "path_missing", "folder not found"); err != nil {
 					t.Fatalf("mark degraded local: %v", err)
 				}
 			},
@@ -468,7 +468,7 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 			}
 			handler := NewAddRepoByURLHandler(AddRepoByURLDeps{
 				DB:    db.DB,
-				Store: store.NewRepoLocationStore(db.DB),
+				Store: repolocation.New(db.DB),
 				Clone: cloner.CloneRepo,
 				CacheRoot: func() (string, error) {
 					cacheRoot := filepath.Join(root, "cache")

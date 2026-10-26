@@ -1,4 +1,4 @@
-package store
+package repolocation
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
-// RepoLocation mirrors the location columns of one repos row.
-type RepoLocation struct {
+// Location mirrors the location columns of one repos row.
+type Location struct {
 	RepoID                string
 	Provider, Owner, Repo string
 	LocalPath             string // "" when NULL
@@ -24,12 +24,12 @@ type RepoLocation struct {
 	LocationError         string
 }
 
-// RepoLocationStore persists repo local/cache location metadata.
-type RepoLocationStore struct{ queries *storedb.Queries }
+// Store persists repo local/cache location metadata.
+type Store struct{ queries *storedb.Queries }
 
-// NewRepoLocationStore creates a RepoLocationStore backed by the given *sql.DB.
-func NewRepoLocationStore(db *sql.DB) *RepoLocationStore {
-	return &RepoLocationStore{queries: storedb.New(db)}
+// New creates a Store backed by the given *sql.DB.
+func New(db *sql.DB) *Store {
+	return &Store{queries: storedb.New(db)}
 }
 
 // UpsertLocal registers/updates a local repo. watch=true marks the repo
@@ -38,7 +38,7 @@ func NewRepoLocationStore(db *sql.DB) *RepoLocationStore {
 // auto-watch every discovered checkout. Preserves an existing healthy
 // local_path when it still exists on disk so duplicate checkout scans do not
 // replace the user's chosen location.
-func (s *RepoLocationStore) UpsertLocal(ctx context.Context, provider, owner, repo, canonicalPath string, watch bool) error {
+func (s *Store) UpsertLocal(ctx context.Context, provider, owner, repo, canonicalPath string, watch bool) error {
 	normalizedProvider := strings.ToLower(provider)
 	normalizedOwner := strings.ToLower(owner)
 	normalizedRepo := strings.ToLower(repo)
@@ -73,7 +73,7 @@ func (s *RepoLocationStore) UpsertLocal(ctx context.Context, provider, owner, re
 }
 
 // SetCache marks a repo as cache-cloned at path, last_used_at=now, status ok.
-func (s *RepoLocationStore) SetCache(ctx context.Context, repoID, path string) error {
+func (s *Store) SetCache(ctx context.Context, repoID, path string) error {
 	if err := s.queries.SetCacheRepoLocation(ctx, storedb.SetCacheRepoLocationParams{
 		LocalPath:  validNullString(path),
 		LastUsedAt: currentNullTime(),
@@ -86,7 +86,7 @@ func (s *RepoLocationStore) SetCache(ctx context.Context, repoID, path string) e
 
 // Touch sets last_used_at=now. Called only after a successful use, so it also
 // clears any stale degraded state left from a previous failure.
-func (s *RepoLocationStore) Touch(ctx context.Context, repoID string) error {
+func (s *Store) Touch(ctx context.Context, repoID string) error {
 	if err := s.queries.TouchRepoLocation(ctx, storedb.TouchRepoLocationParams{
 		LastUsedAt: currentNullTime(),
 		ID:         repoID,
@@ -97,7 +97,7 @@ func (s *RepoLocationStore) Touch(ctx context.Context, repoID string) error {
 }
 
 // MarkDegraded sets location_status + error code/message. Keeps local_path.
-func (s *RepoLocationStore) MarkDegraded(ctx context.Context, repoID, status, code, msg string) error {
+func (s *Store) MarkDegraded(ctx context.Context, repoID, status, code, msg string) error {
 	if err := s.queries.MarkRepoLocationDegraded(ctx, storedb.MarkRepoLocationDegradedParams{
 		LocationStatus:    validNullString(status),
 		LocationErrorCode: validNullString(code),
@@ -110,15 +110,15 @@ func (s *RepoLocationStore) MarkDegraded(ctx context.Context, repoID, status, co
 }
 
 // ClearDegraded resets status to 'ok' and clears error fields.
-func (s *RepoLocationStore) ClearDegraded(ctx context.Context, repoID string) error {
+func (s *Store) ClearDegraded(ctx context.Context, repoID string) error {
 	if err := s.queries.ClearRepoLocationDegraded(ctx, repoID); err != nil {
 		return fmt.Errorf("clear repo location degraded state %s: %w", repoID, err)
 	}
 	return nil
 }
 
-// ClearCacheLocation nulls local_path/source/location fields (post-prune).
-func (s *RepoLocationStore) ClearCacheLocation(ctx context.Context, repoID string) error {
+// ClearCache nulls local_path/source/location fields (post-prune).
+func (s *Store) ClearCache(ctx context.Context, repoID string) error {
 	if err := s.queries.ClearCacheRepoLocation(ctx, repoID); err != nil {
 		return fmt.Errorf("clear cache location for %s: %w", repoID, err)
 	}
@@ -126,7 +126,7 @@ func (s *RepoLocationStore) ClearCacheLocation(ctx context.Context, repoID strin
 }
 
 // Get returns the row or (nil, nil) when absent.
-func (s *RepoLocationStore) Get(ctx context.Context, repoID string) (*RepoLocation, error) {
+func (s *Store) Get(ctx context.Context, repoID string) (*Location, error) {
 	row, err := s.queries.GetRepoLocation(ctx, repoID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -134,29 +134,29 @@ func (s *RepoLocationStore) Get(ctx context.Context, repoID string) (*RepoLocati
 	if err != nil {
 		return nil, fmt.Errorf("get repo location %s: %w", repoID, err)
 	}
-	location := repoLocationFromRow(repoLocationDBRow(row))
+	location := locationFromRow(locationDBRow(row))
 	return &location, nil
 }
 
 // ListBySource returns all rows with the given source ("local"/"cache").
-func (s *RepoLocationStore) ListBySource(ctx context.Context, source string) ([]RepoLocation, error) {
+func (s *Store) ListBySource(ctx context.Context, source string) ([]Location, error) {
 	rows, err := s.queries.ListRepoLocationsBySource(ctx, validNullString(source))
 	if err != nil {
 		return nil, fmt.Errorf("list repo locations by source %s: %w", source, err)
 	}
 
-	locations := make([]RepoLocation, 0, len(rows))
+	locations := make([]Location, 0, len(rows))
 	for _, row := range rows {
-		locations = append(locations, repoLocationFromRow(repoLocationDBRow(row)))
+		locations = append(locations, locationFromRow(locationDBRow(row)))
 	}
 	return locations, nil
 }
 
 // Both sqlc queries select the same columns, so their row structs are convertible.
-type repoLocationDBRow storedb.GetRepoLocationRow
+type locationDBRow storedb.GetRepoLocationRow
 
-func repoLocationFromRow(row repoLocationDBRow) RepoLocation {
-	return RepoLocation{
+func locationFromRow(row locationDBRow) Location {
+	return Location{
 		RepoID:            row.ID,
 		Provider:          row.Provider,
 		Owner:             row.Owner,
@@ -171,12 +171,12 @@ func repoLocationFromRow(row repoLocationDBRow) RepoLocation {
 }
 
 const (
-	repoLocationSourceLocal = "local"
-	repoLocationStatusOK    = "ok"
+	sourceLocal = "local"
+	statusOK    = "ok"
 )
 
-func shouldPreserveLocalPath(existing *RepoLocation, canonicalPath string) bool {
-	if existing == nil || existing.Source != repoLocationSourceLocal || existing.LocationStatus != repoLocationStatusOK {
+func shouldPreserveLocalPath(existing *Location, canonicalPath string) bool {
+	if existing == nil || existing.Source != sourceLocal || existing.LocationStatus != statusOK {
 		return false
 	}
 	if existing.LocalPath == "" || existing.LocalPath == canonicalPath {

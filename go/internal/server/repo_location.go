@@ -6,10 +6,10 @@ import (
 	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/scan"
 	"github.com/itterno/bistro/internal/server/handler"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 )
 
-func (a *App) configureRepoLocationStore(repoLocationStore *store.RepoLocationStore) {
+func (a *App) configureRepoLocationStore(repoLocationStore *repolocation.Store) {
 	if a.gitClient == nil {
 		return
 	}

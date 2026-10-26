@@ -5,15 +5,15 @@ import (
 	"log/slog"
 
 	"github.com/itterno/bistro/internal/git/remote"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 )
 
 type repoLocationResolver struct {
-	locations *store.RepoLocationStore
+	locations *repolocation.Store
 	log       *slog.Logger
 }
 
-func newRepoLocationResolver(locations *store.RepoLocationStore, log *slog.Logger) *repoLocationResolver {
+func newRepoLocationResolver(locations *repolocation.Store, log *slog.Logger) *repoLocationResolver {
 	return &repoLocationResolver{locations: locations, log: log}
 }
 

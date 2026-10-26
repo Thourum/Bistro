@@ -28,6 +28,7 @@ import (
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/currentuser"
 	"github.com/itterno/bistro/internal/store/prdiff"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/sync"
 	"github.com/itterno/bistro/internal/ws"
 )
@@ -135,7 +136,7 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 
 type runStores struct {
 	currentUser  *currentuser.Store
-	repoLocation *store.RepoLocationStore
+	repoLocation *repolocation.Store
 	expertise    *expertise.Store
 	diff         *prdiff.Store
 }
@@ -165,7 +166,7 @@ func (a *App) prepareStores() runStores {
 
 	stores := runStores{
 		currentUser:  currentuser.New(a.db),
-		repoLocation: store.NewRepoLocationStore(a.db.DB),
+		repoLocation: repolocation.New(a.db.DB),
 		expertise:    expertise.NewStore(a.db.DB),
 		diff:         prdiff.New(a.db.DB),
 	}

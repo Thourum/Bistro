@@ -4,13 +4,12 @@ import (
 	"os"
 
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
-
 	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/repolock"
 )
 
 // LocalRepoResolver reports a registered local checkout for a repo URL.
-// Implemented by an adapter over store.RepoLocationStore in package server.
+// Implemented by an adapter over repolocation.Store in package server.
 type LocalRepoResolver interface {
 	// LocalPath returns (path, true) only for source='local' rows.
 	LocalPath(repoURL string) (string, bool)
@@ -19,7 +18,7 @@ type LocalRepoResolver interface {
 	// OnUsed bumps last_used_at.
 	OnUsed(repoURL string)
 	// OnCacheCloned records a cache clone: source='cache', local_path=path,
-	// last_used_at=now (wraps RepoLocationStore.SetCache). Called after every
+	// last_used_at=now (wraps repolocation.Store.SetCache). Called after every
 	// successful cache clone AND on cache-hit reuse (idempotent upsert).
 	OnCacheCloned(repoURL, path string)
 }

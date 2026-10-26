@@ -7,14 +7,14 @@ import (
 	"log/slog"
 
 	"github.com/itterno/bistro/internal/git/repolock"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/ws"
 )
 
 // RemoveRepoDeps supplies persistence, locking, and cache cleanup.
 type RemoveRepoDeps struct {
 	DB             *sql.DB
-	Store          *store.RepoLocationStore
+	Store          *repolocation.Store
 	Locks          *repolock.Locks
 	DeleteCacheDir func(path string) error
 	Log            *slog.Logger

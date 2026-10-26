@@ -16,18 +16,18 @@ import (
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
-	_ "github.com/mattn/go-sqlite3"
-
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestRepoLocationRecoverRepoPathAndToCache(t *testing.T) {
 	// Arrange
 	root := t.TempDir()
 	db := storetest.Open(t)
-	store := store.NewRepoLocationStore(db.DB)
+	store := repolocation.New(db.DB)
 	missingPath := filepath.Join(root, "missing")
 	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "local", missingPath, nil)
 	if err := store.MarkDegraded(context.Background(), "github:acme/api", "missing", "path_missing", "folder not found"); err != nil {
@@ -247,7 +247,7 @@ func assertRowCount(t *testing.T, db *sql.DB, query string, args []any, want int
 	}
 }
 
-func assertLocationStatus(t *testing.T, store *store.RepoLocationStore, repoID, wantStatus, wantCode string) {
+func assertLocationStatus(t *testing.T, store *repolocation.Store, repoID, wantStatus, wantCode string) {
 	t.Helper()
 	location, err := store.Get(context.Background(), repoID)
 	if err != nil {

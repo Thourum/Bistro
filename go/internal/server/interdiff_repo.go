@@ -8,13 +8,14 @@ import (
 
 	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 )
 
 // prRepoLocator finds the repo a PR's diffs were generated in: the user's
 // local clone or the cache clone, whichever the sync recorded.
 type prRepoLocator struct {
 	db        *store.DB
-	locations *store.RepoLocationStore
+	locations *repolocation.Store
 }
 
 // RepoForPR returns the sync's clone URL and recorded local repository path.

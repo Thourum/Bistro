@@ -12,6 +12,7 @@ import (
 	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/store/storetest"
 )
 
@@ -21,7 +22,7 @@ func TestConfigureRepoLocationStoreWiresGitClientLocalResolver(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	db := storetest.Open(t)
-	locations := store.NewRepoLocationStore(db.DB)
+	locations := repolocation.New(db.DB)
 	missingPath := filepath.Join(t.TempDir(), "missing")
 	if err := locations.UpsertLocal(ctx, "github", "acme", "api", missingPath, false); err != nil {
 		t.Fatalf("upsert local repo: %v", err)
@@ -54,7 +55,7 @@ func TestConfigureRepoLocationStoreWiresGitClientLocalResolver(t *testing.T) {
 func TestRepoLocationResolverPersistsGitClientCallbacks(t *testing.T) {
 	// Arrange
 	db := storetest.Open(t)
-	locations := store.NewRepoLocationStore(db.DB)
+	locations := repolocation.New(db.DB)
 	insertServerRepo(t, db, "github:acme/api", "github", "acme", "api")
 	resolver := newRepoLocationResolver(locations, testRepoLocationResolverLogger())
 	cachePath := filepath.Join(t.TempDir(), "cache", "acme", "api")
@@ -85,7 +86,7 @@ func insertServerRepo(t *testing.T, db *store.DB, repoID, provider, owner, repo 
 	}
 }
 
-func mustGetServerRepoLocation(t *testing.T, locations *store.RepoLocationStore, repoID string) *store.RepoLocation {
+func mustGetServerRepoLocation(t *testing.T, locations *repolocation.Store, repoID string) *repolocation.Location {
 	t.Helper()
 	location, err := locations.Get(context.Background(), repoID)
 	if err != nil {

@@ -5,14 +5,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func TestInterdiffRepoForPR(t *testing.T) {
 	ctx := context.Background()
 	db := storetest.Open(t)
-	locations := store.NewRepoLocationStore(db.DB)
+	locations := repolocation.New(db.DB)
 	locator := prRepoLocator{db: db, locations: locations}
 	const prID = "github:acme/api:1"
 

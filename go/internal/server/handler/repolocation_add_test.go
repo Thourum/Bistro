@@ -9,13 +9,12 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
-
 	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/repolock"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestRepoLocationAddRepoByURLUsesCacheRootWhenBistroRepoDirIsSet(t *testing.T) {
@@ -31,7 +30,7 @@ func TestRepoLocationAddRepoByURLUsesCacheRootWhenBistroRepoDirIsSet(t *testing.
 	cloner := &fakeRepoLocationCloner{}
 	handler := NewAddRepoByURLHandler(AddRepoByURLDeps{
 		DB:        db.DB,
-		Store:     store.NewRepoLocationStore(db.DB),
+		Store:     repolocation.New(db.DB),
 		Clone:     cloner.CloneRepo,
 		CacheRoot: clonecache.Root,
 		Log:       testRepoLocationLogger(),
@@ -61,7 +60,7 @@ func TestRepoLocationCacheMutationHandlersHandleMissingDeleteDependency(t *testi
 	mustMkdirAll(cachePath)
 	mustWriteFile(filepath.Join(cachePath, "payload"), "bytes")
 	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "cache", cachePath, &stale)
-	deps := CacheMaintenanceDeps{Store: store.NewRepoLocationStore(db.DB), Locks: repolock.New(), Log: testRepoLocationLogger()}
+	deps := CacheMaintenanceDeps{Store: repolocation.New(db.DB), Locks: repolock.New(), Log: testRepoLocationLogger()}
 
 	// Act
 	pruneResp := callRepoLocationHandler(t, NewPruneCacheHandler(deps), "PRUNE_CACHE", map[string]any{})
@@ -81,14 +80,14 @@ func TestRepoLocationCacheMutationHandlersReturnEnvelopeForOperationFailures(t *
 		msgType   string
 		operation string
 		handler   func(CacheMaintenanceDeps) ws.MessageHandler
-		deps      func(*store.RepoLocationStore) CacheMaintenanceDeps
+		deps      func(*repolocation.Store) CacheMaintenanceDeps
 	}{
 		{
 			name:      "prune cache store failure",
 			msgType:   "PRUNE_CACHE",
 			operation: "prune_cache",
 			handler:   NewPruneCacheHandler,
-			deps: func(locations *store.RepoLocationStore) CacheMaintenanceDeps {
+			deps: func(locations *repolocation.Store) CacheMaintenanceDeps {
 				return CacheMaintenanceDeps{Store: locations, Locks: repolock.New(), DeleteCacheDir: func(string) error { return nil }, Log: testRepoLocationLogger()}
 			},
 		},
@@ -97,7 +96,7 @@ func TestRepoLocationCacheMutationHandlersReturnEnvelopeForOperationFailures(t *
 			msgType:   "CLEAR_CACHE",
 			operation: "clear_cache",
 			handler:   NewClearCacheHandler,
-			deps: func(locations *store.RepoLocationStore) CacheMaintenanceDeps {
+			deps: func(locations *repolocation.Store) CacheMaintenanceDeps {
 				return CacheMaintenanceDeps{Store: locations, Locks: repolock.New(), DeleteCacheDir: func(string) error { return nil }, Log: testRepoLocationLogger()}
 			},
 		},
@@ -107,7 +106,7 @@ func TestRepoLocationCacheMutationHandlersReturnEnvelopeForOperationFailures(t *
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
 			db := storetest.Open(t)
-			locations := store.NewRepoLocationStore(db.DB)
+			locations := repolocation.New(db.DB)
 			if strings.Contains(tt.name, "store failure") {
 				if err := db.Close(); err != nil {
 					t.Fatalf("close db: %v", err)
@@ -127,7 +126,7 @@ func TestRepoLocationCacheMutationHandlersReturnEnvelopeForOperationFailures(t *
 func TestRepoLocationClearCacheOrphanSweepFailureKeepsPartialResults(t *testing.T) {
 	// Arrange
 	db := storetest.Open(t)
-	locations := store.NewRepoLocationStore(db.DB)
+	locations := repolocation.New(db.DB)
 	cachePath := filepath.Join(t.TempDir(), "acme", "api")
 	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "cache", cachePath, nil)
 	deps := CacheMaintenanceDeps{
@@ -173,7 +172,7 @@ func TestRepoLocationRemoveRepoPreflightAndRemoveRepo(t *testing.T) {
 	preflight := NewRemoveRepoPreflightHandler(db.DB, testRepoLocationLogger())
 	remove := NewRemoveRepoHandler(RemoveRepoDeps{
 		DB:    db.DB,
-		Store: store.NewRepoLocationStore(db.DB),
+		Store: repolocation.New(db.DB),
 		DeleteCacheDir: func(path string) error {
 			deleteCalls++
 			return nil
@@ -205,7 +204,7 @@ func TestRepoLocationRemoveRepoRollsBackOnDeleteFailure(t *testing.T) {
 	db := storetest.Open(t)
 	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "local", filepath.Join(t.TempDir(), "api"), nil)
 	insertPRGraph(t, db, "pr1", "github:acme/api", "github", "acme", "api")
-	handler := NewRemoveRepoHandler(RemoveRepoDeps{DB: db.DB, Store: store.NewRepoLocationStore(db.DB), Log: testRepoLocationLogger()})
+	handler := NewRemoveRepoHandler(RemoveRepoDeps{DB: db.DB, Store: repolocation.New(db.DB), Log: testRepoLocationLogger()})
 	_, err := db.DB.Exec(`DROP TABLE action_queue`)
 	if err != nil {
 		t.Fatalf("drop action_queue: %v", err)
@@ -261,7 +260,7 @@ func TestRepoLocationCacheMaintenance(t *testing.T) {
 	sweeper := &fakeRepoLocationSweeper{removed: []string{filepath.Join(root, "cache", "orphan")}}
 	locks := repolock.New()
 	deps := CacheMaintenanceDeps{
-		Store:          store.NewRepoLocationStore(db.DB),
+		Store:          repolocation.New(db.DB),
 		Locks:          locks,
 		DeleteCacheDir: deleter.DeleteCacheDir,
 		SweepOrphans:   sweeper.SweepOrphans,
@@ -372,7 +371,7 @@ func TestRepoLocationDeleteCacheRepoRereadsAfterWaitingForLock(t *testing.T) {
 	deleteCalls := 0
 	handlerDone := make(chan map[string]any)
 	handler := NewDeleteCacheRepoHandler(CacheMaintenanceDeps{
-		Store: store.NewRepoLocationStore(db.DB),
+		Store: repolocation.New(db.DB),
 		Locks: locks,
 		DeleteCacheDir: func(path string) error {
 			deleteCalls++
