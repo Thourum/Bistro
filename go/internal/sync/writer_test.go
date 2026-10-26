@@ -7,6 +7,7 @@ import (
 
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/store/storetest"
 )
 
@@ -178,7 +179,7 @@ func TestWriteSyncResultsWritesDiffsAfterPR(t *testing.T) {
 	results := []*PRFetchResult{
 		{
 			PR: pr,
-			DiffFiles: []store.DiffFile{
+			DiffFiles: []prdiff.File{
 				{FilePath: "go/main.go", Patch: "@@ -1 +1 @@\n", Additions: 2, Deletions: 1},
 				{FilePath: "go/other.go", Patch: "@@ -2 +2 @@\n", Additions: 1, Deletions: 3},
 			},

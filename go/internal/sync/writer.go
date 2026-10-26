@@ -14,6 +14,7 @@ import (
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 )
 
 const (
@@ -292,11 +293,11 @@ func (w *Writer) writeCriticalPRData(ctx context.Context, tx *sql.Tx, result *PR
 	if err := w.writePRRow(ctx, tx, pr, mode); err != nil {
 		return counts, err
 	}
-	var files []store.DiffFile
+	var files []prdiff.File
 	if result.DiffComputed {
 		files = result.DiffFiles
 		if files == nil {
-			files = []store.DiffFile{} // Computed-but-empty still records "no files".
+			files = []prdiff.File{} // Computed-but-empty still records "no files".
 		}
 	}
 	number, err := w.recordPatchset(ctx, tx, patchsetWrite{pr: pr, mergeBase: result.MergeBaseSHA, files: files})

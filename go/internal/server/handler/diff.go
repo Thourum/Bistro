@@ -8,14 +8,14 @@ import (
 
 	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/logging"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/ws"
 )
 
-// diffReader is the subset of store.DiffStore required by the REQUEST_DIFF handler.
+// diffReader is the subset of prdiff.Store required by the REQUEST_DIFF handler.
 type diffReader interface {
-	GetUnifiedDiff(prID string) (string, error)
-	GetDiffs(prID string) ([]store.DiffFile, error)
+	GetUnified(prID string) (string, error)
+	Get(prID string) ([]prdiff.File, error)
 }
 
 // diffViewedChecker can look up whether a file has been viewed.
@@ -54,7 +54,7 @@ type diffFileDetail struct {
 
 // viewedHash uses the patch ID so viewed state survives line-shift-only rebases.
 // Rows cached before migration 035 have no stored patch ID; compute it instead.
-func viewedHash(file store.DiffFile) string {
+func viewedHash(file prdiff.File) string {
 	if file.PatchID != "" {
 		return file.PatchID
 	}
@@ -107,7 +107,7 @@ func newRequestDiffHandler(deps DiffHandlerDeps) ws.MessageHandler {
 
 		logger.Debug("diff requested", "pr_id", data.PRID)
 
-		unified, err := deps.DiffStore.GetUnifiedDiff(data.PRID)
+		unified, err := deps.DiffStore.GetUnified(data.PRID)
 		if err != nil {
 			logger.Warn("failed to get diff", "pr_id", data.PRID, "err", err)
 			return map[string]interface{}{
@@ -135,7 +135,7 @@ func newRequestDiffHandler(deps DiffHandlerDeps) ws.MessageHandler {
 		files := []diffFileDetail{}
 		var additions, deletions int
 
-		diffFiles, filesErr := deps.DiffStore.GetDiffs(data.PRID)
+		diffFiles, filesErr := deps.DiffStore.Get(data.PRID)
 		if filesErr != nil {
 			logger.Warn("failed to get diff file stats", "pr_id", data.PRID, "err", filesErr)
 		} else {
@@ -193,4 +193,4 @@ func newRequestDiffHandler(deps DiffHandlerDeps) ws.MessageHandler {
 	}
 }
 
-var _ diffReader = (*store.DiffStore)(nil)
+var _ diffReader = (*prdiff.Store)(nil)

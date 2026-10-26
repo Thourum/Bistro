@@ -13,7 +13,7 @@ import (
 	gitdiff "github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 )
 
 // perPRFetchTimeout caps how long the detail fetch (comments, reviews, CI,
@@ -60,7 +60,7 @@ type PRFetchResult struct {
 	// nil means diff was not attempted or failed (preserve existing pr_diffs cache).
 	// non-nil (including empty slice) means diff was successfully computed and
 	// the writer should replace pr_diffs — even an empty slice clears stale rows.
-	DiffFiles []store.DiffFile
+	DiffFiles []prdiff.File
 	// DiffComputed is true iff diff generation succeeded and DiffFiles is valid.
 	// When false, the writer must not touch pr_diffs for this result.
 	DiffComputed bool
@@ -323,10 +323,10 @@ func (o *Orchestrator) resolveMergeBase(ctx context.Context, clone *git.CloneRes
 	return mergeBase
 }
 
-func storeDiffFiles(diff *gitdiff.Result) []store.DiffFile {
-	files := make([]store.DiffFile, 0, len(diff.Files))
+func storeDiffFiles(diff *gitdiff.Result) []prdiff.File {
+	files := make([]prdiff.File, 0, len(diff.Files))
 	for _, file := range diff.Files {
-		files = append(files, store.DiffFile{
+		files = append(files, prdiff.File{
 			FilePath:    file.Path,
 			Status:      file.Status,
 			DiffStatus:  file.DiffStatus,
@@ -365,7 +365,7 @@ func (o *Orchestrator) resolveDiffAnchors(ctx context.Context, result *PRFetchRe
 		"anchored", len(result.AnchorUpdates))
 }
 
-func (o *Orchestrator) notifyExpertiseHook(ctx context.Context, pr *provider.PR, diffFiles []store.DiffFile) {
+func (o *Orchestrator) notifyExpertiseHook(ctx context.Context, pr *provider.PR, diffFiles []prdiff.File) {
 	if o.expertise == nil || o.resolveRepoPath == nil || pr == nil {
 		return
 	}

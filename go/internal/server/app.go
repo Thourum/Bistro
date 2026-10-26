@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/itterno/bistro/internal/store/currentuser"
 	"io"
 	"log/slog"
 	"os"
@@ -27,6 +26,8 @@ import (
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/server/handler"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/currentuser"
+	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/sync"
 	"github.com/itterno/bistro/internal/ws"
 )
@@ -136,7 +137,7 @@ type runStores struct {
 	currentUser  *currentuser.Store
 	repoLocation *store.RepoLocationStore
 	expertise    *expertise.Store
-	diff         *store.DiffStore
+	diff         *prdiff.Store
 }
 
 func (a *App) openDatabase(ctx context.Context) error {
@@ -166,7 +167,7 @@ func (a *App) prepareStores() runStores {
 		currentUser:  currentuser.New(a.db),
 		repoLocation: store.NewRepoLocationStore(a.db.DB),
 		expertise:    expertise.NewStore(a.db.DB),
-		diff:         store.NewDiffStore(a.db.DB),
+		diff:         prdiff.New(a.db.DB),
 	}
 	a.anchorResolver = anchor.NewResolver()
 	a.currentUserStore = stores.currentUser

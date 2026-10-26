@@ -2,11 +2,11 @@ package server
 
 import (
 	"context"
-	"github.com/itterno/bistro/internal/store/actionqueue"
 
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/server/handler"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/actionqueue"
+	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/sync"
 )
 
@@ -49,7 +49,7 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 	}
 	a.provCtx, a.provCtxCancel = context.WithCancel(runCtx)
 
-	diffStore := store.NewDiffStore(a.db.DB)
+	diffStore := prdiff.New(a.db.DB)
 	a.orchestrator = sync.NewOrchestrator(a.log, prov, a.db, a.gitClient).
 		WithDiffStore(diffStore).
 		WithReviewTracking(a.currentUserStore, a.db).

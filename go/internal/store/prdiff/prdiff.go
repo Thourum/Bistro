@@ -1,4 +1,4 @@
-package store
+package prdiff
 
 import (
 	"context"
@@ -15,8 +15,8 @@ const (
 	diffHeaderPrefix        = "diff --git "
 )
 
-// DiffFile represents a single file's diff entry for storage.
-type DiffFile struct {
+// File represents a single file's diff entry for storage.
+type File struct {
 	FilePath    string
 	Status      string
 	OldPath     string
@@ -31,22 +31,22 @@ type DiffFile struct {
 	PatchID     string // diff.PatchID of the full patch; empty for rows written before migration 035
 }
 
-// DiffStore provides persistence for per-file PR diffs in the pr_diffs table.
-type DiffStore struct {
+// Store provides persistence for per-file PR diffs in the pr_diffs table.
+type Store struct {
 	db      *sql.DB
 	queries *storedb.Queries
 }
 
-// NewDiffStore creates a DiffStore backed by the given *sql.DB.
-func NewDiffStore(db *sql.DB) *DiffStore {
-	return &DiffStore{db: db, queries: storedb.New(db)}
+// New creates a Store backed by the given *sql.DB.
+func New(db *sql.DB) *Store {
+	return &Store{db: db, queries: storedb.New(db)}
 }
 
-// SaveDiffs atomically replaces all stored diffs for prID.
+// Save atomically replaces all stored diffs for prID.
 // It always deletes existing rows first — this removes files that were renamed
 // or deleted in the current diff, and clears stale rows when diffs is empty.
 // Passing nil or an empty slice clears all existing rows and is not a no-op.
-func (s *DiffStore) SaveDiffs(prID string, diffs []DiffFile) error {
+func (s *Store) Save(prID string, diffs []File) error {
 	ctx := context.Background()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -84,15 +84,15 @@ func (s *DiffStore) SaveDiffs(prID string, diffs []DiffFile) error {
 	return tx.Commit()
 }
 
-// GetDiffs returns all stored DiffFile entries for the given PR, ordered by file path.
+// Get returns all stored File entries for the given PR, ordered by file path.
 // Returns an empty slice (not an error) when no diffs exist.
-func (s *DiffStore) GetDiffs(prID string) ([]DiffFile, error) {
+func (s *Store) Get(prID string) ([]File, error) {
 	rows, err := s.queries.ListDiffsForPR(context.Background(), prID)
 	if err != nil {
 		return nil, fmt.Errorf("query diffs for %s: %w", prID, err)
 	}
 
-	diffs := make([]DiffFile, 0, len(rows))
+	diffs := make([]File, 0, len(rows))
 	for _, row := range rows {
 		diffs = append(diffs, diffFileFromRow(row))
 	}
@@ -100,10 +100,10 @@ func (s *DiffStore) GetDiffs(prID string) ([]DiffFile, error) {
 	return diffs, nil
 }
 
-// GetUnifiedDiff assembles all per-file patches for the given PR into a single
+// GetUnified assembles all per-file patches for the given PR into a single
 // unified diff string suitable for display. Returns an error when no diffs are stored.
-func (s *DiffStore) GetUnifiedDiff(prID string) (string, error) {
-	diffs, err := s.GetDiffs(prID)
+func (s *Store) GetUnified(prID string) (string, error) {
+	diffs, err := s.Get(prID)
 	if err != nil {
 		return "", err
 	}
@@ -148,8 +148,8 @@ func storedDiffStatus(status string) string {
 	return status
 }
 
-func diffFileFromRow(row storedb.ListDiffsForPRRow) DiffFile {
-	return DiffFile{
+func diffFileFromRow(row storedb.ListDiffsForPRRow) File {
+	return File{
 		FilePath:    row.FilePath,
 		Status:      row.Status,
 		OldPath:     row.OldPath,

@@ -178,10 +178,10 @@ func newMarkFileViewedHandler(deps MarkFileViewedDeps) ws.MessageHandler {
 
 // validateFileHash computes the canonical content hash for filePath in the
 // stored diffs and checks it against the client-supplied hash.
-// Fails closed: returns (false, reason) when GetDiffs errors or the file is
+// Fails closed: returns (false, reason) when Get errors or the file is
 // not found in stored diffs, so stale hashes cannot be accepted silently.
 func validateFileHash(ctx context.Context, ds diffReader, prID, filePath, clientHash string) (bool, string) {
-	diffs, err := ds.GetDiffs(prID)
+	diffs, err := ds.Get(prID)
 	if err != nil {
 		logging.FromContext(ctx).Warn("content hash validation diff lookup failed", "pr_id", prID, "error", err)
 		return false, "could not validate content_hash"

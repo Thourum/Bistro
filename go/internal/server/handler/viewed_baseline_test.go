@@ -6,11 +6,12 @@ import (
 	"testing"
 
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
-func newViewedBaselineTestStores(t *testing.T) (*store.DB, *store.DiffStore) {
+func newViewedBaselineTestStores(t *testing.T) (*store.DB, *prdiff.Store) {
 	t.Helper()
 	db := storetest.Open(t)
 	ctx := context.Background()
@@ -27,12 +28,12 @@ func newViewedBaselineTestStores(t *testing.T) (*store.DB, *store.DiffStore) {
 			t.Fatalf("seed: %v", err)
 		}
 	}
-	diffs := store.NewDiffStore(db.DB)
-	if err := diffs.SaveDiffs(prID, []store.DiffFile{
+	diffs := prdiff.New(db.DB)
+	if err := diffs.Save(prID, []prdiff.File{
 		{FilePath: "a.go", Patch: "pa", PatchID: "id-a"},
 		{FilePath: "b.go", Patch: "pb", PatchID: "id-b"},
 	}); err != nil {
-		t.Fatalf("SaveDiffs: %v", err)
+		t.Fatalf("Save: %v", err)
 	}
 	return db, diffs
 }
@@ -119,32 +120,32 @@ func TestAllFilesViewedRequiresMatchingCurrentHashes(t *testing.T) {
 	const patch = "@@ -1 +1 @@\n-old\n+new\n"
 	for _, test := range []struct {
 		name   string
-		diffs  []store.DiffFile
+		diffs  []prdiff.File
 		viewed []store.FileViewed
 		want   bool
 	}{
 		{name: "empty diff", want: false},
 		{
 			name:  "missing mark",
-			diffs: []store.DiffFile{{FilePath: "a.go", PatchID: "id-a"}},
+			diffs: []prdiff.File{{FilePath: "a.go", PatchID: "id-a"}},
 			want:  false,
 		},
 		{
 			name:   "stale mark",
-			diffs:  []store.DiffFile{{FilePath: "a.go", PatchID: "id-a"}},
+			diffs:  []prdiff.File{{FilePath: "a.go", PatchID: "id-a"}},
 			viewed: []store.FileViewed{{FilePath: "a.go", ContentHash: "stale"}},
 			want:   false,
 		},
 		{
 			name:   "all current files viewed",
-			diffs:  []store.DiffFile{{FilePath: "a.go", PatchID: "id-a"}, {FilePath: "b.go", PatchID: "id-b"}},
+			diffs:  []prdiff.File{{FilePath: "a.go", PatchID: "id-a"}, {FilePath: "b.go", PatchID: "id-b"}},
 			viewed: []store.FileViewed{{FilePath: "a.go", ContentHash: "id-a"}, {FilePath: "b.go", ContentHash: "id-b"}, {FilePath: "removed.go", ContentHash: "old"}},
 			want:   true,
 		},
 		{
 			name:   "legacy cached patch",
-			diffs:  []store.DiffFile{{FilePath: "a.go", Patch: patch}},
-			viewed: []store.FileViewed{{FilePath: "a.go", ContentHash: viewedHash(store.DiffFile{Patch: patch})}},
+			diffs:  []prdiff.File{{FilePath: "a.go", Patch: patch}},
+			viewed: []store.FileViewed{{FilePath: "a.go", ContentHash: viewedHash(prdiff.File{Patch: patch})}},
 			want:   true,
 		},
 	} {

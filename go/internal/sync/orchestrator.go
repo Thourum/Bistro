@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/itterno/bistro/internal/store/actionqueue"
 	"log/slog"
 	gosync "sync"
 	"time"
@@ -19,6 +18,8 @@ import (
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/actionqueue"
+	"github.com/itterno/bistro/internal/store/prdiff"
 )
 
 // ExpertiseHook receives successful PR diff sync notifications for incremental expertise updates.
@@ -39,7 +40,7 @@ type Orchestrator struct {
 	rateLimitMu     gosync.RWMutex
 	rateLimitState  *provider.RateLimitState
 	queue           *actionqueue.Queue
-	diffStore       *store.DiffStore
+	diffStore       *prdiff.Store
 	expertise       ExpertiseHook
 	resolveRepoPath RepoPathResolver
 	// reviewLogin/reviewSHAWriter are optional; if set they are attached to
@@ -126,7 +127,7 @@ func shortID() string {
 
 // WithDiffStore attaches a DiffStore so diffs are persisted during sync.
 // This is optional; if not set, diffs are generated but not stored.
-func (o *Orchestrator) WithDiffStore(ds *store.DiffStore) *Orchestrator {
+func (o *Orchestrator) WithDiffStore(ds *prdiff.Store) *Orchestrator {
 	o.diffStore = ds
 	return o
 }

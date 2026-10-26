@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/store/storetest"
 )
 
@@ -13,12 +13,12 @@ import (
 func TestWriteDiffs_NewPR_AtomicWithPRRow(t *testing.T) {
 	// New PR (never written before): PR row, patchset, and pr_diffs must all land
 	// in the same transaction. This guards against the FK ordering bug where
-	// SaveDiffs was called during fetch before the PR row existed.
+	// Save was called during fetch before the PR row existed.
 	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	pr := makePR("github:o/r:20", 20, "head-new", "base-new")
-	diffs := []store.DiffFile{
+	diffs := []prdiff.File{
 		{FilePath: "main.go", Patch: "+new line", Additions: 1},
 		{FilePath: "util.go", Patch: "+helper", Additions: 1},
 	}
@@ -92,7 +92,7 @@ func TestWriteDiffs_EmptyDiff_ClearsStaleRows_OnAcceptedResult(t *testing.T) {
 	// Write accepted result with empty diff (zero-file change set).
 	results := []*PRFetchResult{{
 		PR:           makePR("github:o/r:22", 22, "head-22b", "base-22"),
-		DiffFiles:    []store.DiffFile{}, // explicitly empty
+		DiffFiles:    []prdiff.File{}, // explicitly empty
 		DiffComputed: true,
 	}}
 	if err := w.WriteSyncResults(results); err != nil {
@@ -141,7 +141,7 @@ func TestWriteDiffs_AtomicWithPatchset_BaseHeadChange(t *testing.T) {
 	pr1 := makePR("github:o/r:24", 24, "head-v1", "base-24")
 	if err := w.WriteSyncResults([]*PRFetchResult{{
 		PR:           pr1,
-		DiffFiles:    []store.DiffFile{{FilePath: "a.go", Patch: "v1", Additions: 1}},
+		DiffFiles:    []prdiff.File{{FilePath: "a.go", Patch: "v1", Additions: 1}},
 		DiffComputed: true,
 	}}); err != nil {
 		t.Fatalf("P1 write: %v", err)
@@ -162,7 +162,7 @@ func TestWriteDiffs_AtomicWithPatchset_BaseHeadChange(t *testing.T) {
 	pr2 := makePR("github:o/r:24", 24, "head-v2", "base-24")
 	if err := w.WriteSyncResults([]*PRFetchResult{{
 		PR: pr2,
-		DiffFiles: []store.DiffFile{
+		DiffFiles: []prdiff.File{
 			{FilePath: "a.go", Patch: "v2", Additions: 2},
 			{FilePath: "b.go", Patch: "v2b", Additions: 1},
 		},

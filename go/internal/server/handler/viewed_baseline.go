@@ -6,6 +6,7 @@ import (
 
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 )
 
 // viewedBaselineStore records the all-viewed baseline. Satisfied by *store.DB.
@@ -22,7 +23,7 @@ func recordAllViewedBaseline(ctx context.Context, deps MarkFileViewedDeps, prID,
 		return
 	}
 	logger := logging.FromContext(ctx)
-	diffs, err := deps.DiffStore.GetDiffs(prID)
+	diffs, err := deps.DiffStore.Get(prID)
 	if err != nil {
 		logger.Warn("all-viewed baseline: diff lookup failed", "pr_id", prID, "error", err)
 		return
@@ -53,7 +54,7 @@ func recordAllViewedBaseline(ctx context.Context, deps MarkFileViewedDeps, prID,
 }
 
 // Cached diffs can outlive their head when a list-only sync advances the PR.
-func cachedDiffsMatchPatchset(ctx context.Context, baseline viewedBaselineStore, patchset store.Patchset, diffs []store.DiffFile) bool {
+func cachedDiffsMatchPatchset(ctx context.Context, baseline viewedBaselineStore, patchset store.Patchset, diffs []prdiff.File) bool {
 	fingerprints, err := baseline.ListPatchsetFiles(ctx, patchset.PRID, patchset.Number)
 	if err != nil {
 		logging.FromContext(ctx).Warn("all-viewed baseline: fingerprint lookup failed", "pr_id", patchset.PRID, "error", err)
@@ -71,7 +72,7 @@ func cachedDiffsMatchPatchset(ctx context.Context, baseline viewedBaselineStore,
 	return true
 }
 
-func allFilesViewed(diffs []store.DiffFile, viewed []store.FileViewed) bool {
+func allFilesViewed(diffs []prdiff.File, viewed []store.FileViewed) bool {
 	hashes := make(map[string]string, len(viewed))
 	for _, file := range viewed {
 		hashes[file.FilePath] = file.ContentHash

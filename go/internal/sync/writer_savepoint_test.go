@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/store/storetest"
 )
 
@@ -60,7 +60,7 @@ func TestWriteDiffs_InsertFailure_SavepointRollsBackAll(t *testing.T) {
 	// Duplicate file_path triggers UNIQUE constraint violation on the second INSERT,
 	// AFTER the DELETE has already run. Without savepoints this would commit a cleared
 	// cache. With savepoints, the whole PR's critical writes roll back.
-	badDiffs := []store.DiffFile{
+	badDiffs := []prdiff.File{
 		{FilePath: "dup.go", Patch: "patch-a", Additions: 1},
 		{FilePath: "dup.go", Patch: "patch-b", Additions: 2}, // duplicate: will fail
 	}
@@ -137,7 +137,7 @@ func TestWriteSavepoint_OtherPRsUnaffected(t *testing.T) {
 	w := NewWriter(nil, db)
 
 	goodPR := makePR("github:o/r:40", 40, "head-40", "base-40")
-	badDiffs := []store.DiffFile{
+	badDiffs := []prdiff.File{
 		{FilePath: "dup.go", Patch: "a"},
 		{FilePath: "dup.go", Patch: "b"}, // duplicate → INSERT failure
 	}

@@ -11,12 +11,13 @@ import (
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 )
 
 type patchsetWrite struct {
 	pr        *provider.PR
-	mergeBase string           // "" when unknown
-	files     []store.DiffFile // nil when the diff was not computed this sync
+	mergeBase string        // "" when unknown
+	files     []prdiff.File // nil when the diff was not computed this sync
 }
 
 type latestPatchset struct {

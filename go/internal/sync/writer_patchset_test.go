@@ -7,6 +7,7 @@ import (
 
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/store/storetest"
 )
 
@@ -19,9 +20,9 @@ func patchsetTestPR(baseSHA, headSHA string) *provider.PR {
 }
 
 func diffResult(pr *provider.PR, mergeBase string, patchIDs map[string]string) *PRFetchResult {
-	files := make([]store.DiffFile, 0, len(patchIDs))
+	files := make([]prdiff.File, 0, len(patchIDs))
 	for path, patchID := range patchIDs {
-		files = append(files, store.DiffFile{FilePath: path, Patch: "p", PatchID: patchID})
+		files = append(files, prdiff.File{FilePath: path, Patch: "p", PatchID: patchID})
 	}
 	return &PRFetchResult{PR: pr, DiffComputed: true, DiffFiles: files, MergeBaseSHA: mergeBase}
 }
@@ -53,7 +54,7 @@ func TestBaseTipMoveDoesNotRecordPatchset(t *testing.T) {
 	if err != nil || files["a.go"] != "pa2" || files["b.go"] != "pb" {
 		t.Fatalf("P2 files = %v (err %v)", files, err)
 	}
-	cached, err := store.NewDiffStore(db.DB).GetDiffs("github:o/r:9")
+	cached, err := prdiff.New(db.DB).Get("github:o/r:9")
 	if err != nil || len(cached) != 2 {
 		t.Fatalf("cached diffs = %v (err %v)", cached, err)
 	}
@@ -130,7 +131,7 @@ func TestRecordPatchsetUnknownMergeBaseDefersFingerprints(t *testing.T) {
 	if err != nil || len(files) != 0 {
 		t.Fatalf("fallback fingerprints = %v (err %v), want none", files, err)
 	}
-	cached, err := store.NewDiffStore(db.DB).GetDiffs(pr.ID)
+	cached, err := prdiff.New(db.DB).Get(pr.ID)
 	if err != nil || len(cached) != 1 || cached[0].FilePath != "upstream.go" {
 		t.Fatalf("fallback cache = %+v (err %v), want upstream.go", cached, err)
 	}
@@ -145,7 +146,7 @@ func TestRecordPatchsetUnknownMergeBaseDefersFingerprints(t *testing.T) {
 	if err != nil || len(files) != 1 || files["pr.go"] != "pr-patch" {
 		t.Fatalf("known-base fingerprints = %v (err %v), want only pr.go", files, err)
 	}
-	cached, err = store.NewDiffStore(db.DB).GetDiffs(pr.ID)
+	cached, err = prdiff.New(db.DB).Get(pr.ID)
 	if err != nil || len(cached) != 1 || cached[0].FilePath != "pr.go" {
 		t.Fatalf("known-base cache = %+v (err %v), want only pr.go", cached, err)
 	}
@@ -264,7 +265,7 @@ func TestRecordPatchsetFingerprintFailureRollsBackPR(t *testing.T) {
 	if err != nil || len(patchsets) != 1 {
 		t.Fatalf("patchsets = %+v (err %v), failed P2 must roll back", patchsets, err)
 	}
-	cached, err := store.NewDiffStore(db.DB).GetDiffs(initial.PR.ID)
+	cached, err := prdiff.New(db.DB).Get(initial.PR.ID)
 	if err != nil || len(cached) != 1 || cached[0].PatchID != "pa" {
 		t.Fatalf("cached diffs = %+v (err %v), want original cache", cached, err)
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/itterno/bistro/internal/classify"
 	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/provider"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 )
 
 func (w *Writer) dedupPRComments(ctx context.Context, tx *sql.Tx, prID string) error {
@@ -194,7 +194,7 @@ func provisionalThreadIDs(thread *provider.ReviewThread) []string {
 
 // writeDiffs replaces a PR's diff cache in the same savepoint as the PR row and
 // patchset, preserving the old cache if any critical insert fails.
-func (w *Writer) writeDiffs(ctx context.Context, tx *sql.Tx, prID string, diffs []store.DiffFile) (writeErr error) {
+func (w *Writer) writeDiffs(ctx context.Context, tx *sql.Tx, prID string, diffs []prdiff.File) (writeErr error) {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM pr_diffs WHERE pr_id = ?`, prID); err != nil {
 		return fmt.Errorf("clear pr_diffs for %s: %w", prID, err)
 	}

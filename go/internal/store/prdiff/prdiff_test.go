@@ -1,55 +1,39 @@
-package store
+package prdiff
 
 import (
-	"context"
-	"log/slog"
-	"os"
 	"strings"
 	"testing"
+
+	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
-// setupTestDB opens an in-memory SQLite DB and runs all migrations.
-func setupTestDB(t *testing.T) *DB {
-	t.Helper()
-	db, err := OpenDB(":memory:")
-	if err != nil {
-		t.Fatalf("open test db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	if err := NewMigrationRunner(log, db.DB).Run(context.Background()); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
-	return db
-}
-
 func TestDiffStore_SaveAndGet(t *testing.T) {
-	db := setupTestDB(t)
+	db := storetest.Open(t)
 
 	// Seed a PR row to satisfy the foreign-key constraint.
 	seedPR(t, db, "pr-123")
 
-	store := NewDiffStore(db.DB)
+	store := New(db.DB)
 
-	diffs := []DiffFile{
+	diffs := []File{
 		{FilePath: "main.go", Patch: "+added line\n-removed line", Additions: 1, Deletions: 1},
 		{FilePath: "utils.go", Patch: "+new file", Additions: 1, Deletions: 0},
 	}
 
-	if err := store.SaveDiffs("pr-123", diffs); err != nil {
-		t.Fatalf("SaveDiffs: %v", err)
+	if err := store.Save("pr-123", diffs); err != nil {
+		t.Fatalf("Save: %v", err)
 	}
 
-	got, err := store.GetDiffs("pr-123")
+	got, err := store.Get("pr-123")
 	if err != nil {
-		t.Fatalf("GetDiffs: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
 	if len(got) != 2 {
 		t.Fatalf("expected 2 diffs, got %d", len(got))
 	}
 
-	found := map[string]DiffFile{}
+	found := map[string]File{}
 	for _, d := range got {
 		found[d.FilePath] = d
 	}
@@ -71,11 +55,11 @@ func TestDiffStore_SaveAndGet(t *testing.T) {
 }
 
 func TestDiffStore_SaveAndGet_MetadataRoundTrip(t *testing.T) {
-	db := setupTestDB(t)
+	db := storetest.Open(t)
 	seedPR(t, db, "pr-meta")
-	ds := NewDiffStore(db.DB)
+	ds := New(db.DB)
 
-	want := DiffFile{
+	want := File{
 		FilePath:    "new-name.go",
 		Status:      "renamed",
 		OldPath:     "old-name.go",
@@ -88,13 +72,13 @@ func TestDiffStore_SaveAndGet_MetadataRoundTrip(t *testing.T) {
 		Deletions:   4,
 		DiffStatus:  "ok",
 	}
-	if err := ds.SaveDiffs("pr-meta", []DiffFile{want}); err != nil {
-		t.Fatalf("SaveDiffs: %v", err)
+	if err := ds.Save("pr-meta", []File{want}); err != nil {
+		t.Fatalf("Save: %v", err)
 	}
 
-	got, err := ds.GetDiffs("pr-meta")
+	got, err := ds.Get("pr-meta")
 	if err != nil {
-		t.Fatalf("GetDiffs: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("got %d diffs, want 1", len(got))
@@ -105,12 +89,12 @@ func TestDiffStore_SaveAndGet_MetadataRoundTrip(t *testing.T) {
 }
 
 func TestDiffStore_GetDiffs_Empty(t *testing.T) {
-	db := setupTestDB(t)
-	store := NewDiffStore(db.DB)
+	db := storetest.Open(t)
+	store := New(db.DB)
 
-	got, err := store.GetDiffs("pr-nonexistent")
+	got, err := store.Get("pr-nonexistent")
 	if err != nil {
-		t.Fatalf("GetDiffs on empty: %v", err)
+		t.Fatalf("Get on empty: %v", err)
 	}
 	if len(got) != 0 {
 		t.Errorf("expected 0 diffs, got %d", len(got))
@@ -118,23 +102,23 @@ func TestDiffStore_GetDiffs_Empty(t *testing.T) {
 }
 
 func TestDiffStore_Upsert(t *testing.T) {
-	db := setupTestDB(t)
+	db := storetest.Open(t)
 	seedPR(t, db, "pr-789")
-	store := NewDiffStore(db.DB)
+	store := New(db.DB)
 
-	v1 := []DiffFile{{FilePath: "a.go", Patch: "v1", Additions: 1, Deletions: 0}}
-	if err := store.SaveDiffs("pr-789", v1); err != nil {
-		t.Fatalf("first SaveDiffs: %v", err)
+	v1 := []File{{FilePath: "a.go", Patch: "v1", Additions: 1, Deletions: 0}}
+	if err := store.Save("pr-789", v1); err != nil {
+		t.Fatalf("first Save: %v", err)
 	}
 
-	v2 := []DiffFile{{FilePath: "a.go", Patch: "v2", Additions: 2, Deletions: 1}}
-	if err := store.SaveDiffs("pr-789", v2); err != nil {
-		t.Fatalf("second SaveDiffs: %v", err)
+	v2 := []File{{FilePath: "a.go", Patch: "v2", Additions: 2, Deletions: 1}}
+	if err := store.Save("pr-789", v2); err != nil {
+		t.Fatalf("second Save: %v", err)
 	}
 
-	got, err := store.GetDiffs("pr-789")
+	got, err := store.Get("pr-789")
 	if err != nil {
-		t.Fatalf("GetDiffs: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("expected 1 diff after upsert, got %d", len(got))
@@ -148,21 +132,21 @@ func TestDiffStore_Upsert(t *testing.T) {
 }
 
 func TestDiffStore_GetUnifiedDiff(t *testing.T) {
-	db := setupTestDB(t)
+	db := storetest.Open(t)
 	seedPR(t, db, "pr-456")
-	store := NewDiffStore(db.DB)
+	store := New(db.DB)
 
-	diffs := []DiffFile{
+	diffs := []File{
 		{FilePath: "main.go", Patch: "--- a/main.go\n+++ b/main.go\n@@ -1,3 +1,3 @@\n-old\n+new"},
 		{FilePath: "util.go", Patch: "--- a/util.go\n+++ b/util.go\n@@ -1 +1 @@\n-x\n+y"},
 	}
-	if err := store.SaveDiffs("pr-456", diffs); err != nil {
-		t.Fatalf("SaveDiffs: %v", err)
+	if err := store.Save("pr-456", diffs); err != nil {
+		t.Fatalf("Save: %v", err)
 	}
 
-	unified, err := store.GetUnifiedDiff("pr-456")
+	unified, err := store.GetUnified("pr-456")
 	if err != nil {
-		t.Fatalf("GetUnifiedDiff: %v", err)
+		t.Fatalf("GetUnified: %v", err)
 	}
 
 	for _, want := range []string{"diff --git a/main.go b/main.go", "diff --git a/util.go b/util.go"} {
@@ -173,20 +157,20 @@ func TestDiffStore_GetUnifiedDiff(t *testing.T) {
 }
 
 func TestDiffStore_GetUnifiedDiff_PatchWithOwnHeaderNotDuplicated(t *testing.T) {
-	db := setupTestDB(t)
+	db := storetest.Open(t)
 	seedPR(t, db, "pr-header")
-	store := NewDiffStore(db.DB)
+	store := New(db.DB)
 
-	if err := store.SaveDiffs("pr-header", []DiffFile{{
+	if err := store.Save("pr-header", []File{{
 		FilePath: "main.go",
 		Patch:    "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1 +1 @@\n-old\n+new\n",
 	}}); err != nil {
-		t.Fatalf("SaveDiffs: %v", err)
+		t.Fatalf("Save: %v", err)
 	}
 
-	unified, err := store.GetUnifiedDiff("pr-header")
+	unified, err := store.GetUnified("pr-header")
 	if err != nil {
-		t.Fatalf("GetUnifiedDiff: %v", err)
+		t.Fatalf("GetUnified: %v", err)
 	}
 
 	if got := strings.Count(unified, "diff --git "); got != 1 {
@@ -195,24 +179,24 @@ func TestDiffStore_GetUnifiedDiff_PatchWithOwnHeaderNotDuplicated(t *testing.T) 
 }
 
 func TestDiffStore_GetUnifiedDiff_NotFound(t *testing.T) {
-	db := setupTestDB(t)
-	store := NewDiffStore(db.DB)
+	db := storetest.Open(t)
+	store := New(db.DB)
 
-	_, err := store.GetUnifiedDiff("pr-missing")
+	_, err := store.GetUnified("pr-missing")
 	if err == nil {
 		t.Error("expected error for missing pr, got nil")
 	}
 }
 
 func TestDiffStore_SaveDiffs_Empty(t *testing.T) {
-	db := setupTestDB(t)
-	store := NewDiffStore(db.DB)
+	db := storetest.Open(t)
+	store := New(db.DB)
 
-	if err := store.SaveDiffs("pr-any", nil); err != nil {
-		t.Fatalf("SaveDiffs with nil: %v", err)
+	if err := store.Save("pr-any", nil); err != nil {
+		t.Fatalf("Save with nil: %v", err)
 	}
-	if err := store.SaveDiffs("pr-any", []DiffFile{}); err != nil {
-		t.Fatalf("SaveDiffs with empty slice: %v", err)
+	if err := store.Save("pr-any", []File{}); err != nil {
+		t.Fatalf("Save with empty slice: %v", err)
 	}
 }
 
@@ -220,13 +204,13 @@ func TestDiffStore_SaveDiffs_Empty(t *testing.T) {
 
 func TestDiffStore_SaveDiffs_RemovesDeletedFile(t *testing.T) {
 	// First diff has two files; second diff has only one.
-	// The removed file must not appear in GetDiffs after the second SaveDiffs.
-	db := setupTestDB(t)
+	// The removed file must not appear in Get after the second Save.
+	db := storetest.Open(t)
 	seedPR(t, db, "pr-stale")
-	ds := NewDiffStore(db.DB)
+	ds := New(db.DB)
 
 	// Save initial: main.go + utils.go
-	if err := ds.SaveDiffs("pr-stale", []DiffFile{
+	if err := ds.Save("pr-stale", []File{
 		{FilePath: "main.go", Patch: "patch-main"},
 		{FilePath: "utils.go", Patch: "patch-utils"},
 	}); err != nil {
@@ -234,15 +218,15 @@ func TestDiffStore_SaveDiffs_RemovesDeletedFile(t *testing.T) {
 	}
 
 	// Save updated: only main.go (utils.go deleted from PR)
-	if err := ds.SaveDiffs("pr-stale", []DiffFile{
+	if err := ds.Save("pr-stale", []File{
 		{FilePath: "main.go", Patch: "patch-main-v2"},
 	}); err != nil {
 		t.Fatalf("second save: %v", err)
 	}
 
-	got, err := ds.GetDiffs("pr-stale")
+	got, err := ds.Get("pr-stale")
 	if err != nil {
-		t.Fatalf("GetDiffs: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("expected 1 file after deletion, got %d: %v", len(got), got)
@@ -257,11 +241,11 @@ func TestDiffStore_SaveDiffs_RemovesDeletedFile(t *testing.T) {
 
 func TestDiffStore_SaveDiffs_EmptyClearsStaleRows(t *testing.T) {
 	// Saving an empty diff list must delete all existing rows.
-	db := setupTestDB(t)
+	db := storetest.Open(t)
 	seedPR(t, db, "pr-empty")
-	ds := NewDiffStore(db.DB)
+	ds := New(db.DB)
 
-	if err := ds.SaveDiffs("pr-empty", []DiffFile{
+	if err := ds.Save("pr-empty", []File{
 		{FilePath: "a.go", Patch: "patch-a"},
 		{FilePath: "b.go", Patch: "patch-b"},
 	}); err != nil {
@@ -269,13 +253,13 @@ func TestDiffStore_SaveDiffs_EmptyClearsStaleRows(t *testing.T) {
 	}
 
 	// Simulate a sync that found no changed files (e.g. revert to base).
-	if err := ds.SaveDiffs("pr-empty", nil); err != nil {
+	if err := ds.Save("pr-empty", nil); err != nil {
 		t.Fatalf("empty save: %v", err)
 	}
 
-	got, err := ds.GetDiffs("pr-empty")
+	got, err := ds.Get("pr-empty")
 	if err != nil {
-		t.Fatalf("GetDiffs after empty save: %v", err)
+		t.Fatalf("Get after empty save: %v", err)
 	}
 	if len(got) != 0 {
 		t.Errorf("expected 0 diffs after empty save, got %d: %v", len(got), got)
@@ -283,50 +267,50 @@ func TestDiffStore_SaveDiffs_EmptyClearsStaleRows(t *testing.T) {
 }
 
 func TestDiffStore_SaveDiffs_RenameFile(t *testing.T) {
-	// Rename: old file gone, new file appears. GetDiffs must return only the new name.
-	db := setupTestDB(t)
+	// Rename: old file gone, new file appears. Get must return only the new name.
+	db := storetest.Open(t)
 	seedPR(t, db, "pr-rename")
-	ds := NewDiffStore(db.DB)
+	ds := New(db.DB)
 
-	if err := ds.SaveDiffs("pr-rename", []DiffFile{
+	if err := ds.Save("pr-rename", []File{
 		{FilePath: "old_name.go", Patch: "patch-old"},
 	}); err != nil {
 		t.Fatalf("save old: %v", err)
 	}
-	if err := ds.SaveDiffs("pr-rename", []DiffFile{
+	if err := ds.Save("pr-rename", []File{
 		{FilePath: "new_name.go", Patch: "patch-new"},
 	}); err != nil {
 		t.Fatalf("save new: %v", err)
 	}
 
-	got, _ := ds.GetDiffs("pr-rename")
+	got, _ := ds.Get("pr-rename")
 	if len(got) != 1 || got[0].FilePath != "new_name.go" {
 		t.Errorf("after rename: got %v", got)
 	}
 }
 
 func TestDiffStore_DiffStatus_Roundtrip(t *testing.T) {
-	db := setupTestDB(t)
+	db := storetest.Open(t)
 	seedPR(t, db, "pr-status")
-	store := NewDiffStore(db.DB)
+	store := New(db.DB)
 
-	diffs := []DiffFile{
+	diffs := []File{
 		{FilePath: "ok.go", Patch: "+ok", Additions: 1, Deletions: 0, DiffStatus: "ok"},
 		{FilePath: "big.go", Patch: "", Additions: 0, Deletions: 0, DiffStatus: "truncated"},
 		{FilePath: "overflow.go", Patch: "", Additions: 0, Deletions: 0, DiffStatus: "too_large"},
 	}
-	if err := store.SaveDiffs("pr-status", diffs); err != nil {
-		t.Fatalf("SaveDiffs: %v", err)
+	if err := store.Save("pr-status", diffs); err != nil {
+		t.Fatalf("Save: %v", err)
 	}
 
-	got, err := store.GetDiffs("pr-status")
+	got, err := store.Get("pr-status")
 	if err != nil {
-		t.Fatalf("GetDiffs: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
 	if len(got) != 3 {
 		t.Fatalf("expected 3 diffs, got %d", len(got))
 	}
-	byPath := map[string]DiffFile{}
+	byPath := map[string]File{}
 	for _, d := range got {
 		byPath[d.FilePath] = d
 	}
@@ -348,7 +332,7 @@ func TestDiffStore_DiffStatus_Roundtrip(t *testing.T) {
 }
 
 // seedPR inserts a minimal PR row so foreign-key constraints are satisfied.
-func seedPR(t *testing.T, db *DB, prID string) {
+func seedPR(t *testing.T, db *store.DB, prID string) {
 	t.Helper()
 	_, err := db.Exec(`
 		INSERT OR IGNORE INTO prs
@@ -376,4 +360,20 @@ func stringContains(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestDiffPatchIDRoundTrip(t *testing.T) {
+	db := storetest.Open(t)
+	seedPR(t, db, "pr-patch-id")
+	diffs := New(db.DB)
+	if err := diffs.Save("pr-patch-id", []File{{FilePath: "a.go", Patch: "+added", PatchID: "fingerprint"}, {FilePath: "legacy.go"}}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	files, err := diffs.Get("pr-patch-id")
+	if err != nil || len(files) != 2 {
+		t.Fatalf("get: files=%+v err=%v", files, err)
+	}
+	if files[0].PatchID != "fingerprint" || files[1].PatchID != "" {
+		t.Fatalf("patch IDs: got %+v", files)
+	}
 }
