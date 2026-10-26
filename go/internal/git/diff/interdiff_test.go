@@ -3,19 +3,17 @@ package diff_test
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/diff"
+	"github.com/itterno/bistro/internal/git/gittest"
 	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/logging"
 )
@@ -94,7 +92,7 @@ func TestInterdiffAddedAndDeletedFile(t *testing.T) {
 	fixture := newForcePushFixture(t)
 	locks := repolock.New()
 	const filePath = "added.go"
-	addedHead := commitFile(t, fixture.remote, fixture.remoteDir, filePath, "package added\n", "add file").String()
+	addedHead := gittest.CommitFile(t, fixture.remote, gittest.FileCommit{RepoPath: fixture.remoteDir, FileName: filePath, Content: "package added\n", Message: "add file"}).String()
 	for _, tt := range []struct {
 		name     string
 		fromHead string
@@ -142,8 +140,8 @@ func newForcePushFixture(t *testing.T) forcePushFixture {
 	if err != nil {
 		t.Fatalf("PlainInit: %v", err)
 	}
-	baseSHA := commitFile(t, remote, remoteDir, "foo.go", "package main\n", "base")
-	head1 := commitFile(t, remote, remoteDir, "foo.go", "package main\n\nvar x = 1\n", "head")
+	baseSHA := gittest.CommitFile(t, remote, gittest.FileCommit{RepoPath: remoteDir, FileName: "foo.go", Content: "package main\n", Message: "base"})
+	head1 := gittest.CommitFile(t, remote, gittest.FileCommit{RepoPath: remoteDir, FileName: "foo.go", Content: "package main\n\nvar x = 1\n", Message: "head"})
 	head, err := remote.Head()
 	if err != nil {
 		t.Fatalf("Head: %v", err)
@@ -187,7 +185,7 @@ func forcePush(t *testing.T, fixture forcePushFixture) string {
 	}); err != nil {
 		t.Fatalf("Checkout base: %v", err)
 	}
-	head2 := commitFile(t, fixture.remote, fixture.remoteDir, "foo.go", "package main\n\nvar x = 2\n", "rewritten head")
+	head2 := gittest.CommitFile(t, fixture.remote, gittest.FileCommit{RepoPath: fixture.remoteDir, FileName: "foo.go", Content: "package main\n\nvar x = 2\n", Message: "rewritten head"})
 	for name, target := range map[plumbing.ReferenceName]plumbing.Hash{
 		plumbing.ReferenceName("refs/pull/7/head"):               head2,
 		plumbing.NewBranchReferenceName(fixture.opts.BaseBranch): plumbing.NewHash(fixture.baseSHA),
@@ -211,23 +209,4 @@ func syncHead(t *testing.T, client *git.Client, fixture forcePushFixture, headSH
 	if err != nil {
 		t.Fatalf("WithPRClone %s: %v", logging.ShortSHA(headSHA), err)
 	}
-}
-
-func commitFile(t *testing.T, repo *gitlib.Repository, repoPath, fileName, content, message string) plumbing.Hash {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(repoPath, fileName), []byte(content), 0644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	worktree, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("Worktree: %v", err)
-	}
-	if _, err := worktree.Add(fileName); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	hash, err := worktree.Commit(message, &gitlib.CommitOptions{Author: &object.Signature{Name: "test", Email: "test@test.com", When: time.Now()}})
-	if err != nil {
-		t.Fatalf("Commit %q: %v", message, err)
-	}
-	return hash
 }

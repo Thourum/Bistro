@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 
 	gitdiff "github.com/itterno/bistro/internal/git/diff"
+	"github.com/itterno/bistro/internal/git/gittest"
 )
 
 // Upstream-only changes must not leak into the PR diff.
@@ -18,8 +19,8 @@ func TestMergeBaseDiffShowsOnlyPRChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlainInit: %v", err)
 	}
-	root := commitFile(t, repo, dir, "shared.txt", "v1\n", "root")
-	head := commitFile(t, repo, dir, "pr.txt", "pr\n", "pr change")
+	root := gittest.CommitFile(t, repo, gittest.FileCommit{RepoPath: dir, FileName: "shared.txt", Content: "v1\n", Message: "root"})
+	head := gittest.CommitFile(t, repo, gittest.FileCommit{RepoPath: dir, FileName: "pr.txt", Content: "pr\n", Message: "pr change"})
 
 	worktree, err := repo.Worktree()
 	if err != nil {
@@ -30,7 +31,7 @@ func TestMergeBaseDiffShowsOnlyPRChanges(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Checkout base-tip: %v", err)
 	}
-	baseTip := commitFile(t, repo, dir, "upstream.txt", "upstream\n", "upstream change")
+	baseTip := gittest.CommitFile(t, repo, gittest.FileCommit{RepoPath: dir, FileName: "upstream.txt", Content: "upstream\n", Message: "upstream change"})
 
 	mergeBase, err := MergeBase(dir, baseTip.String(), head.String())
 	if err != nil {
@@ -58,13 +59,13 @@ func TestMergeBaseUnrelatedHistoriesNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlainInit: %v", err)
 	}
-	base := commitFile(t, repo, dir, "a.txt", "a\n", "a")
+	base := gittest.CommitFile(t, repo, gittest.FileCommit{RepoPath: dir, FileName: "a.txt", Content: "a\n", Message: "a"})
 	// Point HEAD at an unborn branch so the next commit has no parents.
 	if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD,
 		plumbing.NewBranchReferenceName("unrelated"))); err != nil {
 		t.Fatalf("SetReference unrelated HEAD: %v", err)
 	}
-	unrelated := commitFile(t, repo, dir, "b.txt", "b\n", "unrelated root")
+	unrelated := gittest.CommitFile(t, repo, gittest.FileCommit{RepoPath: dir, FileName: "b.txt", Content: "b\n", Message: "unrelated root"})
 	const missingCommitSHA = "1111111111111111111111111111111111111111"
 	for _, test := range []struct {
 		name string
@@ -120,7 +121,7 @@ func TestDeepenLeavesFullCloneAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlainInit: %v", err)
 	}
-	commitFile(t, repo, dir, "a.txt", "a\n", "root")
+	gittest.CommitFile(t, repo, gittest.FileCommit{RepoPath: dir, FileName: "a.txt", Content: "a\n", Message: "root"})
 	// No origin exists: a full clone must not attempt a fetch.
 	if err := NewClient(nil).Deepen(context.Background(), dir, nil); err != nil {
 		t.Fatalf("Deepen full clone: %v", err)

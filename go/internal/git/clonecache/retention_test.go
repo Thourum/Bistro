@@ -14,6 +14,7 @@ import (
 
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/git/clonecache"
+	"github.com/itterno/bistro/internal/git/gittest"
 	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/logging"
 )
@@ -72,7 +73,7 @@ func forcePush(t *testing.T, fixture forcePushFixture) string {
 	}); err != nil {
 		t.Fatalf("Checkout base: %v", err)
 	}
-	head2 := commitFile(t, fixture.remote, fixture.remoteDir, "foo.go", "package main\n\nvar x = 2\n", "rewritten head")
+	head2 := gittest.CommitFile(t, fixture.remote, gittest.FileCommit{RepoPath: fixture.remoteDir, FileName: "foo.go", Content: "package main\n\nvar x = 2\n", Message: "rewritten head"})
 	for name, target := range map[plumbing.ReferenceName]plumbing.Hash{
 		plumbing.ReferenceName("refs/pull/7/head"):               head2,
 		plumbing.NewBranchReferenceName(fixture.opts.BaseBranch): plumbing.NewHash(fixture.baseSHA),
@@ -175,31 +176,4 @@ func buildRemoteWithPRRef(t *testing.T, dir string, prNumber int) (baseBranch, b
 	}
 
 	return baseBranch, baseHash.String(), headHash.String()
-}
-
-func commitFile(t *testing.T, repo *gitlib.Repository, repoPath, fileName, content, message string) plumbing.Hash {
-	t.Helper()
-	filePath := filepath.Join(repoPath, fileName)
-	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	worktree, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("Worktree: %v", err)
-	}
-	if _, err := worktree.Add(fileName); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	hash, err := worktree.Commit(message, &gitlib.CommitOptions{Author: &object.Signature{
-		Name:  "Bistro Test",
-		Email: "bistro@example.com",
-		When:  time.Now(),
-	}})
-	if err != nil {
-		t.Fatalf("Commit: %v", err)
-	}
-	return hash
 }
