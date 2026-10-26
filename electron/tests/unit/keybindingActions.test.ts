@@ -3,8 +3,8 @@
 import { Store } from '@tanstack/store';
 import { errAsync, Fault, okAsync } from '@thourum/fault';
 import { afterEach, assert, describe, expect, it, vi } from 'vitest';
-import { appStore } from '../../src/renderer/store';
 import type { OverlayContextValue } from '../../src/renderer/overlays/OverlayContext';
+import { appStore } from '../../src/renderer/store';
 import type { UIState } from '../../src/renderer/store/ui';
 import { initialUIState } from '../../src/renderer/store/ui';
 import {

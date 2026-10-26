@@ -50,7 +50,10 @@ const captured = vi.hoisted(() => ({
   sequences: [] as CapturedSequence[],
   overlay: null as 'command' | null,
   pathname: '/onboarding',
+  prId: null as string | null,
 }));
+const approvePR = vi.hoisted(() => vi.fn());
+vi.mock('../services/prActions', () => ({ approvePR }));
 
 vi.mock('react', () => ({
   useMemo: (factory: () => unknown) => factory(),
@@ -70,7 +73,8 @@ vi.mock('@tanstack/react-hotkeys', () => ({
 vi.mock('@tanstack/react-router', () => ({
   useRouterState: () => ({
     location: { pathname: captured.pathname },
-    matches: [],
+    matches:
+      captured.prId === null ? [] : [{ params: { prId: captured.prId } }],
   }),
 }));
 vi.mock('../router', () => ({ router: { navigate: vi.fn() } }));
@@ -105,6 +109,8 @@ afterEach(() => {
   settingsStore.setState(() => initialSettings);
   captured.overlay = null;
   captured.pathname = '/onboarding';
+  captured.prId = null;
+  approvePR.mockClear();
   vi.unstubAllGlobals();
 });
 
@@ -302,8 +308,13 @@ describe('scoped onboarding actions', () => {
     openSandbox();
     selectOnboardingSandboxPane('detail');
     useAppHotkeys();
-    findHotkey('a').callback(unconsumedEvent);
+    const approve = captured.sequences.find(
+      (definition) => definition.sequence.join(' ') === 'a a',
+    );
+    assert(approve !== undefined, 'Expected approve sequence');
+    approve.callback();
     expect(appStore.state.onboardingSandbox?.approved).toBe(true);
+    expect(approvePR).not.toHaveBeenCalled();
     selectOnboardingSandboxPane('diff');
     useAppHotkeys();
     findHotkey('s').callback(unconsumedEvent);
@@ -355,21 +366,21 @@ describe('scoped onboarding actions', () => {
 });
 
 describe('dispatch safety', () => {
-  it('requires a fresh approval gesture, not a key repeat', () => {
+  it('ignores a key repeat when approve is remapped to a single key', () => {
     captured.pathname = '/prs/1';
+    captured.prId = '1';
     settingsStore.setState((settings) => ({
       ...settings,
       navigation: { ...settings.navigation, style: 'standard' },
+      keybindings: { 'detail.approve': ['a'] },
     }));
     useAppHotkeys();
     const approve = findHotkey('a');
     expect(approve.options.requireReset).toBe(true);
-    approve.callback({ ...unconsumedEvent, repeat: false } as KeyboardEvent);
-    expect(appStore.state.confirmingAction).toBe('approve');
     approve.callback({ ...unconsumedEvent, repeat: true } as KeyboardEvent);
-    expect(appStore.state.confirmingAction).toBe('approve');
+    expect(approvePR).not.toHaveBeenCalled();
     approve.callback({ ...unconsumedEvent, repeat: false } as KeyboardEvent);
-    expect(appStore.state.confirmingAction).toBe('approve_confirmed');
+    expect(approvePR).toHaveBeenCalledExactlyOnceWith('1');
   });
 
   it('allows C-g in an overlay input but not in a review composer', () => {

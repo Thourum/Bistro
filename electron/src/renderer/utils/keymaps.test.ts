@@ -189,7 +189,7 @@ describe('style resolution', () => {
     expect(keysOf('list.downArrow')).toBe('ArrowDown');
     expect(keysOf('list.top')).toBe('Home');
     expect(keysOf('diff.nextFile')).toBe('Control+Tab');
-    expect(keysOf('detail.approve')).toBe('a');
+    expect(keysOf('detail.approve')).toEqual(['a', 'a']);
     expect(keysOf('detail.undoDismiss')).toBe('Mod+Z');
     for (const id of [
       'list.down',
@@ -237,6 +237,7 @@ describe('emacs Meta bindings on macOS', () => {
     ',': 'Comma',
     '.': 'Period',
     '/': 'Slash',
+    ';': 'Semicolon',
   };
   const codeFor = (key: string): string =>
     CODE_BY_KEY[key] ??

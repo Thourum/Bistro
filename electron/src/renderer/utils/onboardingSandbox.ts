@@ -123,7 +123,8 @@ export const SANDBOX_TASKS: readonly SandboxTask[] = [
     stage: 'review',
     label: 'Approve instead',
     actionIds: ['detail.approve'],
-    reason: 'The real app asks for confirmation before sending a review.',
+    reason:
+      'In the real app this approves at once, with your pending line comments.',
   },
   {
     id: 'viewDiff',

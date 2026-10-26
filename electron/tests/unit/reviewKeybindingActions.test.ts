@@ -3,8 +3,11 @@ import { errAsync, Fault, okAsync } from '@thourum/fault';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { shortcutFor } from '../../src/renderer/components/commandPaletteCommands';
 import { appStore } from '../../src/renderer/store';
-import { getEffectiveBindings, isActive } from '../../src/renderer/utils/keybindings';
 import { initialUIState } from '../../src/renderer/store/ui';
+import {
+  getEffectiveBindings,
+  isActive,
+} from '../../src/renderer/utils/keybindings';
 import { invokeAction, makeCtx, makeStore } from './keybindingTestHelpers';
 
 const mockNavigate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -36,27 +39,42 @@ afterEach(() => {
 
 describe('review shortcuts', () => {
   it('on diff hides the PR comment chip and shows the line-comment chip', () => {
-    const bindings = getEffectiveBindings({});
+    const bindings = getEffectiveBindings('vim', {});
     expect(shortcutFor('detail.comment', bindings, 'diff')).toBeUndefined();
-    expect(shortcutFor('diff.lineComment', bindings, 'diff')).toEqual(['C']);
-    expect(shortcutFor('detail.comment', bindings, 'detail')).toEqual(['C']);
+    expect(shortcutFor('diff.lineComment', bindings, 'diff')).toBe('C');
+    expect(shortcutFor('detail.comment', bindings, 'detail')).toBe('C');
   });
 
   it('shows effective sequence and remapped chips; unbound actions have none', () => {
-    const defaults = getEffectiveBindings({});
-    expect(shortcutFor('detail.approve', defaults, 'detail')).toEqual(['A', 'A']);
-    expect(shortcutFor('review.toggleResolve', defaults, 'diff')).toEqual(['X']);
+    const defaults = getEffectiveBindings('vim', {});
+    expect(shortcutFor('detail.approve', defaults, 'detail')).toBe('A A');
+    expect(shortcutFor('review.toggleResolve', defaults, 'diff')).toBe('X');
     expect(shortcutFor('review.submit', defaults, 'detail')).toBeUndefined();
-    const remapped = getEffectiveBindings({ 'detail.approve': ['q', 'r'], 'review.toggleResolve': [] });
-    expect(shortcutFor('detail.approve', remapped, 'detail')).toEqual(['Q', 'R']);
-    expect(shortcutFor('review.toggleResolve', remapped, 'diff')).toBeUndefined();
-    const resolve = defaults.find((binding) => binding.actionId === 'review.toggleResolve');
+    const remapped = getEffectiveBindings('vim', {
+      'detail.approve': ['q', 'r'],
+      'review.toggleResolve': [],
+    });
+    expect(shortcutFor('detail.approve', remapped, 'detail')).toBe('Q R');
+    expect(
+      shortcutFor('review.toggleResolve', remapped, 'diff'),
+    ).toBeUndefined();
+    const resolve = defaults.find(
+      (binding) => binding.actionId === 'review.toggleResolve',
+    );
     expect(resolve).toBeDefined();
     if (resolve === undefined) return;
-    expect(isActive(resolve, { routeBase: 'detail', activeOverlay: null })).toBe(true);
-    expect(isActive(resolve, { routeBase: 'diff', activeOverlay: null })).toBe(true);
-    expect(isActive(resolve, { routeBase: 'list', activeOverlay: null })).toBe(false);
-    expect(isActive(resolve, { routeBase: 'diff', activeOverlay: 'command' })).toBe(false);
+    expect(
+      isActive(resolve, { routeBase: 'detail', activeOverlay: null }),
+    ).toBe(true);
+    expect(isActive(resolve, { routeBase: 'diff', activeOverlay: null })).toBe(
+      true,
+    );
+    expect(isActive(resolve, { routeBase: 'list', activeOverlay: null })).toBe(
+      false,
+    );
+    expect(
+      isActive(resolve, { routeBase: 'diff', activeOverlay: 'command' }),
+    ).toBe(false);
   });
 });
 
@@ -76,7 +94,9 @@ describe('review commands', () => {
     }
     expect(events).toEqual([]);
     expect(appStore.state.toasts.map((toast) => toast.type)).toEqual([
-      'warning', 'warning', 'warning',
+      'warning',
+      'warning',
+      'warning',
     ]);
     invokeAction(
       'review.toggleResolve',
@@ -112,22 +132,32 @@ describe('review commands', () => {
         action === 'detail.comment' ? 'comment' : 'request_changes',
       );
       expect(mockNavigate).toHaveBeenCalledExactlyOnceWith({
-        to: '/prs/$prId', params: { prId: 'pr-test-id' },
+        to: '/prs/$prId',
+        params: { prId: 'pr-test-id' },
       });
     },
   );
 
   it('discard sends all draft ids and reports success', async () => {
     request.mockReturnValue(okAsync({ deleted: 2 }));
-    invokeAction('review.discardDrafts', makeCtx({
-      reviewDrafts: [draft, { ...draft, id: 'D2' }],
-    }, 'diff'));
+    invokeAction(
+      'review.discardDrafts',
+      makeCtx(
+        {
+          reviewDrafts: [draft, { ...draft, id: 'D2' }],
+        },
+        'diff',
+      ),
+    );
     await vi.waitFor(() => expect(appStore.state.toasts).toHaveLength(1));
     expect(request).toHaveBeenCalledExactlyOnceWith('DRAFT_DELETE', {
-      pr_id: 'pr-test-id', draft_ids: ['D1', 'D2'],
+      pr_id: 'pr-test-id',
+      draft_ids: ['D1', 'D2'],
     });
     expect(appStore.state.toasts[0]).toMatchObject({
-      type: 'success', message: 'Discarded 2 drafts', dismissible: false,
+      type: 'success',
+      message: 'Discarded 2 drafts',
+      dismissible: false,
     });
   });
 

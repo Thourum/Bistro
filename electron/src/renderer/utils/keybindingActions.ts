@@ -1,6 +1,5 @@
 import type { Store } from '@tanstack/store';
 import { draftIdFromKey } from '../components/diff/diffAnnotations';
-import { addToast } from '../components/ToastContainer';
 import type {
   OverlayContextValue,
   OverlayKind,
@@ -18,6 +17,7 @@ import {
 } from '../services/firstRunRail';
 import { cycleNavigationStyle } from '../services/navigationStyle';
 import { updateOnboardingSelection } from '../services/onboardingSync';
+import { approvePR } from '../services/prActions';
 import {
   cancelSignIn,
   copySignInLink,
@@ -26,8 +26,6 @@ import {
   startSignIn,
 } from '../services/signIn';
 import { appStore } from '../store';
-import { approvePR, submitReview } from '../services/prActions';
-import { deleteDrafts } from '../services/reviewDrafts';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import type { RouteBase } from './keybindings';
 import { LINE_COMMENT_ACTIONS } from './lineCommentActions';
@@ -38,6 +36,7 @@ import {
   toggleFocusedOnboardingRepo,
 } from './onboardingRepos';
 import { openUrlInBrowser } from './openUrl';
+import { REVIEW_ACTIONS } from './reviewActions';
 
 export interface KeyActionContext {
   store: Store<UIState>;
@@ -93,76 +92,6 @@ function moveInlineDiffComment(context: KeyActionContext, delta: 1 | -1): void {
     activeInlineCommentThreadId: nextId,
     replyingInlineCommentThreadId: null,
   }));
-}
-
-function deleteActiveDraft(context: KeyActionContext): void {
-  const draftId = draftIdFromKey(
-    context.store.state.activeInlineCommentThreadId,
-  );
-  if (draftId === null || context.prId === undefined) return;
-  void deleteDrafts(context.prId, [draftId]).match(
-    () =>
-      addToast({
-        type: 'success',
-        message: 'Draft deleted',
-        dismissible: false,
-      }),
-    (fault) =>
-      addToast({
-        type: 'error',
-        message: `Draft not deleted: ${fault.message}`,
-        dismissible: true,
-      }),
-  );
-}
-
-function toggleActiveThreadResolve(context: KeyActionContext): void {
-  const active = context.store.state.activeInlineCommentThreadId;
-  if (
-    context.routeBase !== 'diff' ||
-    active === null ||
-    draftIdFromKey(active) !== null
-  ) {
-    addToast({
-      type: 'warning',
-      message: 'Select a review thread in the diff (n / p) to resolve it',
-      dismissible: true,
-    });
-    return;
-  }
-  emitAppEvent('bistro:diff:toggle-resolve');
-}
-
-function submitDraftsReview(context: KeyActionContext): void {
-  if (context.prId === undefined) return;
-  if (context.store.state.reviewDrafts.length === 0) {
-    addToast({
-      type: 'warning',
-      message: 'No drafts to submit',
-      dismissible: true,
-    });
-    return;
-  }
-  submitReview(context.prId, 'COMMENT');
-}
-
-function discardAllDrafts(context: KeyActionContext): void {
-  const ids = context.store.state.reviewDrafts.map((draft) => draft.id);
-  if (context.prId === undefined || ids.length === 0) return;
-  void deleteDrafts(context.prId, ids).match(
-    () =>
-      addToast({
-        type: 'success',
-        message: `Discarded ${ids.length} drafts`,
-        dismissible: false,
-      }),
-    (fault) =>
-      addToast({
-        type: 'error',
-        message: `Drafts not discarded: ${fault.message}`,
-        dismissible: true,
-      }),
-  );
 }
 
 /** The detail page owns the PR comment composers; the diff page jumps there. */
@@ -551,9 +480,6 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'detail.comment': (context) => openDetailComposer(context, 'comment'),
   'detail.requestChanges': (context) =>
     openDetailComposer(context, 'request_changes'),
-  'review.toggleResolve': toggleActiveThreadResolve,
-  'review.submit': submitDraftsReview,
-  'review.discardDrafts': discardAllDrafts,
   'diff.sinceLastReview': toggleSinceLastReview,
   'diff.interdiff': toggleInterdiff,
   'diff.toggleStyle': (context) =>
@@ -593,7 +519,6 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'diff.nextComment': (context) => moveInlineDiffComment(context, 1),
   'diff.prevComment': (context) => moveInlineDiffComment(context, -1),
   'detail.inlineReply': startInlineDiffReply,
-  'diff.deleteDraft': deleteActiveDraft,
   'detail.scrollRight': () => scrollDiff({ left: SCROLL_HORIZONTAL_PX }),
   'detail.scrollDownArrow': () => scrollDiff({ top: SCROLL_LINE_PX }),
   'detail.scrollUpArrow': () => scrollDiff({ top: -SCROLL_LINE_PX }),
@@ -609,6 +534,7 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'threads.unresolve': () => emitAppEvent('bistro:threads:unresolve'),
   'diff.lineComment': () => emitAppEvent('bistro:diff:line-comment'),
   ...LINE_COMMENT_ACTIONS,
+  ...REVIEW_ACTIONS,
 };
 
 /** Find the handler for a configured binding; undefined means the action is not registered. */

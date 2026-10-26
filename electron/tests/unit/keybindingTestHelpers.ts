@@ -7,11 +7,7 @@ import {
   getBindingAction,
   type KeyActionContext,
 } from '../../src/renderer/utils/keybindingActions';
-import type {
-  KeyBinding,
-  RouteBase,
-} from '../../src/renderer/utils/keybindings';
-import { DEFAULT_KEYBINDINGS } from '../../src/renderer/utils/keybindings';
+import type { RouteBase } from '../../src/renderer/utils/keybindings';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -54,15 +50,6 @@ export function makeCtx(
     location: { pathname: '/prs' },
     prId,
   };
-}
-
-export function byId(actionId: string): KeyBinding {
-  const binding = DEFAULT_KEYBINDINGS.find(
-    (candidate) => candidate.actionId === actionId,
-  );
-  if (binding === undefined)
-    throw new Error(`no binding with actionId ${actionId}`);
-  return binding;
 }
 
 export function invokeAction(

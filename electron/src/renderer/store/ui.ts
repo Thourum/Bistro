@@ -16,6 +16,7 @@ import {
   INITIAL_FIRST_RUN_RAIL,
 } from '../utils/firstRunRail';
 import type { LaneSection } from '../utils/lanes';
+import type { LineCommentState } from '../utils/lineCommentCursor';
 import type { OnboardingSelection } from '../utils/onboardingRepos';
 import type { SandboxState } from '../utils/onboardingSandbox';
 
@@ -27,7 +28,6 @@ export interface OnboardingSyncState {
   readonly queueError: string | null;
   readonly folder: FolderScanState;
 }
-import type { LineCommentState } from '../utils/lineCommentCursor';
 
 interface SyncStats {
   prCount: number;
