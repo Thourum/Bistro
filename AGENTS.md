@@ -33,7 +33,9 @@ Local diff generation, interdiff, and patch fingerprints live in `internal/git/d
 
 Clone cache entries, path/staging helpers, maintenance, and PR-head retention live in `internal/git/clonecache`; it depends on `remote`, never the parent `git` package. Shared on-disk commit fixtures live in the test-support package `internal/git/gittest`, which depends only on go-git and the standard library. See [Go package layout spec](docs/superpowers/specs/2026-10-26-go-package-layout-design.md) for the cache API and boundaries.
 
-Go tests outside package `store` share migrated in-memory databases via `internal/store/storetest.Open(t)`; `store`'s own internal tests keep local helpers to avoid an import cycle. See the [Go package layout spec](docs/superpowers/specs/2026-10-26-go-package-layout-design.md) for the shared-leaf refactor.
+Independent SQLite stores live in `internal/store/actionqueue`, `currentuser`, `dismissal`, `prdiff`, and `repolocation`; `store` retains the DB handle, migrations (`migrate.go`), and DB query methods (including `review_threads.go`). Subpackages may import `store` and sqlc's `store/db`, never the reverse. Expertise indexing state already belongs to `internal/expertise`, not `repolocation`.
+
+Go tests outside package `store` share migrated in-memory databases via `internal/store/storetest.Open(t)`; `store`'s own internal tests keep local helpers to avoid an import cycle. Version-limited migration tests use `store.MigrationFS()` with goose. See the [Go package layout spec](docs/superpowers/specs/2026-10-26-go-package-layout-design.md) for the package boundaries.
 
 ## Tech stack
 
