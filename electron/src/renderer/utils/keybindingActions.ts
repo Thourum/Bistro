@@ -5,6 +5,7 @@ import type {
 } from '../overlays/OverlayContext';
 import { authAction, PROVIDERS } from '../providers';
 import { router } from '../router';
+import { cycleNavigationStyle } from '../services/navigationStyle';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import type { RouteBase } from './keybindings';
 import { createLogger } from './logger';
@@ -271,11 +272,14 @@ function scrollDiffToBottom(): void {
 const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'global.help': openHelp,
   'global.escape': handleEscape,
-  'onboarding.finish': (context) =>
+  'global.cancel': handleEscape,
+  'onboarding.continue': (context) =>
     context.store.setState((state) => ({
       ...state,
-      confirmingAction: 'onboarding_finish',
+      confirmingAction: 'onboarding_continue',
     })),
+  'onboarding.nextStyle': () => cycleNavigationStyle(1),
+  'onboarding.prevStyle': () => cycleNavigationStyle(-1),
   'global.command': (context) => context.overlays.openCommand(),
   'global.settings': () => {
     void router.navigate({ to: '/settings' });
@@ -348,6 +352,7 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'detail.dismissNits': () => emitAppEvent('bistro:comments:dismiss-nits'),
   'detail.dismissBots': () => emitAppEvent('bistro:comments:dismiss-bots'),
   'detail.undoDismiss': () => emitAppEvent('bistro:comments:undo-dismiss'),
+  'detail.undoDismissAlt': () => emitAppEvent('bistro:comments:undo-dismiss'),
   'detail.filterCritical': (context) =>
     context.store.setState((state) => ({
       ...state,

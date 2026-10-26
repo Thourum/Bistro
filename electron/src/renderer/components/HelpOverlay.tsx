@@ -1,10 +1,8 @@
 import { detectPlatform } from '@tanstack/react-hotkeys';
 import type React from 'react';
-import { useStore } from '../hooks/useStore';
+import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useOverlays } from '../overlays/OverlayContext';
-import { settingsStore } from '../store/settings';
 import type { KeyBinding, RouteBase } from '../utils/keybindings';
-import { getEffectiveBindings } from '../utils/keybindings';
 import { formatBindingKeys } from '../utils/legendPresets';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Kbd } from './ui/kbd';
@@ -32,6 +30,8 @@ function toRow(b: KeyBinding): ShortcutRow {
 const NAVIGATION_IDS = new Set([
   'list.down',
   'list.up',
+  'list.downArrow',
+  'list.upArrow',
   'list.top',
   'list.bottom',
   'list.pageDown',
@@ -43,6 +43,10 @@ const NAVIGATION_IDS = new Set([
   'detail.scrollDown',
   'detail.scrollUp',
   'detail.scrollRight',
+  'detail.scrollLeftArrow',
+  'detail.scrollDownArrow',
+  'detail.scrollUpArrow',
+  'detail.scrollRightArrow',
   'detail.pageDown',
   'detail.pageUp',
   'detail.scrollTop',
@@ -148,12 +152,8 @@ function buildSections(
 
 export function HelpOverlay(): React.ReactElement | null {
   const { activeOverlay, helpSourceRoute, closeOverlay } = useOverlays();
-  const overrides = useStore(settingsStore, (s) => s.keybindings);
   const isOpen = activeOverlay === 'help';
-  const sections = buildSections(
-    getEffectiveBindings(overrides),
-    helpSourceRoute,
-  );
+  const sections = buildSections(useEffectiveBindings(), helpSourceRoute);
 
   const handleClose = (): void => {
     closeOverlay();
@@ -188,7 +188,7 @@ export function HelpOverlay(): React.ReactElement | null {
             ))}
 
             <div className="mt-4 border-t border-outline-variant pt-4 text-center text-xs text-on-surface-variant">
-              Press <Kbd>?</Kbd> or <Kbd>Esc</Kbd> to close
+              Press <Kbd>Esc</Kbd> to close
             </div>
           </div>
         </ScrollArea>

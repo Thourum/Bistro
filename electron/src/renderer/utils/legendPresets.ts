@@ -3,7 +3,11 @@ import {
   formatForDisplay,
 } from '@tanstack/react-hotkeys';
 import type { OverlayKind } from '../overlays/OverlayContext';
-import type { KeyBinding, RouteBase } from './keybindings';
+import {
+  findPrimaryBinding,
+  type KeyBinding,
+  type RouteBase,
+} from './keybindings';
 
 /**
  * Per-route footer legend preset.
@@ -129,6 +133,25 @@ export function formatBindingKeys(
   return formatForDisplay(toShiftedCharacterHotkey(binding.keys), options);
 }
 
+/** Keys of the first of `actionIds` that `bindings` binds, or undefined. */
+export function findActionKeys(
+  bindings: readonly KeyBinding[],
+  actionIds: readonly string[],
+): string | undefined {
+  const binding = actionIds
+    .map((id) => bindings.find((candidate) => candidate.actionId === id))
+    .find((found) => found !== undefined && found.keys.length > 0);
+  return binding === undefined ? undefined : formatBindingKeys(binding);
+}
+
+/** Keys of the first of `actionIds` that `bindings` binds, or `—` if none. */
+export function formatActionKeys(
+  bindings: readonly KeyBinding[],
+  actionIds: readonly string[],
+): string {
+  return findActionKeys(bindings, actionIds) ?? '—';
+}
+
 /**
  * Build the ordered legend entries for the given route/overlay context
  * using the effective (user-overridden) bindings.
@@ -146,9 +169,8 @@ export function buildLegendForRouteBase(
         : [];
   if (preset.length === 0) return [];
 
-  const byId = new Map(bindings.map((binding) => [binding.actionId, binding]));
   return preset.flatMap((actionId) => {
-    const binding = byId.get(actionId);
+    const binding = findPrimaryBinding(bindings, actionId);
     return binding === undefined || binding.keys.length === 0
       ? []
       : [

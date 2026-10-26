@@ -1,4 +1,8 @@
-import type { HotkeySequence, RegisterableHotkey } from '@tanstack/hotkeys';
+import {
+  getSequenceManager,
+  type HotkeySequence,
+  type RegisterableHotkey,
+} from '@tanstack/hotkeys';
 import {
   type UseHotkeyDefinition,
   type UseHotkeySequenceDefinition,
@@ -6,8 +10,9 @@ import {
   useHotkeys,
 } from '@tanstack/react-hotkeys';
 import { useRouterState } from '@tanstack/react-router';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useOverlays } from '../overlays/OverlayContext';
+import { dispatchSandboxAction } from '../services/onboardingSandbox';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import {
@@ -15,19 +20,35 @@ import {
   type KeyActionContext,
 } from '../utils/keybindingActions';
 import {
+  continuesSequence,
+  hotkeyOptions,
+  isEscape,
+  isStyleCycle,
+  isStylePickerTarget,
+  yieldsToFocusedControl,
+} from '../utils/keybindingActivation';
+import {
   getEffectiveBindings,
-  isActive,
+  isBindingEnabled,
   isSequenceBinding,
   routeBaseFromPath,
 } from '../utils/keybindings';
+import { SEQUENCE_TIMEOUT_MS } from '../utils/keymaps';
+import { SANDBOX_ACTION_IDS } from '../utils/onboardingSandbox';
 import { useStore } from './useStore';
 
-/** Sequence steps must follow each other within this window (was 500ms before the migration). */
-const SEQUENCE_TIMEOUT_MS = 500;
-
-/** Escape needs different event handling than every other binding — see below. */
-function isEscape(binding: { keys: string | readonly string[] }): boolean {
-  return binding.keys === 'Escape';
+/** Sandbox actions on the onboarding route drive the fake PR, not the app. */
+function runBinding(actionId: string, context: KeyActionContext): void {
+  if (
+    context.routeBase === 'onboarding' &&
+    context.activeOverlay === null &&
+    appStore.state.onboardingSandbox !== null &&
+    SANDBOX_ACTION_IDS.has(actionId)
+  ) {
+    dispatchSandboxAction(actionId);
+    return;
+  }
+  getBindingAction(actionId)?.(context);
 }
 
 function routePrId(
@@ -49,12 +70,17 @@ function routePrId(
  *
  * Must be rendered inside both OverlayProvider and a TanStack RouterProvider.
  *
- * `Escape` stays active while typing (`ignoreInputs: false`) so it can exit
- * search and comment inputs; everything else is suppressed in form fields.
+ * Escape stays active in inputs; Emacs cancel also stays active in overlay
+ * inputs. Review composers keep their local Escape cleanup.
  */
 export function useAppHotkeys(): void {
   const overlays = useOverlays();
   const overrides = useStore(settingsStore, (s) => s.keybindings);
+  const style = useStore(settingsStore, (s) => s.navigation.style);
+  const sandboxPane = useStore(
+    appStore,
+    (s) => s.onboardingSandbox?.pane ?? null,
+  );
   const routerState = useRouterState();
 
   const routeBase = routeBaseFromPath(routerState.location.pathname);
@@ -72,6 +98,8 @@ export function useAppHotkeys(): void {
   locationRef.current = routerState.location;
   const matchesRef = useRef(routerState.matches);
   matchesRef.current = routerState.matches;
+  // Weak membership identifies this dispatch without retaining DOM targets.
+  const midSequenceEventsRef = useRef(new WeakSet<KeyboardEvent>());
 
   // Stable makeCtx that always reads current values from refs.
   const makeCtx = useCallback((): KeyActionContext => {
@@ -86,7 +114,10 @@ export function useAppHotkeys(): void {
     return prId === undefined ? ctx : { ...ctx, prId };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bindings = useMemo(() => getEffectiveBindings(overrides), [overrides]);
+  const bindings = useMemo(
+    () => getEffectiveBindings(style, overrides),
+    [style, overrides],
+  );
 
   const hotkeyDefs = useMemo<UseHotkeyDefinition[]>(
     () =>
@@ -114,35 +145,78 @@ export function useAppHotkeys(): void {
             // calls preventDefault() itself before every callback, which would
             // make this flag always true.
             if (isEscape(binding) && event.defaultPrevented) return;
-            getBindingAction(binding.actionId)?.(makeCtx());
+            if (midSequenceEventsRef.current.has(event)) return;
+            if (binding.actionId === 'detail.approve' && event.repeat) return;
+            if (isStyleCycle(binding)) {
+              if (!isStylePickerTarget(event.target)) return;
+              // Tab selects a style but still moves focus to the next control.
+            } else {
+              if (yieldsToFocusedControl(binding, event.target)) return;
+              if (
+                binding.keys === 'Enter' ||
+                binding.keys === 'Space' ||
+                binding.keys === 'Tab' ||
+                binding.keys === 'Shift+Tab'
+              )
+                event.preventDefault();
+            }
+            runBinding(binding.actionId, makeCtx());
           },
           options: {
-            enabled: isActive(binding, { routeBase, activeOverlay }),
-            ignoreInputs: !isEscape(binding),
-            // Keep `defaultPrevented` meaningful as "already handled".
-            // Escape has no default browser action worth suppressing.
-            ...(isEscape(binding) ? { preventDefault: false } : {}),
+            enabled: isBindingEnabled(binding, {
+              routeBase,
+              activeOverlay,
+              sandboxPane,
+            }),
+            ...hotkeyOptions(binding, activeOverlay),
+            ...(isStyleCycle(binding) ? { stopPropagation: false } : {}),
           },
         })),
-    [bindings, routeBase, activeOverlay, makeCtx],
+    [bindings, routeBase, activeOverlay, sandboxPane, makeCtx],
   );
 
   const sequenceDefs = useMemo<UseHotkeySequenceDefinition[]>(
     () =>
       bindings.filter(isSequenceBinding).map((binding) => ({
         sequence: [...binding.keys] as HotkeySequence,
-        callback: () => getBindingAction(binding.actionId)?.(makeCtx()),
+        callback: () => runBinding(binding.actionId, makeCtx()),
         options: {
-          enabled: isActive(binding, { routeBase, activeOverlay }),
+          enabled: isBindingEnabled(binding, {
+            routeBase,
+            activeOverlay,
+            sandboxPane,
+          }),
           ignoreInputs: true,
         },
       })),
-    [bindings, routeBase, activeOverlay, makeCtx],
+    [bindings, routeBase, activeOverlay, sandboxPane, makeCtx],
   );
+
+  const timeoutMs = SEQUENCE_TIMEOUT_MS[style];
+
+  // Read TanStack's public progress before its document listeners dispatch.
+  // Unlike a parallel history, this never counts keys the manager ignored.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (
+        continuesSequence(event, {
+          sequences: [...getSequenceManager().registrations.state.values()],
+          timeoutMs,
+          now: Date.now(),
+        })
+      )
+        midSequenceEventsRef.current.add(event);
+    };
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
+      midSequenceEventsRef.current = new WeakSet();
+    };
+  }, [timeoutMs]);
 
   useHotkeys(hotkeyDefs, { conflictBehavior: 'allow' });
   useHotkeySequences(sequenceDefs, {
     conflictBehavior: 'allow',
-    timeout: SEQUENCE_TIMEOUT_MS,
+    timeout: SEQUENCE_TIMEOUT_MS[style],
   });
 }

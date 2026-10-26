@@ -5,6 +5,8 @@ import { Fault, fromPromise, fromThrowable, ResultAsync } from '@thourum/fault';
 import type { Logger } from 'electron-log';
 import type { EventMessage, PostHogOptions } from 'posthog-node';
 import { PostHog } from 'posthog-node';
+import { z } from 'zod';
+import { NAVIGATION_STYLES } from '../types/settings';
 
 const TELEMETRY_SCHEMA_VERSION = 1 as const;
 
@@ -20,6 +22,7 @@ const SETTINGS_SECTIONS = [
   'appearance',
   'keyboard',
   'prList',
+  'navigation',
   'privacy',
   'sync',
   'advanced',
@@ -30,6 +33,8 @@ const REVIEW_ACTIONS = [
   'post_comment',
   'unknown',
 ] as const;
+
+const navigationStyleSchema = z.enum(NAVIGATION_STYLES);
 
 type TelemetryEventName = (typeof EVENT_NAMES)[number];
 
@@ -128,15 +133,20 @@ export function sanitizeTelemetryEvent(
 
   if (eventName === 'settings_updated') {
     const telemetryEnabled = boolValue(rawProperties.telemetryEnabled);
+    const section = enumValue(
+      rawProperties.section,
+      SETTINGS_SECTIONS,
+      'advanced',
+    );
+    const style = navigationStyleSchema.safeParse(rawProperties.style);
     return {
       name: eventName,
       properties: {
-        section: enumValue(
-          rawProperties.section,
-          SETTINGS_SECTIONS,
-          'advanced',
-        ),
+        section,
         ...(telemetryEnabled === undefined ? {} : { telemetryEnabled }),
+        ...(section === 'navigation' && style.success
+          ? { style: style.data }
+          : {}),
       },
     };
   }

@@ -56,6 +56,7 @@ describe('settings normalisation', () => {
       repositories: DEFAULT_SETTINGS.repositories,
       classification: DEFAULT_SETTINGS.classification,
       keybindings: DEFAULT_SETTINGS.keybindings,
+      navigation: { style: 'vim' },
     } satisfies Omit<AppSettings, 'diff'>;
 
     expect(normalise(withoutDiff).diff).toEqual({ style: 'unified' });

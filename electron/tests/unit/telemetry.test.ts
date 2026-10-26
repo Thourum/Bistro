@@ -43,6 +43,46 @@ describe('privacy-safe telemetry', () => {
     });
   });
 
+  it.each(['vim', 'emacs', 'standard'])(
+    'keeps the navigation section and allowlisted %s style',
+    (style) => {
+      expect(
+        sanitizeTelemetryEvent('settings_updated', {
+          section: 'navigation',
+          style,
+          repo: 'secret/repo',
+        }),
+      ).toEqual({
+        name: 'settings_updated',
+        properties: { section: 'navigation', style },
+      });
+    },
+  );
+
+  it('drops free-text navigation styles', () => {
+    expect(
+      sanitizeTelemetryEvent('settings_updated', {
+        section: 'navigation',
+        style: 'secret/repo',
+      }),
+    ).toEqual({
+      name: 'settings_updated',
+      properties: { section: 'navigation' },
+    });
+  });
+
+  it('does not attach navigation styles to other settings sections', () => {
+    expect(
+      sanitizeTelemetryEvent('settings_updated', {
+        section: 'appearance',
+        style: 'emacs',
+      }),
+    ).toEqual({
+      name: 'settings_updated',
+      properties: { section: 'appearance' },
+    });
+  });
+
   it('does not create install id or capture before explicit consent', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'bistro-telemetry-disabled-'));
     const client = {
