@@ -67,7 +67,7 @@ func TestReviewQueueMalformedSearchItemsReturnErrors(t *testing.T) {
 	}
 }
 
-func TestReviewQueuePreservesGitHubCasingAndMergesCaseVariants(t *testing.T) {
+func TestReviewQueueLowercasesGitHubNamesAndMergesCaseVariants(t *testing.T) {
 	queue, err := collectReviewQueue([]*gh.Issue{
 		{RepositoryURL: gh.Ptr("https://api.github.com/repos/Itterno/Bistro")},
 		{HTMLURL: gh.Ptr("https://github.com/itterno/bistro/pull/2")},
@@ -79,9 +79,9 @@ func TestReviewQueuePreservesGitHubCasingAndMergesCaseVariants(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantRequested := []provider.RequestedRepo{{RepoID: "github:itterno/bistro", Count: 2}}
-	wantRepositories := []*provider.Repo{{Owner: "Itterno", Name: "Bistro", FullName: "Itterno/Bistro"}}
+	wantRepositories := []*provider.Repo{{Owner: "itterno", Name: "bistro", FullName: "itterno/bistro"}}
 	if !reflect.DeepEqual(queue.Requested, wantRequested) || !reflect.DeepEqual(queue.Repositories, wantRepositories) || !reflect.DeepEqual(queue.RecentlyReviewed, []string{"github:itterno/bistro"}) {
-		t.Fatalf("queue lost GitHub casing or duplicated case variants: %+v repositories=%+v", queue, queue.Repositories)
+		t.Fatalf("queue kept mixed casing or duplicated case variants: %+v repositories=%+v", queue, queue.Repositories)
 	}
 }
 

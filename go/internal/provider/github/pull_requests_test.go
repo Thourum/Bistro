@@ -76,10 +76,13 @@ func TestNewClientCreatesGHClient(t *testing.T) {
 func TestNormalizePR(t *testing.T) {
 	pr := buildTestGHPR()
 
-	result := normalizePR("myorg", "myrepo", pr)
+	result := normalizePR("MyOrg", "MyRepo", pr)
 
 	if result.ID != "github:myorg/myrepo:42" {
 		t.Errorf("unexpected ID: %q", result.ID)
+	}
+	if id := formatPRID("MyOrg", "MyRepo", pr.GetNumber()); id != "github:myorg/myrepo:42" {
+		t.Errorf("unexpected formatted ID: %q", id)
 	}
 	if result.Provider != "github" {
 		t.Errorf("unexpected Provider: %q", result.Provider)
