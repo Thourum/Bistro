@@ -49,7 +49,7 @@ git/                    package git: Client and its clone/fetch/checkout methods
     └── locks.go        Locks, New, Key                                    (was RepoLocks, repoLockKey)
 ```
 
-Imports: `git → clonecache, diff, remote, repolock`. `clonecache → remote`. `diff → repolock`. `anchor → diff`. `remote` and `repolock` are leaves.
+Imports: `git → clonecache, diff, remote, repolock`. `clonecache → remote`. `diff → repolock`. `anchor → diff`. `repolock → remote` (`Key` parses the remote URL). `remote` is the only leaf.
 
 - `Client.GenerateDiff` has an unused receiver (smell: **Feature Envy**). Apply Move Method → `diff.Generate`.
 - `Client.Interdiff` reads only `c.locks`, so it becomes `diff.Interdiff(locks, req)`. Its only caller is `server/handler/interdiff.go`.
