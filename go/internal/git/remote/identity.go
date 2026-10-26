@@ -1,4 +1,4 @@
-package git
+package remote
 
 import (
 	"crypto/sha256"
@@ -11,7 +11,8 @@ import (
 const (
 	githubProvider = "github"
 	githubHost     = "github.com"
-	safeIDLength   = 16
+	// SafeIDLength is the number of hex characters in a safe repository ID.
+	SafeIDLength = 16
 )
 
 // Identity is a normalized repo identity.
@@ -51,8 +52,8 @@ func (i Identity) ID() string {
 	return strings.ToLower(fmt.Sprintf("%s:%s/%s", i.Provider, i.Owner, i.Repo))
 }
 
-// ParseRemoteURL normalizes accepted GitHub remote URL forms.
-func ParseRemoteURL(raw string) (Identity, error) {
+// ParseURL normalizes accepted GitHub remote URL forms.
+func ParseURL(raw string) (Identity, error) {
 	remote := strings.TrimSpace(raw)
 	if remote == "" {
 		return Identity{}, fmt.Errorf("parse remote URL: empty remote")
@@ -101,7 +102,7 @@ func ParseRemoteURL(raw string) (Identity, error) {
 // SafeRepoID returns the first 16 hex chars of sha256 of Identity.ID().
 func SafeRepoID(id Identity) string {
 	sum := sha256.Sum256([]byte(id.ID()))
-	return hex.EncodeToString(sum[:])[:safeIDLength]
+	return hex.EncodeToString(sum[:])[:SafeIDLength]
 }
 
 func rewriteSCPRemote(raw string) string {

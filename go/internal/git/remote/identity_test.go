@@ -1,4 +1,4 @@
-package git
+package remote
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ func TestLocationErrorPreservesCause(t *testing.T) {
 	}
 }
 
-func TestParseRemoteURL_AcceptedGitHubForms(t *testing.T) {
+func TestParseURL_AcceptedGitHubForms(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -77,13 +77,13 @@ func TestParseRemoteURL_AcceptedGitHubForms(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := ParseRemoteURL(tt.raw)
+			got, err := ParseURL(tt.raw)
 			if err != nil {
-				t.Fatalf("ParseRemoteURL() error = %v", err)
+				t.Fatalf("ParseURL() error = %v", err)
 			}
 
 			if got != tt.want {
-				t.Fatalf("ParseRemoteURL() = %#v, want %#v", got, tt.want)
+				t.Fatalf("ParseURL() = %#v, want %#v", got, tt.want)
 			}
 
 			if got.ID() != tt.id {
@@ -93,7 +93,7 @@ func TestParseRemoteURL_AcceptedGitHubForms(t *testing.T) {
 	}
 }
 
-func TestParseRemoteURL_RejectsInvalidRemotes(t *testing.T) {
+func TestParseURL_RejectsInvalidRemotes(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -129,8 +129,8 @@ func TestParseRemoteURL_RejectsInvalidRemotes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got, err := ParseRemoteURL(tt.raw); err == nil {
-				t.Fatalf("ParseRemoteURL() = %#v, want error", got)
+			if got, err := ParseURL(tt.raw); err == nil {
+				t.Fatalf("ParseURL() = %#v, want error", got)
 			}
 		})
 	}

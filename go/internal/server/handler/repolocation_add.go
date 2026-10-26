@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
 )
@@ -43,7 +43,7 @@ func NewAddRepoByURLHandler(deps AddRepoByURLDeps) ws.MessageHandler {
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return nil, fmt.Errorf("invalid ADD_REPO_BY_URL payload: %w", err)
 		}
-		identity, err := git.ParseRemoteURL(data.URL)
+		identity, err := remote.ParseURL(data.URL)
 		if err != nil {
 			repoLocationLogger(ctx, deps.Log, msg).Warn("parse repository URL failed", "error", err)
 			return locationResponse(msg, locationError("", operationAddRepoByURL, "invalid_url", "invalid repository URL")), nil
@@ -150,7 +150,7 @@ func NewRecoverRepoPathHandler(locations *store.RepoLocationStore, log *slog.Log
 			repoLocationLogger(ctx, log, msg).Warn("recover repository path failed", "error", err)
 			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, recoverPathErrorCode(err), "unable to read repository path")), nil
 		}
-		matches, err := repoPathRemoteMatches(canonical, git.Identity{Provider: location.Provider, Owner: location.Owner, Repo: location.Repo})
+		matches, err := repoPathRemoteMatches(canonical, remote.Identity{Provider: location.Provider, Owner: location.Owner, Repo: location.Repo})
 		if err != nil {
 			repoLocationLogger(ctx, log, msg).Warn("recover repository path failed", "error", err)
 			return locationResponse(msg, locationError(data.RepoID, operationRecoverRepoPath, recoverPathErrorCode(err), "unable to read repository path")), nil
@@ -181,7 +181,7 @@ func NewRecoverRepoToCacheHandler(deps RecoverRepoToCacheDeps) ws.MessageHandler
 		if location == nil {
 			return locationResponse(msg, locationError(repoID, operationRecoverRepoToCache, "clone_failed", "repo not found")), nil
 		}
-		identity := git.Identity{Provider: location.Provider, Owner: location.Owner, Repo: location.Repo}
+		identity := remote.Identity{Provider: location.Provider, Owner: location.Owner, Repo: location.Repo}
 		root, err := deps.CacheRoot()
 		if err != nil {
 			return nil, err

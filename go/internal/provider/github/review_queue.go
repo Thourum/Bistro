@@ -11,7 +11,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 )
@@ -105,7 +105,7 @@ func reviewQueueRepository(issue *gh.Issue) (string, *provider.Repo, error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("read search repository identity: %w", err)
 	}
-	identity, err := git.ParseRemoteURL("https://github.com/" + owner + "/" + name)
+	identity, err := remote.ParseURL("https://github.com/" + owner + "/" + name)
 	if err != nil {
 		return "", nil, fmt.Errorf("parse search repository identity: %w", err)
 	}

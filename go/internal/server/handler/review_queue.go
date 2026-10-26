@@ -13,7 +13,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/provider"
 	storedb "github.com/itterno/bistro/internal/store/db"
 	"github.com/itterno/bistro/internal/ws"
@@ -152,7 +152,7 @@ func fetchAndPersistReviewQueue(ctx context.Context, database *sql.DB, queueProv
 		if repository == nil {
 			return nil, errors.Join(errors.New("review queue repository is nil"), transaction.Rollback())
 		}
-		identity, parseErr := git.ParseRemoteURL("https://github.com/" + repository.Owner + "/" + repository.Name)
+		identity, parseErr := remote.ParseURL("https://github.com/" + repository.Owner + "/" + repository.Name)
 		if parseErr != nil {
 			return nil, errors.Join(fmt.Errorf("parse queue repository: %w", parseErr), transaction.Rollback())
 		}

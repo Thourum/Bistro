@@ -10,7 +10,7 @@ import (
 
 	gogit "github.com/go-git/go-git/v5"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/scan"
 	"github.com/itterno/bistro/internal/store"
@@ -161,7 +161,7 @@ func healthCheckLocalRepo(ctx context.Context, row store.RepoLocation) (string, 
 		logging.FromContext(ctx).Warn("local repo path unreadable", "error", err)
 		return "permission_denied", "permission_denied", "repository path is not readable"
 	}
-	identity := git.Identity{Provider: row.Provider, Owner: row.Owner, Repo: row.Repo}
+	identity := remote.Identity{Provider: row.Provider, Owner: row.Owner, Repo: row.Repo}
 	if !repoPathMatches(row.LocalPath, identity) {
 		return "remote_mismatch", "remote_mismatch", fmt.Sprintf("no remote matches %s", identity.ID())
 	}
@@ -192,12 +192,12 @@ func canReadDir(path string) (bool, error) {
 	return true, err
 }
 
-func repoPathMatches(path string, identity git.Identity) bool {
+func repoPathMatches(path string, identity remote.Identity) bool {
 	matches, err := repoPathRemoteMatches(path, identity)
 	return err == nil && matches
 }
 
-func repoPathRemoteMatches(path string, identity git.Identity) (bool, error) {
+func repoPathRemoteMatches(path string, identity remote.Identity) (bool, error) {
 	repo, err := gogit.PlainOpen(path)
 	if err != nil {
 		return false, fmt.Errorf("open git repo %q: %w", path, err)
@@ -206,9 +206,9 @@ func repoPathRemoteMatches(path string, identity git.Identity) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("read remotes for %q: %w", path, err)
 	}
-	for _, remote := range remotes {
-		for _, rawURL := range remote.Config().URLs {
-			remoteID, err := git.ParseRemoteURL(rawURL)
+	for _, repoRemote := range remotes {
+		for _, rawURL := range repoRemote.Config().URLs {
+			remoteID, err := remote.ParseURL(rawURL)
 			if err == nil && remoteID.ID() == identity.ID() {
 				return true, nil
 			}

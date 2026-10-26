@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/scan"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/storetest"
@@ -61,7 +61,7 @@ func TestScanCancelOnSameSocketPreservesDiscoveries(t *testing.T) {
 		Scan: func(scanCtx context.Context, _ string) (scan.Result, error) {
 			close(entered)
 			<-scanCtx.Done()
-			return scan.Result{Found: []scan.Found{{Identity: git.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}, Partial: true}, nil
+			return scan.Result{Found: []scan.Found{{Identity: remote.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}, Partial: true}, nil
 		},
 	})
 	defer func() { stop(); wait() }()
@@ -151,7 +151,7 @@ func TestScanDevFolderContextErrorsPreserveDiscoveries(t *testing.T) {
 				Context: context.Background(), Locations: store.NewRepoLocationStore(database.DB),
 				Broadcast: func(response any) { responses <- response }, Log: testRepoLocationLogger(),
 				Scan: func(context.Context, string) (scan.Result, error) {
-					return scan.Result{Found: []scan.Found{{Identity: git.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}}, fmt.Errorf("walk interrupted: %w", scanErr)
+					return scan.Result{Found: []scan.Found{{Identity: remote.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}}, fmt.Errorf("walk interrupted: %w", scanErr)
 				},
 			})
 			defer wait()
@@ -239,7 +239,7 @@ func TestScanDevFolderReplacementWaitsForPredecessor(t *testing.T) {
 			if calls == 1 {
 				close(firstEntered)
 				<-scanCtx.Done()
-				return scan.Result{Found: []scan.Found{{Identity: git.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}}, scanCtx.Err()
+				return scan.Result{Found: []scan.Found{{Identity: remote.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}}, scanCtx.Err()
 			}
 			secondEntered <- scanCtx
 			<-scanCtx.Done()

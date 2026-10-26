@@ -8,6 +8,8 @@ import (
 
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
+
+	"github.com/itterno/bistro/internal/git/remote"
 )
 
 const remoteMismatchCode = "remote_mismatch"
@@ -36,7 +38,7 @@ func (e *LocalFetchError) Unwrap() error {
 // disabled. Validates first that some remote of the repo matches identity.
 // Note: opts.Depth is intentionally ignored — local fetches are never shallow,
 // so no .git/shallow metadata is ever written into a user-owned repo.
-func (c *Client) FetchIntoLocal(ctx context.Context, localPath string, id Identity, baseSHA, headSHA string, opts *CloneOptions) error {
+func (c *Client) FetchIntoLocal(ctx context.Context, localPath string, id remote.Identity, baseSHA, headSHA string, opts *CloneOptions) error {
 	if localPath == "" {
 		return errors.New("local path cannot be empty")
 	}
@@ -79,7 +81,7 @@ func (c *Client) FetchIntoLocal(ctx context.Context, localPath string, id Identi
 	return nil
 }
 
-func matchingLocalRepoRemote(repo *gitlib.Repository, id Identity) (string, error) {
+func matchingLocalRepoRemote(repo *gitlib.Repository, id remote.Identity) (string, error) {
 	return matchingLocalRepoRemoteByID(repo, id.ID())
 }
 
@@ -91,22 +93,22 @@ func matchingLocalRepoRemoteByID(repo *gitlib.Repository, repoID string) (string
 	if err != nil {
 		return "", fmt.Errorf("failed to list remotes: %w", err)
 	}
-	for _, remote := range remotes {
-		for _, remoteURL := range remote.Config().URLs {
-			remoteID, err := ParseRemoteURL(remoteURL)
+	for _, repoRemote := range remotes {
+		for _, remoteURL := range repoRemote.Config().URLs {
+			remoteID, err := remote.ParseURL(remoteURL)
 			if err != nil {
 				continue
 			}
 			if remoteID.ID() == strings.ToLower(repoID) {
-				return remote.Config().Name, nil
+				return repoRemote.Config().Name, nil
 			}
 		}
 	}
 	return "", &LocalFetchError{Code: remoteMismatchCode, Err: fmt.Errorf("no remote matches %s", repoID)}
 }
 
-func localFetchRefSpecs(id Identity, opts *CloneOptions) []config.RefSpec {
-	safeID := SafeRepoID(id)
+func localFetchRefSpecs(id remote.Identity, opts *CloneOptions) []config.RefSpec {
+	safeID := remote.SafeRepoID(id)
 	refSpecs := make([]config.RefSpec, 0, 2)
 	if opts != nil {
 		if opts.PRNumber > 0 {

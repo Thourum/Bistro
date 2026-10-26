@@ -17,6 +17,8 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/itterno/bistro/internal/git/remote"
 )
 
 const localFetchRemoteURL = "https://github.com/acme/api.git"
@@ -174,7 +176,7 @@ func TestFetchIntoLocal_TargetedRefspecsOnly(t *testing.T) {
 		t.Fatalf("FetchIntoLocal: %v", err)
 	}
 	userRepo := fixture.openUserRepo(t)
-	safeID := SafeRepoID(fixture.identity)
+	safeID := remote.SafeRepoID(fixture.identity)
 	expectedRefs := []string{
 		fmt.Sprintf("refs/bistro/%s/base/%s", safeID, fixture.baseBranch),
 		fmt.Sprintf("refs/bistro/%s/pull/%d/head", safeID, prNumber),
@@ -225,7 +227,7 @@ func TestFetchIntoLocal_TargetedFetchDoesNotWriteShallowMetadata(t *testing.T) {
 type localFetchFixture struct {
 	upstreamPath string
 	userPath     string
-	identity     Identity
+	identity     remote.Identity
 	baseBranch   string
 	baseSHA      plumbing.Hash
 }
@@ -251,9 +253,9 @@ func newLocalFetchFixture(t *testing.T) localFetchFixture {
 		t.Fatalf("PlainClone user: %v", err)
 	}
 
-	identity, err := ParseRemoteURL(localFetchRemoteURL)
+	identity, err := remote.ParseURL(localFetchRemoteURL)
 	if err != nil {
-		t.Fatalf("ParseRemoteURL: %v", err)
+		t.Fatalf("remote.ParseURL: %v", err)
 	}
 	fixture := localFetchFixture{
 		upstreamPath: upstreamPath,

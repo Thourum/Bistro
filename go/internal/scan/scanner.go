@@ -9,7 +9,7 @@ import (
 	"time"
 
 	gogit "github.com/go-git/go-git/v5"
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/remote"
 )
 
 const (
@@ -20,7 +20,7 @@ const (
 
 // Found is a local GitHub repo found under a dev folder.
 type Found struct {
-	Identity git.Identity
+	Identity remote.Identity
 	Path     string // canonical
 }
 
@@ -144,15 +144,15 @@ func (progress *scanProgress) addCandidate(path string) {
 	progress.result.Found = append(progress.result.Found, Found{Identity: identity, Path: canonical})
 }
 
-func repoIdentity(path string) (git.Identity, bool) {
+func repoIdentity(path string) (remote.Identity, bool) {
 	repo, err := gogit.PlainOpen(path)
 	if err != nil {
-		return git.Identity{}, false
+		return remote.Identity{}, false
 	}
 
 	remotes, err := repo.Remotes()
 	if err != nil {
-		return git.Identity{}, false
+		return remote.Identity{}, false
 	}
 
 	originURLs := []string{}
@@ -172,14 +172,14 @@ func repoIdentity(path string) (git.Identity, bool) {
 	return firstParseable(fallbackURLs)
 }
 
-func firstParseable(urls []string) (git.Identity, bool) {
+func firstParseable(urls []string) (remote.Identity, bool) {
 	for _, rawURL := range urls {
-		identity, err := git.ParseRemoteURL(rawURL)
+		identity, err := remote.ParseURL(rawURL)
 		if err == nil {
 			return identity, true
 		}
 	}
-	return git.Identity{}, false
+	return remote.Identity{}, false
 }
 
 func hasGitDirectory(path string) bool {

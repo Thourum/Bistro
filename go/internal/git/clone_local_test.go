@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/logging"
 )
 
@@ -102,7 +103,7 @@ func TestCloneLocalPathMissingReturnsLocationError(t *testing.T) {
 	if result != nil {
 		t.Fatalf("expected nil result, got %#v", result)
 	}
-	var locationErr *LocationError
+	var locationErr *remote.LocationError
 	if !errors.As(err, &locationErr) {
 		t.Fatalf("expected LocationError, got %T: %v", err, err)
 	}
@@ -172,7 +173,7 @@ func TestCloneLocalBrokenRegistrationDoesNotFallBackToWarmCache(t *testing.T) {
 	if result != nil {
 		t.Fatalf("expected nil result, got %#v", result)
 	}
-	var locationErr *LocationError
+	var locationErr *remote.LocationError
 	if !errors.As(err, &locationErr) {
 		t.Fatalf("expected LocationError, got %T: %v", err, err)
 	}
@@ -204,7 +205,7 @@ func TestCloneLocalRemoteMismatchRecordsRemoteMismatchStatus(t *testing.T) {
 	if result != nil {
 		t.Fatalf("expected nil result, got %#v", result)
 	}
-	var locationErr *LocationError
+	var locationErr *remote.LocationError
 	if !errors.As(err, &locationErr) {
 		t.Fatalf("expected LocationError, got %T: %v", err, err)
 	}

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/store"
 )
 
@@ -27,7 +27,7 @@ func (l prRepoLocator) RepoForPR(ctx context.Context, prID string) (string, stri
 	if err != nil {
 		return "", "", false, fmt.Errorf("look up repo of PR %s: %w", prID, err)
 	}
-	location, err := l.locations.Get(ctx, git.Identity{Provider: "github", Owner: owner, Repo: repo}.ID())
+	location, err := l.locations.Get(ctx, remote.Identity{Provider: "github", Owner: owner, Repo: repo}.ID())
 	if err != nil {
 		return "", "", false, fmt.Errorf("get repo location of PR %s: %w", prID, err)
 	}

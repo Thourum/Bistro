@@ -8,6 +8,8 @@ import (
 
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+
+	"github.com/itterno/bistro/internal/git/remote"
 )
 
 // pinnedHeadRef keeps every PR head the sync diffed reachable, so a force-push
@@ -19,11 +21,11 @@ func pinnedHeadRef(repoURL string, prNumber int, headSHA string) plumbing.Refere
 // refSafeID namespaces pins by repo. URLs without a GitHub identity (tests,
 // BISTRO_REPO_DIR setups) hash the raw URL instead.
 func refSafeID(repoURL string) string {
-	if identity, err := ParseRemoteURL(repoURL); err == nil {
-		return SafeRepoID(identity)
+	if identity, err := remote.ParseURL(repoURL); err == nil {
+		return remote.SafeRepoID(identity)
 	}
 	sum := sha256.Sum256([]byte(repoURL))
-	return hex.EncodeToString(sum[:])[:safeIDLength]
+	return hex.EncodeToString(sum[:])[:remote.SafeIDLength]
 }
 
 // pinPRHead writes the pin for headSHA. Best-effort: a missing pin only makes

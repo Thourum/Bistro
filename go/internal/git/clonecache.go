@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/itterno/bistro/internal/git/remote"
 )
 
 func repoCacheDir(repoURL string) (string, error) {
@@ -16,14 +18,14 @@ func repoCacheDir(repoURL string) (string, error) {
 	if os.Getenv("BISTRO_REPO_DIR") != "" {
 		return root, nil
 	}
-	identity, err := ParseRemoteURL(repoURL)
+	identity, err := remote.ParseURL(repoURL)
 	if err != nil {
 		return root, nil
 	}
 	return safeRepoCacheDir(root, identity)
 }
 
-func safeRepoCacheDir(root string, identity Identity) (string, error) {
+func safeRepoCacheDir(root string, identity remote.Identity) (string, error) {
 	canonicalRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return "", fmt.Errorf("resolve cache root %s: %w", root, err)
@@ -91,7 +93,7 @@ func needsFreshTempDir(repoURL string) bool {
 	if os.Getenv("BISTRO_REPO_DIR") != "" {
 		return true
 	}
-	_, err := ParseRemoteURL(repoURL)
+	_, err := remote.ParseURL(repoURL)
 	return err != nil
 }
 

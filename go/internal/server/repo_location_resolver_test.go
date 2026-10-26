@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	bistrogit "github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/storetest"
 )
@@ -36,7 +37,7 @@ func TestConfigureRepoLocationStoreWiresGitClientLocalResolver(t *testing.T) {
 	if result != nil {
 		t.Fatalf("expected no clone result for degraded local repo, got %#v", result)
 	}
-	var locationErr *bistrogit.LocationError
+	var locationErr *remote.LocationError
 	if !errors.As(err, &locationErr) {
 		t.Fatalf("expected LocationError from wired resolver, got %T: %v", err, err)
 	}

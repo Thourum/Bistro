@@ -9,6 +9,7 @@ import (
 
 	gitlib "github.com/go-git/go-git/v5"
 
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/logging"
 )
 
@@ -106,33 +107,33 @@ func (c *Client) resolveLocal(ctx context.Context, repoURL, baseSHA, headSHA str
 	if !ok {
 		return nil, false, nil
 	}
-	identity, err := ParseRemoteURL(repoURL)
+	identity, err := remote.ParseURL(repoURL)
 	if err != nil {
-		return nil, true, &LocationError{RepoID: repoURL, Operation: locationFetchOperation, Code: locationInvalidURLCode, Message: err.Error(), Err: err}
+		return nil, true, &remote.LocationError{RepoID: repoURL, Operation: locationFetchOperation, Code: locationInvalidURLCode, Message: err.Error(), Err: err}
 	}
 	if !localRepoExists(localPath) {
 		msg := fmt.Sprintf("folder not found: %s", localPath)
 		c.localResolver.OnLocalDegraded(repoURL, locationMissingStatus, locationPathMissingCode, msg)
-		return nil, true, &LocationError{RepoID: identity.ID(), Operation: locationFetchOperation, Code: locationPathMissingCode, Message: msg}
+		return nil, true, &remote.LocationError{RepoID: identity.ID(), Operation: locationFetchOperation, Code: locationPathMissingCode, Message: msg}
 	}
 	if err := c.FetchIntoLocal(ctx, localPath, identity, baseSHA, headSHA, opts); err != nil {
 		msg := err.Error()
 		var fetchErr *LocalFetchError
 		if errors.As(err, &fetchErr) && fetchErr.Code == remoteMismatchCode {
 			c.localResolver.OnLocalDegraded(repoURL, remoteMismatchCode, remoteMismatchCode, msg)
-			return nil, true, &LocationError{RepoID: identity.ID(), Operation: locationFetchOperation, Code: remoteMismatchCode, Message: msg, Err: err}
+			return nil, true, &remote.LocationError{RepoID: identity.ID(), Operation: locationFetchOperation, Code: remoteMismatchCode, Message: msg, Err: err}
 		}
 		if errors.Is(err, os.ErrPermission) {
 			c.localResolver.OnLocalDegraded(repoURL, locationPermissionDeniedCode, locationPermissionDeniedCode, msg)
-			return nil, true, &LocationError{RepoID: identity.ID(), Operation: locationFetchOperation, Code: locationPermissionDeniedCode, Message: msg, Err: err}
+			return nil, true, &remote.LocationError{RepoID: identity.ID(), Operation: locationFetchOperation, Code: locationPermissionDeniedCode, Message: msg, Err: err}
 		}
 		// Context cancellation stays bare so callers can detect it directly.
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, true, err
 		}
 		// Transient failures (network, missing commits) are surfaced as a
-		// structured LocationError without marking the repo degraded.
-		return nil, true, &LocationError{RepoID: identity.ID(), Operation: locationFetchOperation, Code: locationCloneFailedCode, Message: msg, Err: err}
+		// structured remote.LocationError without marking the repo degraded.
+		return nil, true, &remote.LocationError{RepoID: identity.ID(), Operation: locationFetchOperation, Code: locationCloneFailedCode, Message: msg, Err: err}
 	}
 	c.localResolver.OnUsed(repoURL)
 	return &CloneResult{LocalPath: localPath, BaseSHA: baseSHA, HeadSHA: headSHA}, true, nil
@@ -188,7 +189,7 @@ func repoLockKey(repoURL string) string {
 	if os.Getenv("BISTRO_REPO_DIR") != "" {
 		return repoURL
 	}
-	identity, err := ParseRemoteURL(repoURL)
+	identity, err := remote.ParseURL(repoURL)
 	if err != nil {
 		return repoURL
 	}
