@@ -7,42 +7,50 @@ import (
 	"github.com/itterno/bistro/internal/ws"
 )
 
-// TestRequestComments_NullAnchorPatchsetNumber_Stale verifies that a comment with
-// anchor_patchset_number=NULL (anchor computed before migration 018) is treated
-// as stale and all anchor fields are suppressed.
+// TestRequestComments_NullAnchorPatchsetNumber_Stale covers legacy anchors missing
+// both anchor identities: the current-identity guard rejects either comment origin.
 func TestRequestComments_NullAnchorPatchsetNumber_Stale(t *testing.T) {
-	db := newHandlerTestDB(t)
-
-	mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
-		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
-		VALUES ('pr-null','github','o','r',1,'T','a','open','2026-01-01','2026-01-01','main','f',
-		        'sha-BASE','sha-HEAD')`)
-	mustExecDB(t, db, `INSERT INTO patchsets (pr_id, number, head_sha, base_sha, pushed_at)
-		VALUES ('pr-null', 1, 'sha-HEAD', 'sha-BASE', '2026-01-01')`)
-	// anchor_patchset_number is NULL — pre-migration 018 anchor.
-	mustExecDB(t, db, `INSERT INTO comments
-		(id, pr_id, author, body, created_at, updated_at,
-		 kind, anchored_line, anchor_head_sha, outdated)
-		VALUES
-		('c-null','pr-null','alice','old','2026-01-01','2026-01-01',
-		 'review', 5, 'sha-HEAD', 0)`)
-
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, _ := h(context.Background(), ws.InboundMessage{
-		ID: "req-null2", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pr-null"}`),
-	})
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
-	if len(comments) != 1 {
-		t.Fatalf("expected 1, got %d", len(comments))
+	tests := []struct {
+		name           string
+		patchsetNumber *int
+	}{
+		{name: "unknown_comment_patchset"},
+		{name: "current_comment_patchset", patchsetNumber: new(1)},
 	}
-	c := comments[0]
-	// anchor_patchset_number is NULL → cannot verify identity → stale.
-	if c.Anchored {
-		t.Error("Anchored must be false when anchor_patchset_number is NULL")
-	}
-	if c.AnchoredLine != nil {
-		t.Errorf("AnchoredLine must be nil for pre-migration anchor, got %d", *c.AnchoredLine)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newHandlerTestDB(t)
+			mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
+				created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
+				VALUES ('pr-null','github','o','r',1,'T','a','open','2026-01-01','2026-01-01','main','f',
+				        'sha-BASE','sha-HEAD')`)
+			mustExecDB(t, db, `INSERT INTO patchsets (pr_id, number, head_sha, base_sha, pushed_at)
+				VALUES ('pr-null', 1, 'sha-HEAD', 'sha-BASE', '2026-01-01')`)
+			mustExecDB(t, db, `INSERT INTO comments
+				(id, pr_id, author, body, created_at, updated_at,
+				 kind, patchset_number, anchored_line, anchor_head_sha, outdated)
+				VALUES ('c-null','pr-null','alice','old','2026-01-01','2026-01-01',
+				 'review', ?, 5, 'sha-HEAD', 0)`, tt.patchsetNumber)
+
+			h := NewRequestCommentsHandler(db, testRepoLogger())
+			resp, err := h(context.Background(), ws.InboundMessage{
+				ID: "req-null2", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pr-null"}`),
+			})
+			if err != nil {
+				t.Fatalf("REQUEST_COMMENTS: %v", err)
+			}
+			data := resp.(map[string]interface{})["data"].(map[string]interface{})
+			comments := data["comments"].([]commentRow)
+			if len(comments) != 1 {
+				t.Fatalf("expected 1, got %d", len(comments))
+			}
+			if comments[0].Anchored {
+				t.Error("Anchored must be false for a legacy anchor missing patchset identity")
+			}
+			if comments[0].AnchoredLine != nil {
+				t.Errorf("AnchoredLine must be nil, got %d", *comments[0].AnchoredLine)
+			}
+		})
 	}
 }
 
@@ -124,41 +132,6 @@ func TestRequestComments_SameHeadRetarget_CurrentPosition_Stale(t *testing.T) {
 	}
 	if c.AnchoredLine != nil {
 		t.Errorf("AnchoredLine must be nil after retarget stale, got %d", *c.AnchoredLine)
-	}
-}
-
-// TestRequestComments_NullAnchorPatchsetNumber_AlwaysStale ensures null identity
-// always suppresses, regardless of position type.
-func TestRequestComments_NullAnchorPatchsetNumber_AlwaysStale(t *testing.T) {
-	db := newHandlerTestDB(t)
-
-	mustExecDB(t, db, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state,
-		created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
-		VALUES ('pr-null2','github','o','r',1,'T','a','open','2026-01-01','2026-01-01','main','f','b','sha-H')`)
-	mustExecDB(t, db, `INSERT INTO patchsets (pr_id, number, head_sha, base_sha, pushed_at)
-		VALUES ('pr-null2', 1, 'sha-H', 'b', '2026-01-01')`)
-	// anchor_patchset_number is NULL — pre-migration 018 or failed identity.
-	mustExecDB(t, db, `INSERT INTO comments
-		(id, pr_id, author, body, created_at, updated_at,
-		 kind, patchset_number, anchored_line, anchor_head_sha, outdated)
-		VALUES
-		('c-null2','pr-null2','dave','x','2026-01-01','2026-01-01',
-		 'review', 1, 4, 'sha-H', 0)`)
-
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, _ := h(context.Background(), ws.InboundMessage{
-		ID: "req-null3", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pr-null2"}`),
-	})
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
-	if len(comments) != 1 {
-		t.Fatalf("expected 1, got %d", len(comments))
-	}
-	if comments[0].Anchored {
-		t.Error("Anchored must be false when anchor_patchset_number is NULL")
-	}
-	if comments[0].AnchoredLine != nil {
-		t.Errorf("AnchoredLine must be nil when anchor_patchset_number is NULL")
 	}
 }
 
