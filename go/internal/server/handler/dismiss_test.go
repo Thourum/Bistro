@@ -4,10 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/itterno/bistro/internal/store/dismissal"
 	"testing"
 
 	"github.com/itterno/bistro/internal/actions"
-	"github.com/itterno/bistro/internal/store"
+
 	"github.com/itterno/bistro/internal/ws"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -70,7 +71,7 @@ func setupDismissTestDB(t *testing.T) *sql.DB {
 func dismissDeps(db *sql.DB, applier ActionApplier, scope string) DismissDeps {
 	return DismissDeps{
 		DB:         db,
-		Dismissals: store.NewDismissals(db),
+		Dismissals: dismissal.New(db),
 		GetApplier: func() ActionApplier { return applier },
 		Scope:      func() string { return scope },
 		Log:        testRepoLogger(),

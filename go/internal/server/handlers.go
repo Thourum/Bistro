@@ -2,11 +2,11 @@ package server
 
 import (
 	"context"
+	"github.com/itterno/bistro/internal/store/dismissal"
 
 	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/server/handler"
-	"github.com/itterno/bistro/internal/store"
 )
 
 func (a *App) registerAuthHandlers(ctx context.Context, stores runStores) {
@@ -62,7 +62,7 @@ func (a *App) registerReviewHandlers(ctx context.Context, stores runStores) func
 		handler.NewRequestCommentsHandlerWithLLMKick(a.db.DB, a.log, a.classifier, a.llmKick))
 	dismissDeps := handler.DismissDeps{
 		DB:          a.db.DB,
-		Dismissals:  store.NewDismissals(a.db.DB),
+		Dismissals:  dismissal.New(a.db.DB),
 		CurrentUser: stores.currentUser,
 		GetApplier:  a.currentApplier,
 		Scope:       a.classificationState.DismissalScope,

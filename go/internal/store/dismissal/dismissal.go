@@ -1,4 +1,4 @@
-package store
+package dismissal
 
 import (
 	"context"
@@ -8,20 +8,20 @@ import (
 	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
-// Dismissals provides persistence for per-account comment dismissals.
-type Dismissals struct {
+// Store provides persistence for per-account comment dismissals.
+type Store struct {
 	db      *sql.DB
 	queries *storedb.Queries
 }
 
-// NewDismissals creates a new Dismissals store backed by the given database.
-func NewDismissals(db *sql.DB) *Dismissals {
-	return &Dismissals{db: db, queries: storedb.New(db)}
+// New creates a new Store store backed by the given database.
+func New(db *sql.DB) *Store {
+	return &Store{db: db, queries: storedb.New(db)}
 }
 
 // Dismiss inserts comment dismissal rows for the given account in one transaction.
 // Existing rows are ignored, making repeated dismiss commands idempotent.
-func (d *Dismissals) Dismiss(ctx context.Context, commentIDs []string, provider string, login string) error {
+func (d *Store) Dismiss(ctx context.Context, commentIDs []string, provider string, login string) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin dismiss comments: %w", err)
@@ -45,7 +45,7 @@ func (d *Dismissals) Dismiss(ctx context.Context, commentIDs []string, provider 
 }
 
 // Undismiss deletes comment dismissal rows for the given account in one transaction.
-func (d *Dismissals) Undismiss(ctx context.Context, commentIDs []string, provider string, login string) error {
+func (d *Store) Undismiss(ctx context.Context, commentIDs []string, provider string, login string) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin undismiss comments: %w", err)
@@ -69,7 +69,7 @@ func (d *Dismissals) Undismiss(ctx context.Context, commentIDs []string, provide
 }
 
 // DismissedIDs returns the set of dismissed comment IDs for a PR and account.
-func (d *Dismissals) DismissedIDs(ctx context.Context, prID string, provider string, login string) (map[string]bool, error) {
+func (d *Store) DismissedIDs(ctx context.Context, prID string, provider string, login string) (map[string]bool, error) {
 	commentIDs, err := d.queries.ListDismissedCommentIDsForPR(ctx, storedb.ListDismissedCommentIDsForPRParams{
 		PrID:            prID,
 		AccountProvider: provider,

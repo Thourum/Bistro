@@ -1,12 +1,15 @@
-package store
+package dismissal
 
 import (
 	"context"
+	"database/sql"
+	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 	"strings"
 	"testing"
 )
 
-func insertDismissalTestComment(t *testing.T, db *DB, prID, commentID string) {
+func insertDismissalTestComment(t *testing.T, db *store.DB, prID, commentID string) {
 	t.Helper()
 	mustInsertPR(t, db, prID)
 	mustExec(t, db, `INSERT INTO comments (id, pr_id, author, body, created_at, updated_at)
@@ -14,8 +17,8 @@ func insertDismissalTestComment(t *testing.T, db *DB, prID, commentID string) {
 }
 
 func TestDismissalsDismissIsIdempotent(t *testing.T) {
-	db := newTestDB(t)
-	dismissals := NewDismissals(db.DB)
+	db := storetest.Open(t)
+	dismissals := New(db.DB)
 	ctx := context.Background()
 
 	insertDismissalTestComment(t, db, "pr-dismiss", "comment-1")
@@ -37,8 +40,8 @@ func TestDismissalsDismissIsIdempotent(t *testing.T) {
 }
 
 func TestDismissalsUndismiss(t *testing.T) {
-	db := newTestDB(t)
-	dismissals := NewDismissals(db.DB)
+	db := storetest.Open(t)
+	dismissals := New(db.DB)
 	ctx := context.Background()
 
 	insertDismissalTestComment(t, db, "pr-undismiss", "comment-1")
@@ -64,8 +67,8 @@ func TestDismissalsUndismiss(t *testing.T) {
 }
 
 func TestDismissalsDismissedIDsScopesByPRAndAccount(t *testing.T) {
-	db := newTestDB(t)
-	dismissals := NewDismissals(db.DB)
+	db := storetest.Open(t)
+	dismissals := New(db.DB)
 	ctx := context.Background()
 
 	insertDismissalTestComment(t, db, "pr-one", "comment-1")
@@ -117,8 +120,8 @@ func TestDismissalsDismissedIDsScopesByPRAndAccount(t *testing.T) {
 }
 
 func TestDismissalsDismissUnknownCommentRollsBack(t *testing.T) {
-	db := newTestDB(t)
-	dismissals := NewDismissals(db.DB)
+	db := storetest.Open(t)
+	dismissals := New(db.DB)
 	ctx := context.Background()
 
 	insertDismissalTestComment(t, db, "pr-rollback", "comment-1")
@@ -138,4 +141,39 @@ func TestDismissalsDismissUnknownCommentRollsBack(t *testing.T) {
 	if len(ids) != 0 {
 		t.Fatalf("expected failed Dismiss transaction to roll back all rows, got %v", ids)
 	}
+}
+
+// mustExec executes a SQL statement, failing the test on error.
+func mustExec(t *testing.T, db interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+}, query string, args ...interface{}) {
+	t.Helper()
+	if _, err := db.Exec(query, args...); err != nil {
+		t.Fatalf("mustExec(%q): %v", query, err)
+	}
+}
+
+// mustInsertPR inserts a minimal PR row for FK satisfaction in tests.
+// Uses the prID as the number suffix to avoid UNIQUE(provider,owner,repo,number) collisions.
+func mustInsertPR(t *testing.T, db interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+}, prID string) {
+	t.Helper()
+	// Use a hash of prID as the PR number to avoid UNIQUE constraint collisions.
+	num := 0
+	for _, c := range prID {
+		num = num*31 + int(c)
+	}
+	if num < 0 {
+		num = -num
+	}
+	num = (num % 100000) + 1
+	mustExec(t, db,
+		`INSERT OR IGNORE INTO prs
+			(id, provider, owner, repo, number, title, author, state,
+			 created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
+		 VALUES (?, 'github', 'o', 'r', ?, 'T', 'a', 'open',
+		         '2026-01-01', '2026-01-01', 'main', 'f', 'base', 'head')`,
+		prID, num,
+	)
 }
