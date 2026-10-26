@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 
 func TestWriteReviewThreads_PersistsThreadAndComments(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	// Insert a PR first (FK constraint).
 	mustWritePR(t, w, &provider.PR{
@@ -36,7 +36,7 @@ func TestWriteReviewThreads_PersistsThreadAndComments(t *testing.T) {
 		},
 	}}
 
-	results := []*PRFetchResult{{
+	results := []*FetchedPR{{
 		PR: &provider.PR{ID: "github:o/r:1", Provider: "github", Owner: "o", Repo: "r",
 			Number: 1, Title: "T", Author: "a", State: "open",
 			BaseBranch: "main", HeadBranch: "f", BaseSHA: "b", HeadSHA: "h"},
@@ -80,7 +80,7 @@ func TestWriteReviewThreads_PersistsThreadAndComments(t *testing.T) {
 
 func TestWriteReviewThreads_PerItemErrorSkipsNotAborts(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	mustWritePR(t, w, &provider.PR{
 		ID: "github:o/r:2", Provider: "github", Owner: "o", Repo: "r", Number: 2,
 		Title: "T", Author: "a", State: "open",
@@ -97,7 +97,7 @@ func TestWriteReviewThreads_PerItemErrorSkipsNotAborts(t *testing.T) {
 		},
 	}
 
-	results := []*PRFetchResult{{
+	results := []*FetchedPR{{
 		PR: &provider.PR{ID: "github:o/r:2", Provider: "github", Owner: "o", Repo: "r",
 			Number: 2, Title: "T", Author: "a", State: "open",
 			BaseBranch: "main", HeadBranch: "f", BaseSHA: "b", HeadSHA: "h2"},
@@ -122,7 +122,7 @@ func TestWriteReviewThreads_PerItemErrorSkipsNotAborts(t *testing.T) {
 // that both the thread row and the comment row share the same ID, preventing FK violations.
 func TestWriteReviewThreads_GraphQLIDConsistency(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	mustWritePR(t, w, &provider.PR{
 		ID: "github:o/r:10", Provider: "github", Owner: "o", Repo: "r", Number: 10,
 		Title: "T", Author: "a", State: "open",
@@ -149,7 +149,7 @@ func TestWriteReviewThreads_GraphQLIDConsistency(t *testing.T) {
 		},
 	}}
 
-	results := []*PRFetchResult{{
+	results := []*FetchedPR{{
 		PR: &provider.PR{ID: "github:o/r:10", Provider: "github", Owner: "o", Repo: "r",
 			Number: 10, Title: "T", Author: "a", State: "open",
 			BaseBranch: "main", HeadBranch: "f", BaseSHA: "b", HeadSHA: "hgql"},
@@ -179,7 +179,7 @@ func TestWriteReviewThreads_GraphQLIDConsistency(t *testing.T) {
 
 func TestWriteReviewThreads_CanonicalPromotionDeletesProvisionalRow(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	pr := &provider.PR{ID: "github:o/r:11", Provider: "github", Owner: "o", Repo: "r",
 		Number: 11, Title: "T", Author: "a", State: "open",
 		BaseBranch: "main", HeadBranch: "f", BaseSHA: "b", HeadSHA: "h"}
@@ -199,7 +199,7 @@ func TestWriteReviewThreads_CanonicalPromotionDeletesProvisionalRow(t *testing.T
 				InReplyTo: provisionalID, ThreadID: provisionalID, CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		},
 	}
-	if err := w.WriteSyncResults([]*PRFetchResult{{PR: pr, Threads: []*provider.ReviewThread{fallbackThread}}}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{{PR: pr, Threads: []*provider.ReviewThread{fallbackThread}}}); err != nil {
 		t.Fatalf("fallback write: %v", err)
 	}
 
@@ -217,7 +217,7 @@ func TestWriteReviewThreads_CanonicalPromotionDeletesProvisionalRow(t *testing.T
 				InReplyTo: provisionalID, ThreadID: canonicalID, CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		},
 	}
-	if err := w.WriteSyncResults([]*PRFetchResult{{PR: pr, Threads: []*provider.ReviewThread{canonicalThread}}}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{{PR: pr, Threads: []*provider.ReviewThread{canonicalThread}}}); err != nil {
 		t.Fatalf("canonical write: %v", err)
 	}
 

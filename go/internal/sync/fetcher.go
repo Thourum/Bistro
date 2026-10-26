@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/git"
-	"github.com/itterno/bistro/internal/git/anchor"
 	gitdiff "github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/sync/workerpool"
+	"github.com/itterno/bistro/internal/sync/writer"
 )
 
 // perPRFetchTimeout caps how long the detail fetch (comments, reviews, CI,
@@ -42,54 +42,14 @@ func logSubstep(log *slog.Logger, msg string, durMs int64, attrs ...any) {
 	log.Debug(msg, all...)
 }
 
-// PRFetchResult holds the fetched data for a single PR, including any
-// per-PR error encountered during concurrent fetching.
-type PRFetchResult struct {
-	PR       *provider.PR
-	Comments []*provider.Comment
-	Threads  []*provider.ReviewThread // populated when provider implements ThreadProvider
-	Reviews  []*provider.Review       // Submitted reviews; the writer derives the user's GitHub-review baseline.
-	// CommentsFetched and ThreadsFetched distinguish a successful empty refresh
-	// from a write where the corresponding source was not fetched. Mention state
-	// may only be cleared once every source has been refreshed.
-	CommentsFetched bool
-	ThreadsFetched  bool
-	CI              *provider.CIStatus
-	DiffSize        int64
-	// DiffFiles holds the per-file diffs to be persisted atomically with the PR
-	// row and patchset in WriteSyncResultsContext.
-	// nil means diff was not attempted or failed (preserve existing pr_diffs cache).
-	// non-nil (including empty slice) means diff was successfully computed and
-	// the writer should replace pr_diffs — even an empty slice clears stale rows.
-	DiffFiles []prdiff.File
-	// DiffComputed is true iff diff generation succeeded and DiffFiles is valid.
-	// When false, the writer must not touch pr_diffs for this result.
-	DiffComputed bool
-	// MergeBaseSHA is the merge base the diff was generated against; empty when
-	// the diff was not computed or the merge base stayed unknown (the diff then
-	// used the base tip). Part of patchset identity.
-	MergeBaseSHA string
-	// AnchorUpdates carries per-comment anchor results computed from the clone.
-	// Populated only when the clone was available and anchoring ran without a
-	// fatal error. Each entry is written back to the comments table after the
-	// per-PR savepoint releases (best-effort; never blocks PR/patchset commit).
-	AnchorUpdates []anchor.Result
-	// ListOnly marks a result written without a detail fetch (very active
-	// repo over the hydration threshold). The PR row is stored hydrated=0 and
-	// details are fetched on demand; an already-hydrated row is never
-	// downgraded.
-	ListOnly bool
-	Error    error
-}
-
 // FetchPRDetails fetches comments, reviews, threads, CI, and diffs concurrently.
-// Results preserve input order; per-PR errors are stored in PRFetchResult.Error.
+// Results preserve input order; per-PR errors are stored in writer.FetchedPR.Error.
 // Only a worker-pool failure is returned as an error.
 func (o *Orchestrator) FetchPRDetails(
 	ctx context.Context,
 	prs []*provider.PR,
 	includeComments, includeCI, includeDiff bool,
-) ([]*PRFetchResult, error) {
+) ([]*writer.FetchedPR, error) {
 	log := logging.FromContext(ctx)
 	log.Debug("FetchPRDetails start",
 		"pr_count", len(prs),
@@ -100,14 +60,14 @@ func (o *Orchestrator) FetchPRDetails(
 	)
 
 	options := prFetchOptions{comments: includeComments, ci: includeCI, diff: includeDiff}
-	results := make([]*PRFetchResult, len(prs))
+	results := make([]*writer.FetchedPR, len(prs))
 	pool := workerpool.New(workerpool.DefaultWorkers, o.log)
 	for i, pr := range prs {
 		if err := pool.Submit(ctx, func() {
 			results[i] = o.fetchPR(ctx, pr, options)
 		}); err != nil {
 			log.Warn("task submission cancelled", "pr_number", pr.Number, "pr_id", pr.ID, "error", err)
-			results[i] = &PRFetchResult{PR: pr, Error: fmt.Errorf("task submission cancelled: %w", err)}
+			results[i] = &writer.FetchedPR{PR: pr, Error: fmt.Errorf("task submission cancelled: %w", err)}
 			break
 		}
 	}
@@ -126,7 +86,7 @@ type prFetchOptions struct {
 	diff     bool
 }
 
-func (o *Orchestrator) fetchPR(ctx context.Context, pr *provider.PR, options prFetchOptions) *PRFetchResult {
+func (o *Orchestrator) fetchPR(ctx context.Context, pr *provider.PR, options prFetchOptions) *writer.FetchedPR {
 	started := time.Now()
 	log := logging.FromContext(ctx).With(
 		"pr_number", pr.Number,
@@ -140,7 +100,7 @@ func (o *Orchestrator) fetchPR(ctx context.Context, pr *provider.PR, options prF
 	taskCtx := logging.WithLogger(boundedCtx, log)
 	log.Debug("pr fetch start", "title", pr.Title)
 
-	result := &PRFetchResult{PR: pr}
+	result := &writer.FetchedPR{PR: pr}
 	var fetchErrors []error
 	if options.comments && o.provider != nil {
 		if err := o.fetchComments(taskCtx, result, log); err != nil {
@@ -191,7 +151,7 @@ type fetchErrors struct {
 func (errs *fetchErrors) Error() string   { return errs.message }
 func (errs *fetchErrors) Unwrap() []error { return errs.causes }
 
-func (o *Orchestrator) fetchComments(ctx context.Context, result *PRFetchResult, log *slog.Logger) error {
+func (o *Orchestrator) fetchComments(ctx context.Context, result *writer.FetchedPR, log *slog.Logger) error {
 	started := time.Now()
 	comments, err := o.provider.GetComments(ctx, result.PR.ID)
 	if err != nil {
@@ -203,7 +163,7 @@ func (o *Orchestrator) fetchComments(ctx context.Context, result *PRFetchResult,
 	return nil
 }
 
-func (o *Orchestrator) fetchReviews(ctx context.Context, result *PRFetchResult, log *slog.Logger) error {
+func (o *Orchestrator) fetchReviews(ctx context.Context, result *writer.FetchedPR, log *slog.Logger) error {
 	started := time.Now()
 	reviews, err := o.provider.ListReviews(ctx, result.PR.ID)
 	if err != nil {
@@ -219,7 +179,7 @@ func (o *Orchestrator) fetchReviews(ctx context.Context, result *PRFetchResult, 
 	return nil
 }
 
-func (o *Orchestrator) fetchThreads(ctx context.Context, result *PRFetchResult, log *slog.Logger) {
+func (o *Orchestrator) fetchThreads(ctx context.Context, result *writer.FetchedPR, log *slog.Logger) {
 	threadProvider, ok := o.provider.(provider.ThreadProvider)
 	if !ok {
 		result.ThreadsFetched = true
@@ -238,7 +198,7 @@ func (o *Orchestrator) fetchThreads(ctx context.Context, result *PRFetchResult, 
 	logSubstep(log, "pr review threads fetched", time.Since(started).Milliseconds(), "count", len(threads))
 }
 
-func (o *Orchestrator) fetchCI(ctx context.Context, result *PRFetchResult, log *slog.Logger) error {
+func (o *Orchestrator) fetchCI(ctx context.Context, result *writer.FetchedPR, log *slog.Logger) error {
 	started := time.Now()
 	ci, err := o.provider.GetCIStatus(ctx, result.PR.ID)
 	if err != nil {
@@ -253,7 +213,7 @@ func (o *Orchestrator) fetchCI(ctx context.Context, result *PRFetchResult, log *
 	return nil
 }
 
-func (o *Orchestrator) fetchDiff(ctx context.Context, result *PRFetchResult, log *slog.Logger) error {
+func (o *Orchestrator) fetchDiff(ctx context.Context, result *writer.FetchedPR, log *slog.Logger) error {
 	pr := result.PR
 	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", pr.Owner, pr.Repo)
 	// The diff and anchor reads must happen while the repo lock is held: another
@@ -268,7 +228,7 @@ func (o *Orchestrator) fetchDiff(ctx context.Context, result *PRFetchResult, log
 	return nil
 }
 
-func (o *Orchestrator) generateDiff(ctx context.Context, result *PRFetchResult, clone *git.CloneResult, log *slog.Logger) error {
+func (o *Orchestrator) generateDiff(ctx context.Context, result *writer.FetchedPR, clone *git.CloneResult, log *slog.Logger) error {
 	pr := result.PR
 	started := time.Now()
 	mergeBase := o.resolveMergeBase(ctx, clone, pr, log)
@@ -345,7 +305,7 @@ func storeDiffFiles(diff *gitdiff.Result) []prdiff.File {
 	return files
 }
 
-func (o *Orchestrator) resolveDiffAnchors(ctx context.Context, result *PRFetchResult, clone *git.CloneResult, diffBase string, log *slog.Logger) {
+func (o *Orchestrator) resolveDiffAnchors(ctx context.Context, result *writer.FetchedPR, clone *git.CloneResult, diffBase string, log *slog.Logger) {
 	if o.anchorResolver == nil {
 		return
 	}

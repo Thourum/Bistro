@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"testing"
@@ -13,13 +13,13 @@ import (
 // The COALESCE in writeComment preserves the original value when patchsetNum==0.
 func TestWriteComment_OutdatedComment_PreservesPatchsetNumber(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	pr := makePR("github:o/r:60", 60, "head-60", "base-60")
 	origPos := 5
 
 	// First sync: write the comment with patchset_number=1 (original patchset).
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR: pr,
 		Comments: []*provider.Comment{{
 			ID:        "outdated-c1",
@@ -40,7 +40,7 @@ func TestWriteComment_OutdatedComment_PreservesPatchsetNumber(t *testing.T) {
 	// Second sync: comment is now outdated (Position==nil), OriginalPosition set.
 	// This represents a force-push after which GitHub marks the comment outdated.
 	newPR := makePR("github:o/r:60", 60, "head-60b", "base-60") // new head → new patchset
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR: newPR,
 		Comments: []*provider.Comment{{
 			ID:               "outdated-c1",
@@ -68,7 +68,7 @@ func TestWriteComment_OutdatedComment_PreservesPatchsetNumber(t *testing.T) {
 
 func TestWriteComment_ReviewPositionFields(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	pr := makePR("github:o/r:61", 61, "head-61", "base-61")
 	pos := 3
@@ -76,7 +76,7 @@ func TestWriteComment_ReviewPositionFields(t *testing.T) {
 	origLine := 40
 	startLine := 38
 	origStartLine := 37
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR: pr,
 		Comments: []*provider.Comment{{
 			ID: "review-position-c1", PRID: pr.ID, Author: "alice", Body: "range nit",
@@ -112,7 +112,7 @@ func TestWriteComment_ReviewPositionFields(t *testing.T) {
 // the current patchset_number when they have a current Position.
 func TestWriteThreadComment_CurrentPosition_StampsPatchsetNumber(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	pr := makePR("github:o/r:70", 70, "head-70", "base-70")
 	pos := 3
@@ -131,7 +131,7 @@ func TestWriteThreadComment_CurrentPosition_StampsPatchsetNumber(t *testing.T) {
 		}},
 	}
 
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR:      pr,
 		Threads: []*provider.ReviewThread{thread},
 	}}); err != nil {
@@ -151,14 +151,14 @@ func TestWriteThreadComment_CurrentPosition_StampsPatchsetNumber(t *testing.T) {
 // instead of being overwritten with the current patchset number.
 func TestWriteThreadComment_OutdatedPosition_PreservesPatchsetNumber(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	pr := makePR("github:o/r:71", 71, "head-71", "base-71")
 	origPos := 5
 
 	// First sync: current comment with patchset stamped.
 	pos := 5
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR: pr,
 		Threads: []*provider.ReviewThread{{
 			ID:   "thread-71",
@@ -182,7 +182,7 @@ func TestWriteThreadComment_OutdatedPosition_PreservesPatchsetNumber(t *testing.
 
 	// Second sync: the thread comment is now outdated (Position==nil after force-push).
 	newPR := makePR("github:o/r:71", 71, "head-71b", "base-71")
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR: newPR,
 		Threads: []*provider.ReviewThread{{
 			ID:   "thread-71",

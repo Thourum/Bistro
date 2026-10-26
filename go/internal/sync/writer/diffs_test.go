@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"errors"
@@ -15,7 +15,7 @@ func TestWriteDiffs_NewPR_AtomicWithPRRow(t *testing.T) {
 	// in the same transaction. This guards against the FK ordering bug where
 	// Save was called during fetch before the PR row existed.
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	pr := makePR("github:o/r:20", 20, "head-new", "base-new")
 	diffs := []prdiff.File{
@@ -23,7 +23,7 @@ func TestWriteDiffs_NewPR_AtomicWithPRRow(t *testing.T) {
 		{FilePath: "util.go", Patch: "+helper", Additions: 1},
 	}
 
-	results := []*PRFetchResult{{
+	results := []*FetchedPR{{
 		PR:           pr,
 		DiffFiles:    diffs,
 		DiffComputed: true,
@@ -49,7 +49,7 @@ func TestWriteDiffs_ErroredResult_DiffsNotReplaced(t *testing.T) {
 	// When result.Error != nil, the writer skips that result entirely.
 	// Pre-existing pr_diffs must be preserved (not cleared/replaced).
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	pr := makePR("github:o/r:21", 21, "head-21", "base-21")
 	mustWritePR(t, w, pr)
@@ -58,13 +58,13 @@ func TestWriteDiffs_ErroredResult_DiffsNotReplaced(t *testing.T) {
 	db.Exec(`INSERT INTO pr_diffs (pr_id, file_path, patch, additions, deletions) VALUES (?, 'a.go', 'patch', 1, 0)`, pr.ID) //nolint:errcheck
 
 	// Now write a result with Error set — diffs must not be touched.
-	badResult := &PRFetchResult{
+	badResult := &FetchedPR{
 		PR:           pr,
 		DiffFiles:    nil, // no diffs
 		DiffComputed: true,
 		Error:        errors.New("upstream API failure"),
 	}
-	if err := w.WriteSyncResults([]*PRFetchResult{badResult}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{badResult}); err != nil {
 		t.Fatalf("WriteSyncResults: %v", err)
 	}
 
@@ -78,7 +78,7 @@ func TestWriteDiffs_EmptyDiff_ClearsStaleRows_OnAcceptedResult(t *testing.T) {
 	// DiffComputed=true with empty DiffFiles: pr_diffs cleared (stale files gone).
 	// This happens when a PR is reverted to base so no files changed.
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	pr := makePR("github:o/r:22", 22, "head-22", "base-22")
 	mustWritePR(t, w, pr)
@@ -90,7 +90,7 @@ func TestWriteDiffs_EmptyDiff_ClearsStaleRows_OnAcceptedResult(t *testing.T) {
 	}
 
 	// Write accepted result with empty diff (zero-file change set).
-	results := []*PRFetchResult{{
+	results := []*FetchedPR{{
 		PR:           makePR("github:o/r:22", 22, "head-22b", "base-22"),
 		DiffFiles:    []prdiff.File{}, // explicitly empty
 		DiffComputed: true,
@@ -109,7 +109,7 @@ func TestWriteDiffs_DiffNotComputed_PreservesCache(t *testing.T) {
 	// DiffComputed=false (diff generation not attempted or failed):
 	// pr_diffs must not be touched — preserve the last-known-good cache.
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	pr := makePR("github:o/r:23", 23, "head-23", "base-23")
 	mustWritePR(t, w, pr)
@@ -117,7 +117,7 @@ func TestWriteDiffs_DiffNotComputed_PreservesCache(t *testing.T) {
 	db.Exec(`INSERT INTO pr_diffs (pr_id, file_path, patch, additions, deletions) VALUES (?, 'cached.go', 'patch', 2, 0)`, pr.ID) //nolint:errcheck
 
 	// Write result without diff (DiffComputed=false).
-	results := []*PRFetchResult{{
+	results := []*FetchedPR{{
 		PR:           makePR("github:o/r:23", 23, "head-23b", "base-23"),
 		DiffComputed: false, // diff was not computed this sync cycle
 	}}
@@ -135,11 +135,11 @@ func TestWriteDiffs_AtomicWithPatchset_BaseHeadChange(t *testing.T) {
 	// When head or base changes, both patchset row and pr_diffs must advance
 	// in the same transaction. Neither should be visible independently.
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	// P1: initial state
 	pr1 := makePR("github:o/r:24", 24, "head-v1", "base-24")
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR:           pr1,
 		DiffFiles:    []prdiff.File{{FilePath: "a.go", Patch: "v1", Additions: 1}},
 		DiffComputed: true,
@@ -160,7 +160,7 @@ func TestWriteDiffs_AtomicWithPatchset_BaseHeadChange(t *testing.T) {
 
 	// P2: head changes → new patchset + new diffs in one tx
 	pr2 := makePR("github:o/r:24", 24, "head-v2", "base-24")
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR: pr2,
 		DiffFiles: []prdiff.File{
 			{FilePath: "a.go", Patch: "v2", Additions: 2},

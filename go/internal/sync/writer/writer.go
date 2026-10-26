@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"context"
@@ -29,18 +29,19 @@ type Writer struct {
 	db          *store.DB
 	emitter     *events.EventEmitter
 	classifier  *classify.EngineProvider
-	currentUser currentUserReader
+	currentUser CurrentUserReader
 	// postCommit runs after a successful tx.Commit() with the ids of the PRs
 	// written in the batch; asynchronous classification must not run inside the tx.
 	postCommit func(prIDs []string)
 }
 
-type currentUserReader interface {
+// CurrentUserReader supplies the authenticated login for mention and review tracking.
+type CurrentUserReader interface {
 	Get(ctx context.Context, provider string) (string, bool, error)
 }
 
-// NewWriter creates a database writer, using the default logger if log is nil.
-func NewWriter(log *slog.Logger, db *store.DB) *Writer {
+// New creates a database writer, using the default logger if log is nil.
+func New(log *slog.Logger, db *store.DB) *Writer {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -63,7 +64,7 @@ func (w *Writer) WithClassifier(p *classify.EngineProvider) *Writer {
 
 // WithCurrentUser attaches a current-user reader used to detect @mentions while
 // writing PRs. Nil readers leave mentioned at its database default.
-func (w *Writer) WithCurrentUser(reader currentUserReader) *Writer {
+func (w *Writer) WithCurrentUser(reader CurrentUserReader) *Writer {
 	w.currentUser = reader
 	return w
 }
@@ -101,7 +102,7 @@ func readPRSnapshot(ctx context.Context, tx *sql.Tx, prID string) (*prSnapshot, 
 
 // WriteSyncResults persists all sync results in one transaction. A failed PR
 // write rolls back its savepoint without discarding other PRs in the batch.
-func (w *Writer) WriteSyncResults(results []*PRFetchResult) error {
+func (w *Writer) WriteSyncResults(results []*FetchedPR) error {
 	return w.WriteSyncResultsContext(context.Background(), results)
 }
 
@@ -110,7 +111,7 @@ func (w *Writer) WriteSyncResults(results []*PRFetchResult) error {
 // failed critical writes roll back that PR while other PRs can still commit.
 // A failed rollback or release aborts the batch rather than commit partial data.
 // Per-comment and per-thread failures are best-effort and logged separately.
-func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*PRFetchResult) (writeErr error) {
+func (w *Writer) WriteSyncResultsContext(ctx context.Context, results []*FetchedPR) (writeErr error) {
 	if len(results) == 0 || w.db == nil {
 		return nil
 	}
@@ -189,7 +190,7 @@ type prWriteCounts struct {
 	patchsetNumber int
 }
 
-func (w *Writer) writeOnePR(ctx context.Context, batch *writerBatch, result *PRFetchResult) error {
+func (w *Writer) writeOnePR(ctx context.Context, batch *writerBatch, result *FetchedPR) error {
 	if result == nil {
 		batch.prSkipped++
 		return nil
@@ -264,7 +265,7 @@ func rollbackPRSavepoint(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-func (w *Writer) writePRData(ctx context.Context, batch *writerBatch, result *PRFetchResult) (prWriteCounts, error) {
+func (w *Writer) writePRData(ctx context.Context, batch *writerBatch, result *FetchedPR) (prWriteCounts, error) {
 	counts, err := w.writeCriticalPRData(ctx, batch.tx, result)
 	if err != nil {
 		return counts, err
@@ -283,7 +284,7 @@ func (w *Writer) writePRData(ctx context.Context, batch *writerBatch, result *PR
 	return counts, nil
 }
 
-func (w *Writer) writeCriticalPRData(ctx context.Context, tx *sql.Tx, result *PRFetchResult) (prWriteCounts, error) {
+func (w *Writer) writeCriticalPRData(ctx context.Context, tx *sql.Tx, result *FetchedPR) (prWriteCounts, error) {
 	var counts prWriteCounts
 	pr := result.PR
 	mode := hydratedWrite
@@ -350,7 +351,7 @@ func commentPatchsetNumber(comment *provider.Comment, currentNumber int) int {
 	return 0
 }
 
-func (w *Writer) writeAfterSavepoint(ctx context.Context, batch *writerBatch, result *PRFetchResult, patchsetNumber int) {
+func (w *Writer) writeAfterSavepoint(ctx context.Context, batch *writerBatch, result *FetchedPR, patchsetNumber int) {
 	w.recordGitHubReviewBaseline(ctx, batch, result)
 	if len(result.AnchorUpdates) > 0 {
 		w.writeAnchorUpdates(ctx, batch.tx, result.AnchorUpdates, patchsetNumber)
@@ -432,7 +433,7 @@ type mentionUpdate struct {
 	canClear    bool
 }
 
-func (w *Writer) updateMentioned(ctx context.Context, batch *writerBatch, result *PRFetchResult) error {
+func (w *Writer) updateMentioned(ctx context.Context, batch *writerBatch, result *FetchedPR) error {
 	pattern := batch.mentionPattern
 	if pattern == nil {
 		return nil

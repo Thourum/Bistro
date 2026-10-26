@@ -20,6 +20,7 @@ import (
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/actionqueue"
 	"github.com/itterno/bistro/internal/store/prdiff"
+	"github.com/itterno/bistro/internal/sync/writer"
 )
 
 // ExpertiseHook receives successful PR diff sync notifications for incremental expertise updates.
@@ -48,7 +49,7 @@ type Orchestrator struct {
 	reviewLogin     actions.ReviewLoginGetter
 	reviewSHAWriter actions.ReviewSHAWriter
 	// anchorResolver is optional; when set it runs on each clone after diff
-	// generation and populates PRFetchResult.AnchorUpdates.
+	// generation and populates writer.FetchedPR.AnchorUpdates.
 	anchorResolver *anchor.Resolver
 	// liveness is cancelled when this orchestrator is superseded (provider
 	// replaced or disconnected). ApplyAction checks it before executing so
@@ -58,7 +59,7 @@ type Orchestrator struct {
 	classifier *classify.EngineProvider
 	// currentUser resolves the authenticated GitHub login for mention detection
 	// during sync writes.
-	currentUser currentUserReader
+	currentUser writer.CurrentUserReader
 	// postCommit is optional; when set, writers invoke it after each committed
 	// batch with the written PR ids.
 	postCommit func(prIDs []string)
@@ -172,7 +173,7 @@ func (o *Orchestrator) WithClassifier(p *classify.EngineProvider) *Orchestrator 
 
 // WithCurrentUser attaches a current-user reader so sync writers can detect
 // mentions of the authenticated GitHub account.
-func (o *Orchestrator) WithCurrentUser(reader currentUserReader) *Orchestrator {
+func (o *Orchestrator) WithCurrentUser(reader writer.CurrentUserReader) *Orchestrator {
 	o.currentUser = reader
 	return o
 }
@@ -281,7 +282,7 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 	return result, nil
 }
 
-func (o *Orchestrator) syncListPhase(ctx context.Context, req *SyncRequest, result *SyncResult) []*PRFetchResult {
+func (o *Orchestrator) syncListPhase(ctx context.Context, req *SyncRequest, result *SyncResult) []*writer.FetchedPR {
 	log := logging.FromContext(ctx)
 	if !req.IncludePRs {
 		log.Debug("phase list-prs skipped (include_prs=false)")
@@ -297,15 +298,15 @@ func (o *Orchestrator) syncListPhase(ctx context.Context, req *SyncRequest, resu
 		return nil
 	}
 	result.PRCount = len(prs)
-	fetchedPRs := make([]*PRFetchResult, len(prs))
+	fetchedPRs := make([]*writer.FetchedPR, len(prs))
 	for i, pr := range prs {
-		fetchedPRs[i] = &PRFetchResult{PR: pr}
+		fetchedPRs[i] = &writer.FetchedPR{PR: pr}
 	}
 	log.Info("phase list-prs done", "count", len(prs), "duration_ms", phaseDuration)
 	return fetchedPRs
 }
 
-func (o *Orchestrator) syncDetailsPhase(ctx context.Context, req *SyncRequest, fetchedPRs []*PRFetchResult, result *SyncResult) []*PRFetchResult {
+func (o *Orchestrator) syncDetailsPhase(ctx context.Context, req *SyncRequest, fetchedPRs []*writer.FetchedPR, result *SyncResult) []*writer.FetchedPR {
 	log := logging.FromContext(ctx)
 	// Busy repositories use list-only rows, hydrated on demand by SyncPR.
 	if len(fetchedPRs) > hydrationThreshold {
@@ -346,7 +347,7 @@ func (o *Orchestrator) syncDetailsPhase(ctx context.Context, req *SyncRequest, f
 	return details
 }
 
-func (o *Orchestrator) syncWritePhase(ctx context.Context, fetchedPRs []*PRFetchResult, result *SyncResult) {
+func (o *Orchestrator) syncWritePhase(ctx context.Context, fetchedPRs []*writer.FetchedPR, result *SyncResult) {
 	if len(fetchedPRs) == 0 {
 		return
 	}
@@ -354,7 +355,7 @@ func (o *Orchestrator) syncWritePhase(ctx context.Context, fetchedPRs []*PRFetch
 	log.Debug("phase write-db start", "pr_count", len(fetchedPRs))
 	started := time.Now()
 	o.emitter.Emit(events.NewProgressEvent("writing_database", 0, len(fetchedPRs)))
-	writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
+	writer := writer.New(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
 	if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
 		o.recordSyncPhaseError(log, result, syncPhaseError{phase: "phase write-db failed", message: "failed to write results", cause: err, durationMS: time.Since(started).Milliseconds()})
 		return
@@ -396,7 +397,7 @@ func (o *Orchestrator) SyncPR(ctx context.Context, prID string) error {
 		return fmt.Errorf("hydrate %s: %w", prID, results[0].Error)
 	}
 
-	writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
+	writer := writer.New(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
 	if err := writer.WriteSyncResultsContext(ctx, results); err != nil {
 		return fmt.Errorf("write hydrated PR %s: %w", prID, err)
 	}

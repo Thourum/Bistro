@@ -13,6 +13,7 @@ import (
 	"github.com/itterno/bistro/internal/provider/mock"
 
 	"github.com/itterno/bistro/internal/store/storetest"
+	"github.com/itterno/bistro/internal/sync/writer"
 )
 
 // TestOrchestratorRateLimitDetection verifies that a 429 ProviderError from
@@ -297,7 +298,7 @@ func TestSyncPRHydratesListOnlyRow(t *testing.T) {
 	orch := NewOrchestrator(nil, mockProv, db, nil)
 
 	// Seed a list-only row.
-	if err := NewWriter(nil, db).WriteSyncResults([]*PRFetchResult{{PR: pr, ListOnly: true}}); err != nil {
+	if err := writer.New(nil, db).WriteSyncResults([]*writer.FetchedPR{{PR: pr, ListOnly: true}}); err != nil {
 		t.Fatalf("seed list-only row: %v", err)
 	}
 

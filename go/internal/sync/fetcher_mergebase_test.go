@@ -11,6 +11,7 @@ import (
 	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/sync/writer"
 )
 
 func TestGenerateDiffUsesMergeBaseForDiffAndAnchors(t *testing.T) {
@@ -58,7 +59,7 @@ func TestGenerateDiffUsesMergeBaseForDiffAndAnchors(t *testing.T) {
 
 			position := 4 // Three-dot diff: two context lines, deletion, then addition.
 			deletionPosition := 3
-			result := &PRFetchResult{
+			result := &writer.FetchedPR{
 				PR: &provider.PR{BaseSHA: baseSHA, HeadSHA: headSHA, BaseBranch: baseBranch, Number: prNumber},
 				Comments: []*provider.Comment{{
 					ID: "review-comment", Kind: "review", CommitSHA: headSHA,
@@ -115,7 +116,7 @@ func TestGenerateDiffFallsBackToBaseTipForUnrelatedHistory(t *testing.T) {
 	}
 	writeExpertiseHookFile(t, dir, "unrelated.txt", "unrelated\n")
 	headSHA := commitExpertiseHookRepo(t, worktree, "unrelated root")
-	result := &PRFetchResult{PR: &provider.PR{BaseSHA: baseSHA, HeadSHA: headSHA}}
+	result := &writer.FetchedPR{PR: &provider.PR{BaseSHA: baseSHA, HeadSHA: headSHA}}
 	orchestrator := &Orchestrator{git: git.NewClient(nil)}
 	if err := orchestrator.generateDiff(context.Background(), result, &git.CloneResult{LocalPath: dir}, silentLog()); err != nil {
 		t.Fatalf("generateDiff fallback: %v", err)

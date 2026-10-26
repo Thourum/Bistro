@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"context"
@@ -45,7 +45,7 @@ func TestRollbackPRSavepointReportsMissingSavepoint(t *testing.T) {
 // writes are inside the same savepoint boundary.
 func TestWriteDiffs_InsertFailure_SavepointRollsBackAll(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	// Seed a PR and its diff cache.
 	pr := makePR("github:o/r:30", 30, "head-30", "base-30")
@@ -65,7 +65,7 @@ func TestWriteDiffs_InsertFailure_SavepointRollsBackAll(t *testing.T) {
 		{FilePath: "dup.go", Patch: "patch-b", Additions: 2}, // duplicate: will fail
 	}
 	newPR := makePR("github:o/r:30", 30, "head-30b", "base-30")
-	results := []*PRFetchResult{{
+	results := []*FetchedPR{{
 		PR:           newPR,
 		DiffFiles:    badDiffs,
 		DiffComputed: true,
@@ -107,7 +107,7 @@ func TestWriteDiffs_InsertFailure_SavepointRollsBackAll(t *testing.T) {
 // so the prs table is not advanced without a matching patchset.
 func TestWritePR_PatchsetFailure_SavepointRollsBackPRRow(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	// Drop the patchsets table to force recordPatchsetIfChanged to fail.
 	if _, err := db.Exec("DROP TABLE patchsets"); err != nil {
@@ -115,7 +115,7 @@ func TestWritePR_PatchsetFailure_SavepointRollsBackPRRow(t *testing.T) {
 	}
 
 	pr := makePR("github:o/r:31", 31, "head-31", "base-31")
-	results := []*PRFetchResult{{PR: pr}}
+	results := []*FetchedPR{{PR: pr}}
 
 	// Must not return a fatal batch error (one PR failed, batch continues).
 	if err := w.WriteSyncResults(results); err != nil {
@@ -134,7 +134,7 @@ func TestWritePR_PatchsetFailure_SavepointRollsBackPRRow(t *testing.T) {
 // one PR does not roll back other PRs in the same batch.
 func TestWriteSavepoint_OtherPRsUnaffected(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	goodPR := makePR("github:o/r:40", 40, "head-40", "base-40")
 	badDiffs := []prdiff.File{
@@ -143,7 +143,7 @@ func TestWriteSavepoint_OtherPRsUnaffected(t *testing.T) {
 	}
 	failPR := makePR("github:o/r:41", 41, "head-41", "base-41")
 
-	results := []*PRFetchResult{
+	results := []*FetchedPR{
 		{PR: goodPR},
 		{PR: failPR, DiffFiles: badDiffs, DiffComputed: true},
 	}

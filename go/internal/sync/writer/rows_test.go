@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"testing"
@@ -23,7 +23,7 @@ func TestWritePRRowListOnlyRevisionSemantics(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db := storetest.Open(t)
-			writer := NewWriter(nil, db)
+			writer := New(nil, db)
 			now := time.Now().UTC()
 			initialPR := &provider.PR{
 				ID: "github:org/repo:9", Provider: "github", Owner: "org", Repo: "repo",
@@ -33,7 +33,7 @@ func TestWritePRRowListOnlyRevisionSemantics(t *testing.T) {
 				ReviewStatus: "approved", ApprovedBy: "reviewer", ChangesRequestedBy: "prior-requester",
 				RequestedReviewers: []string{"next-reviewer"},
 			}
-			if err := writer.WriteSyncResults([]*PRFetchResult{{PR: initialPR}}); err != nil {
+			if err := writer.WriteSyncResults([]*FetchedPR{{PR: initialPR}}); err != nil {
 				t.Fatalf("initial full write: %v", err)
 			}
 
@@ -43,7 +43,7 @@ func TestWritePRRowListOnlyRevisionSemantics(t *testing.T) {
 				BaseBranch: initialPR.BaseBranch, HeadBranch: initialPR.HeadBranch, BaseSHA: tt.baseSHA, HeadSHA: tt.headSHA,
 				CreatedAt: initialPR.CreatedAt, UpdatedAt: initialPR.UpdatedAt,
 			}
-			if err := writer.WriteSyncResults([]*PRFetchResult{{PR: listPR, ListOnly: true}}); err != nil {
+			if err := writer.WriteSyncResults([]*FetchedPR{{PR: listPR, ListOnly: true}}); err != nil {
 				t.Fatalf("list-only write: %v", err)
 			}
 
@@ -91,7 +91,7 @@ func TestWritePRRowListOnlyRevisionSemantics(t *testing.T) {
 				CreatedAt: listPR.CreatedAt, UpdatedAt: listPR.UpdatedAt, CommentCount: 2, CIStatus: "pending",
 				ReviewStatus: "changes_requested", ChangesRequestedBy: "new-reviewer",
 			}
-			if err := writer.WriteSyncResults([]*PRFetchResult{{PR: fullPR}}); err != nil {
+			if err := writer.WriteSyncResults([]*FetchedPR{{PR: fullPR}}); err != nil {
 				t.Fatalf("rehydrating full write: %v", err)
 			}
 			if err := db.QueryRow(`SELECT hydrated, comment_count, ci_status, review_status, changes_requested_by FROM prs WHERE id = ?`, initialPR.ID).Scan(

@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"context"
@@ -14,12 +14,12 @@ import (
 
 func TestWriteAnchorUpdates_WritesAnchoredLine(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	pr := makePR("github:o/r:50", 50, "sha-head", "sha-base")
 	pos := 5
 	// Write PR with a review comment.
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR: pr,
 		Comments: []*provider.Comment{{
 			ID:        "rc-1",
@@ -37,7 +37,7 @@ func TestWriteAnchorUpdates_WritesAnchoredLine(t *testing.T) {
 	}
 
 	// Now write with AnchorUpdates: anchored at line 12.
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR: makePR("github:o/r:50", 50, "sha-head", "sha-base"),
 		AnchorUpdates: []anchor.Result{{
 			CommentID:    "rc-1",
@@ -67,11 +67,11 @@ func TestWriteAnchorUpdates_WritesAnchoredLine(t *testing.T) {
 
 func TestWriteAnchorUpdates_OutdatedComment(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	pr := makePR("github:o/r:51", 51, "sha-h51", "sha-b51")
 	pos := 3
-	w.WriteSyncResults([]*PRFetchResult{{
+	w.WriteSyncResults([]*FetchedPR{{
 		PR: pr,
 		Comments: []*provider.Comment{{
 			ID: "rc-2", PRID: pr.ID, Author: "bob", Body: "q",
@@ -80,7 +80,7 @@ func TestWriteAnchorUpdates_OutdatedComment(t *testing.T) {
 		}},
 	}}) //nolint:errcheck
 
-	w.WriteSyncResults([]*PRFetchResult{{
+	w.WriteSyncResults([]*FetchedPR{{
 		PR: makePR("github:o/r:51", 51, "sha-h51", "sha-b51"),
 		AnchorUpdates: []anchor.Result{{
 			CommentID:        "rc-2",
@@ -108,11 +108,11 @@ func TestWriteAnchorUpdates_OutdatedComment(t *testing.T) {
 
 func TestWriteAnchorUpdates_NoUpdates_ColumnsRemainNull(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	pr := makePR("github:o/r:52", 52, "sha-h52", "sha-b52")
 	pos := 2
-	w.WriteSyncResults([]*PRFetchResult{{
+	w.WriteSyncResults([]*FetchedPR{{
 		PR: pr,
 		Comments: []*provider.Comment{{
 			ID: "rc-3", PRID: pr.ID, Author: "carol", Body: "x",
@@ -122,7 +122,7 @@ func TestWriteAnchorUpdates_NoUpdates_ColumnsRemainNull(t *testing.T) {
 	}}) //nolint:errcheck
 
 	// Sync with no AnchorUpdates (e.g. clone unavailable).
-	w.WriteSyncResults([]*PRFetchResult{{
+	w.WriteSyncResults([]*FetchedPR{{
 		PR:            makePR("github:o/r:52", 52, "sha-h52b", "sha-b52"),
 		AnchorUpdates: nil, // no updates
 	}}) //nolint:errcheck
@@ -138,11 +138,11 @@ func TestWriteAnchorUpdates_ErrorSkippedSilently(t *testing.T) {
 	// AnchorUpdate referencing a non-existent comment ID is a no-op (UPDATE 0 rows).
 	// The writer must not fail the batch for this.
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	pr := makePR("github:o/r:53", 53, "sha-h53", "sha-b53")
 	mustWritePR(t, w, pr)
 
-	results := []*PRFetchResult{{
+	results := []*FetchedPR{{
 		PR: makePR("github:o/r:53", 53, "sha-h53", "sha-b53"),
 		AnchorUpdates: []anchor.Result{{
 			CommentID:    "nonexistent-comment",
@@ -166,12 +166,12 @@ func TestWriteAnchorUpdates_ErrorSkippedSilently(t *testing.T) {
 // without requiring a second sync.
 func TestWriteAnchorUpdates_FirstSync_GetsCurrentPatchsetNum(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	// First sync: write PR + review comment + anchor update with PatchsetNumber=0.
 	pr := makePR("github:o/r:80", 80, "sha-head-80", "sha-base-80")
 	pos := 3
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR: pr,
 		Comments: []*provider.Comment{{
 			ID:        "rc-first-sync",
@@ -235,13 +235,13 @@ func TestWriteAnchorUpdates_FirstSync_GetsCurrentPatchsetNum(t *testing.T) {
 // with the current patchset number, preserving its correct historical identity.
 func TestWriteAnchorUpdates_OriginalPosition_KeepsOriginalPatchsetNum(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	// Set up: two patchsets. Current PR is on P2; the comment was made on P1.
 	pr := makePR("github:o/r:81", 81, "sha-head-81", "sha-base-81")
 
 	// First write: record P1 (initial patchset).
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR: makePR("github:o/r:81", 81, "sha-head-81a", "sha-base-81"),
 		Comments: []*provider.Comment{{
 			ID: "rc-orig-ps", PRID: pr.ID, Author: "bob", Body: "q",
@@ -258,7 +258,7 @@ func TestWriteAnchorUpdates_OriginalPosition_KeepsOriginalPatchsetNum(t *testing
 
 	// Second write: PR moves to new head (P2 = currentPatchsetNum=2).
 	// The comment is now outdated (original-position), anchor was resolved for P1.
-	if err := w.WriteSyncResults([]*PRFetchResult{{
+	if err := w.WriteSyncResults([]*FetchedPR{{
 		PR: pr, // sha-head-81, sha-base-81 → P2
 		AnchorUpdates: []anchor.Result{{
 			CommentID:        "rc-orig-ps",
@@ -285,7 +285,7 @@ func TestWriteAnchorUpdates_OriginalPosition_KeepsOriginalPatchsetNum(t *testing
 // is NULL — handler treats it as stale, which is the correct safe behavior.
 func TestWriteAnchorUpdates_BothZero_WritesNull(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 
 	// Write a PR without a patchset (edge case: recordPatchsetIfChanged failed
 	// would trigger savepoint rollback, so in practice currentPatchsetNum > 0

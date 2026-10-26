@@ -9,6 +9,7 @@ import (
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/sync/writer"
 )
 
 // SupportsInboxDiscovery reports whether the provider can discover relevant PRs
@@ -106,7 +107,7 @@ func (o *Orchestrator) writeDiscoveredPRs(ctx context.Context, scope string, prs
 		result.UpdatedPRs++
 		result.CommentCount += len(detail.Comments)
 	}
-	writer := NewWriter(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
+	writer := writer.New(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
 	if err := writer.WriteSyncResultsContext(ctx, details); err != nil {
 		return o.recordInboxCursorError(ctx, scope, err)
 	}

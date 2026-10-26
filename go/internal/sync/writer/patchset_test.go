@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"context"
@@ -19,21 +19,21 @@ func patchsetTestPR(baseSHA, headSHA string) *provider.PR {
 	}
 }
 
-func diffResult(pr *provider.PR, mergeBase string, patchIDs map[string]string) *PRFetchResult {
+func diffResult(pr *provider.PR, mergeBase string, patchIDs map[string]string) *FetchedPR {
 	files := make([]prdiff.File, 0, len(patchIDs))
 	for path, patchID := range patchIDs {
 		files = append(files, prdiff.File{FilePath: path, Patch: "p", PatchID: patchID})
 	}
-	return &PRFetchResult{PR: pr, DiffComputed: true, DiffFiles: files, MergeBaseSHA: mergeBase}
+	return &FetchedPR{PR: pr, DiffComputed: true, DiffFiles: files, MergeBaseSHA: mergeBase}
 }
 
 func TestBaseTipMoveDoesNotRecordPatchset(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	ctx := context.Background()
-	write := func(result *PRFetchResult) {
+	write := func(result *FetchedPR) {
 		t.Helper()
-		if err := w.WriteSyncResults([]*PRFetchResult{result}); err != nil {
+		if err := w.WriteSyncResults([]*FetchedPR{result}); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 	}
@@ -67,12 +67,12 @@ func TestBaseTipMoveDoesNotRecordPatchset(t *testing.T) {
 
 func TestPatchsetWithoutDiffIsBackfilled(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	pr := patchsetTestPR("tip-1", "h1")
-	if err := w.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{{PR: pr}}); err != nil {
 		t.Fatalf("write without diff: %v", err)
 	}
-	if err := w.WriteSyncResults([]*PRFetchResult{diffResult(pr, "mb-1", map[string]string{"a.go": "pa"})}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{diffResult(pr, "mb-1", map[string]string{"a.go": "pa"})}); err != nil {
 		t.Fatalf("write with diff: %v", err)
 	}
 	patchsets, err := db.ListPatchsets(context.Background(), pr.ID)
@@ -87,13 +87,13 @@ func TestPatchsetWithoutDiffIsBackfilled(t *testing.T) {
 
 func TestRecordPatchsetReturnWithoutFingerprintsIsBackfilled(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	ctx := context.Background()
 	mustWritePR(t, w, patchsetTestPR("tip-1", "h1"))
 	mustWritePR(t, w, patchsetTestPR("tip-2", "h2"))
 	returned := diffResult(patchsetTestPR("tip-1", "h1"), "mb-1", map[string]string{"a.go": "pa"})
 	for range 2 {
-		if err := w.WriteSyncResults([]*PRFetchResult{returned}); err != nil {
+		if err := w.WriteSyncResults([]*FetchedPR{returned}); err != nil {
 			t.Fatalf("write returned patchset: %v", err)
 		}
 	}
@@ -116,11 +116,11 @@ func TestRecordPatchsetReturnWithoutFingerprintsIsBackfilled(t *testing.T) {
 
 func TestRecordPatchsetUnknownMergeBaseDefersFingerprints(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	ctx := context.Background()
 	pr := patchsetTestPR("tip-1", "h1")
 	fallback := diffResult(pr, "", map[string]string{"upstream.go": "fallback-patch"})
-	if err := w.WriteSyncResults([]*PRFetchResult{fallback}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{fallback}); err != nil {
 		t.Fatalf("write fallback diff: %v", err)
 	}
 	current, ok, err := db.CurrentPatchset(ctx, pr.ID)
@@ -135,7 +135,7 @@ func TestRecordPatchsetUnknownMergeBaseDefersFingerprints(t *testing.T) {
 	if err != nil || len(cached) != 1 || cached[0].FilePath != "upstream.go" {
 		t.Fatalf("fallback cache = %+v (err %v), want upstream.go", cached, err)
 	}
-	if err := w.WriteSyncResults([]*PRFetchResult{diffResult(pr, "mb-1", map[string]string{"pr.go": "pr-patch"})}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{diffResult(pr, "mb-1", map[string]string{"pr.go": "pr-patch"})}); err != nil {
 		t.Fatalf("write known-base diff: %v", err)
 	}
 	patchsets, err := db.ListPatchsets(ctx, pr.ID)
@@ -154,9 +154,9 @@ func TestRecordPatchsetUnknownMergeBaseDefersFingerprints(t *testing.T) {
 
 func TestRecordPatchsetReturnToEarlierPairUsesLatestMatchingHead(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	ctx := context.Background()
-	results := []*PRFetchResult{
+	results := []*FetchedPR{
 		diffResult(patchsetTestPR("tip-1", "h1"), "mb-1", map[string]string{"a.go": "pa"}),
 		diffResult(patchsetTestPR("tip-2", "h1"), "mb-2", map[string]string{"a.go": "pa2"}),
 		diffResult(patchsetTestPR("tip-3", "h2"), "mb-2", map[string]string{"a.go": "pa3"}),
@@ -167,7 +167,7 @@ func TestRecordPatchsetReturnToEarlierPairUsesLatestMatchingHead(t *testing.T) {
 		ID: "return-comment", Author: "reviewer", Kind: "review", Position: &position,
 	}}
 	for _, result := range results {
-		if err := w.WriteSyncResults([]*PRFetchResult{result}); err != nil {
+		if err := w.WriteSyncResults([]*FetchedPR{result}); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 	}
@@ -190,16 +190,16 @@ func TestRecordPatchsetReturnToEarlierPairUsesLatestMatchingHead(t *testing.T) {
 
 func TestRecordPatchsetKnownMergeBaseChangeAndFingerprintOnce(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	ctx := context.Background()
-	results := []*PRFetchResult{
+	results := []*FetchedPR{
 		diffResult(patchsetTestPR("tip-1", "h1"), "mb-1", map[string]string{"a.go": "pa"}),
 		diffResult(patchsetTestPR("tip-2", "h1"), "mb-2", map[string]string{"b.go": "pb"}),
 		diffResult(patchsetTestPR("tip-2", "h1"), "mb-2", map[string]string{"b.go": "pb"}),
 		{PR: patchsetTestPR("tip-3", "h1")},
 	}
 	for _, result := range results {
-		if err := w.WriteSyncResults([]*PRFetchResult{result}); err != nil {
+		if err := w.WriteSyncResults([]*FetchedPR{result}); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 	}
@@ -226,9 +226,9 @@ func TestRecordPatchsetKnownMergeBaseChangeAndFingerprintOnce(t *testing.T) {
 
 func TestRecordPatchsetEmptyDiffHasFingerprints(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
-	result := &PRFetchResult{PR: patchsetTestPR("tip-1", "h1"), DiffComputed: true, MergeBaseSHA: "mb-1"}
-	if err := w.WriteSyncResults([]*PRFetchResult{result}); err != nil {
+	w := New(nil, db)
+	result := &FetchedPR{PR: patchsetTestPR("tip-1", "h1"), DiffComputed: true, MergeBaseSHA: "mb-1"}
+	if err := w.WriteSyncResults([]*FetchedPR{result}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	current, ok, err := db.CurrentPatchset(context.Background(), result.PR.ID)
@@ -243,10 +243,10 @@ func TestRecordPatchsetEmptyDiffHasFingerprints(t *testing.T) {
 
 func TestRecordPatchsetFingerprintFailureRollsBackPR(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	ctx := context.Background()
 	initial := diffResult(patchsetTestPR("tip-1", "h1"), "mb-1", map[string]string{"a.go": "pa"})
-	if err := w.WriteSyncResults([]*PRFetchResult{initial}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{initial}); err != nil {
 		t.Fatalf("initial write: %v", err)
 	}
 	if _, err := db.Exec(`CREATE TRIGGER reject_fingerprints BEFORE INSERT ON patchset_files
@@ -254,7 +254,7 @@ func TestRecordPatchsetFingerprintFailureRollsBackPR(t *testing.T) {
 		t.Fatalf("create trigger: %v", err)
 	}
 	failed := diffResult(patchsetTestPR("tip-2", "h2"), "mb-2", map[string]string{"b.go": "pb"})
-	if err := w.WriteSyncResults([]*PRFetchResult{failed}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{failed}); err != nil {
 		t.Fatalf("batch should skip failed PR: %v", err)
 	}
 	current, ok, err := db.CurrentPatchset(ctx, initial.PR.ID)
@@ -273,7 +273,7 @@ func TestRecordPatchsetFingerprintFailureRollsBackPR(t *testing.T) {
 
 func TestWriterGitHubReviewBaselinePreservesNewerLocalReview(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "me", ok: true})
+	w := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "me", ok: true})
 	ctx := context.Background()
 	pr := patchsetTestPR("tip-1", "h1")
 	mustWritePR(t, w, pr)
@@ -284,10 +284,10 @@ func TestWriterGitHubReviewBaselinePreservesNewerLocalReview(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("record local baseline: %v", err)
 	}
-	result := &PRFetchResult{PR: pr, Reviews: []*provider.Review{{
+	result := &FetchedPR{PR: pr, Reviews: []*provider.Review{{
 		Author: "me", State: "approved", CommitID: "older-head", SubmittedAt: reviewedAt.Add(-time.Hour),
 	}}}
-	if err := w.WriteSyncResults([]*PRFetchResult{result}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{result}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	record, ok, err := db.GetLastReviewed(ctx, pr.ID, "me")
@@ -298,16 +298,16 @@ func TestWriterGitHubReviewBaselinePreservesNewerLocalReview(t *testing.T) {
 
 func TestWriterGitHubReviewBaselineFailureDoesNotDiscardPR(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "me", ok: true})
+	w := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "me", ok: true})
 	if _, err := db.Exec(`CREATE TRIGGER reject_review_baseline BEFORE INSERT ON last_reviewed_sha
 		BEGIN SELECT RAISE(ABORT, 'baseline insert failed'); END`); err != nil {
 		t.Fatalf("create trigger: %v", err)
 	}
-	result := &PRFetchResult{PR: patchsetTestPR("tip-1", "h1"), Reviews: []*provider.Review{{
+	result := &FetchedPR{PR: patchsetTestPR("tip-1", "h1"), Reviews: []*provider.Review{{
 		Author: "me", State: "approved", CommitID: "h1",
 		SubmittedAt: time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC),
 	}}}
-	if err := w.WriteSyncResults([]*PRFetchResult{result}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{result}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	current, ok, err := db.CurrentPatchset(context.Background(), result.PR.ID)
@@ -318,9 +318,9 @@ func TestWriterGitHubReviewBaselineFailureDoesNotDiscardPR(t *testing.T) {
 
 func TestWriterRecordsLatestGitHubReviewAsBaseline(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "me", ok: true})
+	w := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "me", ok: true})
 	reviewedAt := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
-	result := &PRFetchResult{PR: patchsetTestPR("tip-1", "h2"), Reviews: []*provider.Review{
+	result := &FetchedPR{PR: patchsetTestPR("tip-1", "h2"), Reviews: []*provider.Review{
 		{Author: "me", State: "approved", CommitID: "h1", SubmittedAt: reviewedAt.Add(-time.Hour)},
 		{Author: "Me", State: "commented", CommitID: "h2", SubmittedAt: reviewedAt},
 		{Author: "me", State: "approved", CommitID: "older", SubmittedAt: reviewedAt.Add(-time.Hour)},
@@ -330,7 +330,7 @@ func TestWriterRecordsLatestGitHubReviewAsBaseline(t *testing.T) {
 		{Author: "me", State: "commented", CommitID: "h3"},
 		{Author: "other", State: "approved", CommitID: "h3", SubmittedAt: reviewedAt.Add(time.Hour)},
 	}}
-	if err := w.WriteSyncResults([]*PRFetchResult{result}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{result}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	record, ok, err := db.GetLastReviewed(context.Background(), result.PR.ID, "me")

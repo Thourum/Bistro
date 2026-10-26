@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ import (
 // mustWritePR writes a single PR via WriteSyncResults, failing the test on error.
 func mustWritePR(t *testing.T, w *Writer, pr *provider.PR) {
 	t.Helper()
-	if err := w.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{{PR: pr}}); err != nil {
 		t.Fatalf("mustWritePR %s: %v", pr.ID, err)
 	}
 }
@@ -26,8 +26,8 @@ func TestWriterCreation(t *testing.T) {
 	}
 }
 
-func TestPRFetchResultValidation(t *testing.T) {
-	result := &PRFetchResult{
+func TestFetchedPRValidation(t *testing.T) {
+	result := &FetchedPR{
 		PR: &provider.PR{
 			ID:     "github:org/repo:123",
 			Number: 123,
@@ -47,7 +47,7 @@ func TestPRFetchResultValidation(t *testing.T) {
 }
 
 func TestSyncResultAggregation(t *testing.T) {
-	results := []*PRFetchResult{
+	results := []*FetchedPR{
 		{
 			PR:       &provider.PR{ID: "1", Number: 1},
 			Comments: []*provider.Comment{{ID: "c1"}},
@@ -69,8 +69,8 @@ func TestSyncResultAggregation(t *testing.T) {
 }
 
 func TestWriterSkipsNilResults(t *testing.T) {
-	writer := NewWriter(nil, nil)
-	results := []*PRFetchResult{nil, nil}
+	writer := New(nil, nil)
+	results := []*FetchedPR{nil, nil}
 	err := writer.WriteSyncResults(results)
 	if err != nil {
 		t.Errorf("expected no error for nil results, got %v", err)
@@ -78,8 +78,8 @@ func TestWriterSkipsNilResults(t *testing.T) {
 }
 
 func TestWriterEmptyResults(t *testing.T) {
-	writer := NewWriter(nil, nil)
-	err := writer.WriteSyncResults([]*PRFetchResult{})
+	writer := New(nil, nil)
+	err := writer.WriteSyncResults([]*FetchedPR{})
 	if err != nil {
 		t.Errorf("expected no error for empty results, got %v", err)
 	}
@@ -89,7 +89,7 @@ func TestWriterEmptyResults(t *testing.T) {
 // PR and comment rows into the database (C1 regression test).
 func TestWriteSyncResultsActuallyWrites(t *testing.T) {
 	db := storetest.Open(t)
-	writer := NewWriter(nil, db)
+	writer := New(nil, db)
 
 	now := time.Now().UTC()
 	pr := &provider.PR{
@@ -117,7 +117,7 @@ func TestWriteSyncResultsActuallyWrites(t *testing.T) {
 		UpdatedAt: now,
 	}
 
-	results := []*PRFetchResult{
+	results := []*FetchedPR{
 		{PR: pr, Comments: []*provider.Comment{comment}},
 	}
 
@@ -156,7 +156,7 @@ func TestWriteSyncResultsActuallyWrites(t *testing.T) {
 // writer after the PR row exists, avoiding pr_diffs' foreign-key ordering bug.
 func TestWriteSyncResultsWritesDiffsAfterPR(t *testing.T) {
 	db := storetest.Open(t)
-	writer := NewWriter(nil, db)
+	writer := New(nil, db)
 
 	now := time.Now().UTC()
 	pr := &provider.PR{
@@ -176,7 +176,7 @@ func TestWriteSyncResultsWritesDiffsAfterPR(t *testing.T) {
 		UpdatedAt:  now,
 	}
 
-	results := []*PRFetchResult{
+	results := []*FetchedPR{
 		{
 			PR: pr,
 			DiffFiles: []prdiff.File{
@@ -212,7 +212,7 @@ func TestWriteSyncResultsWritesDiffsAfterPR(t *testing.T) {
 // mutable fields rather than erroring on the unique constraint.
 func TestWriteSyncResultsUpsert(t *testing.T) {
 	db := storetest.Open(t)
-	writer := NewWriter(nil, db)
+	writer := New(nil, db)
 
 	now := time.Now().UTC()
 	pr := &provider.PR{
@@ -232,7 +232,7 @@ func TestWriteSyncResultsUpsert(t *testing.T) {
 		UpdatedAt:  now,
 	}
 
-	first := []*PRFetchResult{{PR: pr}}
+	first := []*FetchedPR{{PR: pr}}
 	if err := writer.WriteSyncResults(first); err != nil {
 		t.Fatalf("first write error: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestWriteSyncResultsUpsert(t *testing.T) {
 	updated := *pr
 	updated.Title = "Updated title"
 	updated.State = "closed"
-	second := []*PRFetchResult{{PR: &updated}}
+	second := []*FetchedPR{{PR: &updated}}
 	if err := writer.WriteSyncResults(second); err != nil {
 		t.Fatalf("second write error: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestWriteSyncResultsUpsert(t *testing.T) {
 // Error field are skipped without aborting the whole batch.
 func TestWriteSyncResultsSkipsErrorResults(t *testing.T) {
 	db := storetest.Open(t)
-	writer := NewWriter(nil, db)
+	writer := New(nil, db)
 
 	now := time.Now().UTC()
 	goodPR := &provider.PR{
@@ -282,7 +282,7 @@ func TestWriteSyncResultsSkipsErrorResults(t *testing.T) {
 		UpdatedAt:  now,
 	}
 
-	results := []*PRFetchResult{
+	results := []*FetchedPR{
 		{PR: nil, Error: errors.New("fetch failed")},
 		{PR: goodPR},
 	}

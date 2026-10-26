@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"context"
@@ -53,9 +53,9 @@ func mentionedValue(t *testing.T, db *store.DB, prID string) int {
 func TestWriterSetsMentionedFromPRBody(t *testing.T) {
 	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-body", "hey @alice please look")
-	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
+	writer := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 
-	if err := writer.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
+	if err := writer.WriteSyncResults([]*FetchedPR{{PR: pr}}); err != nil {
 		t.Fatalf("WriteSyncResults: %v", err)
 	}
 
@@ -67,7 +67,7 @@ func TestWriterSetsMentionedFromPRBody(t *testing.T) {
 func TestWriterSetsMentionedFromComment(t *testing.T) {
 	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-comment", "no mention here")
-	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
+	writer := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 	comment := &provider.Comment{
 		ID:        "mention-comment",
 		PRID:      pr.ID,
@@ -77,7 +77,7 @@ func TestWriterSetsMentionedFromComment(t *testing.T) {
 		UpdatedAt: mustTime(),
 	}
 
-	if err := writer.WriteSyncResults([]*PRFetchResult{{PR: pr, Comments: []*provider.Comment{comment}}}); err != nil {
+	if err := writer.WriteSyncResults([]*FetchedPR{{PR: pr, Comments: []*provider.Comment{comment}}}); err != nil {
 		t.Fatalf("WriteSyncResults: %v", err)
 	}
 
@@ -100,9 +100,9 @@ func TestWriterMentionedMatchesCaseInsensitiveExactLogin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			db := storetest.Open(t)
 			pr := mentionedTestPR("github:org/repo:mention-"+tt.name, tt.body)
-			writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
+			writer := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 
-			if err := writer.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
+			if err := writer.WriteSyncResults([]*FetchedPR{{PR: pr}}); err != nil {
 				t.Fatalf("WriteSyncResults: %v", err)
 			}
 
@@ -116,9 +116,9 @@ func TestWriterMentionedMatchesCaseInsensitiveExactLogin(t *testing.T) {
 func TestWriterLeavesMentionedUnsetWithoutCurrentUser(t *testing.T) {
 	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-no-user", "hey @alice please look")
-	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{})
+	writer := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{})
 
-	if err := writer.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
+	if err := writer.WriteSyncResults([]*FetchedPR{{PR: pr}}); err != nil {
 		t.Fatalf("WriteSyncResults: %v", err)
 	}
 
@@ -130,9 +130,9 @@ func TestWriterLeavesMentionedUnsetWithoutCurrentUser(t *testing.T) {
 func TestWriterPersistsPRWhenCurrentUserLookupFails(t *testing.T) {
 	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-lookup-error", "hey @alice please look")
-	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{err: errors.New("keyring unavailable")})
+	writer := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{err: errors.New("keyring unavailable")})
 
-	if err := writer.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
+	if err := writer.WriteSyncResults([]*FetchedPR{{PR: pr}}); err != nil {
 		t.Fatalf("WriteSyncResults() error = %v, want nil when current-user lookup fails", err)
 	}
 
@@ -149,14 +149,14 @@ func TestWriterPreservesMentionedWhenCurrentUserLookupFails(t *testing.T) {
 	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-preserve-on-error", "hey @alice please look")
 
-	okWriter := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
+	okWriter := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 	mustWritePR(t, okWriter, pr)
 	if got := mentionedValue(t, db, pr.ID); got != 1 {
 		t.Fatalf("precondition mentioned = %d, want 1", got)
 	}
 
-	failingWriter := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{err: errors.New("keyring unavailable")})
-	if err := failingWriter.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
+	failingWriter := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{err: errors.New("keyring unavailable")})
+	if err := failingWriter.WriteSyncResults([]*FetchedPR{{PR: pr}}); err != nil {
 		t.Fatalf("WriteSyncResults() error = %v, want nil when current-user lookup fails", err)
 	}
 	if got := mentionedValue(t, db, pr.ID); got != 1 {
@@ -167,7 +167,7 @@ func TestWriterPreservesMentionedWhenCurrentUserLookupFails(t *testing.T) {
 func TestWriterSetsMentionedFromThreadComment(t *testing.T) {
 	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-thread", "no mention here")
-	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
+	writer := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 	thread := &provider.ReviewThread{
 		ID:   "mention-thread",
 		PRID: pr.ID,
@@ -182,7 +182,7 @@ func TestWriterSetsMentionedFromThreadComment(t *testing.T) {
 		}},
 	}
 
-	if err := writer.WriteSyncResults([]*PRFetchResult{{
+	if err := writer.WriteSyncResults([]*FetchedPR{{
 		PR: pr, Threads: []*provider.ReviewThread{thread}, CommentsFetched: true, ThreadsFetched: true,
 	}}); err != nil {
 		t.Fatalf("WriteSyncResults: %v", err)
@@ -196,7 +196,7 @@ func TestWriterSetsMentionedFromThreadComment(t *testing.T) {
 func TestWriterClearsMentionedAfterAllCommentSourcesRefresh(t *testing.T) {
 	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-clear", "no mention here")
-	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
+	writer := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 	comment := &provider.Comment{
 		ID:        "mention-clear-comment",
 		PRID:      pr.ID,
@@ -206,14 +206,14 @@ func TestWriterClearsMentionedAfterAllCommentSourcesRefresh(t *testing.T) {
 		UpdatedAt: mustTime(),
 	}
 
-	if err := writer.WriteSyncResults([]*PRFetchResult{{
+	if err := writer.WriteSyncResults([]*FetchedPR{{
 		PR: pr, Comments: []*provider.Comment{comment}, CommentsFetched: true, ThreadsFetched: true,
 	}}); err != nil {
 		t.Fatalf("initial WriteSyncResults: %v", err)
 	}
 
 	refreshedPR := mentionedTestPR(pr.ID, "no mention here")
-	if err := writer.WriteSyncResults([]*PRFetchResult{{
+	if err := writer.WriteSyncResults([]*FetchedPR{{
 		PR: refreshedPR, CommentsFetched: true, ThreadsFetched: true,
 	}}); err != nil {
 		t.Fatalf("refreshed WriteSyncResults: %v", err)
@@ -227,7 +227,7 @@ func TestWriterClearsMentionedAfterAllCommentSourcesRefresh(t *testing.T) {
 func TestWriterPreservesCommentMentionWithoutCommentRefresh(t *testing.T) {
 	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-no-comment-refresh", "no mention here")
-	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
+	writer := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 	comment := &provider.Comment{
 		ID:        "mention-no-comment-refresh-comment",
 		PRID:      pr.ID,
@@ -237,14 +237,14 @@ func TestWriterPreservesCommentMentionWithoutCommentRefresh(t *testing.T) {
 		UpdatedAt: mustTime(),
 	}
 
-	if err := writer.WriteSyncResults([]*PRFetchResult{{
+	if err := writer.WriteSyncResults([]*FetchedPR{{
 		PR: pr, Comments: []*provider.Comment{comment}, CommentsFetched: true, ThreadsFetched: true,
 	}}); err != nil {
 		t.Fatalf("hydrated WriteSyncResults: %v", err)
 	}
 
 	withoutComments := mentionedTestPR(pr.ID, "no mention here")
-	if err := writer.WriteSyncResults([]*PRFetchResult{{PR: withoutComments}}); err != nil {
+	if err := writer.WriteSyncResults([]*FetchedPR{{PR: withoutComments}}); err != nil {
 		t.Fatalf("without-comments WriteSyncResults: %v", err)
 	}
 
@@ -256,7 +256,7 @@ func TestWriterPreservesCommentMentionWithoutCommentRefresh(t *testing.T) {
 func TestWriterListOnlySyncPreservesCommentMention(t *testing.T) {
 	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-list-only", "no mention here")
-	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
+	writer := New(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 	comment := &provider.Comment{
 		ID:        "mention-list-only-comment",
 		PRID:      pr.ID,
@@ -266,12 +266,12 @@ func TestWriterListOnlySyncPreservesCommentMention(t *testing.T) {
 		UpdatedAt: mustTime(),
 	}
 
-	if err := writer.WriteSyncResults([]*PRFetchResult{{PR: pr, Comments: []*provider.Comment{comment}}}); err != nil {
+	if err := writer.WriteSyncResults([]*FetchedPR{{PR: pr, Comments: []*provider.Comment{comment}}}); err != nil {
 		t.Fatalf("hydrated WriteSyncResults: %v", err)
 	}
 
 	listOnlyPR := mentionedTestPR(pr.ID, "no mention here")
-	if err := writer.WriteSyncResults([]*PRFetchResult{{PR: listOnlyPR, ListOnly: true}}); err != nil {
+	if err := writer.WriteSyncResults([]*FetchedPR{{PR: listOnlyPR, ListOnly: true}}); err != nil {
 		t.Fatalf("list-only WriteSyncResults: %v", err)
 	}
 

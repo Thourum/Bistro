@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"context"
@@ -147,7 +147,7 @@ func writeFingerprintsOnce(ctx context.Context, tx *sql.Tx, write patchsetWrite,
 // recordGitHubReviewBaseline offers the current user's latest submitted
 // review (browser, gh, or Bistro) as the since-last-review baseline.
 // Best-effort: the PR write never fails because of it.
-func (w *Writer) recordGitHubReviewBaseline(ctx context.Context, batch *writerBatch, result *PRFetchResult) {
+func (w *Writer) recordGitHubReviewBaseline(ctx context.Context, batch *writerBatch, result *FetchedPR) {
 	if w.currentUser == nil || len(result.Reviews) == 0 {
 		return
 	}

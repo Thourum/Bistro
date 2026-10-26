@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"os"
@@ -51,12 +51,12 @@ func classificationRow(t *testing.T, w *Writer, commentID string) (authorType, s
 	return deref(at), deref(sev), deref(src), deref(fp)
 }
 
-func classifyTestResult(comments ...*provider.Comment) []*PRFetchResult {
+func classifyTestResult(comments ...*provider.Comment) []*FetchedPR {
 	now := time.Now()
 	for _, c := range comments {
 		c.CreatedAt, c.UpdatedAt = now, now
 	}
-	return []*PRFetchResult{{
+	return []*FetchedPR{{
 		PR: &provider.PR{
 			ID: "github:org/repo:1", Number: 1, Title: "t", State: "open",
 			HeadSHA: "h", BaseSHA: "b",
@@ -68,7 +68,7 @@ func classifyTestResult(comments ...*provider.Comment) []*PRFetchResult {
 func TestWriterClassifiesComments(t *testing.T) {
 	db := storetest.Open(t)
 	p := newClassifierProvider(t)
-	w := NewWriter(nil, db).WithClassifier(p)
+	w := New(nil, db).WithClassifier(p)
 
 	err := w.WriteSyncResults(classifyTestResult(
 		&provider.Comment{ID: "c-bot", Author: "coderabbitai[bot]", Body: "nit: rename this"},
@@ -94,7 +94,7 @@ func TestWriterClassifiesComments(t *testing.T) {
 
 func TestWriterNilEngineSkipsClassification(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db) // no classifier
+	w := New(nil, db) // no classifier
 
 	err := w.WriteSyncResults(classifyTestResult(
 		&provider.Comment{ID: "c-1", Author: "coderabbitai[bot]", Body: "nit: rename"},
@@ -111,7 +111,7 @@ func TestWriterNilEngineSkipsClassification(t *testing.T) {
 
 func TestWriterNoMatchPersistsUnclassified(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db).WithClassifier(newClassifierProvider(t))
+	w := New(nil, db).WithClassifier(newClassifierProvider(t))
 
 	err := w.WriteSyncResults(classifyTestResult(
 		&provider.Comment{ID: "c-1", Author: "random-thing[bot]", Body: "no rule matches this"},
@@ -134,7 +134,7 @@ func TestWriterReclassifiesOnResync(t *testing.T) {
 		t.Fatalf("write rules: %v", err)
 	}
 	p := classify.NewEngineProvider(dir, func() string { return "rules" }, nil)
-	w := NewWriter(nil, db).WithClassifier(p)
+	w := New(nil, db).WithClassifier(p)
 
 	comment := &provider.Comment{ID: "c-1", Author: "coderabbitai[bot]", Body: "nit: rename"}
 	if err := w.WriteSyncResults(classifyTestResult(comment)); err != nil {
@@ -162,7 +162,7 @@ func TestWriterReclassifiesOnResync(t *testing.T) {
 func TestWriterPostCommitHookFiresWithWrittenPRIDs(t *testing.T) {
 	db := storetest.Open(t)
 	var got []string
-	w := NewWriter(nil, db).WithPostCommit(func(prIDs []string) { got = append(got, prIDs...) })
+	w := New(nil, db).WithPostCommit(func(prIDs []string) { got = append(got, prIDs...) })
 
 	err := w.WriteSyncResults(classifyTestResult(
 		&provider.Comment{ID: "c-1", Author: "alice", Body: "hi"},
@@ -179,7 +179,7 @@ func TestWriterPostCommitHookFiresWithWrittenPRIDs(t *testing.T) {
 func TestWriterPostCommitHookSkippedOnEmptyBatch(t *testing.T) {
 	db := storetest.Open(t)
 	called := false
-	w := NewWriter(nil, db).WithPostCommit(func([]string) { called = true })
+	w := New(nil, db).WithPostCommit(func([]string) { called = true })
 
 	if err := w.WriteSyncResults(nil); err != nil {
 		t.Fatalf("WriteSyncResults: %v", err)

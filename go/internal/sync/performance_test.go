@@ -13,6 +13,7 @@ import (
 	"github.com/itterno/bistro/internal/provider"
 	ghprovider "github.com/itterno/bistro/internal/provider/github"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/sync/writer"
 )
 
 const (
@@ -140,7 +141,7 @@ func fetchBenchmarkPR(tb testing.TB, prov *readOnlyBenchmarkProvider) *provider.
 	return pr
 }
 
-func fetchBenchmarkPRDetails(tb testing.TB) []*PRFetchResult {
+func fetchBenchmarkPRDetails(tb testing.TB) []*writer.FetchedPR {
 	tb.Helper()
 	prov := newReadOnlyBenchmarkProvider()
 	pr := fetchBenchmarkPR(tb, prov)
@@ -190,7 +191,7 @@ func BenchmarkWriteSyncResultsT3CodeXXLPRLive(b *testing.B) {
 	b.StopTimer()
 	for i := 0; i < b.N; i++ {
 		db := openBenchmarkDB(b)
-		writer := NewWriter(benchmarkLogger(), db)
+		writer := writer.New(benchmarkLogger(), db)
 		b.StartTimer()
 		if err := writer.WriteSyncResultsContext(context.Background(), results); err != nil {
 			b.Fatalf("WriteSyncResultsContext: %v", err)

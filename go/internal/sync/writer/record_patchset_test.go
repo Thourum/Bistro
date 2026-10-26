@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"context"
@@ -10,13 +10,13 @@ import (
 
 func TestRecordPatchsetIfChanged_First(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	pr := &provider.PR{
 		ID: "github:o/r:3", Provider: "github", Owner: "o", Repo: "r", Number: 3,
 		Title: "T", Author: "a", State: "open",
 		BaseBranch: "main", HeadBranch: "f", BaseSHA: "base", HeadSHA: "sha-1",
 	}
-	if err := w.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{{PR: pr}}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	var num int
@@ -34,14 +34,14 @@ func TestRecordPatchsetIfChanged_First(t *testing.T) {
 
 func TestRecordPatchsetIfChanged_Unchanged(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	pr := &provider.PR{
 		ID: "github:o/r:4", Provider: "github", Owner: "o", Repo: "r", Number: 4,
 		Title: "T", Author: "a", State: "open",
 		BaseBranch: "main", HeadBranch: "f", BaseSHA: "base", HeadSHA: "sha-same",
 	}
 	for i := 0; i < 3; i++ {
-		if err := w.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
+		if err := w.WriteSyncResults([]*FetchedPR{{PR: pr}}); err != nil {
 			t.Fatalf("write %d: %v", i, err)
 		}
 	}
@@ -54,18 +54,18 @@ func TestRecordPatchsetIfChanged_Unchanged(t *testing.T) {
 
 func TestRecordPatchsetIfChanged_Changed(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	base := &provider.PR{
 		ID: "github:o/r:5", Provider: "github", Owner: "o", Repo: "r", Number: 5,
 		Title: "T", Author: "a", State: "open",
 		BaseBranch: "main", HeadBranch: "f", BaseSHA: "base", HeadSHA: "sha-1",
 	}
-	if err := w.WriteSyncResults([]*PRFetchResult{{PR: base}}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{{PR: base}}); err != nil {
 		t.Fatalf("write P1: %v", err)
 	}
 	pushed := *base
 	pushed.HeadSHA = "sha-2"
-	if err := w.WriteSyncResults([]*PRFetchResult{{PR: &pushed}}); err != nil {
+	if err := w.WriteSyncResults([]*FetchedPR{{PR: &pushed}}); err != nil {
 		t.Fatalf("write P2: %v", err)
 	}
 	var count int
@@ -82,7 +82,7 @@ func TestRecordPatchsetIfChanged_Changed(t *testing.T) {
 
 func TestRecordPatchsetIfChanged_BaseOnlyChanged(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db)
+	w := New(nil, db)
 	base := &provider.PR{
 		ID: "github:o/r:6", Provider: "github", Owner: "o", Repo: "r", Number: 6,
 		Title: "T", Author: "a", State: "open",

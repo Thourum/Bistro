@@ -1,4 +1,4 @@
-package sync
+package writer
 
 import (
 	"testing"
@@ -41,7 +41,7 @@ func similarBotComments() []*provider.Comment {
 
 func TestWriterDedupGroupsSimilarBotComments(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db).WithClassifier(newClassifierProvider(t))
+	w := New(nil, db).WithClassifier(newClassifierProvider(t))
 
 	if err := w.WriteSyncResults(classifyTestResult(similarBotComments()...)); err != nil {
 		t.Fatalf("sync: %v", err)
@@ -55,7 +55,7 @@ func TestWriterDedupGroupsSimilarBotComments(t *testing.T) {
 
 func TestWriterDedupIdempotentAcrossResync(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db).WithClassifier(newClassifierProvider(t))
+	w := New(nil, db).WithClassifier(newClassifierProvider(t))
 
 	if err := w.WriteSyncResults(classifyTestResult(similarBotComments()...)); err != nil {
 		t.Fatalf("first sync: %v", err)
@@ -73,7 +73,7 @@ func TestWriterDedupIdempotentAcrossResync(t *testing.T) {
 
 func TestWriterDedupDissimilarStaysNull(t *testing.T) {
 	db := storetest.Open(t)
-	w := NewWriter(nil, db).WithClassifier(newClassifierProvider(t))
+	w := New(nil, db).WithClassifier(newClassifierProvider(t))
 	path := "main.go"
 	comments := []*provider.Comment{
 		{ID: "c-1", Author: "coderabbitai[bot]", Kind: "review", Body: "Nil pointer risk in the config loader.", FilePath: path, LineNo: 10},
