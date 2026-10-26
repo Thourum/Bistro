@@ -1,8 +1,10 @@
 # Bistro keyboard shortcuts
 
-Generated from `electron/src/renderer/utils/keybindings.ts` (updated 2026-10-23). This is
-the full surface for a help-menu redesign. Every key is user-overridable via
-settings, so the UI must render from config, never hardcode.
+All key tables and key examples below are **vim defaults**. Actions and scopes
+come from `electron/src/renderer/utils/keybindings.ts`; per-style keys come from
+`electron/src/renderer/utils/keymaps.ts`. For vim, Emacs and Standard side by side,
+see `website/src/pages/docs/keybindings.mdx`. Every key is user-overridable via
+settings, so the UI must render from effective bindings, never hardcode.
 To rebind, open Settings → Keyboard, press `Enter` on an action, type the new key
 or chord, and press `Enter` to save (`Esc` cancels). `Backspace` restores the
 default. Keys that would collide with a binding active in the same place are rejected.
@@ -104,7 +106,7 @@ Note: PR detail mode keeps its own `n` / `p` for file navigation (no inline
 comment view there); the diff route's `n` / `p` mean comment navigation
 instead — this is a deliberate context-dependent rebind, not a duplicate bug.
 
-## Comment mode
+## Comment mode (vim defaults)
 
 Press `c` in the diff to enter line-comment mode. Cursor keys apply while the
 composer is closed; `Enter` opens it for typing. Select saved drafts with `n` /
