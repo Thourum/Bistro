@@ -129,8 +129,8 @@ func (o *Orchestrator) fetchPR(ctx context.Context, pr *provider.PR, options prF
 		"pr_number", pr.Number,
 		"pr_id", pr.ID,
 		"pr_state", pr.State,
-		"pr_base_sha", truncateSHA(pr.BaseSHA),
-		"pr_head_sha", truncateSHA(pr.HeadSHA),
+		"pr_base_sha", logging.ShortSHA(pr.BaseSHA),
+		"pr_head_sha", logging.ShortSHA(pr.HeadSHA),
 	)
 	boundedCtx, cancel := context.WithTimeout(ctx, perPRFetchTimeout)
 	defer cancel()
@@ -377,15 +377,6 @@ func (o *Orchestrator) notifyExpertiseHook(ctx context.Context, pr *provider.PR,
 		files = append(files, diffFile.FilePath)
 	}
 	o.expertise.OnPRSynced(ctx, repoID, repoPath, files)
-}
-
-const shaLogPrefixLength = 7 // Git's conventional abbreviated SHA length.
-
-func truncateSHA(sha string) string {
-	if len(sha) > shaLogPrefixLength {
-		return sha[:shaLogPrefixLength]
-	}
-	return sha
 }
 
 // diffCloneOptions excludes anchor-only historical commits from the shallow diff clone.

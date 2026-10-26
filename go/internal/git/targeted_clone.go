@@ -10,6 +10,8 @@ import (
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+
+	"github.com/itterno/bistro/internal/logging"
 )
 
 func requiredSHAs(baseSHA, headSHA string, opts *CloneOptions) []string {
@@ -80,7 +82,7 @@ func (c *Client) targetedClone(ctx context.Context, log *slog.Logger, repoURL, b
 			return nil, false, fmt.Errorf("restore previous clone after missing commit %s: %w", missing, cleanupErr)
 		}
 		log.Debug("targeted fetch fallback: required commit missing in shallow fetch",
-			"missing_sha", truncateSHAForLog(missing), "depth", depth)
+			"missing_sha", logging.ShortSHA(missing), "depth", depth)
 		return nil, false, nil
 	}
 

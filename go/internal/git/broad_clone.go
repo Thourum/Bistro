@@ -10,6 +10,8 @@ import (
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+
+	"github.com/itterno/bistro/internal/logging"
 )
 
 func (c *Client) broadClone(ctx context.Context, log *slog.Logger, repoURL, baseSHA, headSHA string) (result *CloneResult, err error) {
@@ -157,7 +159,7 @@ func (c *Client) validateCacheHit(
 	}
 	if missing != "" {
 		log.Debug("git clone cache hit missing a required commit; re-cloning",
-			"local_path", cached.LocalPath, "missing_sha", truncateSHAForLog(missing))
+			"local_path", cached.LocalPath, "missing_sha", logging.ShortSHA(missing))
 		c.cache.Clear(repoURL, baseSHA, headSHA)
 		return false
 	}

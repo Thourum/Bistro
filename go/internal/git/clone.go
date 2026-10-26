@@ -157,8 +157,8 @@ func (c *Client) cloneWithOptions(ctx context.Context, repoURL, baseSHA, headSHA
 func (c *Client) WithPRClone(ctx context.Context, repoURL, baseSHA, headSHA string, opts *CloneOptions, use func(*CloneResult) error) error {
 	log := logging.FromContext(ctx).With(
 		"repo_url", repoURL,
-		"base_sha", truncateSHAForLog(baseSHA),
-		"head_sha", truncateSHAForLog(headSHA),
+		"base_sha", logging.ShortSHA(baseSHA),
+		"head_sha", logging.ShortSHA(headSHA),
 	)
 	if repoURL == "" {
 		return errors.New("repository URL cannot be empty")
@@ -237,12 +237,4 @@ func (c *Client) cloneWithOptionsLocked(ctx context.Context, log *slog.Logger, r
 	}
 
 	return c.broadClone(ctx, log, repoURL, baseSHA, headSHA)
-}
-
-// truncateSHAForLog returns a 7-char prefix of a SHA for compact log output.
-func truncateSHAForLog(s string) string {
-	if len(s) > 7 {
-		return s[:7]
-	}
-	return s
 }

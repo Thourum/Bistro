@@ -12,6 +12,8 @@ import (
 	fdiff "github.com/go-git/go-git/v5/plumbing/format/diff"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	dmp "github.com/sergi/go-diff/diffmatchpatch"
+
+	"github.com/itterno/bistro/internal/logging"
 )
 
 const (
@@ -243,13 +245,13 @@ func positionToLine(repo *gogit.Repository, baseSHA, headSHA, filePath, side str
 
 	patch, err := baseTree.Patch(headTree)
 	if err != nil {
-		return 0, fmt.Errorf("patch %s..%s: %w", truncateSHAForLog(baseSHA), truncateSHAForLog(headSHA), err)
+		return 0, fmt.Errorf("patch %s..%s: %w", logging.ShortSHA(baseSHA), logging.ShortSHA(headSHA), err)
 	}
 
 	if filePatch := patchForPath(patch, filePath); filePatch != nil {
 		return positionToLineInPatch(filePatch, side, position)
 	}
-	return 0, fmt.Errorf("file %q not found in diff %s..%s", filePath, truncateSHAForLog(baseSHA), truncateSHAForLog(headSHA))
+	return 0, fmt.Errorf("file %q not found in diff %s..%s", filePath, logging.ShortSHA(baseSHA), logging.ShortSHA(headSHA))
 }
 
 // positionInRootCommit handles the zero-hash base case (new file, all additions).
@@ -407,7 +409,7 @@ func fileLineHash(repo *gogit.Repository, commitSHA, filePath string, lineNo int
 	}
 	file, err := commit.File(filePath)
 	if err != nil {
-		return "", "", fmt.Errorf("file %s@%s: %w", filePath, truncateSHAForLog(commitSHA), err)
+		return "", "", fmt.Errorf("file %s@%s: %w", filePath, logging.ShortSHA(commitSHA), err)
 	}
 	contents, err := file.Contents()
 	if err != nil {

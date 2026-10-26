@@ -7,6 +7,8 @@ import (
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/itterno/bistro/internal/logging"
 )
 
 // ErrHeadUnavailable means a patchset head is not in the local repo: it was
@@ -58,14 +60,14 @@ func (c *Client) Interdiff(req InterdiffRequest) (InterdiffResult, error) {
 func headTree(repo *gitlib.Repository, sha string) (*object.Tree, error) {
 	commit, err := repo.CommitObject(plumbing.NewHash(sha))
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		return nil, fmt.Errorf("%w: %s", ErrHeadUnavailable, truncateSHAForLog(sha))
+		return nil, fmt.Errorf("%w: %s", ErrHeadUnavailable, logging.ShortSHA(sha))
 	}
 	if err != nil {
-		return nil, fmt.Errorf("load commit %s: %w", truncateSHAForLog(sha), err)
+		return nil, fmt.Errorf("load commit %s: %w", logging.ShortSHA(sha), err)
 	}
 	tree, err := commit.Tree()
 	if err != nil {
-		return nil, fmt.Errorf("load tree of %s: %w", truncateSHAForLog(sha), err)
+		return nil, fmt.Errorf("load tree of %s: %w", logging.ShortSHA(sha), err)
 	}
 	return tree, nil
 }

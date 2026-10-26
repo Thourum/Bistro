@@ -6,6 +6,8 @@ import (
 
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+
+	"github.com/itterno/bistro/internal/logging"
 )
 
 const forcePushRepoURL = "https://github.com/acme/widgets.git"
@@ -84,7 +86,7 @@ func syncHead(t *testing.T, client *Client, fixture forcePushFixture, headSHA st
 			return nil
 		})
 	if err != nil {
-		t.Fatalf("WithPRClone %s: %v", truncateSHAForLog(headSHA), err)
+		t.Fatalf("WithPRClone %s: %v", logging.ShortSHA(headSHA), err)
 	}
 }
 
@@ -103,10 +105,10 @@ func TestForcePushKeepsPreviousHeadPinned(t *testing.T) {
 	for _, head := range []string{fixture.head1, head2} {
 		ref, err := repo.Reference(pinnedHeadRef(forcePushRepoURL, 7, head), true)
 		if err != nil || ref.Hash().String() != head {
-			t.Errorf("pin for %s: ref=%v err=%v", truncateSHAForLog(head), ref, err)
+			t.Errorf("pin for %s: ref=%v err=%v", logging.ShortSHA(head), ref, err)
 		}
 		if _, err := repo.CommitObject(plumbing.NewHash(head)); err != nil {
-			t.Errorf("commit %s missing from cache clone: %v", truncateSHAForLog(head), err)
+			t.Errorf("commit %s missing from cache clone: %v", logging.ShortSHA(head), err)
 		}
 	}
 }

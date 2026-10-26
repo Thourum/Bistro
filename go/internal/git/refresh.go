@@ -11,6 +11,8 @@ import (
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+
+	"github.com/itterno/bistro/internal/logging"
 )
 
 // broadRefSpecs mirrors the broad clone's fetch for callers without PR hints.
@@ -62,7 +64,7 @@ func (c *Client) refreshOnDiskClone(
 	missing, err := firstMissingCommit(repoDir, requiredSHAs(baseSHA, headSHA, opts))
 	if err != nil || missing != "" {
 		log.Debug("cache refresh left a required commit missing; re-cloning",
-			"missing_sha", truncateSHAForLog(missing), "error", err)
+			"missing_sha", logging.ShortSHA(missing), "error", err)
 		return nil, false
 	}
 	c.cache.Set(repoURL, baseSHA, headSHA, &RepoEntry{

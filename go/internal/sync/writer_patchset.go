@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
 )
@@ -96,7 +97,7 @@ func insertPatchset(ctx context.Context, tx *sql.Tx, write patchsetWrite, number
 		`SELECT number FROM patchsets WHERE pr_id = ? AND head_sha = ? ORDER BY number DESC LIMIT 1`,
 		pr.ID, pr.HeadSHA,
 	).Scan(&existing); err != nil {
-		return 0, fmt.Errorf("read existing patchset %s at %s: %w", pr.ID, truncateSHA(pr.HeadSHA), err)
+		return 0, fmt.Errorf("read existing patchset %s at %s: %w", pr.ID, logging.ShortSHA(pr.HeadSHA), err)
 	}
 	return existing, nil
 }
