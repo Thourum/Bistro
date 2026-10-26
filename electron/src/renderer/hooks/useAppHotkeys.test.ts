@@ -23,6 +23,7 @@ import {
 } from '../utils/onboardingRepos';
 import { SANDBOX_TASKS } from '../utils/onboardingSandbox';
 import { useAppHotkeys, useBindingEnabled } from './useAppHotkeys';
+import { useKeyActionContext } from './useKeyActionContext';
 
 interface CapturedHotkey {
   hotkey: string;
@@ -363,6 +364,48 @@ describe('scoped onboarding actions', () => {
     expect(appStore.state.onboardingSandbox).toBeNull();
     expect(appStore.state.selectedPRIndex).toBe(0);
   });
+});
+
+describe('shared action context', () => {
+  it.each(['unchecked', 'crashed', 'ready'] as const)(
+    'uses the effective %s screen for palette context and hotkey activation',
+    (screen) => {
+      captured.pathname = '/prs/1/diff';
+      captured.prId = '1';
+      settingsStore.setState((settings) => ({
+        ...settings,
+        navigation: { ...settings.navigation, style: 'vim' },
+      }));
+      appStore.setState((state) => ({
+        ...state,
+        authChecked: screen !== 'unchecked',
+        engineStatus:
+          screen === 'crashed'
+            ? {
+                state: 'crashed',
+                startedAt: 0,
+                isSpawned: true,
+                code: 1,
+                signal: null,
+                error: 'Engine exited',
+              }
+            : null,
+      }));
+      const { activation, makeCtx } = useKeyActionContext(undefined);
+      const routeBase = screen === 'ready' ? 'diff' : 'connecting';
+      expect(activation.routeBase).toBe(routeBase);
+      expect(makeCtx()).toMatchObject({
+        routeBase,
+        prId: '1',
+        location: { pathname: '/prs/1/diff' },
+      });
+      useAppHotkeys();
+      const enabledNextComment = captured.hotkeys.some(
+        (binding) => binding.hotkey === 'n' && binding.options.enabled,
+      );
+      expect(enabledNextComment).toBe(screen === 'ready');
+    },
+  );
 });
 
 describe('dispatch safety', () => {

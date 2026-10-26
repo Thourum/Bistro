@@ -1,17 +1,11 @@
 // @vitest-environment jsdom
 
-import { Store } from '@tanstack/store';
 import { errAsync, Fault, okAsync } from '@thourum/fault';
-import { afterEach, assert, describe, expect, it, vi } from 'vitest';
-import type { OverlayContextValue } from '../../src/renderer/overlays/OverlayContext';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { appStore } from '../../src/renderer/store';
 import type { UIState } from '../../src/renderer/store/ui';
 import { initialUIState } from '../../src/renderer/store/ui';
-import {
-  getBindingAction,
-  type KeyActionContext,
-} from '../../src/renderer/utils/keybindingActions';
-import type { RouteBase } from '../../src/renderer/utils/keybindings';
+import { invokeAction, makeCtx, makeStore } from './keybindingTestHelpers';
 
 const mockNavigate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('../../src/renderer/router', () => ({
@@ -22,48 +16,6 @@ vi.mock('../../src/renderer/router', () => ({
   prDetailRoute: {},
 }));
 
-function makeStore(overrides: Partial<UIState> = {}): Store<UIState> {
-  return new Store<UIState>({ ...initialUIState, ...overrides });
-}
-
-function makeCtx(
-  storeOrOverrides: Store<UIState> | Partial<UIState> = {},
-  routeBase: RouteBase | null = 'list',
-  overlayOverrides: Partial<OverlayContextValue> = {},
-): KeyActionContext {
-  const store =
-    storeOrOverrides instanceof Store
-      ? storeOrOverrides
-      : makeStore(storeOrOverrides);
-  const overlays: OverlayContextValue = {
-    activeOverlay: null,
-    helpSourceRoute: 'list',
-    openCommand: vi.fn(),
-    openHelp: vi.fn(),
-    openSearch: vi.fn(),
-    openFilter: vi.fn(),
-    toggleFilter: vi.fn(),
-    openRepoPicker: vi.fn(),
-    openThreads: vi.fn(),
-    closeOverlay: vi.fn(),
-    closeSearch: vi.fn(),
-    ...overlayOverrides,
-  };
-  return {
-    store,
-    routeBase,
-    activeOverlay: overlays.activeOverlay,
-    overlays,
-    location: { pathname: '/prs' },
-    prId: 'pr-test-id',
-  };
-}
-
-function invokeAction(actionId: string, context: KeyActionContext): void {
-  const action = getBindingAction(actionId);
-  assert(action !== undefined, `no action for binding ${actionId}`);
-  action(context);
-}
 const mockApprovePR = vi.hoisted(() => vi.fn());
 vi.mock('../../src/renderer/services/prActions', () => ({
   approvePR: mockApprovePR,

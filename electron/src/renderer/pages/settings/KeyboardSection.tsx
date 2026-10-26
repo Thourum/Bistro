@@ -16,7 +16,10 @@ import {
   settingsStore,
   updateSettings,
 } from '../../store/settings';
-import { findKeybindingConflicts } from '../../utils/keybindingConflicts';
+import {
+  keybindingConflictMessage,
+  resetKeybinding,
+} from '../../utils/keybindingConflicts';
 import { getEffectiveBindings, type KeyBinding } from '../../utils/keybindings';
 import { Section, showSettingsError } from './SettingsComponents';
 
@@ -148,10 +151,7 @@ export function KeyboardSection() {
       ...binding,
       keys: keys.length === 1 ? first : keys,
     };
-    const [conflict] = findKeybindingConflicts(effective, candidate, events);
-    return conflict === undefined
-      ? undefined
-      : `${keys.map((key) => formatForDisplay(key)).join(' ')} already runs "${conflict.description}"`;
+    return keybindingConflictMessage(effective, candidate, events);
   };
 
   const saveBinding = (actionId: string, keys: readonly string[]): void => {
@@ -161,10 +161,19 @@ export function KeyboardSection() {
   };
 
   const resetBinding = (actionId: string): void => {
-    const { [actionId]: _removed, ...rest } = overrides;
-    void updateSettings({ keybindings: rest }).match(
-      () => undefined,
-      showSettingsError,
+    resetKeybinding({ style, overrides, actionId }).match(
+      (keybindings) => {
+        void updateSettings({ keybindings }).match(
+          () => undefined,
+          showSettingsError,
+        );
+      },
+      (fault) =>
+        addToast({
+          type: 'warning',
+          message: fault.message,
+          dismissible: true,
+        }),
     );
   };
 

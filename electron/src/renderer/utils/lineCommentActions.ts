@@ -1,10 +1,26 @@
+import { matchesKeyboardEvent, normalizeHotkey } from '@tanstack/hotkeys';
 import type { KeyActionContext } from './keybindingActions';
+import type { KeyBinding } from './keybindings';
 import {
   extendCursor,
   type LineCommentState,
   moveCursor,
   switchSide,
 } from './lineCommentCursor';
+
+/** Let the document manager own effective cancel keys, even inside the composer. */
+export function isLineCommentCancel(
+  event: KeyboardEvent,
+  bindings: readonly KeyBinding[],
+): boolean {
+  return bindings.some(
+    (binding) =>
+      (binding.actionId === 'global.cancel' ||
+        binding.actionId === 'global.escape') &&
+      typeof binding.keys === 'string' &&
+      matchesKeyboardEvent(event, normalizeHotkey(binding.keys)),
+  );
+}
 
 /** Cursor keys only steer while the composer is closed. */
 function updateLineComment(

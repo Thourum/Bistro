@@ -3,11 +3,14 @@ import { errAsync, Fault, okAsync } from '@thourum/fault';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { shortcutFor } from '../../src/renderer/components/commandPaletteCommands';
 import { appStore } from '../../src/renderer/store';
+import { settingsStore } from '../../src/renderer/store/settings';
 import { initialUIState } from '../../src/renderer/store/ui';
 import {
   getEffectiveBindings,
   isActive,
 } from '../../src/renderer/utils/keybindings';
+import { findActionKeys } from '../../src/renderer/utils/legendPresets';
+import { isLineCommentCancel } from '../../src/renderer/utils/lineCommentActions';
 import { invokeAction, makeCtx, makeStore } from './keybindingTestHelpers';
 
 const mockNavigate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -31,13 +34,54 @@ const draft = {
   created_at: '',
 };
 
+const initialSettings = settingsStore.state;
+
 afterEach(() => {
+  settingsStore.setState(() => initialSettings);
   appStore.setState(() => initialUIState);
   request.mockReset();
   mockNavigate.mockClear();
 });
 
 describe('review shortcuts', () => {
+  it('bubbles only effective cancel keys from the line composer', () => {
+    const defaults = getEffectiveBindings('emacs', {});
+    const cancel = new KeyboardEvent('keydown', { key: 'g', ctrlKey: true });
+    expect(isLineCommentCancel(cancel, defaults)).toBe(true);
+    expect(
+      isLineCommentCancel(
+        new KeyboardEvent('keydown', { key: 'Escape' }),
+        defaults,
+      ),
+    ).toBe(true);
+    expect(
+      isLineCommentCancel(new KeyboardEvent('keydown', { key: 'g' }), defaults),
+    ).toBe(false);
+    const remapped = getEffectiveBindings('emacs', {
+      'global.cancel': ['Control+Q'],
+      'global.escape': [],
+    });
+    expect(isLineCommentCancel(cancel, remapped)).toBe(false);
+    expect(
+      isLineCommentCancel(
+        new KeyboardEvent('keydown', { key: 'Escape' }),
+        remapped,
+      ),
+    ).toBe(false);
+    expect(
+      isLineCommentCancel(
+        new KeyboardEvent('keydown', { key: 'q', ctrlKey: true }),
+        remapped,
+      ),
+    ).toBe(true);
+    expect(
+      isLineCommentCancel(
+        new KeyboardEvent('keydown', { key: 'Enter', metaKey: true }),
+        remapped,
+      ),
+    ).toBe(false);
+  });
+
   it('on diff hides the PR comment chip and shows the line-comment chip', () => {
     const bindings = getEffectiveBindings('vim', {});
     expect(shortcutFor('detail.comment', bindings, 'diff')).toBeUndefined();
@@ -104,6 +148,33 @@ describe('review commands', () => {
     );
     document.removeEventListener('bistro:diff:toggle-resolve', record);
     expect(events).toEqual(['bistro:diff:toggle-resolve']);
+  });
+
+  it('uses effective comment navigation in resolve warnings and omits unbound keys', () => {
+    settingsStore.setState((settings) => ({
+      ...settings,
+      navigation: { ...settings.navigation, style: 'emacs' },
+      keybindings: {
+        'diff.nextComment': ['Control+Q'],
+        'diff.prevComment': [],
+      },
+    }));
+    invokeAction('review.toggleResolve', makeCtx({}, 'diff'));
+    const keys = findActionKeys(
+      getEffectiveBindings('emacs', settingsStore.state.keybindings),
+      ['diff.nextComment'],
+    );
+    expect(appStore.state.toasts.at(-1)?.message).toBe(
+      `Select a review thread in the diff (${keys}) to resolve it`,
+    );
+    settingsStore.setState((settings) => ({
+      ...settings,
+      keybindings: { 'diff.nextComment': [], 'diff.prevComment': [] },
+    }));
+    invokeAction('review.toggleResolve', makeCtx({}, 'diff'));
+    expect(appStore.state.toasts.at(-1)?.message).toBe(
+      'Select a review thread in the diff to resolve it',
+    );
   });
 
   it('submit warns without drafts, then sends one COMMENT review and settles feedback', async () => {

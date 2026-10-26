@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useEffectiveBindings } from '../../hooks/useEffectiveBindings';
 import { useOverlays } from '../../overlays/OverlayContext';
 import { saveDraft } from '../../services/reviewDrafts';
 import type { ReviewDraft } from '../../types';
@@ -6,6 +7,8 @@ import {
   isTextareaSubmit,
   TEXTAREA_SUBMIT_HOTKEY,
 } from '../../utils/keybindings';
+import { findActionKeys } from '../../utils/legendPresets';
+import { isLineCommentCancel } from '../../utils/lineCommentActions';
 import {
   cursorRange,
   type LineCommentState,
@@ -36,7 +39,7 @@ interface DraftAnnotationCardProps {
   onActivate: () => void;
 }
 
-/** A saved, unsubmitted line comment. Enter edits, d d deletes. */
+/** A saved, unsubmitted line comment with effective edit/delete hints. */
 export function DraftAnnotationCard({
   draft,
   annotationKey,
@@ -45,6 +48,14 @@ export function DraftAnnotationCard({
   onActivate,
 }: DraftAnnotationCardProps): React.ReactElement {
   const startLine = draft.start_line === 0 ? null : draft.start_line;
+  const bindings = useEffectiveBindings();
+  const hints = [
+    { actionId: 'detail.inlineReply', label: 'edit' },
+    { actionId: 'diff.deleteDraft', label: 'delete' },
+  ].flatMap(({ actionId, label }) => {
+    const keys = findActionKeys(bindings, [actionId]);
+    return keys === undefined ? [] : [`${keys} ${label}`];
+  });
   return (
     <div
       data-annotation-key={annotationKey}
@@ -68,9 +79,9 @@ export function DraftAnnotationCard({
         </span>
       </button>
       <Markdown body={draft.body} compact />
-      {isActive && (
+      {isActive && hints.length > 0 && (
         <p className="font-mono text-[9px] uppercase tracking-widest text-outline">
-          Enter edit · d d delete
+          {hints.join(' · ')}
         </p>
       )}
     </div>
@@ -84,6 +95,7 @@ export function LineCommentComposer({
   lineComment: LineCommentState;
 }): React.ReactElement {
   const { closeOverlay } = useOverlays();
+  const bindings = useEffectiveBindings();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [body, setBody] = useState(lineComment.composer?.initialBody ?? '');
   const [isSaving, setIsSaving] = useState(false);
@@ -142,14 +154,11 @@ export function LineCommentComposer({
         className="bg-surface-container text-xs"
         aria-label="Draft line comment"
         onKeyDown={(event) => {
+          if (isLineCommentCancel(event.nativeEvent, bindings)) return;
           event.stopPropagation();
           if (isTextareaSubmit(event)) {
             event.preventDefault();
             save();
-          }
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            closeOverlay();
           }
         }}
       />

@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
-import { act } from 'react';
+import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { OverlayProvider } from '../../overlays/OverlayContext';
+import {
+  invokeAction,
+  makeCtx,
+} from '../../../../tests/unit/keybindingTestHelpers';
+import { OverlayProvider, useOverlays } from '../../overlays/OverlayContext';
 import { appStore } from '../../store';
 import { initialUIState } from '../../store/ui';
 import type { ReviewDraft } from '../../types';
@@ -38,6 +42,13 @@ interface ProbeProps {
 }
 
 function Probe({ drafts, prId }: ProbeProps): null {
+  const overlays = useOverlays();
+  useEffect(() => {
+    const cancel = (): void =>
+      invokeAction('global.cancel', makeCtx(appStore, 'diff', overlays));
+    document.addEventListener('test:cancel-comment', cancel);
+    return () => document.removeEventListener('test:cancel-comment', cancel);
+  }, [overlays]);
   useLineCommentMode({
     prId,
     headSha: 'new-head',
@@ -96,6 +107,24 @@ describe('useLineCommentMode draft editing', () => {
       });
     },
   );
+
+  it('clears the open draft composer when the central cancel action closes its overlay', async () => {
+    await act(async () =>
+      root.render(
+        <OverlayProvider>
+          <Probe drafts={[DRAFT]} prId="pr-1" />
+        </OverlayProvider>,
+      ),
+    );
+    await act(async () =>
+      document.dispatchEvent(new CustomEvent('bistro:diff:edit-draft')),
+    );
+    expect(appStore.state.lineComment?.composer?.draftId).toBe('D1');
+    await act(async () =>
+      document.dispatchEvent(new CustomEvent('test:cancel-comment')),
+    );
+    expect(appStore.state.lineComment).toBeNull();
+  });
 
   it.each([
     { drafts: [], prId: 'pr-1' },

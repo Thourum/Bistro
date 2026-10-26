@@ -2,7 +2,10 @@ import { draftIdFromKey } from '../components/diff/diffAnnotations';
 import { addToast } from '../components/ToastContainer';
 import { submitReview } from '../services/prActions';
 import { deleteDrafts } from '../services/reviewDrafts';
+import { settingsStore } from '../store/settings';
 import type { KeyActionContext } from './keybindingActions';
+import { getEffectiveBindings } from './keybindings';
+import { findActionKeys } from './legendPresets';
 
 function deleteActiveDraft(context: KeyActionContext): void {
   const draftId = draftIdFromKey(
@@ -32,9 +35,18 @@ function toggleActiveThreadResolve(context: KeyActionContext): void {
     active === null ||
     draftIdFromKey(active) !== null
   ) {
+    const { navigation, keybindings } = settingsStore.state;
+    const bindings = getEffectiveBindings(navigation.style, keybindings);
+    const keys = ['diff.nextComment', 'diff.prevComment'].flatMap(
+      (actionId) => {
+        const hint = findActionKeys(bindings, [actionId]);
+        return hint === undefined ? [] : [hint];
+      },
+    );
+    const hint = keys.length === 0 ? '' : ` (${keys.join(' / ')})`;
     addToast({
       type: 'warning',
-      message: 'Select a review thread in the diff (n / p) to resolve it',
+      message: `Select a review thread in the diff${hint} to resolve it`,
       dismissible: true,
     });
     return;

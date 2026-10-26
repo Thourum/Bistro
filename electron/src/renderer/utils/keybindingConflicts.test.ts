@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, assert, describe, expect, it, vi } from 'vitest';
-import { findKeybindingConflicts } from './keybindingConflicts';
+import {
+  findKeybindingConflicts,
+  resetKeybinding,
+} from './keybindingConflicts';
 import { getEffectiveBindings, type KeyBinding } from './keybindings';
 import { KEYMAPS } from './keymaps';
 
@@ -33,17 +36,87 @@ describe('findKeybindingConflicts', () => {
     'finds no conflicts among the %s defaults',
     (style) => {
       const bindings = getEffectiveBindings(style, {});
-      // Escape layers on purpose; runtime gates pick its one owner.
-      const conflicts = bindings
-        .filter((binding) => binding.keys !== 'Escape')
-        .flatMap((binding) =>
-          findKeybindingConflicts(bindings, binding).map(
-            (other) => `${binding.actionId} ↔ ${other.actionId}`,
-          ),
-        );
+      const conflicts = bindings.flatMap((binding) =>
+        findKeybindingConflicts(bindings, binding).map(
+          (other) => `${binding.actionId} ↔ ${other.actionId}`,
+        ),
+      );
       expect(conflicts).toEqual([]);
     },
   );
+
+  it('detects Continue colliding with practice-list navigation before completion', () => {
+    const candidate = remap('onboarding.continue', ['g', 'g']);
+    expect(conflictIds(candidate)).toEqual(['list.top']);
+  });
+
+  it('rejects restoring a default reused after the action was remapped', () => {
+    const overrides = {
+      'detail.approve': ['q', 'q'],
+      'detail.dismissNits': ['a', 'a'],
+    };
+    const bindings = getEffectiveBindings('standard', overrides);
+    const reused = bindings.find(
+      (binding) => binding.actionId === 'detail.dismissNits',
+    );
+    assert.isDefined(reused);
+    expect(findKeybindingConflicts(bindings, reused)).toEqual([]);
+    const reset = resetKeybinding({
+      style: 'standard',
+      overrides,
+      actionId: 'detail.approve',
+    });
+    expect(reset.isErr()).toBe(true);
+    expect(reset._unsafeUnwrapErr().message).toContain('Dismiss nits');
+    expect(overrides['detail.approve']).toEqual(['q', 'q']);
+    expect(
+      resetKeybinding({
+        style: 'standard',
+        overrides,
+        actionId: 'detail.dismissNits',
+      })._unsafeUnwrap(),
+    ).toEqual({ 'detail.approve': ['q', 'q'] });
+  });
+
+  it('preserves only the literal filter Escape alias, not arbitrary remaps', () => {
+    expect(conflictIds(remap('filter.close', 'Control+G'))).toEqual([]);
+    const bindings = getEffectiveBindings('emacs', {});
+    const closeFilter = bindings.find(
+      (binding) => binding.actionId === 'filter.close',
+    );
+    assert.isDefined(closeFilter);
+    expect(
+      findKeybindingConflicts(bindings, {
+        ...closeFilter,
+        keys: 'Control+G',
+      }).map((binding) => binding.actionId),
+    ).toEqual(['global.cancel']);
+  });
+
+  it('separates auth screens while checking engine-connected login actions', () => {
+    expect(conflictIds(remap('login.retry', 'r'))).toEqual([]);
+    expect(conflictIds(remap('login.retry', 'g'))).toEqual([
+      'login.provider.github',
+    ]);
+  });
+
+  it('detects an onboarding scan action colliding with Continue in sync', () => {
+    expect(conflictIds(remap('onboarding.continue', 'Escape'))).toEqual([
+      'global.escape',
+      'onboarding.stopScan',
+    ]);
+  });
+
+  it('allows resetting an action with no default in the selected style', () => {
+    const overrides = { 'global.cancel': ['Control+Q'] };
+    expect(
+      resetKeybinding({
+        style: 'vim',
+        overrides,
+        actionId: 'global.cancel',
+      })._unsafeUnwrap(),
+    ).toEqual({});
+  });
 
   it('flags a key already bound on the same route', () => {
     expect(conflictIds(remap('diff.markViewed', 'n'))).toEqual([

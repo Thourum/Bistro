@@ -1,8 +1,4 @@
-import {
-  useMatchRoute,
-  useNavigate,
-  useRouterState,
-} from '@tanstack/react-router';
+import { useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -20,7 +16,6 @@ import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
 import { getBindingAction } from '../utils/keybindingActions';
-import { routeBaseFromPath } from '../utils/keybindings';
 import { createLogger } from '../utils/logger';
 import { openUrlInBrowser } from '../utils/openUrl';
 import { prBrowserUrl } from '../utils/triage';
@@ -52,7 +47,12 @@ const isDev = import.meta.env.DEV;
 export function CommandPalette(): React.ReactElement | null {
   const { activeOverlay, closeOverlay, openHelp, openRepoPicker, openAddRepo } =
     useOverlays();
-  const makeCtx = useKeyActionContext();
+  const bindings = useEffectiveBindings();
+  const continueKeys = bindings.find(
+    (binding) => binding.actionId === 'onboarding.continue',
+  )?.keys;
+  const { activation, makeCtx } = useKeyActionContext(continueKeys);
+  const { routeBase } = activation;
   const draftCount = useStore(appStore, (s) => s.reviewDrafts.length);
   const isOpen = activeOverlay === 'command';
   const [query, setQuery] = useState('');
@@ -61,11 +61,8 @@ export function CommandPalette(): React.ReactElement | null {
   const navigate = useNavigate();
   const matchRoute = useMatchRoute();
   const routedPR = matchRoute({ to: '/prs/$prId', fuzzy: true });
-  const isDiffRoute = matchRoute({ to: '/prs/$prId/diff' }) !== false;
-  const isPRRoute = routedPR !== false;
-  const routeBase = useRouterState({
-    select: (state) => routeBaseFromPath(state.location.pathname),
-  });
+  const isDiffRoute = routeBase === 'diff';
+  const isPRRoute = routeBase === 'detail' || isDiffRoute;
 
   // Use the shared visible-PR source so palette results match the list route.
   const { prs } = useVisiblePRs();
@@ -74,7 +71,6 @@ export function CommandPalette(): React.ReactElement | null {
     (state: UIState) => state.visiblePRIds[state.selectedPRIndex] || undefined,
   );
   const prList = useStore(settingsStore, (state) => state.prList);
-  const bindings = useEffectiveBindings();
   const recentPRs = useMemo(() => prs.slice(0, 5), [prs]);
 
   const filteredPRs = useMemo(() => {
