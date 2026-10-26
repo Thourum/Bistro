@@ -60,16 +60,3 @@ func prepareReplyThreadFixture(t *testing.T, db *store.DB, prID, threadID, comme
 	mustExecSync(t, db.DB, `INSERT INTO comments (id, pr_id, author, body, created_at, updated_at, kind, thread_id)
 		VALUES (?, ?, 'a', 'root', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'review', ?)`, commentID, prID, threadID)
 }
-
-// containsStr is a test helper.
-func containsStr(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(sub) == 0 ||
-		func() bool {
-			for i := 0; i <= len(s)-len(sub); i++ {
-				if s[i:i+len(sub)] == sub {
-					return true
-				}
-			}
-			return false
-		}())
-}

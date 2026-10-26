@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/itterno/bistro/internal/store/actionqueue"
+	"strings"
 	"testing"
 	"time"
 
@@ -254,7 +255,7 @@ func TestApplyAction_LineLevelComment_RateLimited_Rejected(t *testing.T) {
 	if result.Success {
 		t.Error("expected failure for line-level post_comment when rate-limited")
 	}
-	if !containsStr(result.Error, "line-level") {
+	if !strings.Contains(result.Error, "line-level") {
 		t.Errorf("error must mention line-level; got: %q", result.Error)
 	}
 
@@ -289,7 +290,7 @@ func TestApplyAction_GeneralComment_RateLimited_Queued(t *testing.T) {
 	if result.Success {
 		// rate-limited path returns failure even on success queue
 	}
-	if containsStr(result.Error, "line-level") {
+	if strings.Contains(result.Error, "line-level") {
 		t.Error("general comment (Line=0) must not be rejected as line-level")
 	}
 
