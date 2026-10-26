@@ -1,204 +1,206 @@
-import type { ReactElement } from 'react';
-import { Badge } from '../components/ui/badge';
+import { type ReactElement, useMemo, useState } from 'react';
+import {
+  keepFocus,
+  NAVIGATION_STYLE_CARDS,
+} from '../components/NavigationStylePicker';
+import { Kbd } from '../components/ui/kbd';
+import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
+import { useStore } from '../hooks/useStore';
 import { cn } from '../lib/utils';
 import {
-  SANDBOX_COMMENT_COUNT,
-  SANDBOX_FILE_COUNT,
-  SANDBOX_PR_COUNT,
+  dispatchSandboxAction,
+  selectOnboardingSandboxPane,
+} from '../services/onboardingSandbox';
+import { settingsStore } from '../store/settings';
+import { findActionKeys } from '../utils/legendPresets';
+import {
+  SANDBOX_TASKS,
+  type SandboxPane,
   type SandboxState,
+  type SandboxTaskId,
+  sandboxTaskDisplayIds,
 } from '../utils/onboardingSandbox';
+import { OnboardingPracticePanes } from './OnboardingPracticePanes';
+import { FAKE_FILES, FAKE_PRS } from './OnboardingPracticeParts';
 
-interface SandboxPr {
-  readonly number: string;
-  readonly title: string;
-}
+const PANE_TABS = [
+  { pane: 'list', label: 'List' },
+  { pane: 'detail', label: 'PR' },
+  { pane: 'diff', label: 'Diff' },
+] as const satisfies readonly { pane: SandboxPane; label: string }[];
 
-const FAKE_PRS: readonly SandboxPr[] = [
-  { number: '#412', title: 'Fix race in sync queue' },
-  { number: '#413', title: 'Add repository health checks' },
-  { number: '#414', title: 'Keep review drafts offline' },
-  { number: '#415', title: 'Show changed files in the inbox' },
-  { number: '#416', title: 'Retry pending approvals after reconnect' },
+/** Movement bar pairs; each half is the matching Task-5 practice task. */
+const MOVE_PAIRS: readonly {
+  label: string;
+  tasks: readonly [SandboxTaskId, SandboxTaskId];
+}[] = [
+  { label: 'Down / Up', tasks: ['moveDown', 'moveUp'] },
+  { label: 'Top / Bottom', tasks: ['top', 'bottom'] },
+  { label: 'Open / Back', tasks: ['open', 'back'] },
 ];
 
-const FAKE_COMMENTS: readonly string[] = [
-  'Can queued reviews retry safely?',
-  'Thanks for keeping sync idempotent.',
-];
-
-interface SandboxFile {
-  readonly path: string;
-  readonly lines: readonly string[];
-}
-
-const FAKE_FILES: readonly SandboxFile[] = [
-  {
-    path: 'go/internal/sync/queue.go',
-    lines: [
-      ' func (q *Queue) Sync() error {',
-      '-    return q.flush()',
-      '+    q.mu.Lock()',
-      '+    defer q.mu.Unlock()',
-      '+    return q.flush()',
-      ' }',
-    ],
-  },
-  {
-    path: 'go/internal/sync/retry.go',
-    lines: [
-      ' func shouldRetry(status int) bool {',
-      '-    return status == 500',
-      '+    return status >= 500',
-      ' }',
-    ],
-  },
-];
-
-const PANE_LABELS = {
-  list: 'Pull request list',
-  detail: 'Pull request detail',
-  diff: 'Diff',
-} satisfies Record<SandboxState['pane'], string>;
+const LABEL = 'mono-text text-[10px] uppercase tracking-widest';
 
 interface OnboardingSandboxProps {
   readonly state: SandboxState;
 }
 
-/** Where the fake review is, so each pane change is visible at a glance. */
-function SandboxPath({
-  segments,
-}: {
-  readonly segments: readonly string[];
-}): ReactElement {
+function Breadcrumb({ state }: OnboardingSandboxProps): ReactElement {
+  const pr = FAKE_PRS[state.cursor];
+  const segments = [
+    'Practice inbox',
+    ...(state.pane === 'list' ? [] : [pr?.number ?? '']),
+    ...(state.pane === 'diff' ? [FAKE_FILES[state.fileIndex]?.path ?? ''] : []),
+  ];
   return (
-    <h3 className="flex gap-2 px-4 py-2 border-b border-outline-variant/30 text-[10px] uppercase tracking-widest text-outline">
+    <p className="flex flex-wrap gap-2 px-4 py-2.5 bg-surface-container-low border-b border-outline-variant/30 mono-text text-xs text-on-surface">
+      <span className={cn(LABEL, 'text-primary')}>Practice</span>
+      <span aria-hidden="true" className="text-outline">
+        {'//'}
+      </span>
       {segments.map((segment, index) => (
-        <span
-          key={segment}
-          className={cn(index === segments.length - 1 && 'text-on-surface')}
-        >
-          {index > 0 && <span aria-hidden="true">/ </span>}
+        <span key={segment}>
+          {index > 0 && (
+            <span aria-hidden="true" className="text-outline">
+              /{' '}
+            </span>
+          )}
           {segment}
         </span>
       ))}
-    </h3>
+    </p>
   );
 }
 
-function SandboxList({ state }: OnboardingSandboxProps): ReactElement {
+function PaneTabs({ state }: OnboardingSandboxProps): ReactElement {
   return (
-    <>
-      <SandboxPath segments={['Practice inbox']} />
-      <ul>
-        {FAKE_PRS.slice(0, SANDBOX_PR_COUNT).map((pr, index) => (
-          <li
-            key={pr.number}
-            aria-current={state.cursor === index ? 'true' : undefined}
+    <div
+      role="tablist"
+      aria-label="Practice pane"
+      className="flex px-2 border-b border-outline-variant/30"
+    >
+      {PANE_TABS.map((tab) => {
+        const isSelected = state.pane === tab.pane;
+        return (
+          <button
+            key={tab.pane}
+            type="button"
+            role="tab"
+            aria-selected={isSelected}
+            onMouseDown={keepFocus}
+            onClick={() => selectOnboardingSandboxPane(tab.pane)}
             className={cn(
-              'flex gap-3 px-4 py-2.5 border-l-2 border-transparent',
-              state.cursor === index &&
-                'bg-surface-container-high border-l-primary',
+              LABEL,
+              'px-4 py-2 border-0! border-b-2! border-transparent!',
+              isSelected ? 'text-on-surface border-primary!' : 'text-outline',
             )}
           >
-            <span className="text-outline">{pr.number}</span>
-            {pr.title}
-          </li>
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MovementBar({ state }: OnboardingSandboxProps): ReactElement {
+  const bindings = useEffectiveBindings();
+  const style = useStore(settingsStore, (s) => s.navigation.style);
+  const tasks = useMemo(
+    () =>
+      SANDBOX_TASKS.map((task) => ({
+        task,
+        keys: findActionKeys(bindings, sandboxTaskDisplayIds(task, style)),
+      })),
+    [bindings, style],
+  );
+  const next = SANDBOX_TASKS.find((task) => !state.completed.includes(task.id));
+  const keysFor = (id: SandboxTaskId) =>
+    tasks.find((entry) => entry.task.id === id);
+  const [isReferenceOpen, setIsReferenceOpen] = useState(false);
+
+  return (
+    <footer className="border-t border-outline-variant/30 bg-surface-container-low">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2.5">
+        <span className={cn(LABEL, 'font-bold text-on-surface')}>
+          {`Move // ${NAVIGATION_STYLE_CARDS[style].label}`}
+        </span>
+        {MOVE_PAIRS.map((pair) => (
+          <span key={pair.label} className="flex items-center gap-1.5">
+            {pair.tasks.map((id) => {
+              const entry = keysFor(id);
+              // Clickable even when an override leaves the task unbound.
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  aria-label={entry?.task.label}
+                  onMouseDown={keepFocus}
+                  onClick={() => {
+                    const actionId = entry?.task.actionIds[0];
+                    if (actionId !== undefined) dispatchSandboxAction(actionId);
+                  }}
+                  className="min-w-6 min-h-5"
+                >
+                  {entry?.keys !== undefined ? (
+                    <Kbd>{entry.keys}</Kbd>
+                  ) : (
+                    <span className={cn(LABEL, 'text-primary')}>
+                      {entry?.task.label}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            <span className={cn(LABEL, 'text-outline')}>{pair.label}</span>
+          </span>
         ))}
-      </ul>
-    </>
-  );
-}
-
-function SandboxDetail({ state }: OnboardingSandboxProps): ReactElement {
-  const pr = FAKE_PRS[state.cursor];
-  return (
-    <>
-      <SandboxPath segments={['Practice inbox', pr?.number ?? '']} />
-      <div className="p-4 space-y-4">
-        <div className="flex items-center gap-3">
-          <span className="font-bold">{pr?.title}</span>
-          {state.approved && <Badge>Approved</Badge>}
-        </div>
-        <p className="text-on-surface-variant">
-          Locks the queue while sync flushes and retries every 5xx.
-        </p>
-        <ul className="space-y-1">
-          {FAKE_FILES.slice(0, SANDBOX_FILE_COUNT).map((file) => (
-            <li key={file.path} className="text-on-surface-variant">
-              {file.path}
-            </li>
-          ))}
-        </ul>
+        <button
+          type="button"
+          aria-expanded={isReferenceOpen}
+          aria-controls="practice-all-keys"
+          onMouseDown={keepFocus}
+          onClick={() => setIsReferenceOpen((open) => !open)}
+          className={cn(LABEL, 'text-outline hover:text-primary')}
+        >
+          All keys
+        </button>
+        <span className={cn(LABEL, 'ml-auto text-on-surface-variant')}>
+          {next === undefined ? 'Practice complete' : `Next: ${next.label}`}
+        </span>
       </div>
-    </>
-  );
-}
-
-function SandboxDiff({ state }: OnboardingSandboxProps): ReactElement | null {
-  const pr = FAKE_PRS[state.cursor];
-  const file = FAKE_FILES[state.fileIndex];
-  if (file === undefined) return null;
-  return (
-    <>
-      <SandboxPath segments={['Practice inbox', pr?.number ?? '', file.path]} />
-      <div className="p-4 space-y-3">
-        <div className="whitespace-pre-wrap break-words">
-          {file.lines.map((line) => (
-            <div
-              key={line}
-              className={cn(
-                line.startsWith('+') && 'text-primary',
-                line.startsWith('-') && 'text-error',
-              )}
-            >
-              <code>{line}</code>
+      {isReferenceOpen && (
+        <dl
+          id="practice-all-keys"
+          className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 px-4 pb-3 text-xs"
+        >
+          {tasks.map(({ task, keys }) => (
+            <div key={task.id} className="flex justify-between gap-3">
+              <dt className="text-on-surface-variant">{task.label}</dt>
+              <dd>{keys === undefined ? null : <Kbd>{keys}</Kbd>}</dd>
             </div>
           ))}
-        </div>
-        <ol aria-label="Inline comments" className="space-y-1">
-          {FAKE_COMMENTS.slice(0, SANDBOX_COMMENT_COUNT).map(
-            (comment, index) => (
-              <li
-                key={comment}
-                aria-current={state.commentIndex === index ? 'true' : undefined}
-                className={cn(
-                  'flex items-center gap-2 px-3 py-1 border border-outline-variant/30 text-on-surface-variant',
-                  state.commentIndex === index &&
-                    'bg-surface-container-high text-on-surface border-primary',
-                )}
-              >
-                <span
-                  aria-hidden="true"
-                  className="material-symbols-outlined text-sm"
-                >
-                  comment
-                </span>
-                {comment}
-              </li>
-            ),
-          )}
-        </ol>
-      </div>
-    </>
+        </dl>
+      )}
+    </footer>
   );
 }
 
-/** Presentational fake review; `useAppHotkeys` drives it through appStore. */
+/** Practice composition: breadcrumb, pane tabs, fake pane, movement bar. */
 export function OnboardingSandbox({
   state,
 }: OnboardingSandboxProps): ReactElement {
-  const pr = FAKE_PRS[state.cursor];
   return (
     <section
       aria-label="Practice pull request"
-      className="h-72 overflow-auto bg-surface-container-lowest mono-text text-sm"
+      className="flex flex-col min-h-[32rem] border border-outline-variant/30 bg-surface-container-lowest"
     >
-      <p className="sr-only" aria-live="polite">
-        {`${PANE_LABELS[state.pane]}: ${pr?.number ?? ''} ${pr?.title ?? ''}`}
-      </p>
-      {state.pane === 'list' && <SandboxList state={state} />}
-      {state.pane === 'detail' && <SandboxDetail state={state} />}
-      {state.pane === 'diff' && <SandboxDiff state={state} />}
+      <Breadcrumb state={state} />
+      <PaneTabs state={state} />
+      <div className="flex flex-1 flex-col min-h-0 overflow-auto">
+        <OnboardingPracticePanes state={state} />
+      </div>
+      <MovementBar state={state} />
     </section>
   );
 }

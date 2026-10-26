@@ -6,6 +6,7 @@ import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useOverlays } from '../overlays/OverlayContext';
+import { showFirstRunRail } from '../services/firstRunRail';
 import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
@@ -47,7 +48,7 @@ const COMMANDS: readonly CommandItem[] = [
   {
     id: 'tour',
     name: ':tour',
-    description: 'Replay the first-run guided tour',
+    description: 'Show the first-review guide again',
     icon: 'school',
   },
   {
@@ -149,14 +150,8 @@ const COMMANDS: readonly CommandItem[] = [
  * Escape closes.
  */
 export function CommandPalette(): React.ReactElement | null {
-  const {
-    activeOverlay,
-    closeOverlay,
-    openHelp,
-    openRepoPicker,
-    openAddRepo,
-    openTour,
-  } = useOverlays();
+  const { activeOverlay, closeOverlay, openHelp, openRepoPicker, openAddRepo } =
+    useOverlays();
   const isOpen = activeOverlay === 'command';
   const [query, setQuery] = useState('');
   const prefetchedRef = useRef(false);
@@ -275,8 +270,22 @@ export function CommandPalette(): React.ReactElement | null {
         setQuery('');
         return;
       case 'tour':
-        openTour();
-        setQuery('');
+        void showFirstRunRail().match(
+          () => {
+            closeOverlay();
+            setQuery('');
+            void navigate({
+              to: '/prs',
+              search: (prev: Record<string, unknown>) => prev,
+            });
+          },
+          (error) =>
+            addToast({
+              type: 'error',
+              message: `Couldn't show the first-review guide: ${error.message}`,
+              dismissible: true,
+            }),
+        );
         return;
       case 'focus-list':
         // Navigate to /prs; route↔mode coherence effect will correct mode.

@@ -13,7 +13,34 @@ import type { Logger } from 'electron-log';
 import { execa, type ResultPromise } from 'execa';
 import waitOn from 'wait-on';
 import { z } from 'zod';
+import { SLOW_ENGINE_MS } from '../types/engine';
 import type { GoProcessConfig } from './types';
+
+const STDERR_TAIL_LINES = 60;
+const stderrTail = (() => {
+  let lines: readonly string[] = [];
+  return {
+    append(line: string): void {
+      lines = [...lines, line].slice(-STDERR_TAIL_LINES);
+    },
+    snapshot(): readonly string[] {
+      return [...lines];
+    },
+  };
+})();
+
+export function getStderrTail(): readonly string[] {
+  return stderrTail.snapshot();
+}
+
+export function restartGoProcess(options: GoSpawnOptions): Promise<number> {
+  restartCount = 0;
+  const config =
+    lastKnownPort === null
+      ? options.config
+      : { ...options.config, wsPort: lastKnownPort };
+  return spawnGoProcess({ ...options, config });
+}
 
 const MAX_WS_PORT = 65535;
 const readyLineSchema = z.object({
@@ -21,14 +48,10 @@ const readyLineSchema = z.object({
   wsPort: z.number().int().min(1).max(MAX_WS_PORT),
 });
 
-function waitForPort(
-  port: number,
-  timeoutMs: number,
-): ResultAsync<void, Fault> {
+function waitForPort(port: number): ResultAsync<void, Fault> {
   return fromPromise(
     waitOn({
       resources: [`tcp:127.0.0.1:${port}`],
-      timeout: timeoutMs,
       interval: 250,
       tcpTimeout: 300,
       window: 0,
@@ -43,7 +66,7 @@ function waitForPort(
 
 let goProcess: ResultPromise | null = null;
 
-const GO_READY_TIMEOUT_MS = 15_000;
+const GO_READY_TIMEOUT_MS = SLOW_ENGINE_MS;
 const MAX_RESTARTS = 3;
 const RESTART_DELAY_MS = 2000;
 const FALLBACK_EXTERNAL_PORT = 8080;
@@ -84,6 +107,9 @@ export interface GoSpawnOptions {
   logger: Logger;
   onCrash?: (code: number | null, signal: string | null) => void;
   onStillStarting?: () => void;
+  onStarting?: () => void;
+  onReady?: (port: number) => void;
+  onGiveUp?: (exit: ProcessExit) => void;
   maxRestarts?: number;
 }
 
@@ -188,7 +214,7 @@ const getExitDetails = (
   return { code: null, signal: null, message: String(error) };
 };
 
-type ProcessExit = { code: number | null; signal: string | null };
+export type ProcessExit = { code: number | null; signal: string | null };
 
 function handleProcessExit(exit: ProcessExit, options: GoSpawnOptions): void {
   options.onCrash?.(exit.code, exit.signal);
@@ -199,6 +225,7 @@ function handleProcessExit(exit: ProcessExit, options: GoSpawnOptions): void {
     options.logger.error(
       `Go process crashed ${restartCount} times — not restarting`,
     );
+    options.onGiveUp?.(exit);
     return;
   }
 
@@ -211,13 +238,22 @@ function handleProcessExit(exit: ProcessExit, options: GoSpawnOptions): void {
       ? options
       : { ...options, config: { ...options.config, wsPort: lastKnownPort } };
   setTimeout(() => {
-    void ResultAsync.fromPromise(spawnGoProcess(restartOptions), (cause) =>
+    let hasGivenUp = false;
+    const attemptOptions: GoSpawnOptions = {
+      ...restartOptions,
+      onGiveUp: (failedExit) => {
+        hasGivenUp = true;
+        options.onGiveUp?.(failedExit);
+      },
+    };
+    void ResultAsync.fromPromise(spawnGoProcess(attemptOptions), (cause) =>
       new Fault(cause instanceof Error ? cause : String(cause))
         .withTag('GO_PROCESS_ERROR')
         .withCause(cause),
-    ).orInspect((error) =>
-      options.logger.error(`Failed to restart Go process: ${error.message}`),
-    );
+    ).orInspect((error) => {
+      options.logger.error(`Failed to restart Go process: ${error.message}`);
+      if (!hasGivenUp) options.onGiveUp?.(getExitDetails(error.cause));
+    });
   }, RESTART_DELAY_MS);
 }
 
@@ -235,6 +271,7 @@ function attachProcessLifecycle(
     );
     goProcess = null;
     if (!wasStartupResolved()) {
+      options.onGiveUp?.(exit);
       onStartupExit(
         ServiceError(
           'GO_PROCESS_ERROR',
@@ -283,18 +320,26 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
 
   // When BISTRO_SKIP_GO_SPAWN=1, assume Go is already running externally (e.g. under Delve for debugging).
   if (process.env.BISTRO_SKIP_GO_SPAWN === '1') {
+    options.onStarting?.();
     const externalPort =
       config.wsPort > 0 ? config.wsPort : FALLBACK_EXTERNAL_PORT;
     logger.info(
       'BISTRO_SKIP_GO_SPAWN=1 — waiting for external Go process on port ' +
         externalPort,
     );
-    return toPortPromise(
-      waitForPort(externalPort, GO_READY_TIMEOUT_MS).map(() => {
+    const readyWaiter = createGoReadyWaiter(GO_READY_TIMEOUT_MS, () => {
+      options.onStillStarting?.();
+    });
+    // A slow external launch has not exited; keep observing its port.
+    void waitForPort(externalPort).match(
+      () => {
         lastKnownPort = externalPort;
-        return externalPort;
-      }),
+        options.onReady?.(externalPort);
+        readyWaiter.markReady(externalPort);
+      },
+      (fault) => readyWaiter.markFailed(fault),
     );
+    return toPortPromise(readyWaiter.wait());
   }
 
   if (goProcess) {
@@ -302,6 +347,7 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
     return Promise.resolve(lastKnownPort ?? config.wsPort);
   }
 
+  options.onStarting?.();
   const args = createGoArgs(config);
   logger.info(`Spawning Go binary: ${config.binaryPath} ${args.join(' ')}`);
 
@@ -342,7 +388,7 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
   let hasReadySignal = false;
   const readyWaiter = createGoReadyWaiter(GO_READY_TIMEOUT_MS, () => {
     logger.warn(
-      'Go process is still starting after 15 seconds — waiting for its ready signal',
+      'Go process is still starting after 10 seconds — waiting for its ready signal',
     );
     options.onStillStarting?.();
   });
@@ -353,6 +399,7 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
     }
     hasReadySignal = true;
     lastKnownPort = port;
+    options.onReady?.(port);
     logger.info(`Go sync engine is ready on port ${port} (${source})`);
     readyWaiter.markReady(port);
   };
@@ -361,9 +408,16 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
     level: 'info' | 'warn',
     prefix: string,
     onLine: (line: string) => void,
-  ): ((data: Buffer) => void) => {
+  ): { onData: (data: Buffer) => void; flush: () => void } => {
     let remainder = '';
-    return (data) => {
+    const flush = (): void => {
+      if (remainder.length === 0) return;
+      const line = remainder;
+      remainder = '';
+      logger[level](`${prefix}${line}`);
+      onLine(line);
+    };
+    const onData = (data: Buffer): void => {
       const chunks = `${remainder}${data.toString()}`.split('\n');
       remainder = chunks.pop() ?? '';
       for (const line of chunks) {
@@ -374,30 +428,30 @@ export function spawnGoProcess(options: GoSpawnOptions): Promise<number> {
         onLine(line);
       }
     };
+    return { onData, flush };
   };
 
-  spawnedProcess.stdout?.on(
-    'data',
-    logProcessLines('info', '[go] ', (line) => {
-      const readyPort = parseReadyLine(line);
-      if (readyPort !== null) {
-        markReady(readyPort, 'ready signal');
-        return;
-      }
-      if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
-        markReady(config.wsPort, 'log line');
-      }
-    }),
-  );
+  const stdoutLines = logProcessLines('info', '[go] ', (line) => {
+    const readyPort = parseReadyLine(line);
+    if (readyPort !== null) {
+      markReady(readyPort, 'ready signal');
+      return;
+    }
+    if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
+      markReady(config.wsPort, 'log line');
+    }
+  });
+  spawnedProcess.stdout?.on('data', stdoutLines.onData);
+  spawnedProcess.stdout?.once('end', stdoutLines.flush);
 
-  spawnedProcess.stderr?.on(
-    'data',
-    logProcessLines('warn', '[go:stderr] ', (line) => {
-      if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
-        markReady(config.wsPort, 'stderr log line');
-      }
-    }),
-  );
+  const stderrLines = logProcessLines('warn', '[go:stderr] ', (line) => {
+    stderrTail.append(line);
+    if (config.wsPort > 0 && /listen|started|serving/i.test(line)) {
+      markReady(config.wsPort, 'stderr log line');
+    }
+  });
+  spawnedProcess.stderr?.on('data', stderrLines.onData);
+  spawnedProcess.stderr?.once('end', stderrLines.flush);
 
   spawnedProcess.nodeChildProcess.once('spawn', () => {
     logger.info('Go process spawned');

@@ -7,6 +7,7 @@ import {
   ServiceError,
 } from '@thourum/fault';
 import { z } from 'zod';
+import { repoInfoSchema, reviewQueueSchema } from './index';
 
 const messageEnvelopeSchema = z.object({
   id: z.string().optional(),
@@ -19,7 +20,15 @@ export type WSMessage = z.infer<typeof messageEnvelopeSchema>;
 
 const locationErrorSchema = z.object({
   repo_id: z.string(),
-  operation: z.enum(['scan', 'fetch', 'diff', 'clone', 'prune', 'recover']),
+  operation: z.enum([
+    'scan',
+    'scan_dev_folder',
+    'fetch',
+    'diff',
+    'clone',
+    'prune',
+    'recover',
+  ]),
   code: z.enum([
     'path_missing',
     'remote_mismatch',
@@ -33,6 +42,8 @@ const locationErrorSchema = z.object({
     'cancelled',
     'delete_failed',
     'scan_partial',
+    'scan_failed',
+    'persistence_failed',
   ]),
   message: z.string(),
 });
@@ -51,12 +62,15 @@ const scanDevFolderResultSchema = z.union([
   }),
   z.object({
     ok: z.literal(true),
-    discovered: z.number(),
+    discovered: z.number().int().nonnegative(),
     healthy: z.number(),
     degraded: z.number(),
     skipped: z.number(),
     partial: z.boolean(),
   }),
+  // The async scan worker reports failures on the same correlated result.
+  locationErrorSchema.extend({ ok: z.literal(false) }),
+  z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
 ]);
 
 export const dataSchemas = Object.freeze({
@@ -137,6 +151,7 @@ export const dataSchemas = Object.freeze({
   AUTH_REDIRECT: z.object({ provider: z.string(), url: z.string().url() }),
   AUTH_CHECK_RESULT: z.object({
     authenticated: z.boolean(),
+    exchange: z.enum(['proxy', 'local']).optional(),
     providers: z
       .array(z.object({ provider: z.string(), username: z.string() }))
       .nullable()
@@ -185,23 +200,13 @@ export const dataSchemas = Object.freeze({
   UNDISMISS_RESULT: z.unknown(),
   PR_LIST_READY: z.unknown(),
   REPO_LIST_READY: z.object({
-    repos: z
-      .array(
-        z.object({
-          id: z.string(),
-          provider: z.string(),
-          owner: z.string(),
-          repo: z.string(),
-          watched: z.boolean(),
-          source: z.enum(['local', 'cache']).nullable().optional(),
-          location_status: z.string().nullable().optional(),
-          location_error_code: z.string().nullable().optional(),
-          location_error: z.string().nullable().optional(),
-        }),
-      )
-      .optional(),
+    repos: z.array(repoInfoSchema).optional(),
     error: z.string().optional(),
   }),
+  REVIEW_QUEUE_READY: z.union([
+    reviewQueueSchema,
+    z.object({ error: z.string() }),
+  ]),
   WATCH_REPO_RESULT: z.object({ repo_id: z.string(), watched: z.boolean() }),
 } satisfies Record<string, z.ZodType>);
 
@@ -280,6 +285,7 @@ const inboundMessageSchema = z.discriminatedUnion('type', [
   eventSchema('UNDISMISS_RESULT'),
   eventSchema('PR_LIST_READY'),
   eventSchema('REPO_LIST_READY'),
+  eventSchema('REVIEW_QUEUE_READY'),
   eventSchema('WATCH_REPO_RESULT'),
 ]);
 

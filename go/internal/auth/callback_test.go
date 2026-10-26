@@ -85,11 +85,19 @@ func TestCallbackServer_StateMismatch(t *testing.T) {
 
 	select {
 	case result := <-resultCh:
-		if result.Err == nil {
-			t.Fatal("expected error for state mismatch")
+		t.Fatalf("stale callback completed the current attempt: %+v", result)
+	default:
+	}
+
+	current := httptest.NewRecorder()
+	handler.ServeHTTP(current, httptest.NewRequest(http.MethodGet, "/callback?state=correct-state&error=access_denied", nil))
+	select {
+	case result := <-resultCh:
+		if result.Err == nil || result.Err.Error() != "GitHub did not authorize this sign-in" {
+			t.Fatalf("expected the current callback's result, got %+v", result)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for result")
+	default:
+		t.Fatal("current callback did not complete the attempt")
 	}
 }
 
@@ -120,6 +128,58 @@ func TestCallbackServer_MissingCode(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for result")
+	}
+}
+
+func TestCallbackFailurePage(t *testing.T) {
+	cases := []struct {
+		name, query, code, detail string
+		status                    int
+	}{
+		{name: "state", query: "state=wrong&code=x", code: "INVALID_STATE", detail: "state mismatch", status: http.StatusForbidden},
+		{name: "denied", query: "state=valid&error=access_denied&error_description=%3Cscript%3E", code: "access_denied", detail: "&lt;script&gt;", status: http.StatusBadRequest},
+		{name: "missing", query: "state=valid", code: "MISSING_CODE", detail: "missing code", status: http.StatusBadRequest},
+		{name: "exchange", query: "state=valid&code=x", code: "TOKEN_EXCHANGE_FAILED", detail: "bad_verification_code", status: http.StatusInternalServerError},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			tokenEndpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := w.Write([]byte(`{"error":"bad_verification_code","error_description":"<script>"}`)); err != nil {
+					t.Errorf("write token response: %v", err)
+				}
+			}))
+			defer tokenEndpoint.Close()
+			results := make(chan CallbackResult, 1)
+			cs := NewCallbackServer(ProviderConfig{TokenURL: tokenEndpoint.URL}, "valid", RedirectURI, results)
+			response := httptest.NewRecorder()
+			cs.handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/callback?"+test.query, nil))
+			if response.Code != test.status {
+				t.Fatalf("status %d", response.Code)
+			}
+			body := response.Body.String()
+			for _, want := range []string{test.code, test.detail, "Sign-in didn", "Nothing was saved", "description", "at"} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("missing %q in %s", want, body)
+				}
+			}
+			if strings.Contains(body, "<script>") {
+				t.Fatal("unescaped detail")
+			}
+			select {
+			case result := <-results:
+				if test.name == "state" {
+					t.Fatal("stale state completed the auth flow")
+				}
+				if result.Err == nil {
+					t.Fatal("failure did not reach auth flow")
+				}
+			default:
+				if test.name != "state" {
+					t.Fatal("missing callback result")
+				}
+			}
+		})
 	}
 }
 

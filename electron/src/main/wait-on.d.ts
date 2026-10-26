@@ -1,9 +1,9 @@
-// wait-on ships no typings. A static import (not createRequire) is required so
-// Vite bundles it — the packaged asar has no node_modules.
+// A static import (not createRequire) is required so Vite bundles wait-on —
+// the packaged asar has no node_modules.
 declare module 'wait-on' {
   interface WaitOnOptions {
     resources: string[];
-    timeout: number;
+    timeout?: number;
     interval?: number;
     tcpTimeout?: number;
     window?: number;

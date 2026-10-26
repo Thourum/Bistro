@@ -3,12 +3,35 @@ import type {
   OverlayContextValue,
   OverlayKind,
 } from '../overlays/OverlayContext';
-import { authAction, PROVIDERS } from '../providers';
+import { PROVIDERS } from '../providers';
 import { router } from '../router';
+import {
+  openEngineLogFolder,
+  reportEngineCrash,
+  restartEngine,
+} from '../services/engine';
+import {
+  hideFirstRunRail,
+  recordFirstRunAction,
+} from '../services/firstRunRail';
 import { cycleNavigationStyle } from '../services/navigationStyle';
+import { updateOnboardingSelection } from '../services/onboardingSync';
+import {
+  cancelSignIn,
+  copySignInLink,
+  reopenSignIn,
+  retrySignIn,
+  startSignIn,
+} from '../services/signIn';
+import { appStore } from '../store';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import type { RouteBase } from './keybindings';
 import { createLogger } from './logger';
+import {
+  moveOnboardingCursor,
+  selectAllOnboardingRepos,
+  toggleFocusedOnboardingRepo,
+} from './onboardingRepos';
 import { openUrlInBrowser } from './openUrl';
 
 export interface KeyActionContext {
@@ -129,9 +152,21 @@ function handleEscape(context: KeyActionContext): void {
     });
     return;
   }
-  if (routeBase === 'list') {
+  if (routeBase === 'list') clearListEscapeWork(context);
+}
+
+function clearListEscapeWork(context: KeyActionContext): void {
+  if (context.store.state.confirmingAction !== null) {
     context.store.setState((state) => ({ ...state, confirmingAction: null }));
+    return;
   }
+  // The /prs search bridge mirrors this reset into the URL, preserving sortBy.
+  context.store.setState((state) => ({
+    ...state,
+    searchQuery: '',
+    repoFilter: null,
+    filterState: 'open',
+  }));
 }
 
 function openSelectedPR(context: KeyActionContext): void {
@@ -144,6 +179,7 @@ function openSelectedPR(context: KeyActionContext): void {
       context.store.setState((state) => toggleRepoGroup(state, repoKey));
     return;
   }
+  recordFirstRunAction('list.open');
   void router.navigate({ to: '/prs/$prId', params: { prId } });
 }
 
@@ -205,6 +241,7 @@ function selectDiffFile(context: KeyActionContext, delta: 1 | -1): void {
 function viewDiff(context: KeyActionContext): void {
   if (context.prId === undefined) return;
   const { diffFileKeys, selectedFileIndex } = context.store.state;
+  recordFirstRunAction('detail.viewDiff');
   void router.navigate({
     to: '/prs/$prId/diff',
     params: { prId: context.prId },
@@ -218,13 +255,16 @@ function toggleApproval(context: KeyActionContext): void {
       ? 'approve_confirmed'
       : 'approve';
   context.store.setState((state) => ({ ...state, confirmingAction }));
+  recordFirstRunAction('detail.approve');
 }
 
 function toggleSinceLastReview(context: KeyActionContext): void {
+  const isActive = context.store.state.sinceLastReviewActive;
   context.store.setState((state) => ({
     ...state,
-    sinceLastReviewActive: !state.sinceLastReviewActive,
+    sinceLastReviewActive: !isActive,
   }));
+  if (!isActive) recordFirstRunAction('diff.sinceLastReview');
 }
 
 function toggleInterdiff(context: KeyActionContext): void {
@@ -270,6 +310,16 @@ function scrollDiffToBottom(): void {
 }
 
 const ACTIONS: Readonly<Record<string, KeyAction>> = {
+  'connecting.restart': () => {
+    if (appStore.state.engineStatus?.state !== 'crashed') return;
+    void restartEngine();
+  },
+  'connecting.openLogs': () => openEngineLogFolder(),
+  'connecting.report': () => reportEngineCrash(),
+  'login.reopen': () => reopenSignIn(),
+  'login.copyLink': () => copySignInLink(),
+  'login.cancel': () => cancelSignIn(),
+  'login.retry': () => retrySignIn(),
   'global.help': openHelp,
   'global.escape': handleEscape,
   'global.cancel': handleEscape,
@@ -278,6 +328,33 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
       ...state,
       confirmingAction: 'onboarding_continue',
     })),
+  'onboarding.repoDown': () =>
+    updateOnboardingSelection((state) => moveOnboardingCursor(state, 1)),
+  'onboarding.repoUp': () =>
+    updateOnboardingSelection((state) => moveOnboardingCursor(state, -1)),
+  'onboarding.repoToggle': () =>
+    updateOnboardingSelection(toggleFocusedOnboardingRepo),
+  'onboarding.repoAll': () =>
+    updateOnboardingSelection((state) =>
+      selectAllOnboardingRepos(state, { watched: true }),
+    ),
+  'onboarding.repoNone': () =>
+    updateOnboardingSelection((state) =>
+      selectAllOnboardingRepos(state, { watched: false }),
+    ),
+  'onboarding.repoFilter': () =>
+    appStore.setState((state) => ({
+      ...state,
+      onboardingIntent: 'focusRepoFilter',
+    })),
+  'onboarding.chooseFolder': () =>
+    appStore.setState((state) => ({
+      ...state,
+      onboardingIntent: 'chooseFolder',
+    })),
+  'onboarding.stopScan': () =>
+    appStore.setState((state) => ({ ...state, onboardingIntent: 'stopScan' })),
+  'firstRun.hide': hideFirstRunRail,
   'onboarding.nextStyle': () => cycleNavigationStyle(1),
   'onboarding.prevStyle': () => cycleNavigationStyle(-1),
   'global.command': (context) => context.overlays.openCommand(),
@@ -385,11 +462,13 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
       commentHumanOnly: false,
     })),
   'detail.approve': toggleApproval,
-  'detail.comment': (context) =>
+  'detail.comment': (context) => {
     context.store.setState((state) => ({
       ...state,
       confirmingAction: 'comment',
-    })),
+    }));
+    recordFirstRunAction('detail.comment');
+  },
   'detail.requestChanges': (context) =>
     context.store.setState((state) => ({
       ...state,
@@ -473,14 +552,8 @@ export function getBindingAction(actionId: string): KeyAction | undefined {
     };
   }
   const provider = PROVIDERS.find(
-    (entry) => `login.provider.${entry.id}` === actionId,
+    (entry) => entry.isAvailable && `login.provider.${entry.id}` === actionId,
   );
-  if (provider !== undefined) {
-    return (context) =>
-      context.store.setState((state) => ({
-        ...state,
-        confirmingAction: authAction(provider),
-      }));
-  }
+  if (provider !== undefined) return () => startSignIn(provider.id);
   return ACTIONS[actionId];
 }

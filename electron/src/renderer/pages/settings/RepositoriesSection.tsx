@@ -96,7 +96,11 @@ function parseScanDevFolderSummary(
     });
   }
 
-  return err(new Fault('Scan failed.').withTag('VALIDATION_ERROR'));
+  const message =
+    isRecord(data) && typeof data.message === 'string'
+      ? data.message
+      : 'Scan failed.';
+  return err(new Fault(message).withTag('VALIDATION_ERROR'));
 }
 
 function isLocationErrorResponse(data: unknown): data is LocationErrorResponse {

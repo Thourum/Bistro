@@ -12,10 +12,12 @@ import React from 'react';
 import { useAppHotkeys } from '../hooks/useAppHotkeys';
 import { useStore } from '../hooks/useStore';
 import { OverlayProvider, useOverlays } from '../overlays/OverlayContext';
+import { initEngineStatus } from '../services/engine';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import { AddRepoDialogOverlay } from './AddRepoDialogOverlay';
 import { AppTitleBar } from './AppTitleBar';
+import { EngineCrashedScreen } from './EngineCrashedScreen';
 import ToastContainer from './ToastContainer';
 
 /** Registers hotkeys. Lives inside OverlayProvider. */
@@ -46,6 +48,7 @@ function ConfirmingActionOverlayBridge(): null {
 }
 
 function RootShellInner(): React.ReactElement {
+  const engineStatus = useStore(appStore, (s: UIState) => s.engineStatus);
   return (
     <div className="flex h-screen flex-col bg-surface text-on-surface">
       <HotkeyRegistrar />
@@ -53,7 +56,11 @@ function RootShellInner(): React.ReactElement {
       <AppTitleBar />
       <AddRepoDialogOverlay />
       <div className="min-h-0 flex-1">
-        <Outlet />
+        {engineStatus?.state === 'crashed' ? (
+          <EngineCrashedScreen />
+        ) : (
+          <Outlet />
+        )}
       </div>
       <ToastContainer />
     </div>
@@ -61,6 +68,8 @@ function RootShellInner(): React.ReactElement {
 }
 
 export function RootShell(): React.ReactElement {
+  // Main-process status; independent of the WS so crash actions work while it is down.
+  React.useEffect(() => initEngineStatus(), []);
   return (
     <OverlayProvider>
       <RootShellInner />

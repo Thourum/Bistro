@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/itterno/bistro/internal/auth"
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/keychain"
 	github "github.com/itterno/bistro/internal/provider/github"
@@ -30,6 +31,7 @@ func main() {
 	logFile := flag.String("log-file", "", "Log file path (default: stderr only)")
 	syncInterval := flag.Duration("sync-interval", 5*time.Minute, "Interval between sync cycles")
 	autoSync := flag.Bool("auto-sync", true, "Enable automatic periodic sync (manual FORCE_SYNC is unaffected)")
+	authCallbackTimeout := flag.Duration("auth-callback-timeout", auth.CallbackTimeout, "OAuth callback wait duration (override for manual timeout checks)")
 	exitOnStdinClose := flag.Bool("exit-on-stdin-close", false,
 		"Exit when stdin closes (set by the Electron shell so the engine dies with its parent)")
 	rulesDir := flag.String("rules-dir", "",
@@ -87,6 +89,7 @@ func main() {
 	app := server.NewWithLogger(*wsPort, *dbPath, log)
 	app.SetSyncInterval(*syncInterval)
 	app.SetAutoSync(*autoSync)
+	app.SetAuthCallbackTimeout(*authCallbackTimeout)
 
 	// Classification rules live in user CONFIG (user-editable YAML), not the
 	// cache dir used for repo clones. No config dir → empty dir → embedded

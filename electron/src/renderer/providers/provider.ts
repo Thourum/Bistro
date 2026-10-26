@@ -4,12 +4,5 @@ export interface ProviderDef {
   readonly key: string;
   readonly label: string;
   readonly icon: string;
-}
-
-const AUTH_ACTION_PREFIX = 'auth_' as const;
-
-export type AuthAction = `${typeof AUTH_ACTION_PREFIX}${string}`;
-
-export function authAction(provider: ProviderDef): AuthAction {
-  return `${AUTH_ACTION_PREFIX}${provider.id}`;
+  readonly isAvailable: boolean;
 }

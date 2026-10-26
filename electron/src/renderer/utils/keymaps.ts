@@ -36,8 +36,22 @@ const SHARED_KEYS: KeyTable = {
   'onboarding.continue': 'Space',
   'onboarding.nextStyle': 'Tab',
   'onboarding.prevStyle': 'Shift+Tab',
+  'onboarding.repoToggle': 'x',
+  'onboarding.repoAll': 'a',
+  'onboarding.repoNone': 'n',
+  'onboarding.repoFilter': '/',
+  'onboarding.chooseFolder': 'o',
+  'onboarding.stopScan': 'Escape',
+  'firstRun.hide': 'Escape',
+  'connecting.restart': 'r',
+  'connecting.openLogs': 'l',
+  'connecting.report': 'i',
+  'login.reopen': 'r',
+  'login.copyLink': 'c',
+  'login.cancel': 'Escape',
+  'login.retry': 'Enter',
   ...Object.fromEntries(
-    PROVIDERS.map((provider) => [
+    PROVIDERS.filter((provider) => provider.isAvailable).map((provider) => [
       `login.provider.${provider.id}`,
       provider.key,
     ]),
@@ -67,6 +81,8 @@ const VIM_KEYS: KeyTable = {
   'global.help': 'Shift+/',
   'global.command': 'Shift+;',
   'global.search': 'Mod+/',
+  'onboarding.repoDown': 'j',
+  'onboarding.repoUp': 'k',
   'list.down': 'j',
   'list.up': 'k',
   'list.top': ['g', 'g'],
@@ -131,6 +147,8 @@ const EMACS_KEYS: KeyTable = {
   'global.cancel': 'Control+G',
   // Mod+/ is Control+/ on Windows/Linux, which is undo here.
   'global.search': ['Control+C', '/'],
+  'onboarding.repoDown': 'Control+N',
+  'onboarding.repoUp': 'Control+P',
   'list.down': 'Control+N',
   'list.up': 'Control+P',
   'list.top': 'Alt+Shift+,',
@@ -190,6 +208,8 @@ const EMACS_KEYS: KeyTable = {
 /** Arrows/Home/End/PgUp/PgDn/Ctrl+Tab move; actions keep vim's plain letters. */
 const STANDARD_KEYS: KeyTable = {
   ...SHARED_KEYS,
+  'onboarding.repoDown': 'ArrowDown',
+  'onboarding.repoUp': 'ArrowUp',
   ...jumpKeys(String),
   ...laneKeys((lane) => `Mod+${lane}`),
   'global.help': 'F1',

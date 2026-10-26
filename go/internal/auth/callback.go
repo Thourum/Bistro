@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -34,17 +35,26 @@ type CallbackServer struct {
 	redirectURI string
 	resultCh    chan<- CallbackResult
 	server      *http.Server
+	cancel      context.CancelFunc
 }
 
 // NewCallbackServer creates a callback server. The state parameter is validated
 // against the incoming request. Results are sent to resultCh.
 func NewCallbackServer(cfg ProviderConfig, state, redirectURI string, resultCh chan<- CallbackResult) *CallbackServer {
-	return &CallbackServer{
+	ctx, cancel := context.WithCancel(context.Background())
+	cs := &CallbackServer{
+		cancel:      cancel,
 		cfg:         cfg,
 		state:       state,
 		redirectURI: redirectURI,
 		resultCh:    resultCh,
 	}
+	cs.server = &http.Server{
+		Addr:        fmt.Sprintf("localhost:%d", CallbackPort),
+		Handler:     cs.handler(),
+		BaseContext: func(net.Listener) context.Context { return ctx },
+	}
+	return cs
 }
 
 // handler returns the HTTP handler for the callback endpoint.
@@ -74,18 +84,31 @@ func (cs *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request)
 			"incoming_state_len", len(incomingState),
 			"expected_state_len", len(cs.state),
 		)
-		http.Error(w, "Invalid state parameter", http.StatusForbidden)
-		cs.sendResult(CallbackResult{Err: errors.New("state mismatch")})
+		writeCallbackPage(w, http.StatusForbidden, failurePage(callbackPage{
+			Code: "INVALID_STATE", Sentence: "The sign-in response did not match this attempt.",
+			Error: "INVALID_STATE", Description: "state mismatch",
+		}))
+		// A stale browser tab must not complete the current sign-in attempt.
+		return
+	}
+
+	if githubError := r.URL.Query().Get("error"); githubError != "" {
+		log.Warn("oauth callback authorization denied")
+		writeCallbackPage(w, http.StatusBadRequest, failurePage(callbackPage{
+			Code: githubError, Sentence: "GitHub did not authorize this sign-in.",
+			Error: githubError, Description: r.URL.Query().Get("error_description"),
+		}))
+		cs.sendResult(CallbackResult{Err: errors.New("GitHub did not authorize this sign-in")})
 		return
 	}
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		log.Warn("oauth callback missing code",
-			"query_params", r.URL.Query().Encode(),
-			"error", r.URL.Query().Get("error"),
-		)
-		http.Error(w, "Missing code parameter", http.StatusBadRequest)
+		log.Warn("oauth callback missing code")
+		writeCallbackPage(w, http.StatusBadRequest, failurePage(callbackPage{
+			Code: "MISSING_CODE", Sentence: "GitHub did not return an authorization code.",
+			Error: "MISSING_CODE", Description: "missing code",
+		}))
 		cs.sendResult(CallbackResult{Err: errors.New("missing code")})
 		return
 	}
@@ -94,38 +117,45 @@ func (cs *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request)
 	token, err := ExchangeToken(r.Context(), cs.cfg, code, cs.redirectURI)
 	if err != nil {
 		log.Error("oauth token exchange failed", "error", err)
-		http.Error(w, "Token exchange failed", http.StatusInternalServerError)
+		upstreamError, description := "TOKEN_EXCHANGE_FAILED", "Unable to exchange the authorization code."
+		var tokenError *TokenError
+		if errors.As(err, &tokenError) {
+			upstreamError, description = tokenError.Code, tokenError.Description
+		}
+		writeCallbackPage(w, http.StatusInternalServerError, failurePage(callbackPage{
+			Code: "TOKEN_EXCHANGE_FAILED", Sentence: "Bistro could not exchange the authorization code for a token.",
+			Error: upstreamError, Description: description,
+		}))
 		cs.sendResult(CallbackResult{Err: fmt.Errorf("token exchange: %w", err)})
 		return
 	}
 
 	log.Info("oauth callback success")
 
-	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprint(w, `<!DOCTYPE html><html><body style="font-family:system-ui;text-align:center;padding:60px">
-		<h2>Authorization successful!</h2><p>You can close this tab and return to Bistro.</p>
-	</body></html>`)
+	writeCallbackPage(w, http.StatusOK, successPage(cs.cfg))
 
 	cs.sendResult(CallbackResult{Token: token})
 }
 
-// ListenAndServe starts the callback server. It blocks until the server is shut down.
-func (cs *CallbackServer) ListenAndServe() error {
-	addr := fmt.Sprintf("localhost:%d", CallbackPort)
-	cs.server = &http.Server{
-		Addr:    addr,
-		Handler: cs.handler(),
-	}
-	return cs.server.ListenAndServe()
+// Serve handles callbacks on an already-bound listener until shutdown.
+func (cs *CallbackServer) Serve(listener net.Listener) error {
+	return cs.server.Serve(listener)
 }
 
-// Shutdown gracefully shuts down the callback server.
+// Shutdown cancels token exchanges and drains callbacks, forcing close on timeout.
 func (cs *CallbackServer) Shutdown(ctx context.Context) error {
-	if cs.server == nil {
-		return nil
+	cs.cancel()
+	if err := cs.server.Shutdown(ctx); err != nil {
+		return errors.Join(err, cs.server.Close())
 	}
-	return cs.server.Shutdown(ctx)
+	return nil
 }
+
+// TokenError is an error reported by the token endpoint, kept typed so the
+// callback page can show GitHub's code and description.
+type TokenError struct{ Code, Description string }
+
+func (e *TokenError) Error() string { return e.Code + ": " + e.Description }
 
 // tokenResponse represents the JSON body returned by the token endpoint.
 type tokenResponse struct {
@@ -222,7 +252,7 @@ func ExchangeToken(ctx context.Context, cfg ProviderConfig, code, redirectURI st
 			"error", tr.Error,
 			"description", tr.ErrorDesc,
 		)
-		return "", fmt.Errorf("%s: %s", tr.Error, tr.ErrorDesc)
+		return "", &TokenError{Code: tr.Error, Description: tr.ErrorDesc}
 	}
 
 	if strings.ToLower(tr.TokenType) != "bearer" {

@@ -1,8 +1,8 @@
-import { Fault, ResultAsync } from '@thourum/fault';
 import { addToast } from '../../../components/ToastContainer';
 import { appStore } from '../../../store';
 import type { WSInboundMessage } from '../../../types/wsSchemas';
 import { formatErrorMessage } from '../../../utils/error';
+import { openUrlInBrowser } from '../../../utils/openUrl';
 
 export function handleAuthExpired({
   data,
@@ -20,44 +20,26 @@ export function handleAuthExpired({
   });
 }
 
-function handleAuthRedirectError(message: string): void {
-  appStore.setState((state) => ({
-    ...state,
-    authLoading: false,
-    authError: message,
-  }));
-  addToast({ type: 'error', message, dismissible: true });
-}
-
 export function handleAuthRedirect({
+  id,
   data,
 }: Readonly<WSInboundMessage<'AUTH_REDIRECT'>>): void {
-  const openExternal = window.electron?.openExternal;
-  if (!openExternal) {
-    appStore.setState((state) => ({
-      ...state,
-      authLoading: false,
-      authError: 'Browser launch is unavailable.',
-    }));
+  if (!appStore.state.authLoading || id !== appStore.state.authStartRequestId)
     return;
-  }
-  void ResultAsync.fromPromise(openExternal(data.url), (cause) =>
-    new Fault(cause instanceof Error ? cause : String(cause))
-      .withTag('EXTERNAL_ERROR')
-      .withCause(cause),
-  ).match(
-    (result) => {
-      if (result && 'err' in result) {
-        handleAuthRedirectError(result.err);
-        return;
-      }
-      appStore.setState((state) => ({
-        ...state,
-        authLoading: true,
-        authError: null,
-      }));
-    },
-    (fault) => handleAuthRedirectError(fault.message),
+  appStore.setState((state) => ({
+    ...state,
+    authUrl: data.url,
+    authStartRequestId: null,
+    authStartedAt: Date.now(),
+    authLoading: true,
+    authError: null,
+    authTimedOut: false,
+    authInterrupted: false,
+  }));
+  void openUrlInBrowser(data.url).match(
+    () => undefined,
+    (fault) =>
+      addToast({ type: 'error', message: fault.message, dismissible: true }),
   );
 }
 
@@ -67,9 +49,9 @@ export function handleAuthCheckResult({
   appStore.setState((state) => ({
     ...state,
     authChecked: true,
-    authLoading: false,
     isAuthenticated: data.authenticated,
     connectedProviders: data.providers ?? [],
+    authExchange: data.exchange ?? null,
   }));
 }
 
@@ -91,6 +73,11 @@ export function handleAuthSuccess({
     isAuthenticated: true,
     authChecked: true,
     authLoading: false,
+    authStartRequestId: null,
+    authUrl: null,
+    authStartedAt: null,
+    authTimedOut: false,
+    authInterrupted: false,
     authError: null,
     connectedProviders: [
       ...state.connectedProviders.filter(
@@ -104,10 +91,20 @@ export function handleAuthSuccess({
 export function handleAuthFailed({
   data,
 }: Readonly<WSInboundMessage<'AUTH_FAILED'>>): void {
+  const isCancelled = data.error === 'cancelled';
+  const isTimeout = data.error === 'timeout';
   appStore.setState((state) => ({
     ...state,
     authLoading: false,
-    authError: data.error,
+    authStartRequestId: null,
+    authUrl: null,
+    authStartedAt: null,
+    authTimedOut: isTimeout,
+    // The reconnect cleanup cancel must not erase the interruption notice.
+    authInterrupted: isCancelled && state.authInterrupted,
+    authError: isCancelled || isTimeout ? null : data.error,
   }));
-  addToast({ type: 'error', message: data.error, dismissible: true });
+  if (!isCancelled && !isTimeout) {
+    addToast({ type: 'error', message: data.error, dismissible: true });
+  }
 }

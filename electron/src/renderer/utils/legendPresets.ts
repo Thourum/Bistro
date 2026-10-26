@@ -41,6 +41,7 @@ const FOOTER_LEGEND_PRESETS_BY_ROUTE = {
   // Login and onboarding footers show no legend (empty chrome).
   login: [],
   onboarding: [],
+  connecting: [],
 } as const satisfies Record<RouteBase, readonly string[]>;
 
 /** Per-overlay footer legend preset. */
@@ -65,7 +66,6 @@ const FOOTER_LEGEND_PRESETS_BY_OVERLAY = {
   command: ['global.escape'],
   repoPicker: ['global.escape'],
   addRepo: ['global.escape'],
-  tour: ['global.escape'],
 } as const satisfies Record<OverlayKind, readonly string[]>;
 
 export interface FooterLegendEntry {

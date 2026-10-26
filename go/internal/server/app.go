@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	stdsync "sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/keychain"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/scan"
 	"github.com/itterno/bistro/internal/server/handler"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/sync"
@@ -33,26 +35,28 @@ type syncSettingsMsg = handler.SyncSettingsMsg
 
 // App is the top-level orchestrator for the bistro-sync process.
 type App struct {
-	log                *slog.Logger
-	db                 *store.DB
-	wsServer           *ws.Server
-	wsPort             int
-	dbPath             string
-	orchestrator       *sync.Orchestrator
-	prov               provider.Provider
-	activeProviderName string
-	gitClient          *git.Client
-	githubClientID     string
-	githubClientSecret string
-	repoLocks          *git.RepoLocks
-	providerCache      *cache.ProviderCache
-	tokenManager       *keychain.TokenManager
-	syncTrigger        chan string
-	syncSettings       chan syncSettingsMsg
-	provMu             stdsync.RWMutex
-	syncInterval       time.Duration
-	autoSync           bool
-	readyWriter        io.Writer
+	log                 *slog.Logger
+	db                  *store.DB
+	wsServer            *ws.Server
+	wsPort              int
+	dbPath              string
+	orchestrator        *sync.Orchestrator
+	prov                provider.Provider
+	activeProviderName  string
+	gitClient           *git.Client
+	githubClientID      string
+	githubClientSecret  string
+	authCallbackTimeout time.Duration
+	repoLocks           *git.RepoLocks
+	providerCache       *cache.ProviderCache
+	tokenManager        *keychain.TokenManager
+	syncTrigger         chan string
+	pendingWatchSync    atomic.Bool
+	syncSettings        chan syncSettingsMsg
+	provMu              stdsync.RWMutex
+	syncInterval        time.Duration
+	autoSync            bool
+	readyWriter         io.Writer
 	// bridgeCancel cancels the event-bridge goroutine for the current orchestrator.
 	// Replaced each time a new orchestrator is wired up.
 	bridgeCancel context.CancelFunc
@@ -325,6 +329,13 @@ func (a *App) getProvider() provider.Provider {
 	return a.prov
 }
 
+// currentProviderSnapshot pairs a provider with its account generation lifetime.
+func (a *App) currentProviderSnapshot() (provider.Provider, context.Context) {
+	a.provMu.RLock()
+	defer a.provMu.RUnlock()
+	return a.prov, a.provCtx
+}
+
 // currentApplier returns the live orchestrator as an ActionApplier under a
 // read lock, or nil when no provider is authenticated. Satisfies
 // handler.ApplierGetter so SUBMIT_ACTION always routes to the current
@@ -360,6 +371,11 @@ func (a *App) SetGitHubClientID(clientID string) {
 // SetGitHubClientSecret sets the GitHub OAuth app client secret used by the auth code flow.
 func (a *App) SetGitHubClientSecret(secret string) {
 	a.githubClientSecret = secret
+}
+
+// SetAuthCallbackTimeout overrides the OAuth callback deadline; zero uses the default.
+func (a *App) SetAuthCallbackTimeout(duration time.Duration) {
+	a.authCallbackTimeout = duration
 }
 
 func (a *App) githubToken() string {
@@ -591,6 +607,8 @@ func (a *App) initializeStartupProvider(ctx context.Context) {
 // Run initializes the database, starts the WebSocket server, and blocks until
 // a SIGTERM, SIGINT, or context cancellation, then shuts down.
 func (a *App) Run(ctx context.Context) (runErr error) {
+	ctx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
 	if err := a.openDatabase(ctx); err != nil {
 		return err
 	}
@@ -602,10 +620,16 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	a.prepareLLMTier(ctx)
 	a.initializeStartupProvider(ctx)
 	a.registerAuthHandlers(ctx, stores)
-	a.registerReviewHandlers(stores)
+	waitReviewQueue := a.registerReviewHandlers(ctx, stores)
 	a.registerDiffAndCheckoutHandlers(stores)
 	a.registerExpertiseHandlers(stores)
-	a.registerRepoLocationHandlers(stores)
+	waitScans := a.registerRepoLocationHandlers(ctx, stores)
+	defer func() {
+		runErr = errors.Join(runErr, a.wsServer.Stop())
+		cancelRun()
+		waitReviewQueue()
+		waitScans()
+	}()
 
 	wsAddr := wsListenAddr(a.wsPort)
 	if err := a.wsServer.Start(wsAddr); err != nil {
@@ -618,7 +642,7 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 		readyOut = os.Stdout
 	}
 	if err := emitReady(readyOut, actualPort); err != nil {
-		return errors.Join(fmt.Errorf("emit ready signal: %w", err), a.wsServer.Stop())
+		return fmt.Errorf("emit ready signal: %w", err)
 	}
 	go a.runSyncLoop(ctx)
 	sigChan := make(chan os.Signal, 1)
@@ -630,15 +654,16 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	case <-ctx.Done():
 		a.log.Info("context cancelled")
 	}
-	return a.wsServer.Stop()
+	return nil
 }
 
 func (a *App) registerAuthHandlers(ctx context.Context, stores runStores) {
 	authDeps := handler.AuthDeps{
-		Log:       a.log,
-		Tokens:    a.tokenManager,
-		Cache:     a.providerCache,
-		Broadcast: a.wsServer.Broadcast,
+		Log:         a.log,
+		Tokens:      a.tokenManager,
+		Cache:       a.providerCache,
+		Broadcast:   a.wsServer.Broadcast,
+		SyncTrigger: a.syncTrigger,
 		SetProvider: func(prov provider.Provider, name string) {
 			a.provMu.Lock()
 			defer a.provMu.Unlock()
@@ -653,18 +678,26 @@ func (a *App) registerAuthHandlers(ctx context.Context, stores runStores) {
 		},
 		GetClientID:        func() string { return a.githubClientID },
 		GetClientSecret:    func() string { return a.githubClientSecret },
+		CallbackTimeout:    a.authCallbackTimeout,
 		CurrentUserWriter:  stores.currentUser,
 		CurrentUserClearer: stores.currentUser,
 	}
 
 	authCheck := handler.NewAuthCheckHandler(authDeps)
 
-	a.wsServer.RegisterHandler("AUTH_START", handler.NewAuthStartHandler(authDeps))
+	start, cancel := handler.NewAuthFlowHandlers(authDeps)
+	a.wsServer.RegisterHandler("AUTH_START", start)
+	a.wsServer.RegisterHandler("AUTH_CANCEL", cancel)
 	a.wsServer.RegisterHandler("AUTH_CHECK", authCheck)
 	a.wsServer.RegisterHandler("AUTH_DISCONNECT", handler.NewAuthDisconnectHandler(authDeps, authCheck))
 }
 
-func (a *App) registerReviewHandlers(stores runStores) {
+func (a *App) registerReviewHandlers(ctx context.Context, stores runStores) func() {
+	requestQueue, waitQueue := handler.NewRequestReviewQueueHandler(handler.ReviewQueueDeps{
+		Context: ctx, GetProvider: a.currentProviderSnapshot, DB: a.db.DB,
+		Broadcast: a.wsServer.Broadcast, Log: a.log,
+	})
+	a.wsServer.RegisterHandler("REQUEST_REVIEW_QUEUE", requestQueue)
 	// REQUEST_DIFF: enriched with per-file content_hash and viewed flag.
 	a.wsServer.RegisterHandler("REQUEST_DIFF", handler.NewRequestDiffHandlerWithDeps(handler.DiffHandlerDeps{
 		DiffStore:   stores.diff,
@@ -694,10 +727,11 @@ func (a *App) registerReviewHandlers(stores runStores) {
 	a.wsServer.RegisterHandler("REQUEST_REPO_LIST",
 		handler.NewRequestRepoListHandler(a.getProvider, a.db.DB, a.log))
 	a.wsServer.RegisterHandler("TOGGLE_WATCH_REPO",
-		handler.NewToggleWatchHandler(a.db.DB, a.syncTrigger, a.log))
+		handler.NewToggleWatchHandler(a.db.DB, handler.WatchSyncTrigger{Queue: a.syncTrigger, Pending: &a.pendingWatchSync}, a.log))
 	a.wsServer.RegisterHandler("FORCE_SYNC", handler.NewForceSyncHandler(a.syncTrigger, a.log))
 	a.wsServer.RegisterHandler("REQUEST_PR_SYNC", handler.NewRequestPRSyncHandler(a.currentPRSyncer, a.log))
 	a.wsServer.RegisterHandler("SET_SYNC_SETTINGS", handler.NewSetSyncSettingsHandler(a.syncSettings, a.log))
+	return waitQueue
 }
 
 func (a *App) registerDiffAndCheckoutHandlers(stores runStores) {
@@ -750,7 +784,7 @@ func (a *App) registerExpertiseHandlers(stores runStores) {
 	a.wsServer.RegisterHandler("SET_EXPERTISE_SETTINGS", handler.NewSetExpertiseSettingsHandler(expertiseDeps))
 }
 
-func (a *App) registerRepoLocationHandlers(stores runStores) {
+func (a *App) registerRepoLocationHandlers(ctx context.Context, stores runStores) func() {
 	deleteCacheDir := func(path string) error {
 		return git.DeleteCacheDir(path)
 	}
@@ -762,7 +796,12 @@ func (a *App) registerRepoLocationHandlers(stores runStores) {
 		Log:            a.log,
 	}
 	a.wsServer.RegisterHandler("VALIDATE_DEV_FOLDER", handler.NewValidateDevFolderHandler(a.log))
-	a.wsServer.RegisterHandler("SCAN_DEV_FOLDER", handler.NewScanDevFolderHandler(stores.repoLocation, a.syncTrigger, a.log))
+	startScan, cancelScan, waitScans := handler.NewScanDevFolderHandlers(handler.ScanDevFolderDeps{
+		Context: ctx, Locations: stores.repoLocation, SyncTrigger: a.syncTrigger,
+		Broadcast: a.wsServer.Broadcast, Scan: scan.Scan, Log: a.log,
+	})
+	a.wsServer.RegisterHandler("SCAN_DEV_FOLDER", startScan)
+	a.wsServer.RegisterHandler("SCAN_CANCEL", cancelScan)
 	a.wsServer.RegisterHandler("ADD_REPO_BY_URL", handler.NewAddRepoByURLHandler(handler.AddRepoByURLDeps{
 		DB:        a.db.DB,
 		Store:     stores.repoLocation,
@@ -790,4 +829,5 @@ func (a *App) registerRepoLocationHandlers(stores runStores) {
 		DeleteCacheDir: deleteCacheDir,
 		Log:            a.log,
 	}))
+	return waitScans
 }

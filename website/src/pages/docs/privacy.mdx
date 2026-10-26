@@ -33,8 +33,10 @@ source document is `design/security-model.md` in the repository.
 
 - **GitHub API calls:** Bistro syncs PR data from GitHub and sends review actions
   back to GitHub. GitHub remains the source of truth.
-- **OAuth flow:** sign-in happens through GitHub OAuth. Bistro receives a token
-  from GitHub after you authorize the app.
+- **OAuth flow:** sign-in happens through GitHub OAuth. In packaged builds, the
+  authorization code is swapped for a token via Bistro's sign-in endpoint
+  (`get-bistro.com`), which stores nothing. With a local `GITHUB_CLIENT_SECRET`,
+  the swap happens on your machine.
 - **Repository fetches:** local diff generation still requires network access to
   GitHub or your configured Git remote when Bistro fetches branches that are not
   already present locally.

@@ -26,7 +26,7 @@ Bistro is a keyboard-first, local-first desktop app for GitHub pull request revi
 ## Run Bistro from source
 
 ```bash
-git clone https://github.com/Itterno/Bistro.git
+git clone https://github.com/Thourum/Bistro.git
 cd Bistro/electron
 pnpm install
 pnpm build

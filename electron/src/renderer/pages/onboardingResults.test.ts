@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseWsMessage } from '../types/wsSchemas';
 import {
   parseScanDevFolderResult,
   parseValidateDevFolderResult,
@@ -17,6 +18,36 @@ const discoveryCount = (response: unknown): number | string =>
   );
 
 describe('development folder result interpretation', () => {
+  it('retains partial scan completion and rejects invalid discovery counts', () => {
+    const partial = parseScanDevFolderResult({
+      ok: true,
+      discovered: 2,
+      partial: true,
+    });
+    expect(partial.isOk()).toBe(true);
+    expect(
+      partial.match(
+        (value) => value,
+        () => null,
+      ),
+    ).toEqual({ discovered: 2, partial: true });
+    for (const discovered of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(
+        parseScanDevFolderResult({
+          ok: true,
+          discovered,
+          partial: false,
+        }).isErr(),
+      ).toBe(true);
+    }
+    expect(
+      parseScanDevFolderResult({ repositories: [] }).match(
+        (value) => value,
+        () => null,
+      ),
+    ).toEqual({ discovered: 0, partial: false });
+  });
+
   it('requires successful validation and preserves the canonical path', () => {
     expect(
       parseValidateDevFolderResult({ ok: true, canonical_path: '' }).match(
@@ -62,11 +93,7 @@ describe('development folder result interpretation', () => {
   });
 
   it('accepts numeric counts only on successful scan responses', () => {
-    expect(discoveryCount({ ok: true, discovered: -1 })).toBe(-1);
-    expect(discoveryCount({ ok: true, discovered: Number.NaN })).toBeNaN();
-    expect(
-      discoveryCount({ ok: true, discovered: Number.POSITIVE_INFINITY }),
-    ).toBe(Number.POSITIVE_INFINITY);
+    expect(discoveryCount({ ok: true, discovered: 2, partial: false })).toBe(2);
     for (const response of [
       null,
       { ok: false, discovered: 1 },
@@ -76,5 +103,24 @@ describe('development folder result interpretation', () => {
         'Dev folder scan returned an invalid response.',
       );
     }
+  });
+
+  it('surfaces an async scan failure instead of dropping it in transport', () => {
+    const failure = {
+      ok: false,
+      repo_id: '',
+      operation: 'scan_dev_folder',
+      code: 'scan_failed',
+      message: 'Unable to scan development folder.',
+    };
+    const message = parseWsMessage(
+      JSON.stringify({
+        id: 'scan-1',
+        type: 'SCAN_DEV_FOLDER_RESULT',
+        data: failure,
+      }),
+    );
+    expect(message.isOk()).toBe(true);
+    expect(discoveryCount(failure)).toBe('Unable to scan development folder.');
   });
 });

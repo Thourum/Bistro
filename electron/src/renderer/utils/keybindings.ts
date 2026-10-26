@@ -12,7 +12,8 @@ export type RouteBase =
   | 'diff'
   | 'settings'
   | 'login'
-  | 'onboarding';
+  | 'onboarding'
+  | 'connecting';
 
 export interface KeyBinding {
   /** Stable id used by settings overrides. */
@@ -54,6 +55,18 @@ export function isTextareaSubmit(event: {
   return (event.metaKey || event.ctrlKey) && event.key === 'Enter';
 }
 
+/** Leaves a practice comment in the onboarding sandbox; handled locally like TEXTAREA_SUBMIT_HOTKEY. */
+export const SANDBOX_COMPOSER_SUBMIT_HOTKEY = 'Shift+Space';
+
+export function isSandboxComposerSubmit(event: {
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  key: string;
+}): boolean {
+  return (event.shiftKey && event.key === ' ') || isTextareaSubmit(event);
+}
+
 const ALL_ROUTES: readonly RouteBase[] = [
   'list',
   'detail',
@@ -61,6 +74,7 @@ const ALL_ROUTES: readonly RouteBase[] = [
   'settings',
   'login',
   'onboarding',
+  'connecting',
 ];
 const ALL_OVERLAYS: readonly OverlayKind[] = [
   'command',
@@ -70,7 +84,6 @@ const ALL_OVERLAYS: readonly OverlayKind[] = [
   'repoPicker',
   'addRepo',
   'threads',
-  'tour',
 ];
 const LIST = { routes: ['list'] } as const;
 const DETAIL = { routes: ['detail'] } as const;
@@ -89,7 +102,7 @@ const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
     actionId: 'global.escape',
     description: 'Back / Cancel',
     activation: {
-      routes: ['list', 'detail', 'diff', 'settings'],
+      routes: ['list', 'detail', 'diff', 'settings', 'onboarding'],
       overlays: ALL_OVERLAYS,
     },
   },
@@ -97,7 +110,7 @@ const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
     actionId: 'global.cancel',
     description: 'Back / Cancel',
     activation: {
-      routes: ['list', 'detail', 'diff', 'settings'],
+      routes: ['list', 'detail', 'diff', 'settings', 'onboarding'],
       overlays: ALL_OVERLAYS,
     },
     hidden: true,
@@ -129,15 +142,101 @@ const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
   },
 ];
 
-const LOGIN_BINDINGS: readonly BindingDefinition[] = PROVIDERS.map(
-  (provider) => ({
-    actionId: `login.provider.${provider.id}`,
-    description: `Login with ${provider.label}`,
+const LOGIN_BINDINGS: readonly BindingDefinition[] = PROVIDERS.filter(
+  (provider) => provider.isAvailable,
+).map((provider) => ({
+  actionId: `login.provider.${provider.id}`,
+  description: `Login with ${provider.label}`,
+  activation: { routes: ['login'] },
+}));
+
+const SIGN_IN_ACTIONS: readonly BindingDefinition[] = [
+  {
+    actionId: 'login.reopen',
+    description: 'Reopen browser',
     activation: { routes: ['login'] },
-  }),
-);
+  },
+  {
+    actionId: 'login.copyLink',
+    description: 'Copy sign-in link',
+    activation: { routes: ['login'] },
+  },
+  {
+    actionId: 'login.cancel',
+    description: 'Cancel / Back to hosts',
+    activation: { routes: ['login'] },
+  },
+  {
+    actionId: 'login.retry',
+    description: 'Try again',
+    activation: { routes: ['login'] },
+  },
+];
+
+const CONNECTING_BINDINGS: readonly BindingDefinition[] = [
+  {
+    actionId: 'connecting.restart',
+    description: 'Restart engine',
+    activation: { routes: ['connecting'] },
+  },
+  {
+    actionId: 'connecting.openLogs',
+    description: 'Open log folder',
+    activation: { routes: ['connecting'] },
+  },
+  {
+    actionId: 'connecting.report',
+    description: 'Report on GitHub',
+    activation: { routes: ['connecting'] },
+  },
+];
 
 const ONBOARDING_BINDINGS: readonly BindingDefinition[] = [
+  {
+    actionId: 'onboarding.repoDown',
+    description: 'Next repository',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.repoUp',
+    description: 'Previous repository',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.repoToggle',
+    description: 'Toggle repository sync',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.repoAll',
+    description: 'Sync all repositories',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.repoNone',
+    description: 'Sync no repositories',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.repoFilter',
+    description: 'Filter repositories',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.chooseFolder',
+    description: 'Choose clone folder',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'onboarding.stopScan',
+    description: 'Stop folder scan',
+    activation: { routes: ['onboarding'] },
+  },
+  {
+    actionId: 'firstRun.hide',
+    description: 'Hide first-run rail',
+    activation: LIST,
+  },
   {
     actionId: 'onboarding.continue',
     description: 'Continue',
@@ -542,6 +641,8 @@ const THREAD_BINDINGS: readonly BindingDefinition[] = [
 export const ACTION_CATALOG: readonly BindingDefinition[] = [
   ...GLOBAL_BINDINGS,
   ...LOGIN_BINDINGS,
+  ...SIGN_IN_ACTIONS,
+  ...CONNECTING_BINDINGS,
   ...ONBOARDING_BINDINGS,
   ...LIST_BINDINGS,
   ...DETAIL_BINDINGS,

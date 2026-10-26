@@ -3,7 +3,7 @@ import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import type { PR } from '../types';
-import { laneForPR } from '../utils/lanes';
+import { LANES, laneForPR } from '../utils/lanes';
 import { useStore } from './useStore';
 import { useWebSocketPRList } from './useWebSocketPRList';
 
@@ -21,6 +21,37 @@ export interface VisiblePRsOverride {
   sort?: UIState['sortBy'];
   q?: string;
   repoFilter?: string | null;
+}
+
+export interface PROrder {
+  sort: UIState['sortBy'];
+  view: 'grouped' | 'flat';
+  viewerLogin: string;
+}
+
+/**
+ * The inbox's row order. The backend returns updated_at DESC (matches
+ * 'updated'), so only 'created' re-sorts; the flat view then orders by lane,
+ * newest-updated first within each lane.
+ */
+export function orderPRs(prs: readonly PR[], order: PROrder): PR[] {
+  let result: PR[] = [...prs];
+  if (order.sort === 'created') {
+    result = result.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+  }
+  if (order.view !== 'flat') return result;
+  const laneById = new Map(
+    result.map((pr) => [pr.id, laneForPR(pr, order.viewerLogin)]),
+  );
+  return [...result].sort((a, b) => {
+    const laneDifference =
+      (laneById.get(a.id) ?? 7) - (laneById.get(b.id) ?? 7);
+    if (laneDifference !== 0) return laneDifference;
+    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+  });
 }
 
 export interface UseVisiblePRsResult {
@@ -95,31 +126,27 @@ export function useVisiblePRs(
       );
     }
 
-    // 3. sort: backend returns updated_at DESC (matches 'updated'); re-sort
-    //    only when the user prefers created_at order.
-    if (sort === 'created') {
-      result = [...result].sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      );
-    }
-
-    if (view === 'flat') {
-      const laneById = new Map(
-        result.map((pr) => [pr.id, laneForPR(pr, viewerLogin)]),
-      );
-      result = [...result].sort((a, b) => {
-        const laneDifference =
-          (laneById.get(a.id) ?? 7) - (laneById.get(b.id) ?? 7);
-        if (laneDifference !== 0) return laneDifference;
-        return (
-          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-        );
-      });
-    }
-
-    return result;
+    // 3. sort, plus lane order in the flat view.
+    return orderPRs(result, { sort, view, viewerLogin });
   }, [rawPRs, repoFilter, q, sort, view, viewerLogin]);
 
   return { prs, isLoading, error };
+}
+
+/**
+ * Needs Action PRs from the full open list, so filtering the table never
+ * shrinks it; ordered like the table so the top PR is the lane's first row.
+ */
+export function useNeedsActionPRs(): readonly PR[] {
+  const { data: openPRs = [] } = useWebSocketPRList('open');
+  const sortBy = useStore(appStore, (s) => s.sortBy);
+  const viewerLogin = useStore(appStore, (s) => s.viewerLogin);
+  const view = useStore(settingsStore, (s) => s.prList.view);
+  return useMemo(() => {
+    const needsActionLane = LANES.find((lane) => lane.key === 'needs_action');
+    if (needsActionLane === undefined) return [];
+    return orderPRs(openPRs, { sort: sortBy, view, viewerLogin }).filter(
+      (pr) => laneForPR(pr, viewerLogin) === needsActionLane.id,
+    );
+  }, [openPRs, sortBy, view, viewerLogin]);
 }
