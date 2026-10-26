@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func dedupGroupIDs(t *testing.T, w *Writer, ids ...string) map[string]string {
@@ -39,7 +40,7 @@ func similarBotComments() []*provider.Comment {
 }
 
 func TestWriterDedupGroupsSimilarBotComments(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db).WithClassifier(newClassifierProvider(t))
 
 	if err := w.WriteSyncResults(classifyTestResult(similarBotComments()...)); err != nil {
@@ -53,7 +54,7 @@ func TestWriterDedupGroupsSimilarBotComments(t *testing.T) {
 }
 
 func TestWriterDedupIdempotentAcrossResync(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db).WithClassifier(newClassifierProvider(t))
 
 	if err := w.WriteSyncResults(classifyTestResult(similarBotComments()...)); err != nil {
@@ -71,7 +72,7 @@ func TestWriterDedupIdempotentAcrossResync(t *testing.T) {
 }
 
 func TestWriterDedupDissimilarStaysNull(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db).WithClassifier(newClassifierProvider(t))
 	path := "main.go"
 	comments := []*provider.Comment{

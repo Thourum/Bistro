@@ -12,6 +12,7 @@ import (
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
 	"github.com/itterno/bistro/internal/server/handler"
+	"github.com/itterno/bistro/internal/store/storetest"
 	gosync "github.com/itterno/bistro/internal/sync"
 	"github.com/itterno/bistro/internal/ws"
 )
@@ -30,7 +31,7 @@ func newTestApp() *App {
 func TestWatchTriggerOverflowSyncsEveryNewlyWatchedRepo(t *testing.T) {
 	app := newTestApp()
 	app.autoSync = false
-	app.db = openTestServerDB(t)
+	app.db = storetest.Open(t)
 	app.wsServer = ws.NewServerWithLogger(app.log)
 	app.prov = mock.NewMockProvider().WithInboxDiscovery(&provider.InboxDiscoveryResult{}, nil)
 	app.orchestrator = gosync.NewOrchestrator(app.log, app.prov, app.db, nil)

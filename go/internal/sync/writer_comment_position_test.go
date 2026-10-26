@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 // TestWriteComment_OutdatedComment_PreservesPatchsetNumber verifies requirement 4:
@@ -11,7 +12,7 @@ import (
 // their patchset_number overwritten with the current patchset number.
 // The COALESCE in writeComment preserves the original value when patchsetNum==0.
 func TestWriteComment_OutdatedComment_PreservesPatchsetNumber(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	pr := makePR("github:o/r:60", 60, "head-60", "base-60")
@@ -66,7 +67,7 @@ func TestWriteComment_OutdatedComment_PreservesPatchsetNumber(t *testing.T) {
 }
 
 func TestWriteComment_ReviewPositionFields(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	pr := makePR("github:o/r:61", 61, "head-61", "base-61")
@@ -110,7 +111,7 @@ func TestWriteComment_ReviewPositionFields(t *testing.T) {
 // review comments arriving via result.Threads (not result.Comments) receive
 // the current patchset_number when they have a current Position.
 func TestWriteThreadComment_CurrentPosition_StampsPatchsetNumber(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	pr := makePR("github:o/r:70", 70, "head-70", "base-70")
@@ -149,7 +150,7 @@ func TestWriteThreadComment_CurrentPosition_StampsPatchsetNumber(t *testing.T) {
 // an outdated thread comment (Position==nil) preserves its existing patchset_number
 // instead of being overwritten with the current patchset number.
 func TestWriteThreadComment_OutdatedPosition_PreservesPatchsetNumber(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	pr := makePR("github:o/r:71", 71, "head-71", "base-71")

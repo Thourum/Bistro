@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func TestRollbackPRSavepointReportsMissingSavepoint(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	ctx := context.Background()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -43,7 +44,7 @@ func TestRollbackPRSavepointReportsMissingSavepoint(t *testing.T) {
 // It also asserts the PR row and patchset did NOT advance, since all three critical
 // writes are inside the same savepoint boundary.
 func TestWriteDiffs_InsertFailure_SavepointRollsBackAll(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	// Seed a PR and its diff cache.
@@ -105,7 +106,7 @@ func TestWriteDiffs_InsertFailure_SavepointRollsBackAll(t *testing.T) {
 // recordPatchsetIfChanged fails, the savepoint rolls back the PR row write too,
 // so the prs table is not advanced without a matching patchset.
 func TestWritePR_PatchsetFailure_SavepointRollsBackPRRow(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	// Drop the patchsets table to force recordPatchsetIfChanged to fail.
@@ -132,7 +133,7 @@ func TestWritePR_PatchsetFailure_SavepointRollsBackPRRow(t *testing.T) {
 // TestWriteSavepoint_OtherPRsUnaffected verifies that a critical failure for
 // one PR does not roll back other PRs in the same batch.
 func TestWriteSavepoint_OtherPRsUnaffected(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	goodPR := makePR("github:o/r:40", 40, "head-40", "base-40")

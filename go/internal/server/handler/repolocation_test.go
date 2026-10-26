@@ -13,6 +13,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 type fakeRepoLocationCloner struct {
@@ -141,7 +142,7 @@ func TestRepoLocationValidateDevFolderReturnsCanonicalPathAndEnvelope(t *testing
 
 func TestRepoLocationScanDevFolderReturnsInvalidPathEnvelope(t *testing.T) {
 	// Arrange
-	handler := newTestScanDevFolderHandler(t, store.NewRepoLocationStore(newRepoLocationMigratedDB(t).DB), nil)
+	handler := newTestScanDevFolderHandler(t, store.NewRepoLocationStore(storetest.Open(t).DB), nil)
 	missing := filepath.Join(t.TempDir(), "missing")
 
 	// Act
@@ -155,7 +156,7 @@ func TestRepoLocationScanDevFolderNoopsWhenBistroRepoDirIsSet(t *testing.T) {
 	// Arrange
 	root := t.TempDir()
 	t.Setenv("BISTRO_REPO_DIR", filepath.Join(root, "cache"))
-	db := newRepoLocationMigratedDB(t)
+	db := storetest.Open(t)
 	store := store.NewRepoLocationStore(db.DB)
 	dev := filepath.Join(root, "dev")
 	if err := createRepo(filepath.Join(dev, "acme", "api"), "origin", "https://github.com/acme/api.git"); err != nil {
@@ -194,7 +195,7 @@ func TestRepoLocationScanDevFolderReconcilesHealthAndTriggersSync(t *testing.T) 
 		t.Skip("permission-denied checks are not meaningful when running as root")
 	}
 	// Arrange
-	db := newRepoLocationMigratedDB(t)
+	db := storetest.Open(t)
 	store := store.NewRepoLocationStore(db.DB)
 	dev := filepath.Join(t.TempDir(), "dev")
 	mustMkdirAll(dev)
@@ -460,7 +461,7 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
 			root := t.TempDir()
-			db := newRepoLocationMigratedDB(t)
+			db := storetest.Open(t)
 			cloner := &fakeRepoLocationCloner{}
 			if tt.arrange != nil {
 				tt.arrange(t, db, root, cloner)

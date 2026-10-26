@@ -9,6 +9,7 @@ import (
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func silentLog() *slog.Logger {
@@ -256,7 +257,7 @@ func TestResolveAnchors_OriginalPosition_PatchsetNumberSetButNotInDB_Skipped(t *
 func TestResolveAnchors_OriginalPosition_WithDB_PatchsetFound_AttemptedNotSkipped(t *testing.T) {
 	origPos := 4
 	psNum := 1
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	mustInsertPRForAnchorTest(t, db, "pr-anc-2")
 	if _, err := db.Exec(`INSERT INTO patchsets (pr_id, number, head_sha, base_sha, pushed_at)
 		VALUES ('pr-anc-2', 1, 'sha-P1-head', 'sha-P1-base', CURRENT_TIMESTAMP)`); err != nil {
@@ -292,7 +293,7 @@ func TestResolveAnchors_OriginalPosition_WithDB_PatchsetFound_AttemptedNotSkippe
 // stored patchset_number in the DB that is loaded by GetCommentPatchsetNumbers.
 func TestResolveAnchors_OriginalPosition_DBLookup_AttemptedNotSkipped(t *testing.T) {
 	origPos := 3
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	mustInsertPRForAnchorTest(t, db, "pr-anc-3")
 	// Patchset row in DB.
 	db.Exec(`INSERT INTO patchsets (pr_id, number, head_sha, base_sha, pushed_at)

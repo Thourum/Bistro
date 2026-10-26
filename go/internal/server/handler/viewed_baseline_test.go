@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
 func newViewedBaselineTestStores(t *testing.T) (*store.DB, *store.DiffStore) {
 	t.Helper()
-	db := newReadStateTestDB(t)
+	db := storetest.Open(t)
 	ctx := context.Background()
 	const prID = "github:o/r:1"
 	for _, statement := range []string{

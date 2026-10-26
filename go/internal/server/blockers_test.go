@@ -7,7 +7,7 @@ import (
 
 	"github.com/itterno/bistro/internal/actions"
 	"github.com/itterno/bistro/internal/provider/mock"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 	gosync "github.com/itterno/bistro/internal/sync"
 	"github.com/itterno/bistro/internal/ws"
 )
@@ -24,20 +24,6 @@ func newFullTestApp(t *testing.T) *App {
 	app.provMu.Unlock()
 	app.wsServer = ws.NewServerWithLogger(app.log)
 	return app
-}
-
-// openTestServerDB opens a migrated in-memory SQLite DB for server-package tests.
-func openTestServerDB(t *testing.T) *store.DB {
-	t.Helper()
-	db, err := store.OpenDB(":memory:")
-	if err != nil {
-		t.Fatalf("openTestServerDB: %v", err)
-	}
-	if err := store.NewMigrationRunner(nil, db.DB).Run(context.Background()); err != nil {
-		t.Fatalf("openTestServerDB migrate: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
 }
 
 // ── Blocker 1: keychain startup + AUTH_DISCONNECT path ────────────────────
@@ -132,7 +118,7 @@ func TestKeychainStartup_DisconnectByName(t *testing.T) {
 // via attachOrchestratorLocked have WithLiveness wired: when provCtx is
 // cancelled, ApplyAction must reject rather than execute with stale credentials.
 func TestAttachOrchestratorLocked_LivenessWired(t *testing.T) {
-	db := openTestServerDB(t)
+	db := storetest.Open(t)
 	app := newFullTestApp(t)
 	app.db = db
 

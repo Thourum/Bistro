@@ -8,6 +8,7 @@ import (
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func TestNewOrchestrator(t *testing.T) {
@@ -63,7 +64,7 @@ func TestSyncMissingFields(t *testing.T) {
 }
 
 func TestDiscoverAndSyncInboxAdvancesCursorAfterWrite(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	now := time.Date(2026, 6, 29, 22, 0, 0, 0, time.UTC)
 	mockProv := mock.NewMockProvider().WithInboxDiscovery(&provider.InboxDiscoveryResult{
 		PRs: []*provider.PR{{

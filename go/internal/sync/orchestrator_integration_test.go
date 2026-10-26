@@ -11,6 +11,7 @@ import (
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 // TestOrchestratorRateLimitDetection verifies that a 429 ProviderError from
@@ -79,7 +80,7 @@ func TestOrchestratorRateLimitDetection(t *testing.T) {
 // TestOrchestratorQueueActionsWhenRateLimited verifies that ApplyAction
 // enqueues the action (not execute it) when the orchestrator is rate limited.
 func TestOrchestratorQueueActionsWhenRateLimited(t *testing.T) {
-	storeDB := openTestDB(t)
+	storeDB := storetest.Open(t)
 
 	mockProv := mock.NewMockProvider()
 	orch := NewOrchestrator(nil, mockProv, nil, nil)
@@ -124,7 +125,7 @@ func TestOrchestratorQueueActionsWhenRateLimited(t *testing.T) {
 // TestOrchestratorReplayQueuedActions verifies that ReplayQueuedActions
 // processes all pending items and transitions them out of 'pending' status.
 func TestOrchestratorReplayQueuedActions(t *testing.T) {
-	storeDB := openTestDB(t)
+	storeDB := storetest.Open(t)
 
 	mockProv := mock.NewMockProvider().WithPRs([]*provider.PR{
 		{ID: "github:org/repo:1", Number: 1, Title: "Test PR"},
@@ -162,7 +163,7 @@ func TestOrchestratorReplayQueuedActions(t *testing.T) {
 // completed actions older than 7 days and failed actions older than 24 hours,
 // while leaving recent pending actions intact.
 func TestOrchestratorCleanupOldQueuedActions(t *testing.T) {
-	storeDB := openTestDB(t)
+	storeDB := storetest.Open(t)
 
 	orch := NewOrchestrator(nil, mock.NewMockProvider(), nil, nil)
 	orch.queue = store.NewActionQueue(storeDB.DB)
@@ -230,7 +231,7 @@ func TestOrchestratorCleanupOldQueuedActions(t *testing.T) {
 // than hydrationThreshold PRs skips the detail fetch and writes rows with
 // hydrated=0, so one busy repo cannot burn the rate-limit budget.
 func TestSyncListOnlyOverHydrationThreshold(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	now := time.Now().UTC()
 
 	prs := make([]*provider.PR, hydrationThreshold+1)
@@ -280,7 +281,7 @@ func TestSyncListOnlyOverHydrationThreshold(t *testing.T) {
 // TestSyncPRHydratesListOnlyRow verifies that on-demand SyncPR fetches details
 // for a single PR and flips its row to hydrated=1.
 func TestSyncPRHydratesListOnlyRow(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	now := time.Now().UTC()
 
 	pr := &provider.PR{

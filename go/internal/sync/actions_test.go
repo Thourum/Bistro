@@ -10,6 +10,7 @@ import (
 	"github.com/itterno/bistro/internal/actions"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 // ── Blocker 3: queue ID uniqueness per thread ─────────────────────────────
@@ -70,7 +71,7 @@ func TestQueuedActionID_SameThreadSamePR(t *testing.T) {
 // clean failure when the thread does not exist for the given PR, without
 // reaching the (nil) provider.
 func TestApplyAction_ThreadNotFoundInStore(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	// No thread row inserted.
 
 	orch := NewOrchestrator(nil, nil, db, nil)
@@ -91,7 +92,7 @@ func TestApplyAction_ThreadNotFoundInStore(t *testing.T) {
 // TestApplyAction_ThreadStateUnknownRejected verifies that a thread with
 // state_known=false is rejected before any provider call.
 func TestApplyAction_ThreadStateUnknownRejected(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	insertThreadSync(t, db.DB, "pr-v2", "PRRT_unk", false, false) // state_known=false
 
 	orch := NewOrchestrator(nil, nil, db, nil)
@@ -112,7 +113,7 @@ func TestApplyAction_ThreadStateUnknownRejected(t *testing.T) {
 // TestApplyAction_ThreadWrongPRRejected verifies that a thread belonging to a
 // different PR cannot be mutated (cross-PR isolation).
 func TestApplyAction_ThreadWrongPRRejected(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	insertThreadSync(t, db.DB, "pr-A", "PRRT_x", true, true) // belongs to pr-A
 
 	orch := NewOrchestrator(nil, nil, db, nil)
@@ -134,7 +135,7 @@ func TestApplyAction_ThreadWrongPRRejected(t *testing.T) {
 // state_known=true passes the pre-flight check (failure here is from nil
 // provider, not from validation).
 func TestApplyAction_ThreadStateKnownPassesValidation(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	insertThreadSync(t, db.DB, "pr-v3", "PRRT_ok", false, true) // state_known=true
 
 	orch := NewOrchestrator(nil, nil, db, nil)
@@ -195,7 +196,7 @@ func TestExecuteAction_LivenessCancelledInterruptsExecution(t *testing.T) {
 // is cancelled — prevents stale THREAD_RESOLVED events from being broadcast
 // to a new session after provider replacement.
 func TestHandleThreadActionSuccess_SkippedWhenLivenessCancelled(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	insertThreadSync(t, db.DB, "pr-live", "PRRT_live", false, true) // state_known=true, unresolved
 
 	liveCtx, cancelLiveness := context.WithCancel(context.Background())
@@ -236,7 +237,7 @@ func TestHandleThreadActionSuccess_SkippedWhenLivenessCancelled(t *testing.T) {
 // with a clear error rather than being queued with the Line context stripped.
 // This prevents the comment from being replayed as a general PR comment.
 func TestApplyAction_LineLevelComment_RateLimited_Rejected(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	q := store.NewActionQueue(db.DB)
 	orch := NewOrchestrator(nil, nil, db, nil).WithActionQueue(q)
 
@@ -272,7 +273,7 @@ func TestApplyAction_LineLevelComment_RateLimited_Rejected(t *testing.T) {
 // TestApplyAction_GeneralComment_RateLimited_Queued verifies that a general
 // post_comment (Line == 0) is still queued normally when rate-limited.
 func TestApplyAction_GeneralComment_RateLimited_Queued(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	q := store.NewActionQueue(db.DB)
 	orch := NewOrchestrator(nil, nil, db, nil).WithActionQueue(q)
 
@@ -304,7 +305,7 @@ func TestApplyAction_GeneralComment_RateLimited_Queued(t *testing.T) {
 }
 
 func TestApplyAction_ReplyComment_RateLimited_QueuesResolvedTarget(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	q := store.NewActionQueue(db.DB)
 	prepareReplyThreadFixture(t, db, "github:owner/repo:3", "PRRT_reply_q", "github-review-comment-321")
 	orch := NewOrchestrator(nil, nil, db, nil).WithActionQueue(q)

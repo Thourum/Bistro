@@ -8,6 +8,7 @@ import (
 
 	"github.com/itterno/bistro/internal/classify"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 const classifyTestRules = `name: CodeRabbit
@@ -65,7 +66,7 @@ func classifyTestResult(comments ...*provider.Comment) []*PRFetchResult {
 }
 
 func TestWriterClassifiesComments(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	p := newClassifierProvider(t)
 	w := NewWriter(nil, db).WithClassifier(p)
 
@@ -92,7 +93,7 @@ func TestWriterClassifiesComments(t *testing.T) {
 }
 
 func TestWriterNilEngineSkipsClassification(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db) // no classifier
 
 	err := w.WriteSyncResults(classifyTestResult(
@@ -109,7 +110,7 @@ func TestWriterNilEngineSkipsClassification(t *testing.T) {
 }
 
 func TestWriterNoMatchPersistsUnclassified(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db).WithClassifier(newClassifierProvider(t))
 
 	err := w.WriteSyncResults(classifyTestResult(
@@ -126,7 +127,7 @@ func TestWriterNoMatchPersistsUnclassified(t *testing.T) {
 }
 
 func TestWriterReclassifiesOnResync(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	dir := t.TempDir()
 	rulePath := filepath.Join(dir, "coderabbit.yml")
 	if err := os.WriteFile(rulePath, []byte(classifyTestRules), 0o644); err != nil {
@@ -159,7 +160,7 @@ func TestWriterReclassifiesOnResync(t *testing.T) {
 }
 
 func TestWriterPostCommitHookFiresWithWrittenPRIDs(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	var got []string
 	w := NewWriter(nil, db).WithPostCommit(func(prIDs []string) { got = append(got, prIDs...) })
 
@@ -176,7 +177,7 @@ func TestWriterPostCommitHookFiresWithWrittenPRIDs(t *testing.T) {
 }
 
 func TestWriterPostCommitHookSkippedOnEmptyBatch(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	called := false
 	w := NewWriter(nil, db).WithPostCommit(func([]string) { called = true })
 

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 // ── Diff atomicity tests (blocker: pr_diffs must not advance independently) ──
@@ -13,7 +14,7 @@ func TestWriteDiffs_NewPR_AtomicWithPRRow(t *testing.T) {
 	// New PR (never written before): PR row, patchset, and pr_diffs must all land
 	// in the same transaction. This guards against the FK ordering bug where
 	// SaveDiffs was called during fetch before the PR row existed.
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	pr := makePR("github:o/r:20", 20, "head-new", "base-new")
@@ -47,7 +48,7 @@ func TestWriteDiffs_NewPR_AtomicWithPRRow(t *testing.T) {
 func TestWriteDiffs_ErroredResult_DiffsNotReplaced(t *testing.T) {
 	// When result.Error != nil, the writer skips that result entirely.
 	// Pre-existing pr_diffs must be preserved (not cleared/replaced).
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	pr := makePR("github:o/r:21", 21, "head-21", "base-21")
@@ -76,7 +77,7 @@ func TestWriteDiffs_ErroredResult_DiffsNotReplaced(t *testing.T) {
 func TestWriteDiffs_EmptyDiff_ClearsStaleRows_OnAcceptedResult(t *testing.T) {
 	// DiffComputed=true with empty DiffFiles: pr_diffs cleared (stale files gone).
 	// This happens when a PR is reverted to base so no files changed.
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	pr := makePR("github:o/r:22", 22, "head-22", "base-22")
@@ -107,7 +108,7 @@ func TestWriteDiffs_EmptyDiff_ClearsStaleRows_OnAcceptedResult(t *testing.T) {
 func TestWriteDiffs_DiffNotComputed_PreservesCache(t *testing.T) {
 	// DiffComputed=false (diff generation not attempted or failed):
 	// pr_diffs must not be touched — preserve the last-known-good cache.
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	pr := makePR("github:o/r:23", 23, "head-23", "base-23")
@@ -133,7 +134,7 @@ func TestWriteDiffs_DiffNotComputed_PreservesCache(t *testing.T) {
 func TestWriteDiffs_AtomicWithPatchset_BaseHeadChange(t *testing.T) {
 	// When head or base changes, both patchset row and pr_diffs must advance
 	// in the same transaction. Neither should be visible independently.
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	// P1: initial state

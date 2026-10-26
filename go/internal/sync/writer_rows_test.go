@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func TestWritePRRowListOnlyRevisionSemantics(t *testing.T) {
@@ -21,7 +22,7 @@ func TestWritePRRowListOnlyRevisionSemantics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db := openTestDB(t)
+			db := storetest.Open(t)
 			writer := NewWriter(nil, db)
 			now := time.Now().UTC()
 			initialPR := &provider.PR{

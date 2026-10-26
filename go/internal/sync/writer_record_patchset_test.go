@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func TestRecordPatchsetIfChanged_First(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	pr := &provider.PR{
 		ID: "github:o/r:3", Provider: "github", Owner: "o", Repo: "r", Number: 3,
@@ -32,7 +33,7 @@ func TestRecordPatchsetIfChanged_First(t *testing.T) {
 }
 
 func TestRecordPatchsetIfChanged_Unchanged(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	pr := &provider.PR{
 		ID: "github:o/r:4", Provider: "github", Owner: "o", Repo: "r", Number: 4,
@@ -52,7 +53,7 @@ func TestRecordPatchsetIfChanged_Unchanged(t *testing.T) {
 }
 
 func TestRecordPatchsetIfChanged_Changed(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	base := &provider.PR{
 		ID: "github:o/r:5", Provider: "github", Owner: "o", Repo: "r", Number: 5,
@@ -80,7 +81,7 @@ func TestRecordPatchsetIfChanged_Changed(t *testing.T) {
 }
 
 func TestRecordPatchsetIfChanged_BaseOnlyChanged(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	base := &provider.PR{
 		ID: "github:o/r:6", Provider: "github", Owner: "o", Repo: "r", Number: 6,

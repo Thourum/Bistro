@@ -8,24 +8,11 @@ import (
 	"testing"
 	"time"
 
-	storepkg "github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
-func newTestDB(t *testing.T) *storepkg.DB {
-	t.Helper()
-	db, err := storepkg.OpenDB(":memory:")
-	if err != nil {
-		t.Fatalf("newTestDB open: %v", err)
-	}
-	if err := storepkg.NewMigrationRunner(nil, db.DB).Run(context.Background()); err != nil {
-		t.Fatalf("newTestDB migrate: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
-}
-
 func TestStoreFileExpertiseRepoStateAndReviewedPRCount(t *testing.T) {
-	db := newTestDB(t)
+	db := storetest.Open(t)
 	store := NewStore(db.DB)
 	ctx := context.Background()
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
@@ -112,7 +99,7 @@ func TestStoreFileExpertiseRepoStateAndReviewedPRCount(t *testing.T) {
 }
 
 func TestReadyPRIDsKeepsOnlyReadyRepositoriesInInputOrder(t *testing.T) {
-	db := newTestDB(t)
+	db := storetest.Open(t)
 	store := NewStore(db.DB)
 	ctx := context.Background()
 	readyRepos := []struct{ repoID, prID string }{
@@ -149,7 +136,7 @@ func TestReadyPRIDsKeepsOnlyReadyRepositoriesInInputOrder(t *testing.T) {
 }
 
 func TestStoreReplaceFileRowsAndSettings(t *testing.T) {
-	db := newTestDB(t)
+	db := storetest.Open(t)
 	store := NewStore(db.DB)
 	ctx := context.Background()
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)

@@ -29,6 +29,8 @@ Where things live: Go engine in `go/` (entry `go/cmd/bistro-sync/`, packages und
 
 Within `go/internal/server/`, `app.go` owns the App struct, constructors, store preparation, and Run lifecycle; provider lifecycle, configuration, LLM setup, expertise, event bridging, repo-location wiring, and handler registration live in `provider.go`, `config.go`, `llm.go`, `expertise.go`, `bridge.go`, `repo_location.go`, and `handlers.go` respectively. All remain in package `server`.
 
+Go tests outside package `store` share migrated in-memory databases via `internal/store/storetest.Open(t)`; `store`'s own internal tests keep local helpers to avoid an import cycle. See the [Go package layout spec](docs/superpowers/specs/2026-10-26-go-package-layout-design.md) for the shared-leaf refactor.
+
 ## Tech stack
 
 - **Go 1.26** — go-git, go-github, gorilla/websocket, mattn/go-sqlite3, go-keyring, x/oauth2.

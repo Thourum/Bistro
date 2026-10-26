@@ -1,20 +1,14 @@
 package sync
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
-
-// newSyncTestDB is an alias for openTestDB — both names are used across tests.
-func newSyncTestDB(t *testing.T) *store.DB {
-	t.Helper()
-	return openTestDB(t)
-}
 
 // mustWritePR writes a single PR via WriteSyncResults, failing the test on error.
 func mustWritePR(t *testing.T, w *Writer, pr *provider.PR) {
@@ -90,24 +84,10 @@ func TestWriterEmptyResults(t *testing.T) {
 	}
 }
 
-// openTestDB opens an in-memory SQLite database with the schema applied.
-func openTestDB(t *testing.T) *store.DB {
-	t.Helper()
-	db, err := store.OpenDB(":memory:")
-	if err != nil {
-		t.Fatalf("openTestDB: %v", err)
-	}
-	if err := store.NewMigrationRunner(nil, db.DB).Run(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
-}
-
 // TestWriteSyncResultsActuallyWrites verifies that WriteSyncResults inserts
 // PR and comment rows into the database (C1 regression test).
 func TestWriteSyncResultsActuallyWrites(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	writer := NewWriter(nil, db)
 
 	now := time.Now().UTC()
@@ -174,7 +154,7 @@ func TestWriteSyncResultsActuallyWrites(t *testing.T) {
 // TestWriteSyncResultsWritesDiffsAfterPR verifies diffs are persisted by the
 // writer after the PR row exists, avoiding pr_diffs' foreign-key ordering bug.
 func TestWriteSyncResultsWritesDiffsAfterPR(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	writer := NewWriter(nil, db)
 
 	now := time.Now().UTC()
@@ -230,7 +210,7 @@ func TestWriteSyncResultsWritesDiffsAfterPR(t *testing.T) {
 // TestWriteSyncResultsUpsert verifies that writing the same PR twice updates
 // mutable fields rather than erroring on the unique constraint.
 func TestWriteSyncResultsUpsert(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	writer := NewWriter(nil, db)
 
 	now := time.Now().UTC()
@@ -280,7 +260,7 @@ func TestWriteSyncResultsUpsert(t *testing.T) {
 // TestWriteSyncResultsSkipsErrorResults verifies that results with a non-nil
 // Error field are skipped without aborting the whole batch.
 func TestWriteSyncResultsSkipsErrorResults(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	writer := NewWriter(nil, db)
 
 	now := time.Now().UTC()

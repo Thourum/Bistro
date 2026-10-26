@@ -19,13 +19,14 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
 func TestRepoLocationRecoverRepoPathAndToCache(t *testing.T) {
 	// Arrange
 	root := t.TempDir()
-	db := newRepoLocationMigratedDB(t)
+	db := storetest.Open(t)
 	store := store.NewRepoLocationStore(db.DB)
 	missingPath := filepath.Join(root, "missing")
 	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "local", missingPath, nil)
@@ -182,20 +183,6 @@ func assertLocationEnvelope(t *testing.T, data map[string]any, repoID string, op
 	if data["repo_id"] != repoID || data["operation"] != operation || data["code"] != code || data["message"] == "" {
 		t.Fatalf("unexpected envelope: %#v", data)
 	}
-}
-
-func newRepoLocationMigratedDB(t *testing.T) *store.DB {
-	t.Helper()
-	db, err := store.OpenDB(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	runner := store.NewMigrationRunner(nil, db.DB)
-	if err := runner.Run(context.Background()); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
-	return db
 }
 
 func insertRepoWithLocation(t *testing.T, db *store.DB, repoID, provider, owner, repo, source, localPath string, lastUsedAt *time.Time) {

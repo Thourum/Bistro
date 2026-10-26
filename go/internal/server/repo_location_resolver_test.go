@@ -10,6 +10,7 @@ import (
 
 	bistrogit "github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 const repoLocationResolverURL = "https://github.com/acme/api.git"
@@ -17,7 +18,7 @@ const repoLocationResolverURL = "https://github.com/acme/api.git"
 func TestConfigureRepoLocationStoreWiresGitClientLocalResolver(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
-	db := newServerRepoLocationMigratedDB(t)
+	db := storetest.Open(t)
 	locations := store.NewRepoLocationStore(db.DB)
 	missingPath := filepath.Join(t.TempDir(), "missing")
 	if err := locations.UpsertLocal(ctx, "github", "acme", "api", missingPath, false); err != nil {
@@ -50,7 +51,7 @@ func TestConfigureRepoLocationStoreWiresGitClientLocalResolver(t *testing.T) {
 
 func TestRepoLocationResolverPersistsGitClientCallbacks(t *testing.T) {
 	// Arrange
-	db := newServerRepoLocationMigratedDB(t)
+	db := storetest.Open(t)
 	locations := store.NewRepoLocationStore(db.DB)
 	insertServerRepo(t, db, "github:acme/api", "github", "acme", "api")
 	resolver := newRepoLocationResolver(locations, testRepoLocationResolverLogger())
@@ -72,19 +73,6 @@ func TestRepoLocationResolverPersistsGitClientCallbacks(t *testing.T) {
 	if location.LocationStatus != "remote_mismatch" || location.LocationErrorCode != "remote_mismatch" || location.LocationError != "remote mismatch" {
 		t.Fatalf("expected degraded state persisted, got %+v", location)
 	}
-}
-
-func newServerRepoLocationMigratedDB(t *testing.T) *store.DB {
-	t.Helper()
-	db, err := store.OpenDB(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := store.NewMigrationRunner(nil, db.DB).Run(context.Background()); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
-	return db
 }
 
 func insertServerRepo(t *testing.T, db *store.DB, repoID, provider, owner, repo string) {

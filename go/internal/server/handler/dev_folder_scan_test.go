@@ -13,6 +13,7 @@ import (
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/scan"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -43,7 +44,7 @@ func newTestScanDevFolderHandler(t *testing.T, locations *store.RepoLocationStor
 }
 
 func TestScanCancelOnSameSocketPreservesDiscoveries(t *testing.T) {
-	database := newRepoLocationMigratedDB(t)
+	database := storetest.Open(t)
 	root := t.TempDir()
 	clone := filepath.Join(root, "api")
 	if err := createRepo(clone, "origin", "https://github.com/acme/api.git"); err != nil {
@@ -139,7 +140,7 @@ func TestScanCancelOnSameSocketPreservesDiscoveries(t *testing.T) {
 func TestScanDevFolderContextErrorsPreserveDiscoveries(t *testing.T) {
 	for _, scanErr := range []error{context.Canceled, context.DeadlineExceeded} {
 		t.Run(scanErr.Error(), func(t *testing.T) {
-			database := newRepoLocationMigratedDB(t)
+			database := storetest.Open(t)
 			root := t.TempDir()
 			clone := filepath.Join(root, "api")
 			if err := createRepo(clone, "origin", "https://github.com/acme/api.git"); err != nil {
@@ -169,7 +170,7 @@ func TestScanDevFolderContextErrorsPreserveDiscoveries(t *testing.T) {
 func TestScanDevFolderErrorsAreCorrelated(t *testing.T) {
 	for _, failure := range []string{"scan_failed", "persistence_failed"} {
 		t.Run(failure, func(t *testing.T) {
-			database := newRepoLocationMigratedDB(t)
+			database := storetest.Open(t)
 			if failure == "persistence_failed" {
 				if _, err := database.Exec("DROP TABLE repos"); err != nil {
 					t.Fatal(err)
@@ -205,7 +206,7 @@ func TestScanDevFolderErrorsAreCorrelated(t *testing.T) {
 }
 
 func TestScanDevFolderReplacementWaitsForPredecessor(t *testing.T) {
-	database := newRepoLocationMigratedDB(t)
+	database := storetest.Open(t)
 	locations := store.NewRepoLocationStore(database.DB)
 	root := t.TempDir()
 	clone := filepath.Join(root, "api")
@@ -291,7 +292,7 @@ func TestScanDevFolderReplacementWaitsForPredecessor(t *testing.T) {
 func TestScanDevFolderShutdownJoinsAndRejectsStarts(t *testing.T) {
 	for _, shutdown := range []string{"run canceled", "wait called"} {
 		t.Run(shutdown, func(t *testing.T) {
-			database := newRepoLocationMigratedDB(t)
+			database := storetest.Open(t)
 			ctx, stop := context.WithCancel(context.Background())
 			defer stop()
 			entered := make(chan struct{}, 1)

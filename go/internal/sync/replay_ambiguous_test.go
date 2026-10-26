@@ -6,6 +6,7 @@ import (
 
 	"github.com/itterno/bistro/internal/actions"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 // ── Blocker 1: ambiguous remote success must not be retried ───────────────
@@ -16,7 +17,7 @@ import (
 // MaxRetryCount rather than incrementing retry_count. This prevents duplicate
 // mutations on the next replay pass for non-idempotent actions.
 func TestReplayQueuedActions_AmbiguousRemoteSuccessIsTerminal(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 
 	q := store.NewActionQueue(db.DB)
 	err := q.Enqueue(context.Background(), &store.QueuedAction{
@@ -106,7 +107,7 @@ func TestReplayQueuedActions_AmbiguousRemoteSuccessIsTerminal(t *testing.T) {
 // MarkFailed ExecContext would fail with "context canceled", leaving the row
 // pending and allowing the next replay to duplicate the GitHub mutation.
 func TestReplayQueuedActions_AmbiguousTerminalWithCancelledCtx(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	q := store.NewActionQueue(db.DB)
 
 	const actionID = "pr-amb-cancel-ctx"
@@ -173,7 +174,7 @@ func TestReplayQueuedActions_AmbiguousTerminalWithCancelledCtx(t *testing.T) {
 // row must be marked terminal (MaxRetryCount) so the next replay does NOT
 // duplicate the GitHub mutation.
 func TestReplayQueuedActions_ContextCancelledProviderError_IsTerminal(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	q := store.NewActionQueue(db.DB)
 
 	const actionID = "pr-cancel-err-terminal"

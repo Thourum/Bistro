@@ -5,10 +5,11 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func TestWriteReviewThreads_PersistsThreadAndComments(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	// Insert a PR first (FK constraint).
@@ -78,7 +79,7 @@ func TestWriteReviewThreads_PersistsThreadAndComments(t *testing.T) {
 }
 
 func TestWriteReviewThreads_PerItemErrorSkipsNotAborts(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	mustWritePR(t, w, &provider.PR{
 		ID: "github:o/r:2", Provider: "github", Owner: "o", Repo: "r", Number: 2,
@@ -120,7 +121,7 @@ func TestWriteReviewThreads_PerItemErrorSkipsNotAborts(t *testing.T) {
 // This test simulates the post-enrichment state (IDs already aligned) and verifies
 // that both the thread row and the comment row share the same ID, preventing FK violations.
 func TestWriteReviewThreads_GraphQLIDConsistency(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	mustWritePR(t, w, &provider.PR{
 		ID: "github:o/r:10", Provider: "github", Owner: "o", Repo: "r", Number: 10,
@@ -177,7 +178,7 @@ func TestWriteReviewThreads_GraphQLIDConsistency(t *testing.T) {
 }
 
 func TestWriteReviewThreads_CanonicalPromotionDeletesProvisionalRow(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	pr := &provider.PR{ID: "github:o/r:11", Provider: "github", Owner: "o", Repo: "r",
 		Number: 11, Title: "T", Author: "a", State: "open",

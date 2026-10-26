@@ -7,6 +7,7 @@ import (
 
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func patchsetTestPR(baseSHA, headSHA string) *provider.PR {
@@ -26,7 +27,7 @@ func diffResult(pr *provider.PR, mergeBase string, patchIDs map[string]string) *
 }
 
 func TestBaseTipMoveDoesNotRecordPatchset(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	ctx := context.Background()
 	write := func(result *PRFetchResult) {
@@ -64,7 +65,7 @@ func TestBaseTipMoveDoesNotRecordPatchset(t *testing.T) {
 }
 
 func TestPatchsetWithoutDiffIsBackfilled(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	pr := patchsetTestPR("tip-1", "h1")
 	if err := w.WriteSyncResults([]*PRFetchResult{{PR: pr}}); err != nil {
@@ -84,7 +85,7 @@ func TestPatchsetWithoutDiffIsBackfilled(t *testing.T) {
 }
 
 func TestRecordPatchsetReturnWithoutFingerprintsIsBackfilled(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	ctx := context.Background()
 	mustWritePR(t, w, patchsetTestPR("tip-1", "h1"))
@@ -113,7 +114,7 @@ func TestRecordPatchsetReturnWithoutFingerprintsIsBackfilled(t *testing.T) {
 }
 
 func TestRecordPatchsetUnknownMergeBaseDefersFingerprints(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	ctx := context.Background()
 	pr := patchsetTestPR("tip-1", "h1")
@@ -151,7 +152,7 @@ func TestRecordPatchsetUnknownMergeBaseDefersFingerprints(t *testing.T) {
 }
 
 func TestRecordPatchsetReturnToEarlierPairUsesLatestMatchingHead(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	ctx := context.Background()
 	results := []*PRFetchResult{
@@ -187,7 +188,7 @@ func TestRecordPatchsetReturnToEarlierPairUsesLatestMatchingHead(t *testing.T) {
 }
 
 func TestRecordPatchsetKnownMergeBaseChangeAndFingerprintOnce(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	ctx := context.Background()
 	results := []*PRFetchResult{
@@ -223,7 +224,7 @@ func TestRecordPatchsetKnownMergeBaseChangeAndFingerprintOnce(t *testing.T) {
 }
 
 func TestRecordPatchsetEmptyDiffHasFingerprints(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	result := &PRFetchResult{PR: patchsetTestPR("tip-1", "h1"), DiffComputed: true, MergeBaseSHA: "mb-1"}
 	if err := w.WriteSyncResults([]*PRFetchResult{result}); err != nil {
@@ -240,7 +241,7 @@ func TestRecordPatchsetEmptyDiffHasFingerprints(t *testing.T) {
 }
 
 func TestRecordPatchsetFingerprintFailureRollsBackPR(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	ctx := context.Background()
 	initial := diffResult(patchsetTestPR("tip-1", "h1"), "mb-1", map[string]string{"a.go": "pa"})
@@ -270,7 +271,7 @@ func TestRecordPatchsetFingerprintFailureRollsBackPR(t *testing.T) {
 }
 
 func TestWriterGitHubReviewBaselinePreservesNewerLocalReview(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "me", ok: true})
 	ctx := context.Background()
 	pr := patchsetTestPR("tip-1", "h1")
@@ -295,7 +296,7 @@ func TestWriterGitHubReviewBaselinePreservesNewerLocalReview(t *testing.T) {
 }
 
 func TestWriterGitHubReviewBaselineFailureDoesNotDiscardPR(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "me", ok: true})
 	if _, err := db.Exec(`CREATE TRIGGER reject_review_baseline BEFORE INSERT ON last_reviewed_sha
 		BEGIN SELECT RAISE(ABORT, 'baseline insert failed'); END`); err != nil {
@@ -315,7 +316,7 @@ func TestWriterGitHubReviewBaselineFailureDoesNotDiscardPR(t *testing.T) {
 }
 
 func TestWriterRecordsLatestGitHubReviewAsBaseline(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "me", ok: true})
 	reviewedAt := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
 	result := &PRFetchResult{PR: patchsetTestPR("tip-1", "h2"), Reviews: []*provider.Review{

@@ -7,6 +7,7 @@ import (
 
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 type mentionedTestCurrentUserReader struct {
@@ -50,7 +51,7 @@ func mentionedValue(t *testing.T, db *store.DB, prID string) int {
 }
 
 func TestWriterSetsMentionedFromPRBody(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-body", "hey @alice please look")
 	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 
@@ -64,7 +65,7 @@ func TestWriterSetsMentionedFromPRBody(t *testing.T) {
 }
 
 func TestWriterSetsMentionedFromComment(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-comment", "no mention here")
 	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 	comment := &provider.Comment{
@@ -97,7 +98,7 @@ func TestWriterMentionedMatchesCaseInsensitiveExactLogin(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db := openTestDB(t)
+			db := storetest.Open(t)
 			pr := mentionedTestPR("github:org/repo:mention-"+tt.name, tt.body)
 			writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 
@@ -113,7 +114,7 @@ func TestWriterMentionedMatchesCaseInsensitiveExactLogin(t *testing.T) {
 }
 
 func TestWriterLeavesMentionedUnsetWithoutCurrentUser(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-no-user", "hey @alice please look")
 	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{})
 
@@ -127,7 +128,7 @@ func TestWriterLeavesMentionedUnsetWithoutCurrentUser(t *testing.T) {
 }
 
 func TestWriterPersistsPRWhenCurrentUserLookupFails(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-lookup-error", "hey @alice please look")
 	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{err: errors.New("keyring unavailable")})
 
@@ -145,7 +146,7 @@ func TestWriterPersistsPRWhenCurrentUserLookupFails(t *testing.T) {
 }
 
 func TestWriterPreservesMentionedWhenCurrentUserLookupFails(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-preserve-on-error", "hey @alice please look")
 
 	okWriter := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
@@ -164,7 +165,7 @@ func TestWriterPreservesMentionedWhenCurrentUserLookupFails(t *testing.T) {
 }
 
 func TestWriterSetsMentionedFromThreadComment(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-thread", "no mention here")
 	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 	thread := &provider.ReviewThread{
@@ -193,7 +194,7 @@ func TestWriterSetsMentionedFromThreadComment(t *testing.T) {
 }
 
 func TestWriterClearsMentionedAfterAllCommentSourcesRefresh(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-clear", "no mention here")
 	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 	comment := &provider.Comment{
@@ -224,7 +225,7 @@ func TestWriterClearsMentionedAfterAllCommentSourcesRefresh(t *testing.T) {
 }
 
 func TestWriterPreservesCommentMentionWithoutCommentRefresh(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-no-comment-refresh", "no mention here")
 	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 	comment := &provider.Comment{
@@ -253,7 +254,7 @@ func TestWriterPreservesCommentMentionWithoutCommentRefresh(t *testing.T) {
 }
 
 func TestWriterListOnlySyncPreservesCommentMention(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	pr := mentionedTestPR("github:org/repo:mention-list-only", "no mention here")
 	writer := NewWriter(nil, db).WithCurrentUser(mentionedTestCurrentUserReader{login: "alice", ok: true})
 	comment := &provider.Comment{

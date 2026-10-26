@@ -7,12 +7,13 @@ import (
 
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 // ── Anchor write-back tests ───────────────────────────────────────────────
 
 func TestWriteAnchorUpdates_WritesAnchoredLine(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	pr := makePR("github:o/r:50", 50, "sha-head", "sha-base")
@@ -65,7 +66,7 @@ func TestWriteAnchorUpdates_WritesAnchoredLine(t *testing.T) {
 }
 
 func TestWriteAnchorUpdates_OutdatedComment(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	pr := makePR("github:o/r:51", 51, "sha-h51", "sha-b51")
@@ -106,7 +107,7 @@ func TestWriteAnchorUpdates_OutdatedComment(t *testing.T) {
 }
 
 func TestWriteAnchorUpdates_NoUpdates_ColumnsRemainNull(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	pr := makePR("github:o/r:52", 52, "sha-h52", "sha-b52")
@@ -136,7 +137,7 @@ func TestWriteAnchorUpdates_NoUpdates_ColumnsRemainNull(t *testing.T) {
 func TestWriteAnchorUpdates_ErrorSkippedSilently(t *testing.T) {
 	// AnchorUpdate referencing a non-existent comment ID is a no-op (UPDATE 0 rows).
 	// The writer must not fail the batch for this.
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 	pr := makePR("github:o/r:53", 53, "sha-h53", "sha-b53")
 	mustWritePR(t, w, pr)
@@ -164,7 +165,7 @@ func TestWriteAnchorUpdates_ErrorSkippedSilently(t *testing.T) {
 // anchor_patchset_number is non-NULL and the handler treats the anchor as fresh
 // without requiring a second sync.
 func TestWriteAnchorUpdates_FirstSync_GetsCurrentPatchsetNum(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	// First sync: write PR + review comment + anchor update with PatchsetNumber=0.
@@ -233,7 +234,7 @@ func TestWriteAnchorUpdates_FirstSync_GetsCurrentPatchsetNum(t *testing.T) {
 // that an original-position anchor (PatchsetNumber > 0) is NOT overwritten
 // with the current patchset number, preserving its correct historical identity.
 func TestWriteAnchorUpdates_OriginalPosition_KeepsOriginalPatchsetNum(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	// Set up: two patchsets. Current PR is on P2; the comment was made on P1.
@@ -283,7 +284,7 @@ func TestWriteAnchorUpdates_OriginalPosition_KeepsOriginalPatchsetNum(t *testing
 // PatchsetNumber=0 AND currentPatchsetNum=0 (degenerate case), anchor_patchset_number
 // is NULL — handler treats it as stale, which is the correct safe behavior.
 func TestWriteAnchorUpdates_BothZero_WritesNull(t *testing.T) {
-	db := newSyncTestDB(t)
+	db := storetest.Open(t)
 	w := NewWriter(nil, db)
 
 	// Write a PR without a patchset (edge case: recordPatchsetIfChanged failed

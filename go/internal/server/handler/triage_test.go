@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -142,7 +143,7 @@ func TestTriageHandlerReturnsPairAndReviewContracts(t *testing.T) {
 }
 
 func TestDefaultTargetsUseCurrentPatchsetAfterForcePushBack(t *testing.T) {
-	db := newReadStateTestDB(t)
+	db := storetest.Open(t)
 	ctx := context.Background()
 	const prID = "github:o/r:1"
 	mustExecDB(t, db.DB, `INSERT INTO prs (id, provider, owner, repo, number, title, author, state, created_at, updated_at, base_branch, head_branch, base_sha, head_sha)

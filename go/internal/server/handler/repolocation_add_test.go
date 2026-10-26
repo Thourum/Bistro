@@ -13,6 +13,7 @@ import (
 
 	bistrogit "github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -25,7 +26,7 @@ func TestRepoLocationAddRepoByURLUsesCacheRootWhenBistroRepoDirIsSet(t *testing.
 	if err := createRepo(filepath.Join(dev, "acme", "api"), "origin", "https://github.com/acme/api.git"); err != nil {
 		t.Fatalf("create targeted dev repo: %v", err)
 	}
-	db := newRepoLocationMigratedDB(t)
+	db := storetest.Open(t)
 	cloner := &fakeRepoLocationCloner{}
 	handler := NewAddRepoByURLHandler(AddRepoByURLDeps{
 		DB:        db.DB,
@@ -53,7 +54,7 @@ func TestRepoLocationAddRepoByURLUsesCacheRootWhenBistroRepoDirIsSet(t *testing.
 func TestRepoLocationCacheMutationHandlersHandleMissingDeleteDependency(t *testing.T) {
 	// Arrange
 	root := t.TempDir()
-	db := newRepoLocationMigratedDB(t)
+	db := storetest.Open(t)
 	stale := time.Now().Add(-31 * 24 * time.Hour)
 	cachePath := filepath.Join(root, "cache", "acme", "api")
 	mustMkdirAll(cachePath)
@@ -104,7 +105,7 @@ func TestRepoLocationCacheMutationHandlersReturnEnvelopeForOperationFailures(t *
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
-			db := newRepoLocationMigratedDB(t)
+			db := storetest.Open(t)
 			locations := store.NewRepoLocationStore(db.DB)
 			if strings.Contains(tt.name, "store failure") {
 				if err := db.Close(); err != nil {
@@ -124,7 +125,7 @@ func TestRepoLocationCacheMutationHandlersReturnEnvelopeForOperationFailures(t *
 
 func TestRepoLocationClearCacheOrphanSweepFailureKeepsPartialResults(t *testing.T) {
 	// Arrange
-	db := newRepoLocationMigratedDB(t)
+	db := storetest.Open(t)
 	locations := store.NewRepoLocationStore(db.DB)
 	cachePath := filepath.Join(t.TempDir(), "acme", "api")
 	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "cache", cachePath, nil)
@@ -161,7 +162,7 @@ func TestRepoLocationClearCacheOrphanSweepFailureKeepsPartialResults(t *testing.
 
 func TestRepoLocationRemoveRepoPreflightAndRemoveRepo(t *testing.T) {
 	// Arrange
-	db := newRepoLocationMigratedDB(t)
+	db := storetest.Open(t)
 	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "cache", filepath.Join(t.TempDir(), "acme", "api"), nil)
 	insertRepoWithLocation(t, db, "github:acme/other", "github", "acme", "other", "local", filepath.Join(t.TempDir(), "acme", "other"), nil)
 	insertPRGraph(t, db, "pr1", "github:acme/api", "github", "acme", "api")
@@ -200,7 +201,7 @@ func TestRepoLocationRemoveRepoPreflightAndRemoveRepo(t *testing.T) {
 
 func TestRepoLocationRemoveRepoRollsBackOnDeleteFailure(t *testing.T) {
 	// Arrange
-	db := newRepoLocationMigratedDB(t)
+	db := storetest.Open(t)
 	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "local", filepath.Join(t.TempDir(), "api"), nil)
 	insertPRGraph(t, db, "pr1", "github:acme/api", "github", "acme", "api")
 	handler := NewRemoveRepoHandler(RemoveRepoDeps{DB: db.DB, Store: store.NewRepoLocationStore(db.DB), Log: testRepoLocationLogger()})
@@ -224,7 +225,7 @@ func TestRepoLocationCacheMaintenance(t *testing.T) {
 	// Arrange
 	root := t.TempDir()
 	t.Setenv("BISTRO_REPO_DIR", filepath.Join(root, "cache"))
-	db := newRepoLocationMigratedDB(t)
+	db := storetest.Open(t)
 	localPath := filepath.Join(root, "local", "acme", "api")
 	freshPath := filepath.Join(root, "cache", "acme", "fresh")
 	stalePath := filepath.Join(root, "cache", "acme", "stale")
@@ -349,7 +350,7 @@ func TestRepoLocationDeleteCacheRepoRereadsAfterWaitingForLock(t *testing.T) {
 	root := t.TempDir()
 	cacheRoot := filepath.Join(root, "cache")
 	t.Setenv("BISTRO_REPO_DIR", cacheRoot)
-	db := newRepoLocationMigratedDB(t)
+	db := storetest.Open(t)
 	cachePath := filepath.Join(cacheRoot, "acme", "api")
 	localPath := filepath.Join(root, "dev", "acme", "api")
 	mustMkdirAll(cachePath)

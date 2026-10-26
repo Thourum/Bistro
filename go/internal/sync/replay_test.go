@@ -12,6 +12,7 @@ import (
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 // ── Blocker 3: replay validates thread preflight ──────────────────────────
@@ -21,7 +22,7 @@ import (
 // executed) when the thread's state_known=false, preventing stale mutations
 // from reaching the provider.
 func TestReplayQueuedActions_SkipsStateUnknownThread(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	insertThreadSync(t, db.DB, "pr-replay", "PRRT_stale", false, false) // state_known=false
 
 	q := store.NewActionQueue(db.DB)
@@ -56,7 +57,7 @@ func TestReplayQueuedActions_SkipsStateUnknownThread(t *testing.T) {
 // TestReplayQueuedActions_SkipsWrongPRThread verifies that a queued thread
 // action for a thread belonging to a different PR is permanently failed.
 func TestReplayQueuedActions_SkipsWrongPRThread(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	insertThreadSync(t, db.DB, "pr-correct", "PRRT_x", false, true) // belongs to pr-correct
 
 	q := store.NewActionQueue(db.DB)
@@ -88,7 +89,7 @@ func TestReplayQueuedActions_SkipsWrongPRThread(t *testing.T) {
 }
 
 func TestReplayQueuedActions_ProcessingPostCommentReconcilesRemoteSuccess(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	q := store.NewActionQueue(db.DB)
 	ctx := context.Background()
 
@@ -135,7 +136,7 @@ func TestReplayQueuedActions_ProcessingPostCommentReconcilesRemoteSuccess(t *tes
 }
 
 func TestReplayQueuedActions_ConcurrentOrchestratorsDoNotDuplicatePostComment(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	q := store.NewActionQueue(db.DB)
 	ctx := context.Background()
 
@@ -214,7 +215,7 @@ func (p *blockingPostCommentProvider) PostComment(_ context.Context, _ string, _
 }
 
 func TestReplayQueuedActions_ReplyComment_CallsProvider(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	q := store.NewActionQueue(db.DB)
 	prov := mock.NewMockProvider()
 	orch := NewOrchestrator(nil, prov, db, nil).WithActionQueue(q)
@@ -237,7 +238,7 @@ func TestReplayQueuedActions_ReplyComment_CallsProvider(t *testing.T) {
 }
 
 func TestReplayQueuedActions_ReplyComment_InvalidPayloadTerminal(t *testing.T) {
-	db := openTestDB(t)
+	db := storetest.Open(t)
 	q := store.NewActionQueue(db.DB)
 	orch := NewOrchestrator(nil, mock.NewMockProvider(), db, nil).WithActionQueue(q)
 	if err := q.Enqueue(context.Background(), &store.QueuedAction{
