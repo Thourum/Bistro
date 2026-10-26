@@ -168,7 +168,7 @@ func (o *Orchestrator) pendingReplayActions(ctx context.Context) ([]*store.Queue
 		}
 		return pending, nil
 	}
-	login, ok, err := o.reviewLogin.GetCurrentUser(ctx, githubProvider)
+	login, ok, err := o.reviewLogin.GetCurrentUser(ctx, provider.GitHub)
 	if err != nil {
 		return nil, fmt.Errorf("resolve current account for queue replay: %w", err)
 	}
@@ -176,7 +176,7 @@ func (o *Orchestrator) pendingReplayActions(ctx context.Context) ([]*store.Queue
 		logging.FromContext(ctx).Info("skipping queue replay: no current GitHub account")
 		return nil, nil
 	}
-	pending, err := o.queue.GetPendingForAccount(ctx, githubProvider, login, replayBatchSize)
+	pending, err := o.queue.GetPendingForAccount(ctx, provider.GitHub, login, replayBatchSize)
 	if err != nil {
 		return nil, fmt.Errorf("load pending queue: %w", err)
 	}

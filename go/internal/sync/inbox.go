@@ -34,7 +34,7 @@ func (o *Orchestrator) DiscoverAndSyncInbox(ctx context.Context) (*SyncResult, e
 	if err != nil {
 		return nil, fmt.Errorf("get username for inbox discovery: %w", err)
 	}
-	scope := githubProvider + ":inbox:" + username + ":search:involves"
+	scope := provider.GitHub + ":inbox:" + username + ":search:involves"
 	started := time.Now().UTC()
 	options, err := o.inboxDiscoveryOptions(ctx, scope, username)
 	if err != nil {

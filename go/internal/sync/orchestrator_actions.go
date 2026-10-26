@@ -12,6 +12,7 @@ import (
 	"github.com/itterno/bistro/internal/actions"
 	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/logging"
+	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store"
 )
 
@@ -105,7 +106,7 @@ func (o *Orchestrator) queueRateLimitedAction(ctx context.Context, req *actions.
 	accountLogin := ""
 	queueID := queuedActionID(req)
 	if o.reviewLogin != nil {
-		login, ok, err := o.reviewLogin.GetCurrentUser(ctx, githubProvider)
+		login, ok, err := o.reviewLogin.GetCurrentUser(ctx, provider.GitHub)
 		if err != nil {
 			return failedActionResult(req, fmt.Sprintf("rate limited: could not resolve current GitHub account for queueing: %v", err))
 		}
@@ -117,7 +118,7 @@ func (o *Orchestrator) queueRateLimitedAction(ctx context.Context, req *actions.
 	}
 	queuedAction := &store.QueuedAction{
 		ID: queueID, ActionType: string(req.Action), PRID: req.PRID,
-		Payload: payload, AccountProvider: githubProvider, AccountLogin: accountLogin,
+		Payload: payload, AccountProvider: provider.GitHub, AccountLogin: accountLogin,
 	}
 	if o.queue == nil {
 		return failedActionResult(req, "rate limited: no action queue configured, action dropped")
@@ -247,5 +248,5 @@ func queuedActionID(req *actions.ActionRequest) string {
 
 func accountScopedQueuedActionID(accountLogin, actionID string) string {
 	h := sha256.Sum256([]byte(accountLogin))
-	return githubProvider + "-" + hex.EncodeToString(h[:queuedIDHashBytes]) + "-" + actionID
+	return provider.GitHub + "-" + hex.EncodeToString(h[:queuedIDHashBytes]) + "-" + actionID
 }

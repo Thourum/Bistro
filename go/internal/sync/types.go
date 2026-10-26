@@ -2,8 +2,6 @@ package sync
 
 import "time"
 
-const githubProvider = "github"
-
 // SyncRequest defines what to fetch during a sync.
 type SyncRequest struct {
 	Provider        string // "github", "gitlab", "gitea"

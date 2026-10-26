@@ -397,7 +397,7 @@ func (w *Writer) mentionPattern(ctx context.Context) (*regexp.Regexp, error) {
 	if w.currentUser == nil {
 		return nil, nil
 	}
-	login, ok, err := w.currentUser.GetCurrentUser(ctx, githubProvider)
+	login, ok, err := w.currentUser.GetCurrentUser(ctx, provider.GitHub)
 	if err != nil {
 		return nil, fmt.Errorf("get current user for mention detection: %w", err)
 	}
