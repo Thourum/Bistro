@@ -38,17 +38,20 @@ export function handleRepoListReady(
   const { data } = message;
   if (data.error) {
     appStore.setState((state) => ({ ...state, reposLoading: false }));
-    addToast({
-      type: 'error',
-      message: `Failed to load repos: ${data.error}`,
-      dismissible: true,
-    });
+    if (appStore.state.onboardingSync === null) {
+      addToast({
+        type: 'error',
+        message: `Failed to load repos: ${data.error}`,
+        dismissible: true,
+      });
+    }
   } else {
     appStore.setState((state) => ({
       ...state,
       repos: (data.repos ?? []).map(
         ({
           source,
+          local_path,
           location_status,
           location_error_code,
           location_error,
@@ -56,6 +59,7 @@ export function handleRepoListReady(
         }) => ({
           ...repo,
           ...(source === undefined ? {} : { source }),
+          ...(local_path === undefined ? {} : { local_path }),
           ...(location_status === undefined ? {} : { location_status }),
           ...(location_error_code === undefined ? {} : { location_error_code }),
           ...(location_error === undefined ? {} : { location_error }),

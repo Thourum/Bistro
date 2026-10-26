@@ -21,8 +21,16 @@ const PR_SYNC_RESPONSE_MARGIN_MS = 15000;
 const PR_SYNC_REQUEST_TIMEOUT_MS = 2 * 60 * 1000 + PR_SYNC_RESPONSE_MARGIN_MS;
 // Checkout fetches and mutates HEAD; the generic budget expires mid-checkout.
 const CHECKOUT_REQUEST_TIMEOUT_MS = 60 * 1000;
+// The engine caps a scan at 30 s, then persists for up to 5 s.
+const SCAN_REQUEST_TIMEOUT_MS = 45 * 1000;
+// Queue and repo discovery have 30 s engine deadlines plus a reply margin.
+const REPO_LIST_REQUEST_TIMEOUT_MS = 35_000;
+const REVIEW_QUEUE_REQUEST_TIMEOUT_MS = 35_000;
 const REQUEST_TIMEOUTS: Readonly<Record<string, number>> = Object.freeze({
   REQUEST_PR_SYNC: PR_SYNC_REQUEST_TIMEOUT_MS,
+  REQUEST_REPO_LIST: REPO_LIST_REQUEST_TIMEOUT_MS,
+  REQUEST_REVIEW_QUEUE: REVIEW_QUEUE_REQUEST_TIMEOUT_MS,
+  SCAN_DEV_FOLDER: SCAN_REQUEST_TIMEOUT_MS,
   CHECKOUT_PR_HEAD: CHECKOUT_REQUEST_TIMEOUT_MS,
 });
 const CONNECT_WAIT_INTERVAL_MS = 250;
@@ -32,11 +40,19 @@ const MAX_PORT_POLL_ATTEMPTS = 10;
 const MAX_RECONNECT_BACKOFF_STEPS = 5;
 const BROWSER_WS_URL = 'ws://127.0.0.1:8080/ws';
 
+interface RequestOptions {
+  readonly onSent?: (id: string) => void;
+}
+
 interface WsClient {
   connect(): void;
   disconnect(): void;
   send(type: string, data: unknown): string | undefined;
-  request(type: string, data: unknown): ResultAsync<unknown, Fault>;
+  request(
+    type: string,
+    data: unknown,
+    options?: RequestOptions,
+  ): ResultAsync<unknown, Fault>;
 }
 
 function isValidWsPort(port: unknown): port is number {
@@ -336,7 +352,11 @@ function createWsClient(): Readonly<WsClient> {
     });
   }
 
-  function request(type: string, data: unknown): ResultAsync<unknown, Fault> {
+  function request(
+    type: string,
+    data: unknown,
+    options?: RequestOptions,
+  ): ResultAsync<unknown, Fault> {
     return new ResultAsync(
       new Promise<Result<unknown, Fault>>((resolve) => {
         const connectDeadline = Date.now() + REQUEST_TIMEOUT_MS;
@@ -368,6 +388,7 @@ function createWsClient(): Readonly<WsClient> {
             return;
           }
           registerRequest(type, id, resolve);
+          options?.onSent?.(id);
         };
         trySend();
       }),

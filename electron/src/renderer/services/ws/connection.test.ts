@@ -63,7 +63,13 @@ function installSocket(): SocketControls {
       socket.onopen?.();
     },
     respond: (type, data) => {
-      const request = sent.find((message) => message.type === 'REQUEST_DIFF');
+      const request = sent.find(
+        (message) =>
+          message.type ===
+          (type === 'SCAN_DEV_FOLDER_RESULT'
+            ? 'SCAN_DEV_FOLDER'
+            : 'REQUEST_DIFF'),
+      );
       state.socket?.onmessage?.(
         new MessageEvent<string>('message', {
           data: JSON.stringify({ id: request?.id, type, data }),
@@ -82,6 +88,45 @@ afterEach(() => {
 });
 
 describe('wsClient.request', () => {
+  it('allows a partial scan reply after five seconds and bounds unanswered scans at forty-five', async () => {
+    const scanBudgetMs = 45_000;
+    const socket = installSocket();
+    wsClient.connect();
+    socket.open();
+    const partial = wsClient.request('SCAN_DEV_FOLDER', {
+      path: '/projects',
+      reason: 'settings-change',
+    });
+    const afterConnectTimerCount = vi.getTimerCount();
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+    expect(vi.getTimerCount()).toBe(afterConnectTimerCount);
+    socket.respond('SCAN_DEV_FOLDER_RESULT', {
+      ok: true,
+      discovered: 2,
+      healthy: 2,
+      degraded: 0,
+      skipped: 0,
+      partial: true,
+    });
+    expect((await partial)._unsafeUnwrap()).toEqual({
+      ok: true,
+      discovered: 2,
+      healthy: 2,
+      degraded: 0,
+      skipped: 0,
+      partial: true,
+    });
+    const unanswered = wsClient.request('SCAN_DEV_FOLDER', {
+      path: '/projects',
+      reason: 'settings-change',
+    });
+    await vi.advanceTimersByTimeAsync(scanBudgetMs - 1);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await unanswered)._unsafeUnwrapErr().tag).toBe('TIMEOUT_ERROR');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('waits for an open socket and resolves a correlated response', async () => {
     const socket = installSocket();
     wsClient.connect();
@@ -94,6 +139,23 @@ describe('wsClient.request', () => {
 
     expect((await response)._unsafeUnwrap()).toEqual({ files: [] });
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('reports the sent request ID only once the socket opens', async () => {
+    const socket = installSocket();
+    wsClient.connect();
+    const onSent = vi.fn();
+    const response = wsClient.request('REQUEST_DIFF', {}, { onSent });
+    expect(onSent).not.toHaveBeenCalled();
+    socket.open();
+    await vi.advanceTimersByTimeAsync(CONNECT_WAIT_INTERVAL_MS);
+    const request = socket.sent.find(
+      (message) => message.type === 'REQUEST_DIFF',
+    );
+    expect(request).toBeDefined();
+    expect(onSent).toHaveBeenCalledExactlyOnceWith(request?.id);
+    socket.respond('DIFF_READY', { files: [] });
+    expect((await response)._unsafeUnwrap()).toEqual({ files: [] });
   });
 
   it('returns the engine error as an EXTERNAL_ERROR without rejecting', async () => {

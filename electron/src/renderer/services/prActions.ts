@@ -2,6 +2,7 @@ import { Fault } from '@thourum/fault';
 import { z } from 'zod';
 import { appStore } from '../store';
 import type { PendingAction } from '../types';
+import { recordFirstRunAction } from './firstRunRail';
 import { wsClient } from './ws/connection';
 
 const actionResponseSchema = z.object({
@@ -38,6 +39,7 @@ function setFailedAction(
 
 /** Dispatches approval; ACTION_COMPLETE / ACTION_FAILED finish the store transition. */
 export function approvePR(prId: string): void {
+  recordFirstRunAction('detail.approve');
   setPendingAction('approve', prId);
   if (wsClient.send('APPROVE_PR', { pr_id: prId }) === undefined) {
     setFailedAction('approve', prId, 'WebSocket not connected');
@@ -63,6 +65,7 @@ export function clearActionResult(): void {
 export function postComment(prId: string, body: string): void {
   const trimmed = body.trim();
   if (trimmed.length === 0) return;
+  recordFirstRunAction('detail.comment');
   setPendingAction('post_comment', prId);
 
   void wsClient

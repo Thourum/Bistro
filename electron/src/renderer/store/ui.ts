@@ -1,5 +1,6 @@
 import { Store } from '@tanstack/store';
 import type { EngineStatus } from '../../types/engine';
+import type { FolderScanState } from '../services/onboardingSync';
 import type {
   ActionResult,
   ExpertiseNudgePayload,
@@ -9,8 +10,22 @@ import type {
   RepoInfo,
   Toast,
 } from '../types';
+import {
+  type FirstRunRailState,
+  INITIAL_FIRST_RUN_RAIL,
+} from '../utils/firstRunRail';
 import type { LaneSection } from '../utils/lanes';
+import type { OnboardingSelection } from '../utils/onboardingRepos';
 import type { SandboxState } from '../utils/onboardingSandbox';
+
+export interface OnboardingSyncState {
+  readonly selection: OnboardingSelection;
+  readonly initialReposPending: boolean;
+  readonly repoError: string | null;
+  readonly queuePending: boolean;
+  readonly queueError: string | null;
+  readonly folder: FolderScanState;
+}
 
 interface SyncStats {
   prCount: number;
@@ -52,6 +67,15 @@ export interface UIState {
   filterState: 'open' | 'draft' | 'all' | 'needs_action' | 'touches_you';
   /** Onboarding style sandbox; null when the step isn't showing. */
   onboardingSandbox: SandboxState | null;
+  /** Sandbox's viewDiff or sinceLastReview task was done this session; never persisted. */
+  onboardingPracticedDiff: boolean;
+  /** Live first-run rail steps done this session; only dismissal persists. */
+  firstRunRail: FirstRunRailState;
+  /** A rail dismissal write is in flight; blocks a duplicate write. */
+  firstRunDismissPending: boolean;
+  onboardingSync: OnboardingSyncState | null;
+  onboardingStep: 'sync' | 'practice' | null;
+  onboardingIntent: 'chooseFolder' | 'stopScan' | 'focusRepoFilter' | null;
   confirmingAction: ConfirmingAction | null;
   pendingAction: PendingAction | null;
   actionResult: ActionResult | null;
@@ -194,6 +218,12 @@ export const initialUIState: UIState = {
   sortBy: 'updated',
   filterState: 'open',
   onboardingSandbox: null,
+  onboardingPracticedDiff: false,
+  firstRunRail: INITIAL_FIRST_RUN_RAIL,
+  firstRunDismissPending: false,
+  onboardingSync: null,
+  onboardingStep: null,
+  onboardingIntent: null,
   confirmingAction: null,
   pendingAction: null,
   actionResult: null,

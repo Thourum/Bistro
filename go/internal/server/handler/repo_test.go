@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"sync/atomic"
 	"testing"
 
 	"github.com/itterno/bistro/internal/provider"
@@ -103,6 +104,33 @@ func TestRequestRepoListHandler_ReturnsRepos(t *testing.T) {
 	for _, repo := range repos {
 		if repo.Source != nil || repo.LocationStatus != nil || repo.LocationErrorCode != nil || repo.LocationError != nil {
 			t.Fatalf("expected empty location fields for provider-only repo, got %+v", repo)
+		}
+	}
+}
+
+func TestRepoListAndQueuePreserveMixedCaseWatchedRepo(t *testing.T) {
+	database := setupRepoTestDB(t)
+	defer database.Close()
+	ctx := context.Background()
+	if _, err := database.Exec(`INSERT INTO repos(id,provider,owner,repo,watched) VALUES('github:itterno/bistro','github','Itterno','Bistro',1)`); err != nil {
+		t.Fatal(err)
+	}
+	queueProvider := &queueOperationProvider{read: func(context.Context) (*provider.ReviewQueue, error) {
+		return &provider.ReviewQueue{Repositories: []*provider.Repo{{Owner: "Itterno", Name: "Bistro", FullName: "Itterno/Bistro"}}}, nil
+	}}
+	prov := mock.NewMockProvider().WithRepos([]*provider.Repo{{Owner: "Itterno", Name: "Bistro", FullName: "Itterno/Bistro"}})
+	request := NewRequestRepoListHandler(func() provider.Provider { return prov }, database, testRepoLogger())
+	for range 2 {
+		if _, err := fetchAndPersistReviewQueue(ctx, database, queueProvider); err != nil {
+			t.Fatal(err)
+		}
+		reply, err := request(ctx, ws.InboundMessage{ID: "mixed-case", Type: "REQUEST_REPO_LIST"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		repos := reply.(map[string]interface{})["data"].(map[string]interface{})["repos"].([]repoRow)
+		if len(repos) != 1 || repos[0].ID != "github:itterno/bistro" || repos[0].Owner != "Itterno" || repos[0].Repo != "Bistro" || !repos[0].Watched {
+			t.Fatalf("discovery split the existing watch state: %+v", repos)
 		}
 	}
 }
@@ -208,7 +236,7 @@ func TestToggleWatchHandler_RespectsWatchedBooleanAndTriggersSyncWhenEnabled(t *
 	}
 
 	syncCh := make(chan string, 8)
-	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
+	handler := NewToggleWatchHandler(db, WatchSyncTrigger{Queue: syncCh, Pending: new(atomic.Bool)}, testRepoLogger())
 
 	payload, _ := json.Marshal(map[string]interface{}{"repo_id": "github:acme/api", "watched": true})
 	msg := ws.InboundMessage{ID: "req-4", Type: "TOGGLE_WATCH_REPO", Data: payload}
@@ -264,7 +292,7 @@ func TestToggleWatchHandler_MissingWatchedFallsBackToToggle(t *testing.T) {
 	}
 
 	syncCh := make(chan string, 8)
-	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
+	handler := NewToggleWatchHandler(db, WatchSyncTrigger{Queue: syncCh, Pending: new(atomic.Bool)}, testRepoLogger())
 
 	payload, _ := json.Marshal(map[string]string{"repo_id": "github:acme/api"})
 	msg := ws.InboundMessage{ID: "req-4c", Type: "TOGGLE_WATCH_REPO", Data: payload}
@@ -284,7 +312,7 @@ func TestToggleWatchHandler_MissingRepoID(t *testing.T) {
 	defer db.Close()
 
 	syncCh := make(chan string, 8)
-	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
+	handler := NewToggleWatchHandler(db, WatchSyncTrigger{Queue: syncCh, Pending: new(atomic.Bool)}, testRepoLogger())
 
 	payload, _ := json.Marshal(map[string]string{})
 	msg := ws.InboundMessage{ID: "req-5", Type: "TOGGLE_WATCH_REPO", Data: payload}
@@ -295,17 +323,97 @@ func TestToggleWatchHandler_MissingRepoID(t *testing.T) {
 	}
 }
 
+func TestCacheOnlyRepoListIncludesCloneWithoutProvider(t *testing.T) {
+	database := setupRepoTestDB(t)
+	defer database.Close()
+	_, err := database.Exec(`INSERT INTO repos(id,provider,owner,repo,watched,local_path,source)
+        VALUES('github:acme/api','github','acme','api',1,'/projects/api','local')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	request := NewRequestRepoListHandler(func() provider.Provider { calls++; return nil }, database, testRepoLogger())
+	reply, err := request(context.Background(), ws.InboundMessage{ID: "cached", Type: "REQUEST_REPO_LIST", Data: json.RawMessage(`{"cache_only":true}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := reply.(map[string]interface{})["data"].(map[string]interface{})
+	repos := data["repos"].([]repoRow)
+	if calls != 0 || len(repos) != 1 || !repos[0].Watched || repos[0].LocalPath == nil || *repos[0].LocalPath != "/projects/api" {
+		t.Fatalf("not a local cache read: calls=%d repos=%+v", calls, repos)
+	}
+}
+
+func TestRepoListRejectsInvalidCacheFlagBeforeProvider(t *testing.T) {
+	for _, payload := range []string{`{`, `[]`, `null`, `{"cache_only":"true"}`, `{"cache_only":null}`} {
+		t.Run(payload, func(t *testing.T) {
+			database := setupRepoTestDB(t)
+			defer database.Close()
+			request := NewRequestRepoListHandler(func() provider.Provider {
+				t.Fatal("invalid payload must not reach provider")
+				return nil
+			}, database, testRepoLogger())
+			reply, err := request(context.Background(), ws.InboundMessage{ID: "invalid", Data: json.RawMessage(payload)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := reply.(map[string]interface{})["data"].(map[string]interface{})
+			if data["error"] != "unable to load repositories" {
+				t.Fatalf("unsafe error: %+v", data)
+			}
+		})
+	}
+}
+
+func TestRepoListFalseCacheFlagStillRefreshes(t *testing.T) {
+	database := setupRepoTestDB(t)
+	defer database.Close()
+	prov := mock.NewMockProvider().WithRepos([]*provider.Repo{{Owner: "acme", Name: "api", FullName: "acme/api"}})
+	request := NewRequestRepoListHandler(func() provider.Provider { return prov }, database, testRepoLogger())
+	reply, err := request(context.Background(), ws.InboundMessage{ID: "refresh", Data: json.RawMessage(`{"cache_only":false}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repos := reply.(map[string]interface{})["data"].(map[string]interface{})["repos"].([]repoRow)
+	if len(repos) != 1 || repos[0].ID != "github:acme/api" {
+		t.Fatalf("missing refresh: %+v", repos)
+	}
+}
+
 func TestToggleWatchHandler_InvalidPayload(t *testing.T) {
 	db := setupRepoTestDB(t)
 	defer db.Close()
 
 	syncCh := make(chan string, 8)
-	handler := NewToggleWatchHandler(db, syncCh, testRepoLogger())
+	handler := NewToggleWatchHandler(db, WatchSyncTrigger{Queue: syncCh, Pending: new(atomic.Bool)}, testRepoLogger())
 
 	msg := ws.InboundMessage{ID: "req-6", Type: "TOGGLE_WATCH_REPO", Data: json.RawMessage(`not-json`)}
 
 	_, err := handler(context.Background(), msg)
 	if err == nil {
 		t.Error("expected error for invalid payload")
+	}
+}
+
+func TestRequestRepoListHandler_InsertFailureStillReturnsOtherRepos(t *testing.T) {
+	db := setupRepoTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TRIGGER reject_bad BEFORE INSERT ON repos WHEN NEW.id = 'github:acme/bad'
+		BEGIN SELECT RAISE(ABORT, 'boom'); END`); err != nil {
+		t.Fatal(err)
+	}
+	prov := mock.NewMockProvider().WithRepos([]*provider.Repo{
+		{Owner: "acme", Name: "bad", FullName: "acme/bad"},
+		{Owner: "acme", Name: "api", FullName: "acme/api"},
+	})
+	handler := NewRequestRepoListHandler(func() provider.Provider { return prov }, db, testRepoLogger())
+	resp, err := handler(context.Background(), ws.InboundMessage{ID: "req-bad", Type: "REQUEST_REPO_LIST"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := resp.(map[string]interface{})["data"].(map[string]interface{})
+	repos, ok := data["repos"].([]repoRow)
+	if !ok || len(repos) != 1 || repos[0].ID != "github:acme/api" || data["error"] != nil {
+		t.Fatalf("data = %+v", data)
 	}
 }
