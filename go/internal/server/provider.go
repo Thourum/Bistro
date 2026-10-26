@@ -158,3 +158,25 @@ func (a *App) initializeStartupProvider(ctx context.Context) {
 		a.log.Error("startup queue replay failed", "error", err)
 	}
 }
+
+// SetReplayOnStart configures whether Run() should replay the offline action
+// queue after the production orchestrator is attached (DB open, queue wired).
+// This replaces pre-Run calls to ReplayQueuedActions which are always no-ops
+// because the orchestrator does not exist before Run opens the database.
+func (a *App) SetReplayOnStart(replay bool) {
+	a.replayOnStart = replay
+}
+
+// ReplayQueuedActions replays any pending offline queue actions.
+// It is a no-op when the orchestrator has not been set up.
+// Prefer SetReplayOnStart so replay happens inside Run() after the database and
+// queue are initialised; calling this before Run() is always a no-op.
+func (a *App) ReplayQueuedActions(ctx context.Context) error {
+	a.provMu.RLock()
+	orchestrator := a.orchestrator
+	a.provMu.RUnlock()
+	if orchestrator == nil {
+		return nil
+	}
+	return orchestrator.ReplayQueuedActions(ctx)
+}

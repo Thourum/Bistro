@@ -93,28 +93,6 @@ type App struct {
 	resolveRepoPath sync.RepoPathResolver
 }
 
-// SetReplayOnStart configures whether Run() should replay the offline action
-// queue after the production orchestrator is attached (DB open, queue wired).
-// This replaces pre-Run calls to ReplayQueuedActions which are always no-ops
-// because the orchestrator does not exist before Run opens the database.
-func (a *App) SetReplayOnStart(replay bool) {
-	a.replayOnStart = replay
-}
-
-// ReplayQueuedActions replays any pending offline queue actions.
-// It is a no-op when the orchestrator has not been set up.
-// Prefer SetReplayOnStart so replay happens inside Run() after the database and
-// queue are initialised; calling this before Run() is always a no-op.
-func (a *App) ReplayQueuedActions(ctx context.Context) error {
-	a.provMu.RLock()
-	orchestrator := a.orchestrator
-	a.provMu.RUnlock()
-	if orchestrator == nil {
-		return nil
-	}
-	return orchestrator.ReplayQueuedActions(ctx)
-}
-
 // New returns a new App configured with the given WebSocket port and database path.
 // Uses default Info-level stderr logging.
 func New(wsPort int, dbPath string) *App {
@@ -148,14 +126,6 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 		provCtxCancel:       provCtxCancel,
 		classificationState: handler.NewClassificationState(),
 	}
-}
-
-func (a *App) githubToken() string {
-	token, err := a.tokenManager.GetGitHubToken()
-	if err != nil {
-		return ""
-	}
-	return token
 }
 
 type runStores struct {

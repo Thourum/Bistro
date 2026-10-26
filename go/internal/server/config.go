@@ -64,3 +64,11 @@ func (a *App) SetGitHubClientSecret(secret string) {
 func (a *App) SetAuthCallbackTimeout(duration time.Duration) {
 	a.authCallbackTimeout = duration
 }
+
+func (a *App) githubToken() string {
+	token, err := a.tokenManager.GetGitHubToken()
+	if err != nil {
+		return ""
+	}
+	return token
+}
