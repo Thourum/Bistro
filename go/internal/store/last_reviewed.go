@@ -10,7 +10,8 @@ import (
 	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
-const localReviewAccountProvider = "github"
+// LocalReviewAccountProvider identifies the provider used for local review state.
+const LocalReviewAccountProvider = "github"
 
 // reviewedAtLayout is UTC at second precision so stored strings sort
 // chronologically; it matches the strftime format migration 035 backfills.
@@ -61,7 +62,7 @@ func RecordLastReviewed(ctx context.Context, q storedb.DBTX, event ReviewEvent) 
 		WHERE last_reviewed_sha.reviewed_at IS NULL
 		   OR excluded.reviewed_at > last_reviewed_sha.reviewed_at`
 	if _, err := q.ExecContext(ctx, query,
-		event.PRID, localReviewAccountProvider, event.Login, event.Login, event.HeadSHA,
+		event.PRID, LocalReviewAccountProvider, event.Login, event.Login, event.HeadSHA,
 		nullablePositiveInt(event.PatchsetNum), event.ReviewedAt.UTC().Format(reviewedAtLayout),
 		string(event.Source),
 	); err != nil {
@@ -78,7 +79,7 @@ func (db *DB) RecordLastReviewed(ctx context.Context, event ReviewEvent) error {
 // GetLastReviewed returns the stored baseline for (prID, login).
 func (db *DB) GetLastReviewed(ctx context.Context, prID, login string) (LastReviewedRecord, bool, error) {
 	row, err := storedb.New(db).GetLastReviewed(ctx, storedb.GetLastReviewedParams{
-		PrID: prID, AccountProvider: localReviewAccountProvider, AccountLogin: login, Login: login,
+		PrID: prID, AccountProvider: LocalReviewAccountProvider, AccountLogin: login, Login: login,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return LastReviewedRecord{}, false, nil

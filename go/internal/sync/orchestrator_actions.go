@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/itterno/bistro/internal/store/actionqueue"
 	"log/slog"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
-	"github.com/itterno/bistro/internal/store"
 )
 
 // failedActionResult keeps failure response fields consistent across preflight,
@@ -116,7 +116,7 @@ func (o *Orchestrator) queueRateLimitedAction(ctx context.Context, req *actions.
 		accountLogin = login
 		queueID = accountScopedQueuedActionID(login, queueID)
 	}
-	queuedAction := &store.QueuedAction{
+	queuedAction := &actionqueue.Action{
 		ID: queueID, ActionType: string(req.Action), PRID: req.PRID,
 		Payload: payload, AccountProvider: provider.GitHub, AccountLogin: accountLogin,
 	}

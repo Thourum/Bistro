@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/itterno/bistro/internal/store/actionqueue"
 	"time"
 
 	"github.com/itterno/bistro/internal/actions"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
-	"github.com/itterno/bistro/internal/store"
 )
 
 // replayNeedsRemoteReconciliation identifies actions that may not be safe to
@@ -27,7 +27,7 @@ func replayTimestampMatches(remote time.Time, queuedAt time.Time) bool {
 	return !remote.IsZero() && !remote.Before(queuedAt.Add(-replayReconciliationClockSkew))
 }
 
-func (o *Orchestrator) reconcileQueuedActionSuccess(ctx context.Context, action *store.QueuedAction, req *actions.ActionRequest) (bool, error) {
+func (o *Orchestrator) reconcileQueuedActionSuccess(ctx context.Context, action *actionqueue.Action, req *actions.ActionRequest) (bool, error) {
 	if o.provider == nil {
 		return false, nil
 	}
@@ -44,7 +44,7 @@ func (o *Orchestrator) reconcileQueuedActionSuccess(ctx context.Context, action 
 	return false, nil
 }
 
-func (o *Orchestrator) reconcileQueuedReview(ctx context.Context, action *store.QueuedAction, req *actions.ActionRequest) (bool, error) {
+func (o *Orchestrator) reconcileQueuedReview(ctx context.Context, action *actionqueue.Action, req *actions.ActionRequest) (bool, error) {
 	username, err := o.provider.GetUsername(ctx)
 	if err != nil {
 		return false, fmt.Errorf("get username for review reconciliation: %w", err)
@@ -65,7 +65,7 @@ func (o *Orchestrator) reconcileQueuedReview(ctx context.Context, action *store.
 	return false, nil
 }
 
-func (o *Orchestrator) reconcileQueuedComment(ctx context.Context, action *store.QueuedAction, req *actions.ActionRequest) (bool, error) {
+func (o *Orchestrator) reconcileQueuedComment(ctx context.Context, action *actionqueue.Action, req *actions.ActionRequest) (bool, error) {
 	username, err := o.provider.GetUsername(ctx)
 	if err != nil {
 		return false, fmt.Errorf("get username for comment reconciliation: %w", err)
@@ -82,7 +82,7 @@ func (o *Orchestrator) reconcileQueuedComment(ctx context.Context, action *store
 	return false, nil
 }
 
-func (o *Orchestrator) reconcileQueuedReply(ctx context.Context, action *store.QueuedAction, req *actions.ActionRequest) (bool, error) {
+func (o *Orchestrator) reconcileQueuedReply(ctx context.Context, action *actionqueue.Action, req *actions.ActionRequest) (bool, error) {
 	threadProvider, ok := o.provider.(provider.ThreadProvider)
 	if !ok {
 		return false, errors.New("provider does not support review-thread reconciliation")
@@ -160,7 +160,7 @@ func (o *Orchestrator) ReplayQueuedActions(ctx context.Context) error {
 	return nil
 }
 
-func (o *Orchestrator) pendingReplayActions(ctx context.Context) ([]*store.QueuedAction, error) {
+func (o *Orchestrator) pendingReplayActions(ctx context.Context) ([]*actionqueue.Action, error) {
 	if o.reviewLogin == nil {
 		pending, err := o.queue.GetPending(ctx, replayBatchSize)
 		if err != nil {
@@ -183,14 +183,14 @@ func (o *Orchestrator) pendingReplayActions(ctx context.Context) ([]*store.Queue
 	return pending, nil
 }
 
-func (o *Orchestrator) replayQueuedAction(ctx context.Context, action *store.QueuedAction) {
+func (o *Orchestrator) replayQueuedAction(ctx context.Context, action *actionqueue.Action) {
 	log := logging.FromContext(ctx)
 	log.Info("replaying queued action", "id", action.ID, "pr_id", action.PRID,
 		"action", action.ActionType, "retry_count", action.RetryCount)
 	req, err := decodeQueuedAction(action)
 	if err != nil {
 		log.Warn("replay: invalid reply_comment payload, marking failed", "id", action.ID, "error", err)
-		if markErr := o.queue.MarkFailed(ctx, action.ID, err.Error(), store.MaxRetryCount); markErr != nil {
+		if markErr := o.queue.MarkFailed(ctx, action.ID, err.Error(), actionqueue.MaxRetryCount); markErr != nil {
 			log.Error("failed to mark action failed after payload decode", "id", action.ID, "error", markErr)
 		}
 		return
@@ -198,7 +198,7 @@ func (o *Orchestrator) replayQueuedAction(ctx context.Context, action *store.Que
 	// Queue replay bypasses ApplyAction; re-run its thread preflight.
 	if preflight := o.validateThreadPreflight(ctx, req); preflight != nil {
 		log.Warn("replay: thread preflight failed, marking failed", "id", action.ID, "reason", preflight.Error)
-		if markErr := o.queue.MarkFailed(ctx, action.ID, preflight.Error, store.MaxRetryCount); markErr != nil {
+		if markErr := o.queue.MarkFailed(ctx, action.ID, preflight.Error, actionqueue.MaxRetryCount); markErr != nil {
 			log.Error("failed to mark action failed after preflight", "id", action.ID, "error", markErr)
 		}
 		return
@@ -213,7 +213,7 @@ func (o *Orchestrator) replayQueuedAction(ctx context.Context, action *store.Que
 	o.finishQueuedAction(ctx, action, o.executeAction(ctx, req))
 }
 
-func decodeQueuedAction(action *store.QueuedAction) (*actions.ActionRequest, error) {
+func decodeQueuedAction(action *actionqueue.Action) (*actions.ActionRequest, error) {
 	req := &actions.ActionRequest{PRID: action.PRID, Action: actions.ActionCommand(action.ActionType), Body: action.Payload}
 	if req.Action != actions.ReplyCommentCommand {
 		return req, nil
@@ -226,7 +226,7 @@ func decodeQueuedAction(action *store.QueuedAction) (*actions.ActionRequest, err
 	return req, nil
 }
 
-func (o *Orchestrator) shouldExecuteQueuedAction(ctx context.Context, action *store.QueuedAction, req *actions.ActionRequest) bool {
+func (o *Orchestrator) shouldExecuteQueuedAction(ctx context.Context, action *actionqueue.Action, req *actions.ActionRequest) bool {
 	log := logging.FromContext(ctx)
 	reconciled, reconcileErr := o.reconcileQueuedActionSuccess(ctx, action, req)
 	if reconcileErr != nil {
@@ -253,7 +253,7 @@ func (o *Orchestrator) shouldExecuteQueuedAction(ctx context.Context, action *st
 	return true
 }
 
-func (o *Orchestrator) finishQueuedAction(ctx context.Context, action *store.QueuedAction, result *actions.ActionResult) {
+func (o *Orchestrator) finishQueuedAction(ctx context.Context, action *actionqueue.Action, result *actions.ActionResult) {
 	log := logging.FromContext(ctx)
 	if result.Success {
 		// Preserve the replay context for completion; changing this changes the
@@ -274,7 +274,7 @@ func (o *Orchestrator) finishQueuedAction(ctx context.Context, action *store.Que
 	if result.IsAmbiguousRemoteSuccess() {
 		log.Warn("replay: ambiguous remote success, marking terminal to prevent duplicate mutation",
 			"id", action.ID, "action", action.ActionType)
-		retryCount = store.MaxRetryCount
+		retryCount = actionqueue.MaxRetryCount
 		markCtx = context.Background()
 	}
 	if err := o.queue.MarkFailed(markCtx, action.ID, errMsg, retryCount); err != nil {

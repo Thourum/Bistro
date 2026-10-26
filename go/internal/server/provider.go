@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"github.com/itterno/bistro/internal/store/actionqueue"
 
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/server/handler"
@@ -53,7 +54,7 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 		WithDiffStore(diffStore).
 		WithReviewTracking(a.currentUserStore, a.db).
 		WithAnchorResolver(a.anchorResolver).
-		WithActionQueue(store.NewActionQueue(a.db.DB)).
+		WithActionQueue(actionqueue.New(a.db.DB)).
 		WithLiveness(a.provCtx).
 		WithClassifier(a.classifier).
 		WithCurrentUser(a.currentUserStore).

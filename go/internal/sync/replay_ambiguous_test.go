@@ -2,10 +2,11 @@ package sync
 
 import (
 	"context"
+	"github.com/itterno/bistro/internal/store/actionqueue"
 	"testing"
 
 	"github.com/itterno/bistro/internal/actions"
-	"github.com/itterno/bistro/internal/store"
+
 	"github.com/itterno/bistro/internal/store/storetest"
 )
 
@@ -19,8 +20,8 @@ import (
 func TestReplayQueuedActions_AmbiguousRemoteSuccessIsTerminal(t *testing.T) {
 	db := storetest.Open(t)
 
-	q := store.NewActionQueue(db.DB)
-	err := q.Enqueue(context.Background(), &store.QueuedAction{
+	q := actionqueue.New(db.DB)
+	err := q.Enqueue(context.Background(), &actionqueue.Action{
 		ID:         "pr-amb-approve",
 		ActionType: string(actions.ApproveCommand),
 		PRID:       "github:owner/repo:42",
@@ -37,7 +38,7 @@ func TestReplayQueuedActions_AmbiguousRemoteSuccessIsTerminal(t *testing.T) {
 	}
 
 	// Re-enqueue (status='pending') to simulate what a fresh Enqueue ON CONFLICT does.
-	err = q.Enqueue(context.Background(), &store.QueuedAction{
+	err = q.Enqueue(context.Background(), &actionqueue.Action{
 		ID:         "pr-amb-approve",
 		ActionType: string(actions.ApproveCommand),
 		PRID:       "github:owner/repo:42",
@@ -71,14 +72,14 @@ func TestReplayQueuedActions_AmbiguousRemoteSuccessIsTerminal(t *testing.T) {
 		// Row may have been re-enqueued as pending — that's also acceptable.
 		// The key test is the direct MarkFailed-terminal path below.
 		t.Logf("GetByID: %v (may have been re-enqueued)", err)
-	} else if action != nil && action.Status == "pending" && action.RetryCount < store.MaxRetryCount {
+	} else if action != nil && action.Status == "pending" && action.RetryCount < actionqueue.MaxRetryCount {
 		// Acceptable: replay was skipped due to cancelled context before running.
 		t.Logf("row still pending with retryCount=%d (replay aborted by ctx cancel)", action.RetryCount)
 	}
 
 	// Core invariant: if we directly simulate what replay does with an ambiguous result,
 	// it must use MaxRetryCount.
-	if err := q.MarkFailed(context.Background(), "pr-amb-approve", ambiguousErr, store.MaxRetryCount); err != nil {
+	if err := q.MarkFailed(context.Background(), "pr-amb-approve", ambiguousErr, actionqueue.MaxRetryCount); err != nil {
 		t.Fatalf("MarkFailed(MaxRetryCount): %v", err)
 	}
 	action, err = q.GetByID(context.Background(), "pr-amb-approve")
@@ -88,8 +89,8 @@ func TestReplayQueuedActions_AmbiguousRemoteSuccessIsTerminal(t *testing.T) {
 	if action.Status != "failed" {
 		t.Errorf("expected status=failed after MaxRetryCount mark, got %q", action.Status)
 	}
-	if action.RetryCount < store.MaxRetryCount {
-		t.Errorf("expected retryCount >= MaxRetryCount=%d, got %d", store.MaxRetryCount, action.RetryCount)
+	if action.RetryCount < actionqueue.MaxRetryCount {
+		t.Errorf("expected retryCount >= MaxRetryCount=%d, got %d", actionqueue.MaxRetryCount, action.RetryCount)
 	}
 
 	// Verify the ambiguous error is preserved in last_error for operator visibility.
@@ -108,10 +109,10 @@ func TestReplayQueuedActions_AmbiguousRemoteSuccessIsTerminal(t *testing.T) {
 // pending and allowing the next replay to duplicate the GitHub mutation.
 func TestReplayQueuedActions_AmbiguousTerminalWithCancelledCtx(t *testing.T) {
 	db := storetest.Open(t)
-	q := store.NewActionQueue(db.DB)
+	q := actionqueue.New(db.DB)
 
 	const actionID = "pr-amb-cancel-ctx"
-	err := q.Enqueue(context.Background(), &store.QueuedAction{
+	err := q.Enqueue(context.Background(), &actionqueue.Action{
 		ID:         actionID,
 		ActionType: string(actions.ApproveCommand),
 		PRID:       "github:owner/repo:99",
@@ -139,7 +140,7 @@ func TestReplayQueuedActions_AmbiguousTerminalWithCancelledCtx(t *testing.T) {
 	// the exact scenario: mark the row using a fresh context (as the fixed
 	// code does) and verify it lands as terminal-failed.
 	ambiguousErr := actions.ErrAmbiguousRemoteSuccess + "provider action may have executed; local effects suppressed"
-	if err := q.MarkFailed(context.Background(), actionID, ambiguousErr, store.MaxRetryCount); err != nil {
+	if err := q.MarkFailed(context.Background(), actionID, ambiguousErr, actionqueue.MaxRetryCount); err != nil {
 		t.Fatalf("MarkFailed with Background ctx must succeed even when execution ctx is cancelled: %v", err)
 	}
 
@@ -152,8 +153,8 @@ func TestReplayQueuedActions_AmbiguousTerminalWithCancelledCtx(t *testing.T) {
 	if action.Status != "failed" {
 		t.Errorf("status = %q, want \"failed\"", action.Status)
 	}
-	if action.RetryCount < store.MaxRetryCount {
-		t.Errorf("retry_count = %d, want >= MaxRetryCount (%d)", action.RetryCount, store.MaxRetryCount)
+	if action.RetryCount < actionqueue.MaxRetryCount {
+		t.Errorf("retry_count = %d, want >= MaxRetryCount (%d)", action.RetryCount, actionqueue.MaxRetryCount)
 	}
 
 	// Verify the row no longer appears in GetPending (no retry will happen).
@@ -175,10 +176,10 @@ func TestReplayQueuedActions_AmbiguousTerminalWithCancelledCtx(t *testing.T) {
 // duplicate the GitHub mutation.
 func TestReplayQueuedActions_ContextCancelledProviderError_IsTerminal(t *testing.T) {
 	db := storetest.Open(t)
-	q := store.NewActionQueue(db.DB)
+	q := actionqueue.New(db.DB)
 
 	const actionID = "pr-cancel-err-terminal"
-	if err := q.Enqueue(context.Background(), &store.QueuedAction{
+	if err := q.Enqueue(context.Background(), &actionqueue.Action{
 		ID:         actionID,
 		ActionType: string(actions.PostCommentCommand),
 		PRID:       "github:owner/repo:10",
@@ -204,7 +205,7 @@ func TestReplayQueuedActions_ContextCancelledProviderError_IsTerminal(t *testing
 
 	// Independently simulate the exact replay outcome to verify the terminal path.
 	ambiguousErr := actions.ErrAmbiguousRemoteSuccess + "provider action may have executed; local effects suppressed"
-	if err := q.MarkFailed(context.Background(), actionID, ambiguousErr, store.MaxRetryCount); err != nil {
+	if err := q.MarkFailed(context.Background(), actionID, ambiguousErr, actionqueue.MaxRetryCount); err != nil {
 		t.Fatalf("MarkFailed(MaxRetryCount) with Background ctx must succeed: %v", err)
 	}
 
@@ -215,8 +216,8 @@ func TestReplayQueuedActions_ContextCancelledProviderError_IsTerminal(t *testing
 	if action.Status != "failed" {
 		t.Errorf("status = %q, want \"failed\"", action.Status)
 	}
-	if action.RetryCount < store.MaxRetryCount {
-		t.Errorf("retry_count = %d, want >= %d", action.RetryCount, store.MaxRetryCount)
+	if action.RetryCount < actionqueue.MaxRetryCount {
+		t.Errorf("retry_count = %d, want >= %d", action.RetryCount, actionqueue.MaxRetryCount)
 	}
 
 	pending, err := q.GetPending(context.Background(), 10)

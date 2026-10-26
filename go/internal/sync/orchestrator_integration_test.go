@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"github.com/itterno/bistro/internal/store/actionqueue"
 	"strconv"
 	"testing"
 	"time"
@@ -10,7 +11,7 @@ import (
 	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
-	"github.com/itterno/bistro/internal/store"
+
 	"github.com/itterno/bistro/internal/store/storetest"
 )
 
@@ -89,7 +90,7 @@ func TestOrchestratorQueueActionsWhenRateLimited(t *testing.T) {
 	orch.rateLimitState = &provider.RateLimitState{
 		ResetAt: time.Now().Add(10 * time.Minute),
 	}
-	orch.queue = store.NewActionQueue(storeDB.DB)
+	orch.queue = actionqueue.New(storeDB.DB)
 
 	req := &actions.ActionRequest{
 		PRID:   "github:org/repo:1",
@@ -131,10 +132,10 @@ func TestOrchestratorReplayQueuedActions(t *testing.T) {
 		{ID: "github:org/repo:1", Number: 1, Title: "Test PR"},
 	})
 	orch := NewOrchestrator(nil, mockProv, nil, nil)
-	orch.queue = store.NewActionQueue(storeDB.DB)
+	orch.queue = actionqueue.New(storeDB.DB)
 
 	// Pre-populate one pending action.
-	action := &store.QueuedAction{
+	action := &actionqueue.Action{
 		ID:         "github:org/repo:1-approve",
 		ActionType: string(actions.ApproveCommand),
 		PRID:       "github:org/repo:1",
@@ -166,7 +167,7 @@ func TestOrchestratorCleanupOldQueuedActions(t *testing.T) {
 	storeDB := storetest.Open(t)
 
 	orch := NewOrchestrator(nil, mock.NewMockProvider(), nil, nil)
-	orch.queue = store.NewActionQueue(storeDB.DB)
+	orch.queue = actionqueue.New(storeDB.DB)
 
 	ctx := context.Background()
 	db := storeDB.DB

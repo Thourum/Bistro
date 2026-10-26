@@ -14,7 +14,7 @@ func insertDismissalTestComment(t *testing.T, db *DB, prID, commentID string) {
 }
 
 func TestDismissalsDismissIsIdempotent(t *testing.T) {
-	db := openTestDBForQueue(t)
+	db := newTestDB(t)
 	dismissals := NewDismissals(db.DB)
 	ctx := context.Background()
 
@@ -37,7 +37,7 @@ func TestDismissalsDismissIsIdempotent(t *testing.T) {
 }
 
 func TestDismissalsUndismiss(t *testing.T) {
-	db := openTestDBForQueue(t)
+	db := newTestDB(t)
 	dismissals := NewDismissals(db.DB)
 	ctx := context.Background()
 
@@ -64,7 +64,7 @@ func TestDismissalsUndismiss(t *testing.T) {
 }
 
 func TestDismissalsDismissedIDsScopesByPRAndAccount(t *testing.T) {
-	db := openTestDBForQueue(t)
+	db := newTestDB(t)
 	dismissals := NewDismissals(db.DB)
 	ctx := context.Background()
 
@@ -117,7 +117,7 @@ func TestDismissalsDismissedIDsScopesByPRAndAccount(t *testing.T) {
 }
 
 func TestDismissalsDismissUnknownCommentRollsBack(t *testing.T) {
-	db := openTestDBForQueue(t)
+	db := newTestDB(t)
 	dismissals := NewDismissals(db.DB)
 	ctx := context.Background()
 

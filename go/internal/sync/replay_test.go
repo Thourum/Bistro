@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"encoding/json"
+	"github.com/itterno/bistro/internal/store/actionqueue"
 	stdsync "sync"
 	"sync/atomic"
 	"testing"
@@ -11,7 +12,7 @@ import (
 	"github.com/itterno/bistro/internal/actions"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
-	"github.com/itterno/bistro/internal/store"
+
 	"github.com/itterno/bistro/internal/store/storetest"
 )
 
@@ -25,9 +26,9 @@ func TestReplayQueuedActions_SkipsStateUnknownThread(t *testing.T) {
 	db := storetest.Open(t)
 	insertThreadSync(t, db.DB, "pr-replay", "PRRT_stale", false, false) // state_known=false
 
-	q := store.NewActionQueue(db.DB)
+	q := actionqueue.New(db.DB)
 	// Insert a queued resolve_thread action targeting the state_unknown thread.
-	err := q.Enqueue(context.Background(), &store.QueuedAction{
+	err := q.Enqueue(context.Background(), &actionqueue.Action{
 		ID:         "pr-replay-resolve_thread-PRRT_stale",
 		ActionType: string(actions.ResolveThreadCommand),
 		PRID:       "pr-replay",
@@ -60,9 +61,9 @@ func TestReplayQueuedActions_SkipsWrongPRThread(t *testing.T) {
 	db := storetest.Open(t)
 	insertThreadSync(t, db.DB, "pr-correct", "PRRT_x", false, true) // belongs to pr-correct
 
-	q := store.NewActionQueue(db.DB)
+	q := actionqueue.New(db.DB)
 	// Queue action with wrong pr_id.
-	err := q.Enqueue(context.Background(), &store.QueuedAction{
+	err := q.Enqueue(context.Background(), &actionqueue.Action{
 		ID:         "pr-wrong-resolve_thread-PRRT_x",
 		ActionType: string(actions.ResolveThreadCommand),
 		PRID:       "pr-wrong", // wrong PR
@@ -90,13 +91,13 @@ func TestReplayQueuedActions_SkipsWrongPRThread(t *testing.T) {
 
 func TestReplayQueuedActions_ProcessingPostCommentReconcilesRemoteSuccess(t *testing.T) {
 	db := storetest.Open(t)
-	q := store.NewActionQueue(db.DB)
+	q := actionqueue.New(db.DB)
 	ctx := context.Background()
 
 	const actionID = "pr-comment-crash-reconcile"
 	const prID = "github:owner/repo:11"
 	const body = "already posted while Bistro crashed"
-	if err := q.Enqueue(ctx, &store.QueuedAction{
+	if err := q.Enqueue(ctx, &actionqueue.Action{
 		ID:         actionID,
 		ActionType: string(actions.PostCommentCommand),
 		PRID:       prID,
@@ -137,11 +138,11 @@ func TestReplayQueuedActions_ProcessingPostCommentReconcilesRemoteSuccess(t *tes
 
 func TestReplayQueuedActions_ConcurrentOrchestratorsDoNotDuplicatePostComment(t *testing.T) {
 	db := storetest.Open(t)
-	q := store.NewActionQueue(db.DB)
+	q := actionqueue.New(db.DB)
 	ctx := context.Background()
 
 	const actionID = "pr-comment-concurrent-replay"
-	if err := q.Enqueue(ctx, &store.QueuedAction{
+	if err := q.Enqueue(ctx, &actionqueue.Action{
 		ID:         actionID,
 		ActionType: string(actions.PostCommentCommand),
 		PRID:       "github:owner/repo:12",
@@ -216,11 +217,11 @@ func (p *blockingPostCommentProvider) PostComment(_ context.Context, _ string, _
 
 func TestReplayQueuedActions_ReplyComment_CallsProvider(t *testing.T) {
 	db := storetest.Open(t)
-	q := store.NewActionQueue(db.DB)
+	q := actionqueue.New(db.DB)
 	prov := mock.NewMockProvider()
 	orch := NewOrchestrator(nil, prov, db, nil).WithActionQueue(q)
 	payload, _ := json.Marshal(actions.ReplyCommentPayload{Body: "reply body", InReplyTo: "github-review-comment-654"})
-	if err := q.Enqueue(context.Background(), &store.QueuedAction{
+	if err := q.Enqueue(context.Background(), &actionqueue.Action{
 		ID: "reply-queued", ActionType: string(actions.ReplyCommentCommand), PRID: "github:owner/repo:4", Payload: string(payload),
 	}); err != nil {
 		t.Fatalf("Enqueue: %v", err)
@@ -239,9 +240,9 @@ func TestReplayQueuedActions_ReplyComment_CallsProvider(t *testing.T) {
 
 func TestReplayQueuedActions_ReplyComment_InvalidPayloadTerminal(t *testing.T) {
 	db := storetest.Open(t)
-	q := store.NewActionQueue(db.DB)
+	q := actionqueue.New(db.DB)
 	orch := NewOrchestrator(nil, mock.NewMockProvider(), db, nil).WithActionQueue(q)
-	if err := q.Enqueue(context.Background(), &store.QueuedAction{
+	if err := q.Enqueue(context.Background(), &actionqueue.Action{
 		ID: "reply-bad-json", ActionType: string(actions.ReplyCommentCommand), PRID: "github:owner/repo:5", Payload: "{bad-json",
 	}); err != nil {
 		t.Fatalf("Enqueue: %v", err)

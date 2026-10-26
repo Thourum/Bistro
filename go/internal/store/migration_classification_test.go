@@ -3,7 +3,7 @@ package store
 import "testing"
 
 func TestMigration027CommentClassification(t *testing.T) {
-	db := openTestDBForQueue(t) // reuse the existing test helper that runs all migrations
+	db := newTestDB(t) // reuse the existing test helper that runs all migrations
 
 	// New columns exist on comments.
 	for _, col := range []string{"author_type", "bot_vendor", "severity", "classification_source"} {
@@ -26,7 +26,7 @@ func TestMigration027CommentClassification(t *testing.T) {
 }
 
 func TestMigration028CommentDismissals(t *testing.T) {
-	db := openTestDBForQueue(t) // reuse the existing test helper that runs all migrations
+	db := newTestDB(t) // reuse the existing test helper that runs all migrations
 
 	t.Run("schema has per-account composite primary key", func(t *testing.T) {
 		columns := []struct {

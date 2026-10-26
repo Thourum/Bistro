@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/itterno/bistro/internal/store/actionqueue"
 	"log/slog"
 	gosync "sync"
 	"time"
@@ -37,7 +38,7 @@ type Orchestrator struct {
 	emitter         *events.EventEmitter
 	rateLimitMu     gosync.RWMutex
 	rateLimitState  *provider.RateLimitState
-	queue           *store.ActionQueue
+	queue           *actionqueue.Queue
 	diffStore       *store.DiffStore
 	expertise       ExpertiseHook
 	resolveRepoPath RepoPathResolver
@@ -147,7 +148,7 @@ func (o *Orchestrator) WithAnchorResolver(r *anchor.Resolver) *Orchestrator {
 
 // WithActionQueue attaches a persistent action queue for offline/rate-limited
 // action replay. Production orchestrators should always have a queue attached.
-func (o *Orchestrator) WithActionQueue(q *store.ActionQueue) *Orchestrator {
+func (o *Orchestrator) WithActionQueue(q *actionqueue.Queue) *Orchestrator {
 	o.queue = q
 	return o
 }

@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/itterno/bistro/internal/store/actionqueue"
 	"testing"
 	"time"
 
 	"github.com/itterno/bistro/internal/actions"
 	"github.com/itterno/bistro/internal/provider"
-	"github.com/itterno/bistro/internal/store"
+
 	"github.com/itterno/bistro/internal/store/storetest"
 )
 
@@ -238,7 +239,7 @@ func TestHandleThreadActionSuccess_SkippedWhenLivenessCancelled(t *testing.T) {
 // This prevents the comment from being replayed as a general PR comment.
 func TestApplyAction_LineLevelComment_RateLimited_Rejected(t *testing.T) {
 	db := storetest.Open(t)
-	q := store.NewActionQueue(db.DB)
+	q := actionqueue.New(db.DB)
 	orch := NewOrchestrator(nil, nil, db, nil).WithActionQueue(q)
 
 	// Force rate-limited state.
@@ -274,7 +275,7 @@ func TestApplyAction_LineLevelComment_RateLimited_Rejected(t *testing.T) {
 // post_comment (Line == 0) is still queued normally when rate-limited.
 func TestApplyAction_GeneralComment_RateLimited_Queued(t *testing.T) {
 	db := storetest.Open(t)
-	q := store.NewActionQueue(db.DB)
+	q := actionqueue.New(db.DB)
 	orch := NewOrchestrator(nil, nil, db, nil).WithActionQueue(q)
 
 	orch.rateLimitState = &provider.RateLimitState{
@@ -306,7 +307,7 @@ func TestApplyAction_GeneralComment_RateLimited_Queued(t *testing.T) {
 
 func TestApplyAction_ReplyComment_RateLimited_QueuesResolvedTarget(t *testing.T) {
 	db := storetest.Open(t)
-	q := store.NewActionQueue(db.DB)
+	q := actionqueue.New(db.DB)
 	prepareReplyThreadFixture(t, db, "github:owner/repo:3", "PRRT_reply_q", "github-review-comment-321")
 	orch := NewOrchestrator(nil, nil, db, nil).WithActionQueue(q)
 	orch.rateLimitState = &provider.RateLimitState{ResetAt: time.Now().Add(5 * time.Minute)}

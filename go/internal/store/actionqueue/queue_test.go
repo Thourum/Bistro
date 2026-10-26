@@ -1,31 +1,19 @@
-package store
+package actionqueue
 
 import (
 	"context"
+	"github.com/itterno/bistro/internal/store/storetest"
 	"testing"
 	"time"
 )
 
-func openTestDBForQueue(t *testing.T) *DB {
-	t.Helper()
-	db, err := OpenDB(":memory:")
-	if err != nil {
-		t.Fatalf("openTestDBForQueue: %v", err)
-	}
-	if err := NewMigrationRunner(nil, db.DB).Run(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
-}
-
 // TestQueueEnqueue verifies that a new action can be enqueued and retrieved by ID.
 func TestQueueEnqueue(t *testing.T) {
-	db := openTestDBForQueue(t)
-	q := NewActionQueue(db.DB)
+	db := storetest.Open(t)
+	q := New(db.DB)
 	ctx := context.Background()
 
-	action := &QueuedAction{
+	action := &Action{
 		ID:         "action-1",
 		ActionType: "approve",
 		PRID:       "github:org/repo:1",
@@ -59,11 +47,11 @@ func TestQueueEnqueue(t *testing.T) {
 
 // TestQueuePending verifies that GetPending returns only pending actions with retry_count < 3.
 func TestQueuePending(t *testing.T) {
-	db := openTestDBForQueue(t)
-	q := NewActionQueue(db.DB)
+	db := storetest.Open(t)
+	q := New(db.DB)
 	ctx := context.Background()
 
-	actions := []*QueuedAction{
+	actions := []*Action{
 		{ID: "a1", ActionType: "approve", PRID: "pr-1", Payload: "{}"},
 		{ID: "a2", ActionType: "comment", PRID: "pr-2", Payload: "{}"},
 		{ID: "a3", ActionType: "approve", PRID: "pr-3", Payload: "{}"},
@@ -85,11 +73,11 @@ func TestQueuePending(t *testing.T) {
 
 // TestQueueMarkCompleted verifies that MarkCompleted sets the status to 'completed'.
 func TestQueueMarkCompleted(t *testing.T) {
-	db := openTestDBForQueue(t)
-	q := NewActionQueue(db.DB)
+	db := storetest.Open(t)
+	q := New(db.DB)
 	ctx := context.Background()
 
-	action := &QueuedAction{
+	action := &Action{
 		ID:         "action-complete",
 		ActionType: "approve",
 		PRID:       "pr-1",
@@ -115,13 +103,13 @@ func TestQueueMarkCompleted(t *testing.T) {
 // TestQueueMarkFailed verifies that MarkFailed keeps the action pending while
 // retries remain, and only moves it to 'failed' once retries are exhausted.
 func TestQueueMarkFailed(t *testing.T) {
-	db := openTestDBForQueue(t)
-	q := NewActionQueue(db.DB)
+	db := storetest.Open(t)
+	q := New(db.DB)
 	ctx := context.Background()
 
 	enqueue := func(id string) {
 		t.Helper()
-		if err := q.Enqueue(ctx, &QueuedAction{
+		if err := q.Enqueue(ctx, &Action{
 			ID:         id,
 			ActionType: "request_changes",
 			PRID:       "pr-2",
@@ -166,15 +154,15 @@ func TestQueueMarkFailed(t *testing.T) {
 
 // TestQueueRetryLimit verifies that actions with retry_count >= 3 are excluded from GetPending.
 func TestQueueRetryLimit(t *testing.T) {
-	db := openTestDBForQueue(t)
-	q := NewActionQueue(db.DB)
+	db := storetest.Open(t)
+	q := New(db.DB)
 	ctx := context.Background()
 
 	// Enqueue two actions; fail one past the retry limit.
-	eligible := &QueuedAction{ID: "eligible", ActionType: "approve", PRID: "pr-1", Payload: "{}"}
-	exhausted := &QueuedAction{ID: "exhausted", ActionType: "approve", PRID: "pr-2", Payload: "{}"}
+	eligible := &Action{ID: "eligible", ActionType: "approve", PRID: "pr-1", Payload: "{}"}
+	exhausted := &Action{ID: "exhausted", ActionType: "approve", PRID: "pr-2", Payload: "{}"}
 
-	for _, a := range []*QueuedAction{eligible, exhausted} {
+	for _, a := range []*Action{eligible, exhausted} {
 		if err := q.Enqueue(ctx, a); err != nil {
 			t.Fatalf("Enqueue error: %v", err)
 		}
@@ -202,11 +190,11 @@ func TestQueueRetryLimit(t *testing.T) {
 
 // TestQueueDeleteCompleted verifies that DeleteCompleted removes old completed actions.
 func TestQueueDeleteCompleted(t *testing.T) {
-	db := openTestDBForQueue(t)
-	q := NewActionQueue(db.DB)
+	db := storetest.Open(t)
+	q := New(db.DB)
 	ctx := context.Background()
 
-	action := &QueuedAction{
+	action := &Action{
 		ID:         "old-completed",
 		ActionType: "approve",
 		PRID:       "pr-1",
@@ -236,11 +224,11 @@ func TestQueueDeleteCompleted(t *testing.T) {
 
 // TestQueueCleanup verifies that DeleteFailed removes old failed actions.
 func TestQueueCleanup(t *testing.T) {
-	db := openTestDBForQueue(t)
-	q := NewActionQueue(db.DB)
+	db := storetest.Open(t)
+	q := New(db.DB)
 	ctx := context.Background()
 
-	action := &QueuedAction{
+	action := &Action{
 		ID:         "old-failed",
 		ActionType: "post_comment",
 		PRID:       "pr-3",
@@ -267,11 +255,11 @@ func TestQueueCleanup(t *testing.T) {
 // TestEnqueueIdempotent verifies that re-enqueuing the same ID replaces the prior row,
 // resets status to 'pending' and retry_count to 0, and updates the payload.
 func TestEnqueueIdempotent(t *testing.T) {
-	db := openTestDBForQueue(t)
-	q := NewActionQueue(db.DB)
+	db := storetest.Open(t)
+	q := New(db.DB)
 	ctx := context.Background()
 
-	first := &QueuedAction{
+	first := &Action{
 		ID:         "pr-42-approve",
 		ActionType: "approve",
 		PRID:       "pr-42",
@@ -287,7 +275,7 @@ func TestEnqueueIdempotent(t *testing.T) {
 	}
 
 	// Re-enqueue with a different payload — must succeed and reset the row.
-	second := &QueuedAction{
+	second := &Action{
 		ID:         "pr-42-approve",
 		ActionType: "approve",
 		PRID:       "pr-42",
@@ -325,8 +313,8 @@ func TestEnqueueIdempotent(t *testing.T) {
 
 // TestQueueGetByIDNotFound verifies that GetByID returns an error for unknown IDs.
 func TestQueueGetByIDNotFound(t *testing.T) {
-	db := openTestDBForQueue(t)
-	q := NewActionQueue(db.DB)
+	db := storetest.Open(t)
+	q := New(db.DB)
 	ctx := context.Background()
 
 	_, err := q.GetByID(ctx, "nonexistent-id")
@@ -337,12 +325,12 @@ func TestQueueGetByIDNotFound(t *testing.T) {
 
 // TestQueuePendingLimit verifies that GetPending respects the limit parameter.
 func TestQueuePendingLimit(t *testing.T) {
-	db := openTestDBForQueue(t)
-	q := NewActionQueue(db.DB)
+	db := storetest.Open(t)
+	q := New(db.DB)
 	ctx := context.Background()
 
 	for i := 0; i < 5; i++ {
-		a := &QueuedAction{
+		a := &Action{
 			ID:         "action-limit-" + time.Now().Format("15:04:05.000000000") + string(rune('0'+i)),
 			ActionType: "approve",
 			PRID:       "pr-limit",
@@ -363,11 +351,11 @@ func TestQueuePendingLimit(t *testing.T) {
 }
 
 func TestQueueGetPendingForAccountIsolation(t *testing.T) {
-	db := openTestDBForQueue(t)
-	q := NewActionQueue(db.DB)
+	db := storetest.Open(t)
+	q := New(db.DB)
 	ctx := context.Background()
 
-	for _, action := range []*QueuedAction{
+	for _, action := range []*Action{
 		{ID: "alice-action", ActionType: "approve", PRID: "pr-1", Payload: "{}", AccountProvider: "github", AccountLogin: "alice"},
 		{ID: "bob-action", ActionType: "approve", PRID: "pr-1", Payload: "{}", AccountProvider: "github", AccountLogin: "bob"},
 		{ID: "legacy-unowned", ActionType: "approve", PRID: "pr-1", Payload: "{}", AccountProvider: "github"},
@@ -387,12 +375,12 @@ func TestQueueGetPendingForAccountIsolation(t *testing.T) {
 }
 
 func TestQueueProcessingLifecycle(t *testing.T) {
-	db := openTestDBForQueue(t)
-	q := NewActionQueue(db.DB)
+	db := storetest.Open(t)
+	q := New(db.DB)
 	ctx := context.Background()
 
 	const actionID = "processing-action"
-	if err := q.Enqueue(ctx, &QueuedAction{ID: actionID, ActionType: "post_comment", PRID: "pr-1", Payload: "body"}); err != nil {
+	if err := q.Enqueue(ctx, &Action{ID: actionID, ActionType: "post_comment", PRID: "pr-1", Payload: "body"}); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
 	if err := q.MarkProcessing(ctx, actionID); err != nil {
