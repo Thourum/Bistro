@@ -14,6 +14,7 @@ import (
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/store/prdiff"
+	"github.com/itterno/bistro/internal/sync/workerpool"
 )
 
 // perPRFetchTimeout caps how long the detail fetch (comments, reviews, CI,
@@ -92,7 +93,7 @@ func (o *Orchestrator) FetchPRDetails(
 	log := logging.FromContext(ctx)
 	log.Debug("FetchPRDetails start",
 		"pr_count", len(prs),
-		"workers", DefaultWorkers,
+		"workers", workerpool.DefaultWorkers,
 		"include_comments", includeComments,
 		"include_ci", includeCI,
 		"include_diff", includeDiff,
@@ -100,7 +101,7 @@ func (o *Orchestrator) FetchPRDetails(
 
 	options := prFetchOptions{comments: includeComments, ci: includeCI, diff: includeDiff}
 	results := make([]*PRFetchResult, len(prs))
-	pool := NewWorkerPool(DefaultWorkers, o.log)
+	pool := workerpool.New(workerpool.DefaultWorkers, o.log)
 	for i, pr := range prs {
 		if err := pool.Submit(ctx, func() {
 			results[i] = o.fetchPR(ctx, pr, options)

@@ -1,4 +1,4 @@
-package sync
+package workerpool
 
 import (
 	"context"
@@ -9,14 +9,14 @@ import (
 
 func TestConcurrentGoroutinePool(t *testing.T) {
 	// Test goroutine pool can be created
-	pool := NewWorkerPool(4, nil)
+	pool := New(4, nil)
 	if pool == nil {
 		t.Error("expected non-nil pool")
 	}
 }
 
 func TestWorkerPoolSubmitTask(t *testing.T) {
-	pool := NewWorkerPool(2, nil)
+	pool := New(2, nil)
 	ctx := context.Background()
 
 	// Submit a simple task
@@ -52,7 +52,7 @@ func TestContextCancellation(t *testing.T) {
 }
 
 func TestWorkerPoolDefaultsToDefaultWorkers(t *testing.T) {
-	pool := NewWorkerPool(0, nil)
+	pool := New(0, nil)
 	wasRun := make(chan struct{}, 1)
 	if err := pool.Submit(context.Background(), func() { wasRun <- struct{}{} }); err != nil {
 		t.Fatalf("submit with default workers: %v", err)
@@ -68,7 +68,7 @@ func TestWorkerPoolDefaultsToDefaultWorkers(t *testing.T) {
 }
 
 func TestWorkerPoolMultipleTasks(t *testing.T) {
-	pool := NewWorkerPool(3, nil)
+	pool := New(3, nil)
 	ctx := context.Background()
 	results := make(chan int, 5)
 
@@ -99,7 +99,7 @@ func TestWorkerPoolMultipleTasks(t *testing.T) {
 // when the context is already cancelled, rather than blocking on a full channel.
 func TestSubmitContextCancellation(t *testing.T) {
 	// Use 1 worker, buffer=2; fill the buffer so the next Submit would block.
-	pool := NewWorkerPool(1, nil)
+	pool := New(1, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Block the worker so the buffer fills up.
@@ -137,7 +137,7 @@ func TestSubmitContextCancellation(t *testing.T) {
 // TestWaitContextCancellation verifies that Wait returns ctx.Err() when the
 // context is cancelled before all workers have finished.
 func TestWaitContextCancellation(t *testing.T) {
-	pool := NewWorkerPool(1, nil)
+	pool := New(1, nil)
 
 	// Submit a task that blocks until we release it.
 	unblock := make(chan struct{})
@@ -172,7 +172,7 @@ func TestWaitContextCancellation(t *testing.T) {
 // TestWorkerPanicRecovery verifies that a panicking task does not propagate
 // the panic and that the pool continues to process subsequent tasks.
 func TestWorkerPanicRecovery(t *testing.T) {
-	pool := NewWorkerPool(1, nil)
+	pool := New(1, nil)
 	ctx := context.Background()
 
 	result := make(chan int, 1)
@@ -190,7 +190,7 @@ func TestWorkerPanicRecovery(t *testing.T) {
 
 	// The worker should have recovered; but after a panic the worker goroutine
 	// exits (calls wg.Done). Submit to a new pool to test continued operation.
-	pool2 := NewWorkerPool(1, nil)
+	pool2 := New(1, nil)
 	if err := pool2.Submit(ctx, func() {
 		result <- 99
 	}); err != nil {
@@ -228,7 +228,7 @@ func TestWorkerPanicRecovery(t *testing.T) {
 // TestWorkerPanicDoesntBlockPool verifies that a panic in one worker does not
 // prevent pool.Wait() from returning.
 func TestWorkerPanicDoesntBlockPool(t *testing.T) {
-	pool := NewWorkerPool(2, nil)
+	pool := New(2, nil)
 	ctx := context.Background()
 
 	var mu context.Context = ctx

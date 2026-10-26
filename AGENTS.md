@@ -35,6 +35,8 @@ Clone cache entries, path/staging helpers, maintenance, and PR-head retention li
 
 Independent SQLite stores live in `internal/store/actionqueue`, `currentuser`, `dismissal`, `prdiff`, and `repolocation`; `store` retains the DB handle, migrations (`migrate.go`), and DB query methods (including `review_threads.go`). Subpackages may import `store` and sqlc's `store/db`, never the reverse. Expertise indexing state already belongs to `internal/expertise`, not `repolocation`.
 
+Concurrent PR fetch tasks run through `internal/sync/workerpool` (`Pool`, `New`, `DefaultWorkers`); it does not import the parent `sync` package. The orchestrator remains in package `sync` until the separate `prsync` rename.
+
 Go tests outside package `store` share migrated in-memory databases via `internal/store/storetest.Open(t)`; `store`'s own internal tests keep local helpers to avoid an import cycle. Version-limited migration tests use `store.MigrationFS()` with goose. See the [Go package layout spec](docs/superpowers/specs/2026-10-26-go-package-layout-design.md) for the package boundaries.
 
 ## Tech stack
