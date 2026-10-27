@@ -5,6 +5,10 @@
 - **Evidence commit:** `c71ea2e` (the tree the inventories were collected from)
 - **Reproduce:** `docs/adr/data/0001/gate0-collect.sh` (read-only; rewrites the `*.txt` files beside it)
 
+## Amendments
+
+- **2026-10-27, Gate 0 override.** The owner chose to continue past the failed Gate 0: "it just means migration wouldn't impact anyone other than myself." Gates 1–5 now run with the owner as the only affected user. Gate 0's verdict and evidence stand unchanged below. The pre-registered thresholds in Gate 1 are judged against the owner's workload (the measured fixtures), not against a user population.
+
 ## Question
 
 Two separate decisions, with separate thresholds and verdicts:

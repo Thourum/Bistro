@@ -2,7 +2,7 @@
 
 ## Scope
 
-- macOS 12 or later, Apple Silicon (arm64) only.
+- macOS 13 or later (Electron 44 sets `LSMinimumSystemVersion` 13.0), Apple Silicon (arm64) only.
 - Alpha means: expect rough edges and data resets. Bistro is not yet a stable v1.0.
 
 ## Installing
