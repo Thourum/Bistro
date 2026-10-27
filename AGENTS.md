@@ -13,6 +13,7 @@ Authoritative references (read when relevant, don't duplicate here):
 - Roadmap / v1.0 status: `docs/ROADMAP.md`
 - Design system & UI specs: `docs/DESIGN.md` (UI mockups live in `electron/stitch_terminal_authentic_prd/`)
 - User facing documentation: `website/src/pages/docs/`
+- Architecture decisions: `docs/adr/` (raw evidence and repro scripts in `docs/adr/data/NNNN/`)
 
 This project is early and evolving. If you change structure, commands, or conventions, update this file in the same change.
 
