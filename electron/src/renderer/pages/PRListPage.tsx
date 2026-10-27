@@ -1,6 +1,7 @@
 import React from 'react';
 import { FooterCenterSlot } from '../components/FooterSlot';
 import { PRListTable, visiblePRListRows } from '../components/PRListTable';
+import { useBenchListRendered } from '../hooks/useBenchListRendered';
 import { useInboxReadActions } from '../hooks/useInboxReadActions';
 import { useStore } from '../hooks/useStore';
 import { useNeedsActionPRs, useVisiblePRs } from '../hooks/useVisiblePRs';
@@ -60,6 +61,7 @@ export function PRListPage({
     sort: sortBy,
     q,
   });
+  useBenchListRendered(prs.length);
 
   const collapsedRepoKeys = useStore(
     appStore,

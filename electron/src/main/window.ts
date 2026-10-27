@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { app, BrowserWindow } from 'electron';
 import type { Logger } from 'electron-log';
+import { parseBenchSearch } from './benchArgs';
 import type { AppConfig } from './types';
 import { wsPortToArg } from './ws-port';
 
@@ -88,12 +89,26 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
     event.preventDefault();
   });
 
+  const benchSearch = parseBenchSearch(process.argv);
+  if (benchSearch.isErr()) {
+    logger.error(benchSearch.error.message);
+    app.quit();
+    return mainWindow;
+  }
+  const search = benchSearch.value;
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    const rendererUrl = new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    if (search) {
+      rendererUrl.search = [rendererUrl.search.slice(1), search]
+        .filter(Boolean)
+        .join('&');
+    }
+    mainWindow.loadURL(rendererUrl.toString());
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(
       join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+      { search },
     );
   }
 
