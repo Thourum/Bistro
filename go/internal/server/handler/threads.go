@@ -112,10 +112,11 @@ func NewGetReviewThreadsHandler(db threadLister, log *slog.Logger) ws.MessageHan
 // Request:
 //
 //	{
-//	  "action":    "resolve_thread" | "unresolve_thread" | "approve" | ...,
-//	  "pr_id":     "github:owner/repo:N",
-//	  "body":      "<thread node id or comment body>",
-//	  "thread_id": "<thread node id>"   // alias for body on thread actions
+//	  "action":       "resolve_thread" | "unresolve_thread" | "approve" | "submit_review" | ...,
+//	  "pr_id":        "github:owner/repo:N",
+//	  "body":         "<thread node id or comment body>",
+//	  "thread_id":    "<thread node id>",   // alias for body on thread actions
+//	  "review_event": "APPROVE" | "REQUEST_CHANGES" | "COMMENT"   // submit_review only
 //	}
 //
 // Response type: ACTION_RESULT
@@ -143,13 +144,14 @@ func NewSubmitActionHandler(getApplier ApplierGetter, log *slog.Logger) ws.Messa
 		}
 
 		var req struct {
-			Action    string `json:"action"`
-			PRID      string `json:"pr_id"`
-			Body      string `json:"body"`
-			ThreadID  string `json:"thread_id"` // alias: resolve/unresolve actions use this field
-			CommentID string `json:"comment_id"`
-			InReplyTo string `json:"in_reply_to"`
-			Line      int    `json:"line"`
+			Action      string `json:"action"`
+			PRID        string `json:"pr_id"`
+			Body        string `json:"body"`
+			ThreadID    string `json:"thread_id"` // alias: resolve/unresolve actions use this field
+			CommentID   string `json:"comment_id"`
+			InReplyTo   string `json:"in_reply_to"`
+			Line        int    `json:"line"`
+			ReviewEvent string `json:"review_event"`
 		}
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
 			return nil, fmt.Errorf("parse SUBMIT_ACTION: %w", err)
@@ -173,12 +175,13 @@ func NewSubmitActionHandler(getApplier ApplierGetter, log *slog.Logger) ws.Messa
 		}
 
 		actionReq := &actions.ActionRequest{
-			PRID:      req.PRID,
-			Action:    actions.ActionCommand(req.Action),
-			Body:      body,
-			Line:      req.Line,
-			InReplyTo: inReplyTo,
-			ThreadID:  req.ThreadID,
+			PRID:        req.PRID,
+			Action:      actions.ActionCommand(req.Action),
+			Body:        body,
+			Line:        req.Line,
+			InReplyTo:   inReplyTo,
+			ThreadID:    req.ThreadID,
+			ReviewEvent: req.ReviewEvent,
 		}
 
 		if err := actionReq.Validate(); err != nil {

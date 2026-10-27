@@ -174,7 +174,7 @@ describe('scoped onboarding and first-run actions', () => {
   it('clears pending intent before list filters, preserves sort, and never hides the rail', () => {
     const store = new Store({
       ...initialUIState,
-      confirmingAction: 'approve' as const,
+      confirmingAction: 'comment' as const,
       searchQuery: 'review',
       repoFilter: 'acme/api',
       filterState: 'all' as const,

@@ -5,6 +5,7 @@ import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
 import { addToast } from '../components/ToastContainer';
 import { useOpenInEditor } from '../hooks/useOpenInEditor';
 import { useStore } from '../hooks/useStore';
+import { useThreadActions } from '../hooks/useThreadActions';
 import { markFileViewed } from '../services/readState';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
@@ -19,6 +20,7 @@ interface DiffPageActionsOptions {
   threads: ReviewThread[];
   confirmingAction: UIState['confirmingAction'];
   setFiles: React.Dispatch<React.SetStateAction<DiffFile[]>>;
+  showInterdiff: boolean;
 }
 
 /** Handles diff page keyboard intents and editor opening without changing fetches. */
@@ -29,11 +31,49 @@ export function useDiffPageActions({
   threads,
   confirmingAction,
   setFiles,
+  showInterdiff,
 }: DiffPageActionsOptions): ReturnType<typeof useOpenInEditor> {
   const diffStyle = useStore(settingsStore, (s) => s.diff.style);
   const openInEditor = useOpenInEditor();
   const { state, requestOpen } = openInEditor;
   const markInFlight = useRef(false);
+  const { resolveThread, unresolveThread } = useThreadActions(pr?.id);
+
+  useEffect(() => {
+    const toggle = (): void => {
+      const thread = threads.find(
+        (entry) => entry.id === appStore.state.activeInlineCommentThreadId,
+      );
+      if (thread === undefined) return;
+      if (!thread.state_known) {
+        addToast({
+          type: 'warning',
+          message: 'Thread state unknown; sync before resolving',
+          dismissible: true,
+        });
+        return;
+      }
+      (thread.resolved ? unresolveThread : resolveThread)(thread.id);
+    };
+    document.addEventListener('bistro:diff:toggle-resolve', toggle);
+    return () =>
+      document.removeEventListener('bistro:diff:toggle-resolve', toggle);
+  }, [threads, resolveThread, unresolveThread]);
+
+  // The interdiff mounts no DiffView, so nothing else answers `c` there.
+  useEffect(() => {
+    if (!showInterdiff) return;
+    const explain = (): void => {
+      addToast({
+        type: 'info',
+        message: 'Line comments are unavailable in the interdiff',
+        dismissible: true,
+      });
+    };
+    document.addEventListener('bistro:diff:line-comment', explain);
+    return () =>
+      document.removeEventListener('bistro:diff:line-comment', explain);
+  }, [showInterdiff]);
 
   const doMarkViewed = useCallback(() => {
     if (pr === undefined || currentFile === undefined || markInFlight.current)

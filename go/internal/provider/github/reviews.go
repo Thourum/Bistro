@@ -48,6 +48,47 @@ func (c *Client) requestChanges(ctx context.Context, owner, repo string, number 
 	return nil
 }
 
+// reviewEvents are the CreateReview events submit_review may send.
+var reviewEvents = map[string]bool{"APPROVE": true, "REQUEST_CHANGES": true, "COMMENT": true}
+
+// submitReview creates one review carrying every inline comment.
+func (c *Client) submitReview(ctx context.Context, owner, repo string, number int, sub provider.ReviewSubmission) error {
+	if !reviewEvents[sub.Event] {
+		return fmt.Errorf("invalid review event %q", sub.Event)
+	}
+	review := &ghlib.PullRequestReviewRequest{Event: ghlib.Ptr(sub.Event)}
+	if sub.Body != "" {
+		review.Body = ghlib.Ptr(sub.Body)
+	}
+	if sub.CommitID != "" {
+		review.CommitID = ghlib.Ptr(sub.CommitID)
+	}
+	for _, comment := range sub.Comments {
+		draft := &ghlib.DraftReviewComment{
+			Path: ghlib.Ptr(comment.Path), Body: ghlib.Ptr(comment.Body),
+			Side: ghlib.Ptr(comment.Side), Line: ghlib.Ptr(comment.Line),
+		}
+		if comment.StartLine > 0 {
+			draft.StartLine = ghlib.Ptr(comment.StartLine)
+			draft.StartSide = ghlib.Ptr(comment.Side)
+		}
+		review.Comments = append(review.Comments, draft)
+	}
+	if _, _, err := c.gh.PullRequests.CreateReview(ctx, owner, repo, number, review); err != nil {
+		return fmt.Errorf("failed to submit review on PR %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return nil
+}
+
+// SubmitReview implements provider.ReviewSubmitter, parsing the "github:owner/repo:number" ID format.
+func (c *Client) SubmitReview(ctx context.Context, prID string, sub provider.ReviewSubmission) error {
+	owner, repo, number, err := parsePRID(prID)
+	if err != nil {
+		return err
+	}
+	return c.submitReview(ctx, owner, repo, number, sub)
+}
+
 // postComment posts a general issue comment on a PR.
 // If line > 0, it is recorded for future use as a review comment (requires commit SHA; not yet implemented).
 func (c *Client) postComment(ctx context.Context, owner, repo string, number, line int, body string) error {

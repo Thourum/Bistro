@@ -99,8 +99,13 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 	// cancellation is observed after a provider call that may have succeeded.
 	// Using ErrAmbiguousRemoteSuccess prefix marks the result as terminal in
 	// the queue replay path so it is never retried (blocker 1).
-	ambiguousResult := func() *ActionResult {
-		return failedResult(req, ErrAmbiguousRemoteSuccess+"provider action may have executed; local effects suppressed")
+	// cause is the provider error that made the outcome unknown, if any.
+	ambiguousResult := func(cause string) *ActionResult {
+		msg := ErrAmbiguousRemoteSuccess + "provider action may have executed; local effects suppressed"
+		if cause != "" {
+			msg += ": " + cause
+		}
+		return failedResult(req, msg)
 	}
 
 	// Guard 1: immediately after handler.Handle, which is the provider mutation
@@ -114,7 +119,7 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 	// return early ABOVE — they never reach this point — so they are correctly
 	// NOT marked ambiguous.
 	if ctx.Err() != nil {
-		result = ambiguousResult()
+		result = ambiguousResult(result.Error)
 	}
 
 	// Guard 1b: recoverable transport failure from a non-idempotent action.
@@ -132,7 +137,7 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 	// Auth/permission errors (401, 403, 404, 422) are permanent, not recoverable,
 	// so IsRecoverable() returns false for them and this guard never fires.
 	if result.IsRecoverable() && !result.IsRateLimit() && req.Action.isNonIdempotent() {
-		result = ambiguousResult()
+		result = ambiguousResult(result.Error)
 	}
 
 	ae.logResult(req, result)
@@ -140,13 +145,13 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 	// Guard 2: before emitting events (action_complete, pr_approved,
 	// changes_requested). Closes the race window between Guard 1 and here.
 	if result.Success && ctx.Err() != nil {
-		result = ambiguousResult()
+		result = ambiguousResult("")
 	}
 	ae.emitEvent(req, result)
 
 	// Guard 3: before local DB writes (updatePRReviewStatus, recordLastReviewedSHA).
 	if result.Success && ctx.Err() != nil {
-		result = ambiguousResult()
+		result = ambiguousResult("")
 	}
 	if result.Success {
 		ae.updatePRReviewStatus(ctx, req)
@@ -155,7 +160,7 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 	// Guard 4: final success return. Ensures the caller never sees Success=true
 	// if cancellation occurred at any point during the side-effect section.
 	if result.Success && ctx.Err() != nil {
-		result = ambiguousResult()
+		result = ambiguousResult("")
 	}
 
 	return result, nil
@@ -214,8 +219,26 @@ func (ae *ActionExecutor) handlerFor(action ActionCommand) (Handler, bool) {
 		return NewResolveThreadHandler(ae.provider), true
 	case UnresolveThreadCommand:
 		return NewUnresolveThreadHandler(ae.provider), true
+	case SubmitReviewCommand:
+		return NewSubmitReviewHandler(ae.provider), true
 	default:
 		return nil, false
+	}
+}
+
+// reviewOutcome maps submit_review onto the plain action whose local side
+// effects (events, review_status, last-reviewed SHA) it shares.
+func reviewOutcome(req *ActionRequest) ActionCommand {
+	if req.Action != SubmitReviewCommand {
+		return req.Action
+	}
+	switch req.ReviewEvent {
+	case ReviewEventApprove:
+		return ApproveCommand
+	case ReviewEventRequestChanges:
+		return RequestChangesCommand
+	default:
+		return PostCommentCommand
 	}
 }
 
@@ -252,7 +275,7 @@ func (ae *ActionExecutor) emitEvent(req *ActionRequest, result *ActionResult) {
 		return
 	}
 
-	switch req.Action {
+	switch reviewOutcome(req) {
 	case ApproveCommand:
 		ae.emitter.Emit(&events.Event{
 			Type: "pr_approved",
@@ -282,7 +305,7 @@ func (ae *ActionExecutor) updatePRReviewStatus(ctx context.Context, req *ActionR
 		return
 	}
 
-	switch req.Action {
+	switch reviewOutcome(req) {
 	case ApproveCommand:
 		const query = `
 			UPDATE prs
@@ -307,20 +330,22 @@ func (ae *ActionExecutor) updatePRReviewStatus(ctx context.Context, req *ActionR
 	// feature (phase 2.2). Review submissions and new top-level comments count
 	// as a review. Replies to existing threads and thread resolve/unresolve do
 	// not constitute a "review" for SHA tracking.
-	switch req.Action {
+	switch reviewOutcome(req) {
 	case ApproveCommand, RequestChangesCommand, PostCommentCommand:
-		ae.recordLastReviewedSHA(ctx, req.PRID)
+		ae.recordLastReviewedSHA(ctx, req)
 	}
 }
 
 // recordLastReviewedSHA fetches the PR's current patchset identity and writes a
-// last_reviewed_sha row for the authenticated login. Best-effort: any failure
-// is logged and swallowed so the caller's action result is unaffected.
-func (ae *ActionExecutor) recordLastReviewedSHA(ctx context.Context, prID string) {
+// last_reviewed_sha row for the authenticated login. Reviews pinned to another
+// commit are skipped so older draft groups cannot mark the current head reviewed.
+// Best-effort: any failure is logged and swallowed so the action result is unaffected.
+func (ae *ActionExecutor) recordLastReviewedSHA(ctx context.Context, req *ActionRequest) {
 	if ae.reviewLogin == nil || ae.reviewSHAWriter == nil || ae.store == nil {
 		return
 	}
 
+	prID := req.PRID
 	login, ok, err := ae.reviewLogin.GetCurrentUser(ctx, "github")
 	if err != nil {
 		ae.log.Warn("recordLastReviewedSHA: could not fetch current user", "pr_id", prID, "error", err)
@@ -337,6 +362,10 @@ func (ae *ActionExecutor) recordLastReviewedSHA(ctx context.Context, prID string
 	).Scan(&headSHA); err != nil {
 		ae.log.Warn("recordLastReviewedSHA: could not fetch PR SHAs",
 			"pr_id", prID, "login", login, "error", err)
+		return
+	}
+
+	if req.CommitID != "" && req.CommitID != headSHA {
 		return
 	}
 

@@ -245,6 +245,19 @@ type Repo struct {
 	LocationError     sql.NullString `json:"location_error"`
 }
 
+type ReviewDraft struct {
+	ID        string        `json:"id"`
+	PrID      string        `json:"pr_id"`
+	Login     string        `json:"login"`
+	Path      string        `json:"path"`
+	Side      string        `json:"side"`
+	StartLine sql.NullInt64 `json:"start_line"`
+	Line      int64         `json:"line"`
+	Body      string        `json:"body"`
+	CommitSha string        `json:"commit_sha"`
+	CreatedAt time.Time     `json:"created_at"`
+}
+
 type ReviewThread struct {
 	ID         string         `json:"id"`
 	PrID       string         `json:"pr_id"`

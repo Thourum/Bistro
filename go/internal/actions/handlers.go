@@ -161,6 +161,35 @@ func (h *ReplyCommentHandler) Handle(ctx context.Context, req *ActionRequest) (*
 	return result, nil
 }
 
+// SubmitReviewHandler executes submit_review via the ReviewSubmitter capability.
+type SubmitReviewHandler struct {
+	provider provider.Provider
+}
+
+// NewSubmitReviewHandler creates a SubmitReviewHandler.
+func NewSubmitReviewHandler(prov provider.Provider) *SubmitReviewHandler {
+	return &SubmitReviewHandler{provider: prov}
+}
+
+// Handle submits one review with the request's event, body and inline comments.
+func (h *SubmitReviewHandler) Handle(ctx context.Context, req *ActionRequest) (*ActionResult, error) {
+	result := &ActionResult{PRID: req.PRID, Action: SubmitReviewCommand, Timestamp: time.Now()}
+	submitter, ok := h.provider.(provider.ReviewSubmitter)
+	if !ok {
+		result.Error = "provider does not support review submission (403 permanent)"
+		return result, nil
+	}
+	err := submitter.SubmitReview(ctx, req.PRID, provider.ReviewSubmission{
+		Event: req.ReviewEvent, Body: req.Body, CommitID: req.CommitID, Comments: req.ReviewComments,
+	})
+	if err != nil {
+		result.Error = fmt.Sprintf("failed to submit review: %v", err)
+		return result, nil
+	}
+	result.Success = true
+	return result, nil
+}
+
 // isPermanentThreadError reports whether the error indicates a permanent
 // failure (thread not found / could not resolve) that should not be retried.
 // Only 404/not-found and node-resolution errors are treated as permanent.

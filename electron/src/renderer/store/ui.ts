@@ -8,6 +8,7 @@ import type {
   ExpertiseSettingsPayload,
   PendingAction,
   RepoInfo,
+  ReviewDraft,
   Toast,
 } from '../types';
 import {
@@ -15,6 +16,7 @@ import {
   INITIAL_FIRST_RUN_RAIL,
 } from '../utils/firstRunRail';
 import type { LaneSection } from '../utils/lanes';
+import type { LineCommentState } from '../utils/lineCommentCursor';
 import type { OnboardingSelection } from '../utils/onboardingRepos';
 import type { SandboxState } from '../utils/onboardingSandbox';
 
@@ -40,8 +42,6 @@ interface SyncStats {
  * round-tripped through the main process into `userData/settings.json`.
  */
 export type ConfirmingAction =
-  | 'approve'
-  | 'approve_confirmed'
   | 'command'
   | 'comment'
   | 'draft'
@@ -167,6 +167,12 @@ export interface UIState {
    * Set by PierreDiffView; consumed by centralized diff hotkeys.
    */
   inlineCommentThreadIds: string[];
+  /** Current user's pending line-comment drafts for `reviewDraftsPrId`. */
+  reviewDrafts: ReviewDraft[];
+  /** PR whose drafts `reviewDrafts` holds; set by useReviewDrafts. */
+  reviewDraftsPrId: string | null;
+  /** Line-pick overlay state (diff `c`); null when comment mode is closed. */
+  lineComment: LineCommentState | null;
   /** Currently selected inline diff-comment thread, if any. */
   activeInlineCommentThreadId: string | null;
   /** Inline diff-comment thread currently showing the reply composer, if any. */
@@ -176,6 +182,8 @@ export interface UIState {
    * and deliberately not persisted — it answers "is this churn?" for one PR.
    */
   hideWhitespaceHunks: boolean;
+  /** True while the keyboard settings page records a new binding; Esc then cancels recording instead of leaving settings. */
+  isRecordingKeybinding: boolean;
   /**
    * Canonical file keys whose default collapse state is inverted by `z`.
    * Generated files start collapsed; everything else starts expanded.
@@ -265,9 +273,13 @@ export const initialUIState: UIState = {
   interdiffActive: false,
   threadsRevision: 0,
   inlineCommentThreadIds: [],
+  reviewDrafts: [],
+  reviewDraftsPrId: null,
+  lineComment: null,
   activeInlineCommentThreadId: null,
   replyingInlineCommentThreadId: null,
   hideWhitespaceHunks: false,
+  isRecordingKeybinding: false,
   diffCollapseOverrides: [],
   commentMinSeverity: null,
   commentHumanOnly: false,

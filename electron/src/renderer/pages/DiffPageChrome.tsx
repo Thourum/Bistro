@@ -82,6 +82,10 @@ interface DiffPageStatusBarProps {
   files: DiffFile[];
   currentFile: DiffFile | undefined;
   triageSummary: string | null;
+  draftCount: number;
+  outdatedDraftCount: number;
+  /** Drafts with no card in this diff: their path or line isn't in it. */
+  unanchoredDraftCount: number;
 }
 
 export function DiffPageStatusBar({
@@ -89,6 +93,9 @@ export function DiffPageStatusBar({
   files,
   currentFile,
   triageSummary,
+  draftCount,
+  outdatedDraftCount,
+  unanchoredDraftCount,
 }: DiffPageStatusBarProps): React.ReactElement {
   // The full diff can be ~19 MB; split it once per diff, never per render.
   const diffLineCount = useMemo(() => diff.split('\n').length, [diff]);
@@ -121,6 +128,15 @@ export function DiffPageStatusBar({
                   ? 'not viewed'
                   : `press ${markViewedKeys} to mark viewed`}
             </span>
+          </span>
+        )}
+        {draftCount > 0 && (
+          <span className="text-primary">
+            {draftCount} {draftCount === 1 ? 'draft' : 'drafts'}
+            {outdatedDraftCount > 0 ? ` · ${outdatedDraftCount} outdated` : ''}
+            {unanchoredDraftCount > 0
+              ? ` · ${unanchoredDraftCount} not in diff`
+              : ''}
           </span>
         )}
       </div>

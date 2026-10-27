@@ -1,15 +1,11 @@
 // @vitest-environment jsdom
 
-import { Store } from '@tanstack/store';
-import { assert, describe, expect, it, vi } from 'vitest';
-import type { OverlayContextValue } from '../../src/renderer/overlays/OverlayContext';
+import { errAsync, Fault, okAsync } from '@thourum/fault';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { appStore } from '../../src/renderer/store';
 import type { UIState } from '../../src/renderer/store/ui';
 import { initialUIState } from '../../src/renderer/store/ui';
-import {
-  getBindingAction,
-  type KeyActionContext,
-} from '../../src/renderer/utils/keybindingActions';
-import type { RouteBase } from '../../src/renderer/utils/keybindings';
+import { invokeAction, makeCtx, makeStore } from './keybindingTestHelpers';
 
 const mockNavigate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('../../src/renderer/router', () => ({
@@ -20,48 +16,19 @@ vi.mock('../../src/renderer/router', () => ({
   prDetailRoute: {},
 }));
 
-function makeStore(overrides: Partial<UIState> = {}): Store<UIState> {
-  return new Store<UIState>({ ...initialUIState, ...overrides });
-}
+const mockApprovePR = vi.hoisted(() => vi.fn());
+vi.mock('../../src/renderer/services/prActions', () => ({
+  approvePR: mockApprovePR,
+}));
 
-function makeCtx(
-  storeOrOverrides: Store<UIState> | Partial<UIState> = {},
-  routeBase: RouteBase | null = 'list',
-  overlayOverrides: Partial<OverlayContextValue> = {},
-): KeyActionContext {
-  const store =
-    storeOrOverrides instanceof Store
-      ? storeOrOverrides
-      : makeStore(storeOrOverrides);
-  const overlays: OverlayContextValue = {
-    activeOverlay: null,
-    helpSourceRoute: 'list',
-    openCommand: vi.fn(),
-    openHelp: vi.fn(),
-    openSearch: vi.fn(),
-    openFilter: vi.fn(),
-    toggleFilter: vi.fn(),
-    openRepoPicker: vi.fn(),
-    openThreads: vi.fn(),
-    closeOverlay: vi.fn(),
-    closeSearch: vi.fn(),
-    ...overlayOverrides,
-  };
-  return {
-    store,
-    routeBase,
-    activeOverlay: overlays.activeOverlay,
-    overlays,
-    location: { pathname: '/prs' },
-    prId: 'pr-test-id',
-  };
-}
+const request = vi.hoisted(() => vi.fn());
+vi.mock('../../src/renderer/services/ws/connection', () => ({
+  wsClient: { send: vi.fn(), request },
+}));
 
-function invokeAction(actionId: string, context: KeyActionContext): void {
-  const action = getBindingAction(actionId);
-  assert(action !== undefined, `no action for binding ${actionId}`);
-  action(context);
-}
+// ---------------------------------------------------------------------------
+// Action behavior (direct invocation)
+// ---------------------------------------------------------------------------
 
 describe('binding actions', () => {
   it('j moves to the next PR', () => {
@@ -204,12 +171,11 @@ describe('binding actions', () => {
     expect(store.state.selectedPRIndex).toBe(4);
   });
 
-  it('aa requires a double tap to confirm approve', () => {
+  it('aa approves the shown PR on the first sequence', () => {
     const store = makeStore({});
     invokeAction('detail.approve', makeCtx(store, 'detail'));
-    expect(store.state.confirmingAction).toBe('approve');
-    invokeAction('detail.approve', makeCtx(store, 'detail'));
-    expect(store.state.confirmingAction).toBe('approve_confirmed');
+    expect(mockApprovePR).toHaveBeenCalledExactlyOnceWith('pr-test-id');
+    expect(store.state.confirmingAction).toBeNull();
   });
 
   it('Shift+R opens the request-changes composer on detail', () => {
@@ -298,7 +264,7 @@ describe('binding actions', () => {
 
     it('in list mode it cancels confirming actions', () => {
       const store = makeStore({
-        confirmingAction: 'approve',
+        confirmingAction: 'comment',
       });
       invokeAction('global.escape', makeCtx(store, 'list'));
       expect(store.state.confirmingAction).toBeNull();
@@ -306,7 +272,7 @@ describe('binding actions', () => {
   });
 
   it('C-g cancels a pending list confirmation', () => {
-    const store = makeStore({ confirmingAction: 'approve' });
+    const store = makeStore({ confirmingAction: 'comment' });
     invokeAction('global.cancel', makeCtx(store, 'list'));
     expect(store.state.confirmingAction).toBeNull();
   });
@@ -414,5 +380,108 @@ describe('binding actions', () => {
         expect(closeOverlay).toHaveBeenCalled();
       });
     }
+  });
+});
+
+describe('draft annotation bindings', () => {
+  afterEach(() => {
+    appStore.setState(() => initialUIState);
+    request.mockReset();
+  });
+
+  it('n/p reach drafts without putting them in thread reply state', () => {
+    const store = makeStore({
+      inlineCommentThreadIds: ['T1', 'draft:D1', 'T2'],
+      activeInlineCommentThreadId: 'T1',
+      replyingInlineCommentThreadId: 'T1',
+    });
+    invokeAction('diff.nextComment', makeCtx(store, 'diff'));
+    expect(store.state.activeInlineCommentThreadId).toBe('draft:D1');
+    expect(store.state.replyingInlineCommentThreadId).toBeNull();
+    invokeAction('diff.nextComment', makeCtx(store, 'diff'));
+    invokeAction('diff.prevComment', makeCtx(store, 'diff'));
+    expect(store.state.activeInlineCommentThreadId).toBe('draft:D1');
+  });
+
+  it('Enter requests draft editing instead of a thread reply', () => {
+    const store = makeStore({
+      inlineCommentThreadIds: ['draft:D1'],
+      activeInlineCommentThreadId: 'draft:D1',
+    });
+    const events: string[] = [];
+    const recordEdit = (event: Event): void => {
+      events.push(event.type);
+    };
+    document.addEventListener('bistro:diff:edit-draft', recordEdit);
+    invokeAction('detail.inlineReply', makeCtx(store, 'diff'));
+    document.removeEventListener('bistro:diff:edit-draft', recordEdit);
+    expect(events).toEqual(['bistro:diff:edit-draft']);
+    expect(store.state.replyingInlineCommentThreadId).toBeNull();
+  });
+
+  it('d d deletes only the active draft and reports success', async () => {
+    request.mockReturnValue(okAsync({ deleted: 1 }));
+    const store = makeStore({ activeInlineCommentThreadId: 'draft:D1' });
+    invokeAction('diff.deleteDraft', makeCtx(store, 'diff'));
+    await vi.waitFor(() => expect(appStore.state.toasts).toHaveLength(1));
+    expect(request).toHaveBeenCalledExactlyOnceWith('DRAFT_DELETE', {
+      pr_id: 'pr-test-id',
+      draft_ids: ['D1'],
+    });
+    expect(appStore.state.toasts[0]).toMatchObject({
+      type: 'success',
+      message: 'Draft deleted',
+      dismissible: false,
+    });
+  });
+
+  it('d d reports failure without claiming the draft was deleted', async () => {
+    request.mockReturnValue(errAsync(new Fault('Offline')));
+    const store = makeStore({ activeInlineCommentThreadId: 'draft:D1' });
+    invokeAction('diff.deleteDraft', makeCtx(store, 'diff'));
+    await vi.waitFor(() => expect(appStore.state.toasts).toHaveLength(1));
+    expect(appStore.state.toasts[0]).toMatchObject({
+      type: 'error',
+      dismissible: true,
+    });
+    expect(appStore.state.toasts[0]?.message).toContain('Draft not deleted:');
+    expect(store.state.activeInlineCommentThreadId).toBe('draft:D1');
+  });
+
+  it('d d is a no-op on threads, no selection, or a missing PR', async () => {
+    invokeAction(
+      'diff.deleteDraft',
+      makeCtx({ activeInlineCommentThreadId: 'T1' }, 'diff'),
+    );
+    invokeAction('diff.deleteDraft', makeCtx({}, 'diff'));
+    const context = makeCtx(
+      { activeInlineCommentThreadId: 'draft:D1' },
+      'diff',
+    );
+    delete context.prId;
+    invokeAction('diff.deleteDraft', context);
+    await Promise.resolve();
+    expect(request).not.toHaveBeenCalled();
+    expect(appStore.state.toasts).toEqual([]);
+  });
+});
+
+describe('line comment bindings', () => {
+  it('Enter keeps an already-open composer (and its draftId)', () => {
+    const composer = { draftId: 'D1', initialBody: 'existing' };
+    const store = makeStore({
+      lineComment: {
+        prId: 'pr-test-id',
+        fileId: 'F1',
+        path: 'a.ts',
+        headSha: 'sha',
+        layout: 'unified',
+        lines: [],
+        cursor: { side: 'RIGHT', anchor: 1, head: 1 },
+        composer,
+      },
+    });
+    invokeAction('lineComment.compose', makeCtx(store, 'diff'));
+    expect(store.state.lineComment?.composer).toBe(composer);
   });
 });
