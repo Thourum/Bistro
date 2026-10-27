@@ -22,7 +22,7 @@ func (db *DB) MarkFileViewed(ctx context.Context, prID, filePath, login, content
 	if err := storedb.New(db).UpsertFileViewed(ctx, storedb.UpsertFileViewedParams{
 		PrID:            prID,
 		FilePath:        filePath,
-		AccountProvider: localReviewAccountProvider,
+		AccountProvider: LocalReviewAccountProvider,
 		AccountLogin:    login,
 		Login:           login,
 		ContentHash:     contentHash,
@@ -39,7 +39,7 @@ func (db *DB) IsFileViewed(ctx context.Context, prID, filePath, login, contentHa
 	stored, err := storedb.New(db).GetViewedFileContentHash(ctx, storedb.GetViewedFileContentHashParams{
 		PrID:            prID,
 		FilePath:        filePath,
-		AccountProvider: localReviewAccountProvider,
+		AccountProvider: LocalReviewAccountProvider,
 		AccountLogin:    login,
 		Login:           login,
 	})
@@ -57,7 +57,7 @@ func (db *DB) IsFileViewed(ctx context.Context, prID, filePath, login, contentHa
 func (db *DB) ListViewedFiles(ctx context.Context, prID, login string) ([]FileViewed, error) {
 	rows, err := storedb.New(db).ListViewedFilesForLogin(ctx, storedb.ListViewedFilesForLoginParams{
 		PrID:            prID,
-		AccountProvider: localReviewAccountProvider,
+		AccountProvider: LocalReviewAccountProvider,
 		AccountLogin:    login,
 		Login:           login,
 	})

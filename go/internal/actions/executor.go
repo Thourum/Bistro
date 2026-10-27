@@ -15,9 +15,9 @@ import (
 )
 
 // ReviewLoginGetter resolves the authenticated login for a provider.
-// Satisfied by *store.CurrentUserStore.
+// Satisfied by *currentuser.Store.
 type ReviewLoginGetter interface {
-	GetCurrentUser(ctx context.Context, providerName string) (string, bool, error)
+	Get(ctx context.Context, providerName string) (string, bool, error)
 }
 
 // ReviewSHAWriter records the since-last-review baseline.
@@ -346,7 +346,7 @@ func (ae *ActionExecutor) recordLastReviewedSHA(ctx context.Context, req *Action
 	}
 
 	prID := req.PRID
-	login, ok, err := ae.reviewLogin.GetCurrentUser(ctx, "github")
+	login, ok, err := ae.reviewLogin.Get(ctx, "github")
 	if err != nil {
 		ae.log.Warn("recordLastReviewedSHA: could not fetch current user", "pr_id", prID, "error", err)
 		return

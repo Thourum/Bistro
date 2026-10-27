@@ -1,9 +1,9 @@
 // Package events provides shared event types and the EventEmitter broadcaster
-// used by both the sync and actions packages.
+// used by both the prsync and actions packages.
 package events
 
 import (
-	gosync "sync"
+	"sync"
 	"time"
 )
 
@@ -19,7 +19,7 @@ type Event struct {
 
 // EventEmitter broadcasts events to multiple subscribers.
 type EventEmitter struct {
-	mu          gosync.RWMutex
+	mu          sync.RWMutex
 	subscribers map[<-chan *Event]chan<- *Event
 }
 

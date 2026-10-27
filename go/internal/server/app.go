@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,7 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	stdsync "sync"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -20,11 +19,17 @@ import (
 	"github.com/itterno/bistro/internal/classify/llm"
 	"github.com/itterno/bistro/internal/expertise"
 	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/anchor"
+	"github.com/itterno/bistro/internal/git/clonecache"
+	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/keychain"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/prsync"
 	"github.com/itterno/bistro/internal/server/handler"
 	"github.com/itterno/bistro/internal/store"
-	"github.com/itterno/bistro/internal/sync"
+	"github.com/itterno/bistro/internal/store/currentuser"
+	"github.com/itterno/bistro/internal/store/prdiff"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -39,20 +44,20 @@ type App struct {
 	wsServer            *ws.Server
 	wsPort              int
 	dbPath              string
-	orchestrator        *sync.Orchestrator
+	orchestrator        *prsync.Orchestrator
 	prov                provider.Provider
 	activeProviderName  string
 	gitClient           *git.Client
 	githubClientID      string
 	githubClientSecret  string
 	authCallbackTimeout time.Duration
-	repoLocks           *git.RepoLocks
+	repoLocks           *repolock.Locks
 	providerCache       *cache.ProviderCache
 	tokenManager        *keychain.TokenManager
 	syncTrigger         chan string
 	pendingWatchSync    atomic.Bool
 	syncSettings        chan syncSettingsMsg
-	provMu              stdsync.RWMutex
+	provMu              sync.RWMutex
 	syncInterval        time.Duration
 	autoSync            bool
 	readyWriter         io.Writer
@@ -70,9 +75,9 @@ type App struct {
 	provCtx       context.Context
 	provCtxCancel context.CancelFunc
 	// currentUserStore is set in Run() and shared across all orchestrators.
-	currentUserStore *store.CurrentUserStore
+	currentUserStore *currentuser.Store
 	// anchorResolver is set in Run() and shared across all orchestrators.
-	anchorResolver *git.AnchorResolver
+	anchorResolver *anchor.Resolver
 	// classifier is the Phase 3 comment-classification engine provider,
 	// shared by the sync writer and the comments handler. Its mode getter
 	// reads classificationState, so a mode change lazily invalidates the
@@ -91,173 +96,7 @@ type App struct {
 	// and sync/review hooks.
 	expertiseEngine *expertise.Engine
 	// resolveRepoPath maps repo IDs to local checkout paths for expertise hooks.
-	resolveRepoPath sync.RepoPathResolver
-}
-
-// slogPrintf adapts *slog.Logger to the llm.Logger Printf interface.
-type slogPrintf struct{ log *slog.Logger }
-
-// Printf forwards tier diagnostics to the structured application logger.
-func (s slogPrintf) Printf(format string, v ...any) {
-	s.log.Warn(fmt.Sprintf(format, v...))
-}
-
-// liveByokClient satisfies llm.ClassifierClient by constructing the right
-// provider client per call from the LIVE settings + keychain key — so a
-// provider/model/key change applies to the next call without restarts.
-// The key never leaves the call path.
-type liveByokClient struct {
-	state  *handler.ClassificationState
-	tokens *keychain.TokenManager
-}
-
-// Classify uses the latest provider configuration and key for each request.
-func (c *liveByokClient) Classify(ctx context.Context, comment llm.CommentInput) (string, int, error) {
-	s := c.state.Snapshot()
-	key, err := c.tokens.Get("byok." + s.Provider)
-	if err != nil {
-		// Missing key behaves like an auth failure: tier disables until a
-		// key change calls ResetAuth.
-		return "", 0, fmt.Errorf("no BYOK key for %s: %w", s.Provider, llm.ErrAuth)
-	}
-	if s.Provider == "anthropic" {
-		return llm.NewAnthropicClient(s.Model, key, s.Endpoint).Classify(ctx, comment)
-	}
-	return llm.NewOpenAICompatibleClient(s.Provider, s.Model, key, s.Endpoint).Classify(ctx, comment)
-}
-
-// SetReadyWriter overrides where the machine-readable ready signal is written.
-// Defaults to os.Stdout when unset.
-func (a *App) SetReadyWriter(w io.Writer) {
-	a.readyWriter = w
-}
-
-// teardownProviderLocked clears the active provider, orchestrator, and all
-// associated per-provider state (event bridge, provCtx, activeProviderName).
-// When name is non-empty, the teardown only proceeds if it matches the current
-// activeProviderName — this prevents a disconnect for "github" from clearing a
-// freshly-reconnected "github2" session, for example.
-// Passing name="" unconditionally tears down (used by the external SetProvider(nil)).
-// Must be called with a.provMu held for writing.
-func (a *App) teardownProviderLocked(name string) {
-	if name != "" && a.activeProviderName != name {
-		return // named disconnect doesn't match current provider — no-op
-	}
-	a.prov = nil
-	a.activeProviderName = ""
-	a.orchestrator = nil
-	// Cancel the per-provider context — stops sync runs, event bridge, and
-	// in-flight actions that captured a reference before disconnect.
-	if a.provCtxCancel != nil {
-		a.provCtxCancel()
-	}
-	// Re-initialise to a non-cancelled context for the next connect.
-	a.provCtx, a.provCtxCancel = context.WithCancel(context.Background())
-	if a.bridgeCancel != nil {
-		a.bridgeCancel()
-		a.bridgeCancel = nil
-	}
-}
-
-// attachOrchestratorLocked creates, wires, and stores a new orchestrator for
-// the given provider, then starts the event bridge. Cancels any previous
-// per-provider context first so all stale goroutines stop.
-// runCtx is the context passed to Run(); it provides the lifetime ceiling for
-// the new per-provider context. Must be called with a.provMu held for writing.
-func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Provider, name string) {
-	// Cancel previous per-provider context (stops stale syncs/bridge/actions).
-	if a.provCtxCancel != nil {
-		a.provCtxCancel()
-	}
-	a.provCtx, a.provCtxCancel = context.WithCancel(runCtx)
-
-	diffStore := store.NewDiffStore(a.db.DB)
-	a.orchestrator = sync.NewOrchestrator(a.log, prov, a.db, a.gitClient).
-		WithDiffStore(diffStore).
-		WithReviewTracking(a.currentUserStore, a.db).
-		WithAnchorResolver(a.anchorResolver).
-		WithActionQueue(store.NewActionQueue(a.db.DB)).
-		WithReviewDrafts(store.NewReviewDrafts(a.db.DB)).
-		WithLiveness(a.provCtx).
-		WithClassifier(a.classifier).
-		WithCurrentUser(a.currentUserStore).
-		WithExpertise(a.expertiseEngine).
-		WithRepoPathResolver(a.resolveRepoPath).
-		WithPostCommit(func(prIDs []string) {
-			if a.llmKick == nil {
-				return
-			}
-			for _, prID := range prIDs {
-				a.llmKick(prID)
-			}
-		}).
-		WithPostReview(func(reviewCtx context.Context, prID string) {
-			a.broadcastExpertiseNudge(reviewCtx, prID)
-		})
-	a.prov = prov
-	a.activeProviderName = name
-	a.startEventBridge(a.provCtx)
-}
-
-// SetProvider configures the GitHub provider used by the sync orchestrator.
-// If the database and git client are already available, it also (re)creates the
-// orchestrator so the sync loop can start working immediately after auth.
-func (a *App) SetProvider(prov provider.Provider) {
-	a.provMu.Lock()
-	defer a.provMu.Unlock()
-
-	if prov == nil {
-		a.teardownProviderLocked("") // unconditional — external nil means disconnect
-		return
-	}
-
-	// Record the provider name so AUTH_DISCONNECT can match it later.
-	// This covers the keychain-startup path (main.go calls SetProvider before
-	// Run) which otherwise leaves activeProviderName empty.
-	a.prov = prov
-	a.activeProviderName = "github"
-
-	if a.db != nil {
-		a.attachOrchestratorLocked(context.Background(), prov, "github")
-	}
-}
-
-// SetGitClient configures the git client used by the sync orchestrator.
-// Must be called before Run.
-func (a *App) SetGitClient(gitClient *git.Client) {
-	a.gitClient = gitClient
-	if gitClient != nil && a.repoLocks != nil {
-		gitClient.SetLocks(a.repoLocks)
-	}
-}
-
-func (a *App) configureRepoLocationStore(repoLocationStore *store.RepoLocationStore) {
-	if a.gitClient == nil {
-		return
-	}
-	a.gitClient.SetLocalResolver(newRepoLocationResolver(repoLocationStore, a.log))
-}
-
-// SetReplayOnStart configures whether Run() should replay the offline action
-// queue after the production orchestrator is attached (DB open, queue wired).
-// This replaces pre-Run calls to ReplayQueuedActions which are always no-ops
-// because the orchestrator does not exist before Run opens the database.
-func (a *App) SetReplayOnStart(replay bool) {
-	a.replayOnStart = replay
-}
-
-// ReplayQueuedActions replays any pending offline queue actions.
-// It is a no-op when the orchestrator has not been set up.
-// Prefer SetReplayOnStart so replay happens inside Run() after the database and
-// queue are initialised; calling this before Run() is always a no-op.
-func (a *App) ReplayQueuedActions(ctx context.Context) error {
-	a.provMu.RLock()
-	orchestrator := a.orchestrator
-	a.provMu.RUnlock()
-	if orchestrator == nil {
-		return nil
-	}
-	return orchestrator.ReplayQueuedActions(ctx)
+	resolveRepoPath prsync.RepoPathResolver
 }
 
 // New returns a new App configured with the given WebSocket port and database path.
@@ -284,7 +123,7 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 		dbPath:              dbPath,
 		providerCache:       cache.NewProviderCache(cachePath),
 		tokenManager:        keychain.NewTokenManager(),
-		repoLocks:           git.NewRepoLocks(),
+		repoLocks:           repolock.New(),
 		syncTrigger:         make(chan string, 8),
 		syncSettings:        make(chan syncSettingsMsg, 4),
 		syncInterval:        5 * time.Minute,
@@ -295,192 +134,57 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 	}
 }
 
-// SetRulesDir seeds the classification rules directory with the embedded
-// built-ins (presence-gated) and constructs the engine provider shared by the
-// sync writer and the comments handler. An empty dir skips seeding entirely;
-// classification then runs on the embedded built-ins. Call before Run.
-// The mode getter reads the live classification state, so a mode change from
-// SET_CLASSIFICATION_SETTINGS invalidates fingerprints lazily.
-func (a *App) SetRulesDir(dir string) {
-	if dir != "" {
-		if err := classify.SeedAndUpdate(dir); err != nil {
-			a.log.Warn("rules dir unusable, classification falls back to embedded built-ins",
-				"dir", dir, "err", err)
-		}
-	}
-	a.classifier = classify.NewEngineProvider(dir, a.classificationState.Mode, a.log)
+type runStores struct {
+	currentUser  *currentuser.Store
+	repoLocation *repolocation.Store
+	expertise    *expertise.Store
+	diff         *prdiff.Store
 }
 
-// SetSyncInterval configures the interval between automatic sync cycles.
-func (a *App) SetSyncInterval(d time.Duration) {
-	a.syncInterval = d
-}
-
-// SetAutoSync enables or disables the automatic periodic sync ticker.
-// Manual FORCE_SYNC always works regardless of this setting.
-func (a *App) SetAutoSync(enabled bool) {
-	a.autoSync = enabled
-}
-
-// getProvider safely returns the current provider under a read lock.
-func (a *App) getProvider() provider.Provider {
-	a.provMu.RLock()
-	defer a.provMu.RUnlock()
-	return a.prov
-}
-
-// currentProviderSnapshot pairs a provider with its account generation lifetime.
-func (a *App) currentProviderSnapshot() (provider.Provider, context.Context) {
-	a.provMu.RLock()
-	defer a.provMu.RUnlock()
-	return a.prov, a.provCtx
-}
-
-// currentApplier returns the live orchestrator as an ActionApplier under a
-// read lock, or nil when no provider is authenticated. Satisfies
-// handler.ApplierGetter so SUBMIT_ACTION always routes to the current
-// orchestrator even after an auth/provider replacement.
-// Both prov and orchestrator must be non-nil; either being nil (e.g. after
-// AUTH_DISCONNECT) causes a nil return so the handler rejects cleanly.
-func (a *App) currentApplier() handler.ActionApplier {
-	a.provMu.RLock()
-	defer a.provMu.RUnlock()
-	if a.prov == nil || a.orchestrator == nil {
-		return nil
-	}
-	return a.orchestrator
-}
-
-// currentPRSyncer returns the live orchestrator as a PRSyncer under a read
-// lock, or nil when no provider is authenticated. Satisfies
-// handler.PRSyncerGetter (same lifecycle rules as currentApplier).
-func (a *App) currentPRSyncer() handler.PRSyncer {
-	a.provMu.RLock()
-	defer a.provMu.RUnlock()
-	if a.prov == nil || a.orchestrator == nil {
-		return nil
-	}
-	return a.orchestrator
-}
-
-// SetGitHubClientID sets the GitHub OAuth app client ID.
-func (a *App) SetGitHubClientID(clientID string) {
-	a.githubClientID = clientID
-}
-
-// SetGitHubClientSecret sets the GitHub OAuth app client secret used by the auth code flow.
-func (a *App) SetGitHubClientSecret(secret string) {
-	a.githubClientSecret = secret
-}
-
-// SetAuthCallbackTimeout overrides the OAuth callback deadline; zero uses the default.
-func (a *App) SetAuthCallbackTimeout(duration time.Duration) {
-	a.authCallbackTimeout = duration
-}
-
-func (a *App) githubToken() string {
-	token, err := a.tokenManager.GetGitHubToken()
+func (a *App) openDatabase(ctx context.Context) error {
+	db, err := store.OpenDB(a.dbPath)
 	if err != nil {
-		return ""
+		return fmt.Errorf("open database: %w", err)
 	}
-	return token
+	if err := store.NewMigrationRunner(a.log, db.DB).Run(ctx); err != nil {
+		return errors.Join(fmt.Errorf("migrate database: %w", err), db.Close())
+	}
+	a.db = db
+	a.log.Info("database initialized")
+	return nil
 }
 
-func (a *App) cloneRepoLocationRepo(ctx context.Context, repoURL, destination string, bare bool) error {
-	return a.gitClient.CloneRepoToPath(ctx, repoURL, destination, bare)
-}
-
-// wsEventMsg is the envelope sent to WebSocket clients for orchestrator events.
-type wsEventMsg struct {
-	Type string         `json:"type"`
-	Data map[string]any `json:"data"`
-}
-
-// startEventBridge subscribes to the current orchestrator's event channel and
-// broadcasts each event to all connected WebSocket clients. Any previously
-// running bridge goroutine is cancelled first so stale goroutines do not leak
-// or deliver events from a superseded orchestrator.
-//
-// Must be called with a.provMu held for writing (or before the App is shared).
-func (a *App) startEventBridge(parent context.Context) {
-	if a.bridgeCancel != nil {
-		a.bridgeCancel()
+func (a *App) prepareStores() runStores {
+	if a.repoLocks == nil {
+		a.repoLocks = repolock.New()
 	}
-	if a.orchestrator == nil || a.wsServer == nil {
-		a.bridgeCancel = nil
-		return
+	if a.gitClient == nil {
+		a.gitClient = git.NewClient(clonecache.New())
 	}
+	a.gitClient.SetLocks(a.repoLocks)
+	a.gitClient.SetTokenSource(a.githubToken)
 
-	ctx, cancel := context.WithCancel(parent)
-	a.bridgeCancel = cancel
-
-	o := a.orchestrator
-	ch := o.GetEventChannel()
-	go func() {
-		defer o.UnsubscribeEventChannel(ch)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case ev, ok := <-ch:
-				if !ok {
-					return
-				}
-				a.wsServer.Broadcast(wsEventMsg{Type: ev.Type, Data: ev.Data})
-			}
-		}
-	}()
-}
-
-func (a *App) broadcastExpertiseEvent(eventType string, payload any) {
-	a.wsServer.Broadcast(wsEventMsg{Type: eventType, Data: expertisePayloadToMap(payload)})
-}
-
-func expertisePayloadToMap(payload any) map[string]any {
-	if data, ok := payload.(map[string]any); ok {
-		return data
+	stores := runStores{
+		currentUser:  currentuser.New(a.db),
+		repoLocation: repolocation.New(a.db.DB),
+		expertise:    expertise.NewStore(a.db.DB),
+		diff:         prdiff.New(a.db.DB),
 	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return map[string]any{"payload": payload}
-	}
-	data := map[string]any{}
-	if err := json.Unmarshal(raw, &data); err != nil {
-		return map[string]any{"payload": payload}
-	}
-	return data
-}
-
-func (a *App) broadcastExpertiseNudge(ctx context.Context, prID string) {
-	if a.expertiseEngine == nil || a.db == nil || a.currentUserStore == nil {
-		return
-	}
-	var repoID string
-	if err := a.db.QueryRowContext(ctx, `SELECT repo_id FROM prs WHERE id = ?`, prID).Scan(&repoID); err != nil {
-		a.log.Warn("expertise nudge skipped: PR repo lookup failed", "pr_id", prID, "error", err)
-		return
-	}
-	login, ok, err := a.currentUserStore.GetCurrentUser(ctx, "github")
-	if err != nil || !ok || login == "" {
+	a.anchorResolver = anchor.NewResolver()
+	a.currentUserStore = stores.currentUser
+	a.configureRepoLocationStore(stores.repoLocation)
+	a.resolveRepoPath = func(repoID string) (string, bool) {
+		location, err := stores.repoLocation.Get(context.Background(), repoID)
 		if err != nil {
-			a.log.Warn("expertise nudge skipped: current user lookup failed", "pr_id", prID, "error", err)
+			a.log.Warn("expertise repo path resolve failed", "repo_id", repoID, "error", err)
+			return "", false
 		}
-		return
+		if location == nil || location.Source != "local" || location.LocalPath == "" {
+			return "", false
+		}
+		return location.LocalPath, true
 	}
-	shouldNudge, err := a.expertiseEngine.ShouldNudge(ctx, repoID, expertise.Account{Provider: "github", Login: login})
-	if err != nil {
-		a.log.Warn("expertise nudge check failed", "repo_id", repoID, "error", err)
-		return
-	}
-	if !shouldNudge {
-		return
-	}
-	count, err := expertise.NewStore(a.db.DB).ReviewedPRCount(ctx, repoID, "github", login, login)
-	if err != nil {
-		a.log.Warn("expertise nudge count failed", "repo_id", repoID, "error", err)
-		return
-	}
-	a.wsServer.Broadcast(wsEventMsg{Type: "EXPERTISE_NUDGE", Data: map[string]any{"repo_id": repoID, "reviewed_count": count}})
+	return stores
 }
 
 // Run initializes the database, starts the WebSocket server, and blocks until

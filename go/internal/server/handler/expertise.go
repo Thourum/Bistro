@@ -44,7 +44,7 @@ type expertiseSettingsStore interface {
 }
 
 type expertiseIdentityReader interface {
-	GetCurrentUser(ctx context.Context, provider string) (string, bool, error)
+	Get(ctx context.Context, provider string) (string, bool, error)
 }
 
 // ExpertiseHandlerDeps bundles the optional engine, stores, identity reader, and logger.
@@ -441,7 +441,7 @@ func decodeExpertiseRepoRequest(msg ws.InboundMessage, messageType string) (expe
 func expertiseIdentityAndMinLines(ctx context.Context, deps ExpertiseHandlerDeps) (expertise.Identity, int) {
 	identity := expertise.Identity{}
 	if deps.CurrentUser != nil {
-		if login, ok, err := deps.CurrentUser.GetCurrentUser(ctx, githubProvider); err != nil {
+		if login, ok, err := deps.CurrentUser.Get(ctx, githubProvider); err != nil {
 			logging.FromContext(ctx).Warn("expertise identity lookup failed", "error", err)
 		} else if ok {
 			identity.Login = login

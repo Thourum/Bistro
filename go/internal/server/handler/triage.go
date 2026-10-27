@@ -144,7 +144,7 @@ func triageFrom(ctx context.Context, deps TriageHandlerDeps, req triageRequest, 
 		}
 		return *explicit, nil, ""
 	}
-	login, ok, err := deps.CurrentUser.GetCurrentUser(ctx, githubProvider)
+	login, ok, err := deps.CurrentUser.Get(ctx, githubProvider)
 	if err != nil {
 		logging.FromContext(ctx).Warn("triage: current user lookup failed", "error", err)
 		return store.Patchset{}, nil, "no authenticated user"

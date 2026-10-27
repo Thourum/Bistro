@@ -4,10 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/itterno/bistro/internal/store/dismissal"
 	"testing"
 
 	"github.com/itterno/bistro/internal/actions"
-	"github.com/itterno/bistro/internal/store"
+
 	"github.com/itterno/bistro/internal/ws"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -70,7 +71,7 @@ func setupDismissTestDB(t *testing.T) *sql.DB {
 func dismissDeps(db *sql.DB, applier ActionApplier, scope string) DismissDeps {
 	return DismissDeps{
 		DB:         db,
-		Dismissals: store.NewDismissals(db),
+		Dismissals: dismissal.New(db),
 		GetApplier: func() ActionApplier { return applier },
 		Scope:      func() string { return scope },
 		Log:        testRepoLogger(),
@@ -114,8 +115,8 @@ func TestDismissLocalOnly(t *testing.T) {
 	db := setupDismissTestDB(t)
 	applier := &fakeApplier{}
 	deps := dismissDeps(db, applier, "local")
-	mustExec(t, db, `INSERT INTO comments (id, pr_id, thread_id) VALUES ('c1','pr-1','t1'), ('c2','pr-1',NULL)`)
-	mustExec(t, db, `INSERT INTO review_threads (id, pr_id, state_known, resolved) VALUES ('t1','pr-1',1,0)`)
+	mustExecDB(t, db, `INSERT INTO comments (id, pr_id, thread_id) VALUES ('c1','pr-1','t1'), ('c2','pr-1',NULL)`)
+	mustExecDB(t, db, `INSERT INTO review_threads (id, pr_id, state_known, resolved) VALUES ('t1','pr-1',1,0)`)
 
 	data := callDismiss(t, deps, "pr-1", []string{"c1", "c2"})
 
@@ -138,9 +139,9 @@ func TestDismissWithProviderWriteback(t *testing.T) {
 	applier := &fakeApplier{}
 	deps := dismissDeps(db, applier, "local+provider")
 	// Three threads: resolvable, already resolved, state unknown.
-	mustExec(t, db, `INSERT INTO review_threads (id, pr_id, state_known, resolved) VALUES
+	mustExecDB(t, db, `INSERT INTO review_threads (id, pr_id, state_known, resolved) VALUES
 		('t-open','pr-1',1,0), ('t-resolved','pr-1',1,1), ('t-unknown','pr-1',0,0)`)
-	mustExec(t, db, `INSERT INTO comments (id, pr_id, thread_id) VALUES
+	mustExecDB(t, db, `INSERT INTO comments (id, pr_id, thread_id) VALUES
 		('c1','pr-1','t-open'), ('c2','pr-1','t-resolved'), ('c3','pr-1','t-unknown')`)
 
 	data := callDismiss(t, deps, "pr-1", []string{"c1", "c2", "c3"})
@@ -161,7 +162,7 @@ func TestDismissIssueCommentsStayLocal(t *testing.T) {
 	db := setupDismissTestDB(t)
 	applier := &fakeApplier{}
 	deps := dismissDeps(db, applier, "local+provider")
-	mustExec(t, db, `INSERT INTO comments (id, pr_id, thread_id) VALUES ('c1','pr-1',NULL)`)
+	mustExecDB(t, db, `INSERT INTO comments (id, pr_id, thread_id) VALUES ('c1','pr-1',NULL)`)
 
 	data := callDismiss(t, deps, "pr-1", []string{"c1"})
 
@@ -180,9 +181,9 @@ func TestUndismiss(t *testing.T) {
 	db := setupDismissTestDB(t)
 	applier := &fakeApplier{}
 	deps := dismissDeps(db, applier, "local+provider")
-	mustExec(t, db, `INSERT INTO comments (id, pr_id, thread_id) VALUES ('c1','pr-1','t1'), ('c2','pr-1','t2')`)
-	mustExec(t, db, `INSERT INTO review_threads (id, pr_id, state_known, resolved) VALUES ('t1','pr-1',1,0), ('t2','pr-1',1,0)`)
-	mustExec(t, db, `INSERT INTO comment_dismissals (comment_id, account_provider, account_login) VALUES ('c1','github','samdev'), ('c2','github','samdev')`)
+	mustExecDB(t, db, `INSERT INTO comments (id, pr_id, thread_id) VALUES ('c1','pr-1','t1'), ('c2','pr-1','t2')`)
+	mustExecDB(t, db, `INSERT INTO review_threads (id, pr_id, state_known, resolved) VALUES ('t1','pr-1',1,0), ('t2','pr-1',1,0)`)
+	mustExecDB(t, db, `INSERT INTO comment_dismissals (comment_id, account_provider, account_login) VALUES ('c1','github','samdev'), ('c2','github','samdev')`)
 
 	// Undo lists ONLY t1 — t2 must not be unresolved even though c2 is undismissed.
 	payload, _ := json.Marshal(map[string]interface{}{
@@ -210,20 +211,13 @@ func TestUndismiss(t *testing.T) {
 func TestDismissResolvesCurrentAccount(t *testing.T) {
 	db := setupDismissTestDB(t)
 	deps := dismissDeps(db, &fakeApplier{}, "local")
-	mustExec(t, db, `INSERT INTO comments (id, pr_id) VALUES ('c1','pr-1')`)
+	mustExecDB(t, db, `INSERT INTO comments (id, pr_id) VALUES ('c1','pr-1')`)
 
 	callDismiss(t, deps, "pr-1", []string{"c1"})
 
 	got := dismissalRows(t, db)
 	if got["c1"] != "github/samdev" {
 		t.Errorf("dismissal account = %q, want github/samdev", got["c1"])
-	}
-}
-
-func mustExec(t *testing.T, db *sql.DB, query string, args ...interface{}) {
-	t.Helper()
-	if _, err := db.Exec(query, args...); err != nil {
-		t.Fatalf("exec %s: %v", query, err)
 	}
 }
 

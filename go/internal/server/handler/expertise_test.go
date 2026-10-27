@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/expertise"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 type fakeExpertiseEngine struct {
@@ -127,7 +128,7 @@ type fakeExpertiseIdentityReader struct {
 	err   error
 }
 
-func (f *fakeExpertiseIdentityReader) GetCurrentUser(_ context.Context, _ string) (string, bool, error) {
+func (f *fakeExpertiseIdentityReader) Get(_ context.Context, _ string) (string, bool, error) {
 	return f.login, f.found, f.err
 }
 
@@ -344,7 +345,7 @@ func responseType(resp interface{}) string {
 }
 
 func TestRequestPRListPopulatesTouchesYou(t *testing.T) {
-	db := newHandlerTestDB(t)
+	db := storetest.Open(t).DB
 	repoID := "github:owner/repo"
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 	insertExpertisePRListRow(t, db, "pr-qualifies", repoID, "qualifies.go", 1)

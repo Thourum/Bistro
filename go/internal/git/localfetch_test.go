@@ -11,12 +11,14 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/itterno/bistro/internal/git/clonecache"
+	"github.com/itterno/bistro/internal/git/gittest"
+	"github.com/itterno/bistro/internal/git/remote"
 )
 
 const localFetchRemoteURL = "https://github.com/acme/api.git"
@@ -27,7 +29,7 @@ func TestFetchIntoLocal_WritesOnlyBistroRefs(t *testing.T) {
 	headSHA := fixture.commitUpstream(t, "feature.txt", "feature\n", "feature")
 	fixture.setUpstreamPRRef(t, 123, headSHA)
 
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 
 	// Act
 	err := client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), nil)
@@ -59,7 +61,7 @@ func TestFetchIntoLocal_NeverTouchesUserState(t *testing.T) {
 	fixture.setUpstreamPRRef(t, 123, headSHA)
 	before := captureUserState(t, fixture.userPath)
 
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 
 	// Act
 	err := client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), nil)
@@ -88,7 +90,7 @@ func TestFetchIntoLocal_RemoteMismatch(t *testing.T) {
 	fixture := newLocalFetchFixture(t)
 	fixture.replaceOriginURLs(t, "file://"+fixture.upstreamPath, "https://github.com/other/repo.git")
 	headSHA := fixture.commitUpstream(t, "feature.txt", "feature\n", "feature")
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 
 	// Act
 	err := client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), nil)
@@ -116,11 +118,11 @@ func TestFetchIntoLocal_FetchesFromMatchingRemote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlainInit wrong remote: %v", err)
 	}
-	commitFile(t, wrongRepo, wrongRemotePath, "README.md", "wrong\n", "wrong")
+	gittest.CommitFile(t, wrongRepo, gittest.FileCommit{RepoPath: wrongRemotePath, FileName: "README.md", Content: "wrong\n", Message: "wrong"})
 
 	fixture.replaceOriginURLs(t, "file://"+wrongRemotePath, "https://github.com/other/repo.git")
 	fixture.addRemote(t, "upstream", "file://"+fixture.upstreamPath, localFetchRemoteURL)
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 
 	// Act
 	err = client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), nil)
@@ -138,7 +140,7 @@ func TestFetchIntoLocal_FetchesFromMatchingRemote(t *testing.T) {
 func TestFetchIntoLocal_SkipsWhenPresent(t *testing.T) {
 	// Arrange
 	fixture := newLocalFetchFixture(t)
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 	beforeRefs := allRefNames(t, fixture.openUserRepo(t))
 
 	// Act
@@ -160,7 +162,7 @@ func TestFetchIntoLocal_TargetedRefspecsOnly(t *testing.T) {
 	fixture.setUpstreamPRRef(t, prNumber, headSHA)
 	unrelatedSHA := fixture.commitUpstreamBranch(t, "unrelated", "unrelated.txt", "unrelated\n", "unrelated")
 
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 
 	// Act
 	err := client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), &CloneOptions{
@@ -174,7 +176,7 @@ func TestFetchIntoLocal_TargetedRefspecsOnly(t *testing.T) {
 		t.Fatalf("FetchIntoLocal: %v", err)
 	}
 	userRepo := fixture.openUserRepo(t)
-	safeID := SafeRepoID(fixture.identity)
+	safeID := remote.SafeRepoID(fixture.identity)
 	expectedRefs := []string{
 		fmt.Sprintf("refs/bistro/%s/base/%s", safeID, fixture.baseBranch),
 		fmt.Sprintf("refs/bistro/%s/pull/%d/head", safeID, prNumber),
@@ -205,7 +207,7 @@ func TestFetchIntoLocal_TargetedFetchDoesNotWriteShallowMetadata(t *testing.T) {
 		t.Fatalf("expected fixture to start without shallow metadata, stat err=%v", err)
 	}
 
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 
 	// Act
 	err := client.FetchIntoLocal(context.Background(), fixture.userPath, fixture.identity, fixture.baseSHA.String(), headSHA.String(), &CloneOptions{
@@ -225,7 +227,7 @@ func TestFetchIntoLocal_TargetedFetchDoesNotWriteShallowMetadata(t *testing.T) {
 type localFetchFixture struct {
 	upstreamPath string
 	userPath     string
-	identity     Identity
+	identity     remote.Identity
 	baseBranch   string
 	baseSHA      plumbing.Hash
 }
@@ -240,7 +242,7 @@ func newLocalFetchFixture(t *testing.T) localFetchFixture {
 	if err != nil {
 		t.Fatalf("PlainInit upstream: %v", err)
 	}
-	baseSHA := commitFile(t, upstream, upstreamPath, "README.md", "base\n", "base")
+	baseSHA := gittest.CommitFile(t, upstream, gittest.FileCommit{RepoPath: upstreamPath, FileName: "README.md", Content: "base\n", Message: "base"})
 	head, err := upstream.Head()
 	if err != nil {
 		t.Fatalf("upstream Head: %v", err)
@@ -251,9 +253,9 @@ func newLocalFetchFixture(t *testing.T) localFetchFixture {
 		t.Fatalf("PlainClone user: %v", err)
 	}
 
-	identity, err := ParseRemoteURL(localFetchRemoteURL)
+	identity, err := remote.ParseURL(localFetchRemoteURL)
 	if err != nil {
-		t.Fatalf("ParseRemoteURL: %v", err)
+		t.Fatalf("remote.ParseURL: %v", err)
 	}
 	fixture := localFetchFixture{
 		upstreamPath: upstreamPath,
@@ -310,7 +312,7 @@ func (f localFetchFixture) addRemote(t *testing.T, name string, urls ...string) 
 
 func (f localFetchFixture) commitUpstream(t *testing.T, fileName, content, message string) plumbing.Hash {
 	t.Helper()
-	return commitFile(t, f.openUpstreamRepo(t), f.upstreamPath, fileName, content, message)
+	return gittest.CommitFile(t, f.openUpstreamRepo(t), gittest.FileCommit{RepoPath: f.upstreamPath, FileName: fileName, Content: content, Message: message})
 }
 
 func (f localFetchFixture) commitUpstreamBranch(t *testing.T, branchName, fileName, content, message string) plumbing.Hash {
@@ -326,7 +328,7 @@ func (f localFetchFixture) commitUpstreamBranch(t *testing.T, branchName, fileNa
 	if err := worktree.Checkout(&gitlib.CheckoutOptions{Branch: plumbing.NewBranchReferenceName(branchName)}); err != nil {
 		t.Fatalf("Checkout unrelated branch: %v", err)
 	}
-	return commitFile(t, repo, f.upstreamPath, fileName, content, message)
+	return gittest.CommitFile(t, repo, gittest.FileCommit{RepoPath: f.upstreamPath, FileName: fileName, Content: content, Message: message})
 }
 
 func (f localFetchFixture) setUpstreamPRRef(t *testing.T, prNumber int, hash plumbing.Hash) {
@@ -336,33 +338,6 @@ func (f localFetchFixture) setUpstreamPRRef(t *testing.T, prNumber int, hash plu
 	if err := repo.Storer.SetReference(plumbing.NewHashReference(refName, hash)); err != nil {
 		t.Fatalf("SetReference PR ref: %v", err)
 	}
-}
-
-func commitFile(t *testing.T, repo *gitlib.Repository, repoPath, fileName, content, message string) plumbing.Hash {
-	t.Helper()
-	filePath := filepath.Join(repoPath, fileName)
-	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	worktree, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("Worktree: %v", err)
-	}
-	if _, err := worktree.Add(fileName); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	hash, err := worktree.Commit(message, &gitlib.CommitOptions{Author: &object.Signature{
-		Name:  "Bistro Test",
-		Email: "bistro@example.com",
-		When:  time.Now(),
-	}})
-	if err != nil {
-		t.Fatalf("Commit: %v", err)
-	}
-	return hash
 }
 
 type capturedUserState struct {

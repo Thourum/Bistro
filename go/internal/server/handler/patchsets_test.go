@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -40,7 +41,7 @@ type mockCurrentUserReader struct {
 	found bool
 }
 
-func (m *mockCurrentUserReader) GetCurrentUser(_ context.Context, _ string) (string, bool, error) {
+func (m *mockCurrentUserReader) Get(_ context.Context, _ string) (string, bool, error) {
 	return m.login, m.found, nil
 }
 
@@ -179,11 +180,11 @@ func TestMarkFileViewedHandler_HashValidation_Mismatch(t *testing.T) {
 	cu := &mockCurrentUserReader{login: "alice", found: true}
 
 	const patch = "real patch content for main.go"
-	canonicalHash := viewedHash(store.DiffFile{Patch: patch})
+	canonicalHash := viewedHash(prdiff.File{Patch: patch})
 
 	ds := &stubDiffReader{
 		diffs: map[string]string{"pr-v": "unified"},
-		files: map[string][]store.DiffFile{
+		files: map[string][]prdiff.File{
 			"pr-v": {{FilePath: "main.go", Patch: patch}},
 		},
 	}
@@ -215,11 +216,11 @@ func TestMarkFileViewedHandler_HashValidation_Match(t *testing.T) {
 	cu := &mockCurrentUserReader{login: "alice", found: true}
 
 	const patch = "the canonical patch content"
-	canonicalHash := viewedHash(store.DiffFile{Patch: patch})
+	canonicalHash := viewedHash(prdiff.File{Patch: patch})
 
 	ds := &stubDiffReader{
 		diffs: map[string]string{"pr-vm": "unified"},
-		files: map[string][]store.DiffFile{
+		files: map[string][]prdiff.File{
 			"pr-vm": {{FilePath: "a.go", Patch: patch}},
 		},
 	}

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/scan"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -20,7 +20,7 @@ const scanPersistenceTimeout = 5 * time.Second
 // Context is the app's run context, not a WebSocket request context.
 type ScanDevFolderDeps struct {
 	Context     context.Context
-	Locations   *store.RepoLocationStore
+	Locations   *repolocation.Store
 	SyncTrigger chan<- string
 	Broadcast   func(any)
 	Scan        func(context.Context, string) (scan.Result, error)

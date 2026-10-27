@@ -17,6 +17,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	"github.com/go-git/go-git/v5/plumbing/transport/file"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+
+	"github.com/itterno/bistro/internal/git/clonecache"
+	"github.com/itterno/bistro/internal/git/diff"
 )
 
 // raceFixturePR is one PR on a linear local remote: its base and head commits.
@@ -151,7 +154,7 @@ func runConcurrentPRDiffs(t *testing.T, buildRemote func(*testing.T, string) []r
 	t.Cleanup(func() { client.InstallProtocol("https", githttp.DefaultClient) })
 
 	const repoURL = "https://github.com/bistro-test/race-repo.git"
-	gitClient := NewClient(NewCache())
+	gitClient := NewClient(clonecache.New())
 	const rounds = 5
 	errs := make(chan error, len(prs)*rounds)
 	var wg sync.WaitGroup
@@ -163,7 +166,7 @@ func runConcurrentPRDiffs(t *testing.T, buildRemote func(*testing.T, string) []r
 				err := gitClient.WithPRClone(context.Background(), repoURL, pr.baseSHA, pr.headSHA,
 					&CloneOptions{PRNumber: pr.number, BaseBranch: "master", Depth: 50},
 					func(clone *CloneResult) error {
-						_, diffErr := gitClient.GenerateDiff(clone.LocalPath, pr.baseSHA, pr.headSHA, DefaultDiffOptions())
+						_, diffErr := diff.Generate(clone.LocalPath, pr.baseSHA, pr.headSHA, diff.DefaultOptions())
 						return diffErr
 					})
 				if err != nil {

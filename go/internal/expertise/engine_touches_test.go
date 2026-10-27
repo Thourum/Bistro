@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"testing"
 	"time"
+
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func TestEngineTouchesYouForPRsUsesPRDiffsAndTopThreeExpertRule(t *testing.T) {
-	db := newTestDB(t)
+	db := storetest.Open(t)
 	store := NewStore(db.DB)
 	ctx := context.Background()
 	repoID := "github:owner/repo"
@@ -55,7 +57,7 @@ func TestEngineTouchesYouForPRsUsesPRDiffsAndTopThreeExpertRule(t *testing.T) {
 }
 
 func TestEngineTouchesYouForPRsRequiresEnabledReadyRepo(t *testing.T) {
-	db := newTestDB(t)
+	db := storetest.Open(t)
 	store := NewStore(db.DB)
 	ctx := context.Background()
 	repoID := "github:owner/repo"

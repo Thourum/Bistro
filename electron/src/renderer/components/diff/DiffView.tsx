@@ -10,7 +10,6 @@ import DiffsHighlighterWorker from '@pierre/diffs/worker/worker.js?worker';
 import { Fault, ResultAsync } from '@thourum/fault';
 import { useEffect, useMemo } from 'react';
 import type { AppSettings } from '../../../types/settings';
-import { useStore } from '../../hooks/useStore';
 import { appStore } from '../../store';
 import type {
   Comment,
@@ -21,18 +20,10 @@ import type {
 } from '../../types';
 import { createLogger } from '../../utils/logger';
 import { openUrlInBrowser } from '../../utils/openUrl';
-import { hideWhitespaceOnlyHunks } from '../../utils/whitespaceDiff';
+import { type DiffAnnotationMeta, isDraftAnchored } from './diffAnnotations';
 import {
-  buildOrderedAnnotations,
-  type DiffAnnotationMeta,
-  isDraftAnchored,
-} from './diffAnnotations';
-import {
-  buildCodeViewItems,
   findUnrenderableDiffFile,
-  groupCommentsByThread,
   type ParsedCodeViewFile,
-  parseCodeViewFiles,
 } from './diffCodeViewItems';
 import { scrollToCodeViewFile } from './diffCodeViewNavigation';
 import {
@@ -42,12 +33,13 @@ import {
 import { DiffFileExpertise } from './diffFileExpertise';
 import { DiffFileSidebar } from './diffFileSidebar';
 import { DiffParseFailurePanel } from './diffParseFailurePanel';
-import { type ParsedDiffFile, splitUnifiedDiff } from './diffPathUtils';
+import type { ParsedDiffFile } from './diffPathUtils';
 import { ThreadAnnotationCard } from './diffThreadAnnotation';
 import {
   useDiffFileNavigation,
   useInlineDiffAnnotations,
 } from './diffViewNavigation';
+import { useDiffViewData } from './useDiffViewData';
 import { useLineCommentMode } from './useLineCommentMode';
 
 const OPEN_FILE_BROWSER_EVENT = 'bistro:diff:open-file-browser';
@@ -286,110 +278,6 @@ function openFilesInBrowser(url: string): void {
   );
 }
 
-interface DiffViewDataOptions {
-  diff: string;
-  threads: readonly ReviewThread[];
-  drafts: readonly ReviewDraft[];
-  headSha: string;
-  comments: readonly Comment[];
-  expertiseFiles: readonly ExpertiseFileData[];
-  expertiseError: string | null;
-  oversizedPatchBytes: ReadonlyMap<string, number>;
-}
-
-function useDiffViewData({
-  diff,
-  threads,
-  drafts,
-  headSha,
-  comments,
-  expertiseFiles,
-  expertiseError,
-  oversizedPatchBytes,
-}: DiffViewDataOptions) {
-  const hideWhitespaceHunks = useStore(
-    appStore,
-    (state) => state.hideWhitespaceHunks,
-  );
-  const collapseOverrides = useStore(
-    appStore,
-    (state) => state.diffCollapseOverrides,
-  );
-  const activeAnnotationKey = useStore(
-    appStore,
-    (state) => state.activeInlineCommentThreadId,
-  );
-  const replyingToThreadId = useStore(
-    appStore,
-    (state) => state.replyingInlineCommentThreadId,
-  );
-  const lineComment = useStore(appStore, (state) => state.lineComment);
-  const allFiles = useMemo(() => splitUnifiedDiff(diff), [diff]);
-  // Hiding whitespace hunks rewrites patches without changing file identity.
-  const { files, hiddenWhitespaceByFileId } = useMemo(
-    () => filterWhitespaceHunks(allFiles, hideWhitespaceHunks),
-    [allFiles, hideWhitespaceHunks],
-  );
-  const { parsedFiles, unrenderableFiles } = useMemo(
-    () => parseCodeViewFiles(files, oversizedPatchBytes),
-    [files, oversizedPatchBytes],
-  );
-  const expertiseByPath = useMemo(
-    () => new Map(expertiseFiles.map((file) => [file.file_path, file])),
-    [expertiseFiles],
-  );
-  const commentsByThread = useMemo(
-    () => groupCommentsByThread(comments),
-    [comments],
-  );
-  const orderedAnnotations = useMemo(
-    () => buildOrderedAnnotations(parsedFiles, threads, drafts),
-    [parsedFiles, threads, drafts],
-  );
-  const items = useMemo(
-    () =>
-      buildCodeViewItems({
-        parsedCodeViewFiles: parsedFiles,
-        threads,
-        drafts,
-        headSha,
-        lineComment,
-        commentsByThread,
-        activeAnnotationKey,
-        replyingToThreadId,
-        expertiseByPath,
-        expertiseError,
-        collapseOverrides,
-      }),
-    [
-      parsedFiles,
-      threads,
-      drafts,
-      headSha,
-      lineComment,
-      commentsByThread,
-      activeAnnotationKey,
-      replyingToThreadId,
-      expertiseByPath,
-      expertiseError,
-      collapseOverrides,
-    ],
-  );
-
-  return {
-    files,
-    hiddenWhitespaceByFileId,
-    parsedFiles,
-    unrenderableFiles,
-    expertiseByPath,
-    commentsByThread,
-    orderedAnnotations,
-    items,
-    activeAnnotationKey,
-    replyingToThreadId,
-  };
-}
-
 interface DiffCodeViewProps {
   files: readonly ParsedDiffFile[];
   parsedFiles: readonly ParsedCodeViewFile[];
@@ -606,28 +494,6 @@ function DiffFileHeader({
       <DiffFileExpertise expertise={expertise} error={expertiseError} />
     </>
   );
-}
-
-interface WhitespaceFilterResult {
-  files: ParsedDiffFile[];
-  /** File id → number of `+`/`-` lines hidden in that file. */
-  hiddenWhitespaceByFileId: ReadonlyMap<string, number>;
-}
-
-function filterWhitespaceHunks(
-  files: readonly ParsedDiffFile[],
-  enabled: boolean,
-): WhitespaceFilterResult {
-  if (!enabled)
-    return { files: [...files], hiddenWhitespaceByFileId: new Map() };
-  const hidden = new Map<string, number>();
-  const filtered = files.map((file) => {
-    const { patch, hiddenLineCount } = hideWhitespaceOnlyHunks(file.patch);
-    if (hiddenLineCount === 0) return file;
-    hidden.set(file.id, hiddenLineCount);
-    return { ...file, patch };
-  });
-  return { files: filtered, hiddenWhitespaceByFileId: hidden };
 }
 
 function findTopVisibleFile(

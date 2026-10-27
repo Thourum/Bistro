@@ -6,23 +6,23 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/ws"
 )
 
 type stubDiffReader struct {
 	diffs map[string]string
-	files map[string][]store.DiffFile
+	files map[string][]prdiff.File
 }
 
-func (s *stubDiffReader) GetUnifiedDiff(prID string) (string, error) {
+func (s *stubDiffReader) GetUnified(prID string) (string, error) {
 	if d, ok := s.diffs[prID]; ok {
 		return d, nil
 	}
 	return "", fmt.Errorf("no diffs found for PR %s", prID)
 }
 
-func (s *stubDiffReader) GetDiffs(prID string) ([]store.DiffFile, error) {
+func (s *stubDiffReader) Get(prID string) ([]prdiff.File, error) {
 	return s.files[prID], nil
 }
 
@@ -72,7 +72,7 @@ func TestRequestDiffHandler_Found(t *testing.T) {
 func TestRequestDiffHandler_IncludesFileStats(t *testing.T) {
 	stub := &stubDiffReader{
 		diffs: map[string]string{"pr-1": "diff --git a/a.go b/a.go\n+x\n"},
-		files: map[string][]store.DiffFile{
+		files: map[string][]prdiff.File{
 			"pr-1": {
 				{FilePath: "a.go", Additions: 10, Deletions: 2, Patch: "patch-a"},
 				{FilePath: "b.go", Additions: 5, Deletions: 1, Patch: "patch-b"},
@@ -118,7 +118,7 @@ func TestRequestDiffHandler_IncludesFileStats(t *testing.T) {
 func TestRequestDiffHandler_IncludesFileMetadata(t *testing.T) {
 	stub := &stubDiffReader{
 		diffs: map[string]string{"pr-meta": "diff --git a/old.go b/new.go\n"},
-		files: map[string][]store.DiffFile{
+		files: map[string][]prdiff.File{
 			"pr-meta": {{
 				FilePath:    "new.go",
 				Status:      "renamed",
@@ -223,7 +223,7 @@ func TestRequestDiffHandler_UsesStoredPatchID(t *testing.T) {
 	const patchID = "full-patch-id"
 	stub := &stubDiffReader{
 		diffs: map[string]string{"pr-1": "truncated patch"},
-		files: map[string][]store.DiffFile{
+		files: map[string][]prdiff.File{
 			"pr-1": {{FilePath: "a.go", Patch: "truncated patch", PatchID: patchID}},
 		},
 	}
@@ -243,7 +243,7 @@ func TestRequestDiffHandler_ViewedSurvivesLineShift(t *testing.T) {
 	const shiftedPatch = "@@ -10,2 +10,3 @@\n context\n+new line\n context\n"
 	stub := &stubDiffReader{
 		diffs: map[string]string{"pr-1": originalPatch},
-		files: map[string][]store.DiffFile{
+		files: map[string][]prdiff.File{
 			"pr-1": {{FilePath: "a.go", Patch: originalPatch}},
 		},
 	}
@@ -258,7 +258,7 @@ func TestRequestDiffHandler_ViewedSurvivesLineShift(t *testing.T) {
 	}
 	originalHash := extractData(t, response)["files"].([]diffFileDetail)[0].ContentHash
 	viewed.viewed["pr-1|a.go|"+originalHash] = true
-	stub.files["pr-1"] = []store.DiffFile{{FilePath: "a.go", Patch: shiftedPatch}}
+	stub.files["pr-1"] = []prdiff.File{{FilePath: "a.go", Patch: shiftedPatch}}
 
 	response, err = handler(context.Background(), makeMsg(t, "shifted", "pr-1"))
 	if err != nil {
@@ -273,8 +273,8 @@ func TestRequestDiffHandler_ViewedSurvivesLineShift(t *testing.T) {
 func TestRequestDiffHandler_ContentHashIsDeterministic(t *testing.T) {
 	// The same patch must always produce the same content_hash.
 	patch := "@@ -1,2 +1,3 @@\n context\n+new line\n context\n"
-	hash1 := viewedHash(store.DiffFile{Patch: patch})
-	hash2 := viewedHash(store.DiffFile{Patch: patch})
+	hash1 := viewedHash(prdiff.File{Patch: patch})
+	hash2 := viewedHash(prdiff.File{Patch: patch})
 	if hash1 != hash2 {
 		t.Error("viewedHash is not deterministic")
 	}
@@ -284,18 +284,18 @@ func TestRequestDiffHandler_ContentHashIsDeterministic(t *testing.T) {
 }
 
 func TestRequestDiffHandler_DifferentPatchesDifferentHash(t *testing.T) {
-	if viewedHash(store.DiffFile{Patch: "patch-a"}) == viewedHash(store.DiffFile{Patch: "patch-b"}) {
+	if viewedHash(prdiff.File{Patch: "patch-a"}) == viewedHash(prdiff.File{Patch: "patch-b"}) {
 		t.Error("different patches must produce different hashes")
 	}
 }
 
 func TestRequestDiffHandler_ViewedFlagTrueWhenFileViewed(t *testing.T) {
 	const patch = "--- a.go\n+++ a.go\n+added line\n"
-	hash := viewedHash(store.DiffFile{Patch: patch})
+	hash := viewedHash(prdiff.File{Patch: patch})
 
 	stub := &stubDiffReader{
 		diffs: map[string]string{"pr-1": patch},
-		files: map[string][]store.DiffFile{
+		files: map[string][]prdiff.File{
 			"pr-1": {{FilePath: "a.go", Patch: patch, Additions: 1}},
 		},
 	}
@@ -329,16 +329,16 @@ func TestRequestDiffHandler_ViewedFlagTrueWhenFileViewed(t *testing.T) {
 
 func TestRequestDiffHandler_ViewedFalseWhenHashMismatch(t *testing.T) {
 	const patch = "some patch content"
-	hash := viewedHash(store.DiffFile{Patch: patch})
+	hash := viewedHash(prdiff.File{Patch: patch})
 
 	stub := &stubDiffReader{
 		diffs: map[string]string{"pr-2": patch},
-		files: map[string][]store.DiffFile{
+		files: map[string][]prdiff.File{
 			"pr-2": {{FilePath: "main.go", Patch: patch}},
 		},
 	}
 	// Viewed with a STALE hash (different from current patch hash).
-	staleHash := viewedHash(store.DiffFile{Patch: "old patch content"})
+	staleHash := viewedHash(prdiff.File{Patch: "old patch content"})
 	viewed := &stubViewedChecker{viewed: map[string]bool{
 		"pr-2|main.go|" + staleHash: true,
 		// Current hash is NOT in viewed store → viewed=false.

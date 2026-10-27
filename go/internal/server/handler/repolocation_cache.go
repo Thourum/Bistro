@@ -6,16 +6,17 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
+	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/logging"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/ws"
 )
 
 // CacheMaintenanceDeps supplies cache persistence, locking, and deletion.
 type CacheMaintenanceDeps struct {
-	Store          *store.RepoLocationStore
-	Locks          *git.RepoLocks
+	Store          *repolocation.Store
+	Locks          *repolock.Locks
 	DeleteCacheDir func(path string) error
 	SweepOrphans   func(known map[string]bool) ([]string, error)
 	Log            *slog.Logger
@@ -133,7 +134,7 @@ func NewDeleteCacheRepoHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
 			if err := requireDeleteCacheDir(deps.DeleteCacheDir)(lockedLocation.LocalPath); err != nil {
 				return err
 			}
-			return deps.Store.ClearCacheLocation(ctx, repoID)
+			return deps.Store.ClearCache(ctx, repoID)
 		}
 		if deps.Locks != nil {
 			if err := deps.Locks.WithRepo(repoID, operation); err != nil {
@@ -150,23 +151,23 @@ func NewDeleteCacheRepoHandler(deps CacheMaintenanceDeps) ws.MessageHandler {
 	}
 }
 
-func runCacheMaintenance(locks *git.RepoLocks, operation func() error) error {
+func runCacheMaintenance(locks *repolock.Locks, operation func() error) error {
 	if locks != nil {
 		return locks.WithMaintenance(operation)
 	}
 	return operation()
 }
 
-func cacheStats(ctx context.Context, locations *store.RepoLocationStore) ([]git.CacheRepoStat, error) {
+func cacheStats(ctx context.Context, locations *repolocation.Store) ([]clonecache.RepoStat, error) {
 	cacheRows, err := locations.ListBySource(ctx, "cache")
 	if err != nil {
 		return nil, err
 	}
-	inputs := make([]git.CacheEntryInput, 0, len(cacheRows))
+	inputs := make([]clonecache.EntryInput, 0, len(cacheRows))
 	for _, row := range cacheRows {
-		inputs = append(inputs, git.CacheEntryInput{RepoID: row.RepoID, Path: row.LocalPath, LastUsedAt: row.LastUsedAt})
+		inputs = append(inputs, clonecache.EntryInput{RepoID: row.RepoID, Path: row.LocalPath, LastUsedAt: row.LastUsedAt})
 	}
-	return git.CacheStats(inputs)
+	return clonecache.Stats(inputs)
 }
 
 func requireDeleteCacheDir(deleteCacheDir func(path string) error) func(path string) error {
@@ -178,7 +179,7 @@ func requireDeleteCacheDir(deleteCacheDir func(path string) error) func(path str
 	}
 }
 
-func pruneCache(ctx context.Context, locations *store.RepoLocationStore, deleteCacheDir func(path string) error) ([]string, []cacheFailurePayload, error) {
+func pruneCache(ctx context.Context, locations *repolocation.Store, deleteCacheDir func(path string) error) ([]string, []cacheFailurePayload, error) {
 	stats, err := cacheStats(ctx, locations)
 	if err != nil {
 		return nil, nil, err
@@ -194,7 +195,7 @@ func pruneCache(ctx context.Context, locations *store.RepoLocationStore, deleteC
 			failed = append(failed, cacheFailurePayload{RepoID: stat.RepoID, Code: "delete_failed", Message: "unable to delete cache repository"})
 			continue
 		}
-		if err := locations.ClearCacheLocation(ctx, stat.RepoID); err != nil {
+		if err := locations.ClearCache(ctx, stat.RepoID); err != nil {
 			return nil, nil, err
 		}
 		removed = append(removed, stat.RepoID)
@@ -202,7 +203,7 @@ func pruneCache(ctx context.Context, locations *store.RepoLocationStore, deleteC
 	return removed, failed, nil
 }
 
-func clearCache(ctx context.Context, locations *store.RepoLocationStore, deleteCacheDir func(path string) error, sweepOrphans func(known map[string]bool) ([]string, error)) ([]string, []cacheFailurePayload, int, error) {
+func clearCache(ctx context.Context, locations *repolocation.Store, deleteCacheDir func(path string) error, sweepOrphans func(known map[string]bool) ([]string, error)) ([]string, []cacheFailurePayload, int, error) {
 	cacheRows, err := locations.ListBySource(ctx, "cache")
 	if err != nil {
 		return nil, nil, 0, err
@@ -217,7 +218,7 @@ func clearCache(ctx context.Context, locations *store.RepoLocationStore, deleteC
 			failed = append(failed, cacheFailurePayload{RepoID: row.RepoID, Code: "delete_failed", Message: "unable to delete cache repository"})
 			continue
 		}
-		if err := locations.ClearCacheLocation(ctx, row.RepoID); err != nil {
+		if err := locations.ClearCache(ctx, row.RepoID); err != nil {
 			return nil, nil, 0, err
 		}
 		removed = append(removed, row.RepoID)

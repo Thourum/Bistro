@@ -2,6 +2,9 @@ package provider
 
 import "time"
 
+// GitHub is the shared identifier for the GitHub provider.
+const GitHub = "github"
+
 // PR represents a normalized pull request
 type PR struct {
 	ID                 string // "github:owner/repo:123" format

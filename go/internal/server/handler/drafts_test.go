@@ -9,13 +9,14 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/reviewdraft"
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
 type fixedUser string
 
-func (f fixedUser) GetCurrentUser(context.Context, string) (string, bool, error) {
+func (f fixedUser) Get(context.Context, string) (string, bool, error) {
 	return string(f), f != "", nil
 }
 
@@ -42,7 +43,7 @@ func draftResponseData(t *testing.T, resp any) map[string]any {
 }
 
 func TestDraftSave_RejectsInvalidPositions(t *testing.T) {
-	deps := DraftDeps{Drafts: store.NewReviewDrafts(newReadStateTestDB(t).DB), CurrentUser: fixedUser("me"), Broadcaster: &spyBroadcaster{}}
+	deps := DraftDeps{Drafts: reviewdraft.New(storetest.Open(t).DB), CurrentUser: fixedUser("me"), Broadcaster: &spyBroadcaster{}}
 	save := NewDraftSaveHandler(deps)
 	valid := map[string]any{"pr_id": "pr-1", "path": "a.go", "side": "RIGHT", "line": 4, "body": "x", "commit_sha": "head"}
 	cases := map[string]func(map[string]any){
@@ -72,7 +73,7 @@ func TestDraftSave_RejectsInvalidPositions(t *testing.T) {
 
 func TestDraftSaveListDelete_BroadcastsDraftsChanged(t *testing.T) {
 	spy := &spyBroadcaster{}
-	deps := DraftDeps{Drafts: store.NewReviewDrafts(newReadStateTestDB(t).DB), CurrentUser: fixedUser("me"), Broadcaster: spy}
+	deps := DraftDeps{Drafts: reviewdraft.New(storetest.Open(t).DB), CurrentUser: fixedUser("me"), Broadcaster: spy}
 	ctx := context.Background()
 
 	resp, err := NewDraftSaveHandler(deps)(ctx, draftMessage(t, "DRAFT_SAVE", map[string]any{
@@ -81,13 +82,13 @@ func TestDraftSaveListDelete_BroadcastsDraftsChanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	saved, ok := draftResponseData(t, resp)["draft"].(store.ReviewDraft)
+	saved, ok := draftResponseData(t, resp)["draft"].(reviewdraft.Draft)
 	if !ok || saved.StartLine != 2 {
 		t.Fatalf("saved = %#v", draftResponseData(t, resp)["draft"])
 	}
 
 	listResp, _ := NewDraftsListHandler(deps)(ctx, draftMessage(t, "DRAFTS_LIST", map[string]any{"pr_id": "pr-1"}))
-	if drafts, _ := draftResponseData(t, listResp)["drafts"].([]store.ReviewDraft); len(drafts) != 1 {
+	if drafts, _ := draftResponseData(t, listResp)["drafts"].([]reviewdraft.Draft); len(drafts) != 1 {
 		t.Fatalf("list = %#v", draftResponseData(t, listResp))
 	}
 
@@ -111,7 +112,7 @@ func TestDraftsList_LogsIdentityFailureAndKeepsEmptyResponse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var output bytes.Buffer
 			deps := DraftDeps{
-				Drafts: store.NewReviewDrafts(newReadStateTestDB(t).DB), CurrentUser: tt.user,
+				Drafts: reviewdraft.New(storetest.Open(t).DB), CurrentUser: tt.user,
 				Log: slog.New(slog.NewJSONHandler(&output, nil)),
 			}
 			msg := draftMessage(t, "DRAFTS_LIST", map[string]any{"pr_id": "pr-1"})
@@ -119,7 +120,7 @@ func TestDraftsList_LogsIdentityFailureAndKeepsEmptyResponse(t *testing.T) {
 			if err != nil {
 				t.Fatalf("list: %v", err)
 			}
-			want := draftResponse(msg.ID, "DRAFTS_READY", map[string]interface{}{"pr_id": "pr-1", "drafts": []store.ReviewDraft{}})
+			want := draftResponse(msg.ID, "DRAFTS_READY", map[string]interface{}{"pr_id": "pr-1", "drafts": []reviewdraft.Draft{}})
 			if !reflect.DeepEqual(resp, want) {
 				t.Fatalf("response = %#v, want %#v", resp, want)
 			}
@@ -140,7 +141,7 @@ func TestDraftsList_LogsIdentityFailureAndKeepsEmptyResponse(t *testing.T) {
 }
 
 func TestDraftSave_RequiresSignedInUser(t *testing.T) {
-	deps := DraftDeps{Drafts: store.NewReviewDrafts(newReadStateTestDB(t).DB), CurrentUser: fixedUser(""), Broadcaster: &spyBroadcaster{}}
+	deps := DraftDeps{Drafts: reviewdraft.New(storetest.Open(t).DB), CurrentUser: fixedUser(""), Broadcaster: &spyBroadcaster{}}
 	resp, _ := NewDraftSaveHandler(deps)(context.Background(), draftMessage(t, "DRAFT_SAVE", map[string]any{
 		"pr_id": "pr-1", "path": "a.go", "side": "RIGHT", "line": 1, "body": "x", "commit_sha": "head",
 	}))

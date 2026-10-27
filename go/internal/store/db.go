@@ -54,3 +54,10 @@ func (db *DB) Ping() error {
 func (db *DB) Close() error {
 	return db.DB.Close()
 }
+
+func boolToInt(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
+}

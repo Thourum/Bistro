@@ -12,7 +12,8 @@ import (
 
 	"github.com/itterno/bistro/internal/actions"
 	"github.com/itterno/bistro/internal/logging"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/currentuser"
+	"github.com/itterno/bistro/internal/store/dismissal"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -24,8 +25,8 @@ type DismissalScopeGetter func() string
 // DismissDeps carries the dismiss/undismiss handlers' dependencies.
 type DismissDeps struct {
 	DB          *sql.DB
-	Dismissals  *store.Dismissals
-	CurrentUser *store.CurrentUserStore
+	Dismissals  *dismissal.Store
+	CurrentUser *currentuser.Store
 	// GetApplier returns the current ActionApplier for provider write-back
 	// (same contract as SUBMIT_ACTION). Nil applier = write-back silently
 	// skipped; the local dismissal always stands.

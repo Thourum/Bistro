@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/itterno/bistro/internal/git/clonecache"
+	"github.com/itterno/bistro/internal/git/remote"
+	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/logging"
 )
 
@@ -62,7 +65,7 @@ func TestCloneLocalPathExistsUsesRegisteredRepo(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", cacheRoot)
 	resolver := &fakeLocalResolver{path: fixture.userPath, hasPath: true}
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 	client.SetLocalResolver(resolver)
 
 	// Act
@@ -92,7 +95,7 @@ func TestCloneLocalPathMissingReturnsLocationError(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", cacheRoot)
 	missingPath := filepath.Join(t.TempDir(), "missing")
 	resolver := &fakeLocalResolver{path: missingPath, hasPath: true}
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 	client.SetLocalResolver(resolver)
 
 	// Act
@@ -102,7 +105,7 @@ func TestCloneLocalPathMissingReturnsLocationError(t *testing.T) {
 	if result != nil {
 		t.Fatalf("expected nil result, got %#v", result)
 	}
-	var locationErr *LocationError
+	var locationErr *remote.LocationError
 	if !errors.As(err, &locationErr) {
 		t.Fatalf("expected LocationError, got %T: %v", err, err)
 	}
@@ -123,9 +126,9 @@ func TestCloneLocalRegistrationWinsOverWarmCache(t *testing.T) {
 	// Arrange
 	fixture := newLocalFetchFixture(t)
 	headSHA := fixture.commitUpstream(t, "feature.txt", "feature\n", "feature")
-	cache := NewCache()
+	cache := clonecache.New()
 	cachedDir := t.TempDir()
-	cache.Set(localFetchRemoteURL, fixture.baseSHA.String(), headSHA.String(), &RepoEntry{
+	cache.Set(localFetchRemoteURL, fixture.baseSHA.String(), headSHA.String(), &clonecache.RepoEntry{
 		URL:       localFetchRemoteURL,
 		LocalPath: cachedDir,
 		BaseSHA:   fixture.baseSHA.String(),
@@ -152,9 +155,9 @@ func TestCloneLocalRegistrationWinsOverWarmCache(t *testing.T) {
 
 func TestCloneLocalBrokenRegistrationDoesNotFallBackToWarmCache(t *testing.T) {
 	// Arrange
-	cache := NewCache()
+	cache := clonecache.New()
 	cachedDir := t.TempDir()
-	cache.Set(localFetchRemoteURL, "base", "head", &RepoEntry{
+	cache.Set(localFetchRemoteURL, "base", "head", &clonecache.RepoEntry{
 		URL:       localFetchRemoteURL,
 		LocalPath: cachedDir,
 		BaseSHA:   "base",
@@ -172,7 +175,7 @@ func TestCloneLocalBrokenRegistrationDoesNotFallBackToWarmCache(t *testing.T) {
 	if result != nil {
 		t.Fatalf("expected nil result, got %#v", result)
 	}
-	var locationErr *LocationError
+	var locationErr *remote.LocationError
 	if !errors.As(err, &locationErr) {
 		t.Fatalf("expected LocationError, got %T: %v", err, err)
 	}
@@ -194,7 +197,7 @@ func TestCloneLocalRemoteMismatchRecordsRemoteMismatchStatus(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", cacheRoot)
 	resolver := &fakeLocalResolver{path: fixture.userPath, hasPath: true}
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 	client.SetLocalResolver(resolver)
 
 	// Act
@@ -204,7 +207,7 @@ func TestCloneLocalRemoteMismatchRecordsRemoteMismatchStatus(t *testing.T) {
 	if result != nil {
 		t.Fatalf("expected nil result, got %#v", result)
 	}
-	var locationErr *LocationError
+	var locationErr *remote.LocationError
 	if !errors.As(err, &locationErr) {
 		t.Fatalf("expected LocationError, got %T: %v", err, err)
 	}
@@ -228,8 +231,8 @@ func TestCloneUsesNormalizedIdentityForRepoLockKey(t *testing.T) {
 	const sshURL = "git@github.com:acme/api.git"
 
 	// Act
-	httpsKey := repoLockKey(httpsURL)
-	sshKey := repoLockKey(sshURL)
+	httpsKey := repolock.Key(httpsURL)
+	sshKey := repolock.Key(sshURL)
 
 	// Assert
 	if httpsKey != sshKey {
@@ -247,7 +250,7 @@ func TestCloneUsesRawRepoURLForLockKeyWithBistroRepoDir(t *testing.T) {
 	const repoURL = "git@github.com:acme/api.git"
 
 	// Act
-	lockKey := repoLockKey(repoURL)
+	lockKey := repolock.Key(repoURL)
 
 	// Assert
 	if lockKey != repoURL {
@@ -263,7 +266,7 @@ func TestCloneLocalBistroRepoDirSkipsResolver(t *testing.T) {
 	cacheRoot := t.TempDir()
 	t.Setenv("BISTRO_REPO_DIR", cacheRoot)
 	resolver := &fakeLocalResolver{path: fixture.userPath, hasPath: true}
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 	client.SetLocalResolver(resolver)
 
 	// Act
@@ -284,123 +287,6 @@ func TestCloneLocalBistroRepoDirSkipsResolver(t *testing.T) {
 	}
 }
 
-func TestPrepareTargetedCloneDirUsesOwnerRepoLayout(t *testing.T) {
-	// Arrange
-	home := t.TempDir()
-	cacheRoot := filepath.Join(home, "cache")
-	t.Setenv("BISTRO_REPO_DIR", "")
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CACHE_HOME", cacheRoot)
-
-	// Act
-	clonePath, err := prepareTargetedCloneDir(localFetchRemoteURL)
-
-	// Assert
-	if err != nil {
-		t.Fatalf("prepareTargetedCloneDir: %v", err)
-	}
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		t.Fatalf("UserCacheDir: %v", err)
-	}
-	canonicalCacheDir, err := filepath.EvalSymlinks(cacheDir)
-	if err != nil {
-		t.Fatalf("EvalSymlinks cacheDir: %v", err)
-	}
-	expectedPath := filepath.Join(canonicalCacheDir, "bistro", "repos", "acme", "api")
-	if clonePath != expectedPath {
-		t.Fatalf("expected targeted cache path %q, got %q", expectedPath, clonePath)
-	}
-}
-
-func TestPrepareCacheCloneDirRejectsSymlinkedOwner(t *testing.T) {
-	// Arrange
-	home := t.TempDir()
-	outsideDir := t.TempDir()
-	t.Setenv("BISTRO_REPO_DIR", "")
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		t.Fatalf("UserCacheDir: %v", err)
-	}
-	cacheRoot := filepath.Join(cacheDir, "bistro", "repos")
-	if err := os.MkdirAll(cacheRoot, 0755); err != nil {
-		t.Fatalf("MkdirAll cacheRoot: %v", err)
-	}
-	if err := os.Symlink(outsideDir, filepath.Join(cacheRoot, "acme")); err != nil {
-		t.Fatalf("Symlink owner: %v", err)
-	}
-
-	// Act
-	clonePath, _, err := stageCacheCloneDir(localFetchRemoteURL)
-
-	// Assert
-	if err == nil {
-		t.Fatalf("expected symlink rejection, got path %q", clonePath)
-	}
-	if entries, readErr := os.ReadDir(outsideDir); readErr != nil || len(entries) != 0 {
-		t.Fatalf("expected outside dir untouched, entries=%d err=%v", len(entries), readErr)
-	}
-}
-
-func TestPrepareCacheCloneDirRejectsSymlinkedRepo(t *testing.T) {
-	// Arrange
-	home := t.TempDir()
-	outsideDir := t.TempDir()
-	t.Setenv("BISTRO_REPO_DIR", "")
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		t.Fatalf("UserCacheDir: %v", err)
-	}
-	ownerDir := filepath.Join(cacheDir, "bistro", "repos", "acme")
-	if err := os.MkdirAll(ownerDir, 0755); err != nil {
-		t.Fatalf("MkdirAll ownerDir: %v", err)
-	}
-	if err := os.Symlink(outsideDir, filepath.Join(ownerDir, "api")); err != nil {
-		t.Fatalf("Symlink repo: %v", err)
-	}
-
-	// Act
-	clonePath, _, err := stageCacheCloneDir(localFetchRemoteURL)
-
-	// Assert
-	if err == nil {
-		t.Fatalf("expected symlink rejection, got path %q", clonePath)
-	}
-	if entries, readErr := os.ReadDir(outsideDir); readErr != nil || len(entries) != 0 {
-		t.Fatalf("expected outside dir untouched, entries=%d err=%v", len(entries), readErr)
-	}
-}
-
-func TestPrepareCacheCloneDirCreatesNonSymlinkRepoDir(t *testing.T) {
-	// Arrange
-	home := t.TempDir()
-	t.Setenv("BISTRO_REPO_DIR", "")
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
-
-	// Act
-	clonePath, _, err := stageCacheCloneDir(localFetchRemoteURL)
-
-	// Assert
-	if err != nil {
-		t.Fatalf("stageCacheCloneDir: %v", err)
-	}
-	info, err := os.Lstat(clonePath)
-	if err != nil {
-		t.Fatalf("expected clone dir to exist: %v", err)
-	}
-	if !info.IsDir() {
-		t.Fatalf("expected clone path to be a directory, mode=%s", info.Mode())
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		t.Fatalf("expected clone path not to be a symlink")
-	}
-}
-
 func TestCloneLocalCacheCloneRecordsCachePathAndHit(t *testing.T) {
 	// Arrange
 	fixture := newLocalFetchFixture(t)
@@ -411,7 +297,7 @@ func TestCloneLocalCacheCloneRecordsCachePathAndHit(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", cacheRoot)
 	resolver := &fakeLocalResolver{}
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 	client.SetLocalResolver(resolver)
 
 	// Act
@@ -445,7 +331,7 @@ func TestCloneLocalTargetedFailureDoesNotRemoveExistingCacheClone(t *testing.T) 
 	// Arrange
 	const url = "https://github.com/acme/api.git"
 	markerPath := writeExistingCacheMarker(t, url)
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -466,7 +352,7 @@ func TestCloneLocalBroadFailureDoesNotRemoveExistingCacheClone(t *testing.T) {
 	// Arrange
 	const url = "https://github.com/acme/api.git"
 	markerPath := writeExistingCacheMarker(t, url)
-	client := NewClient(NewCache())
+	client := NewClient(clonecache.New())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -488,7 +374,7 @@ func writeExistingCacheMarker(t *testing.T, repoURL string) string {
 	t.Setenv("BISTRO_REPO_DIR", "")
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	cacheDir, err := repoCacheDir(repoURL)
+	cacheDir, err := clonecache.RepoDir(repoURL)
 	if err != nil {
 		t.Fatalf("repoCacheDir: %v", err)
 	}
@@ -517,37 +403,5 @@ func assertCacheRootUntouched(t *testing.T, cacheRoot string) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("expected cache root untouched, found %d entries", len(entries))
-	}
-}
-
-func TestPrepareCacheCloneDirUsesOwnerRepoLayout(t *testing.T) {
-	// Arrange
-	home := t.TempDir()
-	cacheRoot := filepath.Join(home, "cache")
-	t.Setenv("BISTRO_REPO_DIR", "")
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CACHE_HOME", cacheRoot)
-
-	// Act
-	clonePath, _, err := stageCacheCloneDir(localFetchRemoteURL)
-
-	// Assert
-	if err != nil {
-		t.Fatalf("stageCacheCloneDir: %v", err)
-	}
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		t.Fatalf("UserCacheDir: %v", err)
-	}
-	canonicalCacheDir, err := filepath.EvalSymlinks(cacheDir)
-	if err != nil {
-		t.Fatalf("EvalSymlinks cacheDir: %v", err)
-	}
-	expectedPath := filepath.Join(canonicalCacheDir, "bistro", "repos", "acme", "api")
-	if clonePath != expectedPath {
-		t.Fatalf("expected cache clone path %q, got %q", expectedPath, clonePath)
-	}
-	if len(filepath.Base(clonePath)) >= 5 && filepath.Base(clonePath)[:5] == "repo-" {
-		t.Fatalf("expected owner/repo path, got temp child path %q", clonePath)
 	}
 }

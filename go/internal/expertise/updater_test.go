@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"testing"
 	"time"
+
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func TestUpdaterRecomputesTouchedStaleFiles(t *testing.T) {
-	db := newTestDB(t)
+	db := storetest.Open(t)
 	store := NewStore(db.DB)
 	repoPath := makeFixtureRepo(t)
 	ctx := context.Background()
@@ -112,7 +114,7 @@ func TestUpdaterRecomputesTouchedStaleFiles(t *testing.T) {
 }
 
 func TestUpdaterNoOpsUnlessRepoReady(t *testing.T) {
-	db := newTestDB(t)
+	db := storetest.Open(t)
 	store := NewStore(db.DB)
 	ctx := context.Background()
 	git := newFakeIndexerGit(1)

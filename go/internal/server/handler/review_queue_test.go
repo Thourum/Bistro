@@ -16,7 +16,7 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -109,7 +109,7 @@ func TestReviewQueueDiscoveryMergesWithLocalRepository(t *testing.T) {
 		t.Fatalf("discovery identity or display casing lost: %s %s/%s", id, owner, repo)
 	}
 	localPath := t.TempDir()
-	if err := store.NewRepoLocationStore(database).UpsertLocal(ctx, "github", "Itterno", "Bistro", localPath, false); err != nil {
+	if err := repolocation.New(database).UpsertLocal(ctx, "github", "Itterno", "Bistro", localPath, false); err != nil {
 		t.Fatal(err)
 	}
 	var count int

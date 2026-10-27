@@ -10,6 +10,7 @@ import (
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -21,7 +22,7 @@ type prCheckoutInfoReader interface {
 
 // repoLocationReader is the DB subset required to resolve a repo's local path.
 type repoLocationReader interface {
-	Get(ctx context.Context, repoID string) (*store.RepoLocation, error)
+	Get(ctx context.Context, repoID string) (*repolocation.Location, error)
 }
 
 // prCheckoutInspector inspects a local checkout against a head SHA. Satisfied

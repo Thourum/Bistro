@@ -13,6 +13,7 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/itterno/bistro/internal/auth"
 	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/keychain"
 	github "github.com/itterno/bistro/internal/provider/github"
 	"github.com/itterno/bistro/internal/server"
@@ -126,7 +127,7 @@ func main() {
 
 	// Git client for cloning PR branches and generating diffs locally.
 	// Clone auth comes from the keychain so private repos work without env vars.
-	gitClient := git.NewClient(git.NewCache())
+	gitClient := git.NewClient(clonecache.New())
 	gitClient.SetTokenSource(func() string {
 		token, err := tm.GetGitHubToken()
 		if err != nil {

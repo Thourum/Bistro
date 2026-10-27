@@ -4,16 +4,16 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/itterno/bistro/internal/git"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/git/remote"
+	"github.com/itterno/bistro/internal/store/repolocation"
 )
 
 type repoLocationResolver struct {
-	locations *store.RepoLocationStore
+	locations *repolocation.Store
 	log       *slog.Logger
 }
 
-func newRepoLocationResolver(locations *store.RepoLocationStore, log *slog.Logger) *repoLocationResolver {
+func newRepoLocationResolver(locations *repolocation.Store, log *slog.Logger) *repoLocationResolver {
 	return &repoLocationResolver{locations: locations, log: log}
 }
 
@@ -22,7 +22,7 @@ func (r *repoLocationResolver) LocalPath(repoURL string) (string, bool) {
 	if r == nil || r.locations == nil {
 		return "", false
 	}
-	identity, err := git.ParseRemoteURL(repoURL)
+	identity, err := remote.ParseURL(repoURL)
 	if err != nil {
 		r.logDebug("repo location resolver ignored invalid url", "repo_url", repoURL, "error", err)
 		return "", false
@@ -43,7 +43,7 @@ func (r *repoLocationResolver) OnLocalDegraded(repoURL, status, code, msg string
 	if r == nil || r.locations == nil {
 		return
 	}
-	identity, err := git.ParseRemoteURL(repoURL)
+	identity, err := remote.ParseURL(repoURL)
 	if err != nil {
 		r.logWarn("repo location resolver ignored degraded invalid url", "repo_url", repoURL, "error", err)
 		return
@@ -58,7 +58,7 @@ func (r *repoLocationResolver) OnUsed(repoURL string) {
 	if r == nil || r.locations == nil {
 		return
 	}
-	identity, err := git.ParseRemoteURL(repoURL)
+	identity, err := remote.ParseURL(repoURL)
 	if err != nil {
 		r.logDebug("repo location resolver ignored used invalid url", "repo_url", repoURL, "error", err)
 		return
@@ -73,7 +73,7 @@ func (r *repoLocationResolver) OnCacheCloned(repoURL, path string) {
 	if r == nil || r.locations == nil {
 		return
 	}
-	identity, err := git.ParseRemoteURL(repoURL)
+	identity, err := remote.ParseURL(repoURL)
 	if err != nil {
 		r.logDebug("repo location resolver ignored cache clone invalid url", "repo_url", repoURL, "error", err)
 		return

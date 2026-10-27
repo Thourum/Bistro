@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/ws"
@@ -18,14 +18,10 @@ type interdiffPatchsets interface {
 	CurrentPatchset(ctx context.Context, prID string) (store.Patchset, bool, error)
 }
 
-type interdiffer interface {
-	Interdiff(req git.InterdiffRequest) (git.InterdiffResult, error)
-}
-
 // InterdiffHandlerDeps bundles REQUEST_INTERDIFF dependencies.
 type InterdiffHandlerDeps struct {
 	Patchsets interdiffPatchsets
-	Git       interdiffer
+	Interdiff func(req diff.InterdiffRequest) (diff.InterdiffResult, error)
 	// RepoForPR returns the sync's clone URL and the on-disk repo for a PR;
 	// ok=false when no repo is recorded yet.
 	RepoForPR func(ctx context.Context, prID string) (repoURL, repoPath string, ok bool, err error)
@@ -104,12 +100,12 @@ func buildInterdiff(ctx context.Context, deps InterdiffHandlerDeps, req interdif
 	if !ok {
 		return unavailableInterdiff(response, "no local copy of this repository yet")
 	}
-	result, err := deps.Git.Interdiff(git.InterdiffRequest{
+	result, err := deps.Interdiff(diff.InterdiffRequest{
 		RepoURL: repoURL, RepoPath: repoPath, Path: req.Path,
 		FromHead: from.HeadSHA, ToHead: to.HeadSHA,
 		FromMergeBase: from.MergeBaseSHA, ToMergeBase: to.MergeBaseSHA,
 	})
-	if errors.Is(err, git.ErrHeadUnavailable) {
+	if errors.Is(err, diff.ErrHeadUnavailable) {
 		return unavailableInterdiff(response, fmt.Sprintf("could not load a patchset head (P%d or P%d): %s", from.Number, to.Number, err))
 	}
 	if err != nil {

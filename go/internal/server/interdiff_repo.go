@@ -6,15 +6,16 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 )
 
 // prRepoLocator finds the repo a PR's diffs were generated in: the user's
 // local clone or the cache clone, whichever the sync recorded.
 type prRepoLocator struct {
 	db        *store.DB
-	locations *store.RepoLocationStore
+	locations *repolocation.Store
 }
 
 // RepoForPR returns the sync's clone URL and recorded local repository path.
@@ -27,7 +28,7 @@ func (l prRepoLocator) RepoForPR(ctx context.Context, prID string) (string, stri
 	if err != nil {
 		return "", "", false, fmt.Errorf("look up repo of PR %s: %w", prID, err)
 	}
-	location, err := l.locations.Get(ctx, git.Identity{Provider: "github", Owner: owner, Repo: repo}.ID())
+	location, err := l.locations.Get(ctx, remote.Identity{Provider: "github", Owner: owner, Repo: repo}.ID())
 	if err != nil {
 		return "", "", false, fmt.Errorf("get repo location of PR %s: %w", prID, err)
 	}

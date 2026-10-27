@@ -127,7 +127,7 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 
 		login := ""
 		if cu != nil {
-			resolvedLogin, found, err := cu.GetCurrentUser(ctx, githubProvider)
+			resolvedLogin, found, err := cu.Get(ctx, githubProvider)
 			if err != nil {
 				// Listing remains available without viewer-specific annotations.
 				logger.Warn("resolve current user for REQUEST_PR_LIST", "err", err)

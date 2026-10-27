@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"testing"
 	"time"
+
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 func TestShouldNudge(t *testing.T) {
@@ -73,7 +75,7 @@ func TestShouldNudge(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db := newTestDB(t)
+			db := storetest.Open(t)
 			store := NewStore(db.DB)
 			tt.setup(t, db.DB, store)
 

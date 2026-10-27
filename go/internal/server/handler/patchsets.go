@@ -33,7 +33,7 @@ type fileViewedMarker interface {
 
 // currentUserReader is the subset used to resolve the authenticated login.
 type currentUserReader interface {
-	GetCurrentUser(ctx context.Context, provider string) (string, bool, error)
+	Get(ctx context.Context, provider string) (string, bool, error)
 }
 
 // NewListPatchsetsHandler returns a WS handler for GET_PATCHSETS.
@@ -141,7 +141,7 @@ func newMarkFileViewedHandler(deps MarkFileViewedDeps) ws.MessageHandler {
 			return nil, fmt.Errorf("MARK_FILE_VIEWED requires pr_id, file_path, and content_hash")
 		}
 
-		login, ok, lookupErr := deps.CurrentUser.GetCurrentUser(ctx, githubProvider)
+		login, ok, lookupErr := deps.CurrentUser.Get(ctx, githubProvider)
 		if lookupErr != nil {
 			logger.Warn("MARK_FILE_VIEWED: failed to resolve current user", "error", lookupErr)
 			return fileViewedACK(msg.ID, req.PRID, req.FilePath, false, "unable to check authenticated user"), nil
@@ -178,10 +178,10 @@ func newMarkFileViewedHandler(deps MarkFileViewedDeps) ws.MessageHandler {
 
 // validateFileHash computes the canonical content hash for filePath in the
 // stored diffs and checks it against the client-supplied hash.
-// Fails closed: returns (false, reason) when GetDiffs errors or the file is
+// Fails closed: returns (false, reason) when Get errors or the file is
 // not found in stored diffs, so stale hashes cannot be accepted silently.
 func validateFileHash(ctx context.Context, ds diffReader, prID, filePath, clientHash string) (bool, string) {
-	diffs, err := ds.GetDiffs(prID)
+	diffs, err := ds.Get(prID)
 	if err != nil {
 		logging.FromContext(ctx).Warn("content hash validation diff lookup failed", "pr_id", prID, "error", err)
 		return false, "could not validate content_hash"

@@ -9,7 +9,11 @@ import (
 	"testing"
 
 	bistrogit "github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 const repoLocationResolverURL = "https://github.com/acme/api.git"
@@ -17,14 +21,14 @@ const repoLocationResolverURL = "https://github.com/acme/api.git"
 func TestConfigureRepoLocationStoreWiresGitClientLocalResolver(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
-	db := newServerRepoLocationMigratedDB(t)
-	locations := store.NewRepoLocationStore(db.DB)
+	db := storetest.Open(t)
+	locations := repolocation.New(db.DB)
 	missingPath := filepath.Join(t.TempDir(), "missing")
 	if err := locations.UpsertLocal(ctx, "github", "acme", "api", missingPath, false); err != nil {
 		t.Fatalf("upsert local repo: %v", err)
 	}
 
-	client := bistrogit.NewClient(bistrogit.NewCache())
+	client := bistrogit.NewClient(clonecache.New())
 	app := &App{log: testRepoLocationResolverLogger(), gitClient: client}
 
 	// Act
@@ -35,7 +39,7 @@ func TestConfigureRepoLocationStoreWiresGitClientLocalResolver(t *testing.T) {
 	if result != nil {
 		t.Fatalf("expected no clone result for degraded local repo, got %#v", result)
 	}
-	var locationErr *bistrogit.LocationError
+	var locationErr *remote.LocationError
 	if !errors.As(err, &locationErr) {
 		t.Fatalf("expected LocationError from wired resolver, got %T: %v", err, err)
 	}
@@ -50,8 +54,8 @@ func TestConfigureRepoLocationStoreWiresGitClientLocalResolver(t *testing.T) {
 
 func TestRepoLocationResolverPersistsGitClientCallbacks(t *testing.T) {
 	// Arrange
-	db := newServerRepoLocationMigratedDB(t)
-	locations := store.NewRepoLocationStore(db.DB)
+	db := storetest.Open(t)
+	locations := repolocation.New(db.DB)
 	insertServerRepo(t, db, "github:acme/api", "github", "acme", "api")
 	resolver := newRepoLocationResolver(locations, testRepoLocationResolverLogger())
 	cachePath := filepath.Join(t.TempDir(), "cache", "acme", "api")
@@ -74,19 +78,6 @@ func TestRepoLocationResolverPersistsGitClientCallbacks(t *testing.T) {
 	}
 }
 
-func newServerRepoLocationMigratedDB(t *testing.T) *store.DB {
-	t.Helper()
-	db, err := store.OpenDB(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := store.NewMigrationRunner(nil, db.DB).Run(context.Background()); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
-	return db
-}
-
 func insertServerRepo(t *testing.T, db *store.DB, repoID, provider, owner, repo string) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO repos (id, provider, owner, repo, watched) VALUES (?, ?, ?, ?, 1)`, repoID, provider, owner, repo)
@@ -95,7 +86,7 @@ func insertServerRepo(t *testing.T, db *store.DB, repoID, provider, owner, repo 
 	}
 }
 
-func mustGetServerRepoLocation(t *testing.T, locations *store.RepoLocationStore, repoID string) *store.RepoLocation {
+func mustGetServerRepoLocation(t *testing.T, locations *repolocation.Store, repoID string) *repolocation.Location {
 	t.Helper()
 	location, err := locations.Get(context.Background(), repoID)
 	if err != nil {

@@ -10,7 +10,7 @@ import (
 
 	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/provider/mock"
-	gosync "github.com/itterno/bistro/internal/sync"
+	"github.com/itterno/bistro/internal/prsync"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -134,7 +134,7 @@ func TestSetProvider_NilClearsOrchestratorAndApplier(t *testing.T) {
 	// Simulate a connected state: non-nil prov stub and orchestrator.
 	app.provMu.Lock()
 	app.prov = mock.NewMockProvider()
-	app.orchestrator = gosync.NewOrchestrator(nil, nil, nil, nil)
+	app.orchestrator = prsync.NewOrchestrator(nil, nil, nil, nil)
 	app.provMu.Unlock()
 
 	// currentApplier must return non-nil while connected.
@@ -174,7 +174,7 @@ func TestSetProvider_NilCancelsBridge(t *testing.T) {
 	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
 	app.provMu.Lock()
 	app.prov = mock.NewMockProvider()
-	app.orchestrator = gosync.NewOrchestrator(nil, nil, nil, nil)
+	app.orchestrator = prsync.NewOrchestrator(nil, nil, nil, nil)
 	app.bridgeCancel = bridgeCancel
 	app.provMu.Unlock()
 
@@ -206,7 +206,7 @@ func TestCurrentApplier_RequiresBothProvAndOrchestrator(t *testing.T) {
 
 	// Only orchestrator set — prov nil.
 	app.provMu.Lock()
-	app.orchestrator = gosync.NewOrchestrator(nil, nil, nil, nil)
+	app.orchestrator = prsync.NewOrchestrator(nil, nil, nil, nil)
 	app.provMu.Unlock()
 	if app.currentApplier() != nil {
 		t.Error("currentApplier must return nil when prov is nil")
@@ -223,7 +223,7 @@ func TestCurrentApplier_RequiresBothProvAndOrchestrator(t *testing.T) {
 
 	// Both set — should return non-nil.
 	app.provMu.Lock()
-	app.orchestrator = gosync.NewOrchestrator(nil, nil, nil, nil)
+	app.orchestrator = prsync.NewOrchestrator(nil, nil, nil, nil)
 	app.provMu.Unlock()
 	if app.currentApplier() == nil {
 		t.Error("currentApplier must return non-nil when both prov and orchestrator are set")

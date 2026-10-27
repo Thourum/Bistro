@@ -10,9 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/clonecache"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/scan"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -33,7 +34,7 @@ func recoverPathErrorCode(err error) string {
 	return "path_missing"
 }
 
-func registeredLocal(ctx context.Context, locations *store.RepoLocationStore, repoID string) (bool, *LocationErrorPayload, error) {
+func registeredLocal(ctx context.Context, locations *repolocation.Store, repoID string) (bool, *LocationErrorPayload, error) {
 	location, err := locations.Get(ctx, repoID)
 	if err != nil {
 		return false, nil, fmt.Errorf("get repo location %s: %w", repoID, err)
@@ -56,7 +57,7 @@ func registeredLocal(ctx context.Context, locations *store.RepoLocationStore, re
 	return false, &payload, nil
 }
 
-func targetedDevFolder(ctx context.Context, locations *store.RepoLocationStore, identity git.Identity, devFolder string) (bool, error) {
+func targetedDevFolder(ctx context.Context, locations *repolocation.Store, identity remote.Identity, devFolder string) (bool, error) {
 	canonicalDev, err := filepath.EvalSymlinks(devFolder)
 	if err != nil {
 		return false, nil
@@ -76,7 +77,7 @@ var (
 	errDevFolderPathInvalid  = errors.New("dev_folder_path is invalid")
 )
 
-func destinationRoot(identity git.Identity, destination, devFolder string, cacheRoot func() (string, error)) (string, string, error) {
+func destinationRoot(identity remote.Identity, destination, devFolder string, cacheRoot func() (string, error)) (string, string, error) {
 	switch destination {
 	case "dev_folder":
 		if devFolder == "" {
@@ -104,7 +105,7 @@ type destinationState struct {
 	Message  string
 }
 
-func inspectDestination(path string, identity git.Identity) (destinationState, error) {
+func inspectDestination(path string, identity remote.Identity) (destinationState, error) {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		return destinationState{CanClone: true}, nil
@@ -154,7 +155,7 @@ func cleanupBistroCreated(path string, createdByBistro bool, source, root string
 }
 
 func validateCacheRepoPathInsideRoot(path string) error {
-	root, err := git.CacheRoot()
+	root, err := clonecache.Root()
 	if err != nil {
 		return fmt.Errorf("get cache root: %w", err)
 	}
@@ -193,7 +194,7 @@ func hasOnlyGitCloneFiles(path string) bool {
 	return true
 }
 
-func setRepoSource(ctx context.Context, db *sql.DB, locations *store.RepoLocationStore, identity git.Identity, path, source string) error {
+func setRepoSource(ctx context.Context, db *sql.DB, locations *repolocation.Store, identity remote.Identity, path, source string) error {
 	if source == "cache" {
 		if err := ensureRepoRow(ctx, db, identity); err != nil {
 			return err
@@ -223,7 +224,7 @@ func cloneErrorCode(err error) string {
 	return "clone_failed"
 }
 
-func ensureRepoRow(ctx context.Context, db *sql.DB, identity git.Identity) error {
+func ensureRepoRow(ctx context.Context, db *sql.DB, identity remote.Identity) error {
 	_, err := db.ExecContext(ctx, `INSERT INTO repos (id, provider, owner, repo, watched) VALUES (?, ?, ?, ?, 1) ON CONFLICT(id) DO NOTHING`, identity.ID(), identity.Provider, strings.ToLower(identity.Owner), strings.ToLower(identity.Repo))
 	if err != nil {
 		return fmt.Errorf("ensure repo row %s: %w", identity.ID(), err)

@@ -10,18 +10,19 @@ import (
 	"unicode/utf8"
 
 	"github.com/itterno/bistro/internal/logging"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/store/reviewdraft"
 	"github.com/itterno/bistro/internal/ws"
 )
 
 // maxDraftBodyLength matches GitHub's 65,536-character comment body limit.
 const maxDraftBodyLength = 65536
 
-// draftStore is the subset of store.ReviewDrafts the draft handlers use.
+// draftStore is the subset of reviewdraft.Store the draft handlers use.
 type draftStore interface {
-	Create(ctx context.Context, login string, draft store.ReviewDraft) (store.ReviewDraft, error)
-	UpdateBody(ctx context.Context, login, id, body string) (store.ReviewDraft, error)
-	List(ctx context.Context, prID, login string) ([]store.ReviewDraft, error)
+	Create(ctx context.Context, login string, draft reviewdraft.Draft) (reviewdraft.Draft, error)
+	UpdateBody(ctx context.Context, login, id, body string) (reviewdraft.Draft, error)
+	List(ctx context.Context, prID, login string) ([]reviewdraft.Draft, error)
 	Delete(ctx context.Context, login string, ids []string) error
 }
 
@@ -78,7 +79,7 @@ func (d DraftDeps) logger(ctx context.Context, msg ws.InboundMessage) *slog.Logg
 
 // currentLogin resolves the account drafts are namespaced under.
 func (d DraftDeps) currentLogin(ctx context.Context) (string, error) {
-	login, ok, err := d.CurrentUser.GetCurrentUser(ctx, githubProvider)
+	login, ok, err := d.CurrentUser.Get(ctx, provider.GitHub)
 	if err != nil {
 		return "", fmt.Errorf("resolve current user: %w", err)
 	}
@@ -112,11 +113,11 @@ func NewDraftSaveHandler(deps DraftDeps) ws.MessageHandler {
 			return draftResponse(msg.ID, "DRAFT_SAVED", map[string]interface{}{"error": err.Error()}), nil
 		}
 		body := strings.TrimSpace(req.Body)
-		var saved store.ReviewDraft
+		var saved reviewdraft.Draft
 		if req.ID != "" {
 			saved, err = deps.Drafts.UpdateBody(ctx, login, req.ID, body)
 		} else {
-			saved, err = deps.Drafts.Create(ctx, login, store.ReviewDraft{
+			saved, err = deps.Drafts.Create(ctx, login, reviewdraft.Draft{
 				PRID: req.PRID, Path: req.Path, Side: req.Side, StartLine: req.StartLine,
 				Line: req.Line, Body: body, CommitSHA: req.CommitSHA,
 			})
@@ -146,12 +147,12 @@ func NewDraftsListHandler(deps DraftDeps) ws.MessageHandler {
 		login, err := deps.currentLogin(ctx)
 		if err != nil {
 			deps.logger(ctx, msg).Error("DRAFTS_LIST failed", "pr_id", req.PRID, "error", err)
-			return draftResponse(msg.ID, "DRAFTS_READY", map[string]interface{}{"pr_id": req.PRID, "drafts": []store.ReviewDraft{}}), nil
+			return draftResponse(msg.ID, "DRAFTS_READY", map[string]interface{}{"pr_id": req.PRID, "drafts": []reviewdraft.Draft{}}), nil
 		}
 		drafts, err := deps.Drafts.List(ctx, req.PRID, login)
 		if err != nil {
 			deps.logger(ctx, msg).Error("DRAFTS_LIST failed", "pr_id", req.PRID, "error", err)
-			return draftResponse(msg.ID, "DRAFTS_READY", map[string]interface{}{"pr_id": req.PRID, "drafts": []store.ReviewDraft{}, "error": "unable to load drafts"}), nil
+			return draftResponse(msg.ID, "DRAFTS_READY", map[string]interface{}{"pr_id": req.PRID, "drafts": []reviewdraft.Draft{}, "error": "unable to load drafts"}), nil
 		}
 		return draftResponse(msg.ID, "DRAFTS_READY", map[string]interface{}{"pr_id": req.PRID, "drafts": drafts}), nil
 	}

@@ -27,6 +27,18 @@ Process lifecycle: Electron Forge spawns `bistro-sync`, or connects to an alread
 
 Where things live: Go engine in `go/` (entry `go/cmd/bistro-sync/`, packages under `go/internal/`); Electron UI in `electron/src/` (`main/` = process + spawn + IPC + settings, `renderer/` = React app).
 
+Within `go/internal/server/`, `app.go` owns the App struct, constructors, store preparation, and Run lifecycle; provider lifecycle, configuration, LLM setup, expertise, event bridging, repo-location wiring, and handler registration live in `provider.go`, `config.go`, `llm.go`, `expertise.go`, `bridge.go`, `repo_location.go`, and `handlers.go` respectively. All remain in package `server`.
+
+Within `internal/git`, `Client` owns clone/fetch/checkout operations; `anchor` resolves comment anchors, `diff` generates diffs/interdiffs and patch fingerprints (`Generate`, `Interdiff`, `PatchID`), `remote` parses repo identities (`ParseURL`, `SafeRepoID`), and `repolock` owns shared per-repo locks (`Locks`, `New`, `Key`). Interdiff takes the same `*repolock.Locks` as clone/fetch, not a `git.Client`. The current package map is in [Go project overview](docs/go-project-overview.md).
+
+Clone cache entries, path/staging helpers, maintenance, and PR-head retention live in `internal/git/clonecache`; it depends on `remote`, never the parent `git` package. Shared on-disk commit fixtures live in the test-support package `internal/git/gittest`, which depends only on go-git and the standard library.
+
+Independent SQLite stores live in `internal/store/currentuser`, `dismissal`, `prdiff`, `repolocation`, and `reviewdraft` (each `Store`, `New`), and the offline action queue in `internal/store/actionqueue` (`Queue`, `New`, `Action`); `store` retains the DB handle, migrations (`migrate.go`), and DB query methods (including `review_threads.go`). Subpackages may import `store` and sqlc's `store/db`, never the reverse. Expertise indexing state already belongs to `internal/expertise`, not `repolocation`.
+
+The PR sync orchestrator lives in `internal/prsync`. Concurrent PR fetch tasks run through `internal/prsync/workerpool` (`Pool`, `New`, `DefaultWorkers`); fetched results and SQLite batch writes live in `internal/prsync/writer` (`FetchedPR`, `Writer`, `New`). Neither subpackage imports the parent `prsync` package.
+
+Go tests outside package `store` share migrated in-memory databases via `internal/store/storetest.Open(t)`; `store`'s own internal tests keep local helpers to avoid an import cycle. Version-limited migration tests use `store.MigrationFS()` with goose.
+
 ## Tech stack
 
 - **Go 1.26** — go-git, go-github, gorilla/websocket, mattn/go-sqlite3, go-keyring, x/oauth2.

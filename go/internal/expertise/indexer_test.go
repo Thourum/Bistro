@@ -6,12 +6,14 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/itterno/bistro/internal/store/storetest"
 )
 
 const fixtureRepoID = "github:owner/repo"
 
 func TestIndexerIndexesFixtureRepo(t *testing.T) {
-	db := newTestDB(t)
+	db := storetest.Open(t)
 	store := NewStore(db.DB)
 	repoPath := makeFixtureRepo(t)
 	ctx := context.Background()
@@ -117,7 +119,7 @@ func TestIndexerIndexesFixtureRepo(t *testing.T) {
 }
 
 func TestIndexerEmitsProgressEveryTwentyFiveFiles(t *testing.T) {
-	db := newTestDB(t)
+	db := storetest.Open(t)
 	store := NewStore(db.DB)
 	git := newFakeIndexerGit(50)
 	ctx := context.Background()
@@ -156,7 +158,7 @@ func TestIndexerEmitsProgressEveryTwentyFiveFiles(t *testing.T) {
 }
 
 func TestIndexerCancellationLeavesRetryableErrorState(t *testing.T) {
-	db := newTestDB(t)
+	db := storetest.Open(t)
 	store := NewStore(db.DB)
 	git := newFakeIndexerGit(3)
 	ctx, cancel := context.WithCancel(context.Background())

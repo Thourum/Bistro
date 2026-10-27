@@ -16,17 +16,18 @@ import (
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
-	_ "github.com/mattn/go-sqlite3"
-
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestRepoLocationRecoverRepoPathAndToCache(t *testing.T) {
 	// Arrange
 	root := t.TempDir()
-	db := newRepoLocationMigratedDB(t)
-	store := store.NewRepoLocationStore(db.DB)
+	db := storetest.Open(t)
+	store := repolocation.New(db.DB)
 	missingPath := filepath.Join(root, "missing")
 	insertRepoWithLocation(t, db, "github:acme/api", "github", "acme", "api", "local", missingPath, nil)
 	if err := store.MarkDegraded(context.Background(), "github:acme/api", "missing", "path_missing", "folder not found"); err != nil {
@@ -184,20 +185,6 @@ func assertLocationEnvelope(t *testing.T, data map[string]any, repoID string, op
 	}
 }
 
-func newRepoLocationMigratedDB(t *testing.T) *store.DB {
-	t.Helper()
-	db, err := store.OpenDB(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	runner := store.NewMigrationRunner(nil, db.DB)
-	if err := runner.Run(context.Background()); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
-	return db
-}
-
 func insertRepoWithLocation(t *testing.T, db *store.DB, repoID, provider, owner, repo, source, localPath string, lastUsedAt *time.Time) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO repos (id, provider, owner, repo, watched, local_path, source, last_used_at, location_status) VALUES (?, ?, ?, ?, 1, ?, ?, ?, 'ok')`, repoID, provider, owner, repo, nullableString(localPath), nullableString(source), lastUsedAt)
@@ -260,7 +247,7 @@ func assertRowCount(t *testing.T, db *sql.DB, query string, args []any, want int
 	}
 }
 
-func assertLocationStatus(t *testing.T, store *store.RepoLocationStore, repoID, wantStatus, wantCode string) {
+func assertLocationStatus(t *testing.T, store *repolocation.Store, repoID, wantStatus, wantCode string) {
 	t.Helper()
 	location, err := store.Get(context.Background(), repoID)
 	if err != nil {

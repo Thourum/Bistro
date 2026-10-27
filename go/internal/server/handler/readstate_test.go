@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
@@ -16,21 +16,6 @@ type spyBroadcaster struct {
 
 func (s *spyBroadcaster) Broadcast(message interface{}) {
 	s.messages = append(s.messages, message)
-}
-
-func newReadStateTestDB(t *testing.T) *store.DB {
-	t.Helper()
-
-	db, err := store.OpenDB(":memory:")
-	if err != nil {
-		t.Fatalf("open test database: %v", err)
-	}
-	if err := store.NewMigrationRunner(nil, db.DB).Run(context.Background()); err != nil {
-		_ = db.Close()
-		t.Fatalf("migrate test database: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
 }
 
 func markPRsReadRequest(t *testing.T, prIDs []string) ws.InboundMessage {
@@ -71,7 +56,7 @@ func broadcastPayload(t *testing.T, message interface{}) map[string]interface{} 
 }
 
 func TestMarkPRsReadHandlerMarksPRsAndBroadcasts(t *testing.T) {
-	db := newReadStateTestDB(t)
+	db := storetest.Open(t)
 	startedAt := time.Now().UTC().Add(-time.Second)
 	broadcaster := &spyBroadcaster{}
 	handler := NewMarkPRsReadHandler(db, &mockCurrentUserReader{login: "alice", found: true}, broadcaster, testRepoLogger())
@@ -119,7 +104,7 @@ func TestMarkPRsReadHandlerMarksPRsAndBroadcasts(t *testing.T) {
 }
 
 func TestMarkPRsReadHandlerRejectsEmptyOrOversizedRequests(t *testing.T) {
-	db := newReadStateTestDB(t)
+	db := storetest.Open(t)
 	broadcaster := &spyBroadcaster{}
 	handler := NewMarkPRsReadHandler(db, &mockCurrentUserReader{login: "alice", found: true}, broadcaster, testRepoLogger())
 
@@ -134,7 +119,7 @@ func TestMarkPRsReadHandlerRejectsEmptyOrOversizedRequests(t *testing.T) {
 }
 
 func TestMarkPRsReadHandlerDeduplicatesPRIDs(t *testing.T) {
-	db := newReadStateTestDB(t)
+	db := storetest.Open(t)
 	broadcaster := &spyBroadcaster{}
 	handler := NewMarkPRsReadHandler(db, &mockCurrentUserReader{login: "alice", found: true}, broadcaster, testRepoLogger())
 
@@ -164,7 +149,7 @@ func TestMarkPRsReadHandlerDeduplicatesPRIDs(t *testing.T) {
 }
 
 func TestMarkPRsReadHandlerSkipsWithoutCurrentUser(t *testing.T) {
-	db := newReadStateTestDB(t)
+	db := storetest.Open(t)
 	broadcaster := &spyBroadcaster{}
 	handler := NewMarkPRsReadHandler(db, &mockCurrentUserReader{found: false}, broadcaster, testRepoLogger())
 
@@ -190,7 +175,7 @@ func TestMarkPRsReadHandlerSkipsWithoutCurrentUser(t *testing.T) {
 }
 
 func TestMarkPRsReadHandlerTimestampIsComparableWithPRUpdatedAt(t *testing.T) {
-	db := newReadStateTestDB(t)
+	db := storetest.Open(t)
 	updatedAt := time.Now().UTC().Add(-time.Minute)
 	if _, err := db.Exec(`INSERT INTO prs (
 		id, provider, owner, repo, number, title, author, state,

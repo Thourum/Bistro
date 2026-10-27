@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
 func TestCurrentPatchsetUsesLatestCurrentHeadNotBaseTip(t *testing.T) {
@@ -62,22 +64,6 @@ func TestListPatchsetFilesIsolatesPatchsetsAndCascades(t *testing.T) {
 	files, err = db.ListPatchsetFiles(ctx, prID, 1)
 	if err != nil || files == nil || len(files) != 0 {
 		t.Fatalf("deleted patchset files: got %v err=%v", files, err)
-	}
-}
-
-func TestDiffPatchIDRoundTrip(t *testing.T) {
-	db := newTestDB(t)
-	mustInsertPR(t, db, "pr-patch-id")
-	diffs := NewDiffStore(db.DB)
-	if err := diffs.SaveDiffs("pr-patch-id", []DiffFile{{FilePath: "a.go", Patch: "+added", PatchID: "fingerprint"}, {FilePath: "legacy.go"}}); err != nil {
-		t.Fatalf("save: %v", err)
-	}
-	files, err := diffs.GetDiffs("pr-patch-id")
-	if err != nil || len(files) != 2 {
-		t.Fatalf("get: files=%+v err=%v", files, err)
-	}
-	if files[0].PatchID != "fingerprint" || files[1].PatchID != "" {
-		t.Fatalf("patch IDs: got %+v", files)
 	}
 }
 
@@ -164,7 +150,7 @@ func TestMigration035BackfillsBaselineAndLegacyFingerprints(t *testing.T) {
 	if err != nil || len(patchsets) != 1 || patchsets[0].HasFingerprints || patchsets[0].MergeBaseSHA != "" {
 		t.Fatalf("legacy patchsets: %+v err=%v", patchsets, err)
 	}
-	files, err := NewDiffStore(db.DB).GetDiffs("pr-before-fingerprints")
+	files, err := storedb.New(db).ListDiffsForPR(ctx, "pr-before-fingerprints")
 	if err != nil || len(files) != 1 || files[0].PatchID != "" {
 		t.Fatalf("legacy diff fingerprint: %+v err=%v", files, err)
 	}

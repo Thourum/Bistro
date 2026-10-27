@@ -10,15 +10,16 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/scan"
-	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/repolocation"
+	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
 
 // newTestScanDevFolderHandler joins the worker and adapts its broadcast for the
 // existing repo-location assertions, while leaving synchronous validation intact.
-func newTestScanDevFolderHandler(t *testing.T, locations *store.RepoLocationStore, syncs chan<- string) ws.MessageHandler {
+func newTestScanDevFolderHandler(t *testing.T, locations *repolocation.Store, syncs chan<- string) ws.MessageHandler {
 	t.Helper()
 	responses := make(chan any, 1)
 	start, _, wait := NewScanDevFolderHandlers(ScanDevFolderDeps{
@@ -43,7 +44,7 @@ func newTestScanDevFolderHandler(t *testing.T, locations *store.RepoLocationStor
 }
 
 func TestScanCancelOnSameSocketPreservesDiscoveries(t *testing.T) {
-	database := newRepoLocationMigratedDB(t)
+	database := storetest.Open(t)
 	root := t.TempDir()
 	clone := filepath.Join(root, "api")
 	if err := createRepo(clone, "origin", "https://github.com/acme/api.git"); err != nil {
@@ -55,12 +56,12 @@ func TestScanCancelOnSameSocketPreservesDiscoveries(t *testing.T) {
 	syncs := make(chan string, 1)
 	server := ws.NewServer()
 	start, cancel, wait := NewScanDevFolderHandlers(ScanDevFolderDeps{
-		Context: ctx, Locations: store.NewRepoLocationStore(database.DB),
+		Context: ctx, Locations: repolocation.New(database.DB),
 		SyncTrigger: syncs, Broadcast: server.Broadcast, Log: testRepoLocationLogger(),
 		Scan: func(scanCtx context.Context, _ string) (scan.Result, error) {
 			close(entered)
 			<-scanCtx.Done()
-			return scan.Result{Found: []scan.Found{{Identity: git.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}, Partial: true}, nil
+			return scan.Result{Found: []scan.Found{{Identity: remote.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}, Partial: true}, nil
 		},
 	})
 	defer func() { stop(); wait() }()
@@ -139,7 +140,7 @@ func TestScanCancelOnSameSocketPreservesDiscoveries(t *testing.T) {
 func TestScanDevFolderContextErrorsPreserveDiscoveries(t *testing.T) {
 	for _, scanErr := range []error{context.Canceled, context.DeadlineExceeded} {
 		t.Run(scanErr.Error(), func(t *testing.T) {
-			database := newRepoLocationMigratedDB(t)
+			database := storetest.Open(t)
 			root := t.TempDir()
 			clone := filepath.Join(root, "api")
 			if err := createRepo(clone, "origin", "https://github.com/acme/api.git"); err != nil {
@@ -147,10 +148,10 @@ func TestScanDevFolderContextErrorsPreserveDiscoveries(t *testing.T) {
 			}
 			responses := make(chan any, 1)
 			start, _, wait := NewScanDevFolderHandlers(ScanDevFolderDeps{
-				Context: context.Background(), Locations: store.NewRepoLocationStore(database.DB),
+				Context: context.Background(), Locations: repolocation.New(database.DB),
 				Broadcast: func(response any) { responses <- response }, Log: testRepoLocationLogger(),
 				Scan: func(context.Context, string) (scan.Result, error) {
-					return scan.Result{Found: []scan.Found{{Identity: git.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}}, fmt.Errorf("walk interrupted: %w", scanErr)
+					return scan.Result{Found: []scan.Found{{Identity: remote.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}}, fmt.Errorf("walk interrupted: %w", scanErr)
 				},
 			})
 			defer wait()
@@ -161,7 +162,7 @@ func TestScanDevFolderContextErrorsPreserveDiscoveries(t *testing.T) {
 			if data["ok"] != true || data["partial"] != true || data["discovered"] != float64(1) {
 				t.Fatalf("unexpected partial response: %#v", response)
 			}
-			assertLocationStatus(t, store.NewRepoLocationStore(database.DB), "github:acme/api", "ok", "")
+			assertLocationStatus(t, repolocation.New(database.DB), "github:acme/api", "ok", "")
 		})
 	}
 }
@@ -169,7 +170,7 @@ func TestScanDevFolderContextErrorsPreserveDiscoveries(t *testing.T) {
 func TestScanDevFolderErrorsAreCorrelated(t *testing.T) {
 	for _, failure := range []string{"scan_failed", "persistence_failed"} {
 		t.Run(failure, func(t *testing.T) {
-			database := newRepoLocationMigratedDB(t)
+			database := storetest.Open(t)
 			if failure == "persistence_failed" {
 				if _, err := database.Exec("DROP TABLE repos"); err != nil {
 					t.Fatal(err)
@@ -178,7 +179,7 @@ func TestScanDevFolderErrorsAreCorrelated(t *testing.T) {
 			responses := make(chan any, 1)
 			syncs := make(chan string, 1)
 			start, _, wait := NewScanDevFolderHandlers(ScanDevFolderDeps{
-				Context: context.Background(), Locations: store.NewRepoLocationStore(database.DB), SyncTrigger: syncs,
+				Context: context.Background(), Locations: repolocation.New(database.DB), SyncTrigger: syncs,
 				Broadcast: func(response any) { responses <- response }, Log: testRepoLocationLogger(),
 				Scan: func(context.Context, string) (scan.Result, error) {
 					if failure == "scan_failed" {
@@ -205,8 +206,8 @@ func TestScanDevFolderErrorsAreCorrelated(t *testing.T) {
 }
 
 func TestScanDevFolderReplacementWaitsForPredecessor(t *testing.T) {
-	database := newRepoLocationMigratedDB(t)
-	locations := store.NewRepoLocationStore(database.DB)
+	database := storetest.Open(t)
+	locations := repolocation.New(database.DB)
 	root := t.TempDir()
 	clone := filepath.Join(root, "api")
 	if err := createRepo(clone, "origin", "https://github.com/acme/api.git"); err != nil {
@@ -238,7 +239,7 @@ func TestScanDevFolderReplacementWaitsForPredecessor(t *testing.T) {
 			if calls == 1 {
 				close(firstEntered)
 				<-scanCtx.Done()
-				return scan.Result{Found: []scan.Found{{Identity: git.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}}, scanCtx.Err()
+				return scan.Result{Found: []scan.Found{{Identity: remote.Identity{Provider: "github", Owner: "acme", Repo: "api"}, Path: clone}}}, scanCtx.Err()
 			}
 			secondEntered <- scanCtx
 			<-scanCtx.Done()
@@ -291,13 +292,13 @@ func TestScanDevFolderReplacementWaitsForPredecessor(t *testing.T) {
 func TestScanDevFolderShutdownJoinsAndRejectsStarts(t *testing.T) {
 	for _, shutdown := range []string{"run canceled", "wait called"} {
 		t.Run(shutdown, func(t *testing.T) {
-			database := newRepoLocationMigratedDB(t)
+			database := storetest.Open(t)
 			ctx, stop := context.WithCancel(context.Background())
 			defer stop()
 			entered := make(chan struct{}, 1)
 			responses := make(chan any, 2)
 			start, _, wait := NewScanDevFolderHandlers(ScanDevFolderDeps{
-				Context: ctx, Locations: store.NewRepoLocationStore(database.DB), Log: testRepoLocationLogger(),
+				Context: ctx, Locations: repolocation.New(database.DB), Log: testRepoLocationLogger(),
 				Broadcast: func(response any) { responses <- response },
 				Scan: func(scanCtx context.Context, _ string) (scan.Result, error) {
 					entered <- struct{}{}

@@ -2,11 +2,14 @@ package git
 
 import (
 	"testing"
+
+	"github.com/itterno/bistro/internal/git/clonecache"
+	"github.com/itterno/bistro/internal/git/diff"
 )
 
 func TestFullIntegration(t *testing.T) {
 	// Verify all components are available and compile
-	cache := NewCache()
+	cache := clonecache.New()
 	client := NewClient(cache)
 
 	if cache.Size() != 0 {
@@ -17,7 +20,7 @@ func TestFullIntegration(t *testing.T) {
 		t.Error("client should reference the cache")
 	}
 
-	entry := &RepoEntry{
+	entry := &clonecache.RepoEntry{
 		URL:       "https://github.com/test/repo",
 		LocalPath: "/tmp/test",
 		BaseSHA:   "abc",
@@ -40,28 +43,10 @@ func TestFullIntegration(t *testing.T) {
 	}
 }
 
-func TestCacheClearAll(t *testing.T) {
-	cache := NewCache()
-
-	cache.Set("https://github.com/org/repo1", "base1", "head1", &RepoEntry{URL: "https://github.com/org/repo1", BaseSHA: "base1", HeadSHA: "head1"})
-	cache.Set("https://github.com/org/repo2", "base2", "head2", &RepoEntry{URL: "https://github.com/org/repo2", BaseSHA: "base2", HeadSHA: "head2"})
-	cache.Set("https://github.com/org/repo3", "base3", "head3", &RepoEntry{URL: "https://github.com/org/repo3", BaseSHA: "base3", HeadSHA: "head3"})
-
-	if cache.Size() != 3 {
-		t.Errorf("expected 3 entries, got %d", cache.Size())
-	}
-
-	cache.ClearAll()
-
-	if cache.Size() != 0 {
-		t.Error("cache should be empty after ClearAll")
-	}
-}
-
 func TestAllTypesAvailable(t *testing.T) {
 	// Verify all types are accessible
-	var _ *RepoEntry
+	var _ *clonecache.RepoEntry
 	var _ *CloneResult
-	var _ *DiffFile
-	var _ *DiffResult
+	var _ *diff.File
+	var _ *diff.Result
 }

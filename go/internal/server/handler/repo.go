@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	storedb "github.com/itterno/bistro/internal/store/db"
@@ -120,7 +120,7 @@ func refreshRepoList(ctx context.Context, queries *storedb.Queries, prov provide
 	}
 	logger.Debug("provider returned repos", "count", len(repos), "duration_ms", time.Since(start).Milliseconds())
 	for _, repository := range repos {
-		identity := git.Identity{Provider: githubProvider, Owner: repository.Owner, Repo: repository.Name}
+		identity := remote.Identity{Provider: githubProvider, Owner: repository.Owner, Repo: repository.Name}
 		if err := queries.InsertDiscoveredRepo(ctx, storedb.InsertDiscoveredRepoParams{
 			ID: identity.ID(), Provider: githubProvider,
 			Owner: repository.Owner, Repo: repository.Name,
