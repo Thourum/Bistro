@@ -3,12 +3,17 @@ import { copyFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
+import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
+import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { PublisherGitHub } from '@electron-forge/publisher-github';
 import type { ForgeConfig } from '@electron-forge/shared-types';
+import { fromPromise, ServiceError } from '@thourum/fault';
+
+const IS_SLIM_BUILD = process.env.BISTRO_SLIM === '1';
 
 // Signing is opt-in: unsigned local builds stay possible when no identity is provided.
 const APPLE_SIGNING_IDENTITY = process.env.APPLE_SIGNING_IDENTITY;
@@ -114,6 +119,39 @@ const config: ForgeConfig = {
     afterExtract: [prepareMacBundle],
   },
   rebuildConfig: {},
+  hooks: {
+    packageAfterCopy: async (_config, buildPath) => {
+      if (!IS_SLIM_BUILD) return;
+      const assetsDir = join(
+        buildPath,
+        '.vite',
+        'renderer',
+        'main_window',
+        'assets',
+      );
+      const onFontError = (cause: unknown) =>
+        ServiceError(
+          'BUILD_ERROR',
+          'Failed to remove duplicate WOFF fonts',
+        ).withCause(cause);
+      // Fontsource lists WOFF2 first; Chromium never needs its WOFF fallback.
+      return fromPromise(readdir(assetsDir), onFontError)
+        .andThen((entries) =>
+          fromPromise(
+            Promise.all(
+              entries
+                .filter((name) => name.endsWith('.woff'))
+                .map((name) => rm(join(assetsDir, name))),
+            ),
+            onFontError,
+          ),
+        )
+        .match(
+          () => undefined,
+          (fault) => Promise.reject(fault),
+        );
+    },
+  },
   makers: [
     new MakerZIP({}, ['darwin', 'linux', 'win32']),
     // LZMA (ULMO, macOS 10.15+) instead of the zlib default: about 33 MB smaller.
@@ -131,6 +169,21 @@ const config: ForgeConfig = {
     }),
   ],
   plugins: [
+    ...(IS_SLIM_BUILD
+      ? [
+          new FusesPlugin({
+            version: FuseVersion.V1,
+            [FuseV1Options.RunAsNode]: false,
+            [FuseV1Options.EnableCookieEncryption]: true,
+            [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+            [FuseV1Options.EnableNodeCliInspectArguments]: false,
+            [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+            [FuseV1Options.OnlyLoadAppFromAsar]: true,
+            // Vite's packaged module scripts still load via file:// (main/window.ts).
+            [FuseV1Options.GrantFileProtocolExtraPrivileges]: true,
+          }),
+        ]
+      : []),
     new AutoUnpackNativesPlugin({}),
     new VitePlugin({
       build: [

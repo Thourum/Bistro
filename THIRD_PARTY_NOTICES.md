@@ -490,7 +490,7 @@ Source: `electron/package.json` and `pnpm-lock.yaml` (production dependencies on
 - zod 4.4.3
 - zwitch 2.0.4
 
-### ISC (45)
+### ISC (44)
 
 - @ungap/structured-clone 1.3.2
 - d3 7.9.0
@@ -534,7 +534,6 @@ Source: `electron/package.json` and `pnpm-lock.yaml` (production dependencies on
 - semver 7.8.5
 - signal-exit 4.1.0
 - split2 4.2.0
-- ts-deepmerge 7.0.3
 - which 2.0.2
 - yaml 2.9.0
 
