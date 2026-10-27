@@ -367,7 +367,7 @@ func (o *Orchestrator) notifyExpertiseHook(ctx context.Context, pr *provider.PR,
 	if o.expertise == nil || o.resolveRepoPath == nil || pr == nil {
 		return
 	}
-	repoID := pr.Provider + ":" + pr.Owner + "/" + pr.Repo
+	repoID := git.Identity{Provider: pr.Provider, Owner: pr.Owner, Repo: pr.Repo}.ID()
 	repoPath, ok := o.resolveRepoPath(repoID)
 	if !ok || repoPath == "" {
 		return

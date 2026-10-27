@@ -9,12 +9,13 @@ export function focusedExpertisePR(
   routedPrId: string | undefined,
   selectedPRId: string | undefined,
 ): PR | undefined {
-  const prId = routedPrId ?? selectedPRId;
+  const prId = routedPrId?.toLowerCase() ?? selectedPRId;
   return prId === undefined ? undefined : prs.find((pr) => pr.id === prId);
 }
 
+// Matches the engine's lowercase GitHub repo IDs (git.Identity.ID).
 export function repoIdForPR(pr: PR): string {
-  return `${pr.provider}:${pr.owner}/${pr.repo}`;
+  return `${pr.provider}:${pr.owner}/${pr.repo}`.toLowerCase();
 }
 
 export function formatWhy(expert: ExpertiseExpert): string {

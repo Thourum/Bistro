@@ -54,7 +54,7 @@ func collectReviewQueue(requested, recent []*gh.Issue) (*provider.ReviewQueue, e
 		Requested: []provider.RequestedRepo{}, RecentlyReviewed: []string{},
 		Repositories: []*provider.Repo{},
 	}
-	// Case-insensitive keys merge variants without changing GitHub's first spelling.
+	// Canonical IDs merge repository case variants.
 	repositories := make(map[string]string)
 	counts := make(map[string]int)
 	for _, issue := range requested {
@@ -109,7 +109,7 @@ func reviewQueueRepository(issue *gh.Issue) (string, *provider.Repo, error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("parse search repository identity: %w", err)
 	}
-	owner, name = identity.Owner, identity.Repo
+	owner, name = strings.ToLower(identity.Owner), strings.ToLower(identity.Repo)
 	return identity.ID(), &provider.Repo{Owner: owner, Name: name, FullName: owner + "/" + name}, nil
 }
 

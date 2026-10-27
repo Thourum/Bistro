@@ -338,8 +338,10 @@ func TestMigration016_UpgradesOldPatchsetsHeadOnlyIdentity(t *testing.T) {
 		watched  INTEGER NOT NULL DEFAULT 0,
 		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 	)`)
-	mustExec(t, db, `CREATE TABLE prs (id TEXT PRIMARY KEY)`)
+	mustExec(t, db, `CREATE TABLE prs (id TEXT PRIMARY KEY, owner TEXT NOT NULL DEFAULT '', repo TEXT NOT NULL DEFAULT '', repo_id TEXT NOT NULL DEFAULT '')`)
 	mustExec(t, db, `INSERT INTO prs (id) VALUES ('p-old')`)
+	mustExec(t, db, `CREATE TABLE files (id TEXT PRIMARY KEY, pr_id TEXT NOT NULL)`)
+	mustExec(t, db, `CREATE TABLE review_threads (id TEXT PRIMARY KEY, pr_id TEXT NOT NULL)`)
 	mustExec(t, db, `CREATE TABLE pr_diffs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		pr_id TEXT NOT NULL,
@@ -455,5 +457,51 @@ func TestMigration033AddsPRMentioned(t *testing.T) {
 	cols := tableColumns(t, db, "prs")
 	if !cols["mentioned"] {
 		t.Error("prs missing column mentioned")
+	}
+}
+
+func TestMigrations(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	runner := NewMigrationRunner(log, db.DB)
+
+	if err := runner.Run(context.Background()); err != nil {
+		t.Fatalf("migration failed: %v", err)
+	}
+
+	tables := []string{"prs", "comments", "files", "schema_migrations", goose.DefaultTablename}
+	for _, table := range tables {
+		var count int
+		err = db.QueryRow(
+			"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+			table,
+		).Scan(&count)
+		if err != nil || count == 0 {
+			t.Errorf("%s table not created", table)
+		}
+	}
+}
+
+func TestMigrationsIdempotent(t *testing.T) {
+	db, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	runner := NewMigrationRunner(log, db.DB)
+
+	ctx := context.Background()
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("first Run() failed: %v", err)
+	}
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("second Run() failed (not idempotent): %v", err)
 	}
 }
