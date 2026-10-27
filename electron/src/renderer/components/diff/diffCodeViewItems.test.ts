@@ -63,6 +63,9 @@ function buildItems(
   return buildCodeViewItems({
     parsedCodeViewFiles: parsedFiles,
     threads: [],
+    drafts: [],
+    headSha: '',
+    lineComment: null,
     commentsByThread: new Map(),
     activeAnnotationKey: null,
     replyingToThreadId: null,
@@ -112,6 +115,9 @@ describe('buildCodeViewItems', () => {
     ]).parsedFiles;
     const options = {
       threads: [],
+      drafts: [],
+      headSha: '',
+      lineComment: null,
       commentsByThread: new Map(),
       activeAnnotationKey: null,
       replyingToThreadId: null,

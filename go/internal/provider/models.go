@@ -125,3 +125,22 @@ type Check struct {
 	URL       string
 	UpdatedAt time.Time
 }
+
+// ReviewComment is one inline comment inside a submitted review. StartLine 0
+// means a single-line comment; a range covers StartLine..Line on Side.
+type ReviewComment struct {
+	Path      string
+	Side      string // "LEFT" (base) or "RIGHT" (head)
+	StartLine int
+	Line      int
+	Body      string
+}
+
+// ReviewSubmission is one pull-request review: an event, an optional body, and
+// inline comments anchored to CommitID.
+type ReviewSubmission struct {
+	Event    string // "APPROVE", "REQUEST_CHANGES" or "COMMENT"
+	Body     string
+	CommitID string
+	Comments []ReviewComment
+}

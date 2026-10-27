@@ -373,6 +373,21 @@ export function threadLifecycle(thread: ReviewThread): ThreadLifecycle {
   return 'open';
 }
 
+/** A pending line comment the engine stores until the review is submitted. */
+export const reviewDraftSchema = z.object({
+  id: z.string(),
+  pr_id: z.string(),
+  path: z.string(),
+  side: z.enum(['LEFT', 'RIGHT']),
+  /** 0 for a single-line comment; otherwise the first line of the range. */
+  start_line: z.number().int().nonnegative(),
+  line: z.number().int().positive(),
+  body: z.string(),
+  commit_sha: z.string(),
+  created_at: z.string(),
+});
+export type ReviewDraft = z.infer<typeof reviewDraftSchema>;
+
 /**
  * CI check status.
  */
@@ -397,7 +412,12 @@ export const ciCheckSchema = z.object({
  * A PR action in progress.
  */
 export interface PendingAction {
-  type: 'approve' | 'request_changes' | 'post_comment' | 'reply_comment';
+  type:
+    | 'approve'
+    | 'request_changes'
+    | 'post_comment'
+    | 'reply_comment'
+    | 'submit_review';
   prId: string;
   startedAt: number;
 }
@@ -406,7 +426,12 @@ export interface PendingAction {
  * Result of a completed PR action.
  */
 export interface ActionResult {
-  type: 'approve' | 'request_changes' | 'post_comment' | 'reply_comment';
+  type:
+    | 'approve'
+    | 'request_changes'
+    | 'post_comment'
+    | 'reply_comment'
+    | 'submit_review';
   prId: string;
   success: boolean;
   message: string;

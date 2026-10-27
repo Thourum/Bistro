@@ -1,4 +1,5 @@
 import type { Store } from '@tanstack/store';
+import { draftIdFromKey } from '../components/diff/diffAnnotations';
 import type {
   OverlayContextValue,
   OverlayKind,
@@ -16,6 +17,7 @@ import {
 } from '../services/firstRunRail';
 import { cycleNavigationStyle } from '../services/navigationStyle';
 import { updateOnboardingSelection } from '../services/onboardingSync';
+import { approvePR } from '../services/prActions';
 import {
   cancelSignIn,
   copySignInLink,
@@ -26,6 +28,7 @@ import {
 import { appStore } from '../store';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import type { RouteBase } from './keybindings';
+import { LINE_COMMENT_ACTIONS } from './lineCommentActions';
 import { createLogger } from './logger';
 import {
   moveOnboardingCursor,
@@ -33,6 +36,7 @@ import {
   toggleFocusedOnboardingRepo,
 } from './onboardingRepos';
 import { openUrlInBrowser } from './openUrl';
+import { REVIEW_ACTIONS } from './reviewActions';
 
 export interface KeyActionContext {
   store: Store<UIState>;
@@ -90,8 +94,25 @@ function moveInlineDiffComment(context: KeyActionContext, delta: 1 | -1): void {
   }));
 }
 
+/** The detail page owns the PR comment composers; the diff page jumps there. */
+function openDetailComposer(
+  context: KeyActionContext,
+  confirmingAction: 'comment' | 'request_changes',
+): void {
+  context.store.setState((state) => ({ ...state, confirmingAction }));
+  if (confirmingAction === 'comment') recordFirstRunAction('detail.comment');
+  if (context.routeBase === 'diff' && context.prId !== undefined)
+    void router.navigate({ to: '/prs/$prId', params: { prId: context.prId } });
+}
+
 function startInlineDiffReply(context: KeyActionContext): void {
   if (context.routeBase !== 'diff') return;
+  if (
+    draftIdFromKey(context.store.state.activeInlineCommentThreadId) !== null
+  ) {
+    emitAppEvent('bistro:diff:edit-draft');
+    return;
+  }
   const active = context.store.state.activeInlineCommentThreadId;
   if (
     active === null ||
@@ -126,6 +147,7 @@ function openHelp(context: KeyActionContext): void {
 }
 
 function handleEscape(context: KeyActionContext): void {
+  if (context.store.state.isRecordingKeybinding) return;
   const { activeOverlay, routeBase } = context;
   if (activeOverlay === 'search') {
     context.overlays.closeSearch({ clearQuery: true });
@@ -247,15 +269,6 @@ function viewDiff(context: KeyActionContext): void {
     params: { prId: context.prId },
     search: { file: diffFileKeys[selectedFileIndex] ?? '', side: 'right' },
   });
-}
-
-function toggleApproval(context: KeyActionContext): void {
-  const confirmingAction =
-    context.store.state.confirmingAction === 'approve'
-      ? 'approve_confirmed'
-      : 'approve';
-  context.store.setState((state) => ({ ...state, confirmingAction }));
-  recordFirstRunAction('detail.approve');
 }
 
 function toggleSinceLastReview(context: KeyActionContext): void {
@@ -461,19 +474,12 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
       commentMinSeverity: null,
       commentHumanOnly: false,
     })),
-  'detail.approve': toggleApproval,
-  'detail.comment': (context) => {
-    context.store.setState((state) => ({
-      ...state,
-      confirmingAction: 'comment',
-    }));
-    recordFirstRunAction('detail.comment');
+  'detail.approve': (context) => {
+    if (context.prId !== undefined) approvePR(context.prId);
   },
+  'detail.comment': (context) => openDetailComposer(context, 'comment'),
   'detail.requestChanges': (context) =>
-    context.store.setState((state) => ({
-      ...state,
-      confirmingAction: 'request_changes',
-    })),
+    openDetailComposer(context, 'request_changes'),
   'diff.sinceLastReview': toggleSinceLastReview,
   'diff.interdiff': toggleInterdiff,
   'diff.toggleStyle': (context) =>
@@ -526,6 +532,9 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'threads.prev': () => emitAppEvent('bistro:threads:prev'),
   'threads.resolve': () => emitAppEvent('bistro:threads:resolve'),
   'threads.unresolve': () => emitAppEvent('bistro:threads:unresolve'),
+  'diff.lineComment': () => emitAppEvent('bistro:diff:line-comment'),
+  ...LINE_COMMENT_ACTIONS,
+  ...REVIEW_ACTIONS,
 };
 
 /** Find the handler for a configured binding; undefined means the action is not registered. */

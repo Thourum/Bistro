@@ -12,11 +12,11 @@ import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useExpertise } from '../hooks/useExpertise';
 import { usePatchsets } from '../hooks/usePatchsets';
 import { usePRHydration } from '../hooks/usePRHydration';
+import { useReviewDrafts } from '../hooks/useReviewDrafts';
 import { useStore } from '../hooks/useStore';
 import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { useOverlays } from '../overlays/OverlayContext';
 import {
-  approvePR,
   clearActionResult,
   postComment,
   requestChanges,
@@ -31,6 +31,7 @@ import {
   Description,
   FileList,
   Header,
+  PendingDraftsNotice,
   PRCommentComposer,
   RecentComments,
 } from './PRDetailSections';
@@ -79,6 +80,8 @@ export function PRDetailPage() {
   const isAwaitingHydration = pr?.hydrated === 0;
   const detailPrId = isAwaitingHydration ? undefined : pr?.id;
   const { patchsets } = usePatchsets(detailPrId);
+  useReviewDrafts(detailPrId);
+  const reviewDrafts = useStore(appStore, (s: UIState) => s.reviewDrafts);
   const { expertise } = useExpertise(detailPrId);
   const expertiseStatus = useStore(appStore, (s: UIState) =>
     pr !== undefined ? s.expertiseRepoStatuses?.[repoIdForPR(pr)] : undefined,
@@ -117,12 +120,6 @@ export function PRDetailPage() {
     // Read state is local-only and silently drops when the WebSocket is down.
     void markPRsRead([prId]);
   }, [prId]);
-
-  useEffect(() => {
-    if (confirmingAction !== 'approve_confirmed' || selectedPrId === undefined)
-      return;
-    approvePR(selectedPrId);
-  }, [confirmingAction, selectedPrId]);
 
   const { files, comments, ciChecks, stats } = usePRDetailData(
     pr,
@@ -201,6 +198,8 @@ export function PRDetailPage() {
           actionResult={actionResult}
           onDismiss={clearActionResult}
         />
+
+        <PendingDraftsNotice drafts={reviewDrafts} headSha={pr.head_sha} />
 
         <ExpertiseNudge repoId={repoIdForPR(pr)} />
 

@@ -5,14 +5,15 @@ import {
   focusedExpertisePR,
   formatWhy,
   isExpertisePayloadForPR,
+  repoIdForPR,
   touchesYouCount,
 } from './expertise';
 
 const makePR = (overrides: Partial<PR>): PR => ({
   id: overrides.id ?? 'pr-1',
   provider: 'github',
-  owner: 'acme',
-  repo: 'api',
+  owner: overrides.owner ?? 'acme',
+  repo: overrides.repo ?? 'api',
   number: 1,
   title: 'Test PR',
   body: null,
@@ -53,6 +54,12 @@ const makeExpert = (overrides: Partial<ExpertiseExpert>): ExpertiseExpert => ({
 });
 
 describe('expertise helpers', () => {
+  it('builds the lowercase engine repo id from a GitHub-cased PR', () => {
+    expect(repoIdForPR(makePR({ owner: 'Thourum', repo: 'Testing' }))).toBe(
+      'github:thourum/testing',
+    );
+  });
+
   it('counts PR rows that touch your code', () => {
     const prs = [
       makePR({ id: 'pr-1', touches_you: true }),
@@ -69,6 +76,17 @@ describe('expertise helpers', () => {
     expect(focusedExpertisePR(prs, 'pr-focused', 'pr-list-row')?.id).toBe(
       'pr-focused',
     );
+  });
+
+  it('selects the lowercase routed PR over the cursor PR for a mixed-case route ID', () => {
+    const prs = [
+      makePR({ id: 'pr-list-row' }),
+      makePR({ id: 'github:acme/api#1' }),
+    ];
+
+    expect(
+      focusedExpertisePR(prs, 'github:Acme/API#1', 'pr-list-row')?.id,
+    ).toBe('github:acme/api#1');
   });
 
   it('selects the cursor PR by its projected id instead of its row index', () => {

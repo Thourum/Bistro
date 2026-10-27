@@ -98,8 +98,8 @@ and the diff; diff-only file and comment navigation is listed separately below.
 | Start PR comment | `c` | `Ctrl+c Ctrl+c` | `c` |
 | Reply from detail | `r` | `Ctrl+c Ctrl+r` | `r` |
 | Open review threads | `g u` | `Ctrl+c Ctrl+t` | `t` |
-| Initiate approval (asks for confirmation) | `a a` | `Ctrl+c Ctrl+a` | `a` |
-| Request changes | `R` | `Ctrl+c Ctrl+w` | `R` |
+| Approve (includes pending drafts) | `a a` | `Ctrl+c Ctrl+a` | `a a` |
+| Request changes (includes pending drafts) | `R` | `Ctrl+c Ctrl+w` | `R` |
 | Dismiss nits + info | `d n` | `Ctrl+c Ctrl+d n` | `d n` |
 | Dismiss bot comments | `d b` | `Ctrl+c Ctrl+d b` | `d b` |
 | Undo last dismissal | `u` | `Ctrl+/` / `Ctrl+x u` | `Mod+z` |
@@ -115,14 +115,17 @@ and the diff; diff-only file and comment navigation is listed separately below.
 | Scroll left / down / up / right | `h` / `j` / `k` / `l`, or `←` / `↓` / `↑` / `→` | `Ctrl+b` / `Ctrl+n` / `Ctrl+p` / `Ctrl+f`, or `←` / `↓` / `↑` / `→` | `←` / `↓` / `↑` / `→` |
 | Page down / up | `Ctrl+d` / `Ctrl+u` | `Ctrl+v` / `Alt+v` | `PageDown` / `PageUp` |
 | Jump to top / bottom | `0` / `$` | `Alt+Shift+,` / `Alt+Shift+.` | `Home` / `End` |
+| Resolve / unresolve the active thread (in detail, select one in the diff first) | `x` | `Ctrl+c Ctrl+x` | `x` |
 
 These shortcuts apply only in the diff:
 
 | Action | Vim | Emacs | Standard |
 | --- | --- | --- | --- |
 | Next / previous file | `J` / `K` | `Ctrl+Alt+n` / `Ctrl+Alt+p` | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
-| Next / previous inline comment | `n` / `p` | `Alt+n` / `Alt+p` | `n` / `p` |
-| Reply to selected inline comment | `Enter` | `Enter` | `Enter` |
+| Next / previous inline comment or draft | `n` / `p` | `Alt+n` / `Alt+p` | `n` / `p` |
+| Edit selected draft / reply to selected inline comment | `Enter` | `Enter` | `Enter` |
+| Comment on a line (opens line-comment mode) | `c` | `Alt+;` | `c` |
+| Delete selected draft | `d d` | `Ctrl+c Ctrl+k` | `d d` |
 | Since last review: show only files changed since your last review | `s` | `Ctrl+c Ctrl+l` | `s` |
 | Interdiff: the current file since your last review | `i` | `Ctrl+c Ctrl+i` | `i` |
 | Toggle side-by-side diff | `S` | `Ctrl+c Ctrl+s` | `S` |
@@ -130,6 +133,28 @@ These shortcuts apply only in the diff:
 | Collapse / expand file | `z` | `Tab` | `z` |
 | Hide whitespace-only hunks | `w` | `Ctrl+c Ctrl+w` | `w` |
 | Mark current file viewed | `v` | `Ctrl+c Ctrl+v` | `v` |
+
+## Comment mode
+
+Press the line-comment key in the diff (`c`, or `Alt+;` in Emacs) to enter
+line-comment mode. Cursor keys apply while the composer is closed; `Enter` opens
+it for typing. Select saved drafts with next / previous inline comment in the
+diff, then `Enter` to edit or delete with the delete-draft key.
+
+| Action | Vim | Emacs | Standard |
+| --- | --- | --- | --- |
+| Next / previous line | `j` / `k` | `Ctrl+n` / `Ctrl+p` | `↓` / `↑` |
+| Extend range down / up (within one hunk and side) | `J` / `K` | `Ctrl+Shift+n` / `Ctrl+Shift+p` | `Shift+↓` / `Shift+↑` |
+| Old / new side (split view) | `h` / `l` | `Ctrl+b` / `Ctrl+f` | `←` / `→` |
+| Write comment | `Enter` | `Enter` | `Enter` |
+| Save draft | `Mod+Enter` | `Mod+Enter` | `Mod+Enter` |
+| Exit comment mode | `Esc` | `Esc` / `Ctrl+g` | `Esc` |
+
+`Mod` means `Cmd` on macOS and `Ctrl` elsewhere. Drafts stay local until you
+approve, request changes, or choose **Submit review** in the command palette.
+Review submissions are not queued for offline replay; failed submissions keep
+unsubmitted drafts. **Discard drafts** in the palette removes all pending drafts
+for the current PR.
 
 ## Review threads overlay
 
@@ -158,8 +183,21 @@ onboarding unless a button has focus.
 
 Open settings with `Cmd+,` / `Ctrl+,` or run `settings` in the command palette
 (`:`, `Alt+x`, or `Mod+k`, depending on your style). **Settings → Keyboard** shows
-the style picker above your shortcuts. Keybinding overrides are stored locally
-in `settings.json` as action ids mapped to key arrays:
+the style picker above your shortcuts. To rebind one:
+
+1. Move to an action with `Tab` and press `Enter`.
+2. Type the new key or chord (for example `g` then `x`). `Backspace` removes the
+   last step.
+3. Press `Enter` to save, or `Esc` to cancel.
+
+Press `Backspace` on a customized action to restore your style's default. A key
+that would collide with another binding active on the same screen is rejected,
+and the message names the action that already uses it.
+
+### Advanced: settings.json
+
+Overrides are stored locally in `settings.json` as action ids mapped to key
+arrays. You can also edit them there:
 
 ```json
 {

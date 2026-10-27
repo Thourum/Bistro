@@ -1,5 +1,5 @@
 import type { CodeViewHandle } from '@pierre/diffs/react';
-import type { ReviewThread } from '../../types';
+import type { DiffAnnotationMeta } from './diffAnnotations';
 import {
   findUnrenderableDiffFile,
   type UnrenderableDiffFile,
@@ -10,7 +10,7 @@ export interface PendingScrollFileId {
 }
 
 export function scrollToCodeViewFile(
-  handle: CodeViewHandle<ReviewThread, unknown> | null,
+  handle: CodeViewHandle<DiffAnnotationMeta, unknown> | null,
   id: string,
   align: 'start' | 'nearest' = 'start',
 ): void {
@@ -18,7 +18,7 @@ export function scrollToCodeViewFile(
 }
 
 export function requestSelectedFileScroll(
-  handle: CodeViewHandle<ReviewThread, unknown> | null,
+  handle: CodeViewHandle<DiffAnnotationMeta, unknown> | null,
   pendingScrollFileIdRef: PendingScrollFileId,
   id: string,
   unrenderableFiles: readonly UnrenderableDiffFile[],

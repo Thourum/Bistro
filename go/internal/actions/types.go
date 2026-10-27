@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/itterno/bistro/internal/provider"
 )
 
 // ActionCommand defines the command type
@@ -22,6 +24,15 @@ const (
 	ResolveThreadCommand ActionCommand = "resolve_thread"
 	// UnresolveThreadCommand reopens a review thread.
 	UnresolveThreadCommand ActionCommand = "unresolve_thread"
+	// SubmitReviewCommand submits one review carrying the user's line-comment drafts.
+	SubmitReviewCommand ActionCommand = "submit_review"
+)
+
+// Review events for submit_review, matching GitHub's CreateReview event values.
+const (
+	ReviewEventApprove        = "APPROVE"
+	ReviewEventRequestChanges = "REQUEST_CHANGES"
+	ReviewEventComment        = "COMMENT"
 )
 
 // isNonIdempotent reports whether a given action can produce duplicate
@@ -32,11 +43,12 @@ const (
 //   - reply_comment    → each call creates a new review-thread reply.
 //   - request_changes  → each call creates a new review submission.
 //   - approve          → uses CreateReview; each call creates a new review record.
+//   - submit_review    → each call creates a new review.
 //   - resolve_thread, unresolve_thread are idempotent: retrying them
 //     when the previous attempt is unknown is safe.
 func (a ActionCommand) isNonIdempotent() bool {
 	switch a {
-	case PostCommentCommand, ReplyCommentCommand, RequestChangesCommand, ApproveCommand:
+	case PostCommentCommand, ReplyCommentCommand, RequestChangesCommand, ApproveCommand, SubmitReviewCommand:
 		return true
 	}
 	return false
@@ -45,7 +57,7 @@ func (a ActionCommand) isNonIdempotent() bool {
 // ActionRequest represents a user-requested PR action
 type ActionRequest struct {
 	PRID   string        // "github:owner/repo:number"
-	Action ActionCommand // approve, request_changes, post_comment, resolve_thread, unresolve_thread
+	Action ActionCommand // approve, request_changes, post_comment, resolve_thread, unresolve_thread, submit_review
 	Body   string        // approval comment, change message, or thread node ID for resolve/unresolve
 	Line   int           // for post_comment: which line (0 = general comment)
 	// InReplyTo is the existing review-comment ID for reply_comment. GitHub accepts
@@ -55,6 +67,11 @@ type ActionRequest struct {
 	// a thread instead of a concrete comment. The sync orchestrator resolves it to
 	// InReplyTo before provider execution or queueing.
 	ThreadID string
+	// ReviewEvent, CommitID and ReviewComments carry a submit_review request.
+	// The sync orchestrator fills CommitID/ReviewComments from stored drafts.
+	ReviewEvent    string
+	CommitID       string
+	ReviewComments []provider.ReviewComment
 }
 
 // ResolveThreadPayload is JSON-serialised into ActionQueue.payload for
@@ -103,6 +120,20 @@ func (ar *ActionRequest) Validate() error {
 	case ResolveThreadCommand, UnresolveThreadCommand:
 		if ar.Body == "" {
 			return fmt.Errorf("body (thread node ID) is required for %s", ar.Action)
+		}
+		return nil
+	case SubmitReviewCommand:
+		switch ar.ReviewEvent {
+		case ReviewEventApprove, ReviewEventComment:
+		case ReviewEventRequestChanges:
+			if ar.Body == "" {
+				return fmt.Errorf("body is required for submit_review with %s", ReviewEventRequestChanges)
+			}
+		default:
+			return fmt.Errorf("invalid review event %q for submit_review", ar.ReviewEvent)
+		}
+		if len(ar.ReviewComments) > 0 && ar.CommitID == "" {
+			return fmt.Errorf("commit id is required for submit_review with comments")
 		}
 		return nil
 	default:
@@ -170,7 +201,9 @@ var transientErrorKeywords = [...]string{
 // Only transient errors (rate limit, timeout, 5xx, network) are recoverable.
 // Permanent errors (auth, not found, validation) are not retried.
 func (ar *ActionResult) IsRecoverable() bool {
-	if ar.Success || ar.Error == "" {
+	// An ambiguous result may carry a transient cause, but retrying it could
+	// repeat a mutation the provider already applied.
+	if ar.Success || ar.Error == "" || ar.IsAmbiguousRemoteSuccess() {
 		return false
 	}
 

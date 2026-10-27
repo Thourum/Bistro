@@ -189,7 +189,7 @@ Everything left between here and FOSS v1.0, in rough dependency order. Done work
 - [ ] Security gates pass: `govulncheck` and `pnpm audit --prod` currently fail (reachable Go vulns in `go/`; 1 critical in `electron/` via `seroval`). Fix and raise `PNPM_AUDIT_LEVEL` to `high` in the release workflow
 - [ ] macOS signing + notarization (secrets not yet configured; alpha ships unsigned); decide auto-update hosting (open question #5)
 - [ ] Windows MSI, Linux AppImage/`.deb`, Homebrew cask (7.2)
-- [ ] Post *new* line-level review comments (`PostReviewComment` with path/commitSHA/side) — replies already work (1.3)
+- [ ] Post *new* line-level review comments (`PostReviewComment` with path/commitSHA/side) — draft-based line comments shipped 2026-10-23 via `SubmitReview` / `CreateReview` (1.3); direct `PostReviewComment` remains unimplemented
 - [x] Former range-diff handler wiring blocker superseded (2026-10-23): patch-ID triage and go-git interdiffs shipped; `s` no longer falls back after an observed force-push when comparable fingerprints exist (2.1/2.2)
 
 **Phase 3 — classification (implemented 2026-07-12, the wedge)**

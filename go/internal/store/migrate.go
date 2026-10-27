@@ -22,11 +22,14 @@ const migrationsDir = "migrations"
 // predate newer migrations, and marking them applied would silently skip
 // them. Bump this only together with new checks in reconciledSchemaVersion.
 const (
-	reconcileBaselineVersion    int64 = 35
-	preHydrationSchemaVersion   int64 = 31
-	preMentionedSchemaVersion   int64 = 32
-	preReadStateSchemaVersion   int64 = 33
-	preFingerprintSchemaVersion int64 = 34
+	// Repo-ID folding changes data, so table presence cannot prove it ran.
+	reconcileBaselineVersion     int64 = 35
+	preHydrationSchemaVersion    int64 = 31
+	preMentionedSchemaVersion    int64 = 32
+	preReadStateSchemaVersion    int64 = 33
+	preFingerprintSchemaVersion  int64 = 34
+	repoIdentityMigrationVersion int64 = 36
+	reviewDraftsMigrationVersion int64 = 37
 )
 
 //go:embed migrations/*.sql
@@ -69,10 +72,34 @@ func (mr *MigrationRunner) Run(ctx context.Context) error {
 	if err := repairMalformedReadStateSchema(ctx, mr.db); err != nil {
 		return fmt.Errorf("repair pr_read_state schema: %w", err)
 	}
+	if err := mr.repairLegacyReviewDraftsVersion(ctx); err != nil {
+		return fmt.Errorf("repair legacy review draft migration version: %w", err)
+	}
 
 	mr.log.Debug("running embedded goose migrations")
 	if err := mr.runGooseProvider(ctx, migrationFS); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (mr *MigrationRunner) repairLegacyReviewDraftsVersion(ctx context.Context) error {
+	hasDrafts, err := tableExists(ctx, mr.db, "review_drafts")
+	if err != nil {
+		return fmt.Errorf("check review_drafts table: %w", err)
+	}
+	if !hasDrafts {
+		return nil
+	}
+
+	// Before the branches merged, version 36 also meant review_drafts. Replay
+	// canonical 36 before 37; neither migration removes draft text. One statement
+	// clears every ambiguous history row atomically, leaving other versions alone.
+	query := fmt.Sprintf(`DELETE FROM %s WHERE version_id = ?
+		AND NOT EXISTS (SELECT 1 FROM %s WHERE version_id >= ? AND is_applied = 1)`,
+		goose.DefaultTablename, goose.DefaultTablename)
+	if _, err := mr.db.ExecContext(ctx, query, repoIdentityMigrationVersion, reviewDraftsMigrationVersion); err != nil {
+		return fmt.Errorf("clear ambiguous version %d: %w", repoIdentityMigrationVersion, err)
 	}
 	return nil
 }

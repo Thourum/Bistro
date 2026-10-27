@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	gh "github.com/google/go-github/v84/github"
 	"github.com/itterno/bistro/internal/provider"
@@ -25,9 +26,9 @@ func (c *Client) ListUserRepos(ctx context.Context) ([]*provider.Repo, error) {
 
 		for _, r := range repos {
 			allRepos = append(allRepos, &provider.Repo{
-				Owner:    r.GetOwner().GetLogin(),
-				Name:     r.GetName(),
-				FullName: r.GetFullName(),
+				Owner:    strings.ToLower(r.GetOwner().GetLogin()),
+				Name:     strings.ToLower(r.GetName()),
+				FullName: strings.ToLower(r.GetFullName()),
 				Private:  r.GetPrivate(),
 			})
 		}

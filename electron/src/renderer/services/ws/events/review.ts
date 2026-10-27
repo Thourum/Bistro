@@ -2,6 +2,7 @@ import { Fault, fromThrowable, type Result } from '@thourum/fault';
 import { appStore } from '../../../store';
 import type { WSInboundMessage } from '../../../types/wsSchemas';
 import { createLogger } from '../../../utils/logger';
+import { loadDrafts } from '../../reviewDrafts';
 
 const log = createLogger('WebSocket');
 
@@ -52,4 +53,14 @@ export function handleCIStatusChanged(): void {
     ...state,
     prListRevision: state.prListRevision + 1,
   }));
+}
+
+/** Reloads drafts when the engine changed the shown PR's drafts. */
+export function handleDraftsChanged({
+  data,
+}: Readonly<WSInboundMessage<'DRAFTS_CHANGED'>>): void {
+  if (appStore.state.reviewDraftsPrId !== data.pr_id) return;
+  void loadDrafts(data.pr_id).mapErr((fault) =>
+    log.warn({ err: fault.message }, 'failed to reload review drafts'),
+  );
 }

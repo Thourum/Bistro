@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/itterno/bistro/internal/classify"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/provider"
 )
 
@@ -37,7 +38,7 @@ func (w *Writer) writePRRow(ctx context.Context, tx *sql.Tx, pr *provider.PR, mo
 		pr.Author, pr.State, pr.CreatedAt, pr.UpdatedAt, pr.MergedAt, pr.BaseBranch,
 		pr.HeadBranch, pr.BaseSHA, pr.HeadSHA, pr.CommentCount, pr.CIStatus,
 		pr.Draft, pr.ReviewStatus, pr.ApprovedBy, pr.ChangesRequestedBy,
-		string(reviewersJSON), pr.Provider+":"+pr.Owner+"/"+pr.Repo, int(mode),
+		string(reviewersJSON), remote.Identity{Provider: pr.Provider, Owner: pr.Owner, Repo: pr.Repo}.ID(), int(mode),
 	)
 	if err != nil {
 		return fmt.Errorf("write PR %s: %w", pr.ID, err)

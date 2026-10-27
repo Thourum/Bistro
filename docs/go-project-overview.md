@@ -2,7 +2,7 @@
 
 ## What Is This?
 
-Bistro is a local-first desktop GitHub PR review app. The Go engine (`go/`, executable `bistro-sync`) authenticates via OAuth, syncs PR metadata/comments/CI/diffs into local SQLite, serves the Electron UI over a localhost WebSocket, and queues offline write actions for retry. Go owns all SQLite writes; the database is a cache, not a shared server.
+Bistro is a local-first desktop GitHub PR review app. The Go engine (`go/`, executable `bistro-sync`) authenticates via OAuth, syncs PR metadata/comments/CI/diffs into local SQLite, serves the Electron UI over a localhost WebSocket, and queues replayable write actions offline for retry. Review submissions with drafts bypass the queue and keep unsubmitted drafts on failure. Go owns all SQLite writes; the database is a cache, not a shared server.
 
 ## Current Directory Structure
 
@@ -56,6 +56,7 @@ go/
 │   ├── prsync/                   # PR sync orchestration (formerly internal/sync)
 │   │   ├── orchestrator.go · request.go · fetch.go · inbox.go
 │   │   ├── anchors.go · actions.go · replay.go
+│   │   ├── options.go · review.go # With* builders; draft-absorbing review submission
 │   │   ├── workerpool/pool.go    # Bounded concurrent fetch tasks
 │   │   └── writer/               # SQLite batch persistence
 │   │       └── writer.go · fetched_pr.go · rows.go · patchset.go · threads.go · diffs.go
@@ -68,7 +69,7 @@ go/
 │   │   ├── repo_location_resolver.go · interdiff_repo.go
 │   │   └── handler/              # Domain-specific WebSocket handlers
 │   │       └── auth.go · classification_settings.go · comments.go · dev_folder_scan.go
-│   │           diff.go · dismiss.go · editor.go · expertise.go · interdiff.go
+│   │           diff.go · dismiss.go · drafts.go · editor.go · expertise.go · interdiff.go
 │   │           patchsets.go · pr.go · readstate.go · repo.go · review_queue.go
 │   │           repolocation.go · repolocation_add.go · repolocation_cache.go
 │   │           repolocation_clone.go · repolocation_remove.go · sync.go
@@ -81,6 +82,7 @@ go/
 │   │   ├── dismissal/dismissal.go
 │   │   ├── prdiff/prdiff.go
 │   │   ├── repolocation/repolocation.go
+│   │   ├── reviewdraft/store.go
 │   │   ├── storetest/storetest.go # Migrated in-memory test databases
 │   │   ├── db/                   # Generated sqlc code; never edit by hand
 │   │   ├── migrations/           # Embedded versioned SQL migrations
@@ -118,7 +120,7 @@ Parses CLI flags, configures structured logging, bootstraps credentials, and cal
 
 `app.go` owns the App struct, constructors, store preparation, and Run lifecycle. The split files remain in package `server`: `provider.go` owns provider/orchestrator lifecycle; `config.go` owns configuration setters; `llm.go` wires BYOK classification; `expertise.go` wires indexing and handlers; `bridge.go` forwards events to WebSocket clients; `repo_location.go` wires clone/location handlers; `handlers.go` registers auth, review, diff, and checkout handlers.
 
-`server/handler` contains WebSocket handlers grouped by domain, including auth, comments/threads, diffs, patchsets, triage/interdiff, PR/repo lists, read state, classification, expertise, editor actions, developer-folder scanning, and review-queue discovery. Repo-location handlers cover add/remove/recover and cache maintenance. `syncloop.go` schedules background sync; `ready.go` emits readiness payloads; `wsaddr.go` formats the listener address; `repo_location_resolver.go` and `interdiff_repo.go` resolve usable clones.
+`server/handler` contains WebSocket handlers grouped by domain, including auth, comments/threads, review drafts (`drafts.go`: `DRAFT_SAVE` / `DRAFT_DELETE` / `DRAFTS_LIST`), diffs, patchsets, triage/interdiff, PR/repo lists, read state, classification, expertise, editor actions, developer-folder scanning, and review-queue discovery. Repo-location handlers cover add/remove/recover and cache maintenance. `syncloop.go` schedules background sync; `ready.go` emits readiness payloads; `wsaddr.go` formats the listener address; `repo_location_resolver.go` and `interdiff_repo.go` resolve usable clones.
 
 The engine acquires a lock on `<db>.lock`, migrates SQLite before announcing `{"event":"ready","wsPort":N}`, and supports `-exit-on-stdin-close` so Electron owns its lifetime. Normal app startup and verification commands live in [the agent guide](../AGENTS.md#how-to-work).
 
@@ -136,7 +138,7 @@ Defines `Provider`, shared domain models (`PR`, `Comment`, `Repo`, `CIStatus`), 
 
 ### `internal/prsync` -- Sync Engine
 
-Renamed from `internal/sync` to avoid shadowing the standard library. `Orchestrator` coordinates list/fetch/write phases and single-PR sync, action dispatch, offline replay, inbox discovery, and anchor updates. Request/result types live in `request.go`; fetch logic lives in `fetch.go`.
+Renamed from `internal/sync` to avoid shadowing the standard library. `Orchestrator` coordinates list/fetch/write phases and single-PR sync, action dispatch, offline replay, inbox discovery, and anchor updates. Request/result types live in `request.go`; fetch logic lives in `fetch.go`; `With*` builders live in `options.go`. `review.go` handles draft-absorbing review submission: approve / request changes include the current user's drafts; `submit_review` bypasses offline/rate-limited replay and removes drafts only after GitHub accepts each commit group.
 
 - `prsync/workerpool`: `Pool`, `New`, and `DefaultWorkers` bound concurrent fetch tasks.
 - `prsync/writer`: `FetchedPR` is the writer input; `Writer`/`New` persist fetched metadata, comments, threads, CI, diffs, and patchsets, with classification and post-commit events.
@@ -169,6 +171,7 @@ Independent persistence surfaces live in subpackages:
 | `store/dismissal` | `Store`, `New`: per-account local comment dismissals |
 | `store/prdiff` | `File`, `Store`, `New`: cached PR diff rows and unified diff |
 | `store/repolocation` | `Location`, `Store`, `New`: local/cache clone paths and recovery state |
+| `store/reviewdraft` | `Draft`, `Store`, `New`, `ErrNotFound`: current-user line/range review drafts (create, edit body, list, delete) |
 | `store/storetest` | `Open(t) *store.DB`: migrated in-memory databases for tests outside `store` |
 
 Store subpackages may import the root or `store/db`, never the reverse. Expertise persistence remains in `internal/expertise`, not repo-location storage.

@@ -271,6 +271,7 @@ const prsIndexRoute = createRoute({
 const prDetailRoute = createRoute({
   getParentRoute: () => prsRoute,
   path: '$prId',
+  params: { parse: ({ prId }) => ({ prId: prId.toLowerCase() }) },
   component: PRDetailPage,
 });
 
@@ -278,6 +279,7 @@ const prDetailRoute = createRoute({
 const prDiffRoute = createRoute({
   getParentRoute: () => prsRoute,
   path: '$prId/diff',
+  params: { parse: ({ prId }) => ({ prId: prId.toLowerCase() }) },
   validateSearch: diffSearchSchema,
   component: DiffPage,
 });

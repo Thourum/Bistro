@@ -10,6 +10,7 @@ import (
 
 	"github.com/itterno/bistro/internal/git"
 	gitdiff "github.com/itterno/bistro/internal/git/diff"
+	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/prsync/workerpool"
@@ -330,7 +331,7 @@ func (o *Orchestrator) notifyExpertiseHook(ctx context.Context, pr *provider.PR,
 	if o.expertise == nil || o.resolveRepoPath == nil || pr == nil {
 		return
 	}
-	repoID := pr.Provider + ":" + pr.Owner + "/" + pr.Repo
+	repoID := remote.Identity{Provider: pr.Provider, Owner: pr.Owner, Repo: pr.Repo}.ID()
 	repoPath, ok := o.resolveRepoPath(repoID)
 	if !ok || repoPath == "" {
 		return

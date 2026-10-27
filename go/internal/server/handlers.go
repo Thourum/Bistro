@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"github.com/itterno/bistro/internal/store/dismissal"
+	"github.com/itterno/bistro/internal/store/reviewdraft"
 
 	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/provider"
@@ -111,6 +112,15 @@ func (a *App) registerDiffAndCheckoutHandlers(stores runStores) {
 		handler.NewGetReviewThreadsHandler(a.db, a.log))
 	a.wsServer.RegisterHandler("SUBMIT_ACTION",
 		handler.NewSubmitActionHandler(a.currentApplier, a.log))
+	draftDeps := handler.DraftDeps{
+		Drafts:      reviewdraft.New(a.db.DB),
+		CurrentUser: stores.currentUser,
+		Broadcaster: a.wsServer,
+		Log:         a.log,
+	}
+	a.wsServer.RegisterHandler("DRAFT_SAVE", handler.NewDraftSaveHandler(draftDeps))
+	a.wsServer.RegisterHandler("DRAFT_DELETE", handler.NewDraftDeleteHandler(draftDeps))
+	a.wsServer.RegisterHandler("DRAFTS_LIST", handler.NewDraftsListHandler(draftDeps))
 	// Phase 5 :open in editor — checkout inspection and checkout.
 	a.wsServer.RegisterHandler("CHECK_PR_CHECKOUT",
 		handler.NewCheckPRCheckoutHandler(a.db, stores.repoLocation, handler.GitCheckoutInspector{}, a.log))

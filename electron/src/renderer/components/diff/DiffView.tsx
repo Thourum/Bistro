@@ -1,4 +1,4 @@
-import type { CodeViewItem } from '@pierre/diffs';
+import type { CodeViewItem, CodeViewLineSelection } from '@pierre/diffs';
 import {
   CodeView,
   type CodeViewHandle,
@@ -10,35 +10,37 @@ import DiffsHighlighterWorker from '@pierre/diffs/worker/worker.js?worker';
 import { Fault, ResultAsync } from '@thourum/fault';
 import { useEffect, useMemo } from 'react';
 import type { AppSettings } from '../../../types/settings';
-import { useStore } from '../../hooks/useStore';
 import { appStore } from '../../store';
 import type {
   Comment,
   ExpertiseFileData,
+  ReviewDraft,
   ReviewThread,
   TriageFileStatus,
 } from '../../types';
 import { createLogger } from '../../utils/logger';
 import { openUrlInBrowser } from '../../utils/openUrl';
-import { hideWhitespaceOnlyHunks } from '../../utils/whitespaceDiff';
-import { buildOrderedAnnotations } from './diffAnnotations';
+import { type DiffAnnotationMeta, isDraftAnchored } from './diffAnnotations';
 import {
-  buildCodeViewItems,
   findUnrenderableDiffFile,
-  groupCommentsByThread,
   type ParsedCodeViewFile,
-  parseCodeViewFiles,
 } from './diffCodeViewItems';
 import { scrollToCodeViewFile } from './diffCodeViewNavigation';
+import {
+  DraftAnnotationCard,
+  LineCommentComposer,
+} from './diffDraftAnnotation';
 import { DiffFileExpertise } from './diffFileExpertise';
 import { DiffFileSidebar } from './diffFileSidebar';
 import { DiffParseFailurePanel } from './diffParseFailurePanel';
-import { type ParsedDiffFile, splitUnifiedDiff } from './diffPathUtils';
+import type { ParsedDiffFile } from './diffPathUtils';
 import { ThreadAnnotationCard } from './diffThreadAnnotation';
 import {
   useDiffFileNavigation,
   useInlineDiffAnnotations,
 } from './diffViewNavigation';
+import { useDiffViewData } from './useDiffViewData';
+import { useLineCommentMode } from './useLineCommentMode';
 
 const OPEN_FILE_BROWSER_EVENT = 'bistro:diff:open-file-browser';
 const log = createLogger('DiffView');
@@ -62,6 +64,7 @@ const WORKER_POOL_OPTIONS: WorkerPoolOptions = {
 const EMPTY_VIEWED_PATHS: ReadonlySet<string> = new Set();
 const EMPTY_OVERSIZED: ReadonlyMap<string, number> = new Map();
 const EMPTY_THREADS: readonly ReviewThread[] = [];
+const EMPTY_DRAFTS: readonly ReviewDraft[] = [];
 const EMPTY_COMMENTS: readonly Comment[] = [];
 const EMPTY_EXPERTISE_FILES: readonly ExpertiseFileData[] = [];
 
@@ -87,6 +90,12 @@ export interface DiffViewProps {
   triageStatuses?: ReadonlyMap<string, TriageFileStatus>;
   /** Engine-capped files (no stored patch), keyed by path → original patch bytes. */
   oversizedPatchBytes?: ReadonlyMap<string, number>;
+  prId?: string | undefined;
+  headSha?: string | undefined;
+  /** Current user's pending line-comment drafts for this PR. */
+  drafts?: readonly ReviewDraft[];
+  /** Reports how many drafts have no card because they aren't in this diff. */
+  onUnanchoredDraftCountChange?: (count: number) => void;
 }
 
 /** CodeView owns the only virtualized scroll surface for the PR diff. */
@@ -107,6 +116,10 @@ export function DiffView({
   viewedPaths = EMPTY_VIEWED_PATHS,
   triageStatuses,
   oversizedPatchBytes = EMPTY_OVERSIZED,
+  prId,
+  headSha,
+  drafts = EMPTY_DRAFTS,
+  onUnanchoredDraftCountChange,
 }: DiffViewProps): React.ReactElement {
   const {
     files,
@@ -122,6 +135,8 @@ export function DiffView({
   } = useDiffViewData({
     diff,
     threads,
+    drafts,
+    headSha: headSha ?? '',
     comments,
     expertiseFiles,
     expertiseError,
@@ -140,9 +155,25 @@ export function DiffView({
     onFilesResolved,
     syncFileSelection,
   });
+  const unanchoredDraftCount = useMemo(
+    () => drafts.filter((draft) => !isDraftAnchored(draft, parsedFiles)).length,
+    [drafts, parsedFiles],
+  );
+  useEffect(() => {
+    onUnanchoredDraftCountChange?.(unanchoredDraftCount);
+  }, [unanchoredDraftCount, onUnanchoredDraftCountChange]);
   useInlineDiffAnnotations({
     orderedAnnotations,
     parsedCodeViewFiles: parsedFiles,
+    codeViewRef,
+  });
+  const selectedLines = useLineCommentMode({
+    prId,
+    headSha,
+    drafts,
+    parsedFiles,
+    activeFileId: activeId,
+    layout: diffStyle,
     codeViewRef,
   });
 
@@ -214,6 +245,7 @@ export function DiffView({
               onThreadReply={onThreadReply}
               theme={theme}
               diffStyle={diffStyle}
+              selectedLines={selectedLines}
             />
           )}
         </section>
@@ -246,108 +278,14 @@ function openFilesInBrowser(url: string): void {
   );
 }
 
-interface DiffViewDataOptions {
-  diff: string;
-  threads: readonly ReviewThread[];
-  comments: readonly Comment[];
-  expertiseFiles: readonly ExpertiseFileData[];
-  expertiseError: string | null;
-  oversizedPatchBytes: ReadonlyMap<string, number>;
-}
-
-function useDiffViewData({
-  diff,
-  threads,
-  comments,
-  expertiseFiles,
-  expertiseError,
-  oversizedPatchBytes,
-}: DiffViewDataOptions) {
-  const hideWhitespaceHunks = useStore(
-    appStore,
-    (state) => state.hideWhitespaceHunks,
-  );
-  const collapseOverrides = useStore(
-    appStore,
-    (state) => state.diffCollapseOverrides,
-  );
-  const activeAnnotationKey = useStore(
-    appStore,
-    (state) => state.activeInlineCommentThreadId,
-  );
-  const replyingToThreadId = useStore(
-    appStore,
-    (state) => state.replyingInlineCommentThreadId,
-  );
-  const allFiles = useMemo(() => splitUnifiedDiff(diff), [diff]);
-  // Hiding whitespace hunks rewrites patches without changing file identity.
-  const { files, hiddenWhitespaceByFileId } = useMemo(
-    () => filterWhitespaceHunks(allFiles, hideWhitespaceHunks),
-    [allFiles, hideWhitespaceHunks],
-  );
-  const { parsedFiles, unrenderableFiles } = useMemo(
-    () => parseCodeViewFiles(files, oversizedPatchBytes),
-    [files, oversizedPatchBytes],
-  );
-  const expertiseByPath = useMemo(
-    () => new Map(expertiseFiles.map((file) => [file.file_path, file])),
-    [expertiseFiles],
-  );
-  const commentsByThread = useMemo(
-    () => groupCommentsByThread(comments),
-    [comments],
-  );
-  const orderedAnnotations = useMemo(
-    () =>
-      buildOrderedAnnotations(
-        parsedFiles.map(({ file }) => file),
-        threads,
-      ),
-    [parsedFiles, threads],
-  );
-  const items = useMemo(
-    () =>
-      buildCodeViewItems({
-        parsedCodeViewFiles: parsedFiles,
-        threads,
-        commentsByThread,
-        activeAnnotationKey,
-        replyingToThreadId,
-        expertiseByPath,
-        expertiseError,
-        collapseOverrides,
-      }),
-    [
-      parsedFiles,
-      threads,
-      commentsByThread,
-      activeAnnotationKey,
-      replyingToThreadId,
-      expertiseByPath,
-      expertiseError,
-      collapseOverrides,
-    ],
-  );
-
-  return {
-    files,
-    hiddenWhitespaceByFileId,
-    parsedFiles,
-    unrenderableFiles,
-    expertiseByPath,
-    commentsByThread,
-    orderedAnnotations,
-    items,
-    activeAnnotationKey,
-    replyingToThreadId,
-  };
-}
-
 interface DiffCodeViewProps {
   files: readonly ParsedDiffFile[];
   parsedFiles: readonly ParsedCodeViewFile[];
-  items: readonly CodeViewItem<ReviewThread>[];
-  codeViewRef: React.RefObject<CodeViewHandle<ReviewThread, unknown> | null>;
+  items: readonly CodeViewItem<DiffAnnotationMeta>[];
+  codeViewRef: React.RefObject<CodeViewHandle<
+    DiffAnnotationMeta,
+    unknown
+  > | null>;
   pendingScrollFileIdRef: React.RefObject<string | null>;
   activeId: string | null;
   activateVisibleFile: (id: string) => void;
@@ -360,6 +298,7 @@ interface DiffCodeViewProps {
   onThreadReply: ((threadId: string, body: string) => void) | undefined;
   theme: DiffViewProps['theme'];
   diffStyle: NonNullable<DiffViewProps['diffStyle']>;
+  selectedLines: CodeViewLineSelection | null;
 }
 
 interface DiffFileHeaderProps {
@@ -386,6 +325,7 @@ function DiffCodeView({
   onThreadReply,
   theme,
   diffStyle,
+  selectedLines,
 }: DiffCodeViewProps): React.ReactElement {
   const workerPool = useWorkerPool();
   // The pool is a singleton: highlighterOptions apply only at creation, so
@@ -418,6 +358,7 @@ function DiffCodeView({
       }}
       className="h-full w-full overflow-y-auto overflow-x-auto"
       items={items}
+      selectedLines={selectedLines}
       options={{
         theme: `pierre-${theme}`,
         diffStyle,
@@ -444,17 +385,42 @@ function DiffCodeView({
         );
       }}
       renderAnnotation={(annotation) => {
-        const thread = annotation.metadata;
-        if (thread === undefined) return null;
-        return (
-          <DiffAnnotation
-            thread={thread}
-            comments={commentsByThread.get(thread.id) ?? []}
-            isActive={thread.id === activeAnnotationKey}
-            isReplying={thread.id === replyingToThreadId}
-            onThreadReply={onThreadReply}
-          />
-        );
+        const metadata = annotation.metadata;
+        switch (metadata?.kind) {
+          case undefined:
+            return null;
+          case 'thread':
+            return (
+              <DiffAnnotation
+                thread={metadata.thread}
+                comments={commentsByThread.get(metadata.thread.id) ?? []}
+                isActive={metadata.key === activeAnnotationKey}
+                isReplying={metadata.thread.id === replyingToThreadId}
+                onThreadReply={onThreadReply}
+              />
+            );
+          case 'draft':
+            return (
+              <DraftAnnotationCard
+                draft={metadata.draft}
+                annotationKey={metadata.key}
+                isOutdated={metadata.isOutdated}
+                isActive={metadata.key === activeAnnotationKey}
+                onActivate={() =>
+                  appStore.setState((state) => ({
+                    ...state,
+                    activeInlineCommentThreadId: metadata.key,
+                  }))
+                }
+              />
+            );
+          case 'composer':
+            return <LineCommentComposer lineComment={metadata.lineComment} />;
+          default: {
+            const unreachable: never = metadata;
+            return unreachable;
+          }
+        }
       }}
     />
   );
@@ -530,31 +496,11 @@ function DiffFileHeader({
   );
 }
 
-interface WhitespaceFilterResult {
-  files: ParsedDiffFile[];
-  /** File id → number of `+`/`-` lines hidden in that file. */
-  hiddenWhitespaceByFileId: ReadonlyMap<string, number>;
-}
-
-function filterWhitespaceHunks(
-  files: readonly ParsedDiffFile[],
-  enabled: boolean,
-): WhitespaceFilterResult {
-  if (!enabled)
-    return { files: [...files], hiddenWhitespaceByFileId: new Map() };
-  const hidden = new Map<string, number>();
-  const filtered = files.map((file) => {
-    const { patch, hiddenLineCount } = hideWhitespaceOnlyHunks(file.patch);
-    if (hiddenLineCount === 0) return file;
-    hidden.set(file.id, hiddenLineCount);
-    return { ...file, patch };
-  });
-  return { files: filtered, hiddenWhitespaceByFileId: hidden };
-}
-
 function findTopVisibleFile(
   files: readonly ParsedCodeViewFile[],
-  viewer: ReturnType<CodeViewHandle<ReviewThread, unknown>['getInstance']>,
+  viewer: ReturnType<
+    CodeViewHandle<DiffAnnotationMeta, unknown>['getInstance']
+  >,
   scrollTop: number,
 ): ParsedDiffFile | undefined {
   if (viewer === undefined) return undefined;

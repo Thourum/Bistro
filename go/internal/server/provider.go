@@ -8,6 +8,7 @@ import (
 	"github.com/itterno/bistro/internal/server/handler"
 	"github.com/itterno/bistro/internal/store/actionqueue"
 	"github.com/itterno/bistro/internal/store/prdiff"
+	"github.com/itterno/bistro/internal/store/reviewdraft"
 )
 
 // teardownProviderLocked clears the active provider, orchestrator, and all
@@ -55,6 +56,7 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 		WithReviewTracking(a.currentUserStore, a.db).
 		WithAnchorResolver(a.anchorResolver).
 		WithActionQueue(actionqueue.New(a.db.DB)).
+		WithReviewDrafts(reviewdraft.New(a.db.DB)).
 		WithLiveness(a.provCtx).
 		WithClassifier(a.classifier).
 		WithCurrentUser(a.currentUserStore).
