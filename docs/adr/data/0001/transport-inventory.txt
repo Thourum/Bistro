@@ -1,0 +1,283 @@
+## renderer wsClient.request/send call sites
+electron/src/renderer/components/CommandPalette.tsx:119:      const requestId = wsClient.send('REQUEST_REPO_LIST', {});
+electron/src/renderer/components/CommandPalette.tsx:159:    wsClient.send(type, { repo_id: repoIdForPR(focusedPR) });
+electron/src/renderer/components/CommandPalette.tsx:279:        wsClient.send('FORCE_SYNC', {});
+electron/src/renderer/components/ExpertiseNudge.tsx:49:    wsClient.send('EXPERTISE_NUDGE_DISMISS', { repo_id: repoId });
+electron/src/renderer/components/RepoPicker.tsx:29:    wsClient.send('REQUEST_REPO_LIST', {});
+electron/src/renderer/components/RepoPicker.tsx:54:    wsClient.send('TOGGLE_WATCH_REPO', {
+electron/src/renderer/pages/settings/ConnectionsSection.tsx:17:    wsClient.send('AUTH_DISCONNECT', { provider: providerId });
+electron/src/renderer/services/onboardingSync.ts:99:  wsClient.send('SCAN_CANCEL', { scan_id: scanID });
+electron/src/renderer/services/signIn.ts:29:  const sentId = wsClient.send('AUTH_START', { provider });
+electron/src/renderer/services/signIn.ts:66:    const sentId = wsClient.send('AUTH_CANCEL', {});
+electron/src/renderer/services/signIn.ts:79:    wsClient.send('AUTH_CANCEL', {});
+## push-event handler table keys (services/ws/events/index.ts)
+ACTION_COMPLETE
+ACTION_FAILED
+ACTION_RESULT
+ADD_REPO_BY_URL_RESULT
+AUTH_CHECK_RESULT
+AUTH_DISCONNECT_RESULT
+AUTH_FAILED
+AUTH_REDIRECT
+AUTH_SUCCESS
+AUTH_TOKEN_EXPIRED
+BYOK_AUTH_FAILED
+BYOK_KEY_UPDATED
+BYOK_USAGE
+CI_STATUS_CHANGED
+CLASSIFICATION_SETTINGS_UPDATED
+CLEAR_CACHE_RESULT
+COMMENT_POSTED
+COMMENTS_READY
+DELETE_CACHE_REPO_RESULT
+DIFF_READY
+DISMISS_RESULT
+DRAFT_SAVED
+DRAFTS_CHANGED
+DRAFTS_DELETED
+DRAFTS_READY
+EXPERTISE_DATA
+EXPERTISE_DISABLE_ACCEPTED
+EXPERTISE_ENABLE_ACCEPTED
+EXPERTISE_ERROR
+EXPERTISE_INDEX_PROGRESS
+EXPERTISE_NUDGE
+EXPERTISE_NUDGE_DISMISSED
+EXPERTISE_READY
+EXPERTISE_SETTINGS
+EXPERTISE_SETTINGS_UPDATED
+FILE_VIEWED_ACK
+GET_CACHE_STATS_RESULT
+INTERDIFF_READY
+LOCATION_ERROR
+PATCHSETS_READY
+PR_APPROVED
+PR_CHECKOUT_RESULT
+PR_CHECKOUT_STATUS
+PR_LIST_READY
+PR_METADATA_CHANGED
+PR_SYNCED
+PRS_READ_ACK
+PRS_READ_CHANGED
+PRUNE_CACHE_RESULT
+RATE_LIMITED
+RECOVER_REPO_PATH_RESULT
+RECOVER_REPO_TO_CACHE_RESULT
+REMOVE_REPO_PREFLIGHT_RESULT
+REMOVE_REPO_RESULT
+REPO_LIST_READY
+REVIEW_QUEUE_READY
+REVIEW_THREADS_READY
+SCAN_DEV_FOLDER_RESULT
+SET_EXPERTISE_SETTINGS
+SYNC_COMPLETE
+SYNC_ERROR
+SYNC_TRIGGERED
+THREAD_REOPENED
+THREAD_RESOLVED
+TRIAGE_READY
+UNDISMISS_RESULT
+VALIDATE_DEV_FOLDER_RESULT
+WATCH_REPO_RESULT
+## engine message-type string literals in go/internal/server (count  type)
+  26 "REQUEST_COMMENTS"
+   9 "SCAN_DEV_FOLDER"
+   9 "REQUEST_REPO_LIST"
+   9 "AUTH_FAILED"
+   9 "AUTH_CANCEL"
+   8 "SCAN_CANCEL"
+   8 "RECOVER_REPO_PATH"
+   8 "DELETE_CACHE_REPO"
+   7 "TOGGLE_WATCH_REPO"
+   7 "RECOVER_REPO_TO_CACHE"
+   7 "CLEAR_CACHE"
+   6 "REMOVE_REPO"
+   6 "PRUNE_CACHE"
+   6 "CHECKOUT_PR_HEAD"
+   6 "BISTRO_REPO_DIR"
+   6 "AUTH_START"
+   5 "SET_SYNC_SETTINGS"
+   5 "SET_CLASSIFICATION_SETTINGS"
+   5 "REQUEST_PR_LIST"
+   5 "REPO_LIST_READY"
+   5 "REMOVE_REPO_PREFLIGHT"
+   5 "FORCE_SYNC"
+   5 "EXPERTISE_ENABLE"
+   5 "ADD_REPO_BY_URL"
+   4 "VALIDATE_DEV_FOLDER"
+   4 "RIGHT"
+   4 "REVIEW_QUEUE_READY"
+   4 "REQUEST_TRIAGE"
+   4 "REQUEST_PR_SYNC"
+   4 "REQUEST_DIFF"
+   4 "GET_EXPERTISE"
+   4 "GET_CACHE_STATS"
+   4 "EXPERTISE_DATA"
+   4 "DRAFTS_READY"
+   4 "DRAFT_SAVED"
+   4 "DRAFT_SAVE"
+   4 "DIFF_READY"
+   4 "COMMENTS_READY"
+   4 "AUTH_SUCCESS"
+   4 "AUTH_REDIRECT"
+   3 "TRIAGE_READY"
+   3 "SYNC_TRIGGERED"
+   3 "SYNC_COMPLETE"
+   3 "SET_EXPERTISE_SETTINGS"
+   3 "SET_BYOK_KEY"
+   3 "REVIEW_THREADS_READY"
+   3 "REQUEST_INTERDIFF"
+   3 "PATCHSETS_READY"
+   3 "EXPERTISE_NUDGE_DISMISS"
+   3 "EXPERTISE_ERROR"
+   3 "EXPERTISE_DISABLE"
+   3 "DRAFTS_LIST"
+   3 "DRAFTS_DELETED"
+   3 "CHECK_PR_CHECKOUT"
+   3 "BYOK_KEY_UPDATED"
+   3 "AUTH_CHECK"
+   2 "WATCH_REPO_RESULT"
+   2 "UNDISMISS_RESULT"
+   2 "UNDISMISS_COMMENTS"
+   2 "THREAD_RESOLVED"
+   2 "SYNC_SETTINGS_UPDATED"
+   2 "SCAN_DEV_FOLDER_RESULT"
+   2 "REQUEST_REVIEW_QUEUE"
+   2 "PRS_READ_CHANGED"
+   2 "PRS_READ_ACK"
+   2 "PR_SYNCED"
+   2 "PR_LIST_READY"
+   2 "MARK_PRS_READ"
+   2 "MARK_FILE_VIEWED"
+   2 "LEFT"
+   2 "INTERDIFF_READY"
+   2 "GET_REVIEW_THREADS"
+   2 "GET_PATCHSETS"
+   2 "GET_EXPERTISE_SETTINGS"
+   2 "FILE_VIEWED_ACK"
+   2 "EXPERTISE_SETTINGS"
+   2 "EXPERTISE_NUDGE_DISMISSED"
+   2 "EXPERTISE_ENABLE_ACCEPTED"
+   2 "EXPERTISE_DISABLE_ACCEPTED"
+   2 "DRAFT_DELETE"
+   2 "DISMISS_RESULT"
+   2 "DISMISS_COMMENTS"
+   2 "DELETE_BYOK_KEY"
+   2 "CLASSIFICATION_SETTINGS_UPDATED"
+   2 "ACTION_RESULT"
+   1 "SYNC_FAILED"
+   1 "SYNC_ERROR"
+   1 "SUBMIT_ACTION"
+   1 "REQUEST_CHANGES"
+   1 "PR_CHECKOUT_STATUS"
+   1 "PR_CHECKOUT_RESULT"
+   1 "MIDDLE"
+   1 "EXPERTISE_SETTINGS_UPDATED"
+   1 "EXPERTISE_NUDGE"
+   1 "ERROR"
+   1 "DRAFTS_CHANGED"
+   1 "COMMENT"
+   1 "AUTH_DISCONNECT"
+   1 "AUTH_DISCONNECT_RESULT"
+   1 "AUTH_CHECK_RESULT"
+   1 "APPROVE"
+## request ids and cancellation
+electron/src/renderer/components/CommandPalette.tsx:119:      const requestId = wsClient.send('REQUEST_REPO_LIST', {});
+electron/src/renderer/components/CommandPalette.tsx:120:      if (requestId === undefined) {
+electron/src/renderer/hooks/useExpertise.ts:47:    const requestId = latestRequestIdRef.current + 1;
+electron/src/renderer/hooks/useExpertise.ts:48:    latestRequestIdRef.current = requestId;
+electron/src/renderer/hooks/useExpertise.ts:58:          if (latestRequestIdRef.current !== requestId) return;
+electron/src/renderer/hooks/useExpertise.ts:63:          if (latestRequestIdRef.current !== requestId) return;
+electron/src/renderer/services/onboardingSync.ts:91:  onSent: (scanID: string) => void,
+electron/src/renderer/services/onboardingSync.ts:94:    .request('SCAN_DEV_FOLDER', { path, reason: 'settings-change' }, { onSent })
+electron/src/renderer/services/onboardingSync.ts:99:  wsClient.send('SCAN_CANCEL', { scan_id: scanID });
+electron/src/renderer/services/signIn.ts:66:    const sentId = wsClient.send('AUTH_CANCEL', {});
+electron/src/renderer/services/signIn.ts:79:    wsClient.send('AUTH_CANCEL', {});
+electron/src/renderer/services/ws/connection.ts:44:  readonly onSent?: (id: string) => void;
+electron/src/renderer/services/ws/connection.ts:202:    if (appStore.state.authInterrupted) send('AUTH_CANCEL', {});
+electron/src/renderer/services/ws/connection.ts:391:          options?.onSent?.(id);
+go/internal/server/handler/repolocation.go:123:		logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/interdiff.go:68:		logger := log.With("request_id", msg.ID, "msg_type", msg.Type, "pr_id", req.PRID)
+go/internal/server/handler/review_queue.go:48:			deps.Log.Error("invalid review queue payload", "request_id", msg.ID, "error", err)
+go/internal/server/handler/review_queue.go:57:			deps.Log.Error("provider does not support review queue", "request_id", msg.ID)
+go/internal/server/handler/review_queue.go:104:		deps.Log.Error("read review queue failed", "request_id", requestID, "error", reviewQueueLogError(err))
+go/internal/server/handler/auth.go:131:// NewAuthFlowHandlers returns AUTH_START and AUTH_CANCEL handlers sharing one
+go/internal/server/handler/auth.go:199:			logger = deps.Log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/auth.go:329:			logger = deps.Log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/auth.go:408:			logger = deps.Log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/sync.go:26:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/sync.go:75:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/sync.go:145:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/patchsets.go:51:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/patchsets.go:129:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/classification_settings.go:96:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/classification_settings.go:151:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/classification_settings.go:185:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/readstate.go:44:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/diff.go:95:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/repo.go:57:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/repo.go:177:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/drafts.go:74:		return d.Log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/pr.go:107:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/triage.go:87:		logger := log.With("request_id", msg.ID, "msg_type", msg.Type, "pr_id", req.PRID)
+go/internal/server/handler/threads.go:62:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/threads.go:138:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/dismiss.go:139:			logger = deps.Log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/dismiss.go:197:			logger = deps.Log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/dev_folder_scan.go:94:		return nil, fmt.Errorf("invalid SCAN_CANCEL payload: %w", err)
+go/internal/server/handler/comments.go:207:			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/expertise.go:533:		logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/editor.go:102:		logger := log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/handler/editor.go:148:		logger := log.With("request_id", msg.ID, "msg_type", msg.Type)
+go/internal/server/app_handlers.go:43:	a.wsServer.RegisterHandler("AUTH_CANCEL", cancel)
+go/internal/server/app_handlers.go:166:	a.wsServer.RegisterHandler("SCAN_CANCEL", cancelScan)
+go/internal/ws/dispatch.go:67:	reqLogger := d.logger.With("request_id", msg.ID, "msg_type", msg.Type)
+## origin enforcement
+go/internal/ws/server.go:162:			CheckOrigin: isLocalOrigin,
+## main-process engine clients (main talks to the engine too)
+electron/src/main/go-spawn.ts:312: * Resolves with the actual WebSocket port once Go prints its structured
+electron/src/main/index.ts:35:import { WebSocketClient } from './websocket-client';
+electron/src/main/index.ts:48: * WebSocket updates. Falls back to DEFAULT_SETTINGS for invalid values so a
+electron/src/main/index.ts:222:let wsClient: WebSocketClient | null = null;
+electron/src/main/index.ts:370:        `Go sync engine reported invalid WebSocket port: ${actualWsPort}`,
+electron/src/main/index.ts:382:    // 2. Create WebSocket client and connect (Go is now ready)
+electron/src/main/index.ts:385:    const wsUrl = `ws://127.0.0.1:${actualWsPort}/ws`;
+electron/src/main/index.ts:386:    wsClient = new WebSocketClient(wsUrl, log);
+electron/src/main/index.ts:426:    // 3. Forward runtime sync-settings changes to Go engine over WebSocket.
+electron/src/main/ipc.ts:26:import type { WebSocketClient } from './websocket-client';
+electron/src/main/ipc.ts:46:  getWsClient: () => WebSocketClient | null,
+electron/src/main/ipc.ts:195:  // ---- go:command handler ----
+electron/src/main/ipc.ts:196:  ipcMain.handle('go:command', (_event, input: unknown) => {
+electron/src/main/ipc.ts:207:      return { err: 'WebSocket not connected — action queued for retry' };
+electron/src/main/ipc.ts:209:    logger.info(`Forwarding go:command: ${action} for PR ${request.pr_id}`);
+electron/src/main/ipc.ts:223:          logger.error(`go:command error: ${error.message}`);
+electron/src/main/ipc.ts:229:  // ---- sync:action handler ----
+electron/src/main/ipc.ts:230:  ipcMain.handle('sync:action', (_event, input: unknown) => {
+electron/src/main/ipc.ts:241:      return { err: 'WebSocket not connected' };
+electron/src/main/ipc.ts:256:          logger.error(`sync:action error: ${error.message}`);
+electron/src/main/preload.ts:35:   * Actual WebSocket port of the Go sync engine, delivered via
+electron/src/main/preload.ts:88:    return ipcRenderer.invoke('go:command', request);
+electron/src/main/preload.ts:92:   * Listen for WebSocket events from Go
+electron/src/main/preload.ts:95:    ipcRenderer.on('go:event', (_, event) => callback(event));
+electron/src/main/preload.ts:108:   * Send a sync action to Go backend via WebSocket
+electron/src/main/preload.ts:114:    return ipcRenderer.invoke('sync:action', request);
+electron/src/main/websocket-client.ts:11:import WebSocket from 'ws';
+electron/src/main/websocket-client.ts:26:export class WebSocketClient extends EventEmitter {
+electron/src/main/websocket-client.ts:27:  private ws: WebSocket | null = null;
+electron/src/main/websocket-client.ts:43:      () => new WebSocket(this.url),
+electron/src/main/websocket-client.ts:50:      this.logger.error('Failed to create WebSocket:', socket.error.message);
+electron/src/main/websocket-client.ts:57:      this.logger.info('WebSocket connected to Go sync engine');
+electron/src/main/websocket-client.ts:61:    socket.value.on('message', (data: WebSocket.Data) => {
+electron/src/main/websocket-client.ts:92:      this.logger.error('WebSocket error:', error.message);
+electron/src/main/websocket-client.ts:96:      this.logger.info('WebSocket disconnected');
+electron/src/main/websocket-client.ts:105:      return err(ServiceError('CONNECTION_ERROR', 'WebSocket not connected'));
+electron/src/main/websocket-client.ts:116:    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+electron/src/main/websocket-client.ts:142:    this.logger.info(`WebSocket reconnecting in ${delay}ms`);
+electron/src/main/ws-port.ts:8: * Reads the WebSocket port passed to the preload script via
+## other WS consumers in this repo (outside electron/src and go/internal/server)
+./go/internal/ws/origin_test.go
+./go/internal/ws/server_concurrent_test.go
+./docs/adr/data/0001/gate0-collect.sh
+./electron/scripts/smoke-macos.sh
+## consumers in /Users/samuelasvanyi/dev/bistro-server (excluding upstream/ submodule and node_modules)
+(none)
