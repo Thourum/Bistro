@@ -209,28 +209,34 @@ describe('review commands', () => {
     },
   );
 
-  it('discard sends all draft ids and reports success', async () => {
-    request.mockReturnValue(okAsync({ deleted: 2 }));
-    invokeAction(
-      'review.discardDrafts',
-      makeCtx(
-        {
-          reviewDrafts: [draft, { ...draft, id: 'D2' }],
-        },
-        'diff',
-      ),
-    );
-    await vi.waitFor(() => expect(appStore.state.toasts).toHaveLength(1));
-    expect(request).toHaveBeenCalledExactlyOnceWith('DRAFT_DELETE', {
-      pr_id: 'pr-test-id',
-      draft_ids: ['D1', 'D2'],
-    });
-    expect(appStore.state.toasts[0]).toMatchObject({
-      type: 'success',
+  it.each([
+    {
+      reviewDrafts: [draft],
+      draftIds: ['D1'],
+      message: 'Discarded 1 draft',
+    },
+    {
+      reviewDrafts: [draft, { ...draft, id: 'D2' }],
+      draftIds: ['D1', 'D2'],
       message: 'Discarded 2 drafts',
-      dismissible: false,
-    });
-  });
+    },
+  ])(
+    'discard sends all draft ids and reports "$message"',
+    async ({ reviewDrafts, draftIds, message }) => {
+      request.mockReturnValue(okAsync({ deleted: draftIds.length }));
+      invokeAction('review.discardDrafts', makeCtx({ reviewDrafts }, 'diff'));
+      await vi.waitFor(() => expect(appStore.state.toasts).toHaveLength(1));
+      expect(request).toHaveBeenCalledExactlyOnceWith('DRAFT_DELETE', {
+        pr_id: 'pr-test-id',
+        draft_ids: draftIds,
+      });
+      expect(appStore.state.toasts[0]).toMatchObject({
+        type: 'success',
+        message,
+        dismissible: false,
+      });
+    },
+  );
 
   it('discard failure reports an error and keeps the drafts intact', async () => {
     request.mockReturnValue(errAsync(new Fault('Offline')));

@@ -145,6 +145,7 @@ func NewDraftsListHandler(deps DraftDeps) ws.MessageHandler {
 		}
 		login, err := deps.currentLogin(ctx)
 		if err != nil {
+			deps.logger(ctx, msg).Error("DRAFTS_LIST failed", "pr_id", req.PRID, "error", err)
 			return draftResponse(msg.ID, "DRAFTS_READY", map[string]interface{}{"pr_id": req.PRID, "drafts": []store.ReviewDraft{}}), nil
 		}
 		drafts, err := deps.Drafts.List(ctx, req.PRID, login)

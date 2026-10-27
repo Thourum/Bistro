@@ -1,8 +1,12 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
+	"reflect"
 	"testing"
 
 	"github.com/itterno/bistro/internal/store"
@@ -92,6 +96,46 @@ func TestDraftSaveListDelete_BroadcastsDraftsChanged(t *testing.T) {
 	}
 	if len(spy.messages) != 2 {
 		t.Fatalf("broadcasts = %d, want DRAFTS_CHANGED after save and delete", len(spy.messages))
+	}
+}
+
+func TestDraftsList_LogsIdentityFailureAndKeepsEmptyResponse(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		user    currentUserReader
+		wantErr string
+	}{
+		{name: "lookup failure", user: &fakeExpertiseIdentityReader{err: errors.New("identity store unavailable")}, wantErr: "resolve current user: identity store unavailable"},
+		{name: "signed out", user: fixedUser(""), wantErr: "drafts require a signed-in account"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var output bytes.Buffer
+			deps := DraftDeps{
+				Drafts: store.NewReviewDrafts(newReadStateTestDB(t).DB), CurrentUser: tt.user,
+				Log: slog.New(slog.NewJSONHandler(&output, nil)),
+			}
+			msg := draftMessage(t, "DRAFTS_LIST", map[string]any{"pr_id": "pr-1"})
+			resp, err := NewDraftsListHandler(deps)(context.Background(), msg)
+			if err != nil {
+				t.Fatalf("list: %v", err)
+			}
+			want := draftResponse(msg.ID, "DRAFTS_READY", map[string]interface{}{"pr_id": "pr-1", "drafts": []store.ReviewDraft{}})
+			if !reflect.DeepEqual(resp, want) {
+				t.Fatalf("response = %#v, want %#v", resp, want)
+			}
+			var record map[string]any
+			if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+				t.Fatalf("decode log: %v; output = %q", err, output.String())
+			}
+			for key, want := range map[string]string{
+				"level": "ERROR", "msg": "DRAFTS_LIST failed", "request_id": msg.ID,
+				"msg_type": msg.Type, "pr_id": "pr-1", "error": tt.wantErr,
+			} {
+				if record[key] != want {
+					t.Errorf("log %s = %v, want %q", key, record[key], want)
+				}
+			}
+		})
 	}
 }
 

@@ -74,7 +74,7 @@ function discardAllDrafts(context: KeyActionContext): void {
     () =>
       addToast({
         type: 'success',
-        message: `Discarded ${ids.length} drafts`,
+        message: `Discarded ${ids.length} ${ids.length === 1 ? 'draft' : 'drafts'}`,
         dismissible: false,
       }),
     (fault) =>

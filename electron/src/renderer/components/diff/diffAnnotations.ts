@@ -8,6 +8,7 @@ import type { ReviewDraft, ReviewThread } from '../../types';
 import {
   cursorRange,
   type LineCommentState,
+  listCommentableLines,
   toAnnotationSide,
 } from '../../utils/lineCommentCursor';
 import type { ParsedDiffFile } from './diffPathUtils';
@@ -45,12 +46,38 @@ export function hasCurrentInlineAnchor(thread: ReviewThread): boolean {
   return thread.line > 0 && thread.state_known && !thread.outdated;
 }
 
+function buildAnnotationRows(
+  fileDiff: FileDiffMetadata,
+): ReadonlyMap<string, number> {
+  const rows = new Map(
+    listCommentableLines(fileDiff.hunks, 'unified').map(
+      ({ side, line, row }) => [`${toAnnotationSide(side)}:${line}`, row],
+    ),
+  );
+  // Unified cursors use RIGHT for context, but cards can anchor on either side.
+  for (const hunk of fileDiff.hunks) {
+    for (const block of hunk.hunkContent) {
+      if (block.type !== 'context') continue;
+      const oldStart =
+        hunk.deletionStart + block.deletionLineIndex - hunk.deletionLineIndex;
+      const newStart =
+        hunk.additionStart + block.additionLineIndex - hunk.additionLineIndex;
+      for (let offset = 0; offset < block.lines; offset += 1) {
+        const row = rows.get(`additions:${newStart + offset}`);
+        if (row !== undefined) rows.set(`deletions:${oldStart + offset}`, row);
+      }
+    }
+  }
+  return rows;
+}
+
 function fileEntries(
-  file: ParsedDiffFile,
+  { file, fileDiff }: AnchorableDiffFile,
   fileIndex: number,
   threads: readonly ReviewThread[],
   drafts: readonly ReviewDraft[],
 ): AnnotationEntry[] {
+  const rows = buildAnnotationRows(fileDiff);
   const threadEntries = threads
     .filter(
       (thread) =>
@@ -78,7 +105,10 @@ function fileEntries(
     );
   return [...threadEntries, ...draftEntries].sort(
     (left, right) =>
-      left.line - right.line || left.key.localeCompare(right.key),
+      (rows.get(`${left.side}:${left.line}`) ?? Number.POSITIVE_INFINITY) -
+        (rows.get(`${right.side}:${right.line}`) ?? Number.POSITIVE_INFINITY) ||
+      left.line - right.line ||
+      left.key.localeCompare(right.key),
   );
 }
 
@@ -111,8 +141,8 @@ export function buildOrderedAnnotations(
   const anchoredDrafts = drafts.filter((draft) =>
     isDraftAnchored(draft, files),
   );
-  return files.flatMap(({ file }, fileIndex) =>
-    fileEntries(file, fileIndex, threads, anchoredDrafts),
+  return files.flatMap((parsed, fileIndex) =>
+    fileEntries(parsed, fileIndex, threads, anchoredDrafts),
   );
 }
 
