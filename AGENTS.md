@@ -33,7 +33,7 @@ Within `internal/git`, `Client` owns clone/fetch/checkout operations; `anchor` r
 
 Clone cache entries, path/staging helpers, maintenance, and PR-head retention live in `internal/git/clonecache`; it depends on `remote`, never the parent `git` package. Shared on-disk commit fixtures live in the test-support package `internal/git/gittest`, which depends only on go-git and the standard library.
 
-Independent SQLite stores live in `internal/store/actionqueue`, `currentuser`, `dismissal`, `prdiff`, `repolocation`, and `reviewdraft` (`Store`, `New`); `store` retains the DB handle, migrations (`migrate.go`), and DB query methods (including `review_threads.go`). Subpackages may import `store` and sqlc's `store/db`, never the reverse. Expertise indexing state already belongs to `internal/expertise`, not `repolocation`.
+Independent SQLite stores live in `internal/store/currentuser`, `dismissal`, `prdiff`, `repolocation`, and `reviewdraft` (each `Store`, `New`), and the offline action queue in `internal/store/actionqueue` (`Queue`, `New`, `Action`); `store` retains the DB handle, migrations (`migrate.go`), and DB query methods (including `review_threads.go`). Subpackages may import `store` and sqlc's `store/db`, never the reverse. Expertise indexing state already belongs to `internal/expertise`, not `repolocation`.
 
 The PR sync orchestrator lives in `internal/prsync`. Concurrent PR fetch tasks run through `internal/prsync/workerpool` (`Pool`, `New`, `DefaultWorkers`); fetched results and SQLite batch writes live in `internal/prsync/writer` (`FetchedPR`, `Writer`, `New`). Neither subpackage imports the parent `prsync` package.
 
