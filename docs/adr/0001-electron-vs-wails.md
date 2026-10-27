@@ -1,9 +1,9 @@
 # ADR 0001: Electron vs Wails v3, and WebSocket vs Wails bindings
 
-- **Status:** Decided, no-go on both. Stopped at Gate 0.
+- **Status:** In progress. Gate 0 failed, the owner overrode it (see Amendments), and Gate 1 thresholds are pre-registered below.
 - **Date:** 2026-10-27
-- **Evidence commit:** `c71ea2e` (the tree the inventories were collected from)
-- **Reproduce:** `docs/adr/data/0001/gate0-collect.sh` (read-only; rewrites the `*.txt` files beside it)
+- **Gate 0 evidence commit:** `c71ea2e` (the tree the inventories were collected from)
+- **Reproduce:** Gate 0: `docs/adr/data/0001/gate0-collect.sh` (read-only). Gate 1: `docs/adr/data/0001/harness/gate1.sh` (see its README).
 
 ## Amendments
 
@@ -22,10 +22,87 @@ The method was gated: stop at the first gate that fails. Gate 0 asks whether a u
 
 | Decision | Verdict | Rule applied |
 |---|---|---|
-| Shell (Electron → Wails v3) | **No-go: no problem to solve** | Gate 0.5: no user-visible problem. |
-| Transport (WebSocket → bindings) | **No-go: no problem to solve** | Gate 0.5 for the same reason. Gate 4b depends on a shell go, so it was never reached. |
+| Shell (Electron → Wails v3) | Gate 0: **no-go, no problem to solve**. Overridden by the owner; pending Gates 1–5 under the pre-registered rule S. | Gate 0.5, then rule S |
+| Transport (WebSocket → bindings) | Gate 0: **no-go, no problem to solve**. Pending; evaluated only if the shell verdict is go. | Gate 0.5, then rule T |
 
-Gates 1–5 did not run. In particular, **no thresholds were pre-registered.** Gate 1.4 says to commit them before any WebKit measurement. Writing them now, with no baseline and no problem to aim at, would just be a number picked to pass. A reopened decision starts at Gate 1 with a fresh pre-registration commit; see "Reopening".
+## Pre-registration (Gate 1.4)
+
+These thresholds were committed before any WebKit or Wails measurement, and before the full Gate 1 Electron baseline existed; only n=1 harness smoke runs had been made. The commit that introduces this section is the pre-registration. Changes after it go in a dated amendment that gives the reason; the thresholds below are never edited in place.
+
+**Comparator.** All shell comparisons are against **slim Electron** (`BISTRO_SLIM=1`), measured on the same machine in the same conditions, with the same harness (`docs/adr/data/0001/harness/`) and the same fixtures. There are four fixtures, with the real PRs pinned to their merged heads:
+- vendoring: `kubernetes/kubernetes#143358` @ `09048f5c`
+- generated code: `googleapis/google-cloud-go#20526` @ `de1e8de4`
+- synthetic: 1000 files × 10 lines
+- synthetic: 1 file × 10,000 lines
+
+The WKWebView host (Gate 2.3) is checked against S1 first, as an early stop; the Wails spike (Gate 4) is checked against everything.
+
+**Why the bar is high.** The owner is the only affected user, on a 36 GiB machine, so size and memory matter little to them. On the other side is the migration cost from Gate 0:
+- ≈3.1k lines of main-process code
+- 21 IPC channels
+- continuity for the updater, keychain and settings
+
+A move is justified only by a large size and memory gain with **no regression** where the owner works: scrolling large diffs, startup and the keyboard.
+
+### Shell thresholds (all must pass)
+
+- **S1 Large-diff frame times.** Checked per fixture, pooling all frames over ≥10 runs, on the current macOS **and** on macOS 13, the oldest supported version (Gate 2.3, `tart`). Every one of these must hold:
+  - pooled p95 ≤ slim p95 + 2.0 ms
+  - pooled p99 ≤ max(slim p99 × 1.10, slim p99 + 3.0 ms)
+  - late-frame share (> 1.5 × the run's measured refresh interval) ≤ slim share + 2.0 percentage points
+  - median of per-run p95 ≤ slim median per-run p95 + 2.0 ms
+
+  The display here runs at 60 Hz. The 120 Hz column the harness reports is informational only and can't decide anything on this hardware.
+- **S2 Startup.** Launch until the first PR list has rendered, then exit; n = 30 and the same seed for both. The candidate must reach p50 ≤ slim p50 × 1.05 and p95 ≤ slim p95 × 1.10. No startup gain is required, but no regression is allowed.
+- **S3 Idle memory.** The `footprint` sum over the whole process tree; for WebKit that includes every `com.apple.WebKit.*` XPC process plus `bistro-sync`; n ≥ 5. The candidate must reach median ≤ 0.70 × slim median **and** max < slim min, so the two distributions don't overlap.
+- **S4 Large-diff memory.** Measured after the largest real fixture: median ≤ 0.80 × slim median.
+- **S5 Size.** Installed `.app` ≤ 0.40 × slim, **and** DMG ≤ 0.40 × slim.
+- **S6 Keybindings.** A *cell* is one binding × navigation style × layout (US / DE / AZERTY / Dvorak) × injection (`osascript` / `CGEventPost`) × focus (outside / inside a comment textarea) × IME (inactive / active). A cell fails when the candidate's outcome (which `actionId` fired or didn't, and for typing the resulting text) differs from Electron's in the same cell. Allowed failing share per class:
+
+  | Class | Allowed |
+  |---|---|
+  | plain keys (no modifier), outside text fields | 0% |
+  | Cmd combinations | 0% |
+  | Ctrl combinations | 0% |
+  | Option combinations, US layout | 0% |
+  | Option combinations, DE / AZERTY / Dvorak | ≤ 5%, and only if each failing binding can be rebound in Settings → Keyboard (workaround recorded) |
+  | multi-key sequences | 0% |
+  | inside text fields (any modifier) | 0% |
+  | IME composition active | 0% (any binding firing mid-composition is a failure in either shell) |
+
+  Regardless of share, any failure that disables a core review action (approve, request changes, submit or save a draft, next/previous file or hunk) is a blocker.
+- **S7 Upstream health** at the pinned Wails v3 version (Gate 3.4). All of these must hold:
+  - the release is at least a beta/RC, or an alpha with a published API-stability statement
+  - ≥ 6 releases (pre-releases included) in the last 12 months
+  - the top committer has ≤ 70% of the non-bot commits in the last 12 months
+  - the median time to first maintainer response over the last 100 issues is ≤ 14 days
+  - there is no open macOS keyboard issue in an S6 class without a workaround
+- **S8 Continuity** (Gate 5). Each of these items has either a demonstrated pass or a named bridge release:
+  - in-place update (Squirrel.Mac to the Wails bundle)
+  - the keychain token and its access list
+  - the `electron-store` settings
+  - the SQLite DB and its migration version
+  - queued offline actions replaying after the upgrade
+  - `codesign --verify --deep --strict`, notarization and `spctl`
+
+**Shell rule:** **go** iff S1–S8 all pass. Any single failure is **no-go**, and gates stop at the first failure.
+
+### Transport thresholds
+
+These are evaluated only if the shell verdict is go. Three options:
+- (a) keep the WebSocket with `bistro-sync` as a separate process
+- (b) Wails bindings and events, with the engine embedded in the app process
+- (c) a hybrid: the WebSocket stays the data protocol, and bindings handle only shell features
+
+- **T1 Round trip.** Over the request mix — `REQUEST_DIFF` of the largest real fixture, `REQUEST_REPO_LIST` and `REQUEST_PR_LIST`, each with n ≥ 200 — (b) must reach p50 ≤ 0.5 × (a) p50 **and** p99 ≤ (a) p99.
+- **T2 Push burst** of 1000 events: (b) throughput ≥ (a), and p99 delivery latency ≤ (a). This is a no-regression check.
+- **T3 Startup.** (b) saves ≥ 150 ms at p50 against (a), with no p95 regression.
+- **T4 Memory.** (b) median idle tree sum ≤ (a) − 30 MiB.
+- **T5 Failure isolation.** Inject a Go panic and a handler deadlock. (b) must keep unsubmitted drafts, show an error state within 5 s, and offer recovery. A silent whole-app crash or a frozen window fails.
+- **T6 Security.** (b)'s bindings must be callable only from the app's own origin. The credit for removing the socket counts against (a) *with* a per-launch token (Follow-up 2), not against today's gap that accepts a missing `Origin`.
+- **T7 Equivalence.** The chosen option passes 100% of the contract suite: request/response and event shapes, `SCAN_CANCEL`/`AUTH_CANCEL`, and offline queue replay. zod validation stays at the edge.
+
+**Transport rule:** choose **(b)** iff T1 ∧ (T3 ∨ T4) ∧ T5 ∧ T6 ∧ T7 pass and T2 doesn't regress. Otherwise choose **(c)** if it passes T5–T7, which is the default. If the shell verdict is no-go, the transport stays **(a)**.
 
 ## Measurement conditions
 
@@ -89,9 +166,24 @@ Raw: `transport-inventory.txt`.
 
 No user-visible problem exists: 0 complaints, 0 crash reports, 0 distributed builds. **Gate 0 fails, and both decisions are no-go: no problem to solve.** The cost side (≈3.1k lines of main-process code, 21 IPC channels, updater/settings/keychain continuity, 68 push events and the cancellation semantics) is recorded so that a future reopening doesn't have to rediscover it.
 
-## Not done (by the gate rule)
+## Status of later gates
 
-Gate 1 (baseline, slim build, `--quit-after-ready`, pre-registration), Gate 2 (WebKit/WKWebView), Gate 3 (upstream reading and Wails health), Gate 4/4b (spikes, the keyboard matrix, the transport options), Gate 5 (updater, install-over, notarization), the second-machine replication, and the blind alpha-tester session. No code was migrated, and no `--quit-after-ready` flag was added.
+Gate 0 originally stopped here. After the override (see Amendments), the following was done:
+- Gate 1 tooling exists and was verified with n=1 smoke runs only:
+  - `--quit-after-ready` and the bench module (`electron/src/renderer/bench/`)
+  - the slim build
+  - `go/cmd/bistro-benchseed`
+  - the harness
+- Thresholds are pre-registered above.
+
+Still to do:
+- **The full Gate 1 baseline.** It's blocked: the engine's keychain token returns HTTP 401, so the two pinned GitHub PRs can't be seeded until the owner signs in again.
+- **Gates 2–5.**
+- **No second machine:** none is available, and `tart` isn't installed.
+- **True cold starts:** they need `sudo purge` without a password; until then, startup runs are warm and labelled as such.
+- **The blind alpha-tester session.**
+
+Only the throwaway spike may be migrated.
 
 ## Reopening
 
