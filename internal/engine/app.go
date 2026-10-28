@@ -26,6 +26,7 @@ import (
 	"github.com/itterno/bistro/internal/keychain"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/prsync"
+	"github.com/itterno/bistro/internal/services"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/currentuser"
 	"github.com/itterno/bistro/internal/store/prdiff"
@@ -40,6 +41,8 @@ type syncSettingsMsg = handler.SyncSettingsMsg
 // App is the top-level orchestrator for the bistro-sync process.
 type App struct {
 	log                 *slog.Logger
+	emitter             services.Emitter
+	panics              services.PanicReporter
 	db                  *store.DB
 	wsServer            *ws.Server
 	wsPort              int
@@ -118,6 +121,7 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 	provCtx, provCtxCancel := context.WithCancel(context.Background())
 	return &App{
 		log:                 logger,
+		emitter:             services.NopEmitter{},
 		wsServer:            ws.NewServerWithLogger(logger),
 		wsPort:              wsPort,
 		dbPath:              dbPath,
@@ -132,6 +136,16 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 		provCtxCancel:       provCtxCancel,
 		classificationState: handler.NewClassificationState(),
 	}
+}
+
+// SetEmitter configures push event delivery before services are constructed.
+func (a *App) SetEmitter(emitter services.Emitter) {
+	a.emitter = emitter
+}
+
+// SetPanicReporter configures reporting for recovered service panics.
+func (a *App) SetPanicReporter(reporter services.PanicReporter) {
+	a.panics = reporter
 }
 
 type runStores struct {
