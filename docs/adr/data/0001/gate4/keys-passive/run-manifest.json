@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "target": {
+    "label": "keys-passive"
+  },
+  "cells": [
+    {
+      "id": "8e2696820a8a98fa950e28c850d3b6bd492670be4e5c10ecc5a15942289581c5",
+      "actionId": "connecting.openLogs",
+      "style": "vim",
+      "steps": [
+        "l"
+      ],
+      "layout": "US",
+      "injection": "osascript",
+      "focus": "outside",
+      "ime": "off"
+    }
+  ],
+  "fingerprint": "ccfb6f604b028682a8a1ddc7bab69507848b84ab1deb5c63a7b599d85614934c",
+  "totalMatrixCells": 11584,
+  "smokeOnly": true
+}

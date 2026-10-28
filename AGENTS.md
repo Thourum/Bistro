@@ -103,7 +103,7 @@ Enable the pre-commit hook once per clone (blocks staged files over 5,000 tokens
 git config core.hooksPath .githooks
 ```
 
-Performance bench (ADR 0001): `BISTRO_SLIM=1 pnpm run release:macos` builds the slim variant (Electron fuses, no `.woff` duplicates). The packaged app accepts `--quit-after-ready` and `--bench-query=…`, and the renderer's `bench/` module loads only when `bench_collector` is in the URL. Seeding (`go/cmd/bistro-benchseed` plus pinned PRs) and the measurement drivers are documented in `docs/adr/data/0001/harness/README.md`.
+Performance bench (ADR 0001): `BISTRO_SLIM=1 pnpm run release:macos` builds the slim variant (Electron fuses, no `.woff` duplicates). The packaged app accepts `--quit-after-ready` and `--bench-query=…`, and the renderer's `bench/` module loads only when `bench_collector` is in the URL. Seeding (`go/cmd/bistro-benchseed` plus pinned PRs) and the measurement drivers are documented in `docs/adr/data/0001/harness/README.md`. Its S6 keyboard driver (`run-keys.mjs` / `keys-stats.mjs`) requires passive permission/layout preflight and an explicit bounded `--limit` or `--full`; never inject keys while preflight is blocked.
 
 If a command or detail is unclear, check `electron/package.json` scripts. Do not invent workflows.
 

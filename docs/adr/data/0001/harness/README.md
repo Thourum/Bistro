@@ -94,3 +94,36 @@ node --test docs/adr/data/0001/harness/*.test.mjs
 ```
 
 Host arguments are the bench URL and seed settings path; stdout is a JSONL protocol retained in `host.log`/`host-events.json`. The driver uses the current foreground/visibility protocol before measuring; focus or visibility loss invalidates the phase. Keep the host frontmost. `run-webview` owns engine/collector cleanup and records launch receipts, idle/post-diff memory and frame events; defaults are 30 startup, 5 memory, 10 frames per fixture. WebKit memory attribution depends on explicit process PID SPIs, not launchd ancestry. Missing PIDs or footprint failures must remain blockers, never partial memory totals. No app input scripts are involved.
+
+### Gate 4 S6 keyboard matrix (passive until permission/layout preflight passes)
+
+```bash
+sh docs/adr/data/0001/harness/keys/build-native.sh
+node docs/adr/data/0001/harness/run-keys.mjs --dry-run
+node docs/adr/data/0001/harness/run-keys.mjs --preflight-only --limit 1 \
+  --label passive --out /tmp/bistro-keys-preflight
+node --test docs/adr/data/0001/harness/keys.test.mjs
+```
+
+These commands do not inject keys or change input sources. In development, the renderer URL can opt into `bench_keys=1` without a CLI flag; packaged measurement launches use the validated `--bench-query` path. Bench mode fails closed if its collector or synthetic fixture is invalid. Current permission/layout blockers are recorded in `../gate4/keys-preflight.txt`; **do not run a live matrix while blocked**. Preflight runs native `self-test`, `preflight`, `sources` and a passive System Events query. A successful Automation query is not permission to inject. Posting, Accessibility, passive tap and all required enabled sources are mandatory before target launch. Never edit the TCC database or silently enable layouts.
+
+When separately authorized and preflight passes, a bounded synthetic smoke can use:
+
+```bash
+node docs/adr/data/0001/harness/run-keys.mjs --app /path/Bistro.app \
+  --seed /tmp/bistro-smoke-seed --fixture-pr github:bench/large-diff:1 \
+  --label baseline --out /tmp/bistro-keys-baseline --limit 4 \
+  --style vim --layout US --ime off --actionId detail.approve
+# Repeat against candidate in a separate output directory, then:
+node docs/adr/data/0001/harness/keys-stats.mjs \
+  --baseline /tmp/bistro-keys-baseline --candidate /tmp/bistro-keys-candidate \
+  --out /tmp/bistro-keys-comparison.json
+```
+
+`--launch-command EXEC --launch-args '["arg"]'` launches any shell's executable without a shell interpreter (Wails must honor the same bench-query/user-data arguments); `--app` resolves `CFBundleExecutable`. `--pid PID` is parsed but refuses live attach until disposable-profile and queue ownership can be proven; use harness-owned launch instead. `--seed` copies settings/cache into the driver's output, disables sync/telemetry and sets rules-only local classification; SQLite is never edited; a read-only queue-count check rejects a copied seed with queued writes before launch. Renderer readiness must prove effective rules classification, dry dispatch, blocked external writes and the synthetic fixture. Renderer transport allows explicit view reads (some refresh only the disposable local cache) and the rules-only classification setter; provider sync, review/comment writes and other external actions are blocked. Live input guard loss aborts the entire run; the persistent native worker restores original input sources on stop, EOF or signals. No hotkey behavior is repaired for this measurement.
+
+Source inventory reuses Gate 3's text parser, excludes platform-disabled `global.quit.win` and adds textarea-local `Mod+Enter` plus the independently accepted macOS `Control+Enter` chord in all styles. Full universe: **11,584 cells per shell** (vim 3,904; emacs 3,968; standard 3,712). `--dry-run` prints counts and ten selected cells by default. Live runs require explicit `--limit 1..10`; only `--full` permits a larger filtered/full matrix. Quit/Cmd+Q cells remain in the denominator but are never injected: manual check pending. The 250 ms per-step pacing gives a hypothetical full-universe lower bound **3,472 seconds (~57.9 minutes) per shell**, excluding setup/collector/native latency, not a measured runtime.
+
+`run-manifest.json` fingerprints target/options/chords/cell dimensions; `--resume` rejects a changed identity and skips only complete groups. `cells.jsonl` groups native tap, DOM events, intended actionIds and resulting text per exact cell; raw `renderer.jsonl`, `native-tap.jsonl` and `worker.jsonl` remain beside it. Stats applies the frozen ADR overlapping class tolerances, requires a verified Settings rebinding workaround for every tolerated non-US Option failure, flags core review regressions, and compares Gate 3 predictions. Full-source coverage is always required for a gate PASS: smoke, missing observations, unreachable handlers, fake textareas and failed setup remain **incomplete**, never equal no-op passes. `completed.json` means the requested driver loop ended, not S6 passed.
+
+IME-active cells remain incomplete without native marked-text proof: selecting Japanese/Hiragana or logging DOM `isComposing` is not that proof. The driver does not switch to an IME or inject composition setup in these cells. Even identical action firing in either shell during a native-verified composition is a failure. Renderer fixture does not reach every overlay/onboarding/login handler, so those cells explicitly remain incomplete. No full S6 verdict is claimed.

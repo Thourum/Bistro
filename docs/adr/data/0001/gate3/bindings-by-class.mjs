@@ -5,7 +5,9 @@ import assert from 'node:assert/strict';
 
 const DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(DIRECTORY, '../../../../..');
-const readSource = (name) => readFileSync(join(ROOT, 'electron/src/renderer', name), 'utf8');
+/** Parse the source-only binding inventory; importing this module has no artifact side effects. */
+export function parseInventory(root = ROOT) {
+const readSource = (name) => readFileSync(join(root, 'electron/src/renderer', name), 'utf8');
 const keymaps = readSource('utils/keymaps.ts');
 const catalog = readSource('utils/keybindings.ts');
 const countConstant = (source, name) => Number(source.match(new RegExp(`const ${name} = (\\d+);`))?.[1]);
@@ -42,6 +44,12 @@ const tables = {
   standard: { ...shared, ...generatedEntries('list.jumpTo', jumpCount, String),
     ...generatedEntries('inbox.lane', laneCount, (digit) => `Mod+${digit}`), ...parseTable('STANDARD_KEYS') },
 };
+return { tables, catalogIds: [...catalogIds] };
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const { tables, catalogIds: ids } = parseInventory();
+const catalogIds = new Set(ids);
 const predicates = {
   'plain, no modifier (single step)': (steps, isSequence) => !isSequence && !/\+/.test(steps[0]),
   'Cmd / Mod on macOS (any step)': (steps) => steps.some((step) => /(?:Meta|Mod)\+/.test(step)),
@@ -68,3 +76,4 @@ writeFileSync(join(DIRECTORY, 'bindings-by-class.json'), JSON.stringify(classifi
 writeFileSync(join(DIRECTORY, 'bindings-by-class.md'), `# Binding inventory (no key injection)\n\nReproduce: \`node docs/adr/data/0001/gate3/bindings-by-class.mjs\` from the repository root. Reads files as text; imports/evaluates no application or dependency code. Fixed source-table grammar is asserted; generated provider, PR-jump and lane entries are expanded using source constants. Counts are actionIds, not distinct chords or active-route counts. User overrides are absent.\n\n| Class | vim | emacs | standard |\n|---|---:|---:|---:|\n${tableRows.join('\n')}\n${totals}\n\nClasses overlap: Ctrl+Alt belongs to both Ctrl and Option; every modified sequence belongs to its modifier class and sequences. The plain row excludes Shift-only and sequences; both are still covered by S6. Option US and DE/AZERTY/Dvorak use the same Option inventory. Every bound actionId is a focus/IME test candidate, including expected non-firing cells. \`global.quit.win\` (Alt+F4) is in the source table for all styles but platform-disabled on macOS: subtract one from Option and total for the macOS-active inventory. Hidden arrow aliases are counted because they remain registered.\n\nInside comment textarea: normal global bindings/sequences use ignoreInputs; Escape (plus emacs C-g for active overlays) can bypass this. Local \`TEXTAREA_SUBMIT_HOTKEY = Mod+Enter\` is one additional binding in every style (function accepts Cmd **or Ctrl**+Enter), not in ACTION_CATALOG. Sandbox-only Shift+Space is not a comment-textarea binding. IME-active is a cross-cutting context, not a separate set of chords.\n\nFull actionId/chord membership: [bindings-by-class.json](bindings-by-class.json).\n`);
 console.log(JSON.stringify(Object.fromEntries(Object.entries(classified).map(([style, inventory]) => [style,
   { total: inventory.total, unbound: inventory.unbound, counts: Object.fromEntries(Object.entries(inventory.classes).map(([name, entries]) => [name, entries.length])) }])), null, 2));
+}
