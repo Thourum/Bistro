@@ -43,6 +43,7 @@ type App struct {
 	log                 *slog.Logger
 	emitter             services.Emitter
 	panics              services.PanicReporter
+	serviceSet          *services.Set
 	db                  *store.DB
 	wsServer            *ws.Server
 	wsPort              int
@@ -216,7 +217,7 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	defer a.expertiseEngine.Shutdown()
 	a.prepareLLMTier(ctx)
 	a.initializeStartupProvider(ctx)
-	a.registerAuthHandlers(ctx, stores)
+	a.serviceSet = a.buildServices(ctx)
 	waitReviewQueue := a.registerReviewHandlers(ctx, stores)
 	a.registerDiffAndCheckoutHandlers(stores)
 	a.registerExpertiseHandlers(stores)

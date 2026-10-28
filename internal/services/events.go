@@ -1,5 +1,17 @@
 package services
 
-// Typed push events are registered here with application.RegisterEvent in init
-// so Wails' binding generator can discover their names and payload types.
-func init() {}
+import "github.com/wailsapp/wails/v3/pkg/application"
+
+// EventAuthRedirect asks the renderer to open the OAuth authorization URL.
+const EventAuthRedirect = "auth:redirect"
+
+// AuthRedirect is emitted only after the callback listener is bound.
+type AuthRedirect struct {
+	Provider string `json:"provider"`
+	URL      string `json:"url"`
+}
+
+// Direct registrations allow Wails' binding generator to discover payload types.
+func init() {
+	application.RegisterEvent[AuthRedirect](EventAuthRedirect)
+}

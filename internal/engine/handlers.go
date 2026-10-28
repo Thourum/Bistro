@@ -7,43 +7,7 @@ import (
 
 	"github.com/itterno/bistro/internal/engine/handler"
 	"github.com/itterno/bistro/internal/git/diff"
-	"github.com/itterno/bistro/internal/provider"
 )
-
-func (a *App) registerAuthHandlers(ctx context.Context, stores runStores) {
-	authDeps := handler.AuthDeps{
-		Log:         a.log,
-		Tokens:      a.tokenManager,
-		Cache:       a.providerCache,
-		Broadcast:   a.wsServer.Broadcast,
-		SyncTrigger: a.syncTrigger,
-		SetProvider: func(prov provider.Provider, name string) {
-			a.provMu.Lock()
-			defer a.provMu.Unlock()
-			if prov == nil {
-				a.teardownProviderLocked(name)
-				return
-			}
-			if a.db != nil {
-				a.attachOrchestratorLocked(ctx, prov, name)
-				a.log.Info("orchestrator initialized after auth")
-			}
-		},
-		GetClientID:        func() string { return a.githubClientID },
-		GetClientSecret:    func() string { return a.githubClientSecret },
-		CallbackTimeout:    a.authCallbackTimeout,
-		CurrentUserWriter:  stores.currentUser,
-		CurrentUserClearer: stores.currentUser,
-	}
-
-	authCheck := handler.NewAuthCheckHandler(authDeps)
-
-	start, cancel := handler.NewAuthFlowHandlers(authDeps)
-	a.wsServer.RegisterHandler("AUTH_START", start)
-	a.wsServer.RegisterHandler("AUTH_CANCEL", cancel)
-	a.wsServer.RegisterHandler("AUTH_CHECK", authCheck)
-	a.wsServer.RegisterHandler("AUTH_DISCONNECT", handler.NewAuthDisconnectHandler(authDeps, authCheck))
-}
 
 func (a *App) registerReviewHandlers(ctx context.Context, stores runStores) func() {
 	requestQueue, waitQueue := handler.NewRequestReviewQueueHandler(handler.ReviewQueueDeps{
