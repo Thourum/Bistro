@@ -1,3 +1,5 @@
+import { openUrlInBrowser } from '../utils/openUrl';
+
 interface ExternalLinkProps {
   href?: string | undefined;
   children: React.ReactNode;
@@ -8,7 +10,7 @@ interface ExternalLinkProps {
  * The single renderer-owned external-link primitive. Prevents in-app navigation
  * and opens HTTPS URLs in the OS browser via the preload bridge (main validates
  * HTTPS-only — main/index.ts). Non-https / relative / javascript: hrefs are inert.
- * `window.electron` is optional-chained so jsdom tests render without a bridge.
+ * The shared URL service also applies the benchmark's external-write guard.
  */
 export function ExternalLink({
   href,
@@ -18,7 +20,7 @@ export function ExternalLink({
   function handleClick(event: React.MouseEvent<HTMLAnchorElement>): void {
     event.preventDefault();
     if (href === undefined || !href.startsWith('https://')) return;
-    void window.electron?.openExternal(href);
+    void openUrlInBrowser(href);
   }
 
   return (

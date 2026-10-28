@@ -10,6 +10,7 @@ import {
 import type { Logger } from 'electron-log';
 import WebSocket from 'ws';
 import { z } from 'zod';
+import { isBenchMessageAllowed } from '../shared/benchSafety';
 
 const syncEventSchema = z.object({
   type: z.string(),
@@ -31,7 +32,11 @@ export class WebSocketClient extends EventEmitter {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
 
-  constructor(url: string, logger: Logger) {
+  constructor(
+    url: string,
+    logger: Logger,
+    private readonly options: Readonly<{ isKeysBench?: boolean }> = {},
+  ) {
     super();
     this.url = url;
     this.logger = logger;
@@ -100,7 +105,18 @@ export class WebSocketClient extends EventEmitter {
     });
   }
 
-  send(message: Record<string, unknown>): Result<void, Fault> {
+  send(message: Readonly<Record<string, unknown>>): Result<void, Fault> {
+    if (
+      this.options.isKeysBench &&
+      !isBenchMessageAllowed(message.type, message.data)
+    ) {
+      return err(
+        ServiceError(
+          'BENCH_WRITE_BLOCKED',
+          `Keys benchmark blocked ${String(message.type)}`,
+        ),
+      );
+    }
     if (!this.ws || !this.isConnected())
       return err(ServiceError('CONNECTION_ERROR', 'WebSocket not connected'));
     return fromThrowable(

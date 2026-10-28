@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 import { app, BrowserWindow } from 'electron';
 import type { Logger } from 'electron-log';
-import { parseBenchSearch } from './benchArgs';
+import { NATIVE_KEYS_BENCH_ARG } from '../shared/benchSafety';
+import { isKeysBenchSearch, parseBenchSearch } from './benchArgs';
 import type { AppConfig } from './types';
 import { wsPortToArg } from './ws-port';
 
@@ -14,6 +15,13 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
   if (mainWindow !== null && !mainWindow.isDestroyed()) {
     return mainWindow;
   }
+
+  const devSearch = MAIN_WINDOW_VITE_DEV_SERVER_URL
+    ? new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL).search
+    : '';
+  const benchSearch = parseBenchSearch(process.argv, devSearch);
+  const isKeysBench =
+    benchSearch.isOk() && isKeysBenchSearch(benchSearch.value);
 
   // Packaged: shipped via Forge extraResource (the asar holds only .vite/).
   const iconPath = app.isPackaged
@@ -40,7 +48,10 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      additionalArguments: [wsPortToArg(config.goProcess.wsPort)],
+      additionalArguments: [
+        wsPortToArg(config.goProcess.wsPort),
+        ...(isKeysBench ? [NATIVE_KEYS_BENCH_ARG] : []),
+      ],
     },
   });
 
@@ -59,6 +70,14 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
     },
   );
 
+  const search = benchSearch.isOk() ? benchSearch.value : '';
+  const validSearch = benchSearch;
+  if (validSearch.isErr()) {
+    logger.error(validSearch.error.message);
+    app.quit();
+    return mainWindow;
+  }
+
   mainWindow.webContents.on('before-input-event', (event, input) => {
     const key = input.key.toLowerCase();
     const isMacQuit =
@@ -68,7 +87,7 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
 
     if (isMacQuit || isWindowsQuit) {
       event.preventDefault();
-      app.quit();
+      if (!isKeysBench) app.quit();
     }
   });
 
@@ -89,19 +108,10 @@ export function createWindow(config: AppConfig, logger: Logger): BrowserWindow {
     event.preventDefault();
   });
 
-  const benchSearch = parseBenchSearch(process.argv);
-  if (benchSearch.isErr()) {
-    logger.error(benchSearch.error.message);
-    app.quit();
-    return mainWindow;
-  }
-  const search = benchSearch.value;
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     const rendererUrl = new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
     if (search) {
-      rendererUrl.search = [rendererUrl.search.slice(1), search]
-        .filter(Boolean)
-        .join('&');
+      rendererUrl.search = search;
     }
     mainWindow.loadURL(rendererUrl.toString());
     mainWindow.webContents.openDevTools();

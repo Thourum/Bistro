@@ -27,6 +27,8 @@ import {
 } from '../services/signIn';
 import { appStore } from '../store';
 import { toggleRepoGroup, type UIState } from '../store/ui';
+import { emitAppEvent } from './appEvents';
+import { guardBenchWrite, permitsBenchAction } from './benchSafety';
 import type { RouteBase } from './keybindings';
 import { LINE_COMMENT_ACTIONS } from './lineCommentActions';
 import { createLogger } from './logger';
@@ -53,11 +55,6 @@ const SCROLL_LINE_PX = 40;
 const SCROLL_HORIZONTAL_PX = 80;
 const SCROLL_PAGE_PX = 300;
 const log = createLogger('KeybindingActions');
-
-function emitAppEvent(name: string): void {
-  if (typeof document === 'undefined') return;
-  document.dispatchEvent(new CustomEvent(name));
-}
 
 function selectedVisibleIndex(context: KeyActionContext): number {
   const { selectedPRIndex, visiblePRIds } = context.store.state;
@@ -375,10 +372,10 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
     void router.navigate({ to: '/settings' });
   },
   'global.quit.mac': () => {
-    void window.electron.quitApp();
+    if (guardBenchWrite('app:quit').isOk()) void window.electron.quitApp();
   },
   'global.quit.win': () => {
-    void window.electron.quitApp();
+    if (guardBenchWrite('app:quit').isOk()) void window.electron.quitApp();
   },
   'global.search': (context) => context.overlays.openSearch(),
   'list.down': (context) =>
@@ -537,8 +534,7 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   ...REVIEW_ACTIONS,
 };
 
-/** Find the handler for a configured binding; undefined means the action is not registered. */
-export function getBindingAction(actionId: string): KeyAction | undefined {
+function findBindingAction(actionId: string): KeyAction | undefined {
   const jump = /^list\.jumpTo([1-9])$/.exec(actionId);
   if (jump !== null) {
     const digit = Number(jump[1]);
@@ -565,4 +561,13 @@ export function getBindingAction(actionId: string): KeyAction | undefined {
   );
   if (provider !== undefined) return () => startSignIn(provider.id);
   return ACTIONS[actionId];
+}
+
+/** Find the handler for a configured binding; undefined means the action is not registered. */
+export function getBindingAction(actionId: string): KeyAction | undefined {
+  const action = findBindingAction(actionId);
+  if (action === undefined) return undefined;
+  return (context) => {
+    if (permitsBenchAction(actionId)) action(context);
+  };
 }

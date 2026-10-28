@@ -1,3 +1,4 @@
+import { permitsBenchAction } from '../utils/benchSafety';
 import { isActive } from '../utils/keybindingActivation';
 import type { KeyBinding, RouteBase } from '../utils/keybindings';
 import { findActionKeys } from '../utils/legendPresets';
@@ -18,6 +19,15 @@ export interface CommandItem {
   readonly actionId?: string;
   /** Only listed on PR detail and diff routes. */
   readonly prOnly?: boolean;
+}
+
+/** Runs both bound and palette-only commands through the same dry-dispatch boundary. */
+export function executePaletteCommand(
+  command: CommandItem,
+  execute: () => void,
+): void {
+  if (permitsBenchAction(command.actionId ?? `palette.${command.id}`))
+    execute();
 }
 
 /** Display keys only for an effective binding active on the underlying route. */

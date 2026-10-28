@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { Store } from '@tanstack/store';
 import {
   afterEach,
@@ -388,6 +389,49 @@ describe('first-run milestones from real keybinding handlers', () => {
       ...state,
       appearance: previousAppearance,
     }));
+  });
+
+  it('records bench dispatch without running any registered or palette-only handler', async () => {
+    const action = getBindingAction('diff.sinceLastReview');
+    assert(action !== undefined);
+    const dispatched: string[] = [];
+    const listener = (event: Event): void => {
+      if (event instanceof CustomEvent) dispatched.push(event.detail.actionId);
+    };
+    document.addEventListener('bistro:bench:action', listener);
+    const previousUrl = location.href;
+    window.history.replaceState(null, '', '?bench_keys=1');
+    vi.resetModules();
+    const benchActions = await import('./keybindingActions');
+    const benchPalette = await import('../components/commandPaletteCommands');
+    const benchStore = (await import('../store')).appStore;
+    const benchSettings = (await import('../store/settings')).settingsStore;
+    const beforeDispatch = benchStore.state;
+    const registeredActions = ACTION_CATALOG.map((entry) => entry.actionId);
+    for (const actionId of registeredActions) {
+      const registered = benchActions.getBindingAction(actionId);
+      assert(registered !== undefined);
+      registered({ ...context, store: benchStore });
+    }
+    expect(dispatched).toEqual(registeredActions);
+    const beforeSettings = benchSettings.state;
+    benchPalette.executePaletteCommand(
+      { id: 'diff-split', name: 'Split', icon: 'split' },
+      () => {
+        benchSettings.setState((state) => ({
+          ...state,
+          diff: { ...state.diff, style: 'split' },
+        }));
+      },
+    );
+    expect(dispatched.at(-1)).toBe('palette.diff-split');
+    expect(benchSettings.state).toBe(beforeSettings);
+    expect(benchStore.state).toBe(beforeDispatch);
+    expect(benchStore.state.sinceLastReviewActive).toBe(false);
+    window.history.replaceState(null, '', previousUrl);
+    document.removeEventListener('bistro:bench:action', listener);
+    action(context);
+    expect(appStore.state.sinceLastReviewActive).toBe(true);
   });
 
   it('records a real PR open but not a header or an empty list', () => {

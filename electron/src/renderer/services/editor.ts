@@ -1,7 +1,8 @@
-import { err, Fault, fromPromise, ok, type ResultAsync } from '@thourum/fault';
+import { err, Fault, fromPromise, ok, ResultAsync } from '@thourum/fault';
 import { safeZodParse } from '@thourum/fault/zod';
 import { z } from 'zod';
 import type { OpenInEditorRequest } from '../../types/ipc';
+import { guardBenchWrite } from '../utils/benchSafety';
 import { parseResponse } from '../utils/error';
 import { wsClient } from './ws/connection';
 
@@ -56,6 +57,8 @@ export function checkoutPRHead(
 export function openInEditor(
   request: Readonly<OpenInEditorRequest>,
 ): ResultAsync<void, Fault> {
+  const permitted = guardBenchWrite('open-in-editor');
+  if (permitted.isErr()) return new ResultAsync(Promise.resolve(permitted));
   return fromPromise(window.electron.openInEditor(request), (cause) =>
     new Fault(cause instanceof Error ? cause : 'Unknown error')
       .withTag('EXTERNAL_ERROR')

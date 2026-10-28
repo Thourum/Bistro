@@ -25,6 +25,7 @@ type EventChannel =
 declare global {
   interface Window {
     electron: {
+      readonly isKeysBench: boolean;
       wsPort: number | null;
       readonly platform: string;
       getWsPort: () => Promise<number | null>;

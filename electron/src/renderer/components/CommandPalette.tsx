@@ -14,6 +14,7 @@ import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
+import { permitsBenchAction } from '../utils/benchSafety';
 import { focusedExpertisePR, repoIdForPR } from '../utils/expertise';
 import { getBindingAction } from '../utils/keybindingActions';
 import { createLogger } from '../utils/logger';
@@ -22,6 +23,7 @@ import { prBrowserUrl } from '../utils/triage';
 import {
   COMMANDS,
   type CommandItem,
+  executePaletteCommand,
   shortcutFor,
 } from './commandPaletteCommands';
 import { addToast } from './ToastContainer';
@@ -131,6 +133,7 @@ export function CommandPalette(): React.ReactElement | null {
   };
 
   const handleExecutePR = (pr: PR): void => {
+    if (!permitsBenchAction('palette.openPR')) return;
     // Navigate by stable pr.id — never write selectedPRIndex as identity.
     void navigate({ to: '/prs/$prId', params: { prId: pr.id } });
     closeOverlay();
@@ -169,7 +172,7 @@ export function CommandPalette(): React.ReactElement | null {
     });
   };
 
-  const handleExecuteCommand = (command: CommandItem): void => {
+  const runCommand = (command: CommandItem): void => {
     if (command.actionId !== undefined) {
       handleClose();
       getBindingAction(command.actionId)?.({
@@ -373,7 +376,9 @@ export function CommandPalette(): React.ReactElement | null {
                     bindings,
                     routeBase,
                   )}
-                  onSelect={() => handleExecuteCommand(cmd)}
+                  onSelect={() =>
+                    executePaletteCommand(cmd, () => runCommand(cmd))
+                  }
                 />
               ))}
             </Command.Group>

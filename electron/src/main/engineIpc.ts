@@ -10,8 +10,9 @@ import {
   ResultAsync,
   ServiceError,
 } from '@thourum/fault';
-import { app, ipcMain, shell } from 'electron';
+import { app, shell } from 'electron';
 import { type EngineStatus, engineLogRequestSchema } from '../types/engine';
+import { registerMainIpc } from './benchIpc';
 import { buildCrashIssueUrl, REPORT_LOG_LINES } from './crashReport';
 import { getStderrTail } from './go-spawn';
 
@@ -79,9 +80,9 @@ function readLogTail(
 }
 
 export function registerEngineIPC(options: EngineIPCOptions): void {
-  ipcMain.handle('engine:get-status', () => ({ ok: options.getStatus() }));
-  ipcMain.handle('app:get-version', () => ({ ok: app.getVersion() }));
-  ipcMain.handle('engine:restart', () => {
+  registerMainIpc('engine:get-status', () => ({ ok: options.getStatus() }));
+  registerMainIpc('app:get-version', () => ({ ok: app.getVersion() }));
+  registerMainIpc('engine:restart', () => {
     const status = options.getStatus();
     if (!status.isSpawned || status.state !== 'crashed')
       return { err: 'This engine cannot be restarted here.' };
@@ -90,7 +91,7 @@ export function registerEngineIPC(options: EngineIPCOptions): void {
       (fault) => ({ err: fault.message }),
     );
   });
-  ipcMain.handle('engine:log-tail', (_event, input: unknown) => {
+  registerMainIpc('engine:log-tail', (_event, input: unknown) => {
     const parsed = engineLogRequestSchema.safeParse(input);
     if (!parsed.success)
       return { err: 'lines must be an integer from 1 to 60.' };
@@ -99,7 +100,7 @@ export function registerEngineIPC(options: EngineIPCOptions): void {
       (fault) => ({ err: fault.message }),
     );
   });
-  ipcMain.handle('engine:open-log-folder', () =>
+  registerMainIpc('engine:open-log-folder', () =>
     fromPromise(shell.openPath(dirname(options.logFile)), engineFault)
       .andThen((message) =>
         message === ''
@@ -111,7 +112,7 @@ export function registerEngineIPC(options: EngineIPCOptions): void {
         (fault) => ({ err: fault.message }),
       ),
   );
-  ipcMain.handle('engine:report-crash', () => {
+  registerMainIpc('engine:report-crash', () => {
     const status = options.getStatus();
     if (status.state !== 'crashed')
       return { err: 'Crash reporting is available after the engine stops.' };

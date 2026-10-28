@@ -1,4 +1,5 @@
 import { err, Fault, ok, ResultAsync, ServiceError } from '@thourum/fault';
+import { guardBenchWrite } from './benchSafety';
 
 /**
  * Open a URL in the user's real browser.
@@ -7,6 +8,8 @@ import { err, Fault, ok, ResultAsync, ServiceError } from '@thourum/fault';
  * `pnpm dev:web` it falls back to `window.open`.
  */
 export function openUrlInBrowser(url: string): ResultAsync<void, Fault> {
+  const permitted = guardBenchWrite('open-external');
+  if (permitted.isErr()) return new ResultAsync(Promise.resolve(permitted));
   if (window.electron?.openExternal !== undefined) {
     return ResultAsync.fromPromise(window.electron.openExternal(url), (cause) =>
       new Fault(cause instanceof Error ? cause.message : String(cause))

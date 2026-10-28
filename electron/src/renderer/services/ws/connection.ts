@@ -10,6 +10,7 @@ import {
 import { appStore } from '../../store';
 import { settingsStore } from '../../store/settings';
 import { extractResponseError, parseWsMessage } from '../../types/wsSchemas';
+import { guardBenchWsMessage } from '../../utils/benchSafety';
 import { createLogger } from '../../utils/logger';
 import { dispatchWsEvent } from './events';
 
@@ -154,6 +155,14 @@ function createWsClient(): Readonly<WsClient> {
   }
 
   function send(type: string, data: unknown): string | undefined {
+    const permitted = guardBenchWsMessage(type, data);
+    if (permitted.isErr()) {
+      log.warn(
+        { type, err: permitted.error.message },
+        'benchmark refused message',
+      );
+      return undefined;
+    }
     const socket = state.socket;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       log.error({ type }, 'send failed — not connected');
@@ -357,6 +366,8 @@ function createWsClient(): Readonly<WsClient> {
     data: unknown,
     options?: RequestOptions,
   ): ResultAsync<unknown, Fault> {
+    const permitted = guardBenchWsMessage(type, data);
+    if (permitted.isErr()) return new ResultAsync(Promise.resolve(permitted));
     return new ResultAsync(
       new Promise<Result<unknown, Fault>>((resolve) => {
         const connectDeadline = Date.now() + REQUEST_TIMEOUT_MS;

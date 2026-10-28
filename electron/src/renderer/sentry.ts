@@ -1,7 +1,12 @@
 import type { Breadcrumb, ErrorEvent } from '@sentry/electron/renderer';
 import * as Sentry from '@sentry/electron/renderer';
 
-const enabled = import.meta.env.VITE_SENTRY_ENABLED === 'true';
+const isBenchRequested =
+  (typeof window !== 'undefined' && window.electron?.isKeysBench === true) ||
+  (typeof location !== 'undefined' &&
+    new URLSearchParams(location.search).has('bench_keys'));
+const enabled =
+  !isBenchRequested && import.meta.env.VITE_SENTRY_ENABLED === 'true';
 
 function stripLocalPath(filename: string): string {
   return filename.replace(/^.*[/\\]/, '');

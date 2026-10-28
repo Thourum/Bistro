@@ -1,15 +1,18 @@
 import { err, Fault, ok, ResultAsync } from '@thourum/fault';
 import { z } from 'zod';
+import { benchCollectorSchema } from '../../shared/benchSafety';
 import { router } from '../router';
+import { guardBenchWrite, isKeysBench } from '../utils/benchSafety';
 import { createLogger } from '../utils/logger';
 import { collectDiffFrames } from './frames';
+import { startKeysBench } from './keys';
 
 const DEFAULT_SCROLL_FRAMES = 1200;
 const DEFAULT_SCROLL_STEP_PX = 48;
 const PR_LIST_RENDERED_EVENT = 'bistro:pr-list-rendered';
 const log = createLogger('bench');
 
-const collectorSchema = z.url({ protocol: /^https?$/ });
+const collectorSchema = benchCollectorSchema;
 const optionsSchema = z.object({
   collector: collectorSchema,
   quitAfterReady: z.boolean(),
@@ -39,6 +42,7 @@ function postEvent<T extends Readonly<{ event: string }>>(
     () =>
       fetch(`${collector}/event`, {
         method: 'POST',
+        redirect: 'error',
         body: JSON.stringify(event),
         headers: { 'Content-Type': 'text/plain' },
       }),
@@ -75,7 +79,7 @@ async function onListRendered(
   });
   if (posted.isErr()) await reportFailure(options.collector, posted.error);
   if (options.quitAfterReady) {
-    if (window.electron?.quitApp) {
+    if (window.electron?.quitApp && guardBenchWrite('app:quit').isOk()) {
       const quit = await ResultAsync.fromThrowable(
         () => window.electron.quitApp(),
         benchFault,
@@ -98,7 +102,7 @@ async function onListRendered(
 }
 
 /** Installs the benchmark listener before React renders; normal launches never import this module. */
-export function startBench(): void {
+export function startBench(): boolean {
   // Hash history appends outer location.search when parsing a fresh hash. Keep
   // the bench query outside the hash and set the route through its own history.
   if (!location.hash) router.history.replace('/prs/?filter=all');
@@ -106,7 +110,19 @@ export function startBench(): void {
   const collector = collectorSchema.safeParse(search.get('bench_collector'));
   if (!collector.success) {
     log.error({ err: collector.error.message }, 'invalid bench collector');
-    return;
+    return false;
+  }
+  if (
+    search.has('bench_keys') &&
+    (search.getAll('bench_keys').length !== 1 ||
+      search.get('bench_keys') !== '1')
+  )
+    return false;
+  if (isKeysBench()) {
+    return startKeysBench(collector.data, {
+      post: (event) => postEvent(collector.data, event),
+      fail: (fault) => reportFailure(collector.data, fault),
+    });
   }
   const options = optionsSchema.safeParse({
     collector: collector.data,
@@ -120,7 +136,7 @@ export function startBench(): void {
       collector.data,
       new Fault(options.error.message).withTag('VALIDATION_ERROR'),
     );
-    return;
+    return false;
   }
   window.addEventListener(
     PR_LIST_RENDERED_EVENT,
@@ -139,4 +155,5 @@ export function startBench(): void {
     },
     { once: true },
   );
+  return true;
 }

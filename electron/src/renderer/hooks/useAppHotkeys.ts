@@ -16,6 +16,8 @@ import {
 } from '../services/onboardingSandbox';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
+import { emitAppEvent } from '../utils/appEvents';
+import { isKeysBench, permitsBenchAction } from '../utils/benchSafety';
 import {
   getBindingAction,
   type KeyActionContext,
@@ -53,7 +55,7 @@ function runBinding(actionId: string, context: KeyActionContext): void {
     appStore.state.onboardingSandbox !== null &&
     SANDBOX_ACTION_IDS.has(actionId)
   ) {
-    dispatchSandboxAction(actionId);
+    if (permitsBenchAction(actionId)) dispatchSandboxAction(actionId);
     return;
   }
   getBindingAction(actionId)?.(context);
@@ -186,6 +188,15 @@ export function useAppHotkeys(): void {
       })),
     [bindings, activation, makeCtx],
   );
+
+  useEffect(() => {
+    if (!isKeysBench()) return;
+    emitAppEvent('bistro:bench:bindings', {
+      actionIds: bindings
+        .filter((binding) => isBindingEnabled(binding, activation))
+        .map((binding) => binding.actionId),
+    });
+  }, [bindings, activation]);
 
   const timeoutMs = SEQUENCE_TIMEOUT_MS[style];
 

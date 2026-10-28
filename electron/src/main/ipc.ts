@@ -8,7 +8,7 @@ import {
   fromThrowable,
   ServiceError,
 } from '@thourum/fault';
-import { dialog, ipcMain } from 'electron';
+import { dialog } from 'electron';
 import type { Logger } from 'electron-log';
 import { buildEditorArgs, parseEditorCommand } from '../shared/editorArgs';
 import {
@@ -18,6 +18,7 @@ import {
   syncActionRequestSchema,
 } from '../types/ipc';
 import { type AppSettings, appSettingsSchema } from '../types/settings';
+import { registerMainIpc } from './benchIpc';
 import { launchEditor } from './editorLaunch';
 import { validateOpenInEditorRequest } from './editorRequest';
 import { resolveEditorTarget } from './editorTarget';
@@ -51,16 +52,16 @@ export function setupIPC(
   logger.info(`IPC setup (db path: ${path})`);
 
   // ---- engine:* handlers ----
-  ipcMain.handle('engine:get-ws-port', () => {
+  registerMainIpc('engine:get-ws-port', () => {
     return { ok: getWsPort() };
   });
 
   // ---- settings:* handlers ----
-  ipcMain.handle('settings:get', async () => {
+  registerMainIpc('settings:get', async () => {
     return { ok: settings.snapshot };
   });
 
-  ipcMain.handle('settings:set', (_event, input: unknown) => {
+  registerMainIpc('settings:set', (_event, input: unknown) => {
     const parsed = appSettingsSchema.partial().safeParse(input);
     if (!parsed.success) return { err: 'Invalid settings patch' };
     const patch = Object.fromEntries(
@@ -80,7 +81,7 @@ export function setupIPC(
     );
   });
 
-  ipcMain.handle('settings:reset', () =>
+  registerMainIpc('settings:reset', () =>
     fromThrowable(() => settings.resetResult(), ipcFault)().match(
       (result) => {
         if ('ok' in result)
@@ -94,16 +95,16 @@ export function setupIPC(
     ),
   );
 
-  ipcMain.handle('settings:open-file', async () => {
+  registerMainIpc('settings:open-file', async () => {
     return settings.openFile();
   });
 
-  ipcMain.handle('settings:path', async () => {
+  registerMainIpc('settings:path', async () => {
     return { ok: settings.path };
   });
 
   // ---- dialog:* handlers ----
-  ipcMain.handle('dialog:pick-folder', async () => {
+  registerMainIpc('dialog:pick-folder', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory'],
     });
@@ -111,7 +112,7 @@ export function setupIPC(
   });
 
   // ---- fs:read-patch handler ----
-  ipcMain.handle('fs:read-patch', async (_event, input: unknown) => {
+  registerMainIpc('fs:read-patch', async (_event, input: unknown) => {
     const parsed = fsReadPatchRequestSchema.safeParse(input);
     if (!parsed.success) return { err: 'Invalid patch path' };
 
@@ -159,7 +160,7 @@ export function setupIPC(
   // Canonicalises the checkout root and the target (following symlinks) and
   // rejects anything that escapes the repository, then spawns the editor with
   // an argument array — never a shell string.
-  ipcMain.handle(
+  registerMainIpc(
     'open-in-editor',
     async (_event, request: OpenInEditorRequest) => {
       const editorCommand = process.env.EDITOR ?? '';
@@ -193,7 +194,7 @@ export function setupIPC(
   );
 
   // ---- go:command handler ----
-  ipcMain.handle('go:command', (_event, input: unknown) => {
+  registerMainIpc('go:command', (_event, input: unknown) => {
     const parsed = goCommandRequestSchema.safeParse(input);
     if (!parsed.success) return { err: 'Invalid go command' };
     const request = parsed.data;
@@ -227,7 +228,7 @@ export function setupIPC(
   });
 
   // ---- sync:action handler ----
-  ipcMain.handle('sync:action', (_event, input: unknown) => {
+  registerMainIpc('sync:action', (_event, input: unknown) => {
     const parsed = syncActionRequestSchema.safeParse(input);
     if (!parsed.success) return { err: 'Invalid sync action' };
     const request = parsed.data;

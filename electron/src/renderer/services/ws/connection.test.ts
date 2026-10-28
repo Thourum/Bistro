@@ -88,6 +88,51 @@ afterEach(() => {
 });
 
 describe('wsClient.request', () => {
+  it.each([
+    'SUBMIT_ACTION',
+    'DRAFT_SAVE',
+    'REQUEST_PR_SYNC',
+    'REQUEST_UNKNOWN',
+  ])('never sends %s in the keys benchmark', async (type) => {
+    vi.stubGlobal('location', { search: '?bench_keys=1' });
+    vi.resetModules();
+    const { wsClient } = await import('./connection');
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal('document', { dispatchEvent });
+    const socket = installSocket();
+    wsClient.connect();
+    socket.open();
+    expect(socket.sent.map((message) => message.type)).toEqual(['AUTH_CHECK']);
+
+    expect(wsClient.send(type, {})).toBeUndefined();
+    const response = wsClient.request(type, {});
+    expect(vi.getTimerCount()).toBe(0);
+    expect((await response)._unsafeUnwrapErr().tag).toBe('BENCH_WRITE_BLOCKED');
+    expect(socket.sent.map((message) => message.type)).toEqual(['AUTH_CHECK']);
+    expect(dispatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'bistro:bench:blocked-write',
+        detail: { type },
+      }),
+    );
+  });
+
+  it('still sends allowed reads in the keys benchmark', async () => {
+    vi.stubGlobal('location', { search: '?bench_keys=1' });
+    vi.resetModules();
+    const { wsClient } = await import('./connection');
+    const socket = installSocket();
+    wsClient.connect();
+    socket.open();
+    const response = wsClient.request('REQUEST_DIFF', { pr_id: 'pr-1' });
+    socket.respond('DIFF_READY', { files: [] });
+    expect((await response)._unsafeUnwrap()).toEqual({ files: [] });
+    expect(socket.sent.map((message) => message.type)).toEqual([
+      'AUTH_CHECK',
+      'REQUEST_DIFF',
+    ]);
+  });
+
   it('allows a partial scan reply after five seconds and bounds unanswered scans at forty-five', async () => {
     const scanBudgetMs = 45_000;
     const socket = installSocket();

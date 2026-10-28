@@ -29,6 +29,8 @@ const VALID_EVENT_CHANNELS = [
 type ValidSendChannel = (typeof VALID_SEND_CHANNELS)[number];
 type ValidEventChannel = (typeof VALID_EVENT_CHANNELS)[number];
 
+const NATIVE_KEYS_BENCH_ARG = '--bistro-bench-keys';
+
 // Expose safe IPC methods to renderer
 contextBridge.exposeInMainWorld('electron', {
   /**
@@ -36,6 +38,7 @@ contextBridge.exposeInMainWorld('electron', {
    * additionalArguments at window creation (Go picks it dynamically).
    */
   wsPort: readWsPortFromArgv(process.argv),
+  isKeysBench: process.argv.includes(NATIVE_KEYS_BENCH_ARG),
   platform: process.platform,
   getEngineStatus: (): Promise<EngineReply<EngineStatus>> =>
     ipcRenderer.invoke('engine:get-status'),

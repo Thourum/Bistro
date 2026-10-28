@@ -9,12 +9,14 @@ import {
   ResultAsync,
   ServiceError,
 } from '@thourum/fault';
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import log from 'electron-log';
 import { z } from 'zod';
 import type { EngineStatus } from '../types/engine';
 import type { ClassificationSettings, SyncSettings } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
+import { isKeysBenchSearch, parseBenchSearch } from './benchArgs';
+import { registerMainIpc } from './benchIpc';
 import { registerEngineIPC } from './engineIpc';
 import {
   type GoSpawnOptions,
@@ -34,6 +36,8 @@ import type { AppConfig } from './types';
 import { startAutoUpdates, stopAutoUpdates } from './updater';
 import { WebSocketClient } from './websocket-client';
 import { createWindow } from './window';
+
+declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -224,12 +228,12 @@ let settingsService: SettingsService | null = null;
 let telemetryService: TelemetryService | null = null;
 let runtimeConfig: AppConfig | null = null;
 
-ipcMain.handle('app:quit', () => {
+registerMainIpc('app:quit', () => {
   app.quit();
   return { ok: true as const };
 });
 
-ipcMain.handle('open-external', (_event, url: unknown) => {
+registerMainIpc('open-external', (_event, url: unknown) => {
   if (typeof url !== 'string' || !url.startsWith('https://')) {
     return { err: 'Only https:// URLs are allowed' };
   }
@@ -244,47 +248,79 @@ ipcMain.handle('open-external', (_event, url: unknown) => {
   );
 });
 
-function initialiseMain(): Result<AppConfig, Fault> {
+function initialiseMain(isKeysBench: boolean): Result<AppConfig, Fault> {
   return fromThrowable(() => new SettingsService(log), mainFault)()
     .andThen((settings) => settings.loadResult().map(() => settings))
     .andThen((settings) =>
       buildConfig(settings.snapshot.sync).andThen((config) =>
         fromThrowable(() => {
+          const isolatedConfig = isKeysBench
+            ? {
+                ...config,
+                goProcess: {
+                  ...config.goProcess,
+                  wsPort: 0,
+                  autoSync: false,
+                  replayQueue: false,
+                },
+              }
+            : config;
+          const isTelemetryEnabled =
+            !isKeysBench && settings.snapshot.privacy.telemetryEnabled;
           log.info(`Settings loaded from ${settings.path}`);
-          startAutoUpdates(log);
-          configureSentryConsent(settings.snapshot.privacy.telemetryEnabled);
+          if (!isKeysBench) startAutoUpdates(log);
+          configureSentryConsent(isTelemetryEnabled);
           log.info(
             `Sentry crash reporting: ${isSentryEnabled() ? 'enabled' : 'disabled'}`,
           );
-          telemetryService = new TelemetryService({
-            enabled: settings.snapshot.privacy.telemetryEnabled,
-            storageDir: join(app.getPath('userData'), 'telemetry'),
-            endpoint: resolveTelemetryEndpoint(
-              process.env.BISTRO_TELEMETRY_ENDPOINT,
-            ),
-            appVersion: app.getVersion(),
-            platform: process.platform,
-            logger: log,
-          });
-          void telemetryService.trackAppStarted();
+          telemetryService = isKeysBench
+            ? null
+            : new TelemetryService({
+                enabled: isTelemetryEnabled,
+                storageDir: join(app.getPath('userData'), 'telemetry'),
+                endpoint: resolveTelemetryEndpoint(
+                  process.env.BISTRO_TELEMETRY_ENDPOINT,
+                ),
+                appVersion: app.getVersion(),
+                platform: process.platform,
+                logger: log,
+              });
+          void telemetryService?.trackAppStarted();
           settingsService = settings;
-          runtimeConfig = config;
+          runtimeConfig = isolatedConfig;
           setupIPC(
-            config.goProcess.dbPath,
+            isolatedConfig.goProcess.dbPath,
             log,
             () => wsClient,
             settings,
             () => runtimeConfig?.goProcess.wsPort ?? null,
-            telemetryService,
+            telemetryService ?? undefined,
           );
-          return config;
+          return isolatedConfig;
         }, mainFault)(),
       ),
     );
 }
 
 app.on('ready', () => {
-  const initialised = initialiseMain();
+  const devSearch =
+    typeof MAIN_WINDOW_VITE_DEV_SERVER_URL !== 'undefined' &&
+    MAIN_WINDOW_VITE_DEV_SERVER_URL
+      ? new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL).search
+      : '';
+  const benchSearch = parseBenchSearch(process.argv, devSearch);
+  if (benchSearch.isErr()) {
+    log.error(benchSearch.error.message);
+    app.quit();
+    return;
+  }
+  const isKeysBench = isKeysBenchSearch(benchSearch.value);
+  if (isKeysBench && process.env.BISTRO_SKIP_GO_SPAWN === '1') {
+    log.error('Keyboard benchmark requires its own isolated sync engine');
+    app.quit();
+    return;
+  }
+  const initialised = initialiseMain(isKeysBench);
   if (initialised.isErr()) {
     log.error(`Failed to initialise app: ${initialised.error.message}`);
     dialog.showErrorBox('Bistro could not start', initialised.error.message);
@@ -334,6 +370,7 @@ app.on('ready', () => {
         error: `Engine exited: ${signal ?? code ?? 'unknown'}`,
       }),
     onStillStarting: () => {
+      if (isKeysBench) return;
       fromThrowable(
         () => createWindow(runtimeConfig ?? appConfig, log),
         mainFault,
@@ -383,7 +420,7 @@ app.on('ready', () => {
     // 127.0.0.1, not localhost: the engine binds IPv4 loopback only and
     // localhost may resolve to ::1 first.
     const wsUrl = `ws://127.0.0.1:${actualWsPort}/ws`;
-    wsClient = new WebSocketClient(wsUrl, log);
+    wsClient = new WebSocketClient(wsUrl, log, { isKeysBench });
     const activeSettingsService = settingsService;
     if (activeSettingsService === null) {
       log.error('Settings unavailable after engine startup');
@@ -392,7 +429,7 @@ app.on('ready', () => {
     }
 
     const sendSyncSettingsToGo = (sync: SyncSettings) => {
-      if (!wsClient?.isConnected()) return;
+      if (isKeysBench || !wsClient?.isConnected()) return;
       wsClient
         .send({
           type: 'SET_SYNC_SETTINGS',
@@ -407,7 +444,15 @@ app.on('ready', () => {
       wsClient
         .send({
           type: 'SET_CLASSIFICATION_SETTINGS',
-          data: classificationSettingsPayload(c),
+          data: isKeysBench
+            ? {
+                mode: 'rules',
+                dismissal_scope: 'local',
+                provider: '',
+                model: '',
+                endpoint: '',
+              }
+            : classificationSettingsPayload(c),
         })
         .orInspect((error) =>
           log.warn(`Classification settings update failed: ${error.message}`),
@@ -427,8 +472,8 @@ app.on('ready', () => {
     activeSettingsService.addChangeListener((s) => {
       sendSyncSettingsToGo(s.sync);
       sendClassificationSettingsToGo(s.classification);
-      telemetryService?.setEnabled(s.privacy.telemetryEnabled);
-      configureSentryConsent(s.privacy.telemetryEnabled);
+      telemetryService?.setEnabled(!isKeysBench && s.privacy.telemetryEnabled);
+      configureSentryConsent(!isKeysBench && s.privacy.telemetryEnabled);
     });
   };
   registerEngineIPC({

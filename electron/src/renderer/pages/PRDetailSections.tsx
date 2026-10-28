@@ -10,6 +10,7 @@ import { isDraftOutdated } from '../services/reviewDrafts';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { Comment, ExpertiseFileData, PR, ReviewDraft } from '../types';
+import { isKeysBench, permitsBenchAction } from '../utils/benchSafety';
 import {
   filterBySeverity,
   groupVisibleFindings,
@@ -87,7 +88,9 @@ export function PRCommentComposer({
   onCancel,
   onSubmit,
 }: PRCommentComposerProps): React.ReactElement {
-  const [body, setBody] = useState('');
+  const [body, setBody] = useState(() =>
+    isKeysBench() ? 'Bistro keyboard fixture' : '',
+  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const trimmed = body.trim();
 
@@ -96,7 +99,7 @@ export function PRCommentComposer({
   }, []);
 
   const submit = (): void => {
-    if (trimmed.length === 0) return;
+    if (trimmed.length === 0 || !permitsBenchAction('textarea.submit')) return;
     onSubmit(trimmed);
     setBody('');
   };
@@ -119,7 +122,7 @@ export function PRCommentComposer({
           }
           if (e.key === 'Escape') {
             e.preventDefault();
-            onCancel();
+            if (permitsBenchAction('textarea.escape')) onCancel();
           }
         }}
         rows={5}

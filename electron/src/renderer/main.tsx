@@ -42,25 +42,41 @@ function renderApp(): void {
   );
 }
 
-if (new URLSearchParams(location.search).get('bench_collector')) {
+const benchSearch = new URLSearchParams(location.search);
+const isKeysRequested =
+  window.electron?.isKeysBench === true || benchSearch.has('bench_keys');
+
+function stopBenchStartup(): void {
+  document.body.textContent =
+    'Keyboard benchmark configuration is invalid; Bistro was not started.';
+}
+
+if (benchSearch.get('bench_collector') || isKeysRequested) {
   // Install the listener before mounting so the first cached list cannot race
   // the benchmark chunk download.
   void ResultAsync.fromThrowable(
     async () => {
       const { startBench } = await import('./bench');
-      startBench();
+      return startBench();
     },
     (cause) =>
       new Fault('Could not initialize benchmark')
         .withTag('BENCH_ERROR')
         .withCause(cause),
-  )().match(renderApp, (fault) => {
-    createLogger('bench').error(
-      { err: fault.message },
-      'benchmark initialization failed',
-    );
-    renderApp();
-  });
+  )().match(
+    (started) => {
+      if (isKeysRequested && !started) stopBenchStartup();
+      else renderApp();
+    },
+    (fault) => {
+      createLogger('bench').error(
+        { err: fault.message },
+        'benchmark initialization failed',
+      );
+      if (isKeysRequested) stopBenchStartup();
+      else renderApp();
+    },
+  );
 } else {
   renderApp();
 }
