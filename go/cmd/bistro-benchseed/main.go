@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"github.com/itterno/bistro/internal/git"
+	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/prsync/writer"
 	"github.com/itterno/bistro/internal/store"
-	syncengine "github.com/itterno/bistro/internal/sync"
+	"github.com/itterno/bistro/internal/store/prdiff"
 )
 
 const (
@@ -86,14 +87,14 @@ func seed(ctx context.Context, db *store.DB) error {
 		{number: 1, files: 1000, changedLinesPerFile: 10, headSHA: "1111111111111111111111111111111111111111"},
 		{number: 2, files: 1, changedLinesPerFile: 10000, headSHA: "2222222222222222222222222222222222222222"},
 	}
-	results := make([]*syncengine.PRFetchResult, 0, len(scenarios))
+	results := make([]*writer.FetchedPR, 0, len(scenarios))
 	for _, scenario := range scenarios {
 		results = append(results, generateBenchmarkPR(scenario))
 	}
 	// The sync writer can skip failed PRs while committing the rest of a batch.
 	written := 0
-	writer := syncengine.NewWriter(nil, db).WithPostCommit(func(prIDs []string) { written = len(prIDs) })
-	if err := writer.WriteSyncResultsContext(ctx, results); err != nil {
+	prWriter := writer.New(nil, db).WithPostCommit(func(prIDs []string) { written = len(prIDs) })
+	if err := prWriter.WriteSyncResultsContext(ctx, results); err != nil {
 		return fmt.Errorf("write benchmark PRs: %w", err)
 	}
 	if written != len(results) {
@@ -102,9 +103,9 @@ func seed(ctx context.Context, db *store.DB) error {
 	return nil
 }
 
-func generateBenchmarkPR(scenario benchmarkScenario) *syncengine.PRFetchResult {
+func generateBenchmarkPR(scenario benchmarkScenario) *writer.FetchedPR {
 	now := time.Now().UTC()
-	result := &syncengine.PRFetchResult{
+	result := &writer.FetchedPR{
 		PR: &provider.PR{
 			ID:         fmt.Sprintf("%s:%s/%s:%d", benchmarkProvider, benchmarkOwner, benchmarkRepo, scenario.number),
 			Provider:   benchmarkProvider,
@@ -123,14 +124,14 @@ func generateBenchmarkPR(scenario benchmarkScenario) *syncengine.PRFetchResult {
 		},
 		DiffComputed: true,
 		MergeBaseSHA: benchmarkBaseSHA,
-		DiffFiles:    make([]store.DiffFile, 0, scenario.files),
+		DiffFiles:    make([]prdiff.File, 0, scenario.files),
 	}
 	for fileIndex := range scenario.files {
 		filePath := fmt.Sprintf("src/generated/file_%05d.ts", fileIndex)
 		patch := generateFilePatch(filePath, scenario.changedLinesPerFile)
-		result.DiffFiles = append(result.DiffFiles, store.DiffFile{
+		result.DiffFiles = append(result.DiffFiles, prdiff.File{
 			FilePath: filePath, Status: "modified", DiffStatus: "ok",
-			Patch: patch, PatchBytes: len(patch), HunkCount: 1, PatchID: git.PatchID(patch),
+			Patch: patch, PatchBytes: len(patch), HunkCount: 1, PatchID: diff.PatchID(patch),
 			Additions: scenario.changedLinesPerFile, Deletions: scenario.changedLinesPerFile,
 		})
 		result.DiffSize += int64(len(patch))

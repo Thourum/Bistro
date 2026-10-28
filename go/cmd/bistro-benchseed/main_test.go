@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 )
 
 func TestSeedPersistsHydratedBenchmarkDiffs(t *testing.T) {
@@ -62,7 +63,7 @@ func TestSeedPersistsHydratedBenchmarkDiffs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			diffs, err := store.NewDiffStore(db.DB).GetDiffs(expected.prID)
+			diffs, err := prdiff.New(db.DB).Get(expected.prID)
 			if err != nil {
 				t.Fatal(err)
 			}
