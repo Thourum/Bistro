@@ -19,10 +19,11 @@ import (
 	"github.com/itterno/bistro/internal/server"
 )
 
-// embeddedGitHubClientID is set at build time with
-// -ldflags "-X main.embeddedGitHubClientID=...". The OAuth client ID is public,
-// so it can ship in the binary. The client secret must not be embedded.
-var embeddedGitHubClientID string
+// embeddedGitHubClientID defaults to Bistro's own OAuth app, whose secret
+// get-bistro.com holds, so dev builds sign in without any env config. Override
+// with GITHUB_CLIENT_ID or -ldflags "-X main.embeddedGitHubClientID=...".
+// The client ID is public; the client secret must never be embedded.
+var embeddedGitHubClientID = "Ov23li9pgeFw42MTBEvT"
 
 func main() {
 	wsPort := flag.Int("ws-port", 8080, "WebSocket server port (0 = random available port, reported via ready signal on stdout)")
@@ -109,9 +110,6 @@ func main() {
 	clientID := os.Getenv("GITHUB_CLIENT_ID")
 	if clientID == "" {
 		clientID = embeddedGitHubClientID
-	}
-	if clientID == "" {
-		log.Warn("GitHub OAuth client ID not configured — OAuth will fail until configured")
 	}
 	app.SetGitHubClientID(clientID)
 

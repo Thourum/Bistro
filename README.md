@@ -66,13 +66,11 @@ pnpm install
 cp .env.example .env.local
 ```
 
-Fill `electron/.env.local` with the GitHub OAuth client id and secret:
+Sign-in works out of the box through Bistro's own OAuth app (code exchange via get-bistro.com). To use your own GitHub OAuth app instead, set both values in `electron/.env.local`:
 
 ```dotenv
 GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
-WS_PORT=0
-GO_LOG_LEVEL=debug
 ```
 
 Then build the Go sync engine:
