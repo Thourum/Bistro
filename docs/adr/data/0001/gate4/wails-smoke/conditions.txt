@@ -1,0 +1,30 @@
+Recorded 2026-10-28T09:54:05.187Z
+ProductName:		macOS
+ProductVersion:		27.2
+BuildVersion:		26B118
+
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37486691)	80%; AC attached; not charging present: true
+
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+
+Graphics/Displays:
+
+    Apple M3 Max:
+
+      Chipset Model: Apple M3 Max
+      Type: GPU
+      Bus: Built-In
+      Total Number of Cores: 30
+      Vendor: Apple (0x106b)
+      Metal Support: Metal 4
+      Displays:
+        BenQ PD3205U:
+          Resolution: 3840 x 2160 (2160p/4K UHD 1 - Ultra High Definition)
+          UI Looks like: 3840 x 2160 @ 60.00Hz
+          Main Display: Yes
+          Mirror: Off
+          Online: Yes
+          Rotation: Supported

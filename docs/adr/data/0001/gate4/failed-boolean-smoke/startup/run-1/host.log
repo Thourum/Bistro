@@ -1,0 +1,4 @@
+{"event":"webcontent_pid","pid":16351}
+{"event":"gpu_pid","pid":16349}
+{"event":"networking_pid","pid":16352}
+{"height":2097,"event":"window_state","width":1915,"isKey":true,"isVisible":1,"originURL":"http:\/\/localhost:50564\/?bench_collector=http%3A%2F%2F127.0.0.1%3A50565","isInspectable":true}

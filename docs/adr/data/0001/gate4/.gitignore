@@ -1,0 +1,4 @@
+wails-spike/build/
+**/user-data/
+**/memory/footprint.txt
+**/memory/footprint.json

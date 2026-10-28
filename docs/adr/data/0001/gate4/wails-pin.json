@@ -1,0 +1,13 @@
+{
+  "Path": "github.com/wailsapp/wails/v3",
+  "Version": "v3.0.0",
+  "Sum": "h1:lBe89kFu23bVz1dc1H9v0srkHQgWsy7BAKpH4sLQuDw=",
+  "GoModSum": "h1:U3p3/QfSer2XxXM3XWhwis9O7LvvuNKN/AcGoEFD+K8=",
+  "Origin": {
+    "VCS": "git",
+    "URL": "https://github.com/wailsapp/wails",
+    "Hash": "7b11001b92b712210b27d8cb53430e83f67ad8e4",
+    "Ref": "refs/tags/v3.0.0"
+  },
+  "method": "go mod download -json github.com/wailsapp/wails/v3@v3.0.0; machine-specific cache paths omitted"
+}
