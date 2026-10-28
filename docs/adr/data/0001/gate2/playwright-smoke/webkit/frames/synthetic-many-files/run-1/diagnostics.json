@@ -1,0 +1,158 @@
+[
+  {
+    "event": "console",
+    "type": "info",
+    "text": "Successfully preconnected to https://fonts.gstatic.com/",
+    "location": {
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "Successfully preconnected to https://fonts.googleapis.com/",
+    "location": {
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180662712, level: 30, component: WebSocket, msg: attempting connection}",
+    "location": {
+      "url": "http://localhost:49270/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21833,
+      "lineNumber": 66,
+      "columnNumber": 21833
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180662716, level: 30, component: WebSocket, msg: connected}",
+    "location": {
+      "url": "http://localhost:49270/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21833,
+      "lineNumber": 66,
+      "columnNumber": 21833
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180662716, level: 30, component: WebSocket, type: AUTH_CHECK, id: req-1793180662716-0.11751854535728323}",
+    "location": {
+      "url": "http://localhost:49270/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21833,
+      "lineNumber": 66,
+      "columnNumber": 21833
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180662779, level: 30, component: WebSocket, type: REQUEST_REPO_LIST, id: req-1793180662779-0.8589410115577394}",
+    "location": {
+      "url": "http://localhost:49270/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21833,
+      "lineNumber": 66,
+      "columnNumber": 21833
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180662780, level: 30, component: WebSocket, type: REQUEST_PR_LIST, id: req-1793180662780-0.006682679467754804}",
+    "location": {
+      "url": "http://localhost:49270/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21833,
+      "lineNumber": 66,
+      "columnNumber": 21833
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180662781, level: 30, component: WebSocket, type: REQUEST_PR_LIST, id: req-1793180662781-0.7007180240311821}",
+    "location": {
+      "url": "http://localhost:49270/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21833,
+      "lineNumber": 66,
+      "columnNumber": 21833
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180663152, level: 30, component: WebSocket, type: GET_EXPERTISE, id: req-1793180663152-0.22159790935184753}",
+    "location": {
+      "url": "http://localhost:49270/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21833,
+      "lineNumber": 66,
+      "columnNumber": 21833
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180663152, level: 30, component: WebSocket, type: REQUEST_DIFF, id: req-1793180663152-0.7597177533490338}",
+    "location": {
+      "url": "http://localhost:49270/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21833,
+      "lineNumber": 66,
+      "columnNumber": 21833
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180663152, level: 30, component: WebSocket, type: REQUEST_COMMENTS, id: req-1793180663152-0.546991028396671}",
+    "location": {
+      "url": "http://localhost:49270/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21833,
+      "lineNumber": 66,
+      "columnNumber": 21833
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180663152, level: 30, component: WebSocket, type: GET_REVIEW_THREADS, id: req-1793180663152-0.212132646164774}",
+    "location": {
+      "url": "http://localhost:49270/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21833,
+      "lineNumber": 66,
+      "columnNumber": 21833
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180663153, level: 30, component: WebSocket, type: DRAFTS_LIST, id: req-1793180663153-0.27781744484070603}",
+    "location": {
+      "url": "http://localhost:49270/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21833,
+      "lineNumber": 66,
+      "columnNumber": 21833
+    }
+  }
+]

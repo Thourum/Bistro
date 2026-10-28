@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "smokeOnly": true,
+  "fixtures": {
+    "github:bench/large-diff:1": {
+      "nFrames": 1200,
+      "nRuns": 1,
+      "pooledMs": {
+        "p50": 17,
+        "p95": 38,
+        "p99": 43
+      },
+      "perRunP95Ms": {
+        "min": 38,
+        "median": 38,
+        "max": 38
+      },
+      "measuredRefreshMs": {
+        "min": 17,
+        "median": 17,
+        "max": 17
+      },
+      "droppedFrameShare": {
+        "measured": {
+          "share": 0.1075,
+          "dropped": 129,
+          "threshold": "each run refreshMs × 1.5"
+        },
+        "target120Hz": {
+          "share": 0.7866666666666666,
+          "dropped": 944,
+          "budgetMs": 8.333333333333334,
+          "thresholdMs": 12.5,
+          "threshold": "120 Hz budget (8.33 ms) × 1.5"
+        }
+      }
+    },
+    "github:bench/large-diff:2": {
+      "nFrames": 1200,
+      "nRuns": 1,
+      "pooledMs": {
+        "p50": 17,
+        "p95": 19,
+        "p99": 21
+      },
+      "perRunP95Ms": {
+        "min": 19,
+        "median": 19,
+        "max": 19
+      },
+      "measuredRefreshMs": {
+        "min": 17,
+        "median": 17,
+        "max": 17
+      },
+      "droppedFrameShare": {
+        "measured": {
+          "share": 0.0033333333333333335,
+          "dropped": 4,
+          "threshold": "each run refreshMs × 1.5"
+        },
+        "target120Hz": {
+          "share": 0.9891666666666666,
+          "dropped": 1187,
+          "budgetMs": 8.333333333333334,
+          "thresholdMs": 12.5,
+          "threshold": "120 Hz budget (8.33 ms) × 1.5"
+        }
+      }
+    }
+  },
+  "method": "Gate 1 summarizeFrames; headed browser/native host, production bundle; no shell verdict"
+}

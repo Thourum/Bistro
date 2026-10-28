@@ -1,0 +1,155 @@
+[
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180530931, level: 30, component: WebSocket, msg: attempting connection}",
+    "location": {
+      "url": "http://localhost:65060/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21829,
+      "lineNumber": 66,
+      "columnNumber": 21829
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180530934, level: 30, component: WebSocket, msg: connected}",
+    "location": {
+      "url": "http://localhost:65060/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21829,
+      "lineNumber": 66,
+      "columnNumber": 21829
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180530934, level: 30, component: WebSocket, type: AUTH_CHECK, id: req-1793180530934-0.4057774386975951}",
+    "location": {
+      "url": "http://localhost:65060/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21829,
+      "lineNumber": 66,
+      "columnNumber": 21829
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180530996, level: 30, component: WebSocket, type: REQUEST_REPO_LIST, id: req-1793180530996-0.09085235806336356}",
+    "location": {
+      "url": "http://localhost:65060/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21829,
+      "lineNumber": 66,
+      "columnNumber": 21829
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180530997, level: 30, component: WebSocket, type: REQUEST_PR_LIST, id: req-1793180530997-0.06653585715947752}",
+    "location": {
+      "url": "http://localhost:65060/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21829,
+      "lineNumber": 66,
+      "columnNumber": 21829
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180530997, level: 30, component: WebSocket, type: REQUEST_PR_LIST, id: req-1793180530997-0.25932636220331096}",
+    "location": {
+      "url": "http://localhost:65060/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21829,
+      "lineNumber": 66,
+      "columnNumber": 21829
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180531204, level: 30, component: WebSocket, type: GET_EXPERTISE, id: req-1793180531204-0.5973071406211314}",
+    "location": {
+      "url": "http://localhost:65060/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21829,
+      "lineNumber": 66,
+      "columnNumber": 21829
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180531205, level: 30, component: WebSocket, type: REQUEST_DIFF, id: req-1793180531205-0.4957322253264411}",
+    "location": {
+      "url": "http://localhost:65060/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21829,
+      "lineNumber": 66,
+      "columnNumber": 21829
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180531205, level: 30, component: WebSocket, type: REQUEST_COMMENTS, id: req-1793180531205-0.43238520973649497}",
+    "location": {
+      "url": "http://localhost:65060/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21829,
+      "lineNumber": 66,
+      "columnNumber": 21829
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180531205, level: 30, component: WebSocket, type: GET_REVIEW_THREADS, id: req-1793180531205-0.7431248912027407}",
+    "location": {
+      "url": "http://localhost:65060/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21829,
+      "lineNumber": 66,
+      "columnNumber": 21829
+    }
+  },
+  {
+    "event": "console",
+    "type": "info",
+    "text": "{time: 1793180531205, level: 30, component: WebSocket, type: DRAFTS_LIST, id: req-1793180531205-0.27723080018985735}",
+    "location": {
+      "url": "http://localhost:65060/assets/index-C9BDEf0C.js",
+      "line": 66,
+      "column": 21829,
+      "lineNumber": 66,
+      "columnNumber": 21829
+    }
+  },
+  {
+    "event": "requestfailed",
+    "url": "http://127.0.0.1:65204/event",
+    "failure": {
+      "errorText": "net::ERR_ABORTED"
+    }
+  },
+  {
+    "event": "requestfailed",
+    "url": "http://127.0.0.1:65204/event",
+    "failure": {
+      "errorText": "net::ERR_ABORTED"
+    }
+  },
+  {
+    "event": "requestfailed",
+    "url": "http://127.0.0.1:65204/event",
+    "failure": {
+      "errorText": "net::ERR_ABORTED"
+    }
+  }
+]

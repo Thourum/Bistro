@@ -1,0 +1,12 @@
+{
+  "name": "bistro-adr0001-compat",
+  "private": true,
+  "type": "module",
+  "scripts": { "check": "node compat.mjs", "css": "node css-probe.mjs" },
+  "browserslist": ["Safari 16.1"],
+  "devDependencies": {
+    "eslint": "9.39.1",
+    "eslint-plugin-compat": "6.0.2",
+    "typescript-eslint": "8.46.2"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "timesMs": [
+    4078.6343329999995
+  ],
+  "summary": {
+    "n": 1,
+    "p50": 4078.6343329999995,
+    "p95": 4078.6343329999995,
+    "p99": 4078.6343329999995,
+    "endpoint": "driver spawn to collector pr_list_rendered receipt; engine already ready; warm/no purge",
+    "notComparableToHyperfineExit": true
+  }
+}

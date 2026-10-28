@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "browser": "chromium",
+  "playwrightVersion": "1.63.0",
+  "executable": "/Users/samuelasvanyi/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "renderer": "/Users/samuelasvanyi/.t3/worktrees/bistro/t3-6ef81aaa/docs/adr/data/0001/gate2/extracted-smoke/.vite/renderer/main_window",
+  "counts": {
+    "startup": 1,
+    "frames": 1
+  },
+  "seedManifest": {
+    "schemaVersion": 1,
+    "createdAt": "2026-10-27T11:58:10.535Z",
+    "engineGitRev": "08942ce67a8e162a53bca68b80a63e22461d8f52",
+    "engineBinary": "/tmp/bistro-smoke-seed/bistro-sync",
+    "engineRevisionSource": "built from checkout",
+    "fixtures": [
+      {
+        "name": "synthetic-many-files",
+        "prId": "github:bench/large-diff:1",
+        "headSha": null,
+        "diff": {
+          "files": 1000,
+          "additions": 10000,
+          "deletions": 10000,
+          "unifiedBytes": 728000
+        }
+      },
+      {
+        "name": "synthetic-one-file",
+        "prId": "github:bench/large-diff:2",
+        "headSha": null,
+        "diff": {
+          "files": 1,
+          "additions": 10000,
+          "deletions": 10000,
+          "unifiedBytes": 655757
+        }
+      }
+    ],
+    "pinnedComplete": false,
+    "syntheticComplete": true
+  },
+  "viewport": {
+    "width": 1600,
+    "height": 900
+  },
+  "headless": false,
+  "node": "v24.13.0",
+  "startupEndpoint": "browser launch to collector pr_list_rendered receipt; engine prestarted; warm/no purge; not hyperfine exit"
+}

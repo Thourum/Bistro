@@ -1,4 +1,4 @@
-# Gate 1 measurement drivers
+# ADR 0001 measurement drivers
 
 Node 24, no npm dependencies. macOS measurement requires `hyperfine`, `footprint`, and an already packaged build with the Task 1 bench hooks. Seeding additionally requires Go and `gh`, both authenticated through their normal stores: log in to Bistro for the engine keychain, and to `gh` for read-only head checks. Never pass tokens to these scripts.
 
@@ -48,3 +48,49 @@ The collector is importable (`createCollector({file})`) or runnable as `collecto
 Dropped-frame share is the fraction of observed deltas greater than **1.5× that run's measured refreshMs**, plus a separately labelled **120 Hz target (8.33 ms ×1.5 = 12.50 ms)**. It is a late-frame share, not the number of missed refresh slots. Pooled tails weight runs by their frame count; per-run p95 distributions expose run variability. Small samples do not justify precise tail or population claims.
 
 Protocol and fixtures are defined in `docs/superpowers/plans/2026-10-27-adr0001-gate1-harness.md`; the decision and thresholds belong in `docs/adr/0001-electron-vs-wails.md`.
+
+## Gate 2: exact production renderer
+
+Extract the already packaged slim renderer using the repository's installed `@electron/asar` (no rebuild). Run from the repository root:
+
+```bash
+node --input-type=module -e 'import {extractAll} from "@electron/asar"; extractAll("electron/out/slim/Bistro-darwin-arm64/Bistro.app/Contents/Resources/app.asar", "docs/adr/data/0001/gate2/extracted-smoke")'
+node docs/adr/data/0001/harness/serve-renderer.mjs \
+  --root docs/adr/data/0001/gate2/extracted-smoke/.vite/renderer/main_window
+```
+
+`serve-renderer` binds an ephemeral localhost port, prints its URL, serves the built bundle with JS/wasm MIME types and SPA fallback, and rejects traversal, symlink escapes and non-read requests. Browser drivers call its importable `serveRenderer({root})` themselves; do not leave a second server running. The extracted tree is gitignored. `browser-common.mjs` resets the synthetic seed DB for each phase, starts its standalone engine, owns the collector and bench URL, and reuses Gate 1 frame statistics. An occupied engine port 8080 is a blocker; never connect to someone else's engine. Concurrent operators coordinate whole runs with `mkdir /tmp/bistro-adr-8080.lock`, then `rmdir` even on failure; retry after 30 seconds if occupied.
+
+### Gate 2.1 headed Playwright smoke
+
+```bash
+node docs/adr/data/0001/harness/run-playwright.mjs --browser chromium \
+  --renderer docs/adr/data/0001/gate2/extracted-smoke/.vite/renderer/main_window \
+  --seed /tmp/bistro-smoke-seed --out docs/adr/data/0001/gate2/playwright-smoke/chromium --runs 1
+# Repeat with --browser webkit and a separate empty --out ending in /webkit.
+```
+
+Global Playwright **1.63.0** is resolved using `npm root -g` and imported by absolute path. Only its cached browsers are used: missing executables fail, no download occurs. Keep the headed browser visible/frontmost; headless rAF timing is meaningless. No host keystrokes are injected. Defaults are 30 startup runs and 10 frame runs per fixture; `--runs 1` is smoke only. Exact build IDs and floor analysis: `../gate2/tools.md`.
+
+**Playwright WebKit is NOT system WKWebView.** This smoke catches renderer incompatibilities only; Gate 2.3's native host is the deciding renderer run. Each output has this warning, `run-manifest.json`, conditions, startup launch-to-collector receipt timings, frame summaries and per-page `diagnostics.json` (console, pageerrors, failed requests and HTTP errors). Timing starts before browser launch, after engine readiness: it is warm/no-purge and not comparable to Electron's hyperfine launch-to-exit. No memory values are invented. `completed.json` means all requested bench phases completed, not zero console diagnostics.
+
+### Gate 2.2 API and CSS compatibility
+
+```bash
+sh docs/adr/data/0001/harness/compat.sh
+node docs/adr/data/0001/gate2/compat/css-probe.mjs
+```
+
+`compat.sh` performs a frozen pnpm install with `--ignore-workspace` in the isolated `gate2/compat/` package, then lints `electron/src/renderer/**/*.{ts,tsx}` against Safari 16.1 (Ventura 13.0). Exact tool pins and lockfile are local, not Electron dependencies. Findings are evidence and do not fail collection; a broken sentinel, parse error or tooling error fails it. Outputs: `compat-results.txt`, `compat-results.json`, `compat-summary.md`; CSS output: `css-results.json`. CSS probes are functional/headless, not timing, and current Playwright support is not minimum-OS support. See `../gate2/tools.md` for primary sources and the CSS floor mismatch.
+
+### Gate 2.3 native WKWebView host
+
+```bash
+swiftc docs/adr/data/0001/harness/webview-host/main.swift -o /tmp/bistro-webview-host
+node docs/adr/data/0001/harness/run-webview.mjs --host /tmp/bistro-webview-host \
+  --renderer docs/adr/data/0001/gate2/extracted-smoke/.vite/renderer/main_window \
+  --seed /tmp/bistro-smoke-seed --out /tmp/bistro-webview-smoke --runs 1
+node --test docs/adr/data/0001/harness/*.test.mjs
+```
+
+Host arguments are the bench URL and seed settings path; stdout is a JSONL protocol retained in `host.log`/`host-events.json`. The driver uses the current foreground/visibility protocol before measuring; focus or visibility loss invalidates the phase. Keep the host frontmost. `run-webview` owns engine/collector cleanup and records launch receipts, idle/post-diff memory and frame events; defaults are 30 startup, 5 memory, 10 frames per fixture. WebKit memory attribution depends on explicit process PID SPIs, not launchd ancestry. Missing PIDs or footprint failures must remain blockers, never partial memory totals. No app input scripts are involved.

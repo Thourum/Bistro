@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "smokeOnly": true,
+  "fixtures": {
+    "github:bench/large-diff:1": {
+      "nFrames": 1200,
+      "nRuns": 1,
+      "pooledMs": {
+        "p50": 16.600000023841858,
+        "p95": 28.815000069141373,
+        "p99": 31.800000071525574
+      },
+      "perRunP95Ms": {
+        "min": 28.815000069141373,
+        "median": 28.815000069141373,
+        "max": 28.815000069141373
+      },
+      "measuredRefreshMs": {
+        "min": 16.699999928474426,
+        "median": 16.699999928474426,
+        "max": 16.699999928474426
+      },
+      "droppedFrameShare": {
+        "measured": {
+          "share": 0.09833333333333333,
+          "dropped": 118,
+          "threshold": "each run refreshMs × 1.5"
+        },
+        "target120Hz": {
+          "share": 0.8933333333333333,
+          "dropped": 1072,
+          "budgetMs": 8.333333333333334,
+          "thresholdMs": 12.5,
+          "threshold": "120 Hz budget (8.33 ms) × 1.5"
+        }
+      }
+    },
+    "github:bench/large-diff:2": {
+      "nFrames": 1200,
+      "nRuns": 1,
+      "pooledMs": {
+        "p50": 16.699999928474426,
+        "p95": 17.200000047683716,
+        "p99": 17.600000023841858
+      },
+      "perRunP95Ms": {
+        "min": 17.200000047683716,
+        "median": 17.200000047683716,
+        "max": 17.200000047683716
+      },
+      "measuredRefreshMs": {
+        "min": 16.699999928474426,
+        "median": 16.699999928474426,
+        "max": 16.699999928474426
+      },
+      "droppedFrameShare": {
+        "measured": {
+          "share": 0,
+          "dropped": 0,
+          "threshold": "each run refreshMs × 1.5"
+        },
+        "target120Hz": {
+          "share": 1,
+          "dropped": 1200,
+          "budgetMs": 8.333333333333334,
+          "thresholdMs": 12.5,
+          "threshold": "120 Hz budget (8.33 ms) × 1.5"
+        }
+      }
+    }
+  },
+  "method": "Gate 1 summarizeFrames; headed browser/native host, production bundle; no shell verdict"
+}
