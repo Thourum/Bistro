@@ -8,6 +8,8 @@
 ## Amendments
 
 - **2026-10-27, Gate 0 override.** The owner chose to continue past the failed Gate 0: "it just means migration wouldn't impact anyone other than myself." Gates 1–5 now run with the owner as the only affected user. Gate 0's verdict and evidence stand unchanged below. The pre-registered thresholds in Gate 1 are judged against the owner's workload (the measured fixtures), not against a user population.
+- **2026-10-28, pre-registration hash.** The thresholds under "Pre-registration (Gate 1.4)" were committed in `755947e`, before any WebKit or Wails measurement. They haven't changed since; check with `git diff 755947e -- docs/adr/0001-electron-vs-wails.md`.
+- **2026-10-28, S7 fails at Gate 3, and the owner overrides the stop.** The median time to a first maintainer response over the last 100 Wails issues is ≥ 18.89 days, against a threshold of 14 (`data/0001/gate3/s7-health.md`). Under rule S, the shell verdict is therefore **no-go**, and no later gate can reverse it. The owner chose to run the remaining gates anyway, to have the evidence. Later results are recorded as evidence only; they don't reopen the S7 failure.
 
 ## Question
 
@@ -22,8 +24,8 @@ The method was gated: stop at the first gate that fails. Gate 0 asks whether a u
 
 | Decision | Verdict | Rule applied |
 |---|---|---|
-| Shell (Electron → Wails v3) | Gate 0: **no-go, no problem to solve**. Overridden by the owner; pending Gates 1–5 under the pre-registered rule S. | Gate 0.5, then rule S |
-| Transport (WebSocket → bindings) | Gate 0: **no-go, no problem to solve**. Pending; evaluated only if the shell verdict is go. | Gate 0.5, then rule T |
+| Shell (Electron → Wails v3) | **No-go.** S7 (upstream health) fails at Gate 3. Gate 0 was also no-go, and the owner overrode it. Gates 4–5 run as evidence only. | Gate 0.5, then rule S |
+| Transport (WebSocket → bindings) | **(a) Keep the WebSocket.** The shell is no-go, so rule T isn't evaluated. Gate 3's source trace (T1, T2, T6) is kept as evidence. | Rule T |
 
 ## Pre-registration (Gate 1.4)
 
