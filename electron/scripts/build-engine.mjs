@@ -15,13 +15,13 @@ const outputBinary = join(
   process.platform === 'win32' ? 'bistro-sync.exe' : 'bistro-sync',
 );
 
-// Only the OAuth client id is embedded. The client secret must never be compiled into a binary.
+// Only the OAuth client id is embedded, overriding the engine's built-in default when set.
+// The client secret must never be compiled into a binary.
 const githubClientId = process.env.GITHUB_CLIENT_ID ?? '';
-if (githubClientId === '') {
-  console.warn(
-    'build:engine: GITHUB_CLIENT_ID is empty; the packaged engine will have no OAuth client id.',
-  );
-}
+const clientIdFlag =
+  githubClientId === ''
+    ? ''
+    : ` -X main.embeddedGitHubClientID=${githubClientId}`;
 
 mkdirSync(outputDir, { recursive: true });
 execFileSync(
@@ -30,7 +30,7 @@ execFileSync(
     'build',
     '-trimpath',
     '-ldflags',
-    `-s -w -X main.embeddedGitHubClientID=${githubClientId}`,
+    `-s -w${clientIdFlag}`,
     '-o',
     outputBinary,
     './cmd/bistro-sync',
