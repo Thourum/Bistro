@@ -23,6 +23,8 @@ node docs/adr/data/0001/harness/run-electron.mjs --app /path/Bistro.app \
   --label baseline --seed /tmp/bistro-bench-seed --out /tmp/bistro-gate1-baseline
 node docs/adr/data/0001/harness/stats.mjs /tmp/bistro-gate1-baseline
 node --test docs/adr/data/0001/harness/harness.test.mjs
+# Apply S1/S3/S4/S5 to a WebKit candidate (Wails: add its .app KiB and DMG bytes):
+node docs/adr/data/0001/harness/evaluate-shell.mjs docs/adr/data/0001/gate1/slim docs/adr/data/0001/gate4/wails-full 70624 28023742
 ```
 
 `BISTRO_BENCH_SEED=/path` overrides the wrapper's `/tmp/bistro-bench-seed`. Seed accepts `--engine /path/bistro-sync` and `--timeout-minutes 30` (minimum 10). Without `--engine` it builds from the checkout. Pinned head prefixes are checked through read-only GitHub API calls before `REQUEST_PR_SYNC`; each diff must have nonempty file rows, nonempty text, and matching addition/deletion row totals. Rerun seed after Task 4 becomes available. A failed seed has no completion manifest; engine logs remain for diagnosis. Seed DBs contain fixture metadata/comments: keep raw artifacts private until inspected.
