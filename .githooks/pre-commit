@@ -8,8 +8,8 @@ BYTES_PER_TOKEN=4
 MAX_BYTES=$((MAX_TOKENS * BYTES_PER_TOKEN))
 
 # Exempt lockfiles, sqlc output, binary/vector assets, generated/minified bundles, snapshots,
-# LICENSE, and historical plan/spec records.
-IGNORE_REGEX='(^|/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|go\.sum|bun\.lockb?)$|^go/internal/store/db/|\.(svg|png|jpe?g|gif|ico|icns|woff2?|pdf|min\.js|snap)$|^Bistro Design System/_|^LICENSE$|^docs/superpowers/(plans|specs)/'
+# LICENSE, historical plan/spec records, and raw command output kept as ADR evidence.
+IGNORE_REGEX='^docs/adr/data/.*\.(json|jsonl|txt|log)$|(^|/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|go\.sum|bun\.lockb?)$|^go/internal/store/db/|\.(svg|png|jpe?g|gif|ico|icns|woff2?|pdf|min\.js|snap)$|^Bistro Design System/_|^LICENSE$|^docs/superpowers/(plans|specs)/'
 
 offenders=()
 while IFS= read -r -d '' file; do
