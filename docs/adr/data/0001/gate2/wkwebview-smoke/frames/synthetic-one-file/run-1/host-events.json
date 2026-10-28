@@ -1,0 +1,122 @@
+[
+  {
+    "event": "host_ready",
+    "pid": 98359,
+    "webKitVersion": "22625.2.8.11.9"
+  },
+  {
+    "event": "webcontent_pid",
+    "pid": 98375
+  },
+  {
+    "event": "gpu_pid",
+    "pid": 98368
+  },
+  {
+    "event": "networking_pid",
+    "pid": 98376
+  },
+  {
+    "event": "window_state",
+    "isKey": true,
+    "isVisible": true
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "focus",
+      "message": "blur"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "focus",
+      "message": "focus"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "focus",
+      "message": "blur"
+    }
+  }
+]

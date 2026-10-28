@@ -1,0 +1,66 @@
+[
+  {
+    "event": "host_ready",
+    "pid": 97284,
+    "webKitVersion": "22625.2.8.11.9"
+  },
+  {
+    "event": "webcontent_pid",
+    "pid": 97297
+  },
+  {
+    "event": "gpu_pid",
+    "pid": 97296
+  },
+  {
+    "event": "networking_pid",
+    "pid": 97298
+  },
+  {
+    "event": "window_state",
+    "isKey": false,
+    "isVisible": false
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  }
+]

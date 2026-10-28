@@ -1,0 +1,27 @@
+[
+  {
+    "pid": 97383,
+    "parentPid": 97225,
+    "command": "/Users/samuelasvanyi/.t3/worktrees/bistro/t3-6ef81aaa/docs/adr/data/0001/gate2/webview-host-smoke"
+  },
+  {
+    "pid": 97380,
+    "parentPid": 97225,
+    "command": "/private/tmp/bistro-smoke-seed/bistro-sync"
+  },
+  {
+    "pid": 97389,
+    "parentPid": 1,
+    "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+  },
+  {
+    "pid": 97388,
+    "parentPid": 1,
+    "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU"
+  },
+  {
+    "pid": 97390,
+    "parentPid": 1,
+    "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking"
+  }
+]

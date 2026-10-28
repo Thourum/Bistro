@@ -1,0 +1,37 @@
+{
+  "processes": [
+    {
+      "pid": 97307,
+      "parentPid": 97225,
+      "command": "/Users/samuelasvanyi/.t3/worktrees/bistro/t3-6ef81aaa/docs/adr/data/0001/gate2/webview-host-smoke",
+      "bytes": 30459008
+    },
+    {
+      "pid": 97304,
+      "parentPid": 97225,
+      "command": "/private/tmp/bistro-smoke-seed/bistro-sync",
+      "bytes": 8520472
+    },
+    {
+      "pid": 97309,
+      "parentPid": 1,
+      "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+      "bytes": 60654480
+    },
+    {
+      "pid": 97308,
+      "parentPid": 1,
+      "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+      "bytes": 13681312
+    },
+    {
+      "pid": 97310,
+      "parentPid": 1,
+      "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+      "bytes": 7619016
+    }
+  ],
+  "totalBytes": 120934288,
+  "sampledAt": "2026-10-27T12:15:01.743Z",
+  "method": "host + standalone engine + explicit WebContent/Networking/GPU PID SPIs; shared allocations may be counted repeatedly"
+}
