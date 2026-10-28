@@ -1,6 +1,6 @@
 # ADR 0001: shared rules for the Gate 2, Gate 4 and Gate 5 tasks
 
-Read first: `docs/adr/0001-electron-vs-wails.md` (thresholds are pre-registered and frozen at `755947e`; do not edit them), `docs/adr/data/0001/harness/README.md`, `docs/adr/data/0001/gate3/README.md` (S6 prediction, pins: Wails v3.0.0 = `7b11001b92b712210b27d8cb53430e83f67ad8e4`).
+Read first: `docs/adr/0001-electron-vs-wails.md` (thresholds are pre-registered and frozen at `30a6d7f`; do not edit them), `docs/adr/data/0001/harness/README.md`, `docs/adr/data/0001/gate3/README.md` (S6 prediction, pins: Wails v3.0.0 = `7b11001b92b712210b27d8cb53430e83f67ad8e4`).
 
 ## State
 - The shell verdict is already **no-go**: S7 failed at Gate 3. The owner chose to run the remaining gates anyway, as evidence. So measure and report faithfully, and don't tune anything to pass.
