@@ -46,7 +46,9 @@ function appArguments({ userData, collector, prId, quit }) {
 }
 
 function benchEnvironment(seed) {
-  return { ...process.env, BISTRO_REPO_DIR: join(seed, 'repos'), BISTRO_DISABLE_AUTO_UPDATES: '1',
+  // Shells spawned by Electron-based tools inherit this; unfused builds would then start as plain Node.
+  const { ELECTRON_RUN_AS_NODE: _runAsNode, ...inherited } = process.env;
+  return { ...inherited, BISTRO_REPO_DIR: join(seed, 'repos'), BISTRO_DISABLE_AUTO_UPDATES: '1',
     BISTRO_ENABLE_AUTO_UPDATES: '0', BISTRO_SKIP_GO_SPAWN: '0', WS_PORT: '0' };
 }
 

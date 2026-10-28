@@ -195,7 +195,7 @@ async function liveRun(values, manifest, preflight) {
       assert.ok(!bundleExecutable || /^[^/]+$/.test(bundleExecutable), 'invalid bundle executable');
       const executable = values.app ? join(resolve(values.app), 'Contents/MacOS', bundleExecutable) : values['launch-command'];
       resources.app = spawn(executable, [...args, `--user-data-dir=${userData}`, `--bench-query=${encodeURIComponent(query)}`], {
-        stdio: 'ignore', env: { ...process.env, WS_PORT: '0', BISTRO_SKIP_GO_SPAWN: '0', BISTRO_DISABLE_AUTO_UPDATES: '1', BISTRO_REPO_DIR: join(resolve(values.seed), 'repos') },
+        stdio: 'ignore', env: { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== 'ELECTRON_RUN_AS_NODE')), WS_PORT: '0', BISTRO_SKIP_GO_SPAWN: '0', BISTRO_DISABLE_AUTO_UPDATES: '1', BISTRO_REPO_DIR: join(resolve(values.seed), 'repos') },
       });
       resources.app.on('error', (error) => console.error(error.message));
       pid = resources.app.pid;
