@@ -15,7 +15,8 @@ const DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const SMOKE_LIMIT = 10;
 const TIMEOUT_MS = 15_000;
 const SETTLE_MS = 250;
-const LAYOUTS = ['US', 'German', 'French-AZERTY', 'Dvorak'];
+// Owner scope (2026-10-28): non-US layouts and Japanese IME are under 1% of potential users.
+const LAYOUTS = ['US'];
 const INJECTORS = ['osascript', 'CGEventPost'];
 const MODIFIERS = { Mod: 'cmd', Meta: 'cmd', Control: 'ctrl', Alt: 'alt', Shift: 'shift' };
 const LOCAL_SUBMIT = 'textarea.submit';
@@ -28,10 +29,10 @@ export function enumerateCells(inventory = parseInventory()) {
       const actionId = bindingId === 'textarea.submit.ctrl' ? LOCAL_SUBMIT : bindingId;
       const steps = Array.isArray(bindings[bindingId]) ? bindings[bindingId] : [bindings[bindingId]];
       return LAYOUTS.flatMap((layout) => INJECTORS.flatMap((injection) =>
-        ['outside', 'inside'].flatMap((focus) => ['off', 'active'].map((ime) => {
-          const cell = { actionId, style, steps, layout, injection, focus, ime };
+        ['outside', 'inside'].map((focus) => {
+          const cell = { actionId, style, steps, layout, injection, focus };
           return { id: fingerprint(cell), ...cell };
-        }))));
+        })));
     });
   });
 }
@@ -57,7 +58,7 @@ export function preflightBlockers(preflight, selfTest) {
   for (const field of ['postEventAccess', 'accessibilityTrusted', 'passiveTapCreated']) {
     if (preflight?.[field] !== true) blockers.push(`${field} unavailable`);
   }
-  for (const layout of [...LAYOUTS, 'Japanese-active', 'Japanese-off']) {
+  for (const layout of LAYOUTS) {
     if (!preflight?.inventory?.required?.[layout]?.enabledIDs?.length) blockers.push(`${layout} source disabled or missing`);
   }
   return blockers;
@@ -106,8 +107,6 @@ async function runCell({ cell, collector, worker, tap, preflight }) {
   }
   if (cell.actionId === LOCAL_SUBMIT && !prepared.text?.trim()) return { cell, status: 'incomplete', reason: 'non-empty real composer required for submit observation', prepared };
   if (cell.focus === 'outside' && prepared.intendedBindingActive !== true) return { cell, status: 'incomplete', reason: 'intended handler not reachable in fixture', prepared };
-  // Source selection/DOM isComposing cannot prove native marked-text state.
-  if (cell.ime === 'active') return { cell, status: 'incomplete', reason: 'native marked-text proof unavailable; no IME injection attempted', prepared };
   const source = preflight.inventory.required[cell.layout].enabledIDs[0];
   await worker.command({ command: 'source', source });
   const tapStart = tap.rows.length;
@@ -237,7 +236,7 @@ async function liveRun(values, manifest, preflight) {
 
 async function main() {
   const { values } = parseArgs({ options: {
-    ...Object.fromEntries(['app', 'pid', 'launch-command', 'launch-args', 'fixture-pr', 'seed', 'out', 'limit', 'label', 'native', 'style', 'layout', 'ime', 'actionId'].map((name) => [name, { type: 'string' }])),
+    ...Object.fromEntries(['app', 'pid', 'launch-command', 'launch-args', 'fixture-pr', 'seed', 'out', 'limit', 'label', 'native', 'style', 'layout', 'actionId'].map((name) => [name, { type: 'string' }])),
     ...Object.fromEntries(['dry-run', 'preflight-only', 'full', 'resume', 'help'].map((name) => [name, { type: 'boolean' }])),
   } });
   if (values.help) {
@@ -245,7 +244,7 @@ async function main() {
     return;
   }
   const cells = enumerateCells();
-  const filtered = cells.filter((cell) => ['style', 'layout', 'ime', 'actionId'].every((field) =>
+  const filtered = cells.filter((cell) => ['style', 'layout', 'actionId'].every((field) =>
     !values[field] || cell[field] === values[field]));
   assert.ok(filtered.length, 'matrix filters matched no cells');
   const selected = selectCells(filtered, values);
@@ -253,7 +252,7 @@ async function main() {
   const targetDigests = targetFiles.map((file) => ({ file: resolve(file), sha256: createHash('sha256').update(readFileSync(file)).digest('hex') }));
   const identity = { schemaVersion: 1, target: { app: values.app, launch: values['launch-command'], args: values['launch-args'], fixture: values['fixture-pr'], seed: values.seed, label: values.label, targetDigests }, cells: selected };
   const manifest = { ...identity, fingerprint: fingerprint(identity), totalMatrixCells: cells.length, smokeOnly: !values.full };
-  if (values['dry-run']) { console.log(JSON.stringify({ ...manifest, estimatedRuntime: { measured: false, note: 'minimum injection pacing only; setup/collector/native latency excluded, active IME remains blocked', stepSettleMs: SETTLE_MS, fullMatrixMinimumSeconds: cells.reduce((sum, cell) => sum + cell.steps.length * SETTLE_MS, 0) / 1000 }, counts: Object.fromEntries(['vim', 'emacs', 'standard'].map((style) => [style, cells.filter((cell) => cell.style === style).length])) }, null, 2)); return; }
+  if (values['dry-run']) { console.log(JSON.stringify({ ...manifest, estimatedRuntime: { measured: false, note: 'minimum injection pacing only; setup/collector/native latency excluded', stepSettleMs: SETTLE_MS, fullMatrixMinimumSeconds: cells.reduce((sum, cell) => sum + cell.steps.length * SETTLE_MS, 0) / 1000 }, counts: Object.fromEntries(['vim', 'emacs', 'standard'].map((style) => [style, cells.filter((cell) => cell.style === style).length])) }, null, 2)); return; }
   assert.ok(values.out && values.label, '--out and --label required');
   const out = resolve(values.out);
   mkdirSync(out, { recursive: true });

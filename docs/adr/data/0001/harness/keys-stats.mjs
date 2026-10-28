@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { enumerateCells, fingerprint } from './run-keys.mjs';
 
-const OPTION_TOLERANCE = 0.05;
 const CORE_ACTIONS = new Set(['detail.approve', 'detail.requestChanges', 'textarea.submit',
   'diff.deleteDraft', 'detail.nextFile', 'detail.prevFile', 'diff.nextFile', 'diff.prevFile',
   'diff.nextComment', 'diff.prevComment']);
@@ -15,11 +14,9 @@ const CLASS_RULES = [
   { name: 'Shift-only outside', prediction: 'PASS', threshold: 0, applies: (cell) => cell.focus === 'outside' && cell.steps.length === 1 && /^Shift\+[^+]+$/.test(cell.steps[0]) },
   { name: 'Cmd', prediction: 'PASS', threshold: 0, applies: (cell) => cell.steps.some((step) => /(?:Mod|Meta)\+/.test(step)) },
   { name: 'Ctrl', prediction: 'FAIL', threshold: 0, applies: (cell) => cell.steps.some((step) => /Control\+/.test(step)) },
-  { name: 'Option US', prediction: 'FAIL', threshold: 0, applies: (cell) => cell.layout === 'US' && cell.steps.some((step) => /Alt\+/.test(step)) },
-  { name: 'Option non-US', prediction: 'FAIL', threshold: OPTION_TOLERANCE, applies: (cell) => cell.layout !== 'US' && cell.steps.some((step) => /Alt\+/.test(step)) },
+  { name: 'Option US', prediction: 'FAIL', threshold: 0, applies: (cell) => cell.steps.some((step) => /Alt\+/.test(step)) },
   { name: 'sequences', prediction: 'PASS', threshold: 0, applies: (cell) => cell.steps.length > 1 },
   { name: 'inside textarea', prediction: 'PASS (inactive IME)', threshold: 0, applies: (cell) => cell.focus === 'inside' },
-  { name: 'IME active', prediction: 'FAIL', threshold: 0, applies: (cell) => cell.ime === 'active' },
 ];
 
 function indexGroups(groups, cells) {
@@ -42,7 +39,7 @@ function hasEvidence(group) {
     Array.isArray(group.dom) && group.dom.some((row) => row.event === 'keys_keydown') &&
     (group.cell.actionId !== 'textarea.submit' || Boolean(group.prepared.text?.trim())) &&
     Array.isArray(group.actionIds) && group.actionIds.every((id) => typeof id === 'string') &&
-    typeof group.text === 'string' && (group.cell.ime !== 'active' || group.nativeMarkedText?.verified === true);
+    typeof group.text === 'string';
 }
 
 /** Compare only exact cells; equal missing observations can never establish parity. */
@@ -52,16 +49,11 @@ export function compareKeys({ baseline, candidate, cells = enumerateCells() }) {
   const outcomes = cells.map((cell) => {
     const before = left.get(cell.id);
     const after = right.get(cell.id);
-    const unsafeIME = cell.ime === 'active' && [before, after].some((group) =>
-      group?.nativeMarkedText?.verified === true && Array.isArray(group.actionIds) && group.actionIds.length > 0);
-    if (unsafeIME) return { cell, status: 'fail', reason: 'action fired during native-verified composition in either shell',
-      baseline: { actionIds: before?.actionIds, text: before?.text }, candidate: { actionIds: after?.actionIds, text: after?.text } };
     if (!hasEvidence(before) || !hasEvidence(after)) return { cell, status: 'incomplete', reason: 'missing/unsupported/native-unverified observation' };
     const equal = JSON.stringify(before.actionIds) === JSON.stringify(after.actionIds) && before.text === after.text;
-    const status = equal && !unsafeIME ? 'pass' : 'fail';
-    return { cell, status, reason: unsafeIME ? 'action fired during native-verified composition' : equal ? undefined : 'actionIds or typing text differ',
-      baseline: { actionIds: before.actionIds, text: before.text }, candidate: { actionIds: after.actionIds, text: after.text },
-      workaround: after.workaround };
+    const status = equal ? 'pass' : 'fail';
+    return { cell, status, reason: equal ? undefined : 'actionIds or typing text differ',
+      baseline: { actionIds: before.actionIds, text: before.text }, candidate: { actionIds: after.actionIds, text: after.text } };
   });
   const classes = CLASS_RULES.map((rule) => {
     const members = outcomes.filter(({ cell }) => rule.applies(cell));
@@ -69,12 +61,10 @@ export function compareKeys({ baseline, candidate, cells = enumerateCells() }) {
     const incomplete = members.filter(({ status }) => status === 'incomplete').length;
     const observed = members.length - incomplete;
     const failingShare = observed ? failures.length / observed : null;
-    const workaroundMissing = rule.threshold > 0 && failures.some(({ workaround }) =>
-      workaround?.rebindVerified !== true || typeof workaround?.description !== 'string' || !workaround.description.trim());
     const exceeds = observed > 0 && failingShare > rule.threshold;
-    const status = exceeds || workaroundMissing ? 'fail' : incomplete || !members.length ? 'incomplete' : 'pass';
+    const status = exceeds ? 'fail' : incomplete || !members.length ? 'incomplete' : 'pass';
     return { name: rule.name, prediction: rule.prediction, threshold: rule.threshold, expected: members.length,
-      observed, incomplete, failing: failures.length, failingShare, workaroundMissing, status,
+      observed, incomplete, failing: failures.length, failingShare, status,
       predictionComparison: status === 'incomplete' ? 'unmeasured' : status.toUpperCase() === rule.prediction.split(' ')[0] ? 'confirmed' : 'falsified' };
   });
   const coreBlockers = outcomes.filter(({ cell, status }) => status === 'fail' && CORE_ACTIONS.has(cell.actionId));

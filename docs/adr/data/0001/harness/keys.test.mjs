@@ -17,22 +17,22 @@ const cells = enumerateCells(fixture);
 const observed = (cell, changes = {}) => ({ cell, status: 'complete',
   prepared: { supported: true, intendedBindingActive: true, text: 'seeded composer', targetKind: cell.focus === 'inside' ? 'textarea' : 'outside' },
   nativeTap: [{ event: 'cg_event' }], dom: [{ event: 'keys_keydown' }],
-  actionIds: [], text: 'observed typing', nativeMarkedText: { verified: true }, ...changes });
+  actionIds: [], text: 'observed typing', ...changes });
 
 function compare(cell, before = {}, after = {}) {
   return compareKeys({ cells: [cell], baseline: [observed(cell, before)], candidate: [observed(cell, after)] });
 }
 
 test('expands every dimension, excludes Windows quit and adds real textarea submit in every style', () => {
-  assert.equal(cells.length, (1 + 2 + 1 + 6) * 4 * 2 * 2 * 2);
+  assert.equal(cells.length, (1 + 2 + 1 + 6) * 2 * 2);
   assert.equal(new Set(cells.map((cell) => cell.id)).size, cells.length);
   assert.ok(cells.every((cell) => cell.actionId !== 'global.quit.win'));
-  assert.equal(cells.filter((cell) => cell.actionId === 'textarea.submit').length, 6 * 32);
+  assert.equal(cells.filter((cell) => cell.actionId === 'textarea.submit').length, 6 * 4);
   assert.ok(cells.some((cell) => cell.actionId === 'textarea.submit' && cell.steps[0] === 'Control+Enter'));
   assert.deepEqual(enumerateCells(fixture), cells);
   const actual = enumerateCells(parseInventory());
-  assert.equal(actual.length, (121 + 123 + 115 + 3) * 32);
-  assert.deepEqual([...new Set(actual.map((cell) => cell.layout))], ['US', 'German', 'French-AZERTY', 'Dvorak']);
+  assert.equal(actual.length, (121 + 123 + 115 + 3) * 4);
+  assert.deepEqual([...new Set(actual.map((cell) => cell.layout))], ['US']);
 });
 
 test('live execution cannot accidentally select more than ten cells without explicit full opt-in', () => {
@@ -44,13 +44,12 @@ test('live execution cannot accidentally select more than ten cells without expl
   assert.equal(selectCells(cells, { full: true }).length, cells.length);
 });
 
-test('preflight stops for missing posting/AX permission or even one disabled required source', () => {
-  const names = ['US', 'German', 'French-AZERTY', 'Dvorak', 'Japanese-active', 'Japanese-off'];
-  const required = Object.fromEntries(names.map((name) => [name, { enabledIDs: ['source'] }]));
+test('preflight stops for missing posting/AX permission or a disabled US source', () => {
+  const required = { US: { enabledIDs: ['source'] } };
   const ready = { postEventAccess: true, accessibilityTrusted: true, passiveTapCreated: true, inventory: { required } };
   assert.deepEqual(preflightBlockers(ready, { ok: true }), []);
   assert.match(preflightBlockers({ ...ready, postEventAccess: false }, { ok: true }).join(), /postEventAccess/);
-  assert.match(preflightBlockers({ ...ready, inventory: { required: { ...required, Dvorak: { enabledIDs: [] } } } }, { ok: true }).join(), /Dvorak/);
+  assert.match(preflightBlockers({ ...ready, inventory: { required: { US: { enabledIDs: [] } } } }, { ok: true }).join(), /US/);
 });
 
 test('resume rejects changed fingerprints and duplicate successful cells, retries incomplete groups', () => {
@@ -63,7 +62,7 @@ test('resume rejects changed fingerprints and duplicate successful cells, retrie
 });
 
 test('exact actions AND resulting typing text define parity, not native or DOM event equality', () => {
-  const cell = cells.find((entry) => entry.actionId === 'detail.nextFile' && entry.ime === 'off');
+  const cell = cells.find((entry) => entry.actionId === 'detail.nextFile');
   const baseline = { actionIds: ['detail.nextFile'] };
   assert.equal(compare(cell, baseline, baseline).outcomes[0].status, 'pass');
   const failure = compare(cell, baseline, { actionIds: ['detail.prevFile'] });
@@ -73,37 +72,12 @@ test('exact actions AND resulting typing text define parity, not native or DOM e
   assert.throws(() => compareKeys({ cells: [cell], baseline: [observed({ ...cell, steps: ['x'] })], candidate: [] }), /identity/);
 });
 
-test('missing, unsupported, synthetic textarea and unproved native IME cells remain incomplete', () => {
-  const cell = cells.find((entry) => entry.focus === 'inside' && entry.ime === 'off');
+test('missing, unsupported and synthetic textarea cells remain incomplete', () => {
+  const cell = cells.find((entry) => entry.focus === 'inside');
   assert.equal(compareKeys({ cells: [cell], baseline: [], candidate: [] }).status, 'incomplete');
   assert.equal(compare(cell, {}, { prepared: { supported: false } }).status, 'incomplete');
   assert.equal(compare(cell, {}, { prepared: { supported: true, targetKind: 'fake-textarea' } }).status, 'incomplete');
   assert.equal(compare(cell, {}, { nativeTap: [] }).status, 'incomplete');
-  const active = cells.find((entry) => entry.ime === 'active');
-  assert.equal(compare(active, {}, { nativeMarkedText: undefined }).status, 'incomplete');
-});
-
-test('identical unsafe IME dispatch fails either-shell rule rather than appearing equivalent', () => {
-  const cell = cells.find((entry) => entry.ime === 'active');
-  const summary = compare(cell, { actionIds: ['detail.approve'] }, { actionIds: ['detail.approve'] });
-  assert.equal(summary.outcomes[0].status, 'fail');
-  assert.equal(summary.classes.find((entry) => entry.name === 'IME active').status, 'fail');
-  assert.equal(compareKeys({ cells: [cell], baseline: [observed(cell, { actionIds: ['detail.approve'] })], candidate: [] }).status, 'fail');
-});
-
-test('non-US Option tolerance needs verified Settings workaround and never exempts a core failure', () => {
-  const optionCells = Array.from({ length: 20 }, (_, index) => {
-    const cell = cells.find((entry) => entry.actionId === 'diff.nextComment' && entry.layout === 'German' && entry.ime === 'off');
-    const identity = { ...cell, actionId: `noncore.${index}` };
-    return { ...identity, id: fingerprint(identity) };
-  });
-  const baseline = optionCells.map((cell) => observed(cell));
-  const candidate = optionCells.map((cell, index) => observed(cell, index === 0 ? { text: 'different' } : {}));
-  const result = compareKeys({ cells: optionCells, baseline, candidate });
-  assert.equal(result.classes.find((entry) => entry.name === 'Option non-US').failingShare, 0.05);
-  assert.equal(result.classes.find((entry) => entry.name === 'Option non-US').status, 'fail');
-  const rebound = candidate.map((group, index) => index === 0 ? { ...group, workaround: { rebindVerified: true, description: 'Settings → Keyboard alternative verified in same context' } } : group);
-  assert.equal(compareKeys({ cells: optionCells, baseline, candidate: rebound }).classes.find((entry) => entry.name === 'Option non-US').status, 'pass');
 });
 
 test('failed native worker command requests restoration and nonzero restoration exit never publishes completion', async () => {
