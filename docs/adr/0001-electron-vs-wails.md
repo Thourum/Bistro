@@ -25,7 +25,7 @@ The method was gated: stop at the first gate that fails. Gate 0 asks whether a u
 
 | Decision | Verdict | Rule applied |
 |---|---|---|
-| Shell (Electron → Wails v3) | **No-go.** S7 (upstream health) fails at Gate 3. Gate 0 was also no-go, and the owner overrode it. Gates 4–5 run as evidence only. | Gate 0.5, then rule S |
+| Shell (Electron → Wails v3) | **No-go.** S7 (upstream health) fails at Gate 3. Gate 0 was also no-go, and the owner overrode it. Later gates are evidence only: Wails passes S1 (current macOS), S3, S4 and S5; S2 is not comparable; S6 is not run; S8 is skipped. | Gate 0.5, then rule S |
 | Transport (WebSocket → bindings) | **(a) Keep the WebSocket.** The shell is no-go, so rule T isn't evaluated. Gate 3's source trace (T1, T2, T6) is kept as evidence. | Rule T |
 
 ## Pre-registration (Gate 1.4)
@@ -171,20 +171,7 @@ No user-visible problem exists: 0 complaints, 0 crash reports, 0 distributed bui
 
 ## Status of later gates
 
-Gate 0 originally stopped here. After the override (see Amendments), the following was done:
-- Gate 1 tooling exists and was verified with n=1 smoke runs only:
-  - `--quit-after-ready` and the bench module (`electron/src/renderer/bench/`)
-  - the slim build
-  - `go/cmd/bistro-benchseed`
-  - the harness
-- Thresholds are pre-registered above.
-
-Still to do:
-- **The full Gate 1 baseline.** It's blocked: the engine's keychain token returns HTTP 401, so the two pinned GitHub PRs can't be seeded until the owner signs in again.
-- **Gates 2–5.**
-- **No second machine:** none is available, and `tart` isn't installed.
-- **True cold starts:** they need `sudo purge` without a password; until then, startup runs are warm and labelled as such.
-- **The blind alpha-tester session.**
+Gate 0 originally stopped here. After the override, Gates 1–4 ran; results against each threshold, the remaining work and the harness failures are in [0001-results.md](0001-results.md).
 
 Only the throwaway spike may be migrated.
 
