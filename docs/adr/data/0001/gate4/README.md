@@ -44,7 +44,7 @@ Omit `--runs` for the pre-registered 30 startup / 5 idle and post-diff memory / 
 origin=wails://localhost error="websocket: request origin not allowed by Upgrader.CheckOrigin"
 ```
 
-`origin-repro/host.log` records the asset page `wails://localhost/`. Reproduce with `node docs/adr/data/0001/gate4/origin-repro.mjs --host <bundle>/Contents/MacOS/wails-spike --renderer <built renderer> --seed /tmp/bistro-smoke-seed --out <new directory>` under the same lock. A migration needs an explicit engine `isLocalOrigin` allowlist change; broad custom-scheme acceptance is not proposed. Measurement instead loads `http://localhost:<port>` from the same `serve-renderer.mjs` as Gate 2.3; engine remains unchanged.
+`origin-repro/host.log` records the asset page `wails://localhost/`. Reproduce with `node docs/adr/data/0001/gate4/origin-repro.mjs --host <bundle>/Contents/MacOS/wails-spike --renderer <built renderer> --seed /tmp/bistro-smoke-seed --out <new directory>` under the same lock. This matters only if the WebSocket stays: transport options (a) and (c) would need `wails://localhost` added to the engine's `isLocalOrigin` allowlist, which is a small change; don't accept custom schemes broadly. With option (b), Wails bindings and events, the renderer has no WebSocket and this finding doesn't apply. The cost moves to re-plumbing the transport: 24 message handlers, 68 push events, request IDs and cancellation (Gate 0.4), plus the Gate 3 T1/T2/T6 risks. Measurement instead loads `http://localhost:<port>` from the same `serve-renderer.mjs` as Gate 2.3; engine remains unchanged.
 
 ## Smoke results
 
