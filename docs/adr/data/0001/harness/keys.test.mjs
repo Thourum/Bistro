@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { enumerateCells, fingerprint, selectCells, preflightBlockers, resumeCells } from './run-keys.mjs';
+import { enumerateCells, fingerprint, selectCells, preflightBlockers, resumeCells, runNativeLifecycle } from './run-keys.mjs';
+import { openNative } from './keys/driver-io.mjs';
+import { mkdtempSync, writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { compareKeys } from './keys-stats.mjs';
 import { parseInventory } from '../gate3/bindings-by-class.mjs';
 
@@ -100,4 +104,43 @@ test('non-US Option tolerance needs verified Settings workaround and never exemp
   assert.equal(result.classes.find((entry) => entry.name === 'Option non-US').status, 'fail');
   const rebound = candidate.map((group, index) => index === 0 ? { ...group, workaround: { rebindVerified: true, description: 'Settings → Keyboard alternative verified in same context' } } : group);
   assert.equal(compareKeys({ cells: optionCells, baseline, candidate: rebound }).classes.find((entry) => entry.name === 'Option non-US').status, 'pass');
+});
+
+test('failed native worker command requests restoration and nonzero restoration exit never publishes completion', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'bistro-keys-lifecycle-'));
+  const binary = join(directory, 'fake-worker');
+  const log = join(directory, 'worker.jsonl');
+  const marker = join(directory, 'completed.json');
+  const fakeWorker = `#!${process.execPath}
+import { createInterface } from 'node:readline';
+const emit = (row) => process.stdout.write(JSON.stringify(row) + '\\n');
+process.on('SIGTERM', () => {
+  emit({event:'restore_requested'});
+  emit({event:'restored',ok:false});
+  process.exitCode = 1;
+  process.stdin.destroy();
+});
+createInterface({input:process.stdin}).on('line', (line) => {
+  const command = JSON.parse(line);
+  emit({event:'reply',id:command.id,ok:false,error:'fixture worker failed mid-run'});
+});
+emit({event:'worker_ready'});
+`;
+  writeFileSync(binary, fakeWorker, { mode: 0o700 });
+  const worker = openNative(binary, 'worker', process.pid, log);
+  return Promise.resolve().then(async () => {
+    await worker.ready;
+    await assert.rejects(runNativeLifecycle({ worker,
+      run: () => worker.command({ command: 'inject', source: 'fixture', key: 'x' }),
+      complete: () => writeFileSync(marker, 'unexpected completion'),
+    }), /native restoration worker failed/);
+    assert.equal(existsSync(marker), false);
+    assert.equal(worker.child.exitCode, 1);
+    const events = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.ok(events.some((row) => row.event === 'restore_requested'));
+    assert.ok(events.some((row) => row.event === 'restored' && row.ok === false));
+  }).finally(() => {
+    if (worker.child.exitCode === null) worker.child.kill('SIGTERM');
+    rmSync(directory, { recursive: true, force: true });
+  });
 });

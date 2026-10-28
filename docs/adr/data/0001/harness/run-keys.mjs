@@ -130,6 +130,26 @@ async function runCell({ cell, collector, worker, tap, preflight }) {
     source, prepared, nativeTap, dom, actionIds, text: snapshot.text, snapshot };
 }
 
+/** Request restoration even after a failed command; completion requires a clean worker exit. */
+export async function restoreNative(worker) {
+  if (!worker) return;
+  if (worker.child.exitCode === null) worker.child.kill('SIGTERM');
+  const exit = await timeout(worker.exited, 'native source restoration');
+  assert.equal(exit.code, 0, 'native restoration worker failed');
+  assert.ok(!worker.rows.some((row) => row.event === 'restored' && row.ok !== true), 'native input-source restoration failed');
+}
+
+/** Shared live-driver lifecycle: never publish completion before restoration succeeds. */
+export async function runNativeLifecycle({ worker, run, complete }) {
+  return Promise.resolve().then(run).then(async () => {
+    await worker.command({ command: 'stop' });
+    const exit = await timeout(worker.exited, 'native restoration');
+    assert.equal(exit.code, 0, 'native restoration worker failed');
+    assert.ok(!worker.rows.some((row) => row.event === 'restored' && row.ok !== true), 'native input-source restoration failed');
+    await complete();
+  }).finally(() => restoreNative(worker));
+}
+
 async function liveRun(values, manifest, preflight) {
   const out = resolve(values.out);
   assert.ok(values.pid || values.app || values['launch-command'], '--pid, --app, or --launch-command required');
@@ -141,14 +161,7 @@ async function liveRun(values, manifest, preflight) {
   const cleanup = () => {
     cleanupPromise ??= Promise.resolve().then(async () => {
       resources.tap?.child.kill('SIGTERM');
-      const restore = async () => {
-        if (!resources.worker) return;
-        if (resources.worker.child.exitCode === null) resources.worker.child.kill('SIGTERM');
-        const exit = await timeout(resources.worker.exited, 'native source restoration');
-        assert.equal(exit.code, 0, 'native restoration worker failed');
-        assert.ok(!resources.worker.rows.some((row) => row.event === 'restored' && row.ok !== true), 'native input-source restoration failed');
-      };
-      await restore().finally(async () => {
+      await restoreNative(resources.worker).finally(async () => {
         resources.app?.kill('SIGTERM');
         await collector.close();
       });
@@ -183,7 +196,7 @@ async function liveRun(values, manifest, preflight) {
       assert.ok(!bundleExecutable || /^[^/]+$/.test(bundleExecutable), 'invalid bundle executable');
       const executable = values.app ? join(resolve(values.app), 'Contents/MacOS', bundleExecutable) : values['launch-command'];
       resources.app = spawn(executable, [...args, `--user-data-dir=${userData}`, `--bench-query=${encodeURIComponent(query)}`], {
-        stdio: 'ignore', env: { ...process.env, WS_PORT: '0', BISTRO_DISABLE_AUTO_UPDATES: '1', BISTRO_REPO_DIR: join(resolve(values.seed), 'repos') },
+        stdio: 'ignore', env: { ...process.env, WS_PORT: '0', BISTRO_SKIP_GO_SPAWN: '0', BISTRO_DISABLE_AUTO_UPDATES: '1', BISTRO_REPO_DIR: join(resolve(values.seed), 'repos') },
       });
       resources.app.on('error', (error) => console.error(error.message));
       pid = resources.app.pid;
@@ -193,6 +206,12 @@ async function liveRun(values, manifest, preflight) {
     assert.ok(ready.externalWritesBlocked === true && ready.dryDispatch === true && ready.classificationMode === 'rules', 'renderer read-only/rules/dry-dispatch proof missing');
     writeFileSync(join(out, 'renderer-ready.json'), JSON.stringify(ready, null, 2));
     assert.ok(/^github:bench\/large-diff:[12]$/.test(ready.prId ?? ''), 'synthetic fixture proof missing');
+    writeFileSync(join(out, 'run-manifest.json'), JSON.stringify({ ...manifest,
+      readinessProof: { classificationMode: ready.classificationMode, externalWritesBlocked: ready.externalWritesBlocked,
+        dryDispatch: ready.dryDispatch, prId: ready.prId, receipt: 'renderer-ready.json',
+        profilePreflight: 'profile-preflight.json', profileSettings: 'profile-settings.json',
+        engineEnvironment: { WS_PORT: '0', BISTRO_SKIP_GO_SPAWN: '0' } },
+    }, null, 2));
     resources.worker = openNative(values.native, 'worker', pid, join(out, 'worker.jsonl'));
     await resources.worker.ready;
     resources.tap = openNative(values.native, 'tap', pid, join(out, 'native-tap.jsonl'));
@@ -200,15 +219,16 @@ async function liveRun(values, manifest, preflight) {
     const journal = join(out, 'cells.jsonl');
     const groups = existsSync(journal) ? readFileSync(journal, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
     const completed = resumeCells(manifest, manifest, groups);
-    for (const cell of manifest.cells.filter((entry) => !completed.has(entry.id))) {
-      const group = await runCell({ cell, collector, worker: resources.worker, tap: resources.tap, preflight });
-      appendFileSync(journal, `${JSON.stringify(group)}\n`);
-    }
-    await resources.worker.command({ command: 'stop' });
-    const workerExit = await timeout(resources.worker.exited, 'native restoration');
-    assert.equal(workerExit.code, 0, 'native restoration worker failed');
-    assert.ok(!resources.worker.rows.some((row) => row.event === 'restored' && row.ok !== true), 'native input-source restoration failed');
-    writeFileSync(join(out, 'completed.json'), JSON.stringify({ fingerprint: manifest.fingerprint, requested: manifest.cells.length }));
+    await runNativeLifecycle({
+      worker: resources.worker,
+      run: async () => {
+        for (const cell of manifest.cells.filter((entry) => !completed.has(entry.id))) {
+          const group = await runCell({ cell, collector, worker: resources.worker, tap: resources.tap, preflight });
+          appendFileSync(journal, `${JSON.stringify(group)}\n`);
+        }
+      },
+      complete: () => writeFileSync(join(out, 'completed.json'), JSON.stringify({ fingerprint: manifest.fingerprint, requested: manifest.cells.length })),
+    });
   }).finally(async () => {
     process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt);
     await cleanup();
