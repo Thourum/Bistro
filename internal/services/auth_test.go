@@ -420,7 +420,7 @@ func TestAuthCallbackFailureAndPersistenceFailure(t *testing.T) {
 			sendCallback(t, req, original)
 			outcome := awaitAuth(t, pending)
 			if persistenceFails {
-				assertAuthError(t, outcome.err, services.CodeInternal, "")
+				assertAuthError(t, outcome.err, services.CodeInternal, "persist_failed")
 			} else {
 				assertAuthError(t, outcome.err, services.CodeUnauthenticated, "authentication_failed")
 			}
