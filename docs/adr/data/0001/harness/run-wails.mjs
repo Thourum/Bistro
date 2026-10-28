@@ -18,6 +18,7 @@ else {
   const host = join(app, 'Contents', 'MacOS', 'wails-spike');
   const args = [join(dirname(fileURLToPath(import.meta.url)), 'run-webview.mjs'), '--host', host];
   for (const key of ['renderer', 'seed', 'out', 'engine', 'runs']) if (values[key]) args.push(`--${key}`, values[key]);
+  // run-webview also requires key+visible window_state and invalidates the phase on later loss.
   // Reuse Gate 2's phase lifecycle, collector, statistics and explicit WebKit PID attribution unchanged.
   const FULL_RUN_TIMEOUT_MS = 24 * 60 * 60 * 1000;
   await execute(process.execPath, args, { env: { ...process.env, BISTRO_ADR_RENDERER: renderer },

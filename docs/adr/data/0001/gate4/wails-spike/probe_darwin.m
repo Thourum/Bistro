@@ -1,5 +1,32 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
+#import <objc/runtime.h>
+
+static const char windowStateObserversKey;
+
+static void reportWindowState(NSWindow *window) {
+    NSDictionary *state = @{ @"event": @"window_state", @"isKey": @(window.isKeyWindow),
+        @"isVisible": @((BOOL)(window.isVisible && (window.occlusionState & NSWindowOcclusionStateVisible) != 0)) };
+    NSData *bytes = [NSJSONSerialization dataWithJSONObject:state options:0 error:nil];
+    fwrite(bytes.bytes, 1, bytes.length, stdout);
+    printf("\n");
+    fflush(stdout);
+}
+
+static void observeWindowState(NSWindow *window) {
+    if (objc_getAssociatedObject(window, &windowStateObserversKey)) return;
+    NSMutableArray *observers = [NSMutableArray array];
+    // These subscriptions live for the disposable host process, without retaining its window.
+    for (NSNotificationName name in @[NSWindowDidBecomeKeyNotification,
+            NSWindowDidResignKeyNotification, NSWindowDidChangeOcclusionStateNotification]) {
+        id observer = [[NSNotificationCenter defaultCenter] addObserverForName:name object:window
+            queue:nil usingBlock:^(NSNotification *notification) {
+                reportWindowState((NSWindow *)notification.object);
+            }];
+        [observers addObject:observer];
+    }
+    objc_setAssociatedObject(window, &windowStateObserversKey, observers, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
 
 static WKWebView *findWebView(NSView *view) {
     if ([view isKindOfClass:[WKWebView class]]) return (WKWebView *)view;
@@ -45,8 +72,9 @@ void reportProbe(void *handle) {
         NSNumber *pid = [target[0] valueForKey:target[1]];
         printf("{\"event\":\"%s\",\"pid\":%d}\n", [target[2] UTF8String], pid.intValue);
     }
+    observeWindowState(window);
     NSDictionary *state = @{@"event": @"window_state", @"isKey": @(window.isKeyWindow),
-        @"isVisible": @((BOOL)((window.occlusionState & NSWindowOcclusionStateVisible) != 0)),
+        @"isVisible": @((BOOL)(window.isVisible && (window.occlusionState & NSWindowOcclusionStateVisible) != 0)),
         @"width": @(view.bounds.size.width), @"height": @(view.bounds.size.height),
         @"originURL": view.URL.absoluteString ?: @"", @"isInspectable": @(view.inspectable)};
     NSData *bytes = [NSJSONSerialization dataWithJSONObject:state options:0 error:nil];
