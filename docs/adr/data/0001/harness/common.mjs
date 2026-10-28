@@ -89,12 +89,24 @@ function hasLiveGroupMember(pgid) {
   });
 }
 
+// A member can still look live to ps for a moment after the kernel already reports EPERM for it.
+const EXIT_SETTLE_POLLS = 20;
+const EXIT_SETTLE_MS = 50;
+function hasSettledLiveGroupMember(pgid) {
+  for (let poll = 0; poll < EXIT_SETTLE_POLLS; poll++) {
+    if (!hasLiveGroupMember(pgid)) return false;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, EXIT_SETTLE_MS);
+  }
+  return true;
+}
+
 function signalGroup(pid, signal) {
   try { process.kill(-pid, signal); return true; }
   catch (error) {
     if (error.code === 'ESRCH') return false;
     // Darwin reports EPERM, not ESRCH, for a group whose only members are zombies or exiting.
-    if (error.code === 'EPERM' && !hasLiveGroupMember(pid)) return false;
+    if (error.code === 'EPERM' && !hasSettledLiveGroupMember(pid)) return false;
+    if (error.code === 'EPERM') error.message += `; group ${pid}: ${execFileSync('ps', ['-g', String(pid), '-o', 'pid=,ppid=,uid=,stat=,comm='], { encoding: 'utf8' }).trim().replace(/\n\s*/g, ' | ')}`;
     throw error;
   }
 }
