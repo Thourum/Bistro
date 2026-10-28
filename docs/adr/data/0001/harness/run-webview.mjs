@@ -2,8 +2,9 @@
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { execute, launch, stopProcessGroup } from './common.mjs';
+import { execute, launch, stopProcessGroup, withTimeout } from './common.mjs';
 import { FRAME_TIMEOUT_MS, IDLE_SETTLE_MS, prepareBrowserRun, withBrowserPhase,
   summarizeBrowserOutput, summarizeReceiptStartup } from './browser-common.mjs';
 
@@ -33,11 +34,31 @@ async function sampleMemory({ host, hostEvents, engine, directory }) {
     method: 'host + standalone engine + explicit WebContent/Networking/GPU PID SPIs; shared allocations may be counted repeatedly' }, null, 2) + '\n');
 }
 
+/** Require a foreground host before measurement and invalidate the whole phase on focus/visibility loss. */
+export function createWindowGuard() {
+  let hasForeground = false;
+  const foreground = Promise.withResolvers();
+  const failed = Promise.withResolvers();
+  return {
+    ready: foreground.promise,
+    failed: failed.promise,
+    observe(row) {
+      if (row.event === 'host_error') failed.reject(new Error(row.message));
+      if (row.event !== 'window_state') return;
+      if (row.isKey === true && row.isVisible === true) {
+        hasForeground = true;
+        foreground.resolve();
+      } else if (hasForeground) failed.reject(new Error('WKWebView window lost key or visible status during measurement'));
+    },
+  };
+}
+
 async function runHostPhase({ context, hostBinary, directory, prId, memory }) {
   return withBrowserPhase({ context, directory, prId, runPage: async ({ url, collector, ownedEngine }) => {
     const launchedPerfMs = performance.now();
     const host = launch(hostBinary, [url, join(context.seed, 'settings.json')], { detached: true, log: join(directory, 'host.log') });
     const hostEvents = [];
+    const windowGuard = createWindowGuard();
     let pending = '';
     host.child.stdout.setEncoding('utf8');
     host.child.stdout.on('data', (chunk) => {
@@ -47,21 +68,30 @@ async function runHostPhase({ context, hostBinary, directory, prId, memory }) {
       for (const line of lines.filter(Boolean)) {
         const row = (() => { try { return JSON.parse(line); } catch { return { event: 'host_stdout_unparsed', line }; } })();
         hostEvents.push(row);
+        windowGuard.observe(row);
       }
     });
     const exited = host.done.then(() => Promise.reject(new Error('host exited before phase completed')));
-    const ready = collector.waitFor('pr_list_rendered', { timeoutMs: FRAME_TIMEOUT_MS });
-    return Promise.race([ready, exited]).then(async (receipt) => {
+    const ready = Promise.all([
+      withTimeout(windowGuard.ready, FRAME_TIMEOUT_MS, 'key and visible WKWebView window'),
+      collector.waitFor('pr_list_rendered', { timeoutMs: FRAME_TIMEOUT_MS }),
+    ]);
+    const measurement = ready.then(async ([, receipt]) => {
       const timing = { launchedPerfMs, receivedPerfMs: receipt.receivedPerfMs,
-        elapsedMs: receipt.receivedPerfMs - launchedPerfMs, engineReadyBeforeLaunch: true };
+        elapsedMs: receipt.receivedPerfMs - launchedPerfMs, engineReadyBeforeLaunch: true,
+        windowKeyVisibleRequired: true };
       await writeFile(join(directory, 'launch-receipt.json'), JSON.stringify(timing, null, 2) + '\n');
-      if (prId) await Promise.race([collector.waitFor('diff_done', { timeoutMs: FRAME_TIMEOUT_MS }), exited]);
+      if (prId) await collector.waitFor('diff_done', { timeoutMs: FRAME_TIMEOUT_MS });
       if (memory) {
         await sleep(IDLE_SETTLE_MS);
         await sampleMemory({ host, hostEvents, engine: ownedEngine, directory: join(directory, 'memory') });
       }
       collector.assertHealthy();
       return timing.elapsedMs;
+    });
+    return Promise.race([measurement, exited, windowGuard.failed]).catch(async (error) => {
+      await writeFile(join(directory, 'failed.json'), JSON.stringify({ failedAt: new Date().toISOString(), message: error.message }, null, 2) + '\n');
+      return Promise.reject(error);
     }).finally(async () => {
       await stopProcessGroup(host);
       await writeFile(join(directory, 'host-events.json'), JSON.stringify(hostEvents, null, 2) + '\n');
@@ -69,6 +99,7 @@ async function runHostPhase({ context, hostBinary, directory, prId, memory }) {
   } });
 }
 
+async function main() {
 const { values } = parseArgs({ options: Object.fromEntries(['host', 'seed', 'out', 'renderer', 'engine', 'runs'].map((name) => [name, { type: 'string' }]).concat([['help', { type: 'boolean' }]])) });
 if (values.help) console.log('node run-webview.mjs --host <compiled bin> --renderer <built renderer> --seed <dir> --out <empty dir> [--runs N] [--engine <bin>]\nDefaults: 30 startup launch-to-receipt, 5 idle memory, 10 frames per fixture. Keep window visible/frontmost. n=1 is smoke only.');
 else {
@@ -95,3 +126,6 @@ else {
     console.log(`WKWebView output: ${context.out}`);
   })().finally(() => context.server.close());
 }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

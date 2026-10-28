@@ -4,6 +4,25 @@ import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { serveRenderer } from './serve-renderer.mjs';
+import { createWindowGuard } from './run-webview.mjs';
+
+test('WKWebView waits for both foreground flags and rejects focus or visibility loss', async () => {
+  for (const lostFlag of ['isKey', 'isVisible']) {
+    const guard = createWindowGuard();
+    let isReady = false;
+    guard.ready.then(() => { isReady = true; });
+    guard.observe({ event: 'window_state', isKey: false, isVisible: true });
+    guard.observe({ event: 'window_state', isKey: true, isVisible: false });
+    await Promise.resolve();
+    assert.equal(isReady, false);
+    guard.observe({ event: 'window_state', isKey: true, isVisible: true });
+    await guard.ready;
+    assert.equal(isReady, true);
+    const failed = assert.rejects(guard.failed, /lost key or visible status/);
+    guard.observe({ event: 'window_state', isKey: true, isVisible: true, [lostFlag]: false });
+    await failed;
+  }
+});
 
 test('built renderer server has correct JS/wasm MIME and rejects symlink escapes and writes', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'bistro-renderer-server-'));

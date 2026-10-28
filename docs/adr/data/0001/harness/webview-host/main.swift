@@ -10,11 +10,12 @@ func emit(_ payload: [String: Any]) {
 
 // This is an evidence host, not a proposed application shell. Private PID SPIs attribute launchd XPC memory.
 @MainActor
-final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler {
+final class Host: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     var window: NSWindow?
     var webView: WKWebView?
     let url: URL
     let settings: String
+    var hasStartedNavigation = false
 
     init(url: URL, settings: String) { self.url = url; self.settings = settings }
 
@@ -49,11 +50,36 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
         window.center()
         self.window = window
         webView = view
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        window.delegate = self
         emit(["event": "host_ready", "pid": ProcessInfo.processInfo.processIdentifier,
               "webKitVersion": Bundle(for: WKWebView.self).object(forInfoDictionaryKey: "CFBundleVersion") ?? "unknown"])
-        view.load(URLRequest(url: url))
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(view)
+        reportWindowState()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        window?.makeKeyAndOrderFront(nil)
+        reportWindowState()
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) { reportWindowState() }
+    func windowDidResignKey(_ notification: Notification) { reportWindowState() }
+    func windowDidChangeOcclusionState(_ notification: Notification) { reportWindowState() }
+    func windowWillClose(_ notification: Notification) {
+        emit(["event": "host_error", "message": "Window closed during measurement"])
+    }
+
+    func reportWindowState() {
+        guard let window = window else { return }
+        let isKey = window.isKeyWindow
+        let isVisible = window.isVisible && window.occlusionState.contains(.visible)
+        emit(["event": "window_state", "isKey": isKey, "isVisible": isVisible])
+        // App activation/occlusion notifications are asynchronous: never load while backgrounded.
+        guard !hasStartedNavigation, isKey, isVisible else { return }
+        hasStartedNavigation = true
+        webView?.load(URLRequest(url: url))
     }
 
     func webView(_ view: WKWebView, didFinish navigation: WKNavigation!) {
@@ -68,8 +94,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
             }
             emit(["event": event, "pid": pid.intValue])
         }
-        emit(["event": "window_state", "isKey": window?.isKeyWindow ?? false,
-              "isVisible": window?.occlusionState.contains(.visible) ?? false])
+        reportWindowState()
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
