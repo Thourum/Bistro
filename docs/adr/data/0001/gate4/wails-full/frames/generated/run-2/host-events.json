@@ -1,0 +1,28 @@
+[
+  {
+    "event": "webcontent_pid",
+    "pid": 79750
+  },
+  {
+    "event": "gpu_pid",
+    "pid": 79747
+  },
+  {
+    "event": "networking_pid",
+    "pid": 79781
+  },
+  {
+    "height": 900,
+    "event": "window_state",
+    "width": 1600,
+    "isKey": true,
+    "isVisible": true,
+    "originURL": "http://localhost:59874/?bench_collector=http%3A%2F%2F127.0.0.1%3A61937&bench_diff=github%3Agoogleapis%2Fgoogle-cloud-go%3A20526",
+    "isInspectable": true
+  },
+  {
+    "event": "window_state",
+    "isKey": false,
+    "isVisible": false
+  }
+]

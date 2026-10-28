@@ -1,0 +1,86 @@
+[
+  {
+    "event": "host_ready",
+    "pid": 14017,
+    "webKitVersion": "22625.2.8.11.9"
+  },
+  {
+    "event": "window_state",
+    "isKey": false,
+    "isVisible": false
+  },
+  {
+    "event": "window_state",
+    "isKey": true,
+    "isVisible": false
+  },
+  {
+    "event": "window_state",
+    "isKey": true,
+    "isVisible": false
+  },
+  {
+    "event": "window_state",
+    "isKey": true,
+    "isVisible": true
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "webcontent_pid",
+    "pid": 14110
+  },
+  {
+    "event": "gpu_pid",
+    "pid": 14023
+  },
+  {
+    "event": "networking_pid",
+    "pid": 14151
+  },
+  {
+    "event": "window_state",
+    "isKey": true,
+    "isVisible": true
+  }
+]

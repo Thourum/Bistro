@@ -1,0 +1,28 @@
+[
+  {
+    "event": "webcontent_pid",
+    "pid": 71202
+  },
+  {
+    "event": "gpu_pid",
+    "pid": 71200
+  },
+  {
+    "event": "networking_pid",
+    "pid": 71224
+  },
+  {
+    "height": 900,
+    "event": "window_state",
+    "width": 1600,
+    "isKey": true,
+    "isVisible": true,
+    "originURL": "http://localhost:59874/?bench_collector=http%3A%2F%2F127.0.0.1%3A60752&bench_diff=github%3Akubernetes%2Fkubernetes%3A143358",
+    "isInspectable": true
+  },
+  {
+    "event": "window_state",
+    "isKey": false,
+    "isVisible": false
+  }
+]

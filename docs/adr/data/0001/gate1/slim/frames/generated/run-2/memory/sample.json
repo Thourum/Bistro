@@ -1,0 +1,32 @@
+{
+  "sampledAt": "2026-10-28T14:17:18.747Z",
+  "processes": [
+    {
+      "pid": 13735,
+      "command": "/Users/samuelasvanyi/.t3/worktrees/bistro/t3-6ef81aaa/electron/out/slim/Bistro-darwin-arm64/Bistro.app/Contents/MacOS/Bistro",
+      "bytes": 89737112
+    },
+    {
+      "pid": 13736,
+      "command": "/Users/samuelasvanyi/.t3/worktrees/bistro/t3-6ef81aaa/electron/out/slim/Bistro-darwin-arm64/Bistro.app/Contents/Frameworks/Bistro Helper.app/Contents/MacOS/Bistro Helper",
+      "bytes": 176456928
+    },
+    {
+      "pid": 13737,
+      "command": "/Users/samuelasvanyi/.t3/worktrees/bistro/t3-6ef81aaa/electron/out/slim/Bistro-darwin-arm64/Bistro.app/Contents/Frameworks/Bistro Helper.app/Contents/MacOS/Bistro Helper",
+      "bytes": 9405400
+    },
+    {
+      "pid": 13751,
+      "command": "/Users/samuelasvanyi/.t3/worktrees/bistro/t3-6ef81aaa/electron/out/slim/Bistro-darwin-arm64/Bistro.app/Contents/Resources/go-bin/bistro-sync",
+      "bytes": 24970128
+    },
+    {
+      "pid": 13976,
+      "command": "/Users/samuelasvanyi/.t3/worktrees/bistro/t3-6ef81aaa/electron/out/slim/Bistro-darwin-arm64/Bistro.app/Contents/Frameworks/Bistro Helper (Renderer).app/Contents/MacOS/Bistro Helper (Renderer)",
+      "bytes": 482462816
+    }
+  ],
+  "totalBytes": 783032384,
+  "method": "sum of per-process footprint (shared allocations may be counted in more than one process)"
+}

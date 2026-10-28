@@ -1,0 +1,37 @@
+{
+  "processes": [
+    {
+      "pid": 22637,
+      "parentPid": 7503,
+      "command": "/private/tmp/adr-full/bistro-webview-host",
+      "bytes": 29410504
+    },
+    {
+      "pid": 22634,
+      "parentPid": 7503,
+      "command": "/private/tmp/bistro-bench-seed/bistro-sync",
+      "bytes": 16024416
+    },
+    {
+      "pid": 22773,
+      "parentPid": 1,
+      "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+      "bytes": 327059064
+    },
+    {
+      "pid": 22638,
+      "parentPid": 1,
+      "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+      "bytes": 106694144
+    },
+    {
+      "pid": 22835,
+      "parentPid": 1,
+      "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+      "bytes": 7848512
+    }
+  ],
+  "totalBytes": 487036640,
+  "sampledAt": "2026-10-28T13:10:12.904Z",
+  "method": "host + standalone engine + explicit WebContent/Networking/GPU PID SPIs; shared allocations may be counted repeatedly"
+}

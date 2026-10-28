@@ -1,0 +1,121 @@
+[
+  {
+    "event": "host_ready",
+    "pid": 28983,
+    "webKitVersion": "22625.2.8.11.9"
+  },
+  {
+    "event": "window_state",
+    "isKey": false,
+    "isVisible": false
+  },
+  {
+    "event": "window_state",
+    "isKey": false,
+    "isVisible": true
+  },
+  {
+    "event": "window_state",
+    "isKey": true,
+    "isVisible": true
+  },
+  {
+    "event": "window_state",
+    "isKey": true,
+    "isVisible": true
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "webcontent_pid",
+    "pid": 29106
+  },
+  {
+    "event": "gpu_pid",
+    "pid": 28984
+  },
+  {
+    "event": "networking_pid",
+    "pid": 29173
+  },
+  {
+    "event": "window_state",
+    "isKey": true,
+    "isVisible": true
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  }
+]

@@ -1,0 +1,121 @@
+[
+  {
+    "event": "host_ready",
+    "pid": 27693,
+    "webKitVersion": "22625.2.8.11.9"
+  },
+  {
+    "event": "window_state",
+    "isKey": false,
+    "isVisible": false
+  },
+  {
+    "event": "window_state",
+    "isKey": true,
+    "isVisible": false
+  },
+  {
+    "event": "window_state",
+    "isKey": true,
+    "isVisible": false
+  },
+  {
+    "event": "window_state",
+    "isKey": true,
+    "isVisible": true
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "webcontent_pid",
+    "pid": 27756
+  },
+  {
+    "event": "gpu_pid",
+    "pid": 27694
+  },
+  {
+    "event": "networking_pid",
+    "pid": 27797
+  },
+  {
+    "event": "window_state",
+    "isKey": true,
+    "isVisible": true
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  },
+  {
+    "event": "console",
+    "payload": {
+      "level": "info",
+      "message": "[object Object]"
+    }
+  }
+]

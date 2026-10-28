@@ -1,0 +1,27 @@
+[
+  {
+    "pid": 22637,
+    "parentPid": 7503,
+    "command": "/private/tmp/adr-full/bistro-webview-host"
+  },
+  {
+    "pid": 22634,
+    "parentPid": 7503,
+    "command": "/private/tmp/bistro-bench-seed/bistro-sync"
+  },
+  {
+    "pid": 22773,
+    "parentPid": 1,
+    "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+  },
+  {
+    "pid": 22638,
+    "parentPid": 1,
+    "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU"
+  },
+  {
+    "pid": 22835,
+    "parentPid": 1,
+    "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking"
+  }
+]

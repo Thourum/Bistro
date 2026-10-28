@@ -1,0 +1,28 @@
+[
+  {
+    "event": "webcontent_pid",
+    "pid": 69848
+  },
+  {
+    "event": "gpu_pid",
+    "pid": 69846
+  },
+  {
+    "event": "networking_pid",
+    "pid": 69880
+  },
+  {
+    "height": 900,
+    "event": "window_state",
+    "width": 1600,
+    "isKey": true,
+    "isVisible": true,
+    "originURL": "http://localhost:59874/?bench_collector=http%3A%2F%2F127.0.0.1%3A60568",
+    "isInspectable": true
+  },
+  {
+    "event": "window_state",
+    "isKey": false,
+    "isVisible": false
+  }
+]

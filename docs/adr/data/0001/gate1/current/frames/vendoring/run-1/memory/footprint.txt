@@ -1,0 +1,503 @@
+======================================================================
+Bistro Helper (Renderer) [56302]: 64-bit    Footprint: 383 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 273 MB        0 B        64 KB      12708    App-Specific Tag 16
+ 102 MB        0 B        35 MB       2281    App-Specific Tag 14
+2131 KB        0 B          0 B          1    page table
+1671 KB     320 KB          0 B         45    __DATA
+1296 KB        0 B          0 B         58    Stack
+ 720 KB        0 B          0 B         29    Untagged
+ 704 KB        0 B          0 B         10    Malloc Metadata
+ 631 KB        0 B          0 B         96    __DATA_DIRTY
+ 352 KB        0 B          0 B          3    Malloc Small
+ 224 KB        0 B          0 B          1    Dispatch Continuations
+ 192 KB        0 B          0 B          8    Mach Message
+ 127 KB        0 B          0 B         63    unused dyld shared cache area
+  96 KB        0 B          0 B          3    __TPRO_CONST
+  95 KB        0 B          0 B         37    __AUTH
+  80 KB        0 B          0 B          1    Malloc Tiny
+  36 KB        0 B          0 B          1    __OBJC_RW
+  16 KB        0 B          0 B          1    Deferred Reclaim
+  16 KB        0 B          0 B          1    Activity Tracing
+  16 KB        0 B          0 B          1    OS Alloc Once
+  16 KB        0 B          0 B          1    PROTECTED_MEMORY
+    0 B        0 B        16 KB          1    App-Specific Tag 1
+    0 B      62 MB          0 B          2    __TEXT
+    0 B    3872 KB          0 B          6    __DATA_CONST
+    0 B    2816 KB          0 B          6    mapped file
+    0 B      16 KB          0 B          1    __LINKEDIT
+    ---        ---          ---        ---    ---
+ 383 MB      69 MB        35 MB      15367    TOTAL
+
+Shared with Bistro [56067], Bistro Helper [56075]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B     736 KB          0 B          1    mapped file
+    ---        ---          ---        ---    ---
+    0 B     736 KB          0 B          1    TOTAL
+
+Shared with Bistro Helper [56074], Bistro Helper [56075], Bistro [56067]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  16 KB        0 B          0 B          1    Untagged
+    0 B    2752 KB          0 B          6    mapped file
+    0 B    1264 KB          0 B         20    __LINKEDIT
+    0 B     304 KB          0 B         16    __TEXT
+    ---        ---          ---        ---    ---
+  16 KB    4320 KB          0 B         43    TOTAL
+
+Shared with Bistro [56067]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 112 KB        0 B          0 B          4    Untagged
+    0 B    1440 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+ 112 KB    1440 KB          0 B          6    TOTAL
+
+Shared with Bistro Helper [56075]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 208 KB        0 B          0 B          3    Untagged
+    ---        ---          ---        ---    ---
+ 208 KB        0 B          0 B          3    TOTAL
+
+Shared with bistro-sync [56077], Bistro Helper [56074], Bistro Helper [56075], Bistro [56067]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  48 KB        0 B          0 B          2    Untagged
+    0 B     480 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+  48 KB     480 KB          0 B          4    TOTAL
+
+Shared with Bistro Helper [56074]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 224 KB        0 B          0 B          8    Untagged
+    ---        ---          ---        ---    ---
+ 224 KB        0 B          0 B          8    TOTAL
+
+Auxiliary data:
+    phys_footprint: 383 MB
+    phys_footprint_peak: 391 MB
+
+======================================================================
+Bistro Helper [56074]: 64-bit    Footprint: 220 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 177 MB        0 B          0 B         70    IOSurface
+  27 MB        0 B        10 MB       1030    App-Specific Tag 14
+5600 KB        0 B       264 MB         55    Owned physical footprint (unmapped) (graphics)
+2912 KB        0 B        40 MB        390    IOAccelerator (graphics)
+1257 KB     112 KB          0 B         40    __DATA
+1232 KB        0 B          0 B         30    Stack
+ 896 KB        0 B          0 B         11    Malloc Metadata
+ 849 KB        0 B          0 B          1    page table
+ 681 KB        0 B          0 B        114    __DATA_DIRTY
+ 560 KB        0 B          0 B          3    Malloc Small
+ 384 KB        0 B          0 B          8    IOAccelerator
+ 192 KB        0 B          0 B          1    Dispatch Continuations
+ 153 KB        0 B          0 B         66    unused dyld shared cache area
+ 113 KB        0 B          0 B         34    __AUTH
+  96 KB        0 B          0 B          1    Malloc Tiny
+  96 KB        0 B          0 B          4    Mach Message
+  96 KB        0 B          0 B          3    __TPRO_CONST
+  64 KB        0 B          0 B          7    Untagged
+  48 KB        0 B          0 B         10    IOKit
+  36 KB        0 B          0 B          1    __OBJC_RW
+  32 KB        0 B          0 B          2    ColorSync
+  16 KB        0 B          0 B          1    Deferred Reclaim
+  16 KB        0 B          0 B          1    OS Alloc Once
+  16 KB        0 B          0 B          1    Activity Tracing
+    0 B        0 B      8192 KB         64    Owned physical footprint (unmapped)
+    0 B    1424 KB          0 B          6    __DATA_CONST
+    0 B     544 KB          0 B          3    mapped file
+    ---        ---          ---        ---    ---
+ 219 MB    2080 KB       322 MB       1959    TOTAL
+
+Shared with Bistro [56067], Bistro Helper [56075]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B        0 B          0 B          1    PROTECTED_MEMORY
+    0 B        0 B          0 B          3    __DATA
+    ---        ---          ---        ---    ---
+    0 B        0 B          0 B          4    TOTAL
+
+Shared with Bistro Helper (Renderer) [56302], Bistro Helper [56075], Bistro [56067]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  16 KB        0 B          0 B          1    Untagged
+    0 B    1264 KB          0 B         20    __LINKEDIT
+    0 B     304 KB          0 B         16    __TEXT
+    0 B     192 KB          0 B          6    mapped file
+    ---        ---          ---        ---    ---
+  16 KB    1760 KB          0 B         43    TOTAL
+
+Shared with Bistro Helper [56075]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B      32 MB          0 B          4    __TEXT
+    0 B      16 KB          0 B          2    __LINKEDIT
+    ---        ---          ---        ---    ---
+    0 B      32 MB          0 B          6    TOTAL
+
+Shared with Bistro [56067]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 304 KB        0 B          0 B         18    Untagged
+ 192 KB    3648 KB          0 B          3    mapped file
+  32 KB        0 B          0 B          1    CoreServices
+  32 KB        0 B          0 B          2    IOKit
+  16 KB        0 B          0 B          1    IOAccelerator
+  16 KB        0 B          0 B          1    CoreGraphics
+    ---        ---          ---        ---    ---
+ 592 KB    3648 KB          0 B         26    TOTAL
+
+Shared with bistro-sync [56077], Bistro Helper (Renderer) [56302], Bistro Helper [56075], Bistro [56067]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  48 KB        0 B          0 B          2    Untagged
+    0 B     336 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+  48 KB     336 KB          0 B          4    TOTAL
+
+Shared with Bistro Helper (Renderer) [56302]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 224 KB        0 B          0 B          8    Untagged
+    ---        ---          ---        ---    ---
+ 224 KB        0 B          0 B          8    TOTAL
+
+Auxiliary data:
+    phys_footprint: 220 MB
+    phys_footprint_peak: 653 MB
+
+======================================================================
+Bistro [56067]: 64-bit    Footprint: 85 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  44 MB        0 B        19 MB       1388    App-Specific Tag 14
+  23 MB        0 B          0 B      11315    App-Specific Tag 16
+4112 KB        0 B          0 B          1    CG Image
+2756 KB      64 KB          0 B        107    __DATA
+1866 KB        0 B          0 B        219    __DATA_DIRTY
+1392 KB        0 B       128 KB          7    Malloc Small
+1344 KB        0 B          0 B         13    Malloc Metadata
+1330 KB        0 B          0 B          1    page table
+1120 KB        0 B        32 KB         89    Stack
+ 564 KB        0 B          0 B         91    __AUTH
+ 480 KB        0 B          0 B         30    CoreAnimation
+ 448 KB        0 B          0 B         31    Untagged
+ 320 KB        0 B        32 KB          1    Dispatch Continuations
+ 256 KB        0 B          0 B          2    Accelerate Framework
+ 218 KB        0 B          0 B        136    unused dyld shared cache area
+ 208 KB        0 B          0 B          3    CoreUI Image Data
+ 128 KB        0 B          0 B          6    Mach Message
+  96 KB        0 B          0 B          3    __TPRO_CONST
+  80 KB        0 B          0 B          1    Malloc Tiny
+  48 KB        0 B          0 B          1    IOAccelerator
+  36 KB        0 B          0 B          1    __OBJC_RW
+  32 KB        0 B          0 B          1    Activity Tracing
+  16 KB        0 B        32 KB          2    Foundation
+  16 KB        0 B          0 B          1    Deferred Reclaim
+  16 KB        0 B          0 B          1    OS Alloc Once
+  16 KB        0 B          0 B          2    IOAccelerator (graphics)
+  16 KB        0 B          0 B          1    IOKit
+  16 KB        0 B          0 B          1    CoreGraphics
+    0 B        0 B      4096 KB          1    Malloc Large
+    0 B      65 MB          0 B          3    __TEXT
+    0 B      11 MB          0 B         41    mapped file
+    0 B    2800 KB          0 B          6    __DATA_CONST
+    0 B      32 KB          0 B          2    __LINKEDIT
+    ---        ---          ---        ---    ---
+  84 MB      79 MB        23 MB      13510    TOTAL
+
+Shared with Bistro Helper (Renderer) [56302], Bistro Helper [56075]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B      16 KB          0 B          1    mapped file
+    ---        ---          ---        ---    ---
+    0 B      16 KB          0 B          1    TOTAL
+
+Shared with Bistro Helper [56074], Bistro Helper [56075]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B        0 B          0 B          1    PROTECTED_MEMORY
+    0 B        0 B          0 B          3    __DATA
+    ---        ---          ---        ---    ---
+    0 B        0 B          0 B          4    TOTAL
+
+Shared with Bistro Helper (Renderer) [56302], Bistro Helper [56074], Bistro Helper [56075]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  16 KB        0 B          0 B          1    Untagged
+    0 B    1264 KB          0 B         20    __LINKEDIT
+    0 B    1024 KB          0 B          6    mapped file
+    0 B     304 KB          0 B         16    __TEXT
+    ---        ---          ---        ---    ---
+  16 KB    2592 KB          0 B         43    TOTAL
+
+Shared with Bistro Helper [56074]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 384 KB        0 B          0 B         18    Untagged
+ 272 KB    4368 KB          0 B          3    mapped file
+  32 KB        0 B          0 B          1    CoreServices
+  32 KB        0 B          0 B          2    IOKit
+  16 KB        0 B          0 B          1    IOAccelerator
+  16 KB        0 B          0 B          1    CoreGraphics
+    ---        ---          ---        ---    ---
+ 752 KB    4368 KB          0 B         26    TOTAL
+
+Shared with Bistro Helper (Renderer) [56302]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 288 KB        0 B          0 B          4    Untagged
+    0 B    1328 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+ 288 KB    1328 KB          0 B          6    TOTAL
+
+Shared with bistro-sync [56077], Bistro Helper (Renderer) [56302], Bistro Helper [56074], Bistro Helper [56075]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  48 KB        0 B          0 B          2    Untagged
+    0 B    1472 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+  48 KB    1472 KB          0 B          4    TOTAL
+
+Shared with bistro-sync [56077]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B     192 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+    0 B     192 KB          0 B          2    TOTAL
+
+Shared with Bistro Helper [56075]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 128 KB        0 B          0 B          1    Untagged
+    ---        ---          ---        ---    ---
+ 128 KB        0 B          0 B          1    TOTAL
+
+Auxiliary data:
+    phys_footprint: 85 MB
+    phys_footprint_peak: 87 MB
+
+======================================================================
+bistro-sync [56077]: 64-bit    Footprint: 16 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  11 MB        0 B          0 B         87    Untagged
+2464 KB        0 B          0 B          8    Malloc Small
+ 608 KB        0 B          0 B          9    Malloc Metadata
+ 593 KB        0 B          0 B          1    page table
+ 538 KB     208 KB          0 B         25    __DATA
+ 382 KB        0 B          0 B         48    __DATA_DIRTY
+ 304 KB        0 B          0 B         32    Stack
+ 144 KB        0 B          0 B          1    Malloc Tiny
+  83 KB        0 B          0 B         33    unused dyld shared cache area
+  80 KB        0 B        16 KB          1    Dispatch Continuations
+  48 KB        0 B          0 B          3    __TPRO_CONST
+  36 KB        0 B          0 B          1    __OBJC_RW
+  16 KB        0 B          0 B          1    Deferred Reclaim
+  16 KB        0 B          0 B          1    OS Alloc Once
+  16 KB        0 B          0 B          1    Activity Tracing
+ 2088 B        0 B          0 B          3    __AUTH
+    0 B      11 MB          0 B          1    __TEXT
+    0 B    3552 KB          0 B          1    __DATA_CONST
+    0 B      32 KB          0 B          1    mapped file
+    0 B      16 KB          0 B          1    __LINKEDIT
+    ---        ---          ---        ---    ---
+  16 MB      15 MB        16 KB        261    TOTAL
+
+Shared with Bistro Helper (Renderer) [56302], Bistro Helper [56074], Bistro Helper [56075], Bistro [56067]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  48 KB        0 B          0 B          2    Untagged
+    0 B     112 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+  48 KB     112 KB          0 B          4    TOTAL
+
+Shared with Bistro [56067]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B     192 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+    0 B     192 KB          0 B          2    TOTAL
+
+Auxiliary data:
+    phys_footprint: 16 MB
+    phys_footprint_peak: 16 MB
+
+======================================================================
+Bistro Helper [56075]: 64-bit    Footprint: 9121 KB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+4368 KB        0 B      3008 KB        548    App-Specific Tag 14
+ 928 KB     144 KB          0 B         31    __DATA
+ 704 KB        0 B          0 B         10    Malloc Metadata
+ 673 KB        0 B          0 B          1    page table
+ 569 KB        0 B          0 B         93    __DATA_DIRTY
+ 432 KB        0 B          0 B         24    Stack
+ 288 KB        0 B          0 B          3    Malloc Small
+ 208 KB        0 B        16 KB          1    Dispatch Continuations
+ 105 KB        0 B          0 B         54    unused dyld shared cache area
+  96 KB        0 B          0 B          1    Malloc Tiny
+  96 KB        0 B          0 B          3    __TPRO_CONST
+  80 KB        0 B          0 B          3    App-Specific Tag 2
+  64 KB        0 B          0 B          2    Mach Message
+  59 KB        0 B          0 B         31    __AUTH
+  36 KB        0 B          0 B          1    __OBJC_RW
+  32 KB        0 B          0 B          4    Untagged
+  16 KB        0 B          0 B          1    Deferred Reclaim
+  16 KB        0 B          0 B          1    OS Alloc Once
+  16 KB        0 B          0 B          1    Activity Tracing
+    0 B    1056 KB          0 B          6    __DATA_CONST
+    0 B     112 KB          0 B          4    mapped file
+    ---        ---          ---        ---    ---
+8785 KB    1312 KB      3024 KB        825    TOTAL
+
+Shared with Bistro [56067], Bistro Helper (Renderer) [56302]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B        0 B          0 B          1    mapped file
+    ---        ---          ---        ---    ---
+    0 B        0 B          0 B          1    TOTAL
+
+Shared with Bistro [56067], Bistro Helper [56074]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B        0 B          0 B          1    PROTECTED_MEMORY
+    0 B        0 B          0 B          3    __DATA
+    ---        ---          ---        ---    ---
+    0 B        0 B          0 B          4    TOTAL
+
+Shared with Bistro Helper (Renderer) [56302], Bistro Helper [56074], Bistro [56067]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  16 KB        0 B          0 B          1    Untagged
+    0 B    1264 KB          0 B         20    __LINKEDIT
+    0 B     304 KB          0 B         16    __TEXT
+    0 B     192 KB          0 B          6    mapped file
+    ---        ---          ---        ---    ---
+  16 KB    1760 KB          0 B         43    TOTAL
+
+Shared with Bistro Helper [56074]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B      32 MB          0 B          4    __TEXT
+    0 B      16 KB          0 B          2    __LINKEDIT
+    ---        ---          ---        ---    ---
+    0 B      32 MB          0 B          6    TOTAL
+
+Shared with Bistro Helper (Renderer) [56302]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 208 KB        0 B          0 B          3    Untagged
+    ---        ---          ---        ---    ---
+ 208 KB        0 B          0 B          3    TOTAL
+
+Shared with bistro-sync [56077], Bistro Helper (Renderer) [56302], Bistro Helper [56074], Bistro [56067]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  48 KB        0 B          0 B          2    Untagged
+    0 B     160 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+  48 KB     160 KB          0 B          4    TOTAL
+
+Shared with Bistro [56067]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  64 KB        0 B          0 B          1    Untagged
+    ---        ---          ---        ---    ---
+  64 KB        0 B          0 B          1    TOTAL
+
+Auxiliary data:
+    phys_footprint: 9121 KB
+    phys_footprint_peak: 10 MB
+
+======================================================================
+Shared Cache B39B8E81-8B0E-3D14-91B5-5ED0494535D6
+======================================================================
+
+Shared with bistro-sync [56077], Bistro Helper (Renderer) [56302], Bistro Helper [56074], Bistro Helper [56075], Bistro [56067]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B        0 B          0 B       4712    __DATA_CONST
+    0 B        0 B          0 B          5    __FONT_DATA
+    0 B        0 B          0 B      11157    unused dyld shared cache area
+    0 B        0 B          0 B          5    __OBJC_RO
+    0 B        0 B          0 B       2124    __AUTH
+    0 B        0 B          0 B       3860    __DATA_DIRTY
+    0 B        0 B          0 B       4696    __AUTH_CONST
+    0 B        0 B          0 B       5130    __TEXT
+    0 B        0 B          0 B          5    __LINKEDIT
+    0 B        0 B          0 B          5    __CTF
+    0 B        0 B          0 B          5    __TPRO_CONST
+    0 B        0 B          0 B       4234    __DATA
+    ---        ---          ---        ---    ---
+    0 B        0 B          0 B      35938    TOTAL
+
+======================================================================
+Summary Footprint: 713 MB
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 296 MB        0 B        64 KB      24023    App-Specific Tag 16
+ 177 MB        0 B        66 MB       5247    App-Specific Tag 14
+ 177 MB        0 B          0 B         70    IOSurface
+  13 MB        0 B          0 B        240    Untagged
+7150 KB     848 KB          0 B       4485    __DATA
+5600 KB        0 B       264 MB         55    Owned physical footprint (unmapped) (graphics)
+5576 KB        0 B          0 B          5    page table
+5056 KB        0 B       128 KB         24    Malloc Small
+4384 KB        0 B        32 KB        233    Stack
+4256 KB        0 B          0 B         53    Malloc Metadata
+4129 KB        0 B          0 B       4430    __DATA_DIRTY
+4112 KB        0 B          0 B          1    CG Image
+2928 KB        0 B        40 MB        392    IOAccelerator (graphics)
+1024 KB        0 B        64 KB          5    Dispatch Continuations
+ 834 KB        0 B          0 B       2320    __AUTH
+ 686 KB        0 B          0 B      11509    unused dyld shared cache area
+ 496 KB        0 B          0 B          5    Malloc Tiny
+ 480 KB        0 B          0 B         20    Mach Message
+ 480 KB        0 B          0 B         30    CoreAnimation
+ 448 KB        0 B          0 B         11    IOAccelerator
+ 432 KB        0 B          0 B         20    __TPRO_CONST
+ 288 KB      27 MB          0 B        106    mapped file
+ 256 KB        0 B          0 B          2    Accelerate Framework
+ 208 KB        0 B          0 B          3    CoreUI Image Data
+ 178 KB        0 B          0 B          5    __OBJC_RW
+  96 KB        0 B          0 B          5    Activity Tracing
+  96 KB        0 B          0 B         15    IOKit
+  80 KB        0 B          0 B          5    Deferred Reclaim
+  80 KB        0 B          0 B          5    OS Alloc Once
+  80 KB        0 B          0 B          3    App-Specific Tag 2
+  32 KB        0 B          0 B          2    CoreServices
+  32 KB        0 B          0 B          3    CoreGraphics
+  32 KB        0 B          0 B          2    ColorSync
+  16 KB        0 B        32 KB          2    Foundation
+  16 KB        0 B          0 B          4    PROTECTED_MEMORY
+    0 B        0 B      8192 KB         64    Owned physical footprint (unmapped)
+    0 B        0 B      4096 KB          1    Malloc Large
+    0 B        0 B        16 KB          1    App-Specific Tag 1
+    0 B     170 MB          0 B       5156    __TEXT
+    0 B      12 MB          0 B       4737    __DATA_CONST
+    0 B    1344 KB          0 B         31    __LINKEDIT
+    0 B        0 B          0 B          5    __OBJC_RO
+    0 B        0 B          0 B          5    __FONT_DATA
+    0 B        0 B          0 B          5    __CTF
+    0 B        0 B          0 B       4696    __AUTH_CONST
+    ---        ---          ---        ---    ---
+ 713 MB     212 MB       383 MB      68051    TOTAL

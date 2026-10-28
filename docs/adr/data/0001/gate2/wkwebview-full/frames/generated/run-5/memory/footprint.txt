@@ -1,0 +1,533 @@
+======================================================================
+com.apple.WebKit.WebContent [32647]: 64-bit    Footprint: 442 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 351 MB        0 B       306 MB        310    WebKit Malloc
+  19 MB        0 B       256 KB          3    JS JIT Generated Code
+  12 MB        0 B          0 B         50    Untagged
+  10 MB        0 B       992 KB        292    WebAssembly Memory
+3152 KB        0 B          0 B          1    Malloc Large
+2768 KB        0 B      8800 KB        529    Malloc Small
+1408 KB        0 B          0 B         72    Stack
+1373 KB        0 B          0 B        147    __DATA_DIRTY
+1234 KB        0 B          0 B          1    page table
+ 801 KB        0 B          0 B         70    __DATA
+ 576 KB        0 B        32 KB         10    Malloc Metadata
+ 224 KB        0 B          0 B          1    Malloc Tiny
+ 184 KB        0 B          0 B         89    unused dyld shared cache area
+ 114 KB        0 B          0 B         19    __AUTH
+  80 KB        0 B          0 B          4    App-Specific Tag 2
+  52 KB        0 B          0 B          4    __TPRO_CONST
+  36 KB        0 B          0 B          1    __OBJC_RW
+  32 KB        0 B          0 B          2    ColorSync
+  16 KB        0 B          0 B          1    Foundation
+  16 KB        0 B          0 B          1    CoreServices
+  16 KB        0 B          0 B          1    OS Alloc Once
+    0 B        0 B        16 KB          1    App-Specific Tag 1
+    0 B     544 KB          0 B         11    mapped file
+    0 B      16 KB          0 B          1    __TEXT
+    0 B      16 KB          0 B          1    __DATA_CONST
+    0 B      16 KB          0 B          1    __LINKEDIT
+    0 B        0 B          0 B        115    Guard
+    0 B        0 B          0 B          1    Dyld Private Memory
+    ---        ---          ---        ---    ---
+ 405 MB     592 KB       316 MB       1741    TOTAL
+
+Shared with com.apple.WebKit.Networking [32698], bistro-webview-host [32604], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  16 KB        0 B          0 B          1    Untagged
+    0 B      16 KB          0 B          2    mapped file
+    0 B      16 KB          0 B          4    __LINKEDIT
+    0 B      16 KB          0 B          4    __TEXT
+    ---        ---          ---        ---    ---
+  16 KB      48 KB          0 B         11    TOTAL
+
+Shared with bistro-webview-host [32604], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  36 MB        0 B        92 MB        163    IOSurface (graphics)
+    0 B     816 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+  36 MB     816 KB        92 MB        165    TOTAL
+
+Shared with com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+2064 KB        0 B          0 B          1    Untagged
+    0 B        0 B       234 MB        291    IOSurface (graphics)
+    0 B    2640 KB          0 B          4    mapped file
+    ---        ---          ---        ---    ---
+2064 KB    2640 KB       234 MB        296    TOTAL
+
+Shared with com.apple.WebKit.Networking [32698], bistro-sync [32601], bistro-webview-host [32604], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  32 KB        0 B          0 B          1    Untagged
+    0 B    3856 KB          0 B          3    mapped file
+    ---        ---          ---        ---    ---
+  32 KB    3856 KB          0 B          4    TOTAL
+
+Shared with bistro-webview-host [32604]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  32 KB        0 B          0 B          1    Untagged
+    0 B     720 KB          0 B          4    mapped file
+    ---        ---          ---        ---    ---
+  32 KB     720 KB          0 B          5    TOTAL
+
+Shared with bistro-webview-host [32604], com.apple.WebKit.Networking [32698]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B      64 KB          0 B          1    mapped file
+    ---        ---          ---        ---    ---
+    0 B      64 KB          0 B          1    TOTAL
+
+Shared with com.apple.WebKit.GPU [32605], com.apple.WebKit.Networking [32698]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B      64 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+    0 B      64 KB          0 B          2    TOTAL
+
+Auxiliary data:
+    phys_footprint: 442 MB
+    phys_footprint_peak: 808 MB
+
+======================================================================
+bistro-webview-host [32604]: 64-bit    Footprint: 29 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  17 MB        0 B      1728 KB         19    Malloc Small
+2412 KB        0 B          0 B        260    __DATA_DIRTY
+1904 KB        0 B      1392 KB          8    WebKit Malloc
+1716 KB        0 B          0 B        111    __DATA
+1552 KB        0 B          0 B         13    Malloc Metadata
+ 849 KB        0 B          0 B          1    page table
+ 631 KB        0 B          0 B         92    __AUTH
+ 464 KB        0 B        16 KB          1    Dispatch Continuations
+ 448 KB        0 B          0 B         25    Untagged
+ 326 KB        0 B          0 B        157    unused dyld shared cache area
+ 288 KB        0 B          0 B          1    Malloc Tiny
+ 272 KB        0 B          0 B          4    CoreUI Image Data
+ 256 KB        0 B          0 B         15    CoreAnimation
+ 224 KB        0 B        64 KB         14    Stack
+ 224 KB      13 MB          0 B         33    mapped file
+ 128 KB        0 B          0 B          1    Accelerate Framework
+ 112 KB        0 B          0 B          3    __TPRO_CONST
+  52 KB        0 B          0 B          1    __OBJC_RW
+  48 KB        0 B          0 B          1    IOAccelerator
+  48 KB        0 B          0 B          1    Activity Tracing
+  48 KB        0 B          0 B          3    CoreGraphics
+  32 KB        0 B          0 B          2    __DATA_CONST
+  32 KB        0 B          0 B          2    ColorSync
+  16 KB        0 B          0 B          1    Deferred Reclaim
+  16 KB        0 B          0 B          1    OS Alloc Once
+  16 KB        0 B          0 B          2    IOAccelerator (graphics)
+  16 KB        0 B          0 B          1    Foundation
+  16 KB        0 B          0 B          1    IOKit
+    0 B     272 KB          0 B          2    __TEXT
+    0 B      32 KB          0 B          2    __LINKEDIT
+    0 B        0 B          0 B         32    WebAssembly Memory
+    0 B        0 B          0 B          1    CoreServices
+    ---        ---          ---        ---    ---
+  29 MB      13 MB      3200 KB        813    TOTAL
+
+Shared with com.apple.WebKit.WebContent [32647], com.apple.WebKit.Networking [32698], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  16 KB        0 B          0 B          1    Untagged
+    0 B      32 KB          0 B          2    mapped file
+    0 B      16 KB          0 B          4    __LINKEDIT
+    0 B      16 KB          0 B          4    __TEXT
+    ---        ---          ---        ---    ---
+  16 KB      64 KB          0 B         11    TOTAL
+
+Shared with com.apple.WebKit.Networking [32698], bistro-sync [32601], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  16 KB        0 B          0 B          1    Untagged
+    0 B      80 KB          0 B          1    mapped file
+    ---        ---          ---        ---    ---
+  16 KB      80 KB          0 B          2    TOTAL
+
+Shared with com.apple.WebKit.WebContent [32647], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B      36 MB          0 B        163    IOSurface
+    0 B    1168 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+    0 B      37 MB          0 B        165    TOTAL
+
+Shared with com.apple.WebKit.WebContent [32647], com.apple.WebKit.Networking [32698], bistro-sync [32601], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  32 KB        0 B          0 B          1    Untagged
+    0 B     752 KB          0 B          3    mapped file
+    ---        ---          ---        ---    ---
+  32 KB     752 KB          0 B          4    TOTAL
+
+Shared with com.apple.WebKit.WebContent [32647]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B    1072 KB          0 B          4    mapped file
+    0 B      32 KB          0 B          1    Untagged
+    ---        ---          ---        ---    ---
+    0 B    1104 KB          0 B          5    TOTAL
+
+Shared with com.apple.WebKit.Networking [32698]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  32 KB        0 B          0 B          2    Untagged
+    ---        ---          ---        ---    ---
+  32 KB        0 B          0 B          2    TOTAL
+
+Shared with com.apple.WebKit.Networking [32698], com.apple.WebKit.WebContent [32647]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B      64 KB          0 B          1    mapped file
+    ---        ---          ---        ---    ---
+    0 B      64 KB          0 B          1    TOTAL
+
+Shared with com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  32 KB        0 B          0 B         10    IOKit
+  16 KB        0 B          0 B          1    IOAccelerator
+    0 B     128 KB          0 B          1    mapped file
+    0 B        0 B          0 B         24    IOSurface
+    ---        ---          ---        ---    ---
+  48 KB     128 KB          0 B         36    TOTAL
+
+Auxiliary data:
+    phys_footprint: 29 MB
+    phys_footprint_peak: 31 MB
+
+======================================================================
+com.apple.WebKit.GPU [32605]: 64-bit    Footprint: 23 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+6816 KB        0 B      8928 KB        736    Malloc Small
+5600 KB        0 B        80 MB         32    Owned physical footprint (unmapped) (graphics)
+3152 KB        0 B          0 B          1    Malloc Large
+1760 KB        0 B      7072 KB          6    WebKit Malloc
+1584 KB        0 B      1792 KB         19    IOAccelerator (graphics)
+1074 KB        0 B          0 B        120    __DATA_DIRTY
+ 945 KB        0 B          0 B          1    page table
+ 576 KB        0 B          0 B         10    Malloc Metadata
+ 520 KB        0 B          0 B         55    __DATA
+ 288 KB        0 B          0 B          1    Malloc Tiny
+ 256 KB        0 B        48 KB         12    Stack
+ 233 KB        0 B          0 B         78    unused dyld shared cache area
+ 160 KB        0 B          0 B         13    Untagged
+  96 KB        0 B          0 B          2    IOAccelerator
+  80 KB        0 B          0 B          4    App-Specific Tag 2
+  52 KB        0 B          0 B          4    __TPRO_CONST
+  37 KB        0 B          0 B         25    __AUTH
+  36 KB        0 B          0 B          1    __OBJC_RW
+  32 KB        0 B          0 B          1    Activity Tracing
+  32 KB        0 B          0 B          2    ColorSync
+  32 KB        0 B          0 B          2    IOKit
+  16 KB        0 B          0 B          1    CoreServices
+  16 KB        0 B          0 B          1    OS Alloc Once
+  16 KB        0 B          0 B          1    Foundation
+  16 KB        0 B          0 B          1    CoreAnimation
+    0 B        0 B      8192 KB         64    Owned physical footprint (unmapped)
+    0 B    4768 KB          0 B          4    mapped file
+    0 B      16 KB          0 B          1    __LINKEDIT
+    0 B      16 KB          0 B          1    __DATA_CONST
+    0 B      16 KB          0 B          1    __TEXT
+    0 B        0 B          0 B         32    WebAssembly Memory
+    0 B        0 B          0 B          1    Dyld Private Memory
+    0 B        0 B          0 B        523    Guard
+    ---        ---          ---        ---    ---
+  23 MB    4816 KB       105 MB       1758    TOTAL
+
+Shared with com.apple.WebKit.WebContent [32647], com.apple.WebKit.Networking [32698], bistro-webview-host [32604]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  16 KB        0 B          0 B          1    Untagged
+    0 B      16 KB          0 B          2    mapped file
+    0 B      16 KB          0 B          4    __LINKEDIT
+    0 B      16 KB          0 B          4    __TEXT
+    ---        ---          ---        ---    ---
+  16 KB      48 KB          0 B         11    TOTAL
+
+Shared with com.apple.WebKit.Networking [32698], bistro-sync [32601], bistro-webview-host [32604]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  16 KB        0 B          0 B          1    Untagged
+    0 B      80 KB          0 B          1    mapped file
+    ---        ---          ---        ---    ---
+  16 KB      80 KB          0 B          2    TOTAL
+
+Shared with bistro-webview-host [32604], com.apple.WebKit.WebContent [32647]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B      36 MB          0 B        163    IOSurface
+    0 B     672 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+    0 B      36 MB          0 B        165    TOTAL
+
+Shared with com.apple.WebKit.WebContent [32647]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B    2064 KB          0 B          1    Untagged
+    0 B    1600 KB          0 B          4    mapped file
+    0 B        0 B          0 B        291    IOSurface
+    ---        ---          ---        ---    ---
+    0 B    3664 KB          0 B        296    TOTAL
+
+Shared with com.apple.WebKit.WebContent [32647], com.apple.WebKit.Networking [32698], bistro-sync [32601], bistro-webview-host [32604]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  32 KB        0 B          0 B          1    Untagged
+    0 B     480 KB          0 B          3    mapped file
+    ---        ---          ---        ---    ---
+  32 KB     480 KB          0 B          4    TOTAL
+
+Shared with com.apple.WebKit.Networking [32698], com.apple.WebKit.WebContent [32647]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B      64 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+    0 B      64 KB          0 B          2    TOTAL
+
+Shared with bistro-webview-host [32604]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  32 KB        0 B          0 B         10    IOKit
+  16 KB        0 B          0 B          1    IOAccelerator
+    0 B     768 KB          0 B          1    mapped file
+    0 B        0 B          0 B         24    IOSurface
+    ---        ---          ---        ---    ---
+  48 KB     768 KB          0 B         36    TOTAL
+
+Auxiliary data:
+    phys_footprint: 23 MB
+    phys_footprint_peak: 234 MB
+
+======================================================================
+bistro-sync [32601]: 64-bit    Footprint: 22 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  15 MB        0 B       128 KB         88    Untagged
+3840 KB        0 B          0 B          7    Malloc Small
+ 609 KB        0 B          0 B          1    page table
+ 592 KB        0 B          0 B          9    Malloc Metadata
+ 538 KB     192 KB          0 B         25    __DATA
+ 382 KB        0 B          0 B         48    __DATA_DIRTY
+ 320 KB        0 B          0 B         34    Stack
+ 128 KB        0 B          0 B          1    Malloc Tiny
+  83 KB        0 B          0 B         33    unused dyld shared cache area
+  80 KB        0 B        16 KB          1    Dispatch Continuations
+  48 KB        0 B          0 B          3    __TPRO_CONST
+  36 KB        0 B          0 B          1    __OBJC_RW
+  16 KB        0 B          0 B          1    Deferred Reclaim
+  16 KB        0 B          0 B          1    OS Alloc Once
+  16 KB        0 B          0 B          1    Activity Tracing
+ 2088 B        0 B          0 B          3    __AUTH
+    0 B      11 MB          0 B          1    __TEXT
+    0 B    3552 KB          0 B          1    __DATA_CONST
+    0 B      32 KB          0 B          1    mapped file
+    0 B      16 KB          0 B          1    __LINKEDIT
+    ---        ---          ---        ---    ---
+  22 MB      15 MB       144 KB        263    TOTAL
+
+Shared with com.apple.WebKit.Networking [32698], bistro-webview-host [32604], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  16 KB        0 B          0 B          1    Untagged
+    0 B      80 KB          0 B          1    mapped file
+    ---        ---          ---        ---    ---
+  16 KB      80 KB          0 B          2    TOTAL
+
+Shared with com.apple.WebKit.WebContent [32647], com.apple.WebKit.Networking [32698], bistro-webview-host [32604], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  32 KB        0 B          0 B          1    Untagged
+    0 B     224 KB          0 B          3    mapped file
+    ---        ---          ---        ---    ---
+  32 KB     224 KB          0 B          4    TOTAL
+
+Auxiliary data:
+    phys_footprint: 22 MB
+    phys_footprint_peak: 22 MB
+
+======================================================================
+com.apple.WebKit.Networking [32698]: 64-bit    Footprint: 7569 KB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+2032 KB        0 B      5280 KB          6    WebKit Malloc
+1920 KB        0 B        14 MB        448    Malloc Small
+1100 KB        0 B          0 B        131    __DATA_DIRTY
+ 656 KB        0 B        16 KB         11    Malloc Metadata
+ 401 KB        0 B          0 B          1    page table
+ 396 KB        0 B          0 B         37    __DATA
+ 224 KB        0 B          0 B          1    Malloc Tiny
+ 185 KB        0 B          0 B         73    unused dyld shared cache area
+ 176 KB        0 B          0 B          8    Stack
+ 136 KB        0 B          0 B         27    __AUTH
+  52 KB        0 B          0 B          4    __TPRO_CONST
+  48 KB        0 B          0 B          5    Untagged
+  48 KB        0 B          0 B          1    Activity Tracing
+  36 KB        0 B          0 B          1    __OBJC_RW
+  32 KB        0 B          0 B          1    SQLite Page Cache
+  16 KB        0 B          0 B          1    Foundation
+  16 KB        0 B          0 B          1    OS Alloc Once
+    0 B     192 KB          0 B         10    Skywalk Networking (network) (nofootprint)
+    0 B      48 KB          0 B          3    Owned physical footprint (unmapped) (network) (nofootprint)
+    0 B      48 KB          0 B          3    mapped file
+    0 B      16 KB          0 B          1    __TEXT
+    0 B      16 KB          0 B          1    __DATA_CONST
+    0 B      16 KB          0 B          1    __LINKEDIT
+    0 B        0 B          0 B         34    Skywalk Networking
+    0 B        0 B          0 B         28    Guard
+    0 B        0 B          0 B          1    Dyld Private Memory
+    0 B        0 B          0 B         32    WebAssembly Memory
+    ---        ---          ---        ---    ---
+7473 KB     336 KB        19 MB        873    TOTAL
+
+Shared with com.apple.WebKit.WebContent [32647], bistro-webview-host [32604], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  16 KB        0 B          0 B          1    Untagged
+    0 B      16 KB          0 B          2    mapped file
+    0 B      16 KB          0 B          4    __LINKEDIT
+    0 B      16 KB          0 B          4    __TEXT
+    ---        ---          ---        ---    ---
+  16 KB      48 KB          0 B         11    TOTAL
+
+Shared with bistro-sync [32601], bistro-webview-host [32604], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  16 KB        0 B          0 B          1    Untagged
+    0 B      80 KB          0 B          1    mapped file
+    ---        ---          ---        ---    ---
+  16 KB      80 KB          0 B          2    TOTAL
+
+Shared with com.apple.WebKit.WebContent [32647], bistro-sync [32601], bistro-webview-host [32604], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  32 KB        0 B          0 B          1    Untagged
+    0 B     976 KB          0 B          3    mapped file
+    ---        ---          ---        ---    ---
+  32 KB     976 KB          0 B          4    TOTAL
+
+Shared with bistro-webview-host [32604]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  32 KB        0 B          0 B          2    Untagged
+    ---        ---          ---        ---    ---
+  32 KB        0 B          0 B          2    TOTAL
+
+Shared with bistro-webview-host [32604], com.apple.WebKit.WebContent [32647]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B     208 KB          0 B          1    mapped file
+    ---        ---          ---        ---    ---
+    0 B     208 KB          0 B          1    TOTAL
+
+Shared with com.apple.WebKit.GPU [32605], com.apple.WebKit.WebContent [32647]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B      48 KB          0 B          2    mapped file
+    ---        ---          ---        ---    ---
+    0 B      48 KB          0 B          2    TOTAL
+
+Auxiliary data:
+    phys_footprint: 7569 KB
+    phys_footprint_peak: 18 MB
+
+======================================================================
+Shared Cache B39B8E81-8B0E-3D14-91B5-5ED0494535D6
+======================================================================
+
+Shared with com.apple.WebKit.WebContent [32647], com.apple.WebKit.Networking [32698], bistro-sync [32601], bistro-webview-host [32604], com.apple.WebKit.GPU [32605]:
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+    0 B        0 B          0 B       3528    __DATA_CONST
+    0 B        0 B          0 B          5    __FONT_DATA
+    0 B        0 B          0 B       6585    unused dyld shared cache area
+    0 B        0 B          0 B          5    __OBJC_RO
+    0 B        0 B          0 B       1416    __AUTH
+    0 B        0 B          0 B       2546    __DATA_DIRTY
+    0 B        0 B          0 B       3530    __AUTH_CONST
+    0 B        0 B          0 B          1    __GLSLBUILTINS
+    0 B        0 B          0 B       3943    __TEXT
+    0 B        0 B          0 B          5    __LINKEDIT
+    0 B        0 B          0 B          5    __CTF
+    0 B        0 B          0 B          2    __TPRO_CONST
+    0 B        0 B          0 B       2868    __DATA
+    ---        ---          ---        ---    ---
+    0 B        0 B          0 B      24439    TOTAL
+
+======================================================================
+Summary Footprint: 524 MB
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 357 MB        0 B       320 MB        330    WebKit Malloc
+  36 MB        0 B       326 MB       1071    IOSurface (graphics)
+  32 MB        0 B        33 MB       1739    Malloc Small
+  30 MB        0 B       128 KB        202    Untagged
+  19 MB        0 B       256 KB          3    JS JIT Generated Code
+  10 MB        0 B       992 KB        388    WebAssembly Memory
+6341 KB        0 B          0 B       3252    __DATA_DIRTY
+6304 KB        0 B          0 B          2    Malloc Large
+5600 KB        0 B        80 MB         32    Owned physical footprint (unmapped) (graphics)
+4038 KB        0 B          0 B          5    page table
+3971 KB     192 KB          0 B       3166    __DATA
+3952 KB        0 B        48 KB         53    Malloc Metadata
+2384 KB        0 B       112 KB        140    Stack
+1600 KB        0 B      1792 KB         21    IOAccelerator (graphics)
+1152 KB        0 B          0 B          5    Malloc Tiny
+1010 KB        0 B          0 B       7015    unused dyld shared cache area
+ 920 KB        0 B          0 B       1582    __AUTH
+ 544 KB        0 B        32 KB          2    Dispatch Continuations
+ 316 KB        0 B          0 B         20    __TPRO_CONST
+ 272 KB        0 B          0 B         16    CoreAnimation
+ 272 KB        0 B          0 B          4    CoreUI Image Data
+ 224 KB      28 MB          0 B        112    mapped file
+ 194 KB        0 B          0 B          5    __OBJC_RW
+ 160 KB        0 B          0 B          8    App-Specific Tag 2
+ 160 KB        0 B          0 B          5    IOAccelerator
+ 144 KB        0 B          0 B          4    Activity Tracing
+ 128 KB        0 B          0 B          1    Accelerate Framework
+  96 KB        0 B          0 B          6    ColorSync
+  80 KB        0 B          0 B         23    IOKit
+  80 KB        0 B          0 B          5    OS Alloc Once
+  64 KB        0 B          0 B          4    Foundation
+  48 KB        0 B          0 B          3    CoreGraphics
+  32 KB    3600 KB          0 B       3534    __DATA_CONST
+  32 KB        0 B          0 B          2    Deferred Reclaim
+  32 KB        0 B          0 B          3    CoreServices
+  32 KB        0 B          0 B          1    SQLite Page Cache
+    0 B        0 B      8192 KB         64    Owned physical footprint (unmapped)
+    0 B        0 B        16 KB          1    App-Specific Tag 1
+    0 B      12 MB          0 B       3953    __TEXT
+    0 B     192 KB          0 B         10    Skywalk Networking (network) (nofootprint)
+    0 B     112 KB          0 B         15    __LINKEDIT
+    0 B      48 KB          0 B          3    Owned physical footprint (unmapped) (network) (nofootprint)
+    0 B        0 B          0 B         48    IOSurface
+    0 B        0 B          0 B         34    Skywalk Networking
+    0 B        0 B          0 B          1    __GLSLBUILTINS
+    0 B        0 B          0 B        666    Guard
+    0 B        0 B          0 B          5    __FONT_DATA
+    0 B        0 B          0 B       3530    __AUTH_CONST
+    0 B        0 B          0 B          5    __CTF
+    0 B        0 B          0 B          3    Dyld Private Memory
+    0 B        0 B          0 B          5    __OBJC_RO
+    ---        ---          ---        ---    ---
+ 524 MB      44 MB       770 MB      31117    TOTAL

@@ -1,0 +1,37 @@
+{
+  "processes": [
+    {
+      "pid": 89465,
+      "parentPid": 56291,
+      "command": "/Users/samuelasvanyi/.t3/worktrees/bistro/t3-6ef81aaa/docs/adr/data/0001/gate4/wails-spike/build/BistroWails.app/Contents/MacOS/wails-spike",
+      "bytes": 34031008
+    },
+    {
+      "pid": 89462,
+      "parentPid": 56291,
+      "command": "/private/tmp/bistro-bench-seed/bistro-sync",
+      "bytes": 19743608
+    },
+    {
+      "pid": 89470,
+      "parentPid": 1,
+      "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+      "bytes": 435078968
+    },
+    {
+      "pid": 89468,
+      "parentPid": 1,
+      "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+      "bytes": 184616040
+    },
+    {
+      "pid": 89522,
+      "parentPid": 1,
+      "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+      "bytes": 8733272
+    }
+  ],
+  "totalBytes": 682202896,
+  "sampledAt": "2026-10-28T13:39:20.339Z",
+  "method": "host + standalone engine + explicit WebContent/Networking/GPU PID SPIs; shared allocations may be counted repeatedly"
+}
