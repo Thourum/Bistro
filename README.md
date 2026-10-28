@@ -73,13 +73,6 @@ GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
 ```
 
-`pnpm start` does not read `.env.local`; the spawned engine only inherits your
-shell environment. Export the file before starting:
-
-```bash
-set -a; source .env.local; set +a; pnpm start
-```
-
 Then build the Go sync engine:
 
 ```bash
@@ -93,6 +86,14 @@ environment variable.
 
 ```bash
 cd electron && pnpm start
+```
+
+Neither `pnpm build` nor `pnpm start` reads `.env.local`, and the spawned engine
+only inherits your shell environment. To sign in with your own OAuth app, export
+the file when starting:
+
+```bash
+cd electron && set -a && source .env.local && set +a && pnpm start
 ```
 
 The app spawns the sync engine automatically, signs you in via GitHub OAuth
