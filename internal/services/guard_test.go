@@ -32,6 +32,25 @@ func TestGuardRecoversAndReportsPanic(t *testing.T) {
 	}
 }
 
+type panickingReporter struct{}
+
+func (panickingReporter) ReportPanic(string, any, []byte) {
+	panic("reporter failed")
+}
+
+func TestGuardRecoversWhenReporterPanics(t *testing.T) {
+	got, err := guard(panickingReporter{}, "X.Y", func() (string, error) {
+		panic("boom")
+	})
+	if got != "" {
+		t.Fatalf("got %q, want zero value", got)
+	}
+	se, ok := err.(*ServiceError)
+	if !ok || se.Code != CodeInternal || se.Message != "internal error" {
+		t.Fatalf("got %v, want internal ServiceError", err)
+	}
+}
+
 func TestGuardReturnsValueAndNormalizesErrors(t *testing.T) {
 	tests := []struct {
 		name string

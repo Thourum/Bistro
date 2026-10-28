@@ -12,11 +12,14 @@ type PanicReporter interface {
 func guard[T any](rep PanicReporter, op string, fn func() (T, error)) (out T, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			if rep != nil {
-				rep.ReportPanic(op, r, debug.Stack())
-			}
 			var zero T
 			out, err = zero, &ServiceError{Code: CodeInternal, Message: "internal error"}
+			if rep == nil {
+				return
+			}
+			// Reporting must not turn an already-recovered service panic into a crash.
+			defer func() { _ = recover() }()
+			rep.ReportPanic(op, r, debug.Stack())
 		}
 	}()
 	out, err = fn()
