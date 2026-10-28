@@ -84,7 +84,8 @@ function hasLiveGroupMember(pgid) {
   const rows = execFileSync('ps', ['-A', '-o', 'pgid=,stat='], { encoding: 'utf8' }).trim().split('\n');
   return rows.some((row) => {
     const [group, stat] = row.trim().split(/\s+/);
-    return Number(group) === pgid && !stat.startsWith('Z');
+    // Z = zombie, E = exiting; neither can still be signalled.
+    return Number(group) === pgid && !/^[ZE]/.test(stat);
   });
 }
 
@@ -92,7 +93,7 @@ function signalGroup(pid, signal) {
   try { process.kill(-pid, signal); return true; }
   catch (error) {
     if (error.code === 'ESRCH') return false;
-    // Darwin reports EPERM, not ESRCH, for a group whose only members are zombies.
+    // Darwin reports EPERM, not ESRCH, for a group whose only members are zombies or exiting.
     if (error.code === 'EPERM' && !hasLiveGroupMember(pid)) return false;
     throw error;
   }
