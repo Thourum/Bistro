@@ -113,7 +113,7 @@ When separately authorized and preflight passes, a bounded synthetic smoke can u
 node docs/adr/data/0001/harness/run-keys.mjs --app /path/Bistro.app \
   --seed /tmp/bistro-smoke-seed --fixture-pr github:bench/large-diff:1 \
   --label baseline --out /tmp/bistro-keys-baseline --limit 4 \
-  --style vim --layout US --ime off --actionId detail.approve
+  --style vim --layout US --actionId detail.approve
 # Repeat against candidate in a separate output directory, then:
 node docs/adr/data/0001/harness/keys-stats.mjs \
   --baseline /tmp/bistro-keys-baseline --candidate /tmp/bistro-keys-candidate \

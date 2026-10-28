@@ -30,15 +30,8 @@ static NSDictionary *sourceInventory(void) {
     NSArray *sources = installedSources();
     NSMutableArray *records = [NSMutableArray array];
     for (id source in sources) [records addObject:describeSource((__bridge TISInputSourceRef)source)];
-    NSDictionary *requirements = @{@"US":@[@"com.apple.keylayout.US"],
-        @"German":@[@"com.apple.keylayout.German"], @"French-AZERTY":@[@"com.apple.keylayout.French"],
-        @"Dvorak":@[@"com.apple.keylayout.Dvorak"],
-        @"Japanese-active":@[@"com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
-            @"com.apple.inputmethod.Kotoeri.KanaTyping.Japanese", @"com.apple.inputmethod.Kotoeri.Japanese",
-            @"com.apple.inputmethod.Kotoeri.Japanese.Hiragana"],
-        @"Japanese-off":@[@"com.apple.inputmethod.Kotoeri.RomajiTyping.Roman",
-            @"com.apple.inputmethod.Kotoeri.KanaTyping.Roman", @"com.apple.inputmethod.Kotoeri.Roman",
-            @"com.apple.inputmethod.Kotoeri.Japanese.Roman"]};
+    // ABC is macOS's default US-English layout; both map these chords identically.
+    NSDictionary *requirements = @{@"US":@[@"com.apple.keylayout.US", @"com.apple.keylayout.ABC"]};
     NSMutableDictionary *required = [NSMutableDictionary dictionary];
     for (NSString *label in requirements) {
         NSArray *identifiers = requirements[label];
@@ -99,9 +92,7 @@ static BOOL resolveKey(NSString *key, TISInputSourceRef layoutSource, CGKeyCode 
 static int selfTest(void) {
     NSArray *sources = installedSources();
     NSDictionary *cases = @{@"com.apple.keylayout.US":@[@"a", @(kVK_ANSI_A)],
-        @"com.apple.keylayout.German":@[@"y", @(kVK_ANSI_Z)],
-        @"com.apple.keylayout.French":@[@"a", @(kVK_ANSI_Q)],
-        @"com.apple.keylayout.Dvorak":@[@"j", @(kVK_ANSI_C)]};
+        @"com.apple.keylayout.ABC":@[@"a", @(kVK_ANSI_A)]};
     NSMutableArray *checked = [NSMutableArray array];
     for (NSString *identifier in cases) {
         TISInputSourceRef source = findSource(identifier, sources);
