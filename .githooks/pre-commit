@@ -9,7 +9,7 @@ MAX_BYTES=$((MAX_TOKENS * BYTES_PER_TOKEN))
 
 # Exempt lockfiles, sqlc output, binary/vector assets, generated/minified bundles, snapshots,
 # LICENSE, historical plan/spec records, and raw command output kept as ADR evidence.
-IGNORE_REGEX='^docs/adr/data/.*\.(json|jsonl|txt|log)$|(^|/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|go\.sum|bun\.lockb?)$|^go/internal/store/db/|\.(svg|png|jpe?g|gif|ico|icns|woff2?|pdf|min\.js|snap)$|^Bistro Design System/_|^LICENSE$|^docs/superpowers/(plans|specs)/'
+IGNORE_REGEX='^docs/adr/data/.*\.(json|jsonl|txt|log)$|(^|/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|go\.sum|bun\.lockb?)$|^internal/store/db/|\.(svg|png|jpe?g|gif|ico|icns|woff2?|pdf|min\.js|snap)$|^Bistro Design System/_|^LICENSE$|^docs/superpowers/(plans|specs)/'
 
 offenders=()
 while IFS= read -r -d '' file; do
@@ -39,7 +39,7 @@ How to split a file:
   4. Keep the original as the thin entry point that imports/re-exports the pieces
      (Go: same package, just new files; no import changes needed).
   5. Aim for each file under ~${MAX_TOKENS} tokens (~${MAX_BYTES} bytes); stage the new files and re-commit.
-  6. Run: cd electron && pnpm type-check && pnpm lint && pnpm test  (Go: cd go && go vet ./... && go test ./...)
+  6. Run: cd electron && pnpm type-check && pnpm lint && pnpm test  (Go: go vet ./... && go test ./...)
 
 Not splittable (fixtures, prose docs)? Commit with --no-verify and say why in the message.
 MSG

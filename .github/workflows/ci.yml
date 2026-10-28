@@ -29,8 +29,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version-file: go/go.mod
-          cache-dependency-path: go/go.sum
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: Install native dependencies
         run: |
@@ -40,11 +40,9 @@ jobs:
           chmod 700 "$HOME/.local" "$HOME/.local/share" "$HOME/.local/share/keyrings"
 
       - name: Vet
-        working-directory: go
         run: go vet ./...
 
       - name: Test
-        working-directory: go
         shell: dbus-run-session -- bash --noprofile --norc -eo pipefail {0}
         run: |
           echo 'bistro-ci-keyring-passphrase' | gnome-keyring-daemon --unlock

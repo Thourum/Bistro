@@ -4,6 +4,12 @@ node_modules/
 # Build output
 dist/
 build/
+!/build/
+/bin/
+/.dev-data/
+/frontend/dist/
+/go/dist/
+/go/logs/
 # Electron macOS packaging config (entitlements) lives in electron/build/ and must be tracked
 !electron/build/
 
@@ -28,11 +34,17 @@ Thumbs.db
 logs/
 
 # Go
-go/bistro-sync
-go/data/
+/bistro-sync
+/data/
+*.exe
+*.dll
+*.dylib
+*.test
+/.go/
 *.db
 *.db-journal
 *.db-wal
+*.db-shm
 *.db.lock
 
 # Node compile cache

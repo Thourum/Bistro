@@ -26,9 +26,9 @@ Two-process desktop app:
 
 Process lifecycle: Electron Forge spawns `bistro-sync`, or connects to an already-running engine on the WS port (default `8080`). The engine prints `{"event":"ready","wsPort":N}` to stdout after migrations, holds a flock on `<db>.lock` (single-instance), and watches stdin (`-exit-on-stdin-close`) so it dies when Electron dies. Deeper detail: `docs/go-project-overview.md`.
 
-Where things live: Go engine in `go/` (entry `go/cmd/bistro-sync/`, packages under `go/internal/`); Electron UI in `electron/src/` (`main/` = process + spawn + IPC + settings, `renderer/` = React app).
+Where things live: Go module at the repo root (entry `cmd/bistro-sync/`, packages under `internal/`); Electron UI in `electron/src/` (`main/` = process + spawn + IPC + settings, `renderer/` = React app).
 
-Within `go/internal/server/`, `app.go` owns the App struct, constructors, store preparation, and Run lifecycle; provider lifecycle, configuration, LLM setup, expertise, event bridging, repo-location wiring, and handler registration live in `provider.go`, `config.go`, `llm.go`, `expertise.go`, `bridge.go`, `repo_location.go`, and `handlers.go` respectively. All remain in package `server`.
+Within `internal/engine/`, `app.go` owns the App struct, constructors, store preparation, and Run lifecycle; provider lifecycle, configuration, LLM setup, expertise, event bridging, repo-location wiring, and handler registration live in `provider.go`, `config.go`, `llm.go`, `expertise.go`, `bridge.go`, `repo_location.go`, and `handlers.go` respectively. All remain in package `engine`.
 
 Within `internal/git`, `Client` owns clone/fetch/checkout operations; `anchor` resolves comment anchors, `diff` generates diffs/interdiffs and patch fingerprints (`Generate`, `Interdiff`, `PatchID`), `remote` parses repo identities (`ParseURL`, `SafeRepoID`), and `repolock` owns shared per-repo locks (`Locks`, `New`, `Key`). Interdiff takes the same `*repolock.Locks` as clone/fetch, not a `git.Client`. The current package map is in [Go project overview](docs/go-project-overview.md).
 
@@ -44,7 +44,7 @@ Go tests outside package `store` share migrated in-memory databases via `interna
 
 - **Go 1.26** — go-git, go-github, gorilla/websocket, mattn/go-sqlite3, go-keyring, x/oauth2.
 - **Electron + Electron Forge + Vite** — React 19, TypeScript, TanStack (React Query / Hotkeys / Virtual / Store), Radix UI, Tailwind, Biome (lint+format), Vitest (test).
-- **Package manager: pnpm** for the Electron app. Run pnpm commands from `electron/`; the lockfile is the repo-root `pnpm-lock.yaml` (workspace defined in `pnpm-workspace.yaml`, covering `electron/` and `website/`). `minimumReleaseAge` in `pnpm-workspace.yaml` blocks package versions younger than 7 days, so a just-published release won't resolve yet. Versions live in `go/go.mod` and `electron/package.json` — check there, don't assume.
+- **Package manager: pnpm** for the Electron app. Run pnpm commands from `electron/`; the lockfile is the repo-root `pnpm-lock.yaml` (workspace defined in `pnpm-workspace.yaml`, covering `electron/` and `website/`). `minimumReleaseAge` in `pnpm-workspace.yaml` blocks package versions younger than 7 days, so a just-published release won't resolve yet. Versions live in `go.mod` and `electron/package.json` — check there, don't assume.
 
 ## Conventions
 
@@ -57,8 +57,8 @@ Go tests outside package `store` share migrated in-memory databases via `interna
 - WebSocket transport lives in `services/ws/connection.ts`: use `wsClient.send` / `wsClient.request` directly, with tagged `ResultAsync` request errors. Only App's Bootstrap calls `hooks/useWebSocketConnection.ts` to own connect/disconnect. Push-event side effects live in `services/ws/events/<domain>.ts`, with an exhaustive handler table in `services/ws/events/index.ts`.
 - Renderer hooks own React state/effects and data-fetching lifecycles; plain WS/IPC requests and appStore writes live in `services/` (`readState.ts`, `prActions.ts`, `dismissals.ts`, `editor.ts`). Call services directly; don't wrap them in hooks solely for `useCallback`.
 - Large renderer pages keep feature-local pieces beside them: `pages/settings/*Section.tsx` for Settings, `use<Page>Data.ts` / `use<Page>Actions.ts` hooks and `*Sections.tsx` / `*Chrome.tsx` for PR detail and diff pages.
-- Onboarding and the first-run rail (design: `docs/superpowers/specs/2026-10-24-first-run-onboarding-rail-design.md`): pure models in `utils/onboardingRepos.ts`, `utils/onboardingSandbox.ts`, `utils/firstRunRail.ts`; WS/appStore writes in `services/onboardingSync.ts` and `services/firstRunRail.ts`. Engine side (`go/internal/server/handler/`): `review_queue.go` (`REQUEST_REVIEW_QUEUE`; repo IDs are lowercase `identity.ID()`, e.g. `github:owner/name`), `dev_folder_scan.go` (`SCAN_DEV_FOLDER` / `SCAN_CANCEL`; Stop cancels only its own scan, whose request id comes from `wsClient.request(..., { onSent })`), and `REQUEST_REPO_LIST {cache_only}` for a provider-free cached read. Components that show or hide UI by a binding's enable rule use `useBindingEnabled` from `hooks/useAppHotkeys.ts`.
-- Do not assert a Go module path from memory — read it from `go/go.mod`.
+- Onboarding and the first-run rail (design: `docs/superpowers/specs/2026-10-24-first-run-onboarding-rail-design.md`): pure models in `utils/onboardingRepos.ts`, `utils/onboardingSandbox.ts`, `utils/firstRunRail.ts`; WS/appStore writes in `services/onboardingSync.ts` and `services/firstRunRail.ts`. Engine side (`internal/engine/handler/`): `review_queue.go` (`REQUEST_REVIEW_QUEUE`; repo IDs are lowercase `identity.ID()`, e.g. `github:owner/name`), `dev_folder_scan.go` (`SCAN_DEV_FOLDER` / `SCAN_CANCEL`; Stop cancels only its own scan, whose request id comes from `wsClient.request(..., { onSent })`), and `REQUEST_REPO_LIST {cache_only}` for a provider-free cached read. Components that show or hide UI by a binding's enable rule use `useBindingEnabled` from `hooks/useAppHotkeys.ts`.
+- Do not assert a Go module path from memory — read it from `go.mod`.
 
 ## How to work
 
@@ -73,26 +73,26 @@ cd electron && pnpm start
 Run the Go sync engine standalone (e.g. to watch its logs) — Electron will connect to it automatically:
 
 ```bash
-cd go && go build -o bistro-sync ./cmd/bistro-sync && ./bistro-sync
+go build -o bistro-sync ./cmd/bistro-sync && ./bistro-sync
 # or without building a binary:
 go run cmd/bistro-sync/main.go
 ```
 
 Config: copy `electron/.env.example` to `electron/.env.local` (GitHub OAuth client id/secret, WS port, log level, window size).
 
-Adding or changing a SQL query: edit/add a `.sql` file under `go/internal/store/queries/`, then regenerate (`sqlc.yaml` is at `go/`):
+Adding or changing a SQL query: edit/add a `.sql` file under `internal/store/queries/`, then regenerate (`sqlc.yaml` is at the repo root):
 
 ```bash
-cd go && go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
+go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
 ```
 
-Generated code lives in `go/internal/store/db/` — never hand-edit it. If a migration lands without a matching `sqlc generate` run, the generated structs silently drift from the schema (this happened once — migrations 033/034 added columns/tables that `internal/store/db/models.go` didn't know about until the next `sqlc generate`).
+Generated code lives in `internal/store/db/` — never hand-edit it. If a migration lands without a matching `sqlc generate` run, the generated structs silently drift from the schema (this happened once — migrations 033/034 added columns/tables that `internal/store/db/models.go` didn't know about until the next `sqlc generate`).
 
 Verify a change before declaring done:
 
 ```bash
 # Go
-cd go && go vet ./... && go test -race ./...
+go vet ./... && go test -race ./...
 # Electron
 cd electron && pnpm type-check && pnpm lint && pnpm test
 ```
@@ -103,7 +103,7 @@ Enable the pre-commit hook once per clone (blocks staged files over 5,000 tokens
 git config core.hooksPath .githooks
 ```
 
-Performance bench (ADR 0001): `BISTRO_SLIM=1 pnpm run release:macos` builds the slim variant (Electron fuses, no `.woff` duplicates). The packaged app accepts `--quit-after-ready` and `--bench-query=…`, and the renderer's `bench/` module loads only when `bench_collector` is in the URL. Seeding (`go/cmd/bistro-benchseed` plus pinned PRs) and the measurement drivers are documented in `docs/adr/data/0001/harness/README.md`. Its S6 keyboard driver (`run-keys.mjs` / `keys-stats.mjs`) requires passive permission/layout preflight and an explicit bounded `--limit` or `--full`; never inject keys while preflight is blocked.
+Performance bench (ADR 0001): `BISTRO_SLIM=1 pnpm run release:macos` builds the slim variant (Electron fuses, no `.woff` duplicates). The packaged app accepts `--quit-after-ready` and `--bench-query=…`, and the renderer's `bench/` module loads only when `bench_collector` is in the URL. Seeding (`cmd/bistro-benchseed` plus pinned PRs) and the measurement drivers are documented in `docs/adr/data/0001/harness/README.md`. Its S6 keyboard driver (`run-keys.mjs` / `keys-stats.mjs`) requires passive permission/layout preflight and an explicit bounded `--limit` or `--full`; never inject keys while preflight is blocked.
 
 If a command or detail is unclear, check `electron/package.json` scripts. Do not invent workflows.
 

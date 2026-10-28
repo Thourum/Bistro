@@ -2,14 +2,14 @@
 
 ## What Is This?
 
-Bistro is a local-first desktop GitHub PR review app. The Go engine (`go/`, executable `bistro-sync`) authenticates via OAuth, syncs PR metadata/comments/CI/diffs into local SQLite, serves the Electron UI over a localhost WebSocket, and queues replayable write actions offline for retry. Review submissions with drafts bypass the queue and keep unsubmitted drafts on failure. Go owns all SQLite writes; the database is a cache, not a shared server.
+Bistro is a local-first desktop GitHub PR review app. The Go engine (repo-root module, executable `bistro-sync`) authenticates via OAuth, syncs PR metadata/comments/CI/diffs into local SQLite, serves the Electron UI over a localhost WebSocket, and queues replayable write actions offline for retry. Review submissions with drafts bypass the queue and keep unsubmitted drafts on failure. Go owns all SQLite writes; the database is a cache, not a shared server.
 
 ## Current Directory Structure
 
-The module is `github.com/itterno/bistro` (`go/go.mod`). This map reflects the source tree as of 2026-10-26; test files and generated SQL files are omitted.
+The module is `github.com/itterno/bistro` (`go.mod`). This map reflects the source tree as of 2026-10-28; test files and generated SQL files are omitted.
 
 ```text
-go/
+./
 ├── cmd/bistro-sync/main.go        # CLI flags, logging, engine bootstrap
 ├── internal/
 │   ├── actions/                  # PR write actions and retry
@@ -61,7 +61,7 @@ go/
 │   │   └── writer/               # SQLite batch persistence
 │   │       └── writer.go · fetched_pr.go · rows.go · patchset.go · threads.go · diffs.go
 │   ├── scan/scanner.go           # Developer-folder repository discovery
-│   ├── server/                   # Application wiring and lifecycle
+│   ├── engine/                   # Application wiring and lifecycle
 │   │   ├── app.go                # App, constructors, stores, Run
 │   │   ├── provider.go · config.go · llm.go · expertise.go · bridge.go
 │   │   ├── repo_location.go · handlers.go
@@ -98,8 +98,8 @@ go/
 ```text
 Electron UI
   └─ localhost WebSocket → ws.Server → ws.Dispatcher
-       ├─ server/handler → provider / stores / git operations
-       └─ manual sync → prsync.Orchestrator ← server/syncloop (periodic sync)
+       ├─ engine/handler → provider / stores / git operations
+       └─ manual sync → prsync.Orchestrator ← engine/syncloop (periodic sync)
                           ├─ provider → remote PR details
                           ├─ workerpool → concurrent fetches
                           ├─ git.Client → clone/fetch/merge base
@@ -107,20 +107,20 @@ Electron UI
                           ├─ writer → SQLite cache
                           └─ actions + store/actionqueue → write actions/replay
 
-events.EventEmitter → server/bridge.go → WebSocket push → Electron UI
+events.EventEmitter → engine/bridge.go → WebSocket push → Electron UI
 ```
 
 ## Package-by-Package Summary
 
 ### `cmd/bistro-sync` -- Entrypoint
 
-Parses CLI flags, configures structured logging, bootstraps credentials, and calls `server.App.Run()`.
+Parses CLI flags, configures structured logging, bootstraps credentials, and calls `engine.App.Run()`.
 
-### `internal/server` -- Application Core
+### `internal/engine` -- Application Core
 
-`app.go` owns the App struct, constructors, store preparation, and Run lifecycle. The split files remain in package `server`: `provider.go` owns provider/orchestrator lifecycle; `config.go` owns configuration setters; `llm.go` wires BYOK classification; `expertise.go` wires indexing and handlers; `bridge.go` forwards events to WebSocket clients; `repo_location.go` wires clone/location handlers; `handlers.go` registers auth, review, diff, and checkout handlers.
+`app.go` owns the App struct, constructors, store preparation, and Run lifecycle. The split files remain in package `engine`: `provider.go` owns provider/orchestrator lifecycle; `config.go` owns configuration setters; `llm.go` wires BYOK classification; `expertise.go` wires indexing and handlers; `bridge.go` forwards events to WebSocket clients; `repo_location.go` wires clone/location handlers; `handlers.go` registers auth, review, diff, and checkout handlers.
 
-`server/handler` contains WebSocket handlers grouped by domain, including auth, comments/threads, review drafts (`drafts.go`: `DRAFT_SAVE` / `DRAFT_DELETE` / `DRAFTS_LIST`), diffs, patchsets, triage/interdiff, PR/repo lists, read state, classification, expertise, editor actions, developer-folder scanning, and review-queue discovery. Repo-location handlers cover add/remove/recover and cache maintenance. `syncloop.go` schedules background sync; `ready.go` emits readiness payloads; `wsaddr.go` formats the listener address; `repo_location_resolver.go` and `interdiff_repo.go` resolve usable clones.
+`engine/handler` contains WebSocket handlers grouped by domain, including auth, comments/threads, review drafts (`drafts.go`: `DRAFT_SAVE` / `DRAFT_DELETE` / `DRAFTS_LIST`), diffs, patchsets, triage/interdiff, PR/repo lists, read state, classification, expertise, editor actions, developer-folder scanning, and review-queue discovery. Repo-location handlers cover add/remove/recover and cache maintenance. `syncloop.go` schedules background sync; `ready.go` emits readiness payloads; `wsaddr.go` formats the listener address; `repo_location_resolver.go` and `interdiff_repo.go` resolve usable clones.
 
 The engine acquires a lock on `<db>.lock`, migrates SQLite before announcing `{"event":"ready","wsPort":N}`, and supports `-exit-on-stdin-close` so Electron owns its lifetime. Normal app startup and verification commands live in [the agent guide](../AGENTS.md#how-to-work).
 
@@ -156,7 +156,7 @@ Executes approve/request-changes/comment and thread actions through handlers, em
 
 ### `internal/events` -- Event System
 
-Buffered pub/sub `EventEmitter`, shared by sync and action execution. The server event bridge translates events into WebSocket pushes.
+Buffered pub/sub `EventEmitter`, shared by sync and action execution. The engine event bridge translates events into WebSocket pushes.
 
 ### `internal/store` -- Database Layer
 
@@ -195,7 +195,7 @@ PR diffs use `merge-base(base, head)..head`. Observed heads are pinned under `re
 
 ### `internal/classify` -- Comment Classification
 
-Loads/seeds embedded YAML rules and user overrides, classifies bot comments by severity/category, and groups duplicates. `classify/llm` supplies optional BYOK classification and task-tier logic; server wiring selects the live client/settings.
+Loads/seeds embedded YAML rules and user overrides, classifies bot comments by severity/category, and groups duplicates. `classify/llm` supplies optional BYOK classification and task-tier logic; engine wiring selects the live client/settings.
 
 ### `internal/expertise` -- Local Expertise Scoring
 
