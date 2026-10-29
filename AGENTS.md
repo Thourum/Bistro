@@ -196,4 +196,4 @@ scripts/smoke-macos.sh out/Bistro-darwin-arm64/Bistro.app   # launch and check t
 pnpm run release:win                        # Windows ZIP; run on Windows (the CGO engine builds for the host only)
 ```
 
-The legacy `.github/workflows/release.yml` still targets the removed Electron package and cannot publish migration builds until the Wails packaging task replaces it. Do not use it to release this branch. Historical signing used the `MACOS_*` / `APPLE_*` secrets.
+`.github/workflows/release.yml` builds native Wails bundles on macOS, Windows and Linux, runs `scripts/smoke.sh`, and creates a draft pre-release with five platform assets and `SHA256SUMS`. Packaging uses `wails3 task package:darwin`, `package:windows` or `package:linux`. Local macOS verification: `BISTRO_VERSION=0.0.0-local wails3 task package:darwin && scripts/smoke.sh bin/Bistro.app`. Smoke mode isolates data and disables sync; Linux needs `xvfb`, macOS needs `timeout` or coreutils' `gtimeout`. Signing/notarization uses `MACOS_*` / `APPLE_*` secrets when configured. Do not push release tags or trigger the workflow without explicit user permission.
