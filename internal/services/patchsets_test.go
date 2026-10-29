@@ -23,6 +23,10 @@ func (m *mockPatchsetLister) CurrentPatchset(context.Context, string) (store.Pat
 	return store.Patchset{}, false, nil
 }
 
+func (m *mockPatchsetLister) GetPRCheckoutInfo(context.Context, string) (*store.PRCheckoutInfo, error) {
+	return &store.PRCheckoutInfo{}, nil
+}
+
 type errorCurrentUserReader struct{ err error }
 
 func (s *errorCurrentUserReader) Get(context.Context, string) (string, bool, error) {

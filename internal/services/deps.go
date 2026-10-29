@@ -43,7 +43,12 @@ type diffViewedChecker interface {
 	IsFileViewed(ctx context.Context, prID, filePath, login, contentHash string) (bool, error)
 }
 
+type prReader interface {
+	GetPRCheckoutInfo(context.Context, string) (*store.PRCheckoutInfo, error)
+}
+
 type patchsetLister interface {
+	prReader
 	ListPatchsets(ctx context.Context, prID string) ([]store.Patchset, error)
 }
 
@@ -52,6 +57,7 @@ type fileViewedMarker interface {
 }
 
 type triageStore interface {
+	prReader
 	ListPatchsets(ctx context.Context, prID string) ([]store.Patchset, error)
 	CurrentPatchset(ctx context.Context, prID string) (store.Patchset, bool, error)
 	ListPatchsetFiles(ctx context.Context, prID string, number int) (map[string]string, error)
@@ -77,6 +83,17 @@ type readStateDB interface {
 func contextError(err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
+	}
+	return nil
+}
+
+func requirePR(ctx context.Context, reader prReader, prID string) error {
+	pr, err := reader.GetPRCheckoutInfo(ctx, prID)
+	if err != nil {
+		return err
+	}
+	if pr == nil {
+		return Errorf(CodeNotFound, "PR not found: %s", prID)
 	}
 	return nil
 }

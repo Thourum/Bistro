@@ -24,6 +24,9 @@ func (s *Patchsets) List(ctx context.Context, req PRRef) (PatchsetsResponse, err
 		if prID == "" {
 			return PatchsetsResponse{}, Errorf(CodeInvalid, "pr_id is required")
 		}
+		if err := requirePR(ctx, s.Store, prID); err != nil {
+			return PatchsetsResponse{}, err
+		}
 		patchsets, err := s.Store.ListPatchsets(ctx, prID)
 		if err != nil {
 			return PatchsetsResponse{}, err

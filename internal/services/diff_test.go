@@ -18,7 +18,7 @@ func (s *stubDiffReader) GetUnified(prID string) (string, error) {
 	if d, ok := s.diffs[prID]; ok {
 		return d, nil
 	}
-	return "", fmt.Errorf("no diffs found for PR %s", prID)
+	return "", fmt.Errorf("%w for PR %s", prdiff.ErrNotFound, prID)
 }
 
 func (s *stubDiffReader) Get(prID string) ([]prdiff.File, error) {

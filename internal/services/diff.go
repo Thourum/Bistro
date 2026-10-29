@@ -56,11 +56,15 @@ func (s *Diff) Get(ctx context.Context, req PRRef) (DiffResponse, error) {
 		}
 		unified, err := s.DiffStore.GetUnified(prID)
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if contextError(err) != nil {
 				return DiffResponse{}, err
 			}
-			return DiffResponse{}, Errorf(CodeNotFound, "unable to load diff")
+			if errors.Is(err, prdiff.ErrNotFound) {
+				return DiffResponse{}, Errorf(CodeNotFound, "unable to load diff")
+			}
+			return DiffResponse{}, err
 		}
+
 		login := ""
 		if s.CurrentUser != nil {
 			l, ok, err := s.CurrentUser.Get(ctx, githubProvider)

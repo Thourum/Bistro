@@ -3,6 +3,7 @@ package prdiff
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -14,6 +15,9 @@ const (
 	defaultStoredDiffStatus = "ok"
 	diffHeaderPrefix        = "diff --git "
 )
+
+// ErrNotFound means no cached diff rows exist for the requested PR.
+var ErrNotFound = errors.New("no diffs found")
 
 // File represents a single file's diff entry for storage.
 type File struct {
@@ -109,7 +113,7 @@ func (s *Store) GetUnified(prID string) (string, error) {
 	}
 
 	if len(diffs) == 0 {
-		return "", fmt.Errorf("no diffs found for PR %s", prID)
+		return "", fmt.Errorf("%w for PR %s", ErrNotFound, prID)
 	}
 
 	var b strings.Builder

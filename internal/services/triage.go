@@ -66,6 +66,9 @@ func (s *Triage) Get(ctx context.Context, req TriageRequest) (TriageResponse, er
 		if req.PRID == "" || req.FromPatchset < 0 || req.ToPatchset < 0 {
 			return TriageResponse{}, Errorf(CodeInvalid, "pr_id and non-negative patchsets are required")
 		}
+		if err := requirePR(ctx, s.Store, req.PRID); err != nil {
+			return TriageResponse{}, err
+		}
 		return buildTriage(logging.WithLogger(ctx, serviceLogger(s.Log)), s, req)
 	})
 }
