@@ -18,7 +18,10 @@ export function triageSummary(result: TriageResult, now: Date): string {
   if (result.baseline === null) {
     return `P${result.from_patchset} → P${result.to_patchset}: ${counts}`;
   }
-  const label = BASELINE_LABELS[result.baseline.source];
+  const label =
+    Object.entries(BASELINE_LABELS).find(
+      ([source]) => source === result.baseline?.source,
+    )?.[1] ?? 'your review';
   const age = relativeAge(new Date(result.baseline.reviewed_at), now);
   return `since P${result.from_patchset} (${label}, ${age}): ${counts}`;
 }

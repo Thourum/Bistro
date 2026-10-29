@@ -1,13 +1,8 @@
-import { Fault } from '@thourum/fault';
-import {
-  type FileViewedAck,
-  fileViewedAckSchema,
-  type PRsReadAck,
-  prsReadAckSchema,
-} from '../types';
-import { parseResponse } from '../utils/error';
+import { ReadState, Viewed } from '@bindings/services';
+import { addToast } from '../components/ToastContainer';
+import type { FileViewedAck, PRsReadAck } from '../types';
 import { createLogger } from '../utils/logger';
-import { wsClient } from './ws/connection';
+import { callWrite, faultReason } from './engine/call';
 
 const log = createLogger('readState');
 
@@ -15,56 +10,44 @@ const log = createLogger('readState');
 export function markPRsRead(
   prIds: readonly string[],
 ): Promise<PRsReadAck | null> {
-  return wsClient
-    .request('MARK_PRS_READ', { pr_ids: [...prIds] })
-    .mapErr((cause) =>
-      new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
-    )
-    .andThen((data) => parseResponse(prsReadAckSchema, data))
-    .match(
-      (data) => data,
-      (err) => {
-        log.warn({ err: err.message, prIds }, 'failed to mark PRs read');
-        return null;
-      },
-    );
+  return callWrite(() => ReadState.MarkRead({ pr_ids: [...prIds] })).match(
+    (data) => data,
+    (fault) => {
+      log.warn({ err: fault.message, prIds }, 'failed to mark PRs read');
+      return null;
+    },
+  );
 }
 
 /**
- * Marks a file viewed via `MARK_FILE_VIEWED`.
- *
- * The `contentHash` MUST be the value the engine returned for the file in
- * `DIFF_READY` — it is sent back unchanged. The engine keys viewed state on
- * `(pr_id, file_path, login, content_hash)` so a file stays viewed across a
- * rebase only while its content (and thus its hash) is unchanged. The UI does
- * not compute hashes.
- *
- * Returns the ack so callers can reconcile local state, or `null` on a
- * transport failure (the engine reports a declined write as `ok: false`).
+ * Marks a file viewed using the canonical content hash from Diff.Get unchanged.
+ * Returns the acknowledgement, or null after showing the declined-write reason
+ * or communication warning. The UI never computes hashes or guesses success.
  */
 export function markFileViewed(
   prId: string,
   filePath: string,
   contentHash: string,
 ): Promise<FileViewedAck | null> {
-  return wsClient
-    .request('MARK_FILE_VIEWED', {
+  return callWrite(() =>
+    Viewed.MarkFile({
       pr_id: prId,
       file_path: filePath,
       content_hash: contentHash,
-    })
-    .mapErr((cause) =>
-      new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
-    )
-    .andThen((data) => parseResponse(fileViewedAckSchema, data))
-    .match(
-      (data) => data,
-      (message) => {
-        log.warn(
-          { err: message.message, filePath },
-          'failed to mark file viewed',
-        );
-        return null;
-      },
-    );
+    }),
+  ).match(
+    (data) => data,
+    (fault) => {
+      log.warn({ err: fault.message, filePath }, 'failed to mark file viewed');
+      const reason = faultReason(fault);
+      addToast({
+        type: 'warning',
+        message: reason
+          ? `Could not mark viewed: ${reason}`
+          : 'Could not mark viewed: network or communication error',
+        dismissible: true,
+      });
+      return null;
+    },
+  );
 }

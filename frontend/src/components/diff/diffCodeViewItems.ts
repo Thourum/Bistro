@@ -156,7 +156,7 @@ export function groupCommentsByThread(
 ): Map<string, Comment[]> {
   const grouped = new Map<string, Comment[]>();
   for (const comment of comments) {
-    if (comment.thread_id === undefined) continue;
+    if (comment.thread_id == null) continue;
     const existing = grouped.get(comment.thread_id);
     if (existing === undefined) {
       grouped.set(comment.thread_id, [comment]);

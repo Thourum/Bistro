@@ -1,11 +1,12 @@
+import { Threads } from '@bindings/services';
 import { useCallback, useState } from 'react';
 import { addToast } from '../components/ToastContainer';
-import { wsClient } from '../services/ws/connection';
+import { callWrite } from '../services/engine/call';
 
 /**
  * Dispatches resolve / unresolve writes for review threads.
  *
- * Both route through the existing offline action queue via `SUBMIT_ACTION`
+ * Both route through the existing offline action queue via `Threads.SubmitAction`
  * (the same envelope `approve` / `request_changes` use). The Go side validates
  * the PR id and rejects `state_known=false` threads; we additionally gate the
  * affordance in the UI so the user never fires an action the backend will
@@ -13,10 +14,10 @@ import { wsClient } from '../services/ws/connection';
  *
  * The hook tracks which thread ids currently have an in-flight write so the
  * view can disable that row's button and show a pending label. The set is
- * cleared when the `ACTION_RESULT` response arrives (success, failure, or
+ * cleared when the binding settles (success, failure, or
  * queued-for-retry) or after a short fallback timeout, so a dropped response
  * never wedges a button forever. Successful thread events still bump the shared
- * threads revision through the WebSocket event handlers, causing the view to re-fetch.
+ * threads revision through the engine event handlers, causing the view to re-fetch.
  */
 const PENDING_FALLBACK_MS = 8000;
 
@@ -49,33 +50,37 @@ export function useThreadActions(prId: string | undefined) {
 
       // `thread_id` is the canonical field; `body` is kept as a compatibility
       // alias for older sync engines that only understood ActionRequest.Body.
-      void wsClient
-        .request('SUBMIT_ACTION', {
+      void callWrite(() =>
+        Threads.SubmitAction({
           pr_id: prId,
           action,
           thread_id: threadId,
           body: threadId,
-        })
-        .match(
-          () => {
-            clearPending(threadId);
-            addToast({
-              type: 'success',
-              message: `Thread ${label}d`,
-              dismissible: false,
-            });
-          },
-          (error) => {
-            clearPending(threadId);
-            const message = error.message;
-            const queued = message.includes('action queued for later replay');
-            addToast({
-              type: queued ? 'warning' : 'error',
-              message: queued ? `Thread ${label} queued for retry` : message,
-              dismissible: true,
-            });
-          },
-        );
+          comment_id: '',
+          in_reply_to: '',
+          line: 0,
+          review_event: '',
+        }),
+      ).match(
+        () => {
+          clearPending(threadId);
+          addToast({
+            type: 'success',
+            message: `Thread ${label}d`,
+            dismissible: false,
+          });
+        },
+        (error) => {
+          clearPending(threadId);
+          const message = error.message;
+          const queued = message.includes('action queued for later replay');
+          addToast({
+            type: queued ? 'warning' : 'error',
+            message: queued ? `Thread ${label} queued for retry` : message,
+            dismissible: true,
+          });
+        },
+      );
 
       // Self-heal: if no push event arrives (engine offline, queued for retry),
       // release the pending lock so the button becomes usable again.

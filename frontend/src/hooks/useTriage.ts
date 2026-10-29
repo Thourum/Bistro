@@ -1,8 +1,7 @@
-import { Fault } from '@thourum/fault';
+import { Triage } from '@bindings/services';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { wsClient } from '../services/ws/connection';
-import { type TriageResult, triageResultSchema } from '../types';
-import { parseResponse } from '../utils/error';
+import { call } from '../services/engine/call';
+import type { TriageResult } from '../types';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('useTriage');
@@ -19,9 +18,9 @@ interface TriageState {
 }
 
 /**
- * Requests `REQUEST_TRIAGE` whenever `prId` or `req` changes; `req = null`
- * clears. A non-`ok` triage state is a normal result; only a transport or
- * parse failure populates `error`.
+ * Requests `Triage.Get` whenever `prId` or `req` changes; `req = null`
+ * clears. A non-`ok` triage state is a normal result; only a service or transport
+ * failure populates `error`.
  */
 export function useTriage(
   prId: string | undefined,
@@ -57,23 +56,17 @@ export function useTriage(
             to_patchset: current.toPatchset,
           };
 
-    void wsClient
-      .request('REQUEST_TRIAGE', payload)
-      .mapErr((cause) =>
-        new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
-      )
-      .andThen((data) => parseResponse(triageResultSchema, data))
-      .match(
-        (result) => {
-          if (!isActive) return;
-          setState({ result, loading: false, error: null });
-        },
-        (fault) => {
-          if (!isActive) return;
-          log.warn({ err: fault.message }, 'failed to load triage');
-          setState({ result: null, loading: false, error: fault.message });
-        },
-      );
+    void call(() => Triage.Get(payload)).match(
+      (result) => {
+        if (!isActive) return;
+        setState({ result, loading: false, error: null });
+      },
+      (fault) => {
+        if (!isActive) return;
+        log.warn({ err: fault.message }, 'failed to load triage');
+        setState({ result: null, loading: false, error: fault.message });
+      },
+    );
     // A late response must not restore a disabled filter or an older pair.
     return () => {
       isActive = false;

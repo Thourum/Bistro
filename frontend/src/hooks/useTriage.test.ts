@@ -1,15 +1,13 @@
 // @vitest-environment jsdom
-import { Fault, ResultAsync } from '@thourum/fault';
+import { Triage } from '@bindings/services';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
-import { wsClient } from '../services/ws/connection';
+import { cancellable } from '../test/cancellable';
 import type { TriageResult } from '../types';
 import { type TriageRequest, useTriage } from './useTriage';
 
-vi.mock('../services/ws/connection', () => ({
-  wsClient: { request: vi.fn() },
-}));
+vi.mock('@bindings/services', () => ({ Triage: { Get: vi.fn() } }));
 vi.mock('../utils/logger', () => ({
   createLogger: () => ({ warn: vi.fn() }),
 }));
@@ -17,10 +15,9 @@ vi.mock('../utils/logger', () => ({
 it('clears prior triage and ignores responses after switching or disabling requests', async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   const pendingResponses: Array<(result: TriageResult) => void> = [];
-  vi.mocked(wsClient.request).mockImplementation(() =>
-    ResultAsync.fromPromise(
+  vi.mocked(Triage.Get).mockImplementation(() =>
+    cancellable(
       new Promise<TriageResult>((resolve) => pendingResponses.push(resolve)),
-      (cause) => new Fault(cause instanceof Error ? cause : String(cause)),
     ),
   );
   const root = createRoot(document.createElement('div'));
@@ -45,7 +42,7 @@ it('clears prior triage and ignores responses after switching or disabling reque
   };
 
   await render({ kind: 'sinceLastReview' });
-  expect(wsClient.request).toHaveBeenLastCalledWith('REQUEST_TRIAGE', {
+  expect(Triage.Get).toHaveBeenLastCalledWith({
     pr_id: result.pr_id,
     from_patchset: 0,
     to_patchset: 0,

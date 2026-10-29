@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import { errAsync, Fault, okAsync } from '@thourum/fault';
+import { okAsync } from '@thourum/fault';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { appStore } from '../../src/store';
 import type { UIState } from '../../src/store/ui';
 import { initialUIState } from '../../src/store/ui';
+import { cancellable } from '../../src/test/cancellable';
 import { invokeAction, makeCtx, makeStore } from './keybindingTestHelpers';
 
 const mockNavigate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -21,10 +22,8 @@ vi.mock('../../src/services/prActions', () => ({
   approvePR: mockApprovePR,
 }));
 
-const request = vi.hoisted(() => vi.fn());
-vi.mock('../../src/services/ws/connection', () => ({
-  wsClient: { send: vi.fn(), request },
-}));
+const Delete = vi.hoisted(() => vi.fn());
+vi.mock('@bindings/services', () => ({ Drafts: { Delete } }));
 
 vi.mock('../../src/utils/openUrl', () => ({
   openUrlInBrowser: (url: string) => {
@@ -393,7 +392,7 @@ describe('binding actions', () => {
 describe('draft annotation bindings', () => {
   afterEach(() => {
     appStore.setState(() => initialUIState);
-    request.mockReset();
+    Delete.mockReset();
   });
 
   it('n/p reach drafts without putting them in thread reply state', () => {
@@ -427,11 +426,13 @@ describe('draft annotation bindings', () => {
   });
 
   it('d d deletes only the active draft and reports success', async () => {
-    request.mockReturnValue(okAsync({ deleted: 1 }));
+    Delete.mockReturnValue(
+      cancellable(Promise.resolve({ pr_id: 'pr-test-id', deleted: 1 })),
+    );
     const store = makeStore({ activeInlineCommentThreadId: 'draft:D1' });
     invokeAction('diff.deleteDraft', makeCtx(store, 'diff'));
     await vi.waitFor(() => expect(appStore.state.toasts).toHaveLength(1));
-    expect(request).toHaveBeenCalledExactlyOnceWith('DRAFT_DELETE', {
+    expect(Delete).toHaveBeenCalledExactlyOnceWith({
       pr_id: 'pr-test-id',
       draft_ids: ['D1'],
     });
@@ -443,7 +444,7 @@ describe('draft annotation bindings', () => {
   });
 
   it('d d reports failure without claiming the draft was deleted', async () => {
-    request.mockReturnValue(errAsync(new Fault('Offline')));
+    Delete.mockReturnValue(cancellable(Promise.reject(new Error('Offline'))));
     const store = makeStore({ activeInlineCommentThreadId: 'draft:D1' });
     invokeAction('diff.deleteDraft', makeCtx(store, 'diff'));
     await vi.waitFor(() => expect(appStore.state.toasts).toHaveLength(1));
@@ -468,7 +469,7 @@ describe('draft annotation bindings', () => {
     delete context.prId;
     invokeAction('diff.deleteDraft', context);
     await Promise.resolve();
-    expect(request).not.toHaveBeenCalled();
+    expect(Delete).not.toHaveBeenCalled();
     expect(appStore.state.toasts).toEqual([]);
   });
 });

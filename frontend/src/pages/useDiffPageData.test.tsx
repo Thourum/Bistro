@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
-import { fromSafePromise, okAsync } from '@thourum/fault';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, onTestFinished, vi } from 'vitest';
+import { cancellable } from '../test/cancellable';
 import type { DiffFile, PR } from '../types';
 import { useDiffPageData } from './useDiffPageData';
 
-const request = vi.hoisted(() => vi.fn());
-vi.mock('../services/ws/connection', () => ({ wsClient: { request } }));
+const { Get, List } = vi.hoisted(() => ({ Get: vi.fn(), List: vi.fn() }));
+vi.mock('@bindings/services', () => ({ Diff: { Get }, Comments: { List } }));
 
 const PR_FIXTURE: PR = {
   id: 'pr-1',
@@ -79,14 +79,16 @@ it('preserves cap-map identity across viewed updates and refreshes changed metad
     { ...CAPPED_FILE, path: 'small.ts', diff_status: 'ok' },
     { ...CAPPED_FILE, path: 'logo.png', status: 'binary', is_binary: true },
   ];
-  request.mockImplementation((type: string) =>
-    okAsync(type === 'REQUEST_DIFF' ? { diff: '', files } : { comments: [] }),
+  Get.mockImplementation(() =>
+    cancellable(Promise.resolve({ diff: '', files })),
   );
+  List.mockImplementation(() => cancellable(Promise.resolve({ comments: [] })));
   const container = document.createElement('div');
   const root = createRoot(container);
   onTestFinished(async () => {
     await act(async () => root.unmount());
-    request.mockReset();
+    Get.mockReset();
+    List.mockReset();
   });
   await act(async () => root.render(<Probe pr={PR_FIXTURE} onData={onData} />));
   const before = seenData.at(-1);
@@ -108,13 +110,15 @@ it('preserves cap-map identity across viewed updates and refreshes changed metad
     ]),
   );
 
-  request.mockImplementation((type: string) =>
-    okAsync(
-      type === 'REQUEST_DIFF'
-        ? { diff: '', files: [{ ...CAPPED_FILE, patch_bytes: 716800 }] }
-        : { comments: [] },
+  Get.mockImplementation(() =>
+    cancellable(
+      Promise.resolve({
+        diff: '',
+        files: [{ ...CAPPED_FILE, patch_bytes: 716800 }],
+      }),
     ),
   );
+  List.mockImplementation(() => cancellable(Promise.resolve({ comments: [] })));
   await act(async () =>
     root.render(
       <Probe pr={{ ...PR_FIXTURE, head_sha: 'updated' }} onData={onData} />,
@@ -135,18 +139,16 @@ it('does not refetch or blank the diff when the PR list re-polls an unchanged PR
   const onData = (data: ReturnType<typeof useDiffPageData>): void => {
     seenData.push(data);
   };
-  request.mockImplementation((type: string) =>
-    okAsync(
-      type === 'REQUEST_DIFF'
-        ? { diff: '', files: [CAPPED_FILE] }
-        : { comments: [] },
-    ),
+  Get.mockImplementation(() =>
+    cancellable(Promise.resolve({ diff: '', files: [CAPPED_FILE] })),
   );
+  List.mockImplementation(() => cancellable(Promise.resolve({ comments: [] })));
   const container = document.createElement('div');
   const root = createRoot(container);
   onTestFinished(async () => {
     await act(async () => root.unmount());
-    request.mockReset();
+    Get.mockReset();
+    List.mockReset();
   });
   await act(async () => root.render(<Probe pr={PR_FIXTURE} onData={onData} />));
   const loadedAt = seenData.length;
@@ -160,8 +162,7 @@ it('does not refetch or blank the diff when the PR list re-polls an unchanged PR
       />,
     ),
   );
-  const diffRequests = (): number =>
-    request.mock.calls.filter(([type]) => type === 'REQUEST_DIFF').length;
+  const diffRequests = (): number => Get.mock.calls.length;
   expect(diffRequests()).toBe(1);
 
   // A new head refetches, but keeps showing the loaded diff meanwhile.
@@ -181,20 +182,20 @@ it('ignores a diff response that resolves after a newer request', async () => {
     seenData.push(data);
   };
   const resolvers: Array<(payload: unknown) => void> = [];
-  request.mockImplementation((type: string) =>
-    type === 'REQUEST_DIFF'
-      ? fromSafePromise(
-          new Promise((resolve) => {
-            resolvers.push(resolve);
-          }),
-        )
-      : okAsync({ comments: [] }),
+  Get.mockImplementation(() =>
+    cancellable(
+      new Promise((resolve) => {
+        resolvers.push(resolve);
+      }),
+    ),
   );
+  List.mockImplementation(() => cancellable(Promise.resolve({ comments: [] })));
   const container = document.createElement('div');
   const root = createRoot(container);
   onTestFinished(async () => {
     await act(async () => root.unmount());
-    request.mockReset();
+    Get.mockReset();
+    List.mockReset();
   });
   await act(async () => root.render(<Probe pr={PR_FIXTURE} onData={onData} />));
   await act(async () =>

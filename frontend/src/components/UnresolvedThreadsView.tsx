@@ -118,7 +118,7 @@ export function UnresolvedThreadsView({
   const commentsByThread = useMemo(() => {
     const map = new Map<string, Comment[]>();
     for (const c of comments ?? []) {
-      if (c.thread_id === undefined) continue;
+      if (c.thread_id == null) continue;
       const bucket = map.get(c.thread_id);
       if (bucket === undefined) map.set(c.thread_id, [c]);
       else bucket.push(c);
@@ -347,13 +347,13 @@ function CommentBlock({ comment }: { comment: Comment }): React.ReactElement {
         <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-on-surface">
           @{comment.author}
         </span>
-        {comment.line !== undefined && (
+        {comment.line != null && (
           <span className="font-mono text-[10px] text-outline-variant">
             line {comment.line}
           </span>
         )}
       </div>
-      {comment.diff_hunk !== undefined && comment.diff_hunk !== '' && (
+      {comment.diff_hunk != null && comment.diff_hunk !== '' && (
         <HighlightedCode code={comment.diff_hunk} lang="diff" />
       )}
       <Markdown body={comment.body} compact />

@@ -1,12 +1,12 @@
-import { okAsync } from '@thourum/fault';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { appStore } from '../store';
 import { initialUIState } from '../store/ui';
+import { cancellable } from '../test/cancellable';
 import { loadDrafts } from './reviewDrafts';
 
-const request = vi.hoisted(() => vi.fn());
-vi.mock('./ws/connection', () => ({
-  wsClient: { send: vi.fn(), request },
+const List = vi.hoisted(() => vi.fn());
+vi.mock('@bindings/services', () => ({
+  Drafts: { List, Save: vi.fn(), Delete: vi.fn() },
 }));
 
 const draft = {
@@ -24,12 +24,14 @@ const draft = {
 describe('review drafts', () => {
   afterEach(() => {
     appStore.setState(() => initialUIState);
-    request.mockReset();
+    List.mockReset();
   });
 
-  it('stores the engine DRAFTS_READY payload for the shown PR', async () => {
+  it('stores the engine Drafts.List payload for the shown PR', async () => {
     appStore.setState((s) => ({ ...s, reviewDraftsPrId: 'pr-1' }));
-    request.mockReturnValue(okAsync({ pr_id: 'pr-1', drafts: [draft] }));
+    List.mockReturnValue(
+      cancellable(Promise.resolve({ pr_id: 'pr-1', drafts: [draft] })),
+    );
 
     const result = await loadDrafts('pr-1');
 
@@ -39,7 +41,9 @@ describe('review drafts', () => {
 
   it('ignores a DRAFTS_READY reply for a PR that is no longer shown', async () => {
     appStore.setState((s) => ({ ...s, reviewDraftsPrId: 'pr-2' }));
-    request.mockReturnValue(okAsync({ pr_id: 'pr-1', drafts: [draft] }));
+    List.mockReturnValue(
+      cancellable(Promise.resolve({ pr_id: 'pr-1', drafts: [draft] })),
+    );
 
     const result = await loadDrafts('pr-1');
 

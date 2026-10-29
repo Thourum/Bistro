@@ -1,14 +1,12 @@
 // @vitest-environment jsdom
-import { errAsync, Fault, okAsync } from '@thourum/fault';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { shortcutFor } from '../../src/components/commandPaletteCommands';
 import { appStore } from '../../src/store';
 import { settingsStore } from '../../src/store/settings';
 import { initialUIState } from '../../src/store/ui';
-import {
-  getEffectiveBindings,
-  isActive,
-} from '../../src/utils/keybindings';
+import { cancellable } from '../../src/test/cancellable';
+import { getEffectiveBindings, isActive } from '../../src/utils/keybindings';
 import { findActionKeys } from '../../src/utils/legendPresets';
 import { isLineCommentCancel } from '../../src/utils/lineCommentActions';
 import { invokeAction, makeCtx, makeStore } from './keybindingTestHelpers';
@@ -17,9 +15,13 @@ const mockNavigate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('../../src/router', () => ({
   router: { navigate: mockNavigate },
 }));
-const request = vi.hoisted(() => vi.fn());
-vi.mock('../../src/services/ws/connection', () => ({
-  wsClient: { send: vi.fn(), request },
+const { Delete, SubmitAction } = vi.hoisted(() => ({
+  Delete: vi.fn(),
+  SubmitAction: vi.fn(),
+}));
+vi.mock('@bindings/services', () => ({
+  Drafts: { Delete },
+  Threads: { SubmitAction },
 }));
 
 const draft = {
@@ -39,7 +41,8 @@ const initialSettings = settingsStore.state;
 afterEach(() => {
   settingsStore.setState(() => initialSettings);
   appStore.setState(() => initialUIState);
-  request.mockReset();
+  Delete.mockReset();
+  SubmitAction.mockReset();
   mockNavigate.mockClear();
 });
 
@@ -180,17 +183,26 @@ describe('review commands', () => {
   it('submit warns without drafts, then sends one COMMENT review and settles feedback', async () => {
     invokeAction('review.submit', makeCtx({}, 'diff'));
     expect(appStore.state.toasts[0]?.type).toBe('warning');
-    expect(request).not.toHaveBeenCalled();
-    request.mockReturnValue(okAsync({ success: true }));
+    expect(Delete).not.toHaveBeenCalled();
+    expect(SubmitAction).not.toHaveBeenCalled();
+    SubmitAction.mockReturnValue(
+      cancellable(
+        Promise.resolve({ pr_id: 'pr-test-id', action: 'submit_review' }),
+      ),
+    );
     invokeAction('review.submit', makeCtx({ reviewDrafts: [draft] }, 'diff'));
     await vi.waitFor(() =>
       expect(appStore.state.actionResult?.success).toBe(true),
     );
-    expect(request).toHaveBeenCalledExactlyOnceWith('SUBMIT_ACTION', {
+    expect(SubmitAction).toHaveBeenCalledExactlyOnceWith({
       pr_id: 'pr-test-id',
       action: 'submit_review',
       review_event: 'COMMENT',
       body: '',
+      thread_id: '',
+      comment_id: '',
+      in_reply_to: '',
+      line: 0,
     });
   });
 
@@ -223,10 +235,14 @@ describe('review commands', () => {
   ])(
     'discard sends all draft ids and reports "$message"',
     async ({ reviewDrafts, draftIds, message }) => {
-      request.mockReturnValue(okAsync({ deleted: draftIds.length }));
+      Delete.mockReturnValue(
+        cancellable(
+          Promise.resolve({ pr_id: 'pr-test-id', deleted: draftIds.length }),
+        ),
+      );
       invokeAction('review.discardDrafts', makeCtx({ reviewDrafts }, 'diff'));
       await vi.waitFor(() => expect(appStore.state.toasts).toHaveLength(1));
-      expect(request).toHaveBeenCalledExactlyOnceWith('DRAFT_DELETE', {
+      expect(Delete).toHaveBeenCalledExactlyOnceWith({
         pr_id: 'pr-test-id',
         draft_ids: draftIds,
       });
@@ -239,7 +255,7 @@ describe('review commands', () => {
   );
 
   it('discard failure reports an error and keeps the drafts intact', async () => {
-    request.mockReturnValue(errAsync(new Fault('Offline')));
+    Delete.mockReturnValue(cancellable(Promise.reject(new Error('Offline'))));
     const store = makeStore({ reviewDrafts: [draft] });
     invokeAction('review.discardDrafts', makeCtx(store, 'detail'));
     await vi.waitFor(() => expect(appStore.state.toasts).toHaveLength(1));
@@ -253,7 +269,8 @@ describe('review commands', () => {
     invokeAction('review.submit', context);
     invokeAction('review.discardDrafts', context);
     invokeAction('review.discardDrafts', makeCtx({}, 'detail'));
-    expect(request).not.toHaveBeenCalled();
+    expect(Delete).not.toHaveBeenCalled();
+    expect(SubmitAction).not.toHaveBeenCalled();
     expect(appStore.state.toasts).toEqual([]);
   });
 });

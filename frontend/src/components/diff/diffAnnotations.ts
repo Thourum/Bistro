@@ -100,7 +100,7 @@ function fileEntries(
         fileIndex,
         fileId: file.id,
         line: draft.line,
-        side: toAnnotationSide(draft.side),
+        side: toAnnotationSide(draft.side === 'LEFT' ? 'LEFT' : 'RIGHT'),
       }),
     );
   return [...threadEntries, ...draftEntries].sort(
@@ -129,7 +129,11 @@ export function isDraftAnchored(
   const parsed = files.find(({ file }) => file.path === draft.path);
   return (
     parsed !== undefined &&
-    lineExistsOnSide(parsed.fileDiff, draft.line, toAnnotationSide(draft.side))
+    lineExistsOnSide(
+      parsed.fileDiff,
+      draft.line,
+      toAnnotationSide(draft.side === 'LEFT' ? 'LEFT' : 'RIGHT'),
+    )
   );
 }
 
@@ -175,7 +179,7 @@ export function buildFileAnnotations(
     .filter((draft) => draft.path === file.path && draft.id !== editingDraftId)
     .map(
       (draft): DiffLineAnnotation<DiffAnnotationMeta> => ({
-        side: toAnnotationSide(draft.side),
+        side: toAnnotationSide(draft.side === 'LEFT' ? 'LEFT' : 'RIGHT'),
         lineNumber: draft.line,
         metadata: {
           kind: 'draft',

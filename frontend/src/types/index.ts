@@ -1,6 +1,22 @@
+import type { TriageResponse as TriageResult } from '@bindings/services';
+import type { ReviewThreadRow as ReviewThread } from '@bindings/store/models';
 import { z } from 'zod';
 
-export type { PRRow as PR, RepoRow as RepoInfo } from '@bindings/services';
+export type {
+  CommentRow as Comment,
+  DiffFile,
+  FileViewed as FileViewedAck,
+  InterdiffResponse as InterdiffResult,
+  MarkReadResult as PRsReadAck,
+  PRRow as PR,
+  RepoRow as RepoInfo,
+  TriageResponse as TriageResult,
+} from '@bindings/services';
+export type {
+  Patchset,
+  ReviewThreadRow as ReviewThread,
+} from '@bindings/store/models';
+export type { Draft as ReviewDraft } from '@bindings/store/reviewdraft/models';
 export type { ReviewQueue } from '../../bindings/github.com/itterno/bistro/internal/provider/models';
 
 export interface ExpertiseExpert {
@@ -75,255 +91,18 @@ export interface ExpertiseSettingsPayload {
   excludes: Record<string, string[]>;
 }
 
-/**
- * Comment model — matches Go `comments` table.
- */
-type CommentAuthorType = 'human' | 'bot' | 'unknown';
-
 export type CommentSeverity =
   | 'critical'
   | 'warning'
   | 'suggestion'
   | 'nit'
   | 'info';
-
-export interface Comment {
-  id: string;
-  pr_id: string;
-  author: string;
-  body: string;
-  created_at: string;
-  updated_at: string;
-  line?: number | undefined;
-  file?: string | undefined;
-  is_reply_to?: string | undefined;
-  // Classification (Phase 3, migration 026) — absent on unclassified/legacy rows.
-  author_type?: CommentAuthorType | undefined;
-  bot_vendor?: string | undefined;
-  severity?: CommentSeverity | undefined;
-  classification_source?: string | undefined;
-  dismissed?: boolean | undefined;
-  dedup_group_id?: string | undefined;
-  /**
-   * Review-thread this comment belongs to, when it is a thread reply. Already
-   * present in the `COMMENTS_READY` payload (comments.thread_id FK); the
-   * threads view joins on it to show each thread's discussion inline.
-   */
-  thread_id?: string | undefined;
-  /**
-   * Raw diff hunk from GitHub for inline review comments. Present only for
-   * kind='review'; undefined for issue comments.
-   */
-  diff_hunk?: string | undefined;
-}
-
-// The engine also sends anchor metadata not represented by the shared Comment type.
-export const commentSchema = z.looseObject({
-  id: z.string(),
-  pr_id: z.string(),
-  author: z.string(),
-  body: z.string(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  line: z.number().optional(),
-  file: z.string().optional(),
-  is_reply_to: z.string().optional(),
-  author_type: z.enum(['human', 'bot', 'unknown']).optional(),
-  bot_vendor: z.string().optional(),
-  severity: z
-    .enum(['critical', 'warning', 'suggestion', 'nit', 'info'])
-    .optional(),
-  classification_source: z.string().optional(),
-  dismissed: z.boolean().optional(),
-  dedup_group_id: z.string().optional(),
-  thread_id: z.string().optional(),
-  diff_hunk: z.string().optional(),
-}) satisfies z.ZodType<Comment>;
-
-export const commentsResponseSchema = z.object({
-  comments: z
-    .array(commentSchema)
-    .nullish()
-    .transform((comments) => comments ?? []),
-});
-
-/**
- * File model for PR changed files.
- */
-/**
- * A single changed file as returned in a `DIFF_READY` payload.
- *
- * `content_hash` is computed by the Go engine (SHA-256 of the file's unified
- * diff) and `viewed` reflects the engine's stored viewed state for the current
- * user. The UI never derives these itself — it echoes `content_hash` back
- * unchanged when marking a file viewed.
- */
-export interface DiffFile {
-  path: string;
-  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'binary';
-  old_path?: string | undefined;
-  is_binary: boolean;
-  is_truncated: boolean;
-  diff_status: 'ok' | 'truncated' | 'too_large';
-  patch_bytes: number;
-  hunk_count: number;
-  additions: number;
-  deletions: number;
-  content_hash: string;
-  viewed: boolean;
-}
-
-export const diffFileSchema = z.object({
-  path: z.string(),
-  status: z.enum(['added', 'modified', 'deleted', 'renamed', 'binary']),
-  old_path: z.string().optional(),
-  is_binary: z.boolean(),
-  is_truncated: z.boolean(),
-  diff_status: z.enum(['ok', 'truncated', 'too_large']),
-  patch_bytes: z.number(),
-  hunk_count: z.number(),
-  additions: z.number(),
-  deletions: z.number(),
-  content_hash: z.string(),
-  viewed: z.boolean(),
-}) satisfies z.ZodType<DiffFile>;
-
-export const diffResponseSchema = z.object({
-  diff: z.string().optional(),
-  files: z
-    .array(diffFileSchema)
-    .nullish()
-    .transform((files) => files ?? []),
-  additions: z.number().nullish(),
-  deletions: z.number().nullish(),
-});
-
-/**
- * An observed patchset snapshot — one row of the `patchsets` table, surfaced
- * via `GET_PATCHSETS` / `PATCHSETS_READY`. `number` is 1-based (P1, P2, …).
- *
- * Field names are snake_case to match the WebSocket payload verbatim; no
- * client-side renaming layer exists for these.
- */
-export interface Patchset {
-  pr_id: string;
-  number: number;
-  head_sha: string;
-  base_sha: string;
-  pushed_at: string; // ISO 8601
-}
-
-export const patchsetSchema = z.object({
-  pr_id: z.string(),
-  number: z.number(),
-  head_sha: z.string(),
-  base_sha: z.string(),
-  pushed_at: z.string(),
-}) satisfies z.ZodType<Patchset>;
-
-const triageFileStatusSchema = z.enum([
-  'changed',
-  'new',
-  'removed',
-  'unchanged',
-]);
-
-/**
- * Result of a `REQUEST_TRIAGE` → `TRIAGE_READY` round-trip: each file's status
- * in `to_patchset` relative to `from_patchset`. `baseline` is the review event
- * the engine chose for since-last-review, `null` for an explicit pair. When
- * `state` is not `ok`, `files` is empty and `reason` says why.
- */
-export const triageResultSchema = z.object({
-  pr_id: z.string(),
-  state: z.enum(['ok', 'no_patchsets', 'no_baseline', 'no_fingerprints']),
-  reason: z.string(),
-  from_patchset: z.number(),
-  to_patchset: z.number(),
-  baseline: z
-    .object({
-      source: z.enum(['github_review', 'bistro_action', 'all_viewed']),
-      reviewed_at: z.string(),
-    })
-    .nullable(),
-  files: z.array(
-    z.object({ path: z.string(), status: triageFileStatusSchema }),
-  ),
-  changed_count: z.number(),
-  total_count: z.number(),
-});
-export type TriageResult = z.infer<typeof triageResultSchema>;
-export type TriageFileStatus = z.infer<typeof triageFileStatusSchema>;
+export type TriageFileStatus = NonNullable<
+  TriageResult['files']
+>[number]['status'];
 export type TriageBaselineSource = NonNullable<
   TriageResult['baseline']
 >['source'];
-
-/**
- * Result of a `REQUEST_INTERDIFF` → `INTERDIFF_READY` round-trip: one file at
- * the `from_patchset` head vs. the `to_patchset` head. `patch` is empty when
- * the file is identical at both heads; `available: false` carries a `reason`.
- */
-export const interdiffResultSchema = z.object({
-  pr_id: z.string(),
-  path: z.string(),
-  from_patchset: z.number(),
-  to_patchset: z.number(),
-  available: z.boolean(),
-  reason: z.string(),
-  patch: z.string(),
-  rebased: z.boolean(),
-});
-export type InterdiffResult = z.infer<typeof interdiffResultSchema>;
-
-/**
- * Acknowledgement of a `MARK_FILE_VIEWED` request.
- * `ok` is false when the engine declined the write; `reason` explains it.
- */
-export const fileViewedAckSchema = z.object({
-  pr_id: z.string(),
-  file_path: z.string(),
-  ok: z.boolean(),
-  reason: z.string().optional(),
-});
-export type FileViewedAck = z.infer<typeof fileViewedAckSchema>;
-
-/** Acknowledgement of a `MARK_PRS_READ` request. */
-export const prsReadAckSchema = z.object({
-  ok: z.boolean(),
-  marked: z.number(),
-  reason: z.string().optional(),
-});
-export type PRsReadAck = z.infer<typeof prsReadAckSchema>;
-
-/**
- * A review thread on a PR — one row of the `review_threads` table, surfaced
- * via `GET_REVIEW_THREADS` / `REVIEW_THREADS_READY`. Field names are snake_case
- * to match the WebSocket payload verbatim; no client-side renaming layer exists.
- *
- * `state_known` is false when the engine could not determine the thread's true
- * resolved/outdated state (e.g. GraphQL was unavailable at sync time). In that
- * case the lifecycle is shown as "unknown" and resolve/unresolve is disabled —
- * the UI never guesses a state the backend hasn't confirmed.
- */
-export interface ReviewThread {
-  id: string;
-  pr_id: string;
-  file_path: string;
-  line: number;
-  resolved: boolean;
-  outdated: boolean;
-  state_known: boolean;
-}
-
-export const reviewThreadSchema = z.object({
-  id: z.string(),
-  pr_id: z.string(),
-  file_path: z.string(),
-  line: z.number(),
-  resolved: z.boolean(),
-  outdated: z.boolean(),
-  state_known: z.boolean(),
-}) satisfies z.ZodType<ReviewThread>;
 
 /** Lifecycle bucket derived from a {@link ReviewThread}'s flags. */
 export type ThreadLifecycle = 'open' | 'resolved' | 'outdated' | 'unknown';
@@ -340,21 +119,6 @@ export function threadLifecycle(thread: ReviewThread): ThreadLifecycle {
   return 'open';
 }
 
-/** A pending line comment the engine stores until the review is submitted. */
-export const reviewDraftSchema = z.object({
-  id: z.string(),
-  pr_id: z.string(),
-  path: z.string(),
-  side: z.enum(['LEFT', 'RIGHT']),
-  /** 0 for a single-line comment; otherwise the first line of the range. */
-  start_line: z.number().int().nonnegative(),
-  line: z.number().int().positive(),
-  body: z.string(),
-  commit_sha: z.string(),
-  created_at: z.string(),
-});
-export type ReviewDraft = z.infer<typeof reviewDraftSchema>;
-
 /**
  * CI check status.
  */
@@ -364,13 +128,6 @@ export interface CICheck {
   description?: string | undefined;
   url?: string | undefined;
 }
-
-export const ciCheckSchema = z.object({
-  name: z.string(),
-  state: z.enum(['pending', 'success', 'failure']),
-  description: z.string().optional(),
-  url: z.string().optional(),
-}) satisfies z.ZodType<CICheck>;
 
 /**
  * Extended PR with detail data (fetched via WebSocket).

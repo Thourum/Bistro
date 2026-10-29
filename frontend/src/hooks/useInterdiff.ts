@@ -1,8 +1,7 @@
-import { Fault } from '@thourum/fault';
+import { Interdiff } from '@bindings/services';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { wsClient } from '../services/ws/connection';
-import { type InterdiffResult, interdiffResultSchema } from '../types';
-import { parseResponse } from '../utils/error';
+import { call } from '../services/engine/call';
+import type { InterdiffResult } from '../types';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('useInterdiff');
@@ -21,8 +20,8 @@ interface InterdiffState {
 }
 
 /**
- * Requests `REQUEST_INTERDIFF` whenever `prId` or `req` changes; `req = null`
- * clears. `available: false` is a normal result; only a transport or parse
+ * Requests `Interdiff.Get` whenever `prId` or `req` changes; `req = null`
+ * clears. `available: false` is a normal result; only a service or transport
  * failure populates `error`.
  */
 export function useInterdiff(
@@ -49,28 +48,24 @@ export function useInterdiff(
     }
     setState({ result: null, loading: true, error: null });
     let isActive = true;
-    void wsClient
-      .request('REQUEST_INTERDIFF', {
+    void call(() =>
+      Interdiff.Get({
         pr_id: prId,
         path: current.path,
         from_patchset: current.fromPatchset,
         to_patchset: current.toPatchset,
-      })
-      .mapErr((cause) =>
-        new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
-      )
-      .andThen((data) => parseResponse(interdiffResultSchema, data))
-      .match(
-        (result) => {
-          if (!isActive) return;
-          setState({ result, loading: false, error: null });
-        },
-        (fault) => {
-          if (!isActive) return;
-          log.warn({ err: fault.message }, 'failed to load interdiff');
-          setState({ result: null, loading: false, error: fault.message });
-        },
-      );
+      }),
+    ).match(
+      (result) => {
+        if (!isActive) return;
+        setState({ result, loading: false, error: null });
+      },
+      (fault) => {
+        if (!isActive) return;
+        log.warn({ err: fault.message }, 'failed to load interdiff');
+        setState({ result: null, loading: false, error: fault.message });
+      },
+    );
     // A late response must not restore a disabled pane or a previous file.
     return () => {
       isActive = false;

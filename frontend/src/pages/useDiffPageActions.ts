@@ -89,20 +89,12 @@ export function useDiffPageActions({
           .withCause(cause),
     ).match(
       (ack) => {
-        if (ack?.ok) {
+        if (ack !== null) {
           setFiles((prev) =>
             prev.map((file) =>
               file.path === path ? { ...file, viewed: true } : file,
             ),
           );
-        } else {
-          addToast({
-            type: 'warning',
-            message: ack?.reason
-              ? `Could not mark viewed: ${ack.reason}`
-              : 'Could not mark viewed: network or communication error',
-            dismissible: true,
-          });
         }
         markInFlight.current = false;
       },

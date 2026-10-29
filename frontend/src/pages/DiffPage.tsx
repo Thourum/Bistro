@@ -137,18 +137,20 @@ export function DiffPage() {
     () =>
       triageOk === null
         ? undefined
-        : new Map(triageOk.files.map((file) => [file.path, file.status])),
+        : new Map(
+            (triageOk.files ?? []).map((file) => [file.path, file.status]),
+          ),
     [triageOk],
   );
   const visibleDiff = useMemo(() => {
     if (triageOk === null) return diff;
-    const shown = triageOk.files
+    const shown = (triageOk.files ?? [])
       .filter((file) => file.status === 'changed' || file.status === 'new')
       .map((file) => file.path);
     return filterDiffToPaths(diff, new Set(shown));
   }, [diff, triageOk]);
   const removedPaths =
-    triageOk?.files
+    (triageOk?.files ?? [])
       .filter((file) => file.status === 'removed')
       .map((file) => file.path) ?? [];
 

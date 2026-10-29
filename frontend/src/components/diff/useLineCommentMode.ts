@@ -117,7 +117,7 @@ export function useLineCommentMode({
         layout,
         lines: listCommentableLines(parsed.fileDiff.hunks, layout),
         cursor: {
-          side: draft.side,
+          side: draft.side === 'LEFT' ? 'LEFT' : 'RIGHT',
           anchor: draft.start_line === 0 ? draft.line : draft.start_line,
           head: draft.line,
         },

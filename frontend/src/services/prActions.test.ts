@@ -1,15 +1,12 @@
-import { errAsync, okAsync, ServiceError } from '@thourum/fault';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import { initialUIState } from '../store/ui';
+import { cancellable } from '../test/cancellable';
 import { approvePR, postComment, requestChanges } from './prActions';
-import { wsClient } from './ws/connection';
 
-const request = vi.hoisted(() => vi.fn());
-vi.mock('./ws/connection', () => ({
-  wsClient: { send: vi.fn(), request },
-}));
+const SubmitAction = vi.hoisted(() => vi.fn());
+vi.mock('@bindings/services', () => ({ Threads: { SubmitAction } }));
 
 describe('first-run milestones from PR services', () => {
   const previousAppearance = settingsStore.state.appearance;
@@ -36,7 +33,9 @@ describe('first-run milestones from PR services', () => {
   });
 
   it('records a dispatched approval', () => {
-    request.mockReturnValueOnce(okAsync({ success: true }));
+    SubmitAction.mockReturnValueOnce(
+      cancellable(Promise.resolve({ pr_id: 'pr-1', action: 'approve' })),
+    );
     approvePR('pr-1');
     expect(appStore.state.firstRunRail.completed).toEqual(['review']);
   });
@@ -44,7 +43,9 @@ describe('first-run milestones from PR services', () => {
   it('records only a non-empty PR comment', () => {
     postComment('pr-1', ' \n\t ');
     expect(appStore.state.firstRunRail.completed).toEqual([]);
-    vi.mocked(wsClient.request).mockReturnValueOnce(okAsync({ success: true }));
+    SubmitAction.mockReturnValueOnce(
+      cancellable(Promise.resolve({ pr_id: 'pr-1', action: 'post_comment' })),
+    );
     postComment('pr-1', 'Looks good');
     expect(appStore.state.firstRunRail.completed).toEqual(['review']);
   });
@@ -53,17 +54,17 @@ describe('first-run milestones from PR services', () => {
 describe('PR actions', () => {
   afterEach(() => {
     appStore.setState(() => initialUIState);
-    request.mockReset();
+    SubmitAction.mockReset();
   });
 
   it.each([
     ['approve', () => approvePR('pr-1')],
     ['request_changes', () => requestChanges('pr-1', 'Please revise')],
   ] as const)(
-    'clears pending %s when the WebSocket cannot send',
+    'clears pending %s when the binding rejects',
     async (type, dispatch) => {
-      request.mockReturnValue(
-        errAsync(ServiceError('CONNECTION_ERROR', 'WebSocket not connected')),
+      SubmitAction.mockReturnValue(
+        cancellable(Promise.reject(new Error('Binding unavailable'))),
       );
       dispatch();
       await vi.waitFor(() => expect(appStore.state.pendingAction).toBeNull());
@@ -72,17 +73,47 @@ describe('PR actions', () => {
         type,
         prId: 'pr-1',
         success: false,
-        message: 'WebSocket not connected',
+        message: 'Binding unavailable',
       });
     },
   );
 
-  it('submits approve through SUBMIT_ACTION so the engine can absorb drafts', () => {
-    request.mockReturnValue(errAsync(ServiceError('CONNECTION_ERROR', 'x')));
+  it('submits approval and settles the engine acknowledgement', async () => {
+    SubmitAction.mockReturnValue(
+      cancellable(Promise.resolve({ pr_id: 'pr-1', action: 'approve' })),
+    );
     approvePR('pr-1');
-    expect(request).toHaveBeenCalledWith('SUBMIT_ACTION', {
-      pr_id: 'pr-1',
-      action: 'approve',
+    await vi.waitFor(() => expect(appStore.state.pendingAction).toBeNull());
+    expect(SubmitAction).toHaveBeenCalledWith(
+      expect.objectContaining({ pr_id: 'pr-1', action: 'approve' }),
+    );
+    expect(appStore.state.actionResult).toMatchObject({
+      success: true,
+      message: 'Approved',
+    });
+  });
+
+  it('surfaces the Go action_failed message through action feedback', async () => {
+    SubmitAction.mockReturnValue(
+      cancellable(
+        Promise.reject(
+          new Error('runtime rejection', {
+            cause: {
+              code: 'internal',
+              reason: 'action_failed',
+              message: 'boom',
+            },
+          }),
+        ),
+      ),
+    );
+    approvePR('pr-1');
+    await vi.waitFor(() => expect(appStore.state.pendingAction).toBeNull());
+    expect(appStore.state.actionResult).toEqual({
+      type: 'approve',
+      prId: 'pr-1',
+      success: false,
+      message: 'boom',
     });
   });
 });

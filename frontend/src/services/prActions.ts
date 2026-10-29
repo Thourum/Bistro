@@ -1,14 +1,8 @@
-import { Fault } from '@thourum/fault';
-import { z } from 'zod';
+import { type ActionRequest, Threads } from '@bindings/services';
 import { appStore } from '../store';
 import type { PendingAction } from '../types';
+import { callWrite } from './engine/call';
 import { recordFirstRunAction } from './firstRunRail';
-import { wsClient } from './ws/connection';
-
-const actionResponseSchema = z.object({
-  success: z.boolean(),
-  error: z.string().optional(),
-});
 
 type ActionType = PendingAction['type'];
 
@@ -42,48 +36,46 @@ export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
 interface ActionDispatch {
   type: ActionType;
   prId: string;
-  payload: Readonly<Record<string, unknown>>;
+  payload: Readonly<
+    Partial<
+      Pick<ActionRequest, 'body' | 'thread_id' | 'comment_id' | 'review_event'>
+    >
+  >;
   successMessage: string;
-  failureMessage: string;
 }
 
-/** Sends SUBMIT_ACTION and settles pendingAction/actionResult from its reply. */
+/** Calls Threads.SubmitAction and settles pendingAction/actionResult from its reply. */
 function dispatchAction({
   type,
   prId,
   payload,
   successMessage,
-  failureMessage,
 }: ActionDispatch): void {
   setPendingAction(type, prId);
-  void wsClient
-    .request('SUBMIT_ACTION', { pr_id: prId, action: type, ...payload })
-    .mapErr((cause) =>
-      new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
-    )
-    .match(
-      (data) => {
-        const parsed = actionResponseSchema.safeParse(data);
-        const success = parsed.success && parsed.data.success;
-        appStore.setState((s) => ({
-          ...s,
-          pendingAction: null,
-          actionResult: {
-            type,
-            prId,
-            success,
-            message: success
-              ? successMessage
-              : ((parsed.success ? parsed.data.error : null) ?? failureMessage),
-          },
-          commentsRevision: success
-            ? s.commentsRevision + 1
-            : s.commentsRevision,
-          threadsRevision: success ? s.threadsRevision + 1 : s.threadsRevision,
-        }));
-      },
-      (fault) => setFailedAction(type, prId, fault.message),
-    );
+  void callWrite(() =>
+    Threads.SubmitAction({
+      pr_id: prId,
+      action: type,
+      body: '',
+      thread_id: '',
+      comment_id: '',
+      in_reply_to: '',
+      line: 0,
+      review_event: '',
+      ...payload,
+    }),
+  ).match(
+    () => {
+      appStore.setState((s) => ({
+        ...s,
+        pendingAction: null,
+        actionResult: { type, prId, success: true, message: successMessage },
+        commentsRevision: s.commentsRevision + 1,
+        threadsRevision: s.threadsRevision + 1,
+      }));
+    },
+    (fault) => setFailedAction(type, prId, fault.message),
+  );
 }
 
 /** Approves; the engine folds pending drafts into the same review. */
@@ -94,7 +86,6 @@ export function approvePR(prId: string): void {
     prId,
     payload: {},
     successMessage: 'Approved',
-    failureMessage: 'Approval failed',
   });
 }
 
@@ -105,7 +96,6 @@ export function requestChanges(prId: string, comment: string): void {
     prId,
     payload: { body: comment },
     successMessage: 'Changes requested',
-    failureMessage: 'Request changes failed',
   });
 }
 
@@ -120,7 +110,6 @@ export function submitReview(
     prId,
     payload: { review_event: event, body },
     successMessage: 'Review submitted',
-    failureMessage: 'Review failed',
   });
 }
 
@@ -139,7 +128,6 @@ export function postComment(prId: string, body: string): void {
     prId,
     payload: { body: trimmed },
     successMessage: 'Comment posted',
-    failureMessage: 'Comment failed',
   });
 }
 
@@ -160,6 +148,5 @@ export function replyComment(
       comment_id: target.commentId ?? '',
     },
     successMessage: 'Reply posted',
-    failureMessage: 'Reply failed',
   });
 }

@@ -9,7 +9,7 @@ export const SEVERITY_RANK = {
 } as const satisfies Record<CommentSeverity, number>;
 
 const UNCLASSIFIED_RANK = 0;
-const AUTO_COLLAPSED_SEVERITIES = new Set<CommentSeverity>(['nit', 'info']);
+const AUTO_COLLAPSED_SEVERITIES = new Set<string>(['nit', 'info']);
 const KNOWN_BOT_VENDORS = new Set(['coderabbit', 'greptile']);
 
 export interface ClassificationCounts {
@@ -23,9 +23,25 @@ export interface SeverityFilterOptions {
   humanOnly?: boolean;
 }
 
-function severityRank(severity: CommentSeverity | undefined): number {
-  if (!severity) return UNCLASSIFIED_RANK;
-  return SEVERITY_RANK[severity];
+export function commentSeverity(
+  value: string | null | undefined,
+): CommentSeverity | undefined {
+  if (
+    value === 'critical' ||
+    value === 'warning' ||
+    value === 'suggestion' ||
+    value === 'nit' ||
+    value === 'info'
+  )
+    return value;
+  return undefined;
+}
+
+function severityRank(severity: string | null | undefined): number {
+  const knownSeverity = commentSeverity(severity);
+  return knownSeverity === undefined
+    ? UNCLASSIFIED_RANK
+    : SEVERITY_RANK[knownSeverity];
 }
 
 function emptySeverityCounts(): Record<
@@ -68,7 +84,7 @@ export function aggregateCounts(
 
   for (const comment of comments) {
     if (comment.author_type === 'human') human += 1;
-    const severityKey = comment.severity ?? 'unclassified';
+    const severityKey = commentSeverity(comment.severity) ?? 'unclassified';
     bySeverity[severityKey] = (bySeverity[severityKey] ?? 0) + 1;
 
     if (comment.author_type === 'bot' && comment.bot_vendor) {
@@ -82,7 +98,7 @@ export function aggregateCounts(
   return { human, bySeverity, byVendor };
 }
 
-export function humanizeSource(source: string | undefined): string {
+export function humanizeSource(source: string | null | undefined): string {
   if (!source || source === 'unclassified') return 'Not classified';
 
   const [kind, firstPart, ...remainingParts] = source.split(':');
@@ -161,7 +177,7 @@ export function groupVisibleFindings(
     const severity = members.reduce<CommentSeverity | undefined>(
       (max, member) =>
         severityRank(member.severity) > severityRank(max)
-          ? member.severity
+          ? commentSeverity(member.severity)
           : max,
       undefined,
     );

@@ -6,7 +6,7 @@ import type {
   ThreadLifecycle,
 } from '../../types';
 import { threadLifecycle } from '../../types';
-import { humanizeSource } from '../../utils/classification';
+import { commentSeverity, humanizeSource } from '../../utils/classification';
 import {
   isTextareaSubmit,
   TEXTAREA_SUBMIT_HOTKEY,
@@ -41,8 +41,8 @@ const COMMENT_SEVERITY_STRIPE_CLASSES = {
   none: 'border-l-outline-variant/30',
 } satisfies Record<CommentSeverity | 'none', string>;
 
-function formatClassificationLabel(value: string | undefined): string {
-  if (value === undefined || value.trim().length === 0) return 'unclassified';
+function formatClassificationLabel(value: string | null | undefined): string {
+  if (value == null || value.trim().length === 0) return 'unclassified';
   return value;
 }
 
@@ -107,7 +107,7 @@ export function ThreadAnnotationCard({
       {comments.length > 0 ? (
         <ol className="space-y-2 pl-2 border-l border-outline-variant/20">
           {comments.map((comment) => {
-            const severity = comment.severity ?? 'none';
+            const severity = commentSeverity(comment.severity) ?? 'none';
             const sourceTooltip = humanizeSource(comment.classification_source);
 
             return (

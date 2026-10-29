@@ -18,6 +18,8 @@ function buildComment(overrides: Partial<Comment> = {}): Comment {
     body: 'Looks good.',
     created_at: '2026-07-12T10:00:00Z',
     updated_at: '2026-07-12T10:00:00Z',
+    outdated: false,
+    anchored: false,
     ...overrides,
   };
 }

@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useState } from 'react';
 import type { Comment, CommentSeverity } from '../types';
-import { humanizeSource } from '../utils/classification';
+import { commentSeverity, humanizeSource } from '../utils/classification';
 import { isTextareaSubmit } from '../utils/keybindings';
 import { Markdown } from './Markdown';
 import { Badge } from './ui/badge';
@@ -28,8 +28,8 @@ const COMMENT_SEVERITY_STRIPE_CLASSES: Record<
   none: 'border-l-outline-variant/30',
 };
 
-function formatClassificationLabel(value: string | undefined): string {
-  if (value === undefined || value.trim().length === 0) return 'unclassified';
+function formatClassificationLabel(value: string | null | undefined): string {
+  if (value == null || value.trim().length === 0) return 'unclassified';
   return value;
 }
 
@@ -109,7 +109,7 @@ export function CommentThread({
             const isAuthor =
               currentUser != null && currentUser === comment.author;
             const isEditing = editingId === comment.id;
-            const severity = comment.severity ?? 'none';
+            const severity = commentSeverity(comment.severity) ?? 'none';
 
             return (
               <div
