@@ -6,6 +6,10 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@bindings': resolve(
+        import.meta.dirname,
+        'bindings/github.com/itterno/bistro/internal',
+      ),
       '@shared': resolve(__dirname, 'src/shared'),
       '@renderer': resolve(__dirname, 'src'),
       '@': resolve(__dirname, 'src'),
@@ -14,7 +18,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['tests/**/*.{test,spec}.{ts,tsx}', 'src/**/*.{test,spec}.{ts,tsx}'],
+    include: [
+      'tests/**/*.{test,spec}.{ts,tsx}',
+      'src/**/*.{test,spec}.{ts,tsx}',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'html'],

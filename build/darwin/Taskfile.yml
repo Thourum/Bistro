@@ -1,0 +1,55 @@
+version: '3'
+
+includes:
+  common: ../Taskfile.yml
+
+tasks:
+  build:
+    platforms: [darwin]
+    deps:
+      - task: common:build:frontend
+      - task: common:generate:icons
+    cmds:
+      - wails3 tool prepare-macos-output --dir '{{.BIN_DIR}}'
+      - go build {{if ne .DEV "true"}}-tags production -trimpath{{end}} -buildvcs=false -ldflags='{{if ne .DEV "true"}}-w -s {{end}}{{.LDFLAGS}}' -o '{{.BIN_DIR}}/{{.APP_NAME}}'
+    env:
+      GOOS: darwin
+      GOARCH: '{{.ARCH | default ARCH}}'
+      CGO_ENABLED: 1
+      CGO_CFLAGS: -mmacosx-version-min=11.0
+      CGO_LDFLAGS: -mmacosx-version-min=11.0
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+
+  package:
+    cmds:
+      - task: build
+      - task: create:app:bundle
+
+  create:app:bundle:
+    vars:
+      BUNDLE: '{{.BUNDLE | default "Bistro.app"}}'
+      PLIST: '{{.PLIST | default "build/darwin/Info.plist"}}'
+    cmds:
+      - mkdir -p '{{.BIN_DIR}}/{{.BUNDLE}}/Contents/MacOS' '{{.BIN_DIR}}/{{.BUNDLE}}/Contents/Resources'
+      - cp '{{.BIN_DIR}}/{{.APP_NAME}}' '{{.BIN_DIR}}/{{.BUNDLE}}/Contents/MacOS/bistro'
+      - cp '{{.PLIST}}' '{{.BIN_DIR}}/{{.BUNDLE}}/Contents/Info.plist'
+      - cp build/darwin/icons.icns '{{.BIN_DIR}}/{{.BUNDLE}}/Contents/Resources/icons.icns'
+      - xattr -cr '{{.BIN_DIR}}/{{.BUNDLE}}'
+      - codesign --force --deep --sign - --entitlements build/darwin/entitlements.plist '{{.BIN_DIR}}/{{.BUNDLE}}'
+      - codesign --verify --deep --strict '{{.BIN_DIR}}/{{.BUNDLE}}'
+
+  run:
+    cmds:
+      - task: create:app:bundle
+        vars:
+          BUNDLE: Bistro.dev.app
+          PLIST: build/darwin/Info.dev.plist
+      - '"{{.BIN_DIR}}/Bistro.dev.app/Contents/MacOS/bistro"'
+
+  sign:
+    cmds:
+      - wails3 tool sign --input '{{.BIN_DIR}}/Bistro.app' --entitlements build/darwin/entitlements.plist {{.CLI_ARGS}}
+
+  sign:notarize:
+    cmds:
+      - wails3 tool sign --input '{{.BIN_DIR}}/Bistro.app' --entitlements build/darwin/entitlements.plist --notarize {{.CLI_ARGS}}

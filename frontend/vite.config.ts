@@ -1,13 +1,14 @@
 import { resolve } from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import wails from '@wailsio/runtime/plugins/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
   root: 'src',
   base: './',
   build: { outDir: '../dist', emptyOutDir: true },
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), wails('../bindings')],
   // The diff highlighter's lazy WASM imports require code-splitting workers.
   worker: { format: 'es' },
   server: {
@@ -25,6 +26,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@bindings': resolve(
+        import.meta.dirname,
+        'bindings/github.com/itterno/bistro/internal',
+      ),
       '@renderer': resolve(import.meta.dirname, 'src'),
       '@shared': resolve(import.meta.dirname, 'src/shared'),
     },

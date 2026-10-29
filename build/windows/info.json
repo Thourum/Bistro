@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "0.1.0.0"
+	},
+	"info": {
+		"0409": {
+			"ProductVersion": "0.1.0-alpha.1",
+			"CompanyName": "Thourum",
+			"FileDescription": "Keyboard-first GitHub PR review client",
+			"LegalCopyright": "Copyright 2026 Thourum",
+			"ProductName": "Bistro",
+			"Comments": "Local-first code review"
+		}
+	}
+}

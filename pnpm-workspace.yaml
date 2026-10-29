@@ -12,3 +12,6 @@ blockExoticSubdeps: false
 
 # Only install versions published at least 7 days ago (minutes).
 minimumReleaseAge: 10080
+# JS half of the pinned Wails v3.0.0 Go module (user-approved 2026-10-29).
+minimumReleaseAgeExclude:
+  - '@wailsio/runtime@3.0.0'

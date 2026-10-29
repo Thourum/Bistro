@@ -1,0 +1,62 @@
+version: '3'
+
+vars:
+  APP_NAME: bistro
+  BIN_DIR: bin
+  PACKAGE_MANAGER: pnpm
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+  GOOS: '{{.GOOS | default OS}}'
+  VERSION: '{{.BISTRO_VERSION | default "dev"}}'
+  LDFLAGS: '-X main.version={{.VERSION}} -X main.embeddedGitHubClientID={{.GITHUB_CLIENT_ID}} -X main.sentryDSN={{.SENTRY_DSN}}'
+
+env:
+  BISTRO_VERSION: '{{.VERSION}}'
+
+includes:
+  common: ./build/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+  linux: ./build/linux/Taskfile.yml
+
+tasks:
+  generate:
+    cmds:
+      - wails3 generate bindings -clean=true -ts -i -d frontend/bindings
+      - go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
+
+  build:
+    cmds:
+      - task: '{{.GOOS}}:build'
+
+  run:
+    cmds:
+      - task: '{{.GOOS}}:run'
+
+  dev:
+    env:
+      BISTRO_DATA_DIR: '{{.ROOT_DIR}}/.dev-data'
+    cmds:
+      - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
+
+  package:darwin:
+    platforms: [darwin]
+    cmds:
+      - task: darwin:package
+        vars:
+          ARCH: arm64
+      - ditto -c -k --keepParent bin/Bistro.app bin/bistro-darwin-arm64.zip
+      - hdiutil create -volname Bistro -srcfolder bin/Bistro.app -ov -format UDZO bin/bistro-darwin-arm64-installer.dmg
+
+  package:windows:
+    cmds:
+      - task: windows:package
+        vars:
+          ARCH: amd64
+      - powershell -NoProfile -Command "Compress-Archive -Path bin/bistro.exe -DestinationPath bin/bistro-windows-amd64.zip -Force"
+
+  package:linux:
+    cmds:
+      - task: linux:build
+        vars:
+          ARCH: amd64
+      - tar -czf bin/bistro-linux-amd64.tar.gz -C bin bistro

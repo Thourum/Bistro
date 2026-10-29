@@ -63,7 +63,7 @@ Go tests outside package `store` share migrated in-memory databases via `interna
 
 There is no Makefile. The commands below are authoritative; ignore `make` targets in any older docs.
 
-Desktop launch/package commands are temporarily unavailable until Task 14 adds the Wails shell entrypoint. `cd frontend && pnpm dev` serves renderer assets but does not supply the native bridge. Do not run the legacy Electron launcher: `cmd/bistro-sync` and its WebSocket transport have been deleted. Engine verification remains available with the Go commands below. Runtime OAuth configuration is supplied through `engine.Options`; no engine WS port exists.
+The Wails shell uses `wails3 task dev` (isolated `.dev-data/`), `wails3 task build`, and `wails3 task generate` (TypeScript bindings plus sqlc). Run the built `./bin/bistro --smoke` to verify the embedded frontend and quit within 60 seconds; smoke uses a temporary data directory and disables sync, offline replay, and update checks. Platform packaging tasks are `package:darwin`, `package:windows`, and `package:linux`. The renderer still speaks the removed WebSocket transport until Tasks 15–18. Do not run the legacy Electron launcher. Runtime OAuth configuration is supplied through `engine.Options`; no engine WS port exists.
 
 Adding or changing a SQL query: edit/add a `.sql` file under `internal/store/queries/`, then regenerate (`sqlc.yaml` is at the repo root):
 

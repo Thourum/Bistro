@@ -1,5 +1,7 @@
 // Sentry must initialize before app modules can throw during import/evaluation.
 import './sentry';
+// Initialize the native runtime before the renderer migrates its service calls.
+import '@wailsio/runtime';
 import { Fault, ResultAsync } from '@thourum/fault';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
