@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { PR } from '../types';
 import { useVisiblePRs } from './useVisiblePRs';
 
-vi.mock('./useWebSocketPRList', () => ({
-  useWebSocketPRList: () => ({ data: undefined, isLoading: true, error: null }),
+vi.mock('./usePRList', () => ({
+  usePRList: () => ({ data: undefined, isLoading: true, error: null }),
 }));
 
 vi.mock('./useStore', () => ({

@@ -1,23 +1,17 @@
-import { Fault } from '@thourum/fault';
+import { PR as PRService } from '@bindings/services';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { wsClient } from '../services/ws/connection';
+import { call } from '../services/engine/call';
 import { appStore } from '../store';
 import type { PR } from '../types';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('usePRHydration');
-const DEFAULT_HYDRATION_ERROR = 'Unable to hydrate this pull request.';
+const PR_SYNC_TIMEOUT_MS = 135_000;
 
 export interface PRHydrationState {
   isHydrating: boolean;
   error: string | null;
   retry: () => void;
-}
-
-function hydrationErrorMessage(error: unknown): string {
-  return error instanceof Error && error.message.trim() !== ''
-    ? error.message
-    : DEFAULT_HYDRATION_ERROR;
 }
 
 /**
@@ -46,13 +40,9 @@ export function usePRHydration(pr: PR | undefined): PRHydrationState {
     setError(null);
 
     log.debug({ prId }, 'hydrating list-only PR');
-    void wsClient
-      .request('REQUEST_PR_SYNC', { pr_id: prId })
-      .mapErr((cause) =>
-        new Fault(hydrationErrorMessage(cause))
-          .withTag('NETWORK_ERROR')
-          .withCause(cause),
-      )
+    void call(() => PRService.Sync({ pr_id: prId }), {
+      timeoutMs: PR_SYNC_TIMEOUT_MS,
+    })
       .match(
         () => {
           if (!isMountedRef.current || activePrIdRef.current !== prId) return;

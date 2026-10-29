@@ -2,10 +2,11 @@ import { Command } from 'cmdk';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../hooks/useStore';
-import { wsClient } from '../services/ws/connection';
+import { loadRepos, setRepoWatched } from '../services/repos';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { RepoInfo } from '../types';
+import { addToast } from './ToastContainer';
 
 interface RepoPickerProps {
   onClose: () => void;
@@ -25,8 +26,7 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    appStore.setState((s) => ({ ...s, reposLoading: true }));
-    wsClient.send('REQUEST_REPO_LIST', {});
+    void loadRepos();
   }, []);
 
   useEffect(() => {
@@ -51,10 +51,11 @@ export function RepoPicker({ onClose }: RepoPickerProps): React.ReactElement {
   const otherRepos = filteredRepos.filter((repo) => !repo.watched);
 
   const toggleWatch = (repo: RepoInfo): void => {
-    wsClient.send('TOGGLE_WATCH_REPO', {
-      repo_id: repo.id,
-      watched: !repo.watched,
-    });
+    void setRepoWatched(repo.id, !repo.watched).match(
+      () => undefined,
+      (fault) =>
+        addToast({ type: 'error', message: fault.message, dismissible: true }),
+    );
   };
 
   if (reposLoading && repos.length === 0) {

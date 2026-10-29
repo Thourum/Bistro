@@ -12,7 +12,6 @@ import React from 'react';
 import { useAppHotkeys } from '../hooks/useAppHotkeys';
 import { useStore } from '../hooks/useStore';
 import { OverlayProvider, useOverlays } from '../overlays/OverlayContext';
-import { initEngineStatus } from '../services/engine';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import { AddRepoDialogOverlay } from './AddRepoDialogOverlay';
@@ -68,8 +67,6 @@ function RootShellInner(): React.ReactElement {
 }
 
 export function RootShell(): React.ReactElement {
-  // Main-process status; independent of the WS so crash actions work while it is down.
-  React.useEffect(() => initEngineStatus(), []);
   return (
     <OverlayProvider>
       <RootShellInner />

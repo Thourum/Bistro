@@ -1,13 +1,25 @@
 // @vitest-environment jsdom
+import {
+  type RepoListResponse,
+  Repos,
+  ReviewQueue,
+  type WatchResult,
+} from '@bindings/services';
 import { Fault, ResultAsync } from '@thourum/fault';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { ReviewQueue as ReviewQueuePayload } from '../../bindings/github.com/itterno/bistro/internal/provider/models';
 import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { initialUIState } from '../store/ui';
+import { cancellable } from '../test/cancellable';
 import { useOnboardingSync } from './useOnboardingSync';
 
+vi.mock('@bindings/services', () => ({
+  Repos: { List: vi.fn(), SetWatched: vi.fn() },
+  ReviewQueue: { Get: vi.fn() },
+}));
 vi.mock('../services/ws/connection', () => ({
   wsClient: { request: vi.fn(), send: vi.fn() },
 }));
@@ -29,16 +41,17 @@ const queue = {
   recently_reviewed: [],
 };
 
-function deferredResponse() {
-  let resolve: (response: unknown) => void = () => undefined;
+function deferredResponse<T = unknown>() {
+  let resolve: (response: T) => void = () => undefined;
   let reject: (error: unknown) => void = () => undefined;
-  const promise = new Promise<unknown>((onResolve, onReject) => {
+  const promise = new Promise<T>((onResolve, onReject) => {
     resolve = onResolve;
     reject = onReject;
   });
   return {
     resolve,
     reject,
+    binding: cancellable(promise),
     result: ResultAsync.fromPromise(promise, (cause) =>
       new Fault('request failed').withTag('EXTERNAL_ERROR').withCause(cause),
     ),
@@ -76,15 +89,15 @@ async function mountSync() {
 }
 
 it('shows clone cache immediately and keeps scans alive after Continue and unmount', async () => {
-  const list = deferredResponse();
-  const review = deferredResponse();
-  const refreshed = deferredResponse();
+  const list = deferredResponse<RepoListResponse>();
+  const review = deferredResponse<ReviewQueuePayload>();
+  const refreshed = deferredResponse<RepoListResponse>();
   const scan = deferredResponse();
-  vi.mocked(wsClient.request)
-    .mockReturnValueOnce(list.result)
-    .mockReturnValueOnce(review.result)
-    .mockReturnValueOnce(refreshed.result)
-    .mockReturnValueOnce(scan.result);
+  vi.mocked(Repos.List)
+    .mockReturnValueOnce(list.binding)
+    .mockReturnValueOnce(refreshed.binding);
+  vi.mocked(ReviewQueue.Get).mockReturnValueOnce(review.binding);
+  vi.mocked(wsClient.request).mockReturnValueOnce(scan.result);
   const hook = await mountSync();
   expect(
     hook.latest.sync?.state.selection.repos.map(
@@ -125,7 +138,9 @@ it('shows clone cache immediately and keeps scans alive after Continue and unmou
   });
   expect(hook.latest.sync?.state.folder.status).toBe('scanning');
   // One independent dispatch for the default-on choice; never wait on its reply.
-  vi.mocked(wsClient.request).mockReturnValueOnce(deferredResponse().result);
+  vi.mocked(Repos.SetWatched).mockReturnValueOnce(
+    deferredResponse<WatchResult>().binding,
+  );
   await act(async () => {
     hook.latest.sync?.continueFromSync();
   });
@@ -149,13 +164,13 @@ it('shows clone cache immediately and keeps scans alive after Continue and unmou
 });
 
 it('continues from cached clones while queue discovery is pending and seals choices against late defaults', async () => {
-  const list = deferredResponse();
-  const review = deferredResponse();
-  const refreshed = deferredResponse();
-  vi.mocked(wsClient.request)
-    .mockReturnValueOnce(list.result)
-    .mockReturnValueOnce(review.result)
-    .mockReturnValueOnce(refreshed.result);
+  const list = deferredResponse<RepoListResponse>();
+  const review = deferredResponse<ReviewQueuePayload>();
+  const refreshed = deferredResponse<RepoListResponse>();
+  vi.mocked(Repos.List)
+    .mockReturnValueOnce(list.binding)
+    .mockReturnValueOnce(refreshed.binding);
+  vi.mocked(ReviewQueue.Get).mockReturnValueOnce(review.binding);
   const hook = await mountSync();
   await act(async () => {
     list.resolve({ repos: [repo('clone', '/dev/clone')] });
@@ -186,20 +201,17 @@ it('continues from cached clones while queue discovery is pending and seals choi
   expect(hook.latest.sync?.state.selection.selected).toBe(selection);
   expect(hook.latest.sync?.state.selection.repos[0]?.watched).toBe(true);
   expect(hook.latest.sync?.canContinue).toBe(false);
-  expect(vi.mocked(wsClient.request).mock.calls.map(([type]) => type)).toEqual([
-    'REQUEST_REPO_LIST',
-    'REQUEST_REVIEW_QUEUE',
-    'REQUEST_REPO_LIST',
-  ]);
+  expect(wsClient.request).not.toHaveBeenCalled();
   await hook.unmount();
 });
 
 it('blocks only the initial empty repo read, not pending queue enrichment', async () => {
   appStore.setState((state) => ({ ...state, repos: [] }));
-  const list = deferredResponse();
-  vi.mocked(wsClient.request)
-    .mockReturnValueOnce(list.result)
-    .mockReturnValueOnce(deferredResponse().result);
+  const list = deferredResponse<RepoListResponse>();
+  vi.mocked(Repos.List).mockReturnValueOnce(list.binding);
+  vi.mocked(ReviewQueue.Get).mockReturnValueOnce(
+    deferredResponse<ReviewQueuePayload>().binding,
+  );
   const hook = await mountSync();
   expect(hook.latest.sync?.canContinue).toBe(false);
   await act(async () => list.resolve({ repos: [] }));
@@ -211,15 +223,14 @@ it('blocks only the initial empty repo read, not pending queue enrichment', asyn
 });
 
 it('reveals held nonlocal cache and permits an empty failed read once the queue fails', async () => {
-  const list = deferredResponse();
-  const review = deferredResponse();
-  vi.mocked(wsClient.request)
-    .mockReturnValueOnce(list.result)
-    .mockReturnValueOnce(review.result);
+  const list = deferredResponse<RepoListResponse>();
+  const review = deferredResponse<ReviewQueuePayload>();
+  vi.mocked(Repos.List).mockReturnValueOnce(list.binding);
+  vi.mocked(ReviewQueue.Get).mockReturnValueOnce(review.binding);
   const hook = await mountSync();
   await act(async () => {
-    list.reject('offline');
-    review.reject('offline');
+    list.reject(new Error('request failed'));
+    review.reject(new Error('request failed'));
   });
   expect(hook.latest.sync?.state.queueError).toBe('request failed');
   expect(hook.latest.sync?.state.repoError).toBe('request failed');
@@ -233,19 +244,19 @@ it('reveals held nonlocal cache and permits an empty failed read once the queue 
 });
 
 it('only explicit Stop cancels and partial completion refreshes clone metadata', async () => {
-  const list = deferredResponse();
-  const review = deferredResponse();
+  const list = deferredResponse<RepoListResponse>();
+  const review = deferredResponse<ReviewQueuePayload>();
   const scan = deferredResponse();
-  const refreshed = deferredResponse();
-  vi.mocked(wsClient.request)
-    .mockReturnValueOnce(list.result)
-    .mockReturnValueOnce(review.result)
-    .mockReturnValueOnce(scan.result)
-    .mockReturnValueOnce(refreshed.result);
+  const refreshed = deferredResponse<RepoListResponse>();
+  vi.mocked(Repos.List)
+    .mockReturnValueOnce(list.binding)
+    .mockReturnValueOnce(refreshed.binding);
+  vi.mocked(ReviewQueue.Get).mockReturnValueOnce(review.binding);
+  vi.mocked(wsClient.request).mockReturnValueOnce(scan.result);
   const hook = await mountSync();
   await act(async () => {
     list.resolve({ repos: [] });
-    review.reject('offline');
+    review.reject(new Error('request failed'));
   });
   await act(async () => {
     hook.latest.sync?.scanAgain();

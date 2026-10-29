@@ -34,9 +34,12 @@ function queueStatus(state: OnboardingSyncState): string {
   if (state.queueError !== null) return 'Unavailable';
   const queue = state.selection.queue;
   if (queue === null) return '';
-  if (queue.requested.length === 0) return '0 waiting on you';
-  const prs = queue.requested.reduce((sum, request) => sum + request.count, 0);
-  return `${prs} PRs need you // ${queue.requested.length} repos`;
+  if ((queue.requested ?? []).length === 0) return '0 waiting on you';
+  const prs = (queue.requested ?? []).reduce(
+    (sum, request) => sum + request.count,
+    0,
+  );
+  return `${prs} PRs need you // ${(queue.requested ?? []).length} repos`;
 }
 
 /** Messages often end with a period; the sentence around them adds its own. */
@@ -222,7 +225,7 @@ function RepoRows({
   readonly state: OnboardingSyncState;
 }): ReactElement {
   const { selection } = state;
-  const hasRequests = (selection.queue?.requested.length ?? 0) > 0;
+  const hasRequests = (selection.queue?.requested?.length ?? 0) > 0;
   const columns = hasRequests ? 4 : 3;
   const groups = groupOnboardingRepos(selection);
   const totals = new Map(
@@ -236,7 +239,7 @@ function RepoRows({
     state,
     hasRequests,
     counts: new Map(
-      selection.queue?.requested.map((request) => [
+      selection.queue?.requested?.map((request) => [
         request.repo_id,
         request.count,
       ]),
@@ -427,7 +430,9 @@ export function OnboardingRepoTable({
 }): ReactElement {
   const queue = state.selection.queue;
   const isQueueEmpty =
-    !state.queuePending && queue !== null && queue.requested.length === 0;
+    !state.queuePending &&
+    queue !== null &&
+    (queue.requested ?? []).length === 0;
   return (
     <section
       aria-label="Repositories"

@@ -1,8 +1,10 @@
+import { Auth } from '@bindings/services';
+import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { useStore } from '../../hooks/useStore';
 import { PROVIDERS, type ProviderId } from '../../providers';
-import { startSignIn } from '../../services/signIn';
-import { wsClient } from '../../services/ws/connection';
+import { callWrite } from '../../services/engine/call';
+import { handleAuthStatus, startSignIn } from '../../services/signIn';
 import { appStore } from '../../store';
 import type { UIState } from '../../store/ui';
 import { Section } from './SettingsComponents';
@@ -14,7 +16,11 @@ export function ConnectionsSection() {
   const handleConnect = (providerId: ProviderId) => startSignIn(providerId);
 
   const handleDisconnect = (providerId: string) => {
-    wsClient.send('AUTH_DISCONNECT', { provider: providerId });
+    void callWrite(() => Auth.Disconnect({ provider: providerId })).match(
+      handleAuthStatus,
+      (fault) =>
+        addToast({ type: 'error', message: fault.message, dismissible: true }),
+    );
   };
 
   return (

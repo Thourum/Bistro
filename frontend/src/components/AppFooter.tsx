@@ -150,8 +150,6 @@ function deriveStatus(
     case 'ready':
     case 'connected':
       return { label: 'OPERATIONAL', dotClass: 'bg-green-500' };
-    case 'connecting':
-      return { label: 'CONNECTING', dotClass: 'bg-yellow-500 animate-pulse' };
     case 'syncing':
       return { label: 'SYNCING', dotClass: 'bg-yellow-500 animate-pulse' };
     case 'rate_limited':

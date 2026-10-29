@@ -1,3 +1,7 @@
+import {
+  DevFolderScan,
+  ReviewQueue as ReviewQueueService,
+} from '@bindings/services';
 import { Fault, ok, ResultAsync } from '@thourum/fault';
 import { z } from 'zod';
 import { addToast } from '../components/ToastContainer';
@@ -10,20 +14,32 @@ import {
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { OnboardingSyncState, UIState } from '../store/ui';
-import {
-  type RepoInfo,
-  type ReviewQueue,
-  repoListResponseSchema,
-  reviewQueueSchema,
-} from '../types';
-import { dataSchemas } from '../types/wsSchemas';
+import type { RepoInfo, ReviewQueue } from '../types';
 import { parseResponse } from '../utils/error';
+import { createLogger } from '../utils/logger';
 import {
   buildOnboardingWatchChanges,
   type OnboardingSelection,
   sealOnboardingSelection,
 } from '../utils/onboardingRepos';
+import { call } from './engine/call';
+import { loadRepos, setRepoWatched } from './repos';
 import { wsClient } from './ws/connection';
+
+const REVIEW_QUEUE_TIMEOUT_MS = 35_000;
+const log = createLogger('OnboardingSync');
+
+export function runStartupDevFolderScan(): void {
+  const path = settingsStore.state.repositories.devFolderPath;
+  if (!path) return;
+  void call(() => DevFolderScan.Scan({ path, reason: 'startup' }), {
+    timeoutMs: null,
+  }).match(
+    () => undefined,
+    (fault) =>
+      log.warn({ err: fault.message }, 'startup dev-folder scan failed'),
+  );
+}
 
 export type FolderScanState =
   | { readonly status: 'none' }
@@ -44,19 +60,16 @@ export function requestCachedOnboardingRepos(): ResultAsync<
   readonly RepoInfo[],
   Fault
 > {
-  return wsClient
-    .request('REQUEST_REPO_LIST', { cache_only: true })
-    .andThen((response) => parseResponse(repoListResponseSchema, response))
-    .map((response) => response.repos);
+  return loadRepos({ cacheOnly: true });
 }
 
 export function requestOnboardingReviewQueue(): ResultAsync<
   ReviewQueue,
   Fault
 > {
-  return wsClient
-    .request('REQUEST_REVIEW_QUEUE', {})
-    .andThen((response) => parseResponse(reviewQueueSchema, response));
+  return call(() => ReviewQueueService.Get(), {
+    timeoutMs: REVIEW_QUEUE_TIMEOUT_MS,
+  });
 }
 
 export function chooseOnboardingFolder(): ResultAsync<
@@ -107,21 +120,16 @@ export function commitOnboardingSelection(
       (repository) => repository.id === change.repo_id,
     );
     if (repo === undefined) continue;
-    void wsClient
-      .request('TOGGLE_WATCH_REPO', change)
-      .andThen((response) =>
-        parseResponse(dataSchemas.WATCH_REPO_RESULT, response),
-      )
-      .match(
-        () => undefined,
-        () => {
-          addToast({
-            type: 'error',
-            dismissible: true,
-            message: `Couldn't switch ${repo.owner}/${repo.repo} ${change.watched ? 'on' : 'off'}. Change it in Settings → Repos.`,
-          });
-        },
-      );
+    void setRepoWatched(change.repo_id, change.watched).match(
+      () => undefined,
+      () => {
+        addToast({
+          type: 'error',
+          dismissible: true,
+          message: `Couldn't switch ${repo.owner}/${repo.repo} ${change.watched ? 'on' : 'off'}. Change it in Settings → Repos.`,
+        });
+      },
+    );
   }
 }
 

@@ -1,5 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
+vi.mock('@bindings/services', () => ({ Shell: { OpenExternal: vi.fn() } }));
+vi.mock('@wailsio/runtime', () => ({ CancelError: class extends Error {} }));
+
 vi.mock('./logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
@@ -72,7 +75,7 @@ it('blocks editor, browser and quit IPC only for bench_keys=1', async () => {
   expect(launchEditor).not.toHaveBeenCalled();
   expect(open).not.toHaveBeenCalled();
   expect(dispatchEvent.mock.calls.map(([event]) => event.detail.type)).toEqual([
-    'open-external',
+    'engine-call',
     'open-in-editor',
     'app:quit',
   ]);

@@ -1,19 +1,15 @@
-// @vitest-environment jsdom
-
+import { Shell } from '@bindings/services';
 import { afterEach, expect, it, vi } from 'vitest';
+import { cancellable } from '../test/cancellable';
 import { openUrlInBrowser } from './openUrl';
 
-afterEach(() => vi.restoreAllMocks());
+vi.mock('@bindings/services', () => ({ Shell: { OpenExternal: vi.fn() } }));
+afterEach(() => vi.clearAllMocks());
 
-it('treats a noopener browser tab as opened even when window.open returns null', async () => {
-  const open = vi.spyOn(window, 'open').mockReturnValue(null);
-
-  const result = await openUrlInBrowser('https://example.com/pr');
-
-  expect(open).toHaveBeenCalledWith(
-    'https://example.com/pr',
-    '_blank',
-    'noopener,noreferrer',
+it('returns a shell opening failure to the UI boundary', async () => {
+  vi.mocked(Shell.OpenExternal).mockReturnValue(
+    cancellable(Promise.reject(new Error('browser unavailable'))),
   );
-  expect(result.isOk()).toBe(true);
+  const result = await openUrlInBrowser('https://example.com/pr');
+  expect(result._unsafeUnwrapErr().message).toBe('browser unavailable');
 });

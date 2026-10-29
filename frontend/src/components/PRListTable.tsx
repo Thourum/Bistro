@@ -1,11 +1,10 @@
 import { useNavigate } from '@tanstack/react-router';
-import { Fault } from '@thourum/fault';
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useStore } from '../hooks/useStore';
 import { recordFirstRunAction } from '../services/firstRunRail';
-import { wsClient } from '../services/ws/connection';
+import { loadRepos } from '../services/repos';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -377,24 +376,7 @@ export function PRListTable({
   );
 
   useEffect(() => {
-    appStore.setState((state) => ({
-      ...state,
-      reposLoading: true,
-    }));
-    void wsClient
-      .request('REQUEST_REPO_LIST', {})
-      .mapErr((cause) =>
-        new Fault(cause).withTag('CONNECTION_ERROR').withCause(cause),
-      )
-      .match(
-        () => undefined,
-        () => {
-          appStore.setState((state) => ({
-            ...state,
-            reposLoading: false,
-          }));
-        },
-      );
+    void loadRepos();
   }, []);
 
   if (isLoading) {

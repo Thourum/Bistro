@@ -1,3 +1,4 @@
+import { Shell } from '@bindings/services';
 import {
   type AppSettings,
   appSettingsSchema,
@@ -15,7 +16,7 @@ import {
   ResultAsync,
   ServiceError,
 } from '@thourum/fault';
-import { z } from 'zod';
+import { call } from '../services/engine/call';
 
 /**
  * Settings store — mirrors the main-process `settings.json`.
@@ -33,61 +34,9 @@ export const settingsStore: Store<AppSettings> = new Store<AppSettings>(
 );
 
 const LOCAL_FALLBACK_KEY = 'bistro-settings-v1';
-const LEGACY_LOCAL_KEY = 'bistro-settings';
 
 function hasElectron(): boolean {
   return typeof window !== 'undefined' && window.electron !== undefined;
-}
-
-const legacySettingsSchema = z.object({
-  darkMode: z.boolean().optional(),
-  autoSync: z.boolean().optional(),
-  syncInterval: z.number().finite().positive().optional(),
-  notifications: z.boolean().optional(),
-  prListView: z.enum(['flat', 'grouped']).optional(),
-});
-
-function readLocalJson(key: string): Result<unknown | null, Fault> {
-  return fromThrowable(
-    () => localStorage.getItem(key),
-    (cause) =>
-      new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
-  )().andThen((raw) =>
-    raw === null
-      ? ok(null)
-      : fromThrowable(
-          () => JSON.parse(raw) as unknown,
-          (cause) =>
-            new Fault(String(cause)).withTag('PARSE_ERROR').withCause(cause),
-        )(),
-  );
-}
-
-function migrateLegacyLocalStorage(): Result<
-  Partial<AppSettings> | null,
-  Fault
-> {
-  return readLocalJson(LEGACY_LOCAL_KEY).andThen((value) => {
-    if (value === null) return ok(null);
-    const parsed = legacySettingsSchema.safeParse(value);
-    if (!parsed.success)
-      return err(ServiceError('VALIDATION_ERROR', 'Invalid legacy settings'));
-    const legacy = parsed.data;
-    const patch: Partial<AppSettings> = {
-      appearance: {
-        ...DEFAULT_SETTINGS.appearance,
-        theme: legacy.darkMode === true ? 'dark' : 'light',
-      },
-      sync: {
-        autoSync: legacy.autoSync ?? DEFAULT_SETTINGS.sync.autoSync,
-        syncInterval: legacy.syncInterval ?? DEFAULT_SETTINGS.sync.syncInterval,
-        notifications:
-          legacy.notifications ?? DEFAULT_SETTINGS.sync.notifications,
-      },
-      prList: { view: legacy.prListView ?? DEFAULT_SETTINGS.prList.view },
-    };
-    return ok(patch);
-  });
 }
 
 function persistLocal(state: AppSettings): Result<void, Fault> {
@@ -96,22 +45,6 @@ function persistLocal(state: AppSettings): Result<void, Fault> {
     (cause) =>
       new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
   )();
-}
-
-function loadLocal(): Result<AppSettings, Fault> {
-  return readLocalJson(LOCAL_FALLBACK_KEY).andThen((value) => {
-    if (value === null) return ok(DEFAULT_SETTINGS);
-    const saved = z.record(z.string(), z.unknown()).safeParse(value);
-    if (!saved.success)
-      return err(ServiceError('VALIDATION_ERROR', 'Invalid local settings'));
-    const parsed = appSettingsSchema.safeParse({
-      ...DEFAULT_SETTINGS,
-      ...saved.data,
-    });
-    return parsed.success
-      ? ok(parsed.data)
-      : err(ServiceError('VALIDATION_ERROR', 'Invalid local settings'));
-  });
 }
 
 function reportSettingsError(error: Fault | string): void {
@@ -150,79 +83,12 @@ function mergeLocalSettings(
  * Bootstrap the store. Call once from the app entry (before first render).
  */
 export async function initSettings(): Promise<void> {
-  const legacy = migrateLegacyLocalStorage().match(
-    (value) => value,
-    (message) => {
-      reportSettingsError(message);
-      return null;
-    },
-  );
-  if (hasElectron()) {
-    if (legacy !== null) {
-      const migrated = await ResultAsync.fromPromise(
-        window.electron.settings.set(legacy),
-        (cause) =>
-          new Fault(String(cause)).withTag('SETTINGS_ERROR').withCause(cause),
-      ).match(
-        (response) => response,
-        (message) => ({ err: message }),
-      );
-      if ('ok' in migrated) {
-        fromThrowable(
-          () => localStorage.removeItem(LEGACY_LOCAL_KEY),
-          (cause) =>
-            new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
-        )().orInspect(reportSettingsError);
-      } else {
-        reportSettingsError(migrated.err);
-      }
-    }
-    await ResultAsync.fromPromise(window.electron.settings.get(), (cause) =>
-      new Fault(String(cause)).withTag('SETTINGS_ERROR').withCause(cause),
-    ).match((initial) => {
-      if ('ok' in initial) {
-        const validated = appSettingsSchema.safeParse(initial.ok);
-        if (validated.success) settingsStore.setState(() => validated.data);
-        else reportSettingsError('Invalid settings from main process');
-      } else {
-        reportSettingsError(initial.err);
-      }
-    }, reportSettingsError);
-    window.electron.on('settings:changed', (data) => {
-      const validated = appSettingsSchema.safeParse(data);
-      if (validated.success) settingsStore.setState(() => validated.data);
-      else reportSettingsError('Invalid settings update from main process');
-    });
-    return;
-  }
-
-  const current = loadLocal().match(
-    (settings) => settings,
-    (message) => {
-      reportSettingsError(message);
-      return DEFAULT_SETTINGS;
-    },
-  );
-  const next =
-    legacy === null
-      ? current
-      : mergeLocalSettings(current, legacy).match(
-          (settings) => settings,
-          (message) => {
-            reportSettingsError(message);
-            return current;
-          },
-        );
-  settingsStore.setState(() => next);
-  const persisted = persistLocal(next);
-  persisted.orInspect(reportSettingsError);
-  if (legacy !== null && persisted.isOk()) {
-    fromThrowable(
-      () => localStorage.removeItem(LEGACY_LOCAL_KEY),
-      (cause) =>
-        new Fault(String(cause)).withTag('STORAGE_ERROR').withCause(cause),
-    )().orInspect(reportSettingsError);
-  }
+  await call(() => Shell.GetSettings()).match((settings) => {
+    // Settings originate in a user-editable file, so retain file validation.
+    const parsed = appSettingsSchema.safeParse(settings);
+    if (parsed.success) settingsStore.setState(() => parsed.data);
+    else reportSettingsError('Invalid settings from engine');
+  }, reportSettingsError);
 }
 
 /**

@@ -15,11 +15,11 @@ import { useDismissals } from '../hooks/useDismissals';
 import { useExpertise } from '../hooks/useExpertise';
 import { type InterdiffRequest, useInterdiff } from '../hooks/useInterdiff';
 import { usePRHydration } from '../hooks/usePRHydration';
+import { usePRList } from '../hooks/usePRList';
 import { useReviewDrafts } from '../hooks/useReviewDrafts';
 import { useReviewThreads } from '../hooks/useReviewThreads';
 import { useStore } from '../hooks/useStore';
 import { type TriageRequest, useTriage } from '../hooks/useTriage';
-import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { replyComment } from '../services/prActions';
 import { isDraftOutdated } from '../services/reviewDrafts';
 import { appStore } from '../store';
@@ -81,7 +81,7 @@ export function DiffPage() {
   const diffStyle = useStore(settingsStore, (s) => s.diff.style);
 
   // Fetch ALL PRs so deep-linked PRs (any status) are always resolvable.
-  const { data: allPRs = [], isLoading: prLoading } = useWebSocketPRList('all');
+  const { data: allPRs = [], isLoading: prLoading } = usePRList('all');
   const pr = allPRs.find((p) => p.id === prId);
   const { isHydrating, error: hydrationError, retry } = usePRHydration(pr);
   const isAwaitingHydration = pr?.hydrated === 0;

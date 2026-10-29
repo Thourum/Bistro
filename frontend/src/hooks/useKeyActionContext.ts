@@ -1,6 +1,5 @@
-import { SLOW_ENGINE_MS } from '@renderer/types/electron/engine';
 import { useRouterState } from '@tanstack/react-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
@@ -16,9 +15,6 @@ import {
 import { type KeyBinding, routeBaseFromPath } from '../utils/keybindings';
 import { SANDBOX_TASKS } from '../utils/onboardingSandbox';
 import { useStore } from './useStore';
-
-// Re-evaluates the slow-start threshold without a store push.
-const TIMER_TICK_MS = 1_000;
 
 function routePrId(
   matches: readonly { params?: Record<string, unknown> }[] | undefined,
@@ -50,21 +46,10 @@ export function useBindingActivationContext(
   const authTimedOut = useStore(appStore, (s) => s.authTimedOut);
   const authInterrupted = useStore(appStore, (s) => s.authInterrupted);
   const authChecked = useStore(appStore, (s) => s.authChecked);
-  const isConnected = useStore(appStore, (s) => s.isWsOpen);
-  const engineStatus = useStore(appStore, (s) => s.engineStatus);
+  const isConnected = true;
   const routerState = useRouterState();
 
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (authChecked || engineStatus?.state !== 'starting') return;
-    const interval = window.setInterval(
-      () => setNow(Date.now()),
-      TIMER_TICK_MS,
-    );
-    return () => window.clearInterval(interval);
-  }, [authChecked, engineStatus?.state]);
-
-  // Pre-auth and crashed screens render over any URL, so derive the route from state.
+  // Auth still gates routes; the in-process engine is already ready.
   const pathRouteBase = routeBaseFromPath(routerState.location.pathname);
   const authScreen = getAuthScreenState({
     isConnected,
@@ -74,19 +59,9 @@ export function useBindingActivationContext(
     authTimedOut,
     authInterrupted,
   });
-  const isCrashed = engineStatus?.state === 'crashed';
-  const routeBase = isCrashed || !authChecked ? 'connecting' : pathRouteBase;
-  const isSlow =
-    engineStatus?.state === 'starting' &&
-    now - engineStatus.startedAt >= SLOW_ENGINE_MS;
-  const screen: FirstRunScreen = isCrashed
-    ? 'crashed'
-    : !authChecked
-      ? isSlow
-        ? 'slow'
-        : 'connecting'
-      : authScreen;
-  const isSpawned = engineStatus?.isSpawned === true;
+  const routeBase = !authChecked ? 'connecting' : pathRouteBase;
+  const screen: FirstRunScreen = !authChecked ? 'connecting' : authScreen;
+  const isSpawned = false;
   const { activeOverlay } = overlays;
   const onboardingStep = useStore(appStore, (s) => s.onboardingStep);
   const isScanning = useStore(

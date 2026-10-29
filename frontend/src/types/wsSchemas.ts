@@ -7,7 +7,26 @@ import {
   ServiceError,
 } from '@thourum/fault';
 import { z } from 'zod';
-import { repoInfoSchema, reviewQueueSchema } from './index';
+
+// ponytail: legacy WS envelopes retain validation until Task 18 deletes this transport.
+const repoInfoSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  owner: z.string(),
+  repo: z.string(),
+  watched: z.boolean(),
+  source: z.enum(['local', 'cache']).nullable().optional(),
+  local_path: z.string().nullable().optional(),
+  location_status: z.string().nullable().optional(),
+  location_error_code: z.string().nullable().optional(),
+  location_error: z.string().nullable().optional(),
+});
+const reviewQueueSchema = z.object({
+  requested: z.array(
+    z.object({ repo_id: z.string(), count: z.number().int().nonnegative() }),
+  ),
+  recently_reviewed: z.array(z.string()),
+});
 
 const messageEnvelopeSchema = z.object({
   id: z.string().optional(),

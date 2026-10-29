@@ -1,40 +1,7 @@
 import { z } from 'zod';
 
-/**
- * PR domain model — matches Go `prs` table schema exactly.
- */
-export interface PR {
-  id: string;
-  provider: string;
-  owner: string;
-  repo: string;
-  number: number;
-  title: string;
-  body: string | null;
-  author: string;
-  state: 'open' | 'closed' | 'merged';
-  created_at: string;
-  updated_at: string;
-  merged_at: string | null;
-  base_branch: string;
-  head_branch: string;
-  base_sha: string;
-  head_sha: string;
-  comment_count: number;
-  ci_status: string | null;
-  draft: number; // 0 or 1 from SQLite
-  review_status: string | null; // 'pending' | 'approved' | 'changes_requested'
-  approved_by: string | null;
-  changes_requested_by: string | null;
-  requested_reviewers: string[]; // logins whose review is currently requested
-  touches_you: boolean;
-  // Inbox signals (Phase 5, Task 4) — payload keys match Go JSON verbatim.
-  mentioned: boolean;
-  viewer_commented: boolean;
-  unread: boolean;
-  reviewed_head_stale: boolean;
-  hydrated: number; // 0 or 1 from SQLite; 0 = list-only row, details fetched on demand
-}
+export type { PRRow as PR, RepoRow as RepoInfo } from '@bindings/services';
+export type { ReviewQueue } from '../../bindings/github.com/itterno/bistro/internal/provider/models';
 
 export interface ExpertiseExpert {
   author_email: string;
@@ -445,43 +412,4 @@ export interface Toast {
   type: 'info' | 'success' | 'error' | 'warning';
   message: string;
   dismissible: boolean;
-}
-
-/**
- * Repository discovered from provider, optionally watched for PR sync.
- */
-export const repoInfoSchema = z.object({
-  id: z.string(),
-  provider: z.string(),
-  owner: z.string(),
-  repo: z.string(),
-  watched: z.boolean(),
-  source: z.enum(['local', 'cache']).nullable().optional(),
-  local_path: z.string().nullable().optional(),
-  location_status: z.string().nullable().optional(),
-  location_error_code: z.string().nullable().optional(),
-  location_error: z.string().nullable().optional(),
-});
-export const repoListResponseSchema = z.object({
-  repos: z.array(repoInfoSchema),
-});
-export const reviewQueueSchema = z.object({
-  requested: z.array(
-    z.object({ repo_id: z.string(), count: z.number().int().nonnegative() }),
-  ),
-  recently_reviewed: z.array(z.string()),
-});
-export type ReviewQueue = z.infer<typeof reviewQueueSchema>;
-
-export interface RepoInfo {
-  id: string;
-  provider: string;
-  owner: string;
-  repo: string;
-  watched: boolean;
-  source?: 'local' | 'cache' | null | undefined;
-  local_path?: string | null | undefined;
-  location_status?: string | null | undefined;
-  location_error_code?: string | null | undefined;
-  location_error?: string | null | undefined;
 }

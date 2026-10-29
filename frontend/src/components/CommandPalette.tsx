@@ -1,3 +1,4 @@
+import { Sync } from '@bindings/services';
 import { useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
@@ -7,7 +8,9 @@ import { useKeyActionContext } from '../hooks/useKeyActionContext';
 import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useOverlays } from '../overlays/OverlayContext';
+import { callWrite } from '../services/engine/call';
 import { showFirstRunRail } from '../services/firstRunRail';
+import { loadRepos } from '../services/repos';
 import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
@@ -117,12 +120,12 @@ export function CommandPalette(): React.ReactElement | null {
   useEffect(() => {
     if (query.toLowerCase().startsWith('repo') && !prefetchedRef.current) {
       prefetchedRef.current = true;
-      appStore.setState((s) => ({ ...s, reposLoading: true }));
-      const requestId = wsClient.send('REQUEST_REPO_LIST', {});
-      if (requestId === undefined) {
-        appStore.setState((s) => ({ ...s, reposLoading: false }));
-        prefetchedRef.current = false;
-      }
+      void loadRepos().match(
+        () => undefined,
+        () => {
+          prefetchedRef.current = false;
+        },
+      );
     }
   }, [query]);
 
@@ -279,11 +282,22 @@ export function CommandPalette(): React.ReactElement | null {
         sendExpertiseCommand('EXPERTISE_DISABLE');
         return;
       case 'sync':
-        wsClient.send('FORCE_SYNC', {});
-        appStore.setState((s) => ({
-          ...s,
-          syncStatus: 'syncing',
-        }));
+        void callWrite(() => Sync.Force({ repo_id: '' })).match(
+          (response) => {
+            if (response.queued)
+              appStore.setState((state) => ({
+                ...state,
+                syncStatus: 'syncing',
+              }));
+            else log.warn('manual sync not queued — sync already in progress');
+          },
+          (fault) =>
+            addToast({
+              type: 'error',
+              message: fault.message,
+              dismissible: true,
+            }),
+        );
         closeOverlay();
         setQuery('');
         return;

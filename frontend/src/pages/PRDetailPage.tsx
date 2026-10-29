@@ -12,9 +12,9 @@ import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useExpertise } from '../hooks/useExpertise';
 import { usePatchsets } from '../hooks/usePatchsets';
 import { usePRHydration } from '../hooks/usePRHydration';
+import { usePRList } from '../hooks/usePRList';
 import { useReviewDrafts } from '../hooks/useReviewDrafts';
 import { useStore } from '../hooks/useStore';
-import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { useOverlays } from '../overlays/OverlayContext';
 import {
   clearActionResult,
@@ -67,10 +67,10 @@ export function PRDetailPage() {
 
   // Fetch ALL PRs via current filter and find by id.
   // We use 'all' to ensure deep-linked PRs (any status) are always resolvable.
-  const { data: allPRs = [], isLoading, error } = useWebSocketPRList('all');
-  const { data: openPRs = [] } = useWebSocketPRList('open');
+  const { data: allPRs = [], isLoading, error } = usePRList('all');
+  const { data: openPRs = [] } = usePRList('open');
   // Also try the current filter as a fallback source — whichever has the PR.
-  const { data: filteredPRs = [] } = useWebSocketPRList(filterState);
+  const { data: filteredPRs = [] } = usePRList(filterState);
 
   const pr =
     allPRs.find((p) => p.id === prId) ?? filteredPRs.find((p) => p.id === prId);

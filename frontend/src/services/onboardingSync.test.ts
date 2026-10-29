@@ -1,8 +1,10 @@
+import { Repos, ReviewQueue } from '@bindings/services';
 import { errAsync, Fault, okAsync } from '@thourum/fault';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import { initialUIState } from '../store/ui';
+import { cancellable } from '../test/cancellable';
 import {
   createOnboardingSelection,
   mergeOnboardingQueue,
@@ -15,8 +17,13 @@ import {
   requestCachedOnboardingRepos,
   requestOnboardingReviewQueue,
 } from './onboardingSync';
+import { loadRepos } from './repos';
 import { wsClient } from './ws/connection';
 
+vi.mock('@bindings/services', () => ({
+  Repos: { List: vi.fn(), SetWatched: vi.fn() },
+  ReviewQueue: { Get: vi.fn() },
+}));
 vi.mock('./ws/connection', () => ({
   wsClient: { request: vi.fn(), send: vi.fn() },
 }));
@@ -53,19 +60,19 @@ const selected = () =>
   );
 
 it('sends explicit differences and does not send unchanged watch flags', () => {
-  vi.mocked(wsClient.request).mockReturnValue(
-    okAsync({ repo_id: 'github:acme/api', watched: true }),
+  vi.mocked(Repos.SetWatched).mockReturnValue(
+    cancellable(Promise.resolve({ repo_id: 'github:acme/api', watched: true })),
   );
   commitOnboardingSelection(selected());
-  expect(wsClient.request).toHaveBeenCalledExactlyOnceWith(
-    'TOGGLE_WATCH_REPO',
-    { repo_id: 'github:acme/api', watched: true },
-  );
+  expect(Repos.SetWatched).toHaveBeenCalledExactlyOnceWith({
+    repo_id: 'github:acme/api',
+    watched: true,
+  });
 });
 
 it('seals the selection and advances without waiting for watch replies', () => {
-  vi.mocked(wsClient.request).mockReturnValue(
-    okAsync({ repo_id: 'github:acme/api', watched: true }),
+  vi.mocked(Repos.SetWatched).mockReturnValue(
+    cancellable(Promise.resolve({ repo_id: 'github:acme/api', watched: true })),
   );
   appStore.setState((state) => ({
     ...state,
@@ -86,8 +93,8 @@ it('seals the selection and advances without waiting for watch replies', () => {
 });
 
 it('shows the prescribed repo-specific failure at one toast boundary', async () => {
-  vi.mocked(wsClient.request).mockReturnValue(
-    errAsync(new Fault('offline').withTag('CONNECTION_ERROR')),
+  vi.mocked(Repos.SetWatched).mockReturnValue(
+    cancellable(Promise.reject(new Error('offline'))),
   );
   commitOnboardingSelection(selected());
   await vi.waitFor(() =>
@@ -97,23 +104,33 @@ it('shows the prescribed repo-specific failure at one toast boundary', async () 
   );
 });
 
-it('requests only cached repositories and rejects invalid queue counts', async () => {
-  vi.mocked(wsClient.request).mockReturnValueOnce(
-    okAsync({ repos: selected().repos }),
+it('loads cached repos into the store and reads the generated review queue', async () => {
+  vi.mocked(Repos.List).mockReturnValue(
+    cancellable(Promise.resolve({ repos: [...selected().repos] })),
   );
   expect((await requestCachedOnboardingRepos())._unsafeUnwrap()).toEqual(
     selected().repos,
   );
-  expect(wsClient.request).toHaveBeenCalledWith('REQUEST_REPO_LIST', {
-    cache_only: true,
-  });
-  vi.mocked(wsClient.request).mockReturnValueOnce(
-    okAsync({
-      requested: [{ repo_id: 'repo', count: -1 }],
-      recently_reviewed: [],
-    }),
+  expect(appStore.state.repos).toEqual(selected().repos);
+  expect(appStore.state.reposLoading).toBe(false);
+  expect(Repos.List).toHaveBeenCalledWith({ cache_only: true });
+  vi.mocked(ReviewQueue.Get).mockReturnValue(
+    cancellable(Promise.resolve({ requested: null, recently_reviewed: null })),
   );
-  expect((await requestOnboardingReviewQueue()).isErr()).toBe(true);
+  expect((await requestOnboardingReviewQueue())._unsafeUnwrap()).toEqual({
+    requested: null,
+    recently_reviewed: null,
+  });
+});
+
+it('clears repo loading on failure without discarding cached rows', async () => {
+  appStore.setState((state) => ({ ...state, repos: [...selected().repos] }));
+  vi.mocked(Repos.List).mockReturnValue(
+    cancellable(Promise.reject(new Error('offline'))),
+  );
+  expect((await loadRepos()).isErr()).toBe(true);
+  expect(appStore.state.reposLoading).toBe(false);
+  expect(appStore.state.repos).toEqual(selected().repos);
 });
 
 it('keeps cancellation silent and gates scanning on canonical-path settings persistence', async () => {

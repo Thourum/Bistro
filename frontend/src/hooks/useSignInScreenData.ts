@@ -43,7 +43,7 @@ export function useSignInScreenData(): SignInScreenData {
   const appVersion = useStore(appStore, (state) => state.appVersion);
   const lastSyncAt = useStore(appStore, (state) => state.lastSyncAt);
   const syncError = useStore(appStore, (state) => state.syncError);
-  const isConnected = useStore(appStore, (state) => state.isWsOpen);
+  const isConnected = true;
   const [now, setNow] = useState(Date.now);
   const screen = getAuthScreenState({
     isConnected,

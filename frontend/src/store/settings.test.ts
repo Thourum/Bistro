@@ -1,33 +1,30 @@
 // @vitest-environment jsdom
-
+import { Shell } from '@bindings/services';
 import { DEFAULT_SETTINGS } from '@renderer/types/electron/settings';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
+import { cancellable } from '../test/cancellable';
 import { initSettings, settingsStore } from './settings';
 
-const LOCAL_SETTINGS_KEY = 'bistro-settings-v1';
-
+vi.mock('@bindings/services', () => ({ Shell: { GetSettings: vi.fn() } }));
 afterEach(() => {
-  localStorage.clear();
   settingsStore.setState(() => DEFAULT_SETTINGS);
+  vi.clearAllMocks();
 });
 
-it('preserves pre-navigation browser preferences and backfills the vim style', async () => {
-  const savedSettings = Object.fromEntries(
-    Object.entries({
-      ...DEFAULT_SETTINGS,
-      appearance: { ...DEFAULT_SETTINGS.appearance, theme: 'dark' },
-      sync: { ...DEFAULT_SETTINGS.sync, autoSync: false },
-      prList: { view: 'grouped' },
-      keybindings: { 'list.down': ['ArrowDown'] },
-    }).filter(([section]) => section !== 'navigation'),
+it('loads persisted engine settings before navigation', async () => {
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    appearance: { ...DEFAULT_SETTINGS.appearance, theme: 'dark' as const },
+    sync: { ...DEFAULT_SETTINGS.sync, autoSync: false },
+  };
+  vi.mocked(Shell.GetSettings).mockReturnValue(
+    cancellable(
+      Promise.resolve({
+        ...settings,
+        window: { x: 0, y: 0, width: 0, height: 0, maximised: false },
+      }),
+    ),
   );
-  localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(savedSettings));
-
   await initSettings();
-
-  const expected = { ...savedSettings, navigation: { style: 'vim' } };
-  expect(settingsStore.state).toEqual(expected);
-  expect(
-    JSON.parse(localStorage.getItem(LOCAL_SETTINGS_KEY) ?? 'null'),
-  ).toEqual(expected);
+  expect(settingsStore.state).toEqual(settings);
 });

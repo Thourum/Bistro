@@ -42,10 +42,10 @@ export function groupOnboardingRepos(
   state: OnboardingSelection,
 ): readonly OnboardingRepoGroup[] {
   const counts = new Map(
-    state.queue?.requested.map((request) => [request.repo_id, request.count]),
+    state.queue?.requested?.map((request) => [request.repo_id, request.count]),
   );
   const recentOrder = new Map(
-    state.queue?.recently_reviewed.map((id, index) => [id, index]),
+    state.queue?.recently_reviewed?.map((id, index) => [id, index]),
   );
   const requested = state.repos
     .filter((repo) => counts.has(repo.id))
@@ -98,7 +98,7 @@ export function mergeOnboardingRepos(
     byId.set(repo.id, { ...byId.get(repo.id), ...repo });
   const merged = [...byId.values()];
   const requestedIds = new Set(
-    state.queue?.requested.map((request) => request.repo_id),
+    state.queue?.requested?.map((request) => request.repo_id),
   );
   const selected = state.sealed
     ? state.selected
@@ -119,7 +119,7 @@ export function mergeOnboardingQueue(
   queue: ReviewQueue,
 ): OnboardingSelection {
   const requestedIds = new Set(
-    queue.requested.map((request) => request.repo_id),
+    (queue.requested ?? []).map((request) => request.repo_id),
   );
   const selected = state.sealed
     ? state.selected

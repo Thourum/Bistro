@@ -367,7 +367,7 @@ describe('scoped onboarding actions', () => {
 });
 
 describe('shared action context', () => {
-  it.each(['unchecked', 'crashed', 'ready'] as const)(
+  it.each(['unchecked', 'ready'] as const)(
     'uses the effective %s screen for palette context and hotkey activation',
     (screen) => {
       captured.pathname = '/prs/1/diff';
@@ -379,17 +379,7 @@ describe('shared action context', () => {
       appStore.setState((state) => ({
         ...state,
         authChecked: screen !== 'unchecked',
-        engineStatus:
-          screen === 'crashed'
-            ? {
-                state: 'crashed',
-                startedAt: 0,
-                isSpawned: true,
-                code: 1,
-                signal: null,
-                error: 'Engine exited',
-              }
-            : null,
+        engineStatus: null,
       }));
       const { activation, makeCtx } = useKeyActionContext(undefined);
       const routeBase = screen === 'ready' ? 'diff' : 'connecting';

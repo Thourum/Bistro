@@ -4,10 +4,10 @@ import { appStore } from '../../store';
 import { openUrlInBrowser } from '../../utils/openUrl';
 
 export function handleAuthRedirect(data: Readonly<AuthRedirect>): void {
+  if (!appStore.state.authLoading) return;
   appStore.setState((state) => ({
     ...state,
     authUrl: data.url,
-    authStartRequestId: null,
     authLoading: true,
     authStartedAt: Date.now(),
     authTimedOut: false,

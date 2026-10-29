@@ -26,8 +26,6 @@ const STEP_SEGMENTS = [1, 2] as const;
 const SYNC_STATUS: Readonly<Record<UIState['syncStatus'], FooterStatus>> = {
   syncing: { label: 'SYNCING', tone: 'active' },
   ready: { label: 'SYNCED', tone: 'success' },
-  connecting: { label: 'CONNECTING', tone: 'neutral' },
-  disconnected: { label: 'CONNECTING', tone: 'neutral' },
   connected: { label: 'WAITING TO SYNC', tone: 'neutral' },
   error: { label: 'SYNC ERROR', tone: 'error' },
   rate_limited: { label: 'RATE LIMITED', tone: 'error' },
@@ -46,8 +44,6 @@ const LABEL_CLASS: Readonly<Record<StatusTone, string>> = {
   success: 'text-on-surface',
   error: 'text-error',
 };
-
-const OFFLINE: FooterStatus = { label: 'OFFLINE', tone: 'neutral' };
 
 interface OnboardingFooterProps {
   readonly step: OnboardingStep;
@@ -69,10 +65,9 @@ function useNeedYouCount(): number | null {
 }
 
 function OnboardingSyncStatus(): ReactElement {
-  const isWsOpen = useStore(appStore, (s) => s.isWsOpen);
   const syncStatus = useStore(appStore, (s) => s.syncStatus);
   const needYou = useNeedYouCount();
-  const status = isWsOpen ? SYNC_STATUS[syncStatus] : OFFLINE;
+  const status = SYNC_STATUS[syncStatus];
   return (
     <p
       aria-live="polite"

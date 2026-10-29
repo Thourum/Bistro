@@ -4,8 +4,8 @@ import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import type { PR } from '../types';
 import { LANES, laneForPR } from '../utils/lanes';
+import { usePRList } from './usePRList';
 import { useStore } from './useStore';
-import { useWebSocketPRList } from './useWebSocketPRList';
 
 // A fresh `[]` default per render would change `prs` identity every render,
 // which re-fires the page's layout effect and loops the store update forever.
@@ -104,7 +104,7 @@ export function useVisiblePRs(
       ? (overrides.repoFilter ?? null)
       : storeRepoFilter;
 
-  const { data, isLoading, error } = useWebSocketPRList(filter);
+  const { data, isLoading, error } = usePRList(filter);
   const rawPRs = data ?? EMPTY_PRS;
 
   const prs = useMemo(() => {
@@ -138,7 +138,7 @@ export function useVisiblePRs(
  * shrinks it; ordered like the table so the top PR is the lane's first row.
  */
 export function useNeedsActionPRs(): readonly PR[] {
-  const { data: openPRs = [] } = useWebSocketPRList('open');
+  const { data: openPRs = [] } = usePRList('open');
   const sortBy = useStore(appStore, (s) => s.sortBy);
   const viewerLogin = useStore(appStore, (s) => s.viewerLogin);
   const view = useStore(settingsStore, (s) => s.prList.view);

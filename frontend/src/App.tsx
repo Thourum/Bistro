@@ -2,8 +2,8 @@
 // The old auth-branching gate is replaced by:
 //
 //   Bootstrap — non-visual component that:
-//     • runs useSettingsEffect() + useWebSocketConnection() BESIDE RouterProvider so the
-//       WS is NEVER unmounted by navigation
+//     • runs useSettingsEffect() + useEngine() BESIDE RouterProvider so the
+//       engine subscription is NEVER unmounted by navigation
 //     • subscribes to authChecked / isAuthenticated / onboardingComplete and
 //       calls router.invalidate() so route guards re-evaluate on auth changes
 //
@@ -24,9 +24,9 @@ import React from 'react';
 import { InitialisingScreen } from './components/ConnectingScreen';
 import { FooterSlotProvider } from './components/FooterSlot';
 import { addToast } from './components/ToastContainer';
+import { useEngine } from './hooks/useEngine';
 import { useSettingsEffect } from './hooks/useSettingsEffect';
 import { useStore } from './hooks/useStore';
-import { useWebSocketConnection } from './hooks/useWebSocketConnection';
 import { router } from './router';
 import { appStore } from './store';
 import { initSettings, settingsStore } from './store/settings';
@@ -42,12 +42,12 @@ const queryClient = new QueryClient();
 
 /**
  * Runs side-effects and keeps the router in sync with auth state.
- * Lives BESIDE RouterProvider (not inside) so the WebSocket singleton is
+ * Lives BESIDE RouterProvider (not inside) so the engine subscription is
  * never torn down by navigation — it outlives any route component.
  */
 function Bootstrap(): null {
   useSettingsEffect();
-  useWebSocketConnection();
+  useEngine();
 
   const authChecked = useStore(appStore, (s) => s.authChecked);
   const isAuthenticated = useStore(appStore, (s) => s.isAuthenticated);

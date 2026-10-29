@@ -3,9 +3,9 @@ import { FooterCenterSlot } from '../components/FooterSlot';
 import { PRListTable, visiblePRListRows } from '../components/PRListTable';
 import { useBenchListRendered } from '../hooks/useBenchListRendered';
 import { useInboxReadActions } from '../hooks/useInboxReadActions';
+import { usePRList } from '../hooks/usePRList';
 import { useStore } from '../hooks/useStore';
 import { useNeedsActionPRs, useVisiblePRs } from '../hooks/useVisiblePRs';
-import { useWebSocketPRList } from '../hooks/useWebSocketPRList';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -106,7 +106,7 @@ export function PRListPage({
   }, [collapsedRepoKeys, prs, view, viewerLogin]);
 
   // Counters always reflect the full open lane, independent of the filter.
-  const { data: openPRs = [] } = useWebSocketPRList('open');
+  const { data: openPRs = [] } = usePRList('open');
   const triage = countTriageLanes(openPRs, username);
   const touchesYou = touchesYouCount(openPRs);
 

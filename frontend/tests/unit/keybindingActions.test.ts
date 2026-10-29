@@ -26,6 +26,13 @@ vi.mock('../../src/services/ws/connection', () => ({
   wsClient: { send: vi.fn(), request },
 }));
 
+vi.mock('../../src/utils/openUrl', () => ({
+  openUrlInBrowser: (url: string) => {
+    window.electron.openExternal(url);
+    return okAsync(undefined);
+  },
+}));
+
 // ---------------------------------------------------------------------------
 // Action behavior (direct invocation)
 // ---------------------------------------------------------------------------

@@ -45,8 +45,7 @@ function renderApp(): void {
 }
 
 const benchSearch = new URLSearchParams(location.search);
-const isKeysRequested =
-  window.electron?.isKeysBench === true || benchSearch.has('bench_keys');
+const isKeysRequested = benchSearch.has('bench_keys');
 
 function stopBenchStartup(): void {
   document.body.textContent =

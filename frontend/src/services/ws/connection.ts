@@ -202,7 +202,6 @@ function createWsClient(): Readonly<WsClient> {
     appStore.setState((previous) => ({
       ...previous,
       syncStatus: 'connected',
-      isWsOpen: true,
       syncError: null,
       lastSyncAt: new Date().toISOString(),
       isOffline: false,
@@ -231,15 +230,13 @@ function createWsClient(): Readonly<WsClient> {
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
     appStore.setState((previous) => ({
       ...previous,
-      syncStatus: 'disconnected',
-      isWsOpen: false,
+      syncStatus: 'connected',
       isOffline: !isOnline,
       authInterrupted:
         previous.authInterrupted ||
         previous.authLoading ||
         previous.authUrl !== null,
       authLoading: false,
-      authStartRequestId: null,
       authUrl: null,
       authStartedAt: null,
       authTimedOut: false,
@@ -275,7 +272,7 @@ function createWsClient(): Readonly<WsClient> {
     log.info('attempting connection');
     appStore.setState((previous) => ({
       ...previous,
-      syncStatus: 'connecting',
+      syncStatus: 'connected',
     }));
     const socket = fromThrowable(
       () => new WebSocket(url),
@@ -310,7 +307,6 @@ function createWsClient(): Readonly<WsClient> {
 
   function disconnect(): void {
     state.isActive = false;
-    appStore.setState((previous) => ({ ...previous, isWsOpen: false }));
     if (state.reconnectTimer !== null) clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
     const socket = state.socket;

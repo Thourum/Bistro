@@ -79,15 +79,8 @@ export interface UIState {
   confirmingAction: ConfirmingAction | null;
   pendingAction: PendingAction | null;
   actionResult: ActionResult | null;
-  // WebSocket sync state
-  syncStatus:
-    | 'disconnected'
-    | 'connecting'
-    | 'connected'
-    | 'ready'
-    | 'syncing'
-    | 'error'
-    | 'rate_limited';
+  // In-process engine sync state
+  syncStatus: 'connected' | 'ready' | 'syncing' | 'error' | 'rate_limited';
   syncError: string | null;
   lastSyncAt: string | null;
   prListRevision: number;
@@ -102,14 +95,11 @@ export interface UIState {
   isOffline: boolean;
   // OAuth auth state
   authLoading: boolean;
-  authStartRequestId: string | null;
   authError: string | null;
   authUrl: string | null;
   authStartedAt: number | null;
   authTimedOut: boolean;
   authInterrupted: boolean;
-  /** Transport state; syncStatus 'error' can also mean an open socket. */
-  isWsOpen: boolean;
   authExchange: 'proxy' | 'local' | null;
   engineStatus: EngineStatus | null;
   appVersion: string | null;
@@ -237,7 +227,7 @@ export const initialUIState: UIState = {
   actionResult: null,
   isAuthenticated: false,
   showFileTree: false,
-  syncStatus: 'disconnected',
+  syncStatus: 'connected',
   syncError: null,
   lastSyncAt: null,
   prListRevision: 0,
@@ -246,13 +236,11 @@ export const initialUIState: UIState = {
   toasts: [],
   isOffline: false,
   authLoading: false,
-  authStartRequestId: null,
   authError: null,
   authUrl: null,
   authStartedAt: null,
   authTimedOut: false,
   authInterrupted: false,
-  isWsOpen: false,
   authExchange: null,
   engineStatus: null,
   appVersion: null,
