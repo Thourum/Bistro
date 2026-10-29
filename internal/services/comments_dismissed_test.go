@@ -1,4 +1,4 @@
-package handler
+package services
 
 import "testing"
 
@@ -16,12 +16,12 @@ func TestCommentsServeDismissedPerAccount(t *testing.T) {
 		t.Fatalf("seed dismissals: %v", err)
 	}
 
-	comments := requestComments(t, NewRequestCommentsHandler(db, testRepoLogger()), "pr-1")
+	comments := requestComments(t, (&Comments{DB: db, Log: testRepoLogger()}), "pr-1")
 
 	if len(comments) != 2 {
 		t.Fatalf("got %d comments, want 2", len(comments))
 	}
-	byID := map[string]commentRow{}
+	byID := map[string]CommentRow{}
 	for _, c := range comments {
 		byID[c.ID] = c
 	}

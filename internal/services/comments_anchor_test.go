@@ -1,4 +1,4 @@
-package handler
+package services
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/itterno/bistro/internal/store/storetest"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 // mustExecDB is a test helper for handler tests that use a *sql.DB.
@@ -38,29 +37,13 @@ func TestRequestComments_ReturnsNewColumns(t *testing.T) {
 		t.Fatalf("insert comment: %v", err)
 	}
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	payload := []byte(`{"pr_id":"p1"}`)
-	resp, err := h(context.Background(), ws.InboundMessage{
-		ID:   "req-new",
-		Type: "REQUEST_COMMENTS",
-		Data: payload,
-	})
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, err := h.List(context.Background(), PRRef{PRID: "p1"})
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
-	env, ok := resp.(map[string]interface{})
-	if !ok {
-		t.Fatalf("response is not a map")
-	}
-	data, ok := env["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("data is not a map")
-	}
-	comments, ok := data["comments"].([]commentRow)
-	if !ok {
-		t.Fatalf("comments is %T, want []commentRow", data["comments"])
-	}
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("got %d rows want 1", len(comments))
 	}
@@ -104,17 +87,12 @@ func TestRequestComments_AnchoredTrueWhenHeadSHAMatches(t *testing.T) {
 		t.Fatalf("insert comment: %v", err)
 	}
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, err := h(context.Background(), ws.InboundMessage{
-		ID:   "req-anc",
-		Type: "REQUEST_COMMENTS",
-		Data: []byte(`{"pr_id":"pa1"}`),
-	})
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, err := h.List(context.Background(), PRRef{PRID: "pa1"})
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("expected 1 comment, got %d", len(comments))
 	}
@@ -149,12 +127,9 @@ func TestRequestComments_AnchoredFalseWhenHeadSHAStale(t *testing.T) {
 		t.Fatalf("insert comment: %v", err)
 	}
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, _ := h(context.Background(), ws.InboundMessage{
-		ID: "req-stale", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pa2"}`),
-	})
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, _ := h.List(context.Background(), PRRef{PRID: "pa2"})
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("expected 1 comment, got %d", len(comments))
 	}
@@ -178,12 +153,9 @@ func TestRequestComments_AnchoredFalseWhenNullAnchor(t *testing.T) {
 		t.Fatalf("insert comment: %v", err)
 	}
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, _ := h(context.Background(), ws.InboundMessage{
-		ID: "req-null", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pa3"}`),
-	})
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, _ := h.List(context.Background(), PRRef{PRID: "pa3"})
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("expected 1 comment, got %d", len(comments))
 	}
@@ -215,12 +187,9 @@ func TestRequestComments_OutdatedComment(t *testing.T) {
 		t.Fatalf("insert comment: %v", err)
 	}
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, _ := h(context.Background(), ws.InboundMessage{
-		ID: "req-out", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pa4"}`),
-	})
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, _ := h.List(context.Background(), PRRef{PRID: "pa4"})
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("expected 1, got %d", len(comments))
 	}

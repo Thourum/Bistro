@@ -6,8 +6,10 @@ import (
 	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/services"
+	"github.com/itterno/bistro/internal/store/dismissal"
 	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/store/repolocation"
+	"github.com/itterno/bistro/internal/store/reviewdraft"
 )
 
 // Services returns the service set prepared by Run (Start from Task 9).
@@ -17,6 +19,10 @@ func (a *App) Services() *services.Set { return a.serviceSet }
 func (a *App) buildServices(ctx context.Context) *services.Set {
 	diffStore := prdiff.New(a.db.DB)
 	return &services.Set{
+		Comments:    &services.Comments{DB: a.db.DB, Provider: a.classifier, Kick: a.llmKick, Panics: a.panics, Log: a.log},
+		Dismiss:     &services.Dismiss{DB: a.db.DB, Dismissals: dismissal.New(a.db.DB), CurrentUser: a.currentUserStore, GetApplier: a.currentApplier, Scope: a.classificationState.DismissalScope, Panics: a.panics, Log: a.log},
+		Threads:     &services.Threads{DB: a.db, GetApplier: a.currentApplier, Panics: a.panics, Log: a.log},
+		Drafts:      &services.Drafts{Drafts: reviewdraft.New(a.db.DB), CurrentUser: a.currentUserStore, Events: a.emitter, Panics: a.panics, Log: a.log},
 		Diff:        &services.Diff{DiffStore: diffStore, ViewedStore: a.db, CurrentUser: a.currentUserStore, Panics: a.panics, Log: a.log},
 		Patchsets:   &services.Patchsets{Store: a.db, Panics: a.panics, Log: a.log},
 		Triage:      &services.Triage{Store: a.db, CurrentUser: a.currentUserStore, Panics: a.panics, Log: a.log},

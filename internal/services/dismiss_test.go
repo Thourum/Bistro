@@ -1,15 +1,13 @@
-package handler
+package services
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"github.com/itterno/bistro/internal/store/dismissal"
+	"errors"
 	"testing"
 
 	"github.com/itterno/bistro/internal/actions"
-
-	"github.com/itterno/bistro/internal/ws"
+	"github.com/itterno/bistro/internal/store/dismissal"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -68,8 +66,8 @@ func setupDismissTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func dismissDeps(db *sql.DB, applier ActionApplier, scope string) DismissDeps {
-	return DismissDeps{
+func dismissDeps(db *sql.DB, applier ActionApplier, scope string) Dismiss {
+	return Dismiss{
 		DB:         db,
 		Dismissals: dismissal.New(db),
 		GetApplier: func() ActionApplier { return applier },
@@ -78,19 +76,13 @@ func dismissDeps(db *sql.DB, applier ActionApplier, scope string) DismissDeps {
 	}
 }
 
-func callDismiss(t *testing.T, deps DismissDeps, prID string, ids []string) map[string]interface{} {
+func callDismiss(t *testing.T, deps Dismiss, prID string, ids []string) DismissResult {
 	t.Helper()
-	payload, _ := json.Marshal(map[string]interface{}{"pr_id": prID, "comment_ids": ids})
-	resp, err := NewDismissCommentsHandler(deps)(context.Background(),
-		ws.InboundMessage{ID: "r1", Type: "DISMISS_COMMENTS", Data: payload})
+	result, err := deps.Dismiss(context.Background(), DismissRequest{PRID: prID, CommentIDs: ids})
 	if err != nil {
-		t.Fatalf("dismiss handler: %v", err)
+		t.Fatal(err)
 	}
-	env := resp.(map[string]interface{})
-	if env["type"] != "DISMISS_RESULT" {
-		t.Fatalf("response type = %v, want DISMISS_RESULT", env["type"])
-	}
-	return env["data"].(map[string]interface{})
+	return result
 }
 
 func dismissalRows(t *testing.T, db *sql.DB) map[string]string {
@@ -126,10 +118,10 @@ func TestDismissLocalOnly(t *testing.T) {
 	if len(applier.applied) != 0 {
 		t.Errorf("local scope must enqueue nothing, got %d actions", len(applier.applied))
 	}
-	if ids := data["resolved_thread_ids"].([]string); len(ids) != 0 {
+	if ids := data.ResolvedThreadIDs; len(ids) != 0 {
 		t.Errorf("resolved_thread_ids = %v, want empty", ids)
 	}
-	if data["batch_id"] == "" {
+	if data.BatchID == "" {
 		t.Errorf("batch_id missing")
 	}
 }
@@ -146,7 +138,7 @@ func TestDismissWithProviderWriteback(t *testing.T) {
 
 	data := callDismiss(t, deps, "pr-1", []string{"c1", "c2", "c3"})
 
-	ids := data["resolved_thread_ids"].([]string)
+	ids := data.ResolvedThreadIDs
 	if len(ids) != 1 || ids[0] != "t-open" {
 		t.Errorf("resolved_thread_ids = %v, want [t-open]", ids)
 	}
@@ -172,7 +164,7 @@ func TestDismissIssueCommentsStayLocal(t *testing.T) {
 	if got := dismissalRows(t, db); !reflectHas(got, "c1") {
 		t.Errorf("comment not dismissed locally: %v", got)
 	}
-	if ids := data["resolved_thread_ids"].([]string); len(ids) != 0 {
+	if ids := data.ResolvedThreadIDs; len(ids) != 0 {
 		t.Errorf("resolved_thread_ids = %v, want empty", ids)
 	}
 }
@@ -186,12 +178,7 @@ func TestUndismiss(t *testing.T) {
 	mustExecDB(t, db, `INSERT INTO comment_dismissals (comment_id, account_provider, account_login) VALUES ('c1','github','samdev'), ('c2','github','samdev')`)
 
 	// Undo lists ONLY t1 — t2 must not be unresolved even though c2 is undismissed.
-	payload, _ := json.Marshal(map[string]interface{}{
-		"comment_ids":          []string{"c1", "c2"},
-		"unresolve_thread_ids": []string{"t1"},
-	})
-	resp, err := NewUndismissCommentsHandler(deps)(context.Background(),
-		ws.InboundMessage{ID: "r2", Type: "UNDISMISS_COMMENTS", Data: payload})
+	resp, err := deps.Undismiss(context.Background(), UndismissRequest{CommentIDs: []string{"c1", "c2"}, UnresolveThreadIDs: []string{"t1"}})
 	if err != nil {
 		t.Fatalf("undismiss handler: %v", err)
 	}
@@ -202,9 +189,8 @@ func TestUndismiss(t *testing.T) {
 	if len(applier.applied) != 1 || applier.applied[0].Action != actions.UnresolveThreadCommand || applier.applied[0].ThreadID != "t1" {
 		t.Errorf("applied = %+v, want exactly one UnresolveThread for t1", applier.applied)
 	}
-	env := resp.(map[string]interface{})
-	if env["type"] != "UNDISMISS_RESULT" {
-		t.Errorf("response type = %v", env["type"])
+	if len(resp.UndismissedIDs) != 2 {
+		t.Fatalf("result = %+v", resp)
 	}
 }
 
@@ -224,4 +210,26 @@ func TestDismissResolvesCurrentAccount(t *testing.T) {
 func reflectHas(m map[string]string, k string) bool {
 	_, ok := m[k]
 	return ok
+}
+
+func TestDismissIdentityErrors(t *testing.T) {
+	db := setupDismissTestDB(t)
+	service := dismissDeps(db, nil, "local")
+	mustExecDB(t, db, "DELETE FROM current_user")
+	_, err := service.Dismiss(context.Background(), DismissRequest{PRID: "pr-1", CommentIDs: []string{"c1"}})
+	var se *ServiceError
+	if !errors.As(err, &se) || se.Code != CodeUnauthenticated {
+		t.Fatalf("missing account = %v", err)
+	}
+	mustExecDB(t, db, "DROP TABLE current_user")
+	_, err = service.Dismiss(context.Background(), DismissRequest{PRID: "pr-1", CommentIDs: []string{"c1"}})
+	if !errors.As(err, &se) || se.Code != CodeInternal {
+		t.Fatalf("storage failure = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = service.Undismiss(ctx, UndismissRequest{CommentIDs: []string{"c1"}})
+	if !errors.As(err, &se) || se.Code != CodeCancelled {
+		t.Fatalf("cancelled = %v", err)
+	}
 }

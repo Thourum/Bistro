@@ -1,15 +1,13 @@
-package handler
+package services
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/itterno/bistro/internal/classify"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 const refreshTestRule = `name: CodeRabbit
@@ -31,18 +29,13 @@ func refreshRulesDir(t *testing.T, content string) string {
 	return dir
 }
 
-func requestComments(t *testing.T, h ws.MessageHandler, prID string) []commentRow {
+func requestComments(t *testing.T, s *Comments, prID string) []CommentRow {
 	t.Helper()
-	payload, _ := json.Marshal(map[string]string{"pr_id": prID})
-	resp, err := h(context.Background(), ws.InboundMessage{ID: "r1", Type: "REQUEST_COMMENTS", Data: payload})
+	resp, err := s.List(context.Background(), PRRef{PRID: prID})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	_, data := commentsResponse(t, resp)
-	comments, ok := data["comments"].([]commentRow)
-	if !ok {
-		t.Fatalf("comments is %T, want []commentRow", data["comments"])
-	}
+	comments := resp.Comments
 	return comments
 }
 
@@ -80,7 +73,7 @@ func TestCommentsReadyIncludesClassification(t *testing.T) {
 		t.Fatalf("seed classification: %v", err)
 	}
 
-	comments := requestComments(t, NewRequestCommentsHandler(db, testRepoLogger()), "pr-1")
+	comments := requestComments(t, (&Comments{DB: db, Log: testRepoLogger()}), "pr-1")
 
 	if len(comments) != 1 {
 		t.Fatalf("got %d comments, want 1", len(comments))
@@ -103,7 +96,7 @@ func TestRefreshIfStaleReclassifies(t *testing.T) {
 		t.Fatalf("seed state: %v", err)
 	}
 	provider := classify.NewEngineProvider(refreshRulesDir(t, refreshTestRule), func() string { return "rules" }, nil)
-	h := NewRequestCommentsHandlerWithClassifier(db, testRepoLogger(), provider)
+	h := (&Comments{DB: db, Log: testRepoLogger(), Provider: provider})
 
 	comments := requestComments(t, h, "pr-1")
 
@@ -135,7 +128,7 @@ func TestRefreshIfStaleNoopWhenCurrent(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO comment_classification_state (comment_id, fingerprint) VALUES ('c1', ?)`, provider.Current().Fingerprint()); err != nil {
 		t.Fatalf("seed state: %v", err)
 	}
-	h := NewRequestCommentsHandlerWithClassifier(db, testRepoLogger(), provider)
+	h := (&Comments{DB: db, Log: testRepoLogger(), Provider: provider})
 
 	requestComments(t, h, "pr-1")
 
@@ -150,7 +143,7 @@ func TestRefreshPicksUpRuleEditWithoutRestart(t *testing.T) {
 	defer db.Close()
 	dir := refreshRulesDir(t, refreshTestRule)
 	provider := classify.NewEngineProvider(dir, func() string { return "rules" }, nil)
-	h := NewRequestCommentsHandlerWithClassifier(db, testRepoLogger(), provider)
+	h := (&Comments{DB: db, Log: testRepoLogger(), Provider: provider})
 	insertTestComment(t, db, "c1", "pr-1", "coderabbitai[bot]", "nit: rename", nil, nil)
 
 	// First serve classifies under the original rule.
@@ -182,9 +175,9 @@ func TestRequestCommentsKicksLLMTier(t *testing.T) {
 	defer db.Close()
 	insertTestComment(t, db, "c1", "pr-1", "alice", "hi", nil, nil)
 	var kicked []string
-	h := NewRequestCommentsHandlerWithLLMKick(db, testRepoLogger(), nil, func(prID string) {
+	h := (&Comments{DB: db, Log: testRepoLogger(), Kick: func(prID string) {
 		kicked = append(kicked, prID)
-	})
+	}})
 
 	requestComments(t, h, "pr-1")
 
@@ -198,7 +191,7 @@ func TestRequestCommentsNilKickIsFine(t *testing.T) {
 	defer db.Close()
 	insertTestComment(t, db, "c1", "pr-1", "alice", "hi", nil, nil)
 
-	comments := requestComments(t, NewRequestCommentsHandler(db, testRepoLogger()), "pr-1")
+	comments := requestComments(t, (&Comments{DB: db, Log: testRepoLogger()}), "pr-1")
 
 	if len(comments) != 1 {
 		t.Errorf("got %d comments, want 1", len(comments))

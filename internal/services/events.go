@@ -18,8 +18,16 @@ type PRsReadChanged struct {
 	PRIDs []string `json:"pr_ids"`
 }
 
+const EventDraftsChanged = "drafts:changed"
+
+// DraftsChanged identifies the PR whose local drafts changed.
+type DraftsChanged struct {
+	PRID string `json:"pr_id"`
+}
+
 // Direct registrations allow Wails' binding generator to discover payload types.
 func init() {
+	application.RegisterEvent[DraftsChanged](EventDraftsChanged)
 	application.RegisterEvent[AuthRedirect](EventAuthRedirect)
 	application.RegisterEvent[PRsReadChanged](EventPRsReadChanged)
 }

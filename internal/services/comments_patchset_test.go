@@ -1,11 +1,10 @@
-package handler
+package services
 
 import (
 	"context"
 	"testing"
 
 	"github.com/itterno/bistro/internal/store/storetest"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 func TestRequestCommentsCurrentPatchsetIgnoresBaseTip(t *testing.T) {
@@ -24,14 +23,12 @@ func TestRequestCommentsCurrentPatchsetIgnoresBaseTip(t *testing.T) {
 		VALUES ('comment-head-only','pr-head-only','bob','good','2026-01-01','2026-01-01',
 		        'review', 2, 11, 'h1', 0, 2, 2)`)
 
-	handler := NewRequestCommentsHandler(db, testRepoLogger())
-	response, err := handler(context.Background(), ws.InboundMessage{
-		ID: "req-head-only", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pr-head-only"}`),
-	})
+	handler := (&Comments{DB: db, Log: testRepoLogger()})
+	response, err := handler.List(context.Background(), PRRef{PRID: "pr-head-only"})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	comments := response.(map[string]interface{})["data"].(map[string]interface{})["comments"].([]commentRow)
+	comments := response.Comments
 	if len(comments) != 1 {
 		t.Fatalf("comments = %+v, want one row (no duplicate patchset joins)", comments)
 	}

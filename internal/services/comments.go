@@ -1,22 +1,14 @@
-package handler
+package services
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 
 	"github.com/itterno/bistro/internal/classify"
-	"github.com/itterno/bistro/internal/logging"
-	"github.com/itterno/bistro/internal/ws"
 )
 
-type commentsRequest struct {
-	PRID string `json:"pr_id"`
-}
-
-// commentRow is the per-comment shape returned in COMMENTS_READY.
+// CommentRow is the per-comment shape returned in COMMENTS_READY.
 // Anchor fields (migrations 015, 018, 019) are populated for kind='review' comments.
 //
 // Freshness rules (both must hold for any anchor-derived fields to be returned):
@@ -27,7 +19,7 @@ type commentsRequest struct {
 //  3. anchor_patchset_number == comments.patchset_number  (correct geometry was used)
 //
 // NULL anchor_current_patchset_number is always stale (pre-migration 019 data).
-type commentRow struct {
+type CommentRow struct {
 	ID        string  `json:"id"`
 	PRID      string  `json:"pr_id"`
 	Author    string  `json:"author"`
@@ -82,11 +74,16 @@ type commentsStore interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 }
 
-// NewRequestCommentsHandler returns the handler for REQUEST_COMMENTS messages
-// without a classification engine (no refresh pass; classification columns
-// are served as stored).
-func NewRequestCommentsHandler(db commentsStore, log *slog.Logger) ws.MessageHandler {
-	return NewRequestCommentsHandlerWithClassifier(db, log, nil)
+type Comments struct {
+	DB       commentsStore
+	Provider *classify.EngineProvider
+	Kick     func(prID string)
+	Panics   PanicReporter
+	Log      *slog.Logger
+}
+type CommentsResponse struct {
+	PRID     string       `json:"pr_id"`
+	Comments []CommentRow `json:"comments"`
 }
 
 // refreshIfStale re-runs the deterministic classification tier for comments
@@ -151,15 +148,7 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
-// NewRequestCommentsHandlerWithClassifier returns the REQUEST_COMMENTS
-// handler with lazy re-classification: comments whose stored fingerprint
-// differs from the provider's current engine are re-classified before
-// serving. Nil provider = no refresh.
-func NewRequestCommentsHandlerWithClassifier(db commentsStore, log *slog.Logger, provider *classify.EngineProvider) ws.MessageHandler {
-	return NewRequestCommentsHandlerWithLLMKick(db, log, provider, nil)
-}
-
-func withFreshAnchor(comment commentRow, currentHeadSHA *string, currentPatchsetNumber *int) commentRow {
+func withFreshAnchor(comment CommentRow, currentHeadSHA *string, currentPatchsetNumber *int) CommentRow {
 	// Anchor validity ties the head and current (base, head) patchset together:
 	// a retarget with the same head still invalidates old anchor geometry.
 	fresh := comment.AnchorHeadSHA != nil && currentHeadSHA != nil &&
@@ -184,50 +173,21 @@ func withFreshAnchor(comment commentRow, currentHeadSHA *string, currentPatchset
 	return comment
 }
 
-func commentsErrorResponse(requestID, prID string) map[string]interface{} {
-	return map[string]interface{}{
-		"id":   requestID,
-		"type": "COMMENTS_READY",
-		"data": map[string]interface{}{
-			"pr_id":    prID,
-			"comments": []commentRow{},
-			"error":    "unable to load comments",
-		},
-	}
-}
-
-// NewRequestCommentsHandlerWithLLMKick additionally kicks the async BYOK LLM
-// tier for the opened PR (identical code path as post-sync; the cache makes
-// repeats cheap). kick is invoked after the deterministic refresh, before
-// serving — the tier itself no-ops in non-LLM modes. Nil kick = no tier.
-func NewRequestCommentsHandlerWithLLMKick(db commentsStore, log *slog.Logger, provider *classify.EngineProvider, kick func(prID string)) ws.MessageHandler {
-	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		logger := logging.FromContext(ctx)
-		if log != nil {
-			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+// List serves comments with fresh anchors and classification, then kicks asynchronous refinement.
+func (s *Comments) List(ctx context.Context, req PRRef) (CommentsResponse, error) {
+	return guard(s.Panics, "Comments.List", func() (CommentsResponse, error) {
+		prID := NormalizeID(req.PRID)
+		if prID == "" {
+			return CommentsResponse{}, Errorf(CodeInvalid, "pr_id is required")
 		}
-
-		var req commentsRequest
-		if err := json.Unmarshal(msg.Data, &req); err != nil {
-			return nil, fmt.Errorf("invalid REQUEST_COMMENTS payload: %w", err)
+		if err := ctx.Err(); err != nil {
+			return CommentsResponse{}, err
 		}
-		if req.PRID == "" {
-			return nil, fmt.Errorf("REQUEST_COMMENTS requires pr_id")
+		logger := serviceLogger(s.Log)
+		if s.Provider != nil {
+			refreshIfStale(s.DB, s.Provider, prID, logger)
 		}
-
-		logger.Debug("comments requested", "pr_id", req.PRID)
-
-		// Lazy re-classification: rule edits / mode changes apply here,
-		// on PR open, before the SELECT below serves the rows.
-		if provider != nil {
-			refreshIfStale(db, provider, req.PRID, logger)
-		}
-		// Async LLM refinement for this PR (no-op outside LLM modes).
-		if kick != nil {
-			kick(req.PRID)
-		}
-
-		rows, err := db.Query(
+		rows, err := s.DB.Query(
 			`SELECT c.id, c.pr_id, c.author, c.body, c.created_at, c.updated_at,
 			        c.line_number, c.file_path,
 			        c.kind, c.commit_sha, c.original_sha, c.side, c.position,
@@ -252,17 +212,16 @@ func NewRequestCommentsHandlerWithLLMKick(db commentsStore, log *slog.Logger, pr
 			       AND (d.account_provider, d.account_login) IN (SELECT provider, login FROM current_user)
 			 WHERE c.pr_id = ?
 			 ORDER BY c.created_at ASC`,
-			req.PRID,
+			prID,
 		)
 		if err != nil {
-			logger.Error("REQUEST_COMMENTS query failed", "pr_id", req.PRID, "err", err)
-			return commentsErrorResponse(msg.ID, req.PRID), nil
+			return CommentsResponse{}, err
 		}
 		defer rows.Close()
 
-		comments := []commentRow{}
+		comments := []CommentRow{}
 		for rows.Next() {
-			var c commentRow
+			var c CommentRow
 			var currentHeadSHA *string
 			var currentPatchsetNumber *int
 			if err := rows.Scan(
@@ -282,23 +241,19 @@ func NewRequestCommentsHandlerWithLLMKick(db commentsStore, log *slog.Logger, pr
 				&currentHeadSHA,
 				&currentPatchsetNumber,
 			); err != nil {
-				logger.Error("REQUEST_COMMENTS scan failed", "pr_id", req.PRID, "err", err)
-				continue
+				return CommentsResponse{}, err
 			}
 
 			c = withFreshAnchor(c, currentHeadSHA, currentPatchsetNumber)
 			comments = append(comments, c)
 		}
 
-		logger.Debug("comments ready", "pr_id", req.PRID, "count", len(comments))
-
-		return map[string]interface{}{
-			"id":   msg.ID,
-			"type": "COMMENTS_READY",
-			"data": map[string]interface{}{
-				"pr_id":    req.PRID,
-				"comments": comments,
-			},
-		}, nil
-	}
+		if err := rows.Err(); err != nil {
+			return CommentsResponse{}, err
+		}
+		if s.Kick != nil {
+			s.Kick(prID)
+		}
+		return CommentsResponse{PRID: prID, Comments: comments}, nil
+	})
 }

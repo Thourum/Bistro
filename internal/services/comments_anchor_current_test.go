@@ -1,11 +1,10 @@
-package handler
+package services
 
 import (
 	"context"
 	"testing"
 
 	"github.com/itterno/bistro/internal/store/storetest"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 // TestRequestComments_NullAnchorPatchsetNumber_Stale covers legacy anchors missing
@@ -33,15 +32,12 @@ func TestRequestComments_NullAnchorPatchsetNumber_Stale(t *testing.T) {
 				VALUES ('c-null','pr-null','alice','old','2026-01-01','2026-01-01',
 				 'review', ?, 5, 'sha-HEAD', 0)`, tt.patchsetNumber)
 
-			h := NewRequestCommentsHandler(db, testRepoLogger())
-			resp, err := h(context.Background(), ws.InboundMessage{
-				ID: "req-null2", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pr-null"}`),
-			})
+			h := (&Comments{DB: db, Log: testRepoLogger()})
+			resp, err := h.List(context.Background(), PRRef{PRID: "pr-null"})
 			if err != nil {
 				t.Fatalf("REQUEST_COMMENTS: %v", err)
 			}
-			data := resp.(map[string]interface{})["data"].(map[string]interface{})
-			comments := data["comments"].([]commentRow)
+			comments := resp.Comments
 			if len(comments) != 1 {
 				t.Fatalf("expected 1, got %d", len(comments))
 			}
@@ -73,12 +69,9 @@ func TestRequestComments_CurrentPositionAnchor_Fresh(t *testing.T) {
 		('c-cp','pr-cp','bob','good','2026-01-01','2026-01-01',
 		 'review', 3, 11, 'sha-P3', 0, 3, 3)`)
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, _ := h(context.Background(), ws.InboundMessage{
-		ID: "req-cp", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pr-cp"}`),
-	})
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, _ := h.List(context.Background(), PRRef{PRID: "pr-cp"})
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("expected 1, got %d", len(comments))
 	}
@@ -116,12 +109,9 @@ func TestRequestComments_SameHeadRetarget_CurrentPosition_Stale(t *testing.T) {
 		('c-rt2','pr-rt2','carol','msg','2026-01-01','2026-01-01',
 		 'review', 2, 5, 'sha-SAME', 0, 1)`)
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, _ := h(context.Background(), ws.InboundMessage{
-		ID: "req-rt2", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pr-rt2"}`),
-	})
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, _ := h.List(context.Background(), PRRef{PRID: "pr-rt2"})
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("expected 1, got %d", len(comments))
 	}
@@ -155,12 +145,9 @@ func TestRequestComments_NullCurrentPatchsetNumber_Stale(t *testing.T) {
 		('c-ncp','pr-ncp','bob','x','2026-01-01','2026-01-01',
 		 'review', 1, 3, 'sha-H', 0, 1)`)
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, _ := h(context.Background(), ws.InboundMessage{
-		ID: "req-ncp", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pr-ncp"}`),
-	})
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, _ := h.List(context.Background(), PRRef{PRID: "pr-ncp"})
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("expected 1, got %d", len(comments))
 	}

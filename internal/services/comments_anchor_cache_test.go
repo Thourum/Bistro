@@ -1,11 +1,10 @@
-package handler
+package services
 
 import (
 	"context"
 	"testing"
 
 	"github.com/itterno/bistro/internal/store/storetest"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 // ── Stale cache suppression (blocker 2 fix) ───────────────────────────────
@@ -33,12 +32,9 @@ func TestRequestComments_StaleCacheSuppressesAllAnchorFields(t *testing.T) {
 		t.Fatalf("insert stale comment: %v", err)
 	}
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, _ := h(context.Background(), ws.InboundMessage{
-		ID: "req-stale2", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"ps1"}`),
-	})
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, _ := h.List(context.Background(), PRRef{PRID: "ps1"})
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("expected 1 comment, got %d", len(comments))
 	}
@@ -85,12 +81,9 @@ func TestRequestComments_FreshCacheShowsAnchorFields(t *testing.T) {
 		t.Fatalf("insert fresh comment: %v", err)
 	}
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, _ := h(context.Background(), ws.InboundMessage{
-		ID: "req-fresh", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pf1"}`),
-	})
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, _ := h.List(context.Background(), PRRef{PRID: "pf1"})
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("expected 1 comment, got %d", len(comments))
 	}
@@ -126,12 +119,9 @@ func TestRequestComments_StaleOutdatedTrue_NotLeaked(t *testing.T) {
 		t.Fatalf("insert stale outdated comment: %v", err)
 	}
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, _ := h(context.Background(), ws.InboundMessage{
-		ID: "req-leak", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pl1"}`),
-	})
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, _ := h.List(context.Background(), PRRef{PRID: "pl1"})
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("expected 1, got %d", len(comments))
 	}
@@ -174,15 +164,12 @@ func TestRequestComments_RetargetStaleAnchor_Suppressed(t *testing.T) {
 		('c-ret','pr-ret','alice','nit','2026-01-01','2026-01-01',
 		 'review', 7, 'sha-HEAD', 0, 1)`)
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, err := h(context.Background(), ws.InboundMessage{
-		ID: "req-ret", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pr-ret"}`),
-	})
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, err := h.List(context.Background(), PRRef{PRID: "pr-ret"})
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("expected 1 comment, got %d", len(comments))
 	}
@@ -221,12 +208,9 @@ func TestRequestComments_FreshAnchorAfterRetarget_Passes(t *testing.T) {
 		('c-fresh','pr-fresh','alice','nit','2026-01-01','2026-01-01',
 		 'review', 9, 'sha-HEAD', 0, 2, 2)`)
 
-	h := NewRequestCommentsHandler(db, testRepoLogger())
-	resp, _ := h(context.Background(), ws.InboundMessage{
-		ID: "req-fresh2", Type: "REQUEST_COMMENTS", Data: []byte(`{"pr_id":"pr-fresh"}`),
-	})
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	comments := data["comments"].([]commentRow)
+	h := (&Comments{DB: db, Log: testRepoLogger()})
+	resp, _ := h.List(context.Background(), PRRef{PRID: "pr-fresh"})
+	comments := resp.Comments
 	if len(comments) != 1 {
 		t.Fatalf("expected 1, got %d", len(comments))
 	}

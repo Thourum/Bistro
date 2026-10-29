@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 
-	"github.com/itterno/bistro/internal/engine/handler"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/prsync"
 	"github.com/itterno/bistro/internal/services"
@@ -118,11 +117,11 @@ func (a *App) currentProviderSnapshot() (provider.Provider, context.Context) {
 
 // currentApplier returns the live orchestrator as an ActionApplier under a
 // read lock, or nil when no provider is authenticated. Satisfies
-// handler.ApplierGetter so SUBMIT_ACTION always routes to the current
+// services.ApplierGetter so SUBMIT_ACTION always routes to the current
 // orchestrator even after an auth/provider replacement.
 // Both prov and orchestrator must be non-nil; either being nil (e.g. after
 // AUTH_DISCONNECT) causes a nil return so the handler rejects cleanly.
-func (a *App) currentApplier() handler.ActionApplier {
+func (a *App) currentApplier() services.ActionApplier {
 	a.provMu.RLock()
 	defer a.provMu.RUnlock()
 	if a.prov == nil || a.orchestrator == nil {
