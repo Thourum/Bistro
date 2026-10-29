@@ -19,6 +19,10 @@ includes:
   linux: ./build/linux/Taskfile.yml
 
 tasks:
+  setup:docker:
+    cmds:
+      - docker build -t wails-cross -f build/docker/Dockerfile.cross build/docker/
+
   generate:
     cmds:
       - wails3 generate bindings -clean=true -ts -i -d frontend/bindings

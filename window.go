@@ -33,14 +33,16 @@ func newMainWindow(app *application.App, settings *shell.SettingsStore, log *slo
 	var stopped bool
 	var generation uint64
 	save := func(expectedGeneration uint64) {
+		// Native reads dispatch to the main thread, where shutdown takes mu.
+		rect := window.Bounds()
+		maximised := window.IsMaximised()
 		mu.Lock()
 		defer mu.Unlock()
 		if stopped || generation != expectedGeneration {
 			return
 		}
-		rect := window.Bounds()
 		if err := settings.SetWindow(shell.WindowBounds{
-			X: rect.X, Y: rect.Y, Width: rect.Width, Height: rect.Height, Maximised: window.IsMaximised(),
+			X: rect.X, Y: rect.Y, Width: rect.Width, Height: rect.Height, Maximised: maximised,
 		}); err != nil {
 			log.Warn("save window bounds", "err", err)
 		}
