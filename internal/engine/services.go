@@ -3,8 +3,11 @@ package engine
 import (
 	"context"
 
+	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/services"
+	"github.com/itterno/bistro/internal/store/prdiff"
+	"github.com/itterno/bistro/internal/store/repolocation"
 )
 
 // Services returns the service set prepared by Run (Start from Task 9).
@@ -12,7 +15,14 @@ import (
 func (a *App) Services() *services.Set { return a.serviceSet }
 
 func (a *App) buildServices(ctx context.Context) *services.Set {
+	diffStore := prdiff.New(a.db.DB)
 	return &services.Set{
+		Diff:        &services.Diff{DiffStore: diffStore, ViewedStore: a.db, CurrentUser: a.currentUserStore, Panics: a.panics, Log: a.log},
+		Patchsets:   &services.Patchsets{Store: a.db, Panics: a.panics, Log: a.log},
+		Triage:      &services.Triage{Store: a.db, CurrentUser: a.currentUserStore, Panics: a.panics, Log: a.log},
+		Interdiff:   &services.Interdiff{Patchsets: a.db, Interdiff: func(req diff.InterdiffRequest) (diff.InterdiffResult, error) { return diff.Interdiff(a.repoLocks, req) }, RepoForPR: prRepoLocator{db: a.db, locations: repolocation.New(a.db.DB)}.RepoForPR, Panics: a.panics, Log: a.log},
+		Viewed:      &services.Viewed{Viewed: a.db, CurrentUser: a.currentUserStore, DiffStore: diffStore, Baseline: a.db, Panics: a.panics, Log: a.log},
+		ReadState:   &services.ReadState{DB: a.db, CurrentUser: a.currentUserStore, Events: a.emitter, Panics: a.panics, Log: a.log},
 		PR:          &services.PR{DB: a.db.DB, CurrentUser: a.currentUserStore, TouchesYou: a.expertiseEngine, GetSyncer: a.currentPRSyncer, Panics: a.panics, Log: a.log},
 		Sync:        &services.Sync{Trigger: a.syncTrigger, Panics: a.panics, Log: a.log},
 		Repos:       &services.Repos{DB: a.db.DB, GetProvider: a.getProvider, SyncTrigger: services.WatchSyncTrigger{Queue: a.syncTrigger, Pending: &a.pendingWatchSync}, Panics: a.panics, Log: a.log},

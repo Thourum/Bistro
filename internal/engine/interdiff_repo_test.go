@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -23,7 +25,9 @@ func TestInterdiffRepoForPR(t *testing.T) {
 			t.Fatalf("RepoForPR = (%q, %q, %v, %v), want (%q, %q, %v, nil)", url, path, ok, err, wantURL, wantPath, wantOK)
 		}
 	}
-	assertLocation("", "", false)
+	if _, _, ok, err := locator.RepoForPR(ctx, prID); ok || !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("missing PR: ok=%v err=%v, want sql.ErrNoRows", ok, err)
+	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO prs
 		(id, provider, owner, repo, number, title, author, state, created_at, updated_at, base_branch, head_branch, base_sha, head_sha)
 		VALUES (?, 'github', 'Acme', 'API', 1, 'test', 'alice', 'open', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'main', 'feature', 'base', 'head')`, prID); err != nil {

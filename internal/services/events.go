@@ -11,7 +11,15 @@ type AuthRedirect struct {
 	URL      string `json:"url"`
 }
 
+const EventPRsReadChanged = "prs:read-changed"
+
+// PRsReadChanged identifies PRs whose local read state changed.
+type PRsReadChanged struct {
+	PRIDs []string `json:"pr_ids"`
+}
+
 // Direct registrations allow Wails' binding generator to discover payload types.
 func init() {
 	application.RegisterEvent[AuthRedirect](EventAuthRedirect)
+	application.RegisterEvent[PRsReadChanged](EventPRsReadChanged)
 }

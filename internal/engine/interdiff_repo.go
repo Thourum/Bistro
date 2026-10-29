@@ -23,7 +23,7 @@ func (l prRepoLocator) RepoForPR(ctx context.Context, prID string) (string, stri
 	var owner, repo string
 	err := l.db.QueryRowContext(ctx, `SELECT owner, repo FROM prs WHERE id = ?`, prID).Scan(&owner, &repo)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", false, nil
+		return "", "", false, sql.ErrNoRows
 	}
 	if err != nil {
 		return "", "", false, fmt.Errorf("look up repo of PR %s: %w", prID, err)

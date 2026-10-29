@@ -1,13 +1,12 @@
-package handler
+package services
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/itterno/bistro/internal/store/prdiff"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 type stubDiffReader struct {
@@ -26,46 +25,19 @@ func (s *stubDiffReader) Get(prID string) ([]prdiff.File, error) {
 	return s.files[prID], nil
 }
 
-func makeMsg(t *testing.T, id, prID string) ws.InboundMessage {
-	t.Helper()
-	data, _ := json.Marshal(map[string]string{"pr_id": prID})
-	return ws.InboundMessage{ID: id, Type: "REQUEST_DIFF", Data: data}
-}
-
 func TestRequestDiffHandler_Found(t *testing.T) {
 	stub := &stubDiffReader{diffs: map[string]string{
 		"pr-1": "diff --git a/main.go b/main.go\n+new line\n",
 	}}
-	handler := NewRequestDiffHandler(stub, nil)
+	handler := (&Diff{DiffStore: stub}).Get
 
-	resp, err := handler(context.Background(), makeMsg(t, "req-1", "pr-1"))
+	resp, err := handler(context.Background(), PRRef{PRID: "pr-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	m, ok := resp.(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected map response, got %T", resp)
-	}
-	if m["type"] != "DIFF_READY" {
-		t.Errorf("expected type DIFF_READY, got %v", m["type"])
-	}
-	if m["id"] != "req-1" {
-		t.Errorf("expected id req-1, got %v", m["id"])
-	}
-
-	data, ok := m["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected data map, got %T", m["data"])
-	}
-	if data["pr_id"] != "pr-1" {
-		t.Errorf("expected pr_id pr-1, got %v", data["pr_id"])
-	}
-	if data["diff"] == "" {
-		t.Error("expected non-empty diff")
-	}
-	if _, hasErr := data["error"]; hasErr {
-		t.Errorf("expected no error field on success, got %v", data["error"])
+	if resp.PRID != "pr-1" || resp.Diff == "" {
+		t.Fatalf("diff = %+v", resp)
 	}
 }
 
@@ -79,30 +51,25 @@ func TestRequestDiffHandler_IncludesFileStats(t *testing.T) {
 			},
 		},
 	}
-	handler := NewRequestDiffHandler(stub, nil)
+	handler := (&Diff{DiffStore: stub}).Get
 
-	resp, err := handler(context.Background(), makeMsg(t, "req-files", "pr-1"))
+	resp, err := handler(context.Background(), PRRef{PRID: "pr-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
 
-	// Files are now []diffFileDetail (not []diffFileStat).
-	files, ok := data["files"].([]diffFileDetail)
-	if !ok {
-		t.Fatalf("files is %T, want []diffFileDetail", data["files"])
-	}
+	files := resp.Files
 	if len(files) != 2 {
 		t.Fatalf("got %d files, want 2", len(files))
 	}
 	if files[0].Path != "a.go" || files[0].Additions != 10 || files[0].Deletions != 2 {
 		t.Errorf("unexpected first file: %+v", files[0])
 	}
-	if data["additions"] != 15 {
-		t.Errorf("additions = %v, want 15", data["additions"])
+	if resp.Additions != 15 {
+		t.Errorf("additions = %v, want 15", resp.Additions)
 	}
-	if data["deletions"] != 3 {
-		t.Errorf("deletions = %v, want 3", data["deletions"])
+	if resp.Deletions != 3 {
+		t.Errorf("deletions = %v, want 3", resp.Deletions)
 	}
 
 	// content_hash must be non-empty.
@@ -134,14 +101,13 @@ func TestRequestDiffHandler_IncludesFileMetadata(t *testing.T) {
 			}},
 		},
 	}
-	handler := NewRequestDiffHandler(stub, nil)
+	handler := (&Diff{DiffStore: stub}).Get
 
-	resp, err := handler(context.Background(), makeMsg(t, "req-meta", "pr-meta"))
+	resp, err := handler(context.Background(), PRRef{PRID: "pr-meta"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	files := data["files"].([]diffFileDetail)
+	files := resp.Files
 	if len(files) != 1 {
 		t.Fatalf("got %d files, want 1", len(files))
 	}
@@ -154,69 +120,24 @@ func TestRequestDiffHandler_IncludesFileMetadata(t *testing.T) {
 	}
 }
 
-func TestRequestDiffHandler_NotFound(t *testing.T) {
-	stub := &stubDiffReader{diffs: map[string]string{}}
-	handler := NewRequestDiffHandler(stub, nil)
-
-	resp, err := handler(context.Background(), makeMsg(t, "req-2", "pr-missing"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	m, ok := resp.(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected map response, got %T", resp)
-	}
-	if m["type"] != "DIFF_READY" {
-		t.Errorf("expected type DIFF_READY, got %v", m["type"])
-	}
-
-	data, ok := m["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected data map, got %T", m["data"])
-	}
-	if data["error"] == "" {
-		t.Error("expected non-empty error field for missing PR")
-	}
-	if data["diff"] != "" {
-		t.Errorf("expected empty diff on error, got %v", data["diff"])
-	}
-}
-
-func TestRequestDiffHandler_MissingPRID(t *testing.T) {
-	stub := &stubDiffReader{diffs: map[string]string{}}
-	handler := NewRequestDiffHandler(stub, nil)
-
-	data, _ := json.Marshal(map[string]string{})
-	msg := ws.InboundMessage{ID: "req-3", Type: "REQUEST_DIFF", Data: data}
-
-	_, err := handler(context.Background(), msg)
-	if err == nil {
-		t.Error("expected error for missing pr_id, got nil")
-	}
-}
-
-func TestRequestDiffHandler_InvalidPayload(t *testing.T) {
-	stub := &stubDiffReader{diffs: map[string]string{}}
-	handler := NewRequestDiffHandler(stub, nil)
-
-	msg := ws.InboundMessage{ID: "req-4", Type: "REQUEST_DIFF", Data: []byte("not-json")}
-
-	_, err := handler(context.Background(), msg)
-	if err == nil {
-		t.Error("expected error for invalid JSON, got nil")
-	}
+func TestDiffNotFoundAndInvalid(t *testing.T) {
+	s := &Diff{DiffStore: &stubDiffReader{}}
+	_, err := s.Get(context.Background(), PRRef{PRID: "missing"})
+	assertServiceCode(t, err, CodeNotFound)
+	_, err = s.Get(context.Background(), PRRef{})
+	assertServiceCode(t, err, CodeInvalid)
 }
 
 // ---- content_hash and viewed tests ----
 
 type stubViewedChecker struct {
+	err    error
 	viewed map[string]bool // key: "prID|filePath|hash"
 }
 
 func (s *stubViewedChecker) IsFileViewed(_ context.Context, prID, filePath, _, contentHash string) (bool, error) {
 	key := prID + "|" + filePath + "|" + contentHash
-	return s.viewed[key], nil
+	return s.viewed[key], s.err
 }
 
 func TestRequestDiffHandler_UsesStoredPatchID(t *testing.T) {
@@ -227,12 +148,12 @@ func TestRequestDiffHandler_UsesStoredPatchID(t *testing.T) {
 			"pr-1": {{FilePath: "a.go", Patch: "truncated patch", PatchID: patchID}},
 		},
 	}
-	handler := NewRequestDiffHandler(stub, nil)
-	response, err := handler(context.Background(), makeMsg(t, "stored-id", "pr-1"))
+	handler := (&Diff{DiffStore: stub}).Get
+	response, err := handler(context.Background(), PRRef{PRID: "pr-1"})
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
-	files := extractData(t, response)["files"].([]diffFileDetail)
+	files := response.Files
 	if len(files) != 1 || files[0].ContentHash != patchID {
 		t.Fatalf("files = %+v, want content_hash %q", files, patchID)
 	}
@@ -248,23 +169,23 @@ func TestRequestDiffHandler_ViewedSurvivesLineShift(t *testing.T) {
 		},
 	}
 	viewed := &stubViewedChecker{viewed: make(map[string]bool)}
-	handler := NewRequestDiffHandlerWithDeps(DiffHandlerDeps{
+	handler := (&Diff{
 		DiffStore: stub, ViewedStore: viewed,
 		CurrentUser: &mockCurrentUserReader{login: "alice", found: true},
-	})
-	response, err := handler(context.Background(), makeMsg(t, "original", "pr-1"))
+	}).Get
+	response, err := handler(context.Background(), PRRef{PRID: "pr-1"})
 	if err != nil {
 		t.Fatalf("original diff: %v", err)
 	}
-	originalHash := extractData(t, response)["files"].([]diffFileDetail)[0].ContentHash
+	originalHash := response.Files[0].ContentHash
 	viewed.viewed["pr-1|a.go|"+originalHash] = true
 	stub.files["pr-1"] = []prdiff.File{{FilePath: "a.go", Patch: shiftedPatch}}
 
-	response, err = handler(context.Background(), makeMsg(t, "shifted", "pr-1"))
+	response, err = handler(context.Background(), PRRef{PRID: "pr-1"})
 	if err != nil {
 		t.Fatalf("shifted diff: %v", err)
 	}
-	file := extractData(t, response)["files"].([]diffFileDetail)[0]
+	file := response.Files[0]
 	if !file.Viewed || file.ContentHash != originalHash {
 		t.Fatalf("shifted file = %+v, want viewed with hash %q", file, originalHash)
 	}
@@ -304,18 +225,17 @@ func TestRequestDiffHandler_ViewedFlagTrueWhenFileViewed(t *testing.T) {
 	}}
 	cu := &mockCurrentUserReader{login: "alice", found: true}
 
-	h := NewRequestDiffHandlerWithDeps(DiffHandlerDeps{
+	h := (&Diff{
 		DiffStore:   stub,
 		ViewedStore: viewed,
 		CurrentUser: cu,
-	})
+	}).Get
 
-	resp, err := h(context.Background(), makeMsg(t, "r1", "pr-1"))
+	resp, err := h(context.Background(), PRRef{PRID: "pr-1"})
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	files := data["files"].([]diffFileDetail)
+	files := resp.Files
 	if len(files) != 1 {
 		t.Fatalf("got %d files, want 1", len(files))
 	}
@@ -345,18 +265,17 @@ func TestRequestDiffHandler_ViewedFalseWhenHashMismatch(t *testing.T) {
 	}}
 	cu := &mockCurrentUserReader{login: "alice", found: true}
 
-	h := NewRequestDiffHandlerWithDeps(DiffHandlerDeps{
+	h := (&Diff{
 		DiffStore:   stub,
 		ViewedStore: viewed,
 		CurrentUser: cu,
-	})
+	}).Get
 
-	resp, err := h(context.Background(), makeMsg(t, "r2", "pr-2"))
+	resp, err := h(context.Background(), PRRef{PRID: "pr-2"})
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
-	data := resp.(map[string]interface{})["data"].(map[string]interface{})
-	files := data["files"].([]diffFileDetail)
+	files := resp.Files
 	if len(files) != 1 {
 		t.Fatalf("got %d files, want 1", len(files))
 	}
@@ -366,4 +285,16 @@ func TestRequestDiffHandler_ViewedFalseWhenHashMismatch(t *testing.T) {
 	if files[0].ContentHash != hash {
 		t.Errorf("content_hash should be current: got %q want %q", files[0].ContentHash, hash)
 	}
+}
+
+func TestDiffEnrichmentFailuresAreInternal(t *testing.T) {
+	reader := &stubDiffReader{diffs: map[string]string{"p": "diff"}, files: map[string][]prdiff.File{"p": {{FilePath: "a.go", PatchID: "hash"}}}}
+	failure := errors.New("lookup unavailable")
+	s := &Diff{DiffStore: reader, CurrentUser: &errorCurrentUserReader{err: failure}}
+	_, err := s.Get(context.Background(), PRRef{PRID: "p"})
+	assertServiceCode(t, err, CodeInternal)
+	s.CurrentUser = &mockCurrentUserReader{login: "alice", found: true}
+	s.ViewedStore = &stubViewedChecker{err: failure}
+	_, err = s.Get(context.Background(), PRRef{PRID: "p"})
+	assertServiceCode(t, err, CodeInternal)
 }

@@ -1,14 +1,12 @@
-package handler
+package services
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/store/storetest"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 func newViewedBaselineTestStores(t *testing.T) (*store.DB, *prdiff.Store) {
@@ -38,18 +36,14 @@ func newViewedBaselineTestStores(t *testing.T) (*store.DB, *prdiff.Store) {
 	return db, diffs
 }
 
-func markViewedBaselineTestFile(t *testing.T, handler ws.MessageHandler, file store.FileViewed) {
+func markViewedBaselineTestFile(t *testing.T, service *Viewed, file store.FileViewed) {
 	t.Helper()
-	data, err := json.Marshal(map[string]string{"pr_id": "github:o/r:1", "file_path": file.FilePath, "content_hash": file.ContentHash})
+	response, err := service.MarkFile(context.Background(), MarkFileViewedRequest{PRID: "github:o/r:1", FilePath: file.FilePath, ContentHash: file.ContentHash})
 	if err != nil {
-		t.Fatalf("marshal mark: %v", err)
+		t.Fatal(err)
 	}
-	response, err := handler(context.Background(), ws.InboundMessage{ID: "m-" + file.FilePath, Type: "MARK_FILE_VIEWED", Data: data})
-	if err != nil {
-		t.Fatalf("mark %s: %v", file.FilePath, err)
-	}
-	if ack := extractData(t, response); ack["ok"] != true {
-		t.Fatalf("mark %s: ack = %v", file.FilePath, ack)
+	if response.PRID != "github:o/r:1" || response.FilePath != file.FilePath {
+		t.Fatalf("mark result = %+v", response)
 	}
 }
 
@@ -57,10 +51,10 @@ func TestMarkingLastFileViewedRecordsAllViewedBaseline(t *testing.T) {
 	db, diffs := newViewedBaselineTestStores(t)
 	ctx := context.Background()
 	const prID = "github:o/r:1"
-	handler := NewMarkFileViewedHandlerWithDeps(MarkFileViewedDeps{
+	handler := &Viewed{
 		Viewed: db, CurrentUser: &mockCurrentUserReader{login: "alice", found: true},
 		DiffStore: diffs, Baseline: db,
-	})
+	}
 	markViewedBaselineTestFile(t, handler, store.FileViewed{FilePath: "a.go", ContentHash: "id-a"})
 	if _, found, err := db.GetLastReviewed(ctx, prID, "alice"); err != nil || found {
 		t.Fatalf("baseline while b.go is unviewed: found=%v, error=%v", found, err)
@@ -103,9 +97,9 @@ func TestAllViewedBaselineSkipsStaleCachedDiffs(t *testing.T) {
 					t.Fatalf("seed P2 fingerprint: %v", err)
 				}
 			}
-			handler := NewMarkFileViewedHandlerWithDeps(MarkFileViewedDeps{
+			handler := &Viewed{
 				Viewed: db, CurrentUser: &mockCurrentUserReader{login: "alice", found: true}, DiffStore: diffs, Baseline: db,
-			})
+			}
 			for _, file := range []store.FileViewed{{FilePath: "a.go", ContentHash: "id-a"}, {FilePath: "b.go", ContentHash: "id-b"}} {
 				markViewedBaselineTestFile(t, handler, file)
 			}

@@ -5,17 +5,9 @@ import (
 	"github.com/itterno/bistro/internal/store/reviewdraft"
 
 	"github.com/itterno/bistro/internal/engine/handler"
-	"github.com/itterno/bistro/internal/git/diff"
 )
 
 func (a *App) registerReviewHandlers(stores runStores) {
-	// REQUEST_DIFF: enriched with per-file content_hash and viewed flag.
-	a.wsServer.RegisterHandler("REQUEST_DIFF", handler.NewRequestDiffHandlerWithDeps(handler.DiffHandlerDeps{
-		DiffStore:   stores.diff,
-		ViewedStore: a.db,
-		CurrentUser: stores.currentUser,
-		Log:         a.log,
-	}))
 	a.wsServer.RegisterHandler("REQUEST_COMMENTS",
 		handler.NewRequestCommentsHandlerWithLLMKick(a.db.DB, a.log, a.classifier, a.llmKick))
 	dismissDeps := handler.DismissDeps{
@@ -38,25 +30,6 @@ func (a *App) registerReviewHandlers(stores runStores) {
 }
 
 func (a *App) registerDiffAndCheckoutHandlers(stores runStores) {
-	// Phase 2.1+2.2 handlers.
-	a.wsServer.RegisterHandler("GET_PATCHSETS",
-		handler.NewListPatchsetsHandler(a.db, a.log))
-	a.wsServer.RegisterHandler("REQUEST_TRIAGE", handler.NewTriageHandler(handler.TriageHandlerDeps{
-		Store: a.db, CurrentUser: stores.currentUser, Log: a.log,
-	}))
-	a.wsServer.RegisterHandler("REQUEST_INTERDIFF", handler.NewInterdiffHandler(handler.InterdiffHandlerDeps{
-		Patchsets: a.db,
-		Interdiff: func(req diff.InterdiffRequest) (diff.InterdiffResult, error) {
-			return diff.Interdiff(a.repoLocks, req)
-		},
-		RepoForPR: prRepoLocator{db: a.db, locations: stores.repoLocation}.RepoForPR,
-		Log:       a.log,
-	}))
-	a.wsServer.RegisterHandler("MARK_FILE_VIEWED", handler.NewMarkFileViewedHandlerWithDeps(handler.MarkFileViewedDeps{
-		Viewed: a.db, CurrentUser: stores.currentUser, DiffStore: stores.diff, Baseline: a.db, Log: a.log,
-	}))
-	a.wsServer.RegisterHandler("MARK_PRS_READ",
-		handler.NewMarkPRsReadHandler(a.db, stores.currentUser, a.wsServer, a.log))
 	// Phase 2.4 handlers.
 	a.wsServer.RegisterHandler("GET_REVIEW_THREADS",
 		handler.NewGetReviewThreadsHandler(a.db, a.log))

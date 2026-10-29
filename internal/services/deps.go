@@ -3,7 +3,11 @@ package services
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
+
+	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/prdiff"
 )
 
 type prLister interface {
@@ -28,4 +32,51 @@ func serviceLogger(log *slog.Logger) *slog.Logger {
 		return log
 	}
 	return slog.Default()
+}
+
+type diffReader interface {
+	GetUnified(prID string) (string, error)
+	Get(prID string) ([]prdiff.File, error)
+}
+
+type diffViewedChecker interface {
+	IsFileViewed(ctx context.Context, prID, filePath, login, contentHash string) (bool, error)
+}
+
+type patchsetLister interface {
+	ListPatchsets(ctx context.Context, prID string) ([]store.Patchset, error)
+}
+
+type fileViewedMarker interface {
+	MarkFileViewed(ctx context.Context, prID, filePath, login, contentHash string) error
+}
+
+type triageStore interface {
+	ListPatchsets(ctx context.Context, prID string) ([]store.Patchset, error)
+	CurrentPatchset(ctx context.Context, prID string) (store.Patchset, bool, error)
+	ListPatchsetFiles(ctx context.Context, prID string, number int) (map[string]string, error)
+	GetLastReviewed(ctx context.Context, prID, login string) (store.LastReviewedRecord, bool, error)
+}
+
+type interdiffPatchsets interface {
+	ListPatchsets(ctx context.Context, prID string) ([]store.Patchset, error)
+	CurrentPatchset(ctx context.Context, prID string) (store.Patchset, bool, error)
+}
+
+type viewedBaselineStore interface {
+	ListViewedFiles(ctx context.Context, prID, login string) ([]store.FileViewed, error)
+	CurrentPatchset(ctx context.Context, prID string) (store.Patchset, bool, error)
+	ListPatchsetFiles(ctx context.Context, prID string, number int) (map[string]string, error)
+	RecordLastReviewed(ctx context.Context, event store.ReviewEvent) error
+}
+
+type readStateDB interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+func contextError(err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return nil
 }

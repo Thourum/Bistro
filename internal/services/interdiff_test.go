@@ -1,8 +1,8 @@
-package handler
+package services
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
@@ -10,7 +10,6 @@ import (
 
 	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/store"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 type interdiffGitStub struct {
@@ -27,7 +26,6 @@ func (s *interdiffGitStub) Interdiff(req diff.InterdiffRequest) (diff.InterdiffR
 func TestInterdiffHandlerContract(t *testing.T) {
 	const prID = "github:o/r:1"
 	const filePath = "a.go"
-	const requestID = "interdiff-1"
 	const repoURL = "https://github.com/o/r.git"
 	const repoPath = "/local/repo"
 	patchsets := []store.Patchset{
@@ -61,7 +59,7 @@ func TestInterdiffHandlerContract(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			gitClient := &interdiffGitStub{result: tt.gitResult, err: tt.gitErr}
-			h := NewInterdiffHandler(InterdiffHandlerDeps{
+			s := &Interdiff{
 				Patchsets: &mockPatchsetLister{patchsets: tt.patchsets, err: tt.patchsetsErr},
 				Interdiff: gitClient.Interdiff,
 				RepoForPR: func(_ context.Context, gotPRID string) (string, string, bool, error) {
@@ -71,35 +69,14 @@ func TestInterdiffHandlerContract(t *testing.T) {
 					return repoURL, repoPath, tt.hasRepo, tt.repoErr
 				},
 				Log: testRepoLogger(),
-			})
-			payload, err := json.Marshal(map[string]interface{}{
-				"pr_id": prID, "path": filePath, "from_patchset": 3, "to_patchset": tt.toPatchset,
-			})
+			}
+			response, err := s.Get(context.Background(), InterdiffRequest{PRID: prID, Path: filePath, FromPatchset: 3, ToPatchset: tt.toPatchset})
 			if err != nil {
 				t.Fatal(err)
 			}
-			response, err := h(context.Background(), ws.InboundMessage{ID: requestID, Type: "REQUEST_INTERDIFF", Data: payload})
-			if err != nil {
-				t.Fatalf("handler: %v", err)
-			}
-			encoded, err := json.Marshal(response)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var envelope struct {
-				ID   string                 `json:"id"`
-				Type string                 `json:"type"`
-				Data map[string]interface{} `json:"data"`
-			}
-			if err := json.Unmarshal(encoded, &envelope); err != nil {
-				t.Fatal(err)
-			}
-			want := map[string]interface{}{
-				"pr_id": prID, "path": filePath, "from_patchset": float64(3), "to_patchset": float64(tt.wantTo),
-				"available": tt.wantReady, "reason": tt.wantReason, "patch": tt.gitResult.Patch, "rebased": tt.gitResult.Rebased,
-			}
-			if envelope.ID != requestID || envelope.Type != "INTERDIFF_READY" || !reflect.DeepEqual(envelope.Data, want) {
-				t.Fatalf("response = %s, want id=%q type=INTERDIFF_READY data=%v", encoded, requestID, want)
+			want := InterdiffResponse{PRID: prID, Path: filePath, FromPatchset: 3, ToPatchset: tt.wantTo, Available: tt.wantReady, Reason: tt.wantReason, Patch: tt.gitResult.Patch, Rebased: tt.gitResult.Rebased}
+			if !reflect.DeepEqual(response, want) {
+				t.Fatalf("response = %+v, want %+v", response, want)
 			}
 			if !tt.wantReady {
 				return
@@ -119,22 +96,15 @@ func TestInterdiffHandlerContract(t *testing.T) {
 	}
 }
 
-func TestInterdiffHandlerRejectsInvalidPayload(t *testing.T) {
-	h := NewInterdiffHandler(InterdiffHandlerDeps{Log: testRepoLogger()})
-	for _, payload := range []string{
-		`{`,
-		`{}`,
-		`{"path":"a.go","from_patchset":3}`,
-		`{"pr_id":"github:o/r:1","from_patchset":3}`,
-		`{"pr_id":"github:o/r:1","path":"a.go"}`,
-		`{"pr_id":"github:o/r:1","path":"a.go","from_patchset":-1}`,
-		`{"pr_id":"github:o/r:1","path":"a.go","from_patchset":"3"}`,
-	} {
-		t.Run(payload, func(t *testing.T) {
-			response, err := h(context.Background(), ws.InboundMessage{ID: "invalid-1", Type: "REQUEST_INTERDIFF", Data: json.RawMessage(payload)})
-			if err == nil || response != nil {
-				t.Errorf("response=%v err=%v, want payload error", response, err)
-			}
-		})
+func TestInterdiffRejectsInvalidRequest(t *testing.T) {
+	for _, req := range []InterdiffRequest{{}, {Path: "a.go", FromPatchset: 3}, {PRID: "p", FromPatchset: 3}, {PRID: "p", Path: "a.go"}, {PRID: "p", Path: "a.go", FromPatchset: -1}} {
+		_, err := (&Interdiff{}).Get(context.Background(), req)
+		assertServiceCode(t, err, CodeInvalid)
 	}
+}
+
+func TestInterdiffUnknownPRIsNotFound(t *testing.T) {
+	s := &Interdiff{Patchsets: &mockPatchsetLister{}, RepoForPR: func(context.Context, string) (string, string, bool, error) { return "", "", false, sql.ErrNoRows }}
+	_, err := s.Get(context.Background(), InterdiffRequest{PRID: "github:O/R:1", Path: "a.go", FromPatchset: 1})
+	assertServiceCode(t, err, CodeNotFound)
 }
