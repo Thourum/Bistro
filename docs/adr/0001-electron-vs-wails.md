@@ -188,3 +188,8 @@ Reopen at Gate 1, with a new pre-registration commit, when **any** of these hold
 1. Configure Electron fuses (`@electron-forge/plugin-fuses`), and drop unused fonts and dependencies. This is cheap, and it's the "slim Electron" baseline any future comparison is required to use.
 2. Add a per-launch WS auth token so a missing `Origin` isn't trusted on its own (see 0.4).
 3. Ship a tagged alpha with telemetry enabled, so a future Gate 0 has an n.
+
+
+## Amendment — 2026-10-28
+
+The verdict above stays **no-go** under its pre-registered rule. The owner nevertheless chose to migrate on the experimental branch `experiment/wails3` (implementation on `experiment/wails3-migration`), because Electron's memory and the localhost WebSocket remained the performance blockers after the React work. Design: [Wails v3 migration design](../superpowers/specs/2026-10-28-wails3-migration-design.md). The S3 (idle footprint ≤ 173 MiB) and S5 (DMG ≤ 40.5 MB) limits are re-checked on the packaged app as the migration's done criteria. The known risks in the design's "Known risks" section are accepted for the experiment, not resolved.

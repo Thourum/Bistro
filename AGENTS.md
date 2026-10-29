@@ -4,93 +4,93 @@
 
 **Bistro** is the keyboard-first code review client for the AI-PR era: a local-first desktop GitHub PR review app. Review PRs at the speed of thought — no browser, no mouse.
 
-There is no server. Everything runs locally. SQLite is a local cache, not a shared database. The one remote call besides GitHub is the OAuth code exchange: when no `GITHUB_CLIENT_SECRET` is configured (packaged builds), the engine posts the code to `https://get-bistro.com/api/oauth/token`, which holds the secret.
+Bistro runs as one Wails v3 process, not a client/server pair. SQLite is a local cache, not a shared database. When no `GITHUB_CLIENT_SECRET` is configured (packaged builds), the engine exchanges the OAuth code through `https://get-bistro.com/api/oauth/token`, which holds the secret. Sync and review actions go directly to GitHub; optional BYOK classification and opt-in telemetry are separate outbound integrations.
 
 Authoritative references (read when relevant, don't duplicate here):
 
-- Product overview: `README.md`
-- Go backend package-by-package map: `docs/go-project-overview.md`
-- Roadmap / v1.0 status: `docs/ROADMAP.md`
-- Design system & UI specs: `docs/DESIGN.md` (UI mockups live in `docs/design/stitch_terminal_authentic_prd/`)
-- User facing documentation: `website/src/pages/docs/`
+- Product overview: [README.md](README.md)
+- Build, configuration, and platform prerequisites: [DEVELOPMENT.md](DEVELOPMENT.md)
+- Go package map: [docs/go-project-overview.md](docs/go-project-overview.md)
+- Roadmap / v1.0 status: [docs/ROADMAP.md](docs/ROADMAP.md)
+- Design system: [docs/DESIGN.md](docs/DESIGN.md); mockups in `docs/design/stitch_terminal_authentic_prd/`
+- User-facing documentation: `website/src/pages/docs/`
 - Architecture decisions: `docs/adr/`
 
-This project is early and evolving. If you change structure, commands, or conventions, update this file in the same change.
+If you change structure, commands, or conventions, update this guide in the same change. `CLAUDE.md` is a symlink to `AGENTS.md`; edit only `AGENTS.md` and keep the symlink.
 
 ## Architecture
 
-The Go engine now runs in-process for the Wails migration. `internal/services` exposes typed calls and registered Wails events; the engine still owns all SQLite writes, sync, local diffs, and offline action replay. The Electron shell has been removed; the standalone React renderer lives in `frontend/`. The renderer uses generated Wails bindings and typed engine events; no WebSocket client remains. `internal/shell.SettingsStore` owns atomic JSON settings persistence, per-leaf validation, external-edit polling, and shell-only window bounds. It has no dependency on services; `internal/services/events.go` registers its `Settings` snapshot as `settings:changed` for the future shell wiring.
+- `main.go` constructs the Wails application, embeds `frontend/dist/`, wires services, settings, events, and telemetry, and starts the engine. `window.go` owns the native window and menu.
+- `internal/engine` owns SQLite writes, sync, local diffs, and offline action replay. There is no WebSocket transport or standalone engine process.
+- `internal/services` exposes one service per domain with typed context-aware methods. `ServiceError` codes are `not_found`, `unauthenticated`, `rate_limited`, `invalid`, `cancelled`, `timeout`, and `internal`; optional `Reason` identifies domain failures. `guard` / `guardErr` normalize errors and recover/report panics. `events.go` registers typed Wails events; `servicestest.Recorder` captures them in behavior tests.
+- `internal/shell` owns atomic JSON settings, external-edit polling, editor launching, platform operations, Sentry, PostHog, and the updater. `services.Shell` validates external URLs and editor requests before delegating to the platform.
+- `frontend/` is the React/Vite renderer. Generated TypeScript models and services in `frontend/bindings/` are committed output, not hand-authored code.
 
-`services.Shell` exposes settings, folder selection, HTTP(S) links, detached external-editor launch, app info, and quit. Task 14 constructs `Set.Shell`; the engine leaves it nil. `internal/shell` owns symlink-contained editor target resolution and OS helpers; `NewPlatform` resolves the Wails app at call time. The existing `services.Editor` remains the PR-checkout service.
+Wails enforces single-instance behavior and focuses the existing window on a second launch. `engine.New(Options)` constructs the engine; its emitter and panic reporter are set before `Start(ctx)` opens/migrates SQLite, restores keychain credentials, builds services, and launches supervised loops. `OnShutdown` cancels the shared engine/shell context and stops updater checks. When the Wails run loop returns, deferred `engine.Stop()` waits for background work before closing SQLite. `--smoke` uses a temporary data directory, disables sync, replay, telemetry, and updates, verifies the native window/runtime, and exits within a bounded time. Only OAuth retains a temporary loopback callback listener.
 
-`engine.New(Options)` constructs the engine. Set its emitter and panic reporter before `Start(ctx)`, which opens/migrates SQLite, restores the keychain provider, builds the retained service set, and launches supervised loops without blocking. `Stop()` cancels and waits for background work before closing SQLite. The shell owns single-instance enforcement; there is no engine port, flock, ready message, or stdin watchdog.
+Within `internal/engine`, `app.go` owns Start/Stop, `options.go` construction/defaults, `supervise.go` panic restart/backoff, and `services.go` the retained service set. `provider.go`, `config.go`, `llm.go`, `expertise.go`, `bridge.go`, and `repo_location.go` own domain wiring. Auth uses blocking `Auth.Start` with context cancellation. `App.ApplySyncSettings` clamps intervals to 30–3600 seconds; `App.ApplyClassificationSettings` shares validated service state.
 
-Within `internal/engine/`, `app.go` owns store preparation and Start/Stop; `options.go` owns construction/defaults, `supervise.go` panic restart/backoff, and `provider.go`, `config.go`, `llm.go`, `expertise.go`, `bridge.go`, and `repo_location.go` own domain wiring. The WebSocket, standalone command, and handler packages are deleted.
+Within `internal/git`, `Client` owns clone/fetch/checkout; `anchor` resolves comment anchors, `diff` generates diffs/interdiffs and patch fingerprints, `remote` parses canonical identities, and `repolock` owns shared per-repo locks. Interdiff takes the same `*repolock.Locks` as clone/fetch, not a `git.Client`. `clonecache` depends on `remote`, never the parent package. Shared on-disk commit fixtures live in `git/gittest`.
 
-`internal/engine/services.go` builds `services.Set`; `internal/services/servicestest.Recorder` captures typed events in behavior tests. Auth uses a blocking `Auth.Start` with context cancellation and retains only the temporary OAuth callback listener. `App.ApplySyncSettings` clamps runtime intervals to 30–3600 seconds, and `App.ApplyClassificationSettings` shares the service's validated state. Draft, sync, review, expertise, and BYOK notifications all use the event registrations in `internal/services/events.go`. Service conventions and migration steps live in [the migration plan](docs/superpowers/plans/2026-10-28-wails3-migration/README.md).
+Independent SQLite stores live in `internal/store/currentuser`, `dismissal`, `prdiff`, `repolocation`, and `reviewdraft`; the offline queue lives in `store/actionqueue`. The root `store` package retains the DB handle, migrations, and DB-bound queries. Subpackages may import `store` and `store/db`, never the reverse. Expertise persistence belongs to `internal/expertise`.
 
-Within `internal/git`, `Client` owns clone/fetch/checkout operations; `anchor` resolves comment anchors, `diff` generates diffs/interdiffs and patch fingerprints (`Generate`, `Interdiff`, `PatchID`), `remote` parses repo identities (`ParseURL`, `SafeRepoID`), and `repolock` owns shared per-repo locks (`Locks`, `New`, `Key`). Interdiff takes the same `*repolock.Locks` as clone/fetch, not a `git.Client`. The current package map is in [Go project overview](docs/go-project-overview.md).
-
-Clone cache entries, path/staging helpers, maintenance, and PR-head retention live in `internal/git/clonecache`; it depends on `remote`, never the parent `git` package. Shared on-disk commit fixtures live in the test-support package `internal/git/gittest`, which depends only on go-git and the standard library.
-
-Independent SQLite stores live in `internal/store/currentuser`, `dismissal`, `prdiff`, `repolocation`, and `reviewdraft` (each `Store`, `New`), and the offline action queue in `internal/store/actionqueue` (`Queue`, `New`, `Action`); `store` retains the DB handle, migrations (`migrate.go`), and DB query methods (including `review_threads.go`). Subpackages may import `store` and sqlc's `store/db`, never the reverse. Expertise indexing state already belongs to `internal/expertise`, not `repolocation`.
-
-The PR sync orchestrator lives in `internal/prsync`. Concurrent PR fetch tasks run through `internal/prsync/workerpool` (`Pool`, `New`, `DefaultWorkers`); fetched results and SQLite batch writes live in `internal/prsync/writer` (`FetchedPR`, `Writer`, `New`). Neither subpackage imports the parent `prsync` package.
-
-Go tests outside package `store` share migrated in-memory databases via `internal/store/storetest.Open(t)`; `store`'s own internal tests keep local helpers to avoid an import cycle. Version-limited migration tests use `store.MigrationFS()` with goose.
+`internal/prsync` orchestrates PR sync. `prsync/workerpool` bounds concurrent fetches; `prsync/writer` owns fetched results and SQLite batch writes. Neither imports the parent package. Go tests outside `store` share migrated in-memory DBs via `internal/store/storetest.Open(t)`; version-limited tests use `store.MigrationFS()` with goose.
 
 ## Tech stack
 
-- **Go 1.26** — go-git, go-github, mattn/go-sqlite3, go-keyring, x/oauth2.
-- **Wails v3 shell + Vite frontend** — React 19, TypeScript, TanStack (React Query / Hotkeys / Virtual / Store), Radix UI, Tailwind, Biome (lint+format), Vitest (test).
-- **Package manager: pnpm** for the frontend. Run pnpm commands from `frontend/`; the lockfile is the repo-root `pnpm-lock.yaml` (workspace defined in `pnpm-workspace.yaml`, covering `frontend/` and `website/`). `minimumReleaseAge` in `pnpm-workspace.yaml` blocks package versions younger than 7 days, so a just-published release won't resolve yet. Versions live in `go.mod` and `frontend/package.json` — check there, don't assume.
+- **Go 1.26.1**, module `github.com/itterno/bistro` — go-git, go-github, mattn/go-sqlite3, go-keyring, x/oauth2, sentry-go, posthog-go.
+- **Wails v3.0.0** and **`@wailsio/runtime` 3.0.0** — WKWebView on macOS, WebView2 on Windows, WebKitGTK on Linux.
+- **React 19 + TypeScript + Vite** — TanStack Query / Hotkeys / Virtual / Store, Radix UI, Tailwind, Biome, Vitest.
+- **pnpm** — run frontend commands from `frontend/`; the lockfile is repo-root `pnpm-lock.yaml`. `pnpm-workspace.yaml` covers `frontend/` and `website/`. Its `minimumReleaseAge` blocks versions younger than 7 days. The sole exemption is exactly `'@wailsio/runtime@3.0.0'`, approved by the user on 2026-10-29 to match the pinned Go runtime; do not broaden it. Read versions from `go.mod` and `frontend/package.json`.
 
 ## Conventions
 
-- **Error handling: in frontend TS/JS code, use `@thourum/fault`. NEVER write `try`/`catch` for control flow or error handling.** Return and chain `Result<T, Fault>` / `ResultAsync<T, Fault>` with tagged faults; narrow errors with `fault.tag` and use `fault.message` at display/log boundaries. Go continues to use its existing error handling. (The only `try/catch` allowed anywhere is inside throwaway context-mode MCP sandbox scripts — never in committed code.)
-- Go owns all SQLite writes — the UI never writes the DB directly.
-- Review drafts: the engine owns `review_drafts`. `approve` / `request_changes` absorb the current user's drafts inside `Orchestrator.ApplyAction`, and `submit_review` is never queued.
-- SQLite is a cache; migrations are versioned, idempotent, embedded. Services are in-process; the only localhost listener is the temporary OAuth callback.
+- **Frontend TS/JS error handling uses `@thourum/fault`, never `try`/`catch`.** Chain `Result<T, Fault>` / `ResultAsync<T, Fault>`, narrow by `fault.tag`, and use `fault.message` only at display/log boundaries. Go uses its existing error style. The only exception is throwaway context-mode sandbox scripts.
+- Go owns all SQLite writes; SQLite is a cache with versioned, idempotent, embedded migrations.
+- Review drafts belong to the engine. `approve` / `request_changes` absorb current-user drafts in `Orchestrator.ApplyAction`. `Threads.SubmitAction` with action `submit_review` is never queued; failed submissions retain unsubmitted drafts.
 - Keyboard bindings are pure config, no handlers: actions (`actionId`, label, activation) in `ACTION_CATALOG` in `frontend/src/utils/keybindings.ts`, keys per navigation style (`vim` / `emacs` / `standard`) in `utils/keymaps.ts` (`KEYMAPS`, `SEQUENCE_TIMEOUT_MS`). `getEffectiveBindings(style, overrides)` resolves user override → style table → unbound; handlers live in `utils/keybindingActions.ts` (line-comment handlers in `utils/lineCommentActions.ts`, draft and resolve handlers in `utils/reviewActions.ts`), enable/scope rules in `utils/keybindingActivation.ts`; registration in `hooks/useAppHotkeys.ts`. Don't register hotkeys outside `useAppHotkeys` (textarea-local submit uses `TEXTAREA_SUBMIT_HOTKEY` / `isTextareaSubmit` from the same file). Command-palette entries dispatch the same handler by `actionId` (`getBindingAction`); palette and hotkeys share effective-route activation and the ref-backed action context in `hooks/useKeyActionContext.ts`. Palette-only actions (no key in any style) live in `ACTIONS` without a binding. Entries live in `components/commandPaletteCommands.ts`; `shortcutFor` shows a shortcut only when `isActive` permits the binding on the current route. Settings → Keyboard records overrides with `useHotkeySequenceRecorder`; recording and default resets reject conflicts via `utils/keybindingConflicts.ts`, using the runtime `isBindingEnabled` ownership gates.
-- Validate genuinely external data with zod at the edge, never `as` casts. Generated Wails models type engine responses and events; settings-file leaves remain validated in `types/settings.ts`.
-- Call generated `@bindings/services` methods through `services/engine/call.ts`: `call()` for reads, `callWrite()` for mutations and external side effects, `faultReason()` for domain reasons. Typed event side effects live in `services/events/<domain>.ts`, with an exhaustive event table in `services/events/index.ts`; `useEngine` owns subscriptions and once-only startup checks.
-- Renderer hooks own React state/effects and data-fetching lifecycles; plain binding calls and appStore writes live in `services/` (`readState.ts`, `prActions.ts`, `dismissals.ts`, `editor.ts`). Call services directly; don't wrap them in hooks solely for `useCallback`.
-- Large renderer pages keep feature-local pieces beside them: `pages/settings/*Section.tsx` for Settings, `use<Page>Data.ts` / `use<Page>Actions.ts` hooks and `*Sections.tsx` / `*Chrome.tsx` for PR detail and diff pages.
-- Onboarding and the first-run rail (design: `docs/superpowers/specs/2026-10-24-first-run-onboarding-rail-design.md`): pure models in `utils/onboardingRepos.ts`, `utils/onboardingSandbox.ts`, `utils/firstRunRail.ts`; WS/appStore writes in `services/onboardingSync.ts` and `services/firstRunRail.ts`. Engine services (`internal/services/`): `ReviewQueue.Get` (repo IDs are lowercase `identity.ID()`, e.g. `github:owner/name`), `DevFolderScan.Scan` (Stop cancels the call's context; a newer scan cancels its predecessor), and `Repos.List` with `cache_only` for a provider-free cached read. The legacy onboarding WS calls remain pending the renderer migration. Components that show or hide UI by a binding's enable rule use `useBindingEnabled` from `hooks/useAppHotkeys.ts`.
-- Do not assert a Go module path from memory — read it from `go.mod`.
+- Engine calls use generated `@bindings/services` methods through `call()` / `callWrite()` in `frontend/src/services/engine/call.ts`. Never call bindings directly from components. Reads use `call`; mutations and external side effects use `callWrite`, which refuses writes under `?bench_keys=1`.
+- Faults carry `code` / `reason` context. Branch on `faultReason`, never message text. Calls default to a 30-second timeout and cancel the Wails promise on expiry; `Auth.Start` and dev-folder scans disable that timeout.
+- Push events are registered in `internal/services/events.go` and handled by the exhaustive table in `frontend/src/services/events/index.ts`. `useEngine` owns subscriptions and once-only startup checks.
+- Generated Wails models type engine responses/events. Use zod only at genuinely external edges: settings-file leaves, URL search params, bench collector input, DOM events, and the untyped RuntimeError cause in `call.ts`; never replace validation with `as` casts.
+- After changing a bound service method or event shape, run `wails3 task generate` and commit `frontend/bindings/`. Never hand-edit generated bindings or `internal/store/db/`.
+- Hooks own React state/effects and fetching lifecycles; requests and appStore writes live in `frontend/src/services/`. Call services directly, not hooks created solely for `useCallback`.
+- Large pages keep feature-local pieces beside them: `pages/settings/*Section.tsx`, `use<Page>Data.ts` / `use<Page>Actions.ts`, and `*Sections.tsx` / `*Chrome.tsx`.
+- Onboarding / first-run rail pure models live in `utils/onboardingRepos.ts`, `utils/onboardingSandbox.ts`, and `utils/firstRunRail.ts`; binding calls and store writes live in `services/onboardingSync.ts` and `services/firstRunRail.ts`. Engine methods live in `internal/services/{review_queue,dev_folder_scan,repos}.go`: `ReviewQueue.Get` uses lowercase `identity.ID()` repo IDs; a newer `DevFolderScan.Scan` cancels its predecessor, and Stop cancels the call context; `Repos.List` supports `cache_only`. Binding-owned UI uses `useBindingEnabled`.
+- Read the Go module path from `go.mod`; do not assume it from memory.
 
 ## How to work
 
-There is no Makefile. The commands below are authoritative; ignore `make` targets in any older docs.
-
-The Wails shell uses `wails3 task dev` (isolated `.dev-data/`), `wails3 task build`, and `wails3 task generate` (TypeScript bindings plus sqlc). Run the built `./bin/bistro --smoke` to verify the embedded frontend and quit within 60 seconds; smoke uses a temporary data directory and disables sync, offline replay, and update checks. Platform packaging tasks are `package:darwin`, `package:windows`, and `package:linux`. Do not run the legacy Electron launcher. Runtime OAuth configuration is supplied through `engine.Options`; no engine WS port exists.
-
-Adding or changing a SQL query: edit/add a `.sql` file under `internal/store/queries/`, then regenerate (`sqlc.yaml` is at the repo root):
+There is no Makefile. The root `Taskfile.yml` is authoritative; the pinned Wails CLI includes its task runner (no separate `task` binary):
 
 ```bash
-go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+pnpm install
+wails3 task dev
+wails3 task generate
+wails3 task build
+wails3 task package:darwin
+wails3 task package:windows
+wails3 task package:linux
+wails3 task setup:docker
 ```
 
-Generated code lives in `internal/store/db/` — never hand-edit it. If a migration lands without a matching `sqlc generate` run, the generated structs silently drift from the schema (this happened once — migrations 033/034 added columns/tables that `internal/store/db/models.go` didn't know about until the next `sqlc generate`).
+Run these from the repository root; packaging requires each platform's tools (see [DEVELOPMENT.md](DEVELOPMENT.md#packaging)). Dev uses isolated `.dev-data/`. Runtime configuration is `BISTRO_DATA_DIR`, `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`, and `BISTRO_LOG_LEVEL`; build-time `BISTRO_VERSION` stamps the version. Never commit secrets.
 
-Verify a change before declaring done:
+For SQL changes, edit `internal/store/queries/*.sql`, then run `wails3 task generate` (bindings + sqlc), or `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate` from the root. Generated models must match migrations.
+
+Verify before declaring done:
 
 ```bash
-# Go
 go vet ./... && go test -race ./...
-# Frontend
-cd frontend && pnpm type-check && pnpm lint && pnpm test && pnpm build
+cd frontend && pnpm type-check && pnpm lint && pnpm test
 ```
 
-Enable the pre-commit hook once per clone (blocks staged files over 5,000 tokens, bytes/4; skips lockfiles, sqlc output, images, and files marked generated; the error message explains how to split):
+Enable the existing pre-commit hook with `git config core.hooksPath .githooks`. It blocks staged authored files over 5,000 estimated tokens (bytes/4); exemptions include lockfiles, sqlc output, images, and generated-file headers. There is no bindings-directory skip rule: committed `frontend/bindings/` files stay under the limit and carry DO NOT EDIT headers. Never bypass the hook.
 
-```bash
-git config core.hooksPath .githooks
-```
+ADR 0001's bench harness remains a historical Electron record: `BISTRO_SLIM=1 pnpm run release:macos`, `--quit-after-ready`, and its Electron paths are not current build commands. The retained renderer collector loads only with `bench_collector` in the URL; seeding uses `cmd/bistro-benchseed` and pinned PRs. S6 keyboard drivers require passive permission/layout preflight and an explicit bounded `--limit` or `--full`; never inject keys while preflight is blocked. Do not rewrite historical harness evidence in `docs/adr/data/`.
 
-Performance bench (ADR 0001): `BISTRO_SLIM=1 pnpm run release:macos` builds the slim variant (Electron fuses, no `.woff` duplicates). The packaged app accepts `--quit-after-ready` and `--bench-query=…`, and the renderer's `bench/` module loads only when `bench_collector` is in the URL. Seeding uses `cmd/bistro-benchseed` plus pinned PRs. The S6 keyboard driver (`run-keys.mjs` / `keys-stats.mjs`) requires passive permission/layout preflight and an explicit bounded `--limit` or `--full`; never inject keys while preflight is blocked.
-
-If a command or detail is unclear, check `frontend/package.json` scripts. Do not invent workflows.
+If a command is unclear, read `Taskfile.yml` and `frontend/package.json` rather than inventing a workflow.
 
 ---
 
@@ -188,12 +188,6 @@ After /clear or /compact: knowledge base and session stats preserved. Use `ctx p
 
 ## Release
 
-Historical alpha install and release details: `docs/ALPHA.md`. These legacy commands depend on the removed standalone engine and are unavailable until Wails packaging replaces them:
+Install/update instructions live in [docs/ALPHA.md](docs/ALPHA.md). `.github/workflows/release.yml` builds native Wails bundles on macOS, Windows, and Linux, runs `scripts/smoke.sh`, and creates a draft pre-release on `v*` tags. Update archives are `bistro-darwin-arm64.zip`, `bistro-windows-amd64.zip`, and `bistro-linux-amd64.tar.gz`; first-install artifacts are `bistro-darwin-arm64-installer.dmg` and `bistro-windows-amd64-installer.exe`. All five assets are covered by `SHA256SUMS`.
 
-```bash
-pnpm run release:macos                      # engine build + Forge make (DMG/ZIP)
-scripts/smoke-macos.sh out/Bistro-darwin-arm64/Bistro.app   # launch and check the engine's /ws
-pnpm run release:win                        # Windows ZIP; run on Windows (the CGO engine builds for the host only)
-```
-
-`.github/workflows/release.yml` builds native Wails bundles on macOS, Windows and Linux, runs `scripts/smoke.sh`, and creates a draft pre-release with five platform assets and `SHA256SUMS`. Packaging uses `wails3 task package:darwin`, `package:windows` or `package:linux`. Local macOS verification: `BISTRO_VERSION=0.0.0-local wails3 task package:darwin && scripts/smoke.sh bin/Bistro.app`. Smoke mode isolates data and disables sync; Linux needs `xvfb`, macOS needs `timeout` or coreutils' `gtimeout`. Signing/notarization uses `MACOS_*` / `APPLE_*` secrets when configured. Do not push release tags or trigger the workflow without explicit user permission.
+Local macOS verification: `BISTRO_VERSION=0.0.0-local wails3 task package:darwin && scripts/smoke.sh bin/Bistro.app`. Smoke isolates data and disables sync; Linux needs `xvfb`, macOS needs `timeout` or coreutils' `gtimeout`. Signing/notarization uses `MACOS_*` / `APPLE_*` secrets when configured. The built-in updater checks GitHub pre-releases on launch and every six hours, verifies `SHA256SUMS`, and is disabled in dev/untagged builds. Do not push release tags or trigger publishing without explicit user permission.

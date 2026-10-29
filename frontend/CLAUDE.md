@@ -1,3 +1,20 @@
+# Bistro frontend
+
+This directory is the React/Vite renderer for the Wails v3 app. See the root
+[CLAUDE.md](../CLAUDE.md) for architecture, conventions, generation, and checks;
+[DEVELOPMENT.md](../DEVELOPMENT.md) covers setup and packaging.
+
+- `src/`: pages, components, hooks, stores, services, and utilities.
+- `src/services/engine/call.ts`: `call()` / `callWrite()` boundary for generated
+  `@bindings/services` calls; components call renderer services, not bindings.
+- `src/services/events/index.ts`: exhaustive typed Wails event handlers.
+- `bindings/`: committed generated output; run `wails3 task generate` at the
+  repository root after changing Go services/events. Do not hand-edit it.
+- `tests/` and colocated tests: Vitest behavioral checks.
+- `dist/`: generated Vite assets embedded by `main.go`, not committed output.
+
+Checks from this directory: `pnpm type-check && pnpm lint && pnpm test`.
+
 # context-mode — MANDATORY routing rules
 
 You have context-mode MCP tools available. These rules are NOT optional — they protect your context window from flooding. A single unrouted command can dump 56 KB into context and waste the entire session.
