@@ -1,6 +1,9 @@
 package services
 
-import "github.com/wailsapp/wails/v3/pkg/application"
+import (
+	"github.com/itterno/bistro/internal/shell"
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
 
 const (
 	EventAuthRedirect       = "auth:redirect"
@@ -22,6 +25,7 @@ const (
 	EventCommentsClassified = "comments:classified"
 	EventByokAuthFailed     = "byok:auth-failed"
 	EventByokUsage          = "byok:usage"
+	EventSettingsChanged    = "settings:changed"
 )
 
 // AuthRedirect is emitted only after the callback listener is bound.
@@ -152,4 +156,5 @@ func init() {
 	application.RegisterEvent[CommentsClassified](EventCommentsClassified)
 	application.RegisterEvent[ByokAuthFailed](EventByokAuthFailed)
 	application.RegisterEvent[ByokUsage](EventByokUsage)
+	application.RegisterEvent[shell.Settings](EventSettingsChanged)
 }

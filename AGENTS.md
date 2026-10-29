@@ -19,7 +19,7 @@ This project is early and evolving. If you change structure, commands, or conven
 
 ## Architecture
 
-The Go engine now runs in-process for the Wails migration. `internal/services` exposes typed calls and registered Wails events; the engine still owns all SQLite writes, sync, local diffs, and offline action replay. The legacy Electron sources remain until Task 13, but their removed `bistro-sync`/WebSocket backend is no longer runnable. The Wails shell entrypoint arrives in Task 14.
+The Go engine now runs in-process for the Wails migration. `internal/services` exposes typed calls and registered Wails events; the engine still owns all SQLite writes, sync, local diffs, and offline action replay. The legacy Electron sources remain until Task 13, but their removed `bistro-sync`/WebSocket backend is no longer runnable. The Wails shell entrypoint arrives in Task 14. `internal/shell.SettingsStore` owns atomic JSON settings persistence, per-leaf validation, external-edit polling, and shell-only window bounds. It has no dependency on services; `internal/services/events.go` registers its `Settings` snapshot as `settings:changed` for the future shell wiring.
 
 `engine.New(Options)` constructs the engine. Set its emitter and panic reporter before `Start(ctx)`, which opens/migrates SQLite, restores the keychain provider, builds the retained service set, and launches supervised loops without blocking. `Stop()` cancels and waits for background work before closing SQLite. The shell owns single-instance enforcement; there is no engine port, flock, ready message, or stdin watchdog.
 
