@@ -3,7 +3,7 @@ import {
   type FontChoice,
   fontChoiceId,
   UI_FONT_CHOICES,
-} from '@renderer/types/electron/settings';
+} from '@renderer/utils/fontChoices';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { useStore } from '../../hooks/useStore';

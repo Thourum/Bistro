@@ -1,4 +1,4 @@
-import type { AppSettings } from '@renderer/types/electron/settings';
+import type { DisplaySettings as AppSettings } from '@renderer/types/settings';
 import { DiffView, type DiffViewProps } from '../components/diff/DiffView';
 import type { InterdiffResult } from '../types';
 

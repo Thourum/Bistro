@@ -159,9 +159,7 @@ const FIRST_RUN_ACTION_STATES: Readonly<
   'login.copyLink': ['waiting'],
   'login.cancel': ['waiting', 'timedOut'],
   'login.retry': ['timedOut'],
-  'connecting.restart': ['crashed'],
-  'connecting.openLogs': ['slow', 'crashed'],
-  'connecting.report': ['crashed'],
+  'connecting.openLogs': ['connecting'],
 };
 
 function isFirstRunAction(actionId: string): boolean {
@@ -233,7 +231,6 @@ export interface BindingActivationContext {
   activeOverlay: OverlayKind | null;
   sandboxPane: SandboxPane | null;
   screen?: FirstRunScreen;
-  isSpawned?: boolean;
   isConnected?: boolean;
   onboardingStep?: 'sync' | 'practice' | null;
   isScanning?: boolean;
@@ -255,8 +252,6 @@ function isAuthBindingEnabled(
     allowed === undefined ||
     !allowed.includes(context.screen)
   )
-    return false;
-  if (binding.actionId === 'connecting.restart' && context.isSpawned !== true)
     return false;
   const needsEngine =
     binding.actionId.startsWith('login.provider.') ||

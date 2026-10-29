@@ -117,18 +117,30 @@ describe('expertise helpers', () => {
   });
 
   it('normalizes GET_EXPERTISE payloads to the requested PR id', () => {
-    expect(expertisePayloadForPR({ files: [] }, 'pr-1')).toEqual({
+    expect(
+      expertisePayloadForPR(
+        { pr_id: 'pr-1', status: 'ready', files: [] },
+        'pr-1',
+      ),
+    ).toEqual({
       pr_id: 'pr-1',
+      status: 'ready',
       files: [],
     });
   });
 
   it('checks whether an expertise payload belongs to the active PR', () => {
-    expect(isExpertisePayloadForPR({ pr_id: 'pr-1', files: [] }, 'pr-1')).toBe(
-      true,
-    );
-    expect(isExpertisePayloadForPR({ pr_id: 'pr-1', files: [] }, 'pr-2')).toBe(
-      false,
-    );
+    expect(
+      isExpertisePayloadForPR(
+        { pr_id: 'pr-1', status: 'ready', files: [] },
+        'pr-1',
+      ),
+    ).toBe(true);
+    expect(
+      isExpertisePayloadForPR(
+        { pr_id: 'pr-1', status: 'ready', files: [] },
+        'pr-2',
+      ),
+    ).toBe(false);
   });
 });

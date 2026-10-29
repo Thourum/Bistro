@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  ERROR_MESSAGES,
-  formatErrorMessage,
-} from '../../src/utils/error';
+import { ERROR_MESSAGES, formatErrorMessage } from '../../src/utils/error';
 
 describe('formatErrorMessage', () => {
   it('maps AUTH_TOKEN_EXPIRED to friendly message', () => {
@@ -14,12 +11,6 @@ describe('formatErrorMessage', () => {
   it('maps RATE_LIMITED to friendly message', () => {
     expect(formatErrorMessage('RATE_LIMITED')).toBe(
       'Too many requests. Try again in a few minutes.',
-    );
-  });
-
-  it('maps WEBSOCKET_DISCONNECTED to friendly message', () => {
-    expect(formatErrorMessage('WEBSOCKET_DISCONNECTED')).toBe(
-      'Connection lost. Reconnecting...',
     );
   });
 
@@ -52,7 +43,6 @@ describe('formatErrorMessage', () => {
     const codes = [
       'AUTH_TOKEN_EXPIRED',
       'RATE_LIMITED',
-      'WEBSOCKET_DISCONNECTED',
       'GO_PROCESS_CRASHED',
       'NETWORK_OFFLINE',
       'DB_QUERY_FAILED',

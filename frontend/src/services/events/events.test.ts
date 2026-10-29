@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { appStore } from '../../store';
 import { settingsStore } from '../../store/settings';
-import { DEFAULT_SETTINGS } from '../../types/electron/settings';
+import { DEFAULT_SETTINGS } from '../../types/settings';
 import { handleActionComplete } from './actions';
 import { handleCommentsClassified } from './comments';
 import { handleExpertiseError } from './expertise';

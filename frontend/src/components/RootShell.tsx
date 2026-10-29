@@ -16,7 +16,6 @@ import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import { AddRepoDialogOverlay } from './AddRepoDialogOverlay';
 import { AppTitleBar } from './AppTitleBar';
-import { EngineCrashedScreen } from './EngineCrashedScreen';
 import ToastContainer from './ToastContainer';
 
 /** Registers hotkeys. Lives inside OverlayProvider. */
@@ -47,7 +46,6 @@ function ConfirmingActionOverlayBridge(): null {
 }
 
 function RootShellInner(): React.ReactElement {
-  const engineStatus = useStore(appStore, (s: UIState) => s.engineStatus);
   return (
     <div className="flex h-screen flex-col bg-surface text-on-surface">
       <HotkeyRegistrar />
@@ -55,11 +53,7 @@ function RootShellInner(): React.ReactElement {
       <AppTitleBar />
       <AddRepoDialogOverlay />
       <div className="min-h-0 flex-1">
-        {engineStatus?.state === 'crashed' ? (
-          <EngineCrashedScreen />
-        ) : (
-          <Outlet />
-        )}
+        <Outlet />
       </div>
       <ToastContainer />
     </div>

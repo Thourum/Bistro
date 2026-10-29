@@ -1,13 +1,16 @@
-/**
- * AppSettings — the full user-configurable state persisted to
- * `userData/settings.json` by the main process, and mirrored into the
- * renderer via `window.electron.settings.*`.
- *
- * Keep this file framework-agnostic: it's imported by both main and
- * renderer. Bumping `$schema` requires a migration.
- */
-
 import { z } from 'zod';
+
+export type {
+  AppearanceSettings,
+  ClassificationSettings,
+  DiffSettings,
+  NavigationSettings,
+  PRListSettings,
+  PrivacySettings,
+  RepositorySettings as RepositoriesSettings,
+  Settings as AppSettings,
+  SyncSettings,
+} from '@bindings/shell/models';
 
 export const SETTINGS_SCHEMA_VERSION = 1 as const;
 
@@ -22,7 +25,6 @@ const classificationSchema = z.object({
 export const NAVIGATION_STYLES = ['vim', 'emacs', 'standard'] as const;
 const navigationSchema = z.object({ style: z.enum(NAVIGATION_STYLES) });
 export type NavigationStyle = (typeof NAVIGATION_STYLES)[number];
-export type NavigationSettings = z.infer<typeof navigationSchema>;
 
 const appearanceSchema = z.object({
   theme: z.enum(['light', 'dark']),
@@ -50,13 +52,6 @@ export type ClassificationMode = z.infer<typeof classificationSchema>['mode'];
 export type DismissalScope = z.infer<
   typeof classificationSchema
 >['dismissalScope'];
-export type ClassificationSettings = z.infer<typeof classificationSchema>;
-export type AppearanceSettings = z.infer<typeof appearanceSchema>;
-export type SyncSettings = z.infer<typeof syncSchema>;
-export type PRListSettings = z.infer<typeof prListSchema>;
-export type DiffSettings = z.infer<typeof diffSchema>;
-export type PrivacySettings = z.infer<typeof privacySchema>;
-export type RepositoriesSettings = z.infer<typeof repositoriesSchema>;
 
 /**
  * Overrides for keyboard bindings.
@@ -82,15 +77,32 @@ export const appSettingsSchema = z.object({
   repositories: repositoriesSchema,
   classification: classificationSchema,
   navigation: navigationSchema,
-  keybindings: z.record(z.string(), z.array(z.string())),
+  keybindings: z
+    .record(z.string(), z.array(z.string()).nullable().optional())
+    .nullable()
+    .transform((bindings) =>
+      Object.fromEntries(
+        Object.entries(bindings ?? {}).flatMap(([key, keys]) =>
+          keys == null ? [] : [[key, keys]],
+        ),
+      ),
+    ),
+  window: z.object({
+    x: z.number(),
+    y: z.number(),
+    width: z.number(),
+    height: z.number(),
+    maximised: z.boolean(),
+  }),
 });
 
 export type KeybindingOverrides = z.infer<
   typeof appSettingsSchema
 >['keybindings'];
-export type AppSettings = z.infer<typeof appSettingsSchema>;
 
-export const DEFAULT_SETTINGS: AppSettings = {
+export type DisplaySettings = z.infer<typeof appSettingsSchema>;
+
+export const DEFAULT_SETTINGS: DisplaySettings = {
   $schema: SETTINGS_SCHEMA_VERSION,
   appearance: {
     theme: 'light',
@@ -129,72 +141,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   navigation: { style: 'vim' },
   keybindings: {},
+  window: { x: 0, y: 0, width: 0, height: 0, maximised: false },
 };
-
-/**
- * Curated list of fonts available in the Appearance settings UI.
- *
- * Bundled via `@fontsource*` imports in `main.tsx`. Each entry's `value`
- * is the CSS font-family stack written to `--app-ui-font` / `--app-code-font`
- * at runtime.
- */
-export interface FontChoice {
-  id: string;
-  label: string;
-  value: string;
-}
-
-export const UI_FONT_CHOICES: readonly FontChoice[] = [
-  {
-    id: 'geist',
-    label: 'Geist',
-    value: '"Geist Variable", "Geist", "Inter", system-ui, sans-serif',
-  },
-  {
-    id: 'inter',
-    label: 'Inter',
-    value: '"Inter", system-ui, sans-serif',
-  },
-  {
-    id: 'ibm-plex-sans',
-    label: 'IBM Plex Sans',
-    value: '"IBM Plex Sans", system-ui, sans-serif',
-  },
-  {
-    id: 'system-ui',
-    label: 'System',
-    value: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-  },
-] as const;
-
-export const CODE_FONT_CHOICES: readonly FontChoice[] = [
-  {
-    id: 'jetbrains-mono',
-    label: 'JetBrains Mono',
-    value: '"JetBrains Mono", monospace',
-  },
-  {
-    id: 'geist-mono',
-    label: 'Geist Mono',
-    value: '"Geist Mono Variable", "Geist Mono", monospace',
-  },
-  {
-    id: 'fira-code',
-    label: 'Fira Code',
-    value: '"Fira Code", monospace',
-  },
-  {
-    id: 'ibm-plex-mono',
-    label: 'IBM Plex Mono',
-    value: '"IBM Plex Mono", monospace',
-  },
-] as const;
-
-/** Helper: match a saved font stack to a curated `FontChoice` id. */
-export function fontChoiceId(
-  choices: readonly FontChoice[],
-  value: string,
-): string | null {
-  const match = choices.find((c) => c.value === value);
-  return match?.id ?? null;
-}

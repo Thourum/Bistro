@@ -1,7 +1,7 @@
 import type {
   KeybindingOverrides,
   NavigationStyle,
-} from '@renderer/types/electron/settings';
+} from '@renderer/types/settings';
 import type { OverlayKind } from '../overlays/OverlayContext';
 import { PROVIDERS } from '../providers';
 import { KEYMAPS } from './keymaps';
@@ -177,18 +177,8 @@ const SIGN_IN_ACTIONS: readonly BindingDefinition[] = [
 
 const CONNECTING_BINDINGS: readonly BindingDefinition[] = [
   {
-    actionId: 'connecting.restart',
-    description: 'Restart engine',
-    activation: { routes: ['connecting'] },
-  },
-  {
     actionId: 'connecting.openLogs',
     description: 'Open log folder',
-    activation: { routes: ['connecting'] },
-  },
-  {
-    actionId: 'connecting.report',
-    description: 'Report on GitHub',
     activation: { routes: ['connecting'] },
   },
 ];

@@ -1,9 +1,8 @@
-import { Fault } from '@thourum/fault';
+import { Expertise } from '@bindings/services';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { wsClient } from '../services/ws/connection';
+import { call } from '../services/engine/call';
 import { appStore } from '../store';
-import { type ExpertiseDataPayload, expertiseDataSchema } from '../types';
-import { parseResponse } from '../utils/error';
+import type { ExpertiseDataPayload } from '../types';
 import {
   expertisePayloadForPR,
   isExpertisePayloadForPR,
@@ -47,24 +46,18 @@ export function useExpertise(prId: string | undefined): ExpertiseState & {
     const requestId = latestRequestIdRef.current + 1;
     latestRequestIdRef.current = requestId;
     setState({ expertise: null, loading: true, error: null });
-    void wsClient
-      .request('GET_EXPERTISE', { pr_id: prId })
-      .mapErr((cause) =>
-        new Fault(cause).withTag('NETWORK_ERROR').withCause(cause),
-      )
-      .andThen((data) => parseResponse(expertiseDataSchema, data))
-      .match(
-        (data) => {
-          if (latestRequestIdRef.current !== requestId) return;
-          const payload = expertisePayloadForPR(data, prId);
-          setState({ expertise: payload, loading: false, error: null });
-        },
-        (message) => {
-          if (latestRequestIdRef.current !== requestId) return;
-          log.warn({ err: message.message }, 'failed to load expertise');
-          setState({ expertise: null, loading: false, error: message.message });
-        },
-      );
+    void call(() => Expertise.Get({ pr_id: prId })).match(
+      (data) => {
+        if (latestRequestIdRef.current !== requestId) return;
+        const payload = expertisePayloadForPR(data, prId);
+        setState({ expertise: payload, loading: false, error: null });
+      },
+      (message) => {
+        if (latestRequestIdRef.current !== requestId) return;
+        log.warn({ err: message.message }, 'failed to load expertise');
+        setState({ expertise: null, loading: false, error: message.message });
+      },
+    );
   }, [prId]);
 
   useEffect(() => {

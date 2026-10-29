@@ -1,4 +1,4 @@
-import type { NavigationStyle } from '@renderer/types/electron/settings';
+import type { NavigationStyle } from '@renderer/types/settings';
 import { PROVIDERS } from '../providers';
 
 /** actionId → hotkey; a string is one hotkey, an array is a sequence. */
@@ -43,9 +43,7 @@ const SHARED_KEYS: KeyTable = {
   'onboarding.chooseFolder': 'o',
   'onboarding.stopScan': 'Escape',
   'firstRun.hide': 'Escape',
-  'connecting.restart': 'r',
   'connecting.openLogs': 'l',
-  'connecting.report': 'i',
   'login.reopen': 'r',
   'login.copyLink': 'c',
   'login.cancel': 'Escape',

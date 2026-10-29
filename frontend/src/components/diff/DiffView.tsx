@@ -7,7 +7,7 @@ import {
   type WorkerPoolOptions,
 } from '@pierre/diffs/react';
 import DiffsHighlighterWorker from '@pierre/diffs/worker/worker.js?worker';
-import type { AppSettings } from '@renderer/types/electron/settings';
+import type { DisplaySettings as AppSettings } from '@renderer/types/settings';
 import { Fault, ResultAsync } from '@thourum/fault';
 import { useEffect, useMemo } from 'react';
 import { appStore } from '../../store';

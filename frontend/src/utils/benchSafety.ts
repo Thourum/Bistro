@@ -1,5 +1,4 @@
 import { err, type Fault, ok, type Result, ServiceError } from '@thourum/fault';
-import { isBenchMessageAllowed } from '../shared/benchSafety';
 import { emitAppEvent } from './appEvents';
 
 // Latch before user input: history/query changes cannot disable the safety guard.
@@ -26,13 +25,4 @@ export function guardBenchWrite(type: string): Result<void, Fault> {
   return err(
     ServiceError('BENCH_WRITE_BLOCKED', `Keys benchmark blocked ${type}`),
   );
-}
-
-/** Allows audited reads; send's void API reports refusal through event/log only. */
-export function guardBenchWsMessage(
-  type: string,
-  data?: unknown,
-): Result<void, Fault> {
-  if (!isKeysBench() || isBenchMessageAllowed(type, data)) return ok(undefined);
-  return guardBenchWrite(type);
 }

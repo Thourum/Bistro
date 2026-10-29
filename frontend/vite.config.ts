@@ -20,8 +20,11 @@ export default defineConfig({
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(
       process.env.BISTRO_VERSION ?? 'dev',
     ),
+    'import.meta.env.VITE_SENTRY_DSN': JSON.stringify(
+      process.env.SENTRY_DSN ?? '',
+    ),
     'import.meta.env.VITE_SENTRY_ENABLED': JSON.stringify(
-      String(Boolean(process.env.SENTRY_DSN ?? process.env.VITE_SENTRY_DSN)),
+      String(Boolean(process.env.SENTRY_DSN)),
     ),
   },
   resolve: {

@@ -17,10 +17,6 @@ export function LoginPage(): React.ReactElement {
     authLoading,
     authError,
     authExchange,
-    engineStatus,
-    appVersion,
-    lastSyncAt,
-    syncError,
     platform,
   } = useSignInScreenData();
   const githubHint = findActionKeys(useEffectiveBindings(), [
@@ -69,10 +65,6 @@ export function LoginPage(): React.ReactElement {
                 elapsed={elapsed}
                 error={authError}
                 isConnected={isConnected}
-                status={engineStatus}
-                syncError={syncError}
-                lastSyncAt={lastSyncAt}
-                version={appVersion}
               />
             </div>
             <p className="mt-auto font-mono text-[11px] text-outline">

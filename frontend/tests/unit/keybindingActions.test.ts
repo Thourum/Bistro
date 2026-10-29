@@ -27,7 +27,7 @@ vi.mock('@bindings/services', () => ({ Drafts: { Delete } }));
 
 vi.mock('../../src/utils/openUrl', () => ({
   openUrlInBrowser: (url: string) => {
-    window.electron.openExternal(url);
+    window.open(url);
     return okAsync(undefined);
   },
 }));
@@ -138,10 +138,7 @@ describe('binding actions', () => {
 
   it('o opens the PR at the cursor position in the browser', () => {
     const openExternal = vi.fn().mockResolvedValue({ ok: true });
-    Object.defineProperty(window, 'electron', {
-      configurable: true,
-      value: { openExternal },
-    });
+    vi.spyOn(window, 'open').mockImplementation(openExternal);
     const store = makeStore({
       selectedPRIndex: 1,
       visiblePRIds: ['pr-1', 'pr-2'],

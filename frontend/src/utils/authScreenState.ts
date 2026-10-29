@@ -5,11 +5,7 @@ export type AuthScreenState =
   | 'failed'
   | 'interrupted'
   | 'engineDown';
-export type FirstRunScreen =
-  | AuthScreenState
-  | 'connecting'
-  | 'slow'
-  | 'crashed';
+export type FirstRunScreen = AuthScreenState | 'connecting';
 
 export interface AuthScreenInput {
   readonly isConnected: boolean;

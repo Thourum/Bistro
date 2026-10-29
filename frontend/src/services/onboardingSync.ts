@@ -1,21 +1,19 @@
 import {
   DevFolderScan,
   ReviewQueue as ReviewQueueService,
+  Shell,
 } from '@bindings/services';
-import { Fault, ok, ResultAsync } from '@thourum/fault';
-import { z } from 'zod';
+import { type Fault, ok, type ResultAsync } from '@thourum/fault';
+import type { CancellablePromise } from '@wailsio/runtime';
 import { addToast } from '../components/ToastContainer';
-import {
-  parseScanDevFolderResult,
-  parseValidateDevFolderResult,
-  type ScanDevFolderResult,
-  type ValidateDevFolderResult,
+import type {
+  ScanDevFolderResult,
+  ValidateDevFolderResult,
 } from '../pages/onboardingResults';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { OnboardingSyncState, UIState } from '../store/ui';
 import type { RepoInfo, ReviewQueue } from '../types';
-import { parseResponse } from '../utils/error';
 import { createLogger } from '../utils/logger';
 import {
   buildOnboardingWatchChanges,
@@ -24,7 +22,6 @@ import {
 } from '../utils/onboardingRepos';
 import { call } from './engine/call';
 import { loadRepos, setRepoWatched } from './repos';
-import { wsClient } from './ws/connection';
 
 const REVIEW_QUEUE_TIMEOUT_MS = 35_000;
 const log = createLogger('OnboardingSync');
@@ -76,40 +73,31 @@ export function chooseOnboardingFolder(): ResultAsync<
   ValidateDevFolderResult | null,
   Fault
 > {
-  return ResultAsync.fromPromise(window.electron.pickFolder(), (cause) =>
-    new Fault('Unable to choose a folder.')
-      .withTag('EXTERNAL_ERROR')
-      .withCause(cause),
-  )
-    .andThen((path) => parseResponse(z.string().nullable(), path))
+  return call(() => Shell.PickFolder())
     .andThen((path) =>
-      path === null
+      path === '' ? ok(null) : call(() => DevFolderScan.Validate({ path })),
+    )
+    .andThen((result) =>
+      result === null
         ? ok(null)
-        : wsClient
-            .request('VALIDATE_DEV_FOLDER', { path })
-            .andThen(parseValidateDevFolderResult)
-            .andThen((result) =>
-              updateSettings({
-                repositories: {
-                  ...settingsStore.state.repositories,
-                  devFolderPath: result.canonicalPath,
-                },
-              }).map(() => result),
-            ),
+        : updateSettings({
+            repositories: { devFolderPath: result.canonical_path },
+          }).map(() => ({ canonicalPath: result.canonical_path })),
     );
 }
 
 export function scanOnboardingFolder(
   path: string,
-  onSent: (scanID: string) => void,
+  onStart: (promise: CancellablePromise<unknown>) => void,
 ): ResultAsync<ScanDevFolderResult, Fault> {
-  return wsClient
-    .request('SCAN_DEV_FOLDER', { path, reason: 'settings-change' }, { onSent })
-    .andThen(parseScanDevFolderResult);
+  return call(() => DevFolderScan.Scan({ path, reason: 'settings-change' }), {
+    timeoutMs: null,
+    onStart,
+  });
 }
 
-export function stopOnboardingScan(scanID: string): void {
-  wsClient.send('SCAN_CANCEL', { scan_id: scanID });
+export function stopOnboardingScan(promise: CancellablePromise<unknown>): void {
+  void promise.cancel();
 }
 
 export function commitOnboardingSelection(

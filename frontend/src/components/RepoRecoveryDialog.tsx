@@ -1,156 +1,36 @@
-import { err, Fault, ok, type Result, ResultAsync } from '@thourum/fault';
+import { type RepoCounts, RepoLocation, Shell } from '@bindings/services';
+import { type Fault, okAsync } from '@thourum/fault';
 import type React from 'react';
 import { useState } from 'react';
-import { wsClient } from '../services/ws/connection';
+import { call, callWrite, faultReason } from '../services/engine/call';
 import type { RepoInfo } from '../types';
-import type { LocationErrorCode } from '../types/repoLocation';
 
 type DialogMode = 'actions' | 'moveToCache' | 'removeConfirm';
 
-type ActionResponse =
-  | { ok: true; counts?: RemoveCounts; deleted?: RemoveCounts }
-  | { ok: false; code: LocationErrorCode; message: string };
-
-interface RemoveCounts {
-  prs: number;
-  comments: number;
-  threads: number;
-  patchsets: number;
-  actions: number;
-}
+type RemoveCounts = RepoCounts;
 
 interface RepoRecoveryDialogProps {
   repo: RepoInfo;
   onClose: () => void;
 }
 
-const LOCATION_ERROR_CODES = [
-  'path_missing',
-  'remote_mismatch',
-  'permission_denied',
-  'invalid_url',
-  'invalid_path',
-  'destination_required',
-  'destination_conflict',
-  'clone_failed',
-  'auth_failed',
-  'cancelled',
-  'delete_failed',
-  'scan_partial',
-] as const satisfies readonly LocationErrorCode[];
+const RECOVERY_MESSAGES: Readonly<Record<string, string>> = {
+  remote_mismatch: 'That folder belongs to a different repository.',
+  permission_denied: 'Bistro does not have permission to use that folder.',
+  invalid_path: 'Choose an existing repository folder.',
+  path_missing: 'Choose an existing repository folder.',
+  clone_failed: 'Bistro could not clone this repository into the cache.',
+  auth_failed: 'Authentication failed while recovering this repository.',
+};
 
-function isRecord(data: unknown): data is Record<string, unknown> {
-  return typeof data === 'object' && data !== null;
-}
-
-function isLocationErrorCode(code: unknown): code is LocationErrorCode {
-  return LOCATION_ERROR_CODES.includes(
-    code as (typeof LOCATION_ERROR_CODES)[number],
+function userFacingCodeMessage(code: string | null): string {
+  return (
+    RECOVERY_MESSAGES[code ?? ''] ?? 'Bistro could not recover this repository.'
   );
-}
-
-function isCount(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
-}
-
-function parseCounts(data: unknown): RemoveCounts | null {
-  if (!isRecord(data)) {
-    return null;
-  }
-
-  if (
-    isCount(data.prs) &&
-    isCount(data.comments) &&
-    isCount(data.threads) &&
-    isCount(data.patchsets) &&
-    isCount(data.actions)
-  ) {
-    return {
-      prs: data.prs,
-      comments: data.comments,
-      threads: data.threads,
-      patchsets: data.patchsets,
-      actions: data.actions,
-    };
-  }
-
-  return null;
-}
-
-function parseActionResponse(data: unknown): Result<ActionResponse, Fault> {
-  if (!isRecord(data)) {
-    return err(
-      new Fault('Recovery action returned an invalid response.').withTag(
-        'VALIDATION_ERROR',
-      ),
-    );
-  }
-
-  if (data.ok === true) {
-    const counts = parseCounts(data.counts);
-    const deleted = parseCounts(data.deleted);
-    return ok({
-      ok: true,
-      ...(counts === null ? {} : { counts }),
-      ...(deleted === null ? {} : { deleted }),
-    });
-  }
-
-  if (
-    data.ok === false &&
-    isLocationErrorCode(data.code) &&
-    typeof data.message === 'string'
-  ) {
-    return ok({ ok: false, code: data.code, message: data.message });
-  }
-
-  return err(
-    new Fault('Recovery action returned an invalid response.').withTag(
-      'VALIDATION_ERROR',
-    ),
-  );
-}
-
-function requestFault(error: unknown): Fault {
-  const message =
-    error instanceof Error && error.message.trim() !== ''
-      ? error.message
-      : typeof error === 'string' && error.trim() !== ''
-        ? error
-        : 'Bistro could not reach the sync engine. Try again.';
-  return new Fault(message).withTag('CONNECTION_ERROR').withCause(error);
-}
-
-function userFacingCodeMessage(code: LocationErrorCode): string {
-  switch (code) {
-    case 'remote_mismatch':
-      return 'That folder belongs to a different repository.';
-    case 'permission_denied':
-      return 'Bistro does not have permission to use that folder.';
-    case 'invalid_path':
-    case 'path_missing':
-      return 'Choose an existing repository folder.';
-    case 'clone_failed':
-      return 'Bistro could not clone this repository into the cache.';
-    case 'auth_failed':
-      return 'Authentication failed while recovering this repository.';
-    default:
-      return 'Bistro could not recover this repository.';
-  }
 }
 
 function countsCopy(counts: RemoveCounts): string {
   return `This deletes ${counts.prs} PRs, ${counts.comments} comments, ${counts.threads} threads, ${counts.patchsets} patchsets, and ${counts.actions} queued actions.`;
-}
-
-function runRequest(
-  type: string,
-  payload: unknown,
-): ResultAsync<ActionResponse, Fault> {
-  return wsClient
-    .request(type, payload)
-    .mapErr(requestFault)
-    .andThen(parseActionResponse);
 }
 
 export function RepoRecoveryDialog({
@@ -166,107 +46,60 @@ export function RepoRecoveryDialog({
   const recoveryMessage = repo.location_error ?? 'Location unavailable.';
   const mismatchHint = repo.location_error_code === 'remote_mismatch';
 
-  const handleResponse = (response: ActionResponse): boolean => {
-    if (response.ok) {
-      return true;
-    }
-
-    setErrorMessage(userFacingCodeMessage(response.code));
-    return false;
+  const handleError = (fault: Fault): void => {
+    setIsSubmitting(false);
+    setErrorMessage(userFacingCodeMessage(faultReason(fault)));
   };
 
   const chooseNewPath = (): void => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    ResultAsync.fromPromise(window.electron.pickFolder(), requestFault)
-      .andThen((path) => {
-        if (path === null) {
-          return ok<ActionResponse, Fault>({
-            ok: false,
-            code: 'cancelled',
-            message: '',
-          });
-        }
-
-        return runRequest('RECOVER_REPO_PATH', {
-          repo_id: repo.id,
-          path,
-        });
-      })
-      .match(
-        (response) => {
-          setIsSubmitting(false);
-          if (response.ok) {
-            onClose();
-            return;
-          }
-          if (response.code !== 'cancelled') {
-            handleResponse(response);
-          }
-        },
-        (error) => {
-          setIsSubmitting(false);
-          setErrorMessage(error.message);
-        },
-      );
+    call(() => Shell.PickFolder())
+      .andThen((path) =>
+        path === ''
+          ? okAsync(undefined)
+          : callWrite(() =>
+              RepoLocation.RecoverPath({ repo_id: repo.id, path }),
+            ).map(() => {
+              onClose();
+              return undefined;
+            }),
+      )
+      .match(() => setIsSubmitting(false), handleError);
   };
 
   const confirmMoveToCache = (): void => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    runRequest('RECOVER_REPO_TO_CACHE', { repo_id: repo.id }).match(
-      (response) => {
+    callWrite(() => RepoLocation.RecoverToCache({ repo_id: repo.id })).match(
+      () => {
         setIsSubmitting(false);
-        if (handleResponse(response)) {
-          onClose();
-        }
+        onClose();
       },
-      (error) => {
-        setIsSubmitting(false);
-        setErrorMessage(error.message);
-      },
+      handleError,
     );
   };
 
   const preflightRemove = (): void => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    runRequest('REMOVE_REPO_PREFLIGHT', { repo_id: repo.id }).match(
-      (response) => {
+    call(() => RepoLocation.RemovePreflight({ repo_id: repo.id })).match(
+      (counts) => {
         setIsSubmitting(false);
-        if (!response.ok) {
-          handleResponse(response);
-          return;
-        }
-        if (response.counts === undefined) {
-          setErrorMessage('Recovery action returned an invalid response.');
-          return;
-        }
-        setRemoveCounts(response.counts);
+        setRemoveCounts(counts);
         setMode('removeConfirm');
       },
-      (error) => {
-        setIsSubmitting(false);
-        setErrorMessage(error.message);
-      },
+      handleError,
     );
   };
 
   const confirmRemove = (): void => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    runRequest('REMOVE_REPO', { repo_id: repo.id }).match(
-      (response) => {
-        setIsSubmitting(false);
-        if (handleResponse(response)) {
-          onClose();
-        }
-      },
-      (error) => {
-        setIsSubmitting(false);
-        setErrorMessage(error.message);
-      },
-    );
+    callWrite(() => RepoLocation.Remove({ repo_id: repo.id })).match(() => {
+      setIsSubmitting(false);
+      onClose();
+    }, handleError);
   };
 
   return (

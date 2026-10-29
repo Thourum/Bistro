@@ -1,5 +1,5 @@
-import { Repos, ReviewQueue } from '@bindings/services';
-import { errAsync, Fault, okAsync } from '@thourum/fault';
+import { DevFolderScan, Repos, ReviewQueue, Shell } from '@bindings/services';
+import { errAsync, Fault } from '@thourum/fault';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
@@ -18,14 +18,12 @@ import {
   requestOnboardingReviewQueue,
 } from './onboardingSync';
 import { loadRepos } from './repos';
-import { wsClient } from './ws/connection';
 
 vi.mock('@bindings/services', () => ({
+  Shell: { PickFolder: vi.fn() },
+  DevFolderScan: { Validate: vi.fn(), Scan: vi.fn() },
   Repos: { List: vi.fn(), SetWatched: vi.fn() },
   ReviewQueue: { Get: vi.fn() },
-}));
-vi.mock('./ws/connection', () => ({
-  wsClient: { request: vi.fn(), send: vi.fn() },
 }));
 vi.mock('../store/settings', () => ({
   settingsStore: { state: { repositories: { devFolderPath: '' } } },
@@ -134,13 +132,14 @@ it('clears repo loading on failure without discarding cached rows', async () => 
 });
 
 it('keeps cancellation silent and gates scanning on canonical-path settings persistence', async () => {
-  const pickFolder = vi.fn().mockResolvedValue(null);
-  vi.stubGlobal('window', { electron: { pickFolder } });
+  vi.mocked(Shell.PickFolder).mockReturnValue(cancellable(Promise.resolve('')));
   expect((await chooseOnboardingFolder())._unsafeUnwrap()).toBeNull();
-  expect(wsClient.request).not.toHaveBeenCalled();
-  pickFolder.mockResolvedValue('/projects');
-  vi.mocked(wsClient.request).mockReturnValue(
-    okAsync({ ok: true, canonical_path: '/canonical' }),
+  expect(DevFolderScan.Validate).not.toHaveBeenCalled();
+  vi.mocked(Shell.PickFolder).mockReturnValue(
+    cancellable(Promise.resolve('/projects')),
+  );
+  vi.mocked(DevFolderScan.Validate).mockReturnValue(
+    cancellable(Promise.resolve({ canonical_path: '/canonical' })),
   );
   vi.mocked(updateSettings).mockReturnValue(
     errAsync(new Fault('disk full').withTag('SETTINGS_ERROR')),
@@ -154,9 +153,7 @@ it('keeps cancellation silent and gates scanning on canonical-path settings pers
       devFolderPath: '/canonical',
     },
   });
-  expect(wsClient.request).toHaveBeenCalledExactlyOnceWith(
-    'VALIDATE_DEV_FOLDER',
-    { path: '/projects' },
-  );
-  vi.unstubAllGlobals();
+  expect(DevFolderScan.Validate).toHaveBeenCalledExactlyOnceWith({
+    path: '/projects',
+  });
 });

@@ -1,3 +1,4 @@
+import type { CancellablePromise } from '@wailsio/runtime';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '../hooks/useStore';
 import {
@@ -62,7 +63,7 @@ function startFolderLifecycle(
   options: FolderLifecycleOptions,
 ): OnboardingSyncControls {
   let scanAttempt = 0;
-  let scanID: string | undefined;
+  let scanPromise: CancellablePromise<unknown> | undefined;
   let choiceAttempt = 0;
   let previousFolder = options.initialFolder;
 
@@ -78,15 +79,16 @@ function startFolderLifecycle(
 
   function scanFolder(path: string): void {
     const attempt = ++scanAttempt;
-    scanID = undefined;
+    scanPromise = undefined;
     updateOnboardingSyncState((state) =>
       state === null
         ? null
         : { ...state, folder: { status: 'scanning', path } },
     );
     // A new engine scan serializes old persistence without a separate Stop.
-    void scanOnboardingFolder(path, (id) => {
-      if (!options.isDisposed() && attempt === scanAttempt) scanID = id;
+    void scanOnboardingFolder(path, (promise) => {
+      if (!options.isDisposed() && attempt === scanAttempt)
+        scanPromise = promise;
     }).match(
       (result) => {
         if (options.isDisposed() || attempt !== scanAttempt) return;
@@ -140,9 +142,9 @@ function startFolderLifecycle(
     stopScan: () => {
       if (
         appStore.state.onboardingSync?.folder.status === 'scanning' &&
-        scanID !== undefined
+        scanPromise !== undefined
       )
-        stopOnboardingScan(scanID);
+        stopOnboardingScan(scanPromise);
     },
     scanAgain: () => {
       const folder = appStore.state.onboardingSync?.folder;

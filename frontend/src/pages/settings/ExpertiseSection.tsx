@@ -1,11 +1,11 @@
-import { Fault } from '@thourum/fault';
+import { Expertise } from '@bindings/services';
 import { useEffect, useState } from 'react';
 import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { useStore } from '../../hooks/useStore';
-import { wsClient } from '../../services/ws/connection';
+import { call, callWrite } from '../../services/engine/call';
 import { appStore } from '../../store';
 import type { UIState } from '../../store/ui';
 import type { ExpertiseSettingsPayload } from '../../types';
@@ -20,8 +20,8 @@ function splitListInput(value: string): string[] {
     .filter((item) => item.length > 0);
 }
 
-function joinListInput(values: readonly string[]): string {
-  return values.join('\n');
+function joinListInput(values: readonly string[] | null | undefined): string {
+  return (values ?? []).join('\n');
 }
 
 export function expertiseSettingsPayloadFromInputs(
@@ -67,7 +67,7 @@ export function ExpertiseSection() {
   const [excludeInputs, setExcludeInputs] = useState<Record<string, string>>(
     () =>
       Object.fromEntries(
-        Object.entries(settings.excludes).map(([repoId, globs]) => [
+        Object.entries(settings.excludes ?? {}).map(([repoId, globs]) => [
           repoId,
           joinListInput(globs),
         ]),
@@ -76,21 +76,20 @@ export function ExpertiseSection() {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    void wsClient
-      .request('GET_EXPERTISE_SETTINGS', {})
-      .mapErr((cause) =>
-        new Fault(cause).withTag('CONNECTION_ERROR').withCause(cause),
-      )
-      .match(
-        () => undefined,
-        (err) => {
-          addToast({
-            type: 'error',
-            message: `Loading expertise settings failed: ${err.message}`,
-            dismissible: true,
-          });
-        },
-      );
+    void call(() => Expertise.GetSettings()).match(
+      (settings) =>
+        appStore.setState((state) => ({
+          ...state,
+          expertiseSettings: settings,
+        })),
+      (err) => {
+        addToast({
+          type: 'error',
+          message: `Loading expertise settings failed: ${err.message}`,
+          dismissible: true,
+        });
+      },
+    );
   }, []);
 
   useEffect(() => {
@@ -99,7 +98,7 @@ export function ExpertiseSection() {
     setMinLinesInput(String(storedSettings.min_surviving_lines));
     setExcludeInputs(
       Object.fromEntries(
-        Object.entries(storedSettings.excludes).map(([repoId, globs]) => [
+        Object.entries(storedSettings.excludes ?? {}).map(([repoId, globs]) => [
           repoId,
           joinListInput(globs),
         ]),
@@ -132,30 +131,25 @@ export function ExpertiseSection() {
     );
 
     setIsSaving(true);
-    void wsClient
-      .request('SET_EXPERTISE_SETTINGS', payload)
-      .mapErr((cause) =>
-        new Fault(cause).withTag('CONNECTION_ERROR').withCause(cause),
-      )
-      .match(
-        () => {
-          setIsSaving(false);
-          appStore.setState((s) => ({ ...s, expertiseSettings: payload }));
-          addToast({
-            type: 'success',
-            message: 'Expertise settings saved.',
-            dismissible: true,
-          });
-        },
-        (err) => {
-          setIsSaving(false);
-          addToast({
-            type: 'error',
-            message: `Saving expertise settings failed: ${err.message}`,
-            dismissible: true,
-          });
-        },
-      );
+    void callWrite(() => Expertise.SetSettings(payload)).match(
+      (saved) => {
+        setIsSaving(false);
+        appStore.setState((s) => ({ ...s, expertiseSettings: saved }));
+        addToast({
+          type: 'success',
+          message: 'Expertise settings saved.',
+          dismissible: true,
+        });
+      },
+      (err) => {
+        setIsSaving(false);
+        addToast({
+          type: 'error',
+          message: `Saving expertise settings failed: ${err.message}`,
+          dismissible: true,
+        });
+      },
+    );
   };
 
   const setRepoExcludes = (repoId: string, value: string): void => {

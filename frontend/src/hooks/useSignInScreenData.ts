@@ -1,4 +1,3 @@
-import type { EngineStatus } from '@renderer/types/electron/engine';
 import { useEffect, useState } from 'react';
 import { appStore } from '../store';
 import {
@@ -17,7 +16,6 @@ interface SignInScreenData {
   readonly authLoading: boolean;
   readonly authError: string | null;
   readonly authExchange: 'proxy' | 'local' | null;
-  readonly engineStatus: EngineStatus | null;
   readonly appVersion: string | null;
   readonly lastSyncAt: string | null;
   readonly syncError: string | null;
@@ -39,7 +37,7 @@ export function useSignInScreenData(): SignInScreenData {
   const authTimedOut = useStore(appStore, (state) => state.authTimedOut);
   const authInterrupted = useStore(appStore, (state) => state.authInterrupted);
   const authExchange = useStore(appStore, (state) => state.authExchange);
-  const engineStatus = useStore(appStore, (state) => state.engineStatus);
+  const platform = useStore(appStore, (state) => state.platform);
   const appVersion = useStore(appStore, (state) => state.appVersion);
   const lastSyncAt = useStore(appStore, (state) => state.lastSyncAt);
   const syncError = useStore(appStore, (state) => state.syncError);
@@ -76,10 +74,9 @@ export function useSignInScreenData(): SignInScreenData {
     authLoading,
     authError,
     authExchange,
-    engineStatus,
     appVersion,
     lastSyncAt,
     syncError,
-    platform: window.electron?.platform ?? 'unknown',
+    platform,
   };
 }

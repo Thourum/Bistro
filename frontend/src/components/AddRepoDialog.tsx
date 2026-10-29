@@ -1,40 +1,14 @@
-import { err, Fault, ok, type Result } from '@thourum/fault';
+import { RepoLocation } from '@bindings/services';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { wsClient } from '../services/ws/connection';
+import { callWrite, faultReason } from '../services/engine/call';
 import { settingsStore } from '../store/settings';
-import type { LocationErrorCode } from '../types/repoLocation';
 import { addToast } from './ToastContainer';
 
 type Destination = 'dev_folder' | 'cache';
 type Step = 'url' | 'destination';
 
-type AddRepoResponse =
-  | { ok: true; source?: string }
-  | {
-      ok: false;
-      code: LocationErrorCode;
-      message: string;
-      operation?: string;
-      repo_id?: string;
-    };
-
-const LOCATION_ERROR_CODES = [
-  'path_missing',
-  'remote_mismatch',
-  'permission_denied',
-  'invalid_url',
-  'invalid_path',
-  'destination_required',
-  'destination_conflict',
-  'clone_failed',
-  'auth_failed',
-  'cancelled',
-  'delete_failed',
-  'scan_partial',
-] as const satisfies readonly LocationErrorCode[];
-
-const ERROR_MESSAGES: Partial<Record<LocationErrorCode, string>> = {
+const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   invalid_url: 'Enter a valid Git repository URL.',
   destination_conflict: 'A repository already exists at that destination.',
   auth_failed: 'Authentication failed while adding the repository.',
@@ -42,75 +16,6 @@ const ERROR_MESSAGES: Partial<Record<LocationErrorCode, string>> = {
   permission_denied: 'Bistro does not have permission to use that destination.',
   invalid_path: 'Choose a valid repository destination.',
 };
-
-function requestFault(error: unknown): Fault {
-  const message =
-    error instanceof Error && error.message.trim() !== ''
-      ? error.message
-      : typeof error === 'string' && error.trim() !== ''
-        ? error
-        : 'Bistro could not reach the sync engine. Try again.';
-  return new Fault(message).withTag('CONNECTION_ERROR').withCause(error);
-}
-
-function isRecord(data: unknown): data is Record<string, unknown> {
-  return typeof data === 'object' && data !== null;
-}
-
-function isLocationErrorCode(code: unknown): code is LocationErrorCode {
-  return LOCATION_ERROR_CODES.includes(
-    code as (typeof LOCATION_ERROR_CODES)[number],
-  );
-}
-
-function parseAddRepoResponse(data: unknown): Result<AddRepoResponse, Fault> {
-  if (!isRecord(data)) {
-    return err(
-      new Fault('Add repository returned an invalid response.').withTag(
-        'VALIDATION_ERROR',
-      ),
-    );
-  }
-
-  if (data.ok === true) {
-    if (data.source !== undefined && typeof data.source !== 'string') {
-      return err(
-        new Fault('Add repository returned an invalid response.').withTag(
-          'VALIDATION_ERROR',
-        ),
-      );
-    }
-
-    return ok(
-      data.source === undefined
-        ? { ok: true }
-        : { ok: true, source: data.source },
-    );
-  }
-
-  if (
-    data.ok === false &&
-    isLocationErrorCode(data.code) &&
-    typeof data.message === 'string' &&
-    (data.operation === undefined || typeof data.operation === 'string') &&
-    (data.repo_id === undefined || typeof data.repo_id === 'string')
-  ) {
-    const response: AddRepoResponse = {
-      ok: false,
-      code: data.code,
-      message: data.message,
-      ...(data.operation === undefined ? {} : { operation: data.operation }),
-      ...(data.repo_id === undefined ? {} : { repo_id: data.repo_id }),
-    };
-    return ok(response);
-  }
-
-  return err(
-    new Fault('Add repository returned an invalid response.').withTag(
-      'VALIDATION_ERROR',
-    ),
-  );
-}
 
 interface AddRepoDialogProps {
   onClose: () => void;
@@ -130,7 +35,7 @@ export function AddRepoDialog({
   const devFolderButtonRef = useRef<HTMLButtonElement>(null);
   const cacheButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
-  // Ignore in-flight WebSocket responses once the dialog is closed/unmounted,
+  // Ignore in-flight responses once the dialog is closed/unmounted,
   // so a stale callback cannot toast or close a newly opened overlay.
   const isClosedRef = useRef(false);
   const devFolderPath = settingsStore.state.repositories.devFolderPath;
@@ -195,28 +100,6 @@ export function AddRepoDialog({
     }
   };
 
-  const handleResponse = (response: AddRepoResponse): void => {
-    if (response.ok) {
-      addToast({
-        type: 'success',
-        message: 'Repository added',
-        dismissible: true,
-      });
-      close();
-      return;
-    }
-
-    if (response.code === 'destination_required') {
-      setStep('destination');
-      setErrorMessage(null);
-      return;
-    }
-
-    setErrorMessage(
-      ERROR_MESSAGES[response.code] ?? 'Repository could not be added.',
-    );
-  };
-
   const submit = (destination: Destination | null): void => {
     const trimmedUrl = url.trim();
     if (trimmedUrl === '') {
@@ -227,26 +110,37 @@ export function AddRepoDialog({
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    wsClient
-      .request('ADD_REPO_BY_URL', {
+    callWrite(() =>
+      RepoLocation.AddByURL({
         url: trimmedUrl,
         destination,
         dev_folder_path: devFolderPath,
-      })
-      .mapErr(requestFault)
-      .andThen(parseAddRepoResponse)
-      .match(
-        (response) => {
-          if (isClosedRef.current) return;
-          setIsSubmitting(false);
-          handleResponse(response);
-        },
-        (error) => {
-          if (isClosedRef.current) return;
-          setIsSubmitting(false);
-          setErrorMessage(error.message);
-        },
-      );
+      }),
+    ).match(
+      () => {
+        if (isClosedRef.current) return;
+        setIsSubmitting(false);
+        addToast({
+          type: 'success',
+          message: 'Repository added',
+          dismissible: true,
+        });
+        close();
+      },
+      (error) => {
+        if (isClosedRef.current) return;
+        setIsSubmitting(false);
+        const reason = faultReason(error);
+        if (reason === 'destination_required') {
+          setStep('destination');
+          setErrorMessage(null);
+          return;
+        }
+        setErrorMessage(
+          ERROR_MESSAGES[reason ?? ''] ?? 'Repository could not be added.',
+        );
+      },
+    );
   };
 
   return (

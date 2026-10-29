@@ -1,10 +1,10 @@
-import { Fault } from '@thourum/fault';
+import { Expertise } from '@bindings/services';
 import { useCallback } from 'react';
 import { useStore } from '../hooks/useStore';
-import { wsClient } from '../services/ws/connection';
+import { callWrite, faultReason } from '../services/engine/call';
+import { handleExpertiseError } from '../services/events/expertise';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
-import { addToast } from './ToastContainer';
 import { Button } from './ui/button';
 
 interface ExpertiseNudgeProps {
@@ -28,26 +28,27 @@ export function ExpertiseNudge({
   }, [repoId]);
 
   const handleEnable = (): void => {
-    void wsClient
-      .request('EXPERTISE_ENABLE', { repo_id: repoId })
-      .mapErr((cause) =>
-        new Fault(cause).withTag('CONNECTION_ERROR').withCause(cause),
-      )
-      .match(
-        () => clearNudge(),
-        (err) => {
-          addToast({
-            type: 'error',
-            message: `Enabling expertise failed: ${err.message}`,
-            dismissible: true,
-          });
-        },
-      );
+    void callWrite(() => Expertise.Enable({ repo_id: repoId })).match(
+      () => clearNudge(),
+      (fault) =>
+        handleExpertiseError({
+          repo_id: repoId,
+          code: faultReason(fault) ?? fault.tag ?? 'internal',
+          message: fault.message,
+        }),
+    );
   };
 
   const handleDismiss = (): void => {
-    wsClient.send('EXPERTISE_NUDGE_DISMISS', { repo_id: repoId });
-    clearNudge();
+    void callWrite(() => Expertise.DismissNudge({ repo_id: repoId })).match(
+      clearNudge,
+      (fault) =>
+        handleExpertiseError({
+          repo_id: repoId,
+          code: faultReason(fault) ?? fault.tag ?? 'internal',
+          message: fault.message,
+        }),
+    );
   };
 
   if (nudge === null) return null;

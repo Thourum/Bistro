@@ -1,4 +1,3 @@
-import type { EngineStatus } from '@renderer/types/electron/engine';
 import type React from 'react';
 import { ActionKeyHint } from '../../components/ui/action-key-hint';
 import { Button } from '../../components/ui/button';
@@ -33,17 +32,11 @@ const ACTIONS_BY_SCREEN: Partial<
   Record<AuthScreenState, readonly SignInAction[]>
 > = { waiting: WAITING_ACTIONS, timedOut: TIMEOUT_ACTIONS };
 
-const STATUS_ROW = 'grid grid-cols-[6rem_1fr] gap-4';
-
 interface SignInStateProps {
   readonly screen: AuthScreenState;
   readonly elapsed: string;
   readonly error: string | null;
   readonly isConnected: boolean;
-  readonly status: EngineStatus | null;
-  readonly syncError: string | null;
-  readonly lastSyncAt: string | null;
-  readonly version: string | null;
 }
 
 function ActionRow({
@@ -68,54 +61,7 @@ function ActionRow({
   );
 }
 
-function EngineDiagnostics(
-  props: Pick<
-    SignInStateProps,
-    'status' | 'syncError' | 'lastSyncAt' | 'version'
-  >,
-): React.ReactElement {
-  return (
-    <div role="alert" className="space-y-4">
-      <p className="text-sm text-error">
-        {props.status?.isSpawned
-          ? 'Cannot connect to sync engine. Bistro is restarting it.'
-          : 'Cannot connect to sync engine. Start it, then Bistro reconnects automatically.'}
-      </p>
-      <dl className="space-y-1 border-t border-outline-variant/40 pt-4 font-mono text-[11px]">
-        <div className={STATUS_ROW}>
-          <dt className="uppercase tracking-widest text-outline">Engine</dt>
-          <dd className="uppercase text-error">
-            {props.status?.state ?? 'Unavailable'}
-          </dd>
-        </div>
-        <div className={STATUS_ROW}>
-          <dt className="uppercase tracking-widest text-outline">Error</dt>
-          <dd className="break-words text-error">
-            {props.syncError ??
-              props.status?.error ??
-              'No error detail available.'}
-          </dd>
-        </div>
-        <div className={STATUS_ROW}>
-          <dt className="uppercase tracking-widest text-outline">Last sync</dt>
-          <dd className="text-on-surface-variant">
-            {props.lastSyncAt === null
-              ? 'Not yet synced'
-              : new Date(props.lastSyncAt).toLocaleString()}
-          </dd>
-        </div>
-        <div className={STATUS_ROW}>
-          <dt className="uppercase tracking-widest text-outline">Version</dt>
-          <dd className="text-on-surface-variant">
-            {props.version ?? 'Unavailable'}
-          </dd>
-        </div>
-      </dl>
-    </div>
-  );
-}
-
-/** Left-column state area: waiting/timeout panels, inline errors, engine diagnostics. */
+/** Left-column state area: waiting/timeout panels, inline errors, authorization state. */
 export function SignInState(props: SignInStateProps): React.ReactElement {
   const actions = ACTIONS_BY_SCREEN[props.screen];
   return (
@@ -164,17 +110,8 @@ export function SignInState(props: SignInStateProps): React.ReactElement {
       )}
       {props.screen === 'interrupted' && (
         <p role="alert" className="text-sm text-error">
-          Sign-in was interrupted because the connection to the sync engine
-          dropped. Start again.
+          Sign-in was interrupted. Start again.
         </p>
-      )}
-      {!props.isConnected && (
-        <EngineDiagnostics
-          status={props.status}
-          syncError={props.syncError}
-          lastSyncAt={props.lastSyncAt}
-          version={props.version}
-        />
       )}
     </div>
   );

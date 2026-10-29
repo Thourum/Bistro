@@ -1,3 +1,4 @@
+import { Classification } from '@bindings/services';
 import { getSequenceManager } from '@tanstack/hotkeys';
 import {
   err,
@@ -9,7 +10,7 @@ import {
 } from '@thourum/fault';
 import { z } from 'zod';
 import { router } from '../router';
-import { wsClient } from '../services/ws/connection';
+import { call } from '../services/engine/call';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import { permitsBenchAction } from '../utils/benchSafety';
@@ -375,28 +376,24 @@ export function startKeysBench(
   window.addEventListener(
     'bistro:pr-list-rendered',
     () => {
-      void wsClient
-        .request('SET_CLASSIFICATION_SETTINGS', {
+      void call(() =>
+        Classification.SetSettings({
           mode: 'rules',
           dismissal_scope: 'local',
           provider: 'anthropic',
           model: '',
           endpoint: '',
-        })
-        .mapErr(keysFault)
-        .andThen((response) => {
-          const settings = z
-            .object({
-              mode: z.literal('rules'),
-              dismissal_scope: z.literal('local'),
-            })
-            .safeParse(response);
-          return settings.success
-            ? ok(settings.data)
+        }),
+      )
+        .andThen((settings) =>
+          settings.mode === 'rules' && settings.dismissal_scope === 'local'
+            ? ok(settings)
             : err(
-                keysFault('Engine did not confirm rules-only classification'),
-              );
-        })
+                new Fault(
+                  'Rules-only classification was not confirmed',
+                ).withTag('VALIDATION_ERROR'),
+              ),
+        )
         .andThen((settings) =>
           reporter.post({
             event: 'keys_ready',

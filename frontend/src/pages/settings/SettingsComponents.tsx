@@ -1,4 +1,4 @@
-import type { AppSettings } from '@renderer/types/electron/settings';
+import type { AppSettings } from '@renderer/types/settings';
 import type { Fault } from '@thourum/fault';
 import type { ReactNode } from 'react';
 import { addToast } from '../../components/ToastContainer';

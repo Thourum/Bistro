@@ -1,11 +1,11 @@
-import type { ClassificationSettings } from '@renderer/types/electron/settings';
-import { Fault } from '@thourum/fault';
+import { Classification } from '@bindings/services';
+import type { ClassificationSettings } from '@renderer/types/settings';
 import { useState } from 'react';
 import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { useStore } from '../../hooks/useStore';
-import { wsClient } from '../../services/ws/connection';
+import { callWrite } from '../../services/engine/call';
 import { appStore } from '../../store';
 import type { UIState } from '../../store/ui';
 import { saveSettings } from './SettingsComponents';
@@ -45,36 +45,33 @@ export function ClassificationProvider({
     setKeySaving(true);
     // The key travels ONLY through SET_BYOK_KEY into the OS keychain —
     // never into settings JSON or any renderer store.
-    void wsClient
-      .request('SET_BYOK_KEY', {
+    void callWrite(() =>
+      Classification.SetByokKey({
         provider: classification.provider,
         key: keyInput,
-      })
-      .mapErr((cause) =>
-        new Fault(cause).withTag('CONNECTION_ERROR').withCause(cause),
-      )
-      .match(
-        () => {
-          setKeySaving(false);
-          setKeyInput('');
-          setKeySaved(true);
-          appStore.setState((s) => ({ ...s, byokAuthFailed: false }));
-          addToast({
-            type: 'success',
-            message: `API key saved to the OS keychain (${classification.provider})`,
-            dismissible: true,
-          });
-        },
-        (err) => {
-          // Key kept in the input so the user can retry.
-          setKeySaving(false);
-          addToast({
-            type: 'error',
-            message: `Saving key failed: ${err.message}`,
-            dismissible: true,
-          });
-        },
-      );
+      }),
+    ).match(
+      () => {
+        setKeySaving(false);
+        setKeyInput('');
+        setKeySaved(true);
+        appStore.setState((s) => ({ ...s, byokAuthFailed: false }));
+        addToast({
+          type: 'success',
+          message: `API key saved to the OS keychain (${classification.provider})`,
+          dismissible: true,
+        });
+      },
+      (err) => {
+        // Key kept in the input so the user can retry.
+        setKeySaving(false);
+        addToast({
+          type: 'error',
+          message: `Saving key failed: ${err.message}`,
+          dismissible: true,
+        });
+      },
+    );
   };
 
   return (

@@ -4,6 +4,7 @@ import {
   checkPRCheckout,
   openInEditor,
 } from '../services/editor';
+import { faultReason } from '../services/engine/call';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('useOpenInEditor');
@@ -85,8 +86,8 @@ export function useOpenInEditor(): {
       openInEditor({ repoRoot, relativePath, line }).match(
         () => setState({ dialog: null, error: null }),
         (err) => {
-          if (err.tag !== 'EDITOR_ERROR') {
-            log.warn({ err: err.message }, 'openInEditor IPC failed');
+          if (faultReason(err) !== 'editor_not_set') {
+            log.warn({ err: err.message }, 'openInEditor failed');
           }
           setState({ dialog: null, error: err.message });
         },
@@ -99,10 +100,6 @@ export function useOpenInEditor(): {
       Promise.resolve(
         checkPRCheckout(prId).match(
           async (data) => {
-            if (data.error !== undefined) {
-              setState({ dialog: null, error: data.error });
-              return;
-            }
             const repoRoot = data.local_path;
             if (repoRoot === undefined || repoRoot === '') {
               setState({ dialog: null, error: 'no local path' });
@@ -140,13 +137,6 @@ export function useOpenInEditor(): {
       Promise.resolve(
         checkoutPRHead(dialog.prId, dialog.headSha).match(
           async (data) => {
-            if (data.ok !== true) {
-              setState({
-                dialog: null,
-                error: `Checkout failed: ${data.reason ?? 'unknown error'}`,
-              });
-              return;
-            }
             const repoRoot = data.local_path ?? dialog.repoRoot;
             await openViaIPC(repoRoot, dialog.relativePath, dialog.line);
           },
@@ -155,7 +145,10 @@ export function useOpenInEditor(): {
               { err: err.message, prId: dialog.prId },
               'CHECKOUT_PR_HEAD failed',
             );
-            setState({ dialog: null, error: err.message });
+            setState({
+              dialog: null,
+              error: `Checkout failed: ${faultReason(err) ?? err.message}`,
+            });
           },
         ),
       ),

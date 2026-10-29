@@ -2,11 +2,14 @@
 import './sentry';
 // Initialize the native runtime before the renderer migrates its service calls.
 import '@wailsio/runtime';
+import { Shell } from '@bindings/services';
 import { Fault, ResultAsync } from '@thourum/fault';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { call } from './services/engine/call';
+import { appStore } from './store';
 import { createLogger } from './utils/logger';
 
 import '@fontsource-variable/geist/index.css';
@@ -29,6 +32,17 @@ import '@fontsource/ibm-plex-sans/500.css';
 import './styles/globals.css';
 
 function renderApp(): void {
+  void call(() => Shell.AppInfo()).match(
+    (info) =>
+      appStore.setState((state) => ({
+        ...state,
+        appVersion: info.version,
+        platform: info.platform,
+      })),
+    (fault) =>
+      createLogger('Bootstrap').warn({ err: fault.message }, 'app info failed'),
+  );
+
   const root = document.getElementById('root');
   if (root === null) {
     document.body.textContent =

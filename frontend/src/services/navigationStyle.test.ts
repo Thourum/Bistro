@@ -1,4 +1,4 @@
-import type { NavigationStyle } from '@renderer/types/electron/settings';
+import type { NavigationStyle } from '@renderer/types/settings';
 import { describe, expect, it } from 'vitest';
 import { neighbourNavigationStyle } from './navigationStyle';
 

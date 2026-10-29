@@ -1,10 +1,11 @@
-import type { Breadcrumb, ErrorEvent } from '@sentry/electron/renderer';
-import * as Sentry from '@sentry/electron/renderer';
+import type { Breadcrumb, ErrorEvent } from '@sentry/browser';
+import * as Sentry from '@sentry/browser';
+
+import { settingsStore } from './store/settings';
 
 const isBenchRequested =
-  (typeof window !== 'undefined' && window.electron?.isKeysBench === true) ||
-  (typeof location !== 'undefined' &&
-    new URLSearchParams(location.search).has('bench_keys'));
+  typeof location !== 'undefined' &&
+  new URLSearchParams(location.search).has('bench_keys');
 const enabled =
   !isBenchRequested && import.meta.env.VITE_SENTRY_ENABLED === 'true';
 
@@ -41,10 +42,16 @@ function filterBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
 
 if (enabled) {
   Sentry.init({
+    dsn: import.meta.env.VITE_SENTRY_DSN,
+    release: `bistro@${import.meta.env.VITE_APP_VERSION}`,
+    integrations: (integrations) =>
+      integrations.filter(
+        (integration) => integration.name !== 'BrowserSession',
+      ),
     sendDefaultPii: false,
     tracesSampleRate: 0,
-    denyUrls: [/^file:\/\//i],
-    beforeSend: scrubEvent,
+    beforeSend: (event) =>
+      settingsStore.state.privacy.telemetryEnabled ? scrubEvent(event) : null,
     beforeBreadcrumb: filterBreadcrumb,
   });
 }

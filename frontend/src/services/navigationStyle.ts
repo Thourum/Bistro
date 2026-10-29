@@ -1,7 +1,7 @@
 import {
   NAVIGATION_STYLES,
   type NavigationStyle,
-} from '@renderer/types/electron/settings';
+} from '@renderer/types/settings';
 import type { Fault, ResultAsync } from '@thourum/fault';
 import { addToast } from '../components/ToastContainer';
 import { settingsStore, updateSettings } from '../store/settings';

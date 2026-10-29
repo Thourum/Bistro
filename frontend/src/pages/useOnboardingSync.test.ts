@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import {
+  DevFolderScan,
   type RepoListResponse,
   Repos,
   ReviewQueue,
+  type ScanDevFolderResult,
   type WatchResult,
 } from '@bindings/services';
 import { Fault, ResultAsync } from '@thourum/fault';
@@ -10,18 +12,15 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ReviewQueue as ReviewQueuePayload } from '../../bindings/github.com/itterno/bistro/internal/provider/models';
-import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { initialUIState } from '../store/ui';
 import { cancellable } from '../test/cancellable';
 import { useOnboardingSync } from './useOnboardingSync';
 
 vi.mock('@bindings/services', () => ({
+  DevFolderScan: { Scan: vi.fn() },
   Repos: { List: vi.fn(), SetWatched: vi.fn() },
   ReviewQueue: { Get: vi.fn() },
-}));
-vi.mock('../services/ws/connection', () => ({
-  wsClient: { request: vi.fn(), send: vi.fn() },
 }));
 vi.mock('../store/settings', () => ({
   settingsStore: { state: { repositories: { devFolderPath: '/dev' } } },
@@ -92,12 +91,12 @@ it('shows clone cache immediately and keeps scans alive after Continue and unmou
   const list = deferredResponse<RepoListResponse>();
   const review = deferredResponse<ReviewQueuePayload>();
   const refreshed = deferredResponse<RepoListResponse>();
-  const scan = deferredResponse();
+  const scan = deferredResponse<ScanDevFolderResult>();
   vi.mocked(Repos.List)
     .mockReturnValueOnce(list.binding)
     .mockReturnValueOnce(refreshed.binding);
   vi.mocked(ReviewQueue.Get).mockReturnValueOnce(review.binding);
-  vi.mocked(wsClient.request).mockReturnValueOnce(scan.result);
+  vi.mocked(DevFolderScan.Scan).mockReturnValueOnce(scan.binding);
   const hook = await mountSync();
   expect(
     hook.latest.sync?.state.selection.repos.map(
@@ -110,10 +109,7 @@ it('shows clone cache immediately and keeps scans alive after Continue and unmou
     path: '/dev',
     partial: false,
   });
-  expect(wsClient.request).not.toHaveBeenCalledWith(
-    'SCAN_DEV_FOLDER',
-    expect.anything(),
-  );
+  expect(DevFolderScan.Scan).not.toHaveBeenCalled();
   await act(async () => {
     list.resolve({ repos: [repo('api'), repo('clone', '/dev/clone')] });
   });
@@ -147,11 +143,10 @@ it('shows clone cache immediately and keeps scans alive after Continue and unmou
   expect(appStore.state.onboardingStep).toBe('practice');
   expect(appStore.state.onboardingSync?.selection.sealed).toBe(true);
   await hook.unmount();
-  expect(wsClient.send).not.toHaveBeenCalled();
-  const requests = vi.mocked(wsClient.request).mock.calls.length;
+  expect(scan.binding.cancel).not.toHaveBeenCalled();
+  const requests = vi.mocked(DevFolderScan.Scan).mock.calls.length;
   await act(async () => {
     scan.resolve({
-      ok: true,
       discovered: 1,
       healthy: 1,
       degraded: 0,
@@ -160,7 +155,7 @@ it('shows clone cache immediately and keeps scans alive after Continue and unmou
     });
   });
   expect(appStore.state.onboardingSync).toBeNull();
-  expect(wsClient.request).toHaveBeenCalledTimes(requests);
+  expect(DevFolderScan.Scan).toHaveBeenCalledTimes(requests);
 });
 
 it('continues from cached clones while queue discovery is pending and seals choices against late defaults', async () => {
@@ -201,7 +196,7 @@ it('continues from cached clones while queue discovery is pending and seals choi
   expect(hook.latest.sync?.state.selection.selected).toBe(selection);
   expect(hook.latest.sync?.state.selection.repos[0]?.watched).toBe(true);
   expect(hook.latest.sync?.canContinue).toBe(false);
-  expect(wsClient.request).not.toHaveBeenCalled();
+  expect(DevFolderScan.Scan).not.toHaveBeenCalled();
   await hook.unmount();
 });
 
@@ -246,13 +241,13 @@ it('reveals held nonlocal cache and permits an empty failed read once the queue 
 it('only explicit Stop cancels and partial completion refreshes clone metadata', async () => {
   const list = deferredResponse<RepoListResponse>();
   const review = deferredResponse<ReviewQueuePayload>();
-  const scan = deferredResponse();
+  const scan = deferredResponse<ScanDevFolderResult>();
   const refreshed = deferredResponse<RepoListResponse>();
   vi.mocked(Repos.List)
     .mockReturnValueOnce(list.binding)
     .mockReturnValueOnce(refreshed.binding);
   vi.mocked(ReviewQueue.Get).mockReturnValueOnce(review.binding);
-  vi.mocked(wsClient.request).mockReturnValueOnce(scan.result);
+  vi.mocked(DevFolderScan.Scan).mockReturnValueOnce(scan.binding);
   const hook = await mountSync();
   await act(async () => {
     list.resolve({ repos: [] });
@@ -260,24 +255,16 @@ it('only explicit Stop cancels and partial completion refreshes clone metadata',
   });
   await act(async () => {
     hook.latest.sync?.scanAgain();
-    hook.latest.sync?.stopScan();
   });
-  expect(wsClient.send).not.toHaveBeenCalled();
-  const options = vi
-    .mocked(wsClient.request)
-    .mock.calls.find(([type]) => type === 'SCAN_DEV_FOLDER')?.[2];
-  expect(options?.onSent).toBeDefined();
-  options?.onSent?.('this-window-scan');
-  // Another window/startup scan can replace this one before its reply arrives.
-  wsClient.send('SCAN_DEV_FOLDER', { path: '/other', reason: 'startup' });
-  vi.mocked(wsClient.send).mockClear();
+  expect(scan.binding.cancel).not.toHaveBeenCalled();
+  const otherScan = deferredResponse<ScanDevFolderResult>();
+  vi.mocked(DevFolderScan.Scan).mockReturnValueOnce(otherScan.binding);
+  DevFolderScan.Scan({ path: '/other', reason: 'startup' });
   await act(async () => hook.latest.sync?.stopScan());
-  expect(wsClient.send).toHaveBeenCalledExactlyOnceWith('SCAN_CANCEL', {
-    scan_id: 'this-window-scan',
-  });
+  expect(scan.binding.cancel).toHaveBeenCalledOnce();
+  expect(otherScan.binding.cancel).not.toHaveBeenCalled();
   await act(async () => {
     scan.resolve({
-      ok: true,
       discovered: 1,
       healthy: 1,
       degraded: 0,
@@ -299,5 +286,5 @@ it('only explicit Stop cancels and partial completion refreshes clone metadata',
     )?.local_path,
   ).toBe('/dev/cached');
   await hook.unmount();
-  expect(wsClient.send).toHaveBeenCalledTimes(1);
+  expect(scan.binding.cancel).toHaveBeenCalledOnce();
 });

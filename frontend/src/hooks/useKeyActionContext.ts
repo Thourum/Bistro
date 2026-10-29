@@ -61,7 +61,6 @@ export function useBindingActivationContext(
   });
   const routeBase = !authChecked ? 'connecting' : pathRouteBase;
   const screen: FirstRunScreen = !authChecked ? 'connecting' : authScreen;
-  const isSpawned = false;
   const { activeOverlay } = overlays;
   const onboardingStep = useStore(appStore, (s) => s.onboardingStep);
   const isScanning = useStore(
@@ -96,7 +95,6 @@ export function useBindingActivationContext(
       activeOverlay,
       sandboxPane,
       screen,
-      isSpawned,
       isConnected,
       onboardingStep,
       isScanning,

@@ -1,16 +1,14 @@
+import { Shell } from '@bindings/services';
 import type { Store } from '@tanstack/store';
 import { draftIdFromKey } from '../components/diff/diffAnnotations';
+import { addToast } from '../components/ToastContainer';
 import type {
   OverlayContextValue,
   OverlayKind,
 } from '../overlays/OverlayContext';
 import { PROVIDERS } from '../providers';
 import { router } from '../router';
-import {
-  openEngineLogFolder,
-  reportEngineCrash,
-  restartEngine,
-} from '../services/engine';
+import { call } from '../services/engine/call';
 import {
   hideFirstRunRail,
   recordFirstRunAction,
@@ -28,7 +26,7 @@ import {
 import { appStore } from '../store';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import { emitAppEvent } from './appEvents';
-import { guardBenchWrite, permitsBenchAction } from './benchSafety';
+import { permitsBenchAction } from './benchSafety';
 import type { RouteBase } from './keybindings';
 import { LINE_COMMENT_ACTIONS } from './lineCommentActions';
 import { createLogger } from './logger';
@@ -91,7 +89,6 @@ function moveInlineDiffComment(context: KeyActionContext, delta: 1 | -1): void {
   }));
 }
 
-/** The detail page owns the PR comment composers; the diff page jumps there. */
 function openDetailComposer(
   context: KeyActionContext,
   confirmingAction: 'comment' | 'request_changes',
@@ -320,12 +317,13 @@ function scrollDiffToBottom(): void {
 }
 
 const ACTIONS: Readonly<Record<string, KeyAction>> = {
-  'connecting.restart': () => {
-    if (appStore.state.engineStatus?.state !== 'crashed') return;
-    void restartEngine();
+  'connecting.openLogs': () => {
+    void call(() => Shell.OpenLogFolder()).match(
+      () => undefined,
+      (fault) =>
+        addToast({ type: 'error', message: fault.message, dismissible: true }),
+    );
   },
-  'connecting.openLogs': () => openEngineLogFolder(),
-  'connecting.report': () => reportEngineCrash(),
   'login.reopen': () => reopenSignIn(),
   'login.copyLink': () => copySignInLink(),
   'login.cancel': () => cancelSignIn(),
@@ -372,10 +370,16 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
     void router.navigate({ to: '/settings' });
   },
   'global.quit.mac': () => {
-    if (guardBenchWrite('app:quit').isOk()) void window.electron.quitApp();
+    void call(() => Shell.Quit()).match(
+      () => undefined,
+      (fault) => log.warn({ err: fault.message }, 'quit failed'),
+    );
   },
   'global.quit.win': () => {
-    if (guardBenchWrite('app:quit').isOk()) void window.electron.quitApp();
+    void call(() => Shell.Quit()).match(
+      () => undefined,
+      (fault) => log.warn({ err: fault.message }, 'quit failed'),
+    );
   },
   'global.search': (context) => context.overlays.openSearch(),
   'list.down': (context) =>

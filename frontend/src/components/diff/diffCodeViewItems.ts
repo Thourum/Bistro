@@ -268,7 +268,7 @@ function serializeExpertise(expertise: ExpertiseFileData | undefined): string {
   return [
     expertise.file_path,
     expertise.your_rank,
-    ...expertise.experts.map(serializeExpertiseExpert),
+    ...(expertise.experts ?? []).map(serializeExpertiseExpert),
   ].join(':');
 }
 

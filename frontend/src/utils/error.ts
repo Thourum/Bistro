@@ -1,24 +1,11 @@
-import type { Fault, Result } from '@thourum/fault';
-import { safeZodParse } from '@thourum/fault/zod';
-import type { z } from 'zod';
-
-/** Validates a response before it reaches renderer state. */
-export function parseResponse<T>(
-  schema: z.ZodType<T>,
-  response: unknown,
-): Result<T, Fault> {
-  return safeZodParse(schema, response).mapErr((fault) =>
-    fault.withDescription(fault.message, 'Invalid WebSocket response'),
-  );
-}
+import type { Fault } from '@thourum/fault';
 
 /**
- * Known error codes from Go sync engine and IPC layer.
+ * Known error codes from engine services.
  */
 export const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   AUTH_TOKEN_EXPIRED: 'Your authentication expired. Please re-login.',
   RATE_LIMITED: 'Too many requests. Try again in a few minutes.',
-  WEBSOCKET_DISCONNECTED: 'Connection lost. Reconnecting...',
   GO_PROCESS_CRASHED: 'Sync engine crashed. Restarting automatically...',
   NETWORK_OFFLINE: 'No network connection. Using cached data.',
   DB_QUERY_FAILED: 'Failed to load data. Please try again.',

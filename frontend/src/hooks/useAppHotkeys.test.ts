@@ -379,7 +379,6 @@ describe('shared action context', () => {
       appStore.setState((state) => ({
         ...state,
         authChecked: screen !== 'unchecked',
-        engineStatus: null,
       }));
       const { activation, makeCtx } = useKeyActionContext(undefined);
       const routeBase = screen === 'ready' ? 'diff' : 'connecting';

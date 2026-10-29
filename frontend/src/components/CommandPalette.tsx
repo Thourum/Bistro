@@ -1,4 +1,4 @@
-import { Sync } from '@bindings/services';
+import { Expertise, Sync } from '@bindings/services';
 import { useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
@@ -8,10 +8,10 @@ import { useKeyActionContext } from '../hooks/useKeyActionContext';
 import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useOverlays } from '../overlays/OverlayContext';
-import { callWrite } from '../services/engine/call';
+import { callWrite, faultReason } from '../services/engine/call';
+import { handleExpertiseError } from '../services/events/expertise';
 import { showFirstRunRail } from '../services/firstRunRail';
 import { loadRepos } from '../services/repos';
-import { wsClient } from '../services/ws/connection';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -162,7 +162,20 @@ export function CommandPalette(): React.ReactElement | null {
       return;
     }
 
-    wsClient.send(type, { repo_id: repoIdForPR(focusedPR) });
+    const repoId = repoIdForPR(focusedPR);
+    void callWrite(() =>
+      type === 'EXPERTISE_ENABLE'
+        ? Expertise.Enable({ repo_id: repoId })
+        : Expertise.Disable({ repo_id: repoId }),
+    ).match(
+      () => undefined,
+      (fault) =>
+        handleExpertiseError({
+          repo_id: repoId,
+          code: faultReason(fault) ?? fault.tag ?? 'internal',
+          message: fault.message,
+        }),
+    );
     closeOverlay();
     setQuery('');
   };

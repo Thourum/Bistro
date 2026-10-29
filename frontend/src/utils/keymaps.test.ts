@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../router', () => ({ router: { navigate: vi.fn() } }));
 
-import { NAVIGATION_STYLES } from '@renderer/types/electron/settings';
+import { NAVIGATION_STYLES } from '@renderer/types/settings';
 import type { OverlayKind } from '../overlays/OverlayContext';
 import {
   ACTION_CATALOG,
@@ -85,15 +85,13 @@ const CONTEXTS = [
     activeOverlay: null,
     sandboxPane: null,
     screen,
-    isSpawned: true,
     isConnected: true,
   })),
   {
     routeBase: 'connecting' as const,
     activeOverlay: null,
     sandboxPane: null,
-    screen: 'crashed' as const,
-    isSpawned: true,
+    screen: 'connecting' as const,
     isConnected: true,
   },
 ];

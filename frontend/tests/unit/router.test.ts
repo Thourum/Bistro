@@ -4,7 +4,7 @@ import { router } from '../../src/router';
 import { appStore } from '../../src/store';
 import { settingsStore } from '../../src/store/settings';
 import { initialUIState } from '../../src/store/ui';
-import { DEFAULT_SETTINGS } from '../../src/types/electron/settings';
+import { DEFAULT_SETTINGS } from '../../src/types/settings';
 
 beforeEach(() => {
   appStore.setState(() => ({ ...initialUIState, authChecked: false }));
@@ -42,7 +42,10 @@ describe('router smoke tests', () => {
   });
 
   it('canonicalizes mixed-case PR IDs in encoded detail links', () => {
-    const matches = router.matchRoutes('/prs/github%3AThourum%2FTesting%2342', {});
+    const matches = router.matchRoutes(
+      '/prs/github%3AThourum%2FTesting%2342',
+      {},
+    );
     const detailMatch = matches.find(
       (match) => match.routeId === '/authed/prs/$prId',
     );

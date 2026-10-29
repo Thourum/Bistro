@@ -1,8 +1,10 @@
+import { Shell } from '@bindings/services';
 import { err, Fault, ok, ResultAsync } from '@thourum/fault';
 import { z } from 'zod';
 import { router } from '../router';
+import { call } from '../services/engine/call';
 import { benchCollectorSchema } from '../shared/benchSafety';
-import { guardBenchWrite, isKeysBench } from '../utils/benchSafety';
+import { isKeysBench } from '../utils/benchSafety';
 import { createLogger } from '../utils/logger';
 import { collectDiffFrames } from './frames';
 import { startKeysBench } from './keys';
@@ -79,13 +81,8 @@ async function onListRendered(
   });
   if (posted.isErr()) await reportFailure(options.collector, posted.error);
   if (options.quitAfterReady) {
-    if (window.electron?.quitApp && guardBenchWrite('app:quit').isOk()) {
-      const quit = await ResultAsync.fromThrowable(
-        () => window.electron.quitApp(),
-        benchFault,
-      )();
-      if (quit.isErr()) await reportFailure(options.collector, quit.error);
-    }
+    const quit = await call(() => Shell.Quit());
+    if (quit.isErr()) await reportFailure(options.collector, quit.error);
     return;
   }
   if (posted.isErr() || options.prId === undefined) return;

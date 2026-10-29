@@ -1,4 +1,3 @@
-import type { EngineStatus } from '@renderer/types/electron/engine';
 import { Store } from '@tanstack/store';
 import type { FolderScanState } from '../services/onboardingSync';
 import type {
@@ -101,7 +100,7 @@ export interface UIState {
   authTimedOut: boolean;
   authInterrupted: boolean;
   authExchange: 'proxy' | 'local' | null;
-  engineStatus: EngineStatus | null;
+  platform: string;
   appVersion: string | null;
   authChecked: boolean;
   connectedProviders: Array<{ provider: string; username: string }>;
@@ -242,7 +241,7 @@ export const initialUIState: UIState = {
   authTimedOut: false,
   authInterrupted: false,
   authExchange: null,
-  engineStatus: null,
+  platform: 'unknown',
   appVersion: null,
   authChecked: false,
   connectedProviders: [],

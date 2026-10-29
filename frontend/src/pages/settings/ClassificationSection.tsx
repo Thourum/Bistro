@@ -2,7 +2,7 @@ import type {
   ClassificationMode,
   ClassificationSettings,
   DismissalScope,
-} from '@renderer/types/electron/settings';
+} from '@renderer/types/settings';
 import { useStore } from '../../hooks/useStore';
 import { settingsStore } from '../../store/settings';
 import { ClassificationProvider } from './ClassificationProvider';

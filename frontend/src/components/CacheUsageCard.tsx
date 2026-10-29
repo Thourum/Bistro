@@ -1,225 +1,15 @@
-import { err, Fault, ok, type Result } from '@thourum/fault';
+import {
+  type CacheCleanup,
+  type CacheStats,
+  RepoLocation,
+} from '@bindings/services';
+import type { Fault, ResultAsync } from '@thourum/fault';
 import { useCallback, useEffect, useState } from 'react';
-import { wsClient } from '../services/ws/connection';
-import type { LocationErrorCode } from '../types/repoLocation';
+import { call, callWrite } from '../services/engine/call';
 import { addToast } from './ToastContainer';
-
-interface CacheRepoStat {
-  repo_id: string;
-  size_bytes: number;
-  last_used_at: string | null;
-  stale: boolean;
-}
-
-interface CacheStats {
-  ok: true;
-  total_bytes: number;
-  active_bytes: number;
-  stale_bytes: number;
-  repos: CacheRepoStat[];
-}
-
-interface CacheFailure {
-  repo_id: string;
-  code: LocationErrorCode;
-  message: string;
-}
-
-interface CacheMutationResponse {
-  ok: true;
-  removed?: string[];
-  failed?: CacheFailure[];
-  orphans_removed?: number;
-}
-
-interface LocationErrorResponse {
-  ok?: false;
-  repo_id: string;
-  operation: string;
-  code: LocationErrorCode;
-  message: string;
-}
-
-type CacheActionResponse = CacheMutationResponse | LocationErrorResponse;
 
 const DELETE_FAILED_MESSAGE = 'Something went wrong, check the logs';
 const CLEAR_CACHE_CONFIRM_MESSAGE = 'Clear all cached repos?';
-
-const LOCATION_ERROR_CODES = [
-  'path_missing',
-  'remote_mismatch',
-  'permission_denied',
-  'invalid_url',
-  'invalid_path',
-  'destination_required',
-  'destination_conflict',
-  'clone_failed',
-  'auth_failed',
-  'cancelled',
-  'delete_failed',
-  'scan_partial',
-] as const satisfies readonly LocationErrorCode[];
-
-function isRecord(data: unknown): data is Record<string, unknown> {
-  return typeof data === 'object' && data !== null;
-}
-
-function isLocationErrorCode(code: unknown): code is LocationErrorCode {
-  return LOCATION_ERROR_CODES.includes(
-    code as (typeof LOCATION_ERROR_CODES)[number],
-  );
-}
-
-function parseRepoStat(data: unknown): CacheRepoStat | null {
-  if (!isRecord(data)) {
-    return null;
-  }
-
-  if (
-    typeof data.repo_id === 'string' &&
-    typeof data.size_bytes === 'number' &&
-    (data.last_used_at === null || typeof data.last_used_at === 'string') &&
-    typeof data.stale === 'boolean'
-  ) {
-    return {
-      repo_id: data.repo_id,
-      size_bytes: data.size_bytes,
-      last_used_at: data.last_used_at,
-      stale: data.stale,
-    };
-  }
-
-  return null;
-}
-
-function parseCacheStats(data: unknown): Result<CacheStats, Fault> {
-  if (!isRecord(data) || data.ok !== true || !Array.isArray(data.repos)) {
-    return err(
-      new Fault('Cache stats returned an invalid response.').withTag(
-        'VALIDATION_ERROR',
-      ),
-    );
-  }
-
-  const repos = data.repos.map(parseRepoStat);
-  if (
-    typeof data.total_bytes !== 'number' ||
-    typeof data.active_bytes !== 'number' ||
-    typeof data.stale_bytes !== 'number' ||
-    repos.some((repo) => repo === null)
-  ) {
-    return err(
-      new Fault('Cache stats returned an invalid response.').withTag(
-        'VALIDATION_ERROR',
-      ),
-    );
-  }
-
-  return ok({
-    ok: true,
-    total_bytes: data.total_bytes,
-    active_bytes: data.active_bytes,
-    stale_bytes: data.stale_bytes,
-    repos: repos.filter((repo): repo is CacheRepoStat => repo !== null),
-  });
-}
-
-function parseCacheFailure(data: unknown): CacheFailure | null {
-  if (!isRecord(data)) {
-    return null;
-  }
-
-  if (
-    typeof data.repo_id === 'string' &&
-    isLocationErrorCode(data.code) &&
-    typeof data.message === 'string'
-  ) {
-    return {
-      repo_id: data.repo_id,
-      code: data.code,
-      message: data.message,
-    };
-  }
-
-  return null;
-}
-
-function parseCacheActionResponse(
-  data: unknown,
-): Result<CacheActionResponse, Fault> {
-  if (!isRecord(data)) {
-    return err(
-      new Fault('Cache action returned an invalid response.').withTag(
-        'VALIDATION_ERROR',
-      ),
-    );
-  }
-
-  if (data.ok === true) {
-    const failed = Array.isArray(data.failed)
-      ? data.failed.map(parseCacheFailure)
-      : [];
-
-    if (failed.some((failure) => failure === null)) {
-      return err(
-        new Fault('Cache action returned an invalid response.').withTag(
-          'VALIDATION_ERROR',
-        ),
-      );
-    }
-
-    const validFailed = failed.filter(
-      (failure): failure is CacheFailure => failure !== null,
-    );
-    const response: CacheMutationResponse = { ok: true, failed: validFailed };
-
-    if (Array.isArray(data.removed)) {
-      return ok({
-        ...response,
-        removed: data.removed.filter(
-          (repoID): repoID is string => typeof repoID === 'string',
-        ),
-      });
-    }
-
-    if (typeof data.orphans_removed === 'number') {
-      return ok({ ...response, orphans_removed: data.orphans_removed });
-    }
-
-    return ok(response);
-  }
-
-  if (
-    isLocationErrorCode(data.code) &&
-    typeof data.repo_id === 'string' &&
-    typeof data.operation === 'string' &&
-    typeof data.message === 'string'
-  ) {
-    return ok({
-      ok: false,
-      repo_id: data.repo_id,
-      operation: data.operation,
-      code: data.code,
-      message: data.message,
-    });
-  }
-
-  return err(
-    new Fault('Cache action returned an invalid response.').withTag(
-      'VALIDATION_ERROR',
-    ),
-  );
-}
-
-function requestFault(error: unknown): Fault {
-  const message =
-    error instanceof Error && error.message.trim() !== ''
-      ? error.message
-      : typeof error === 'string' && error.trim() !== ''
-        ? error
-        : 'Bistro could not reach the sync engine. Try again.';
-  return new Fault(message).withTag('CONNECTION_ERROR').withCause(error);
-}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) {
@@ -272,17 +62,13 @@ export function CacheUsageCard(): React.ReactElement {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   const loadStats = useCallback((): void => {
-    wsClient
-      .request('GET_CACHE_STATS', {})
-      .mapErr(requestFault)
-      .andThen(parseCacheStats)
-      .match(
-        (nextStats) => {
-          setStats(nextStats);
-          setErrorMessage(null);
-        },
-        (error) => setErrorMessage(error.message),
-      );
+    call(() => RepoLocation.CacheStats()).match(
+      (nextStats) => {
+        setStats(nextStats);
+        setErrorMessage(null);
+      },
+      (error) => setErrorMessage(error.message),
+    );
   }, []);
 
   useEffect(() => {
@@ -290,42 +76,36 @@ export function CacheUsageCard(): React.ReactElement {
   }, [loadStats]);
 
   const runAction = (
-    type: string,
-    payload: unknown,
+    request: () => ResultAsync<CacheCleanup | undefined, Fault>,
     actionKey: string,
   ): void => {
     setPendingAction(actionKey);
-    wsClient
-      .request(type, payload)
-      .mapErr(requestFault)
-      .andThen(parseCacheActionResponse)
-      .match(
-        (response) => {
-          setPendingAction(null);
-          if (
-            response.ok !== true ||
-            response.failed?.some(
-              (failure) => failure.code === 'delete_failed',
-            ) === true
-          ) {
-            addToast({
-              type: 'error',
-              message: DELETE_FAILED_MESSAGE,
-              dismissible: true,
-            });
-            return;
-          }
-          loadStats();
-        },
-        () => {
-          setPendingAction(null);
+    request().match(
+      (response) => {
+        setPendingAction(null);
+        if (
+          response?.failed?.some(
+            (failure) => failure.code === 'delete_failed',
+          ) === true
+        ) {
           addToast({
             type: 'error',
             message: DELETE_FAILED_MESSAGE,
             dismissible: true,
           });
-        },
-      );
+          return;
+        }
+        loadStats();
+      },
+      () => {
+        setPendingAction(null);
+        addToast({
+          type: 'error',
+          message: DELETE_FAILED_MESSAGE,
+          dismissible: true,
+        });
+      },
+    );
   };
 
   const totalBytes = stats?.total_bytes ?? 0;
@@ -374,7 +154,12 @@ export function CacheUsageCard(): React.ReactElement {
           <button
             type="button"
             disabled={pendingAction !== null}
-            onClick={() => runAction('PRUNE_CACHE', {}, 'prune')}
+            onClick={() =>
+              runAction(
+                () => callWrite(() => RepoLocation.PruneCache()),
+                'prune',
+              )
+            }
             className="px-3 py-2 text-sm bg-primary text-on-primary disabled:opacity-60"
           >
             Prune
@@ -386,7 +171,10 @@ export function CacheUsageCard(): React.ReactElement {
               if (window.confirm(CLEAR_CACHE_CONFIRM_MESSAGE) !== true) {
                 return;
               }
-              runAction('CLEAR_CACHE', {}, 'clear');
+              runAction(
+                () => callWrite(() => RepoLocation.ClearCache()),
+                'clear',
+              );
             }}
             className="px-3 py-2 text-sm bg-surface-container-high text-on-surface disabled:opacity-60"
           >
@@ -443,8 +231,12 @@ export function CacheUsageCard(): React.ReactElement {
                         aria-label={`Delete cached repo ${repo.repo_id}`}
                         onClick={() =>
                           runAction(
-                            'DELETE_CACHE_REPO',
-                            { repo_id: repo.repo_id },
+                            () =>
+                              callWrite(() =>
+                                RepoLocation.DeleteCacheRepo({
+                                  repo_id: repo.repo_id,
+                                }),
+                              ).map(() => undefined),
                             `delete:${repo.repo_id}`,
                           )
                         }

@@ -1,7 +1,7 @@
 import type {
   KeybindingOverrides,
   NavigationStyle,
-} from '@renderer/types/electron/settings';
+} from '@renderer/types/settings';
 import {
   type Hotkey,
   matchesKeyboardEvent,
@@ -29,8 +29,6 @@ const AUTH_SCREENS: readonly FirstRunScreen[] = [
   'interrupted',
   'engineDown',
   'connecting',
-  'slow',
-  'crashed',
 ];
 const SANDBOX_PANES: readonly (SandboxPane | null)[] = [
   null,
@@ -71,14 +69,7 @@ function routeContexts(
 ): BindingActivationContext[] {
   if (base.routeBase === 'login' || base.routeBase === 'connecting')
     return AUTH_SCREENS.flatMap((screen) =>
-      BOOLEAN_STATES.flatMap((isConnected) =>
-        BOOLEAN_STATES.map((isSpawned) => ({
-          ...base,
-          screen,
-          isConnected,
-          isSpawned,
-        })),
-      ),
+      BOOLEAN_STATES.map((isConnected) => ({ ...base, screen, isConnected })),
     );
   if (base.routeBase === 'list')
     return BOOLEAN_STATES.flatMap((isFirstRunRailVisible) =>

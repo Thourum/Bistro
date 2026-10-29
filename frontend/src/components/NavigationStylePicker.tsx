@@ -1,7 +1,7 @@
 import {
   NAVIGATION_STYLES,
   type NavigationStyle,
-} from '@renderer/types/electron/settings';
+} from '@renderer/types/settings';
 import { type ReactElement, useMemo } from 'react';
 import { useStore } from '../hooks/useStore';
 import { cn } from '../lib/utils';

@@ -1,118 +1,19 @@
-import { err, Fault, ok, type Result, ResultAsync } from '@thourum/fault';
+import {
+  DevFolderScan,
+  type ScanDevFolderResult,
+  Shell,
+} from '@bindings/services';
+import { Fault, okAsync, type ResultAsync } from '@thourum/fault';
 import { useCallback, useState } from 'react';
 import { CacheUsageCard } from '../../components/CacheUsageCard';
 import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { useStore } from '../../hooks/useStore';
-import { wsClient } from '../../services/ws/connection';
+import { call } from '../../services/engine/call';
 import { settingsStore, updateSettings } from '../../store/settings';
-import type { LocationErrorCode } from '../../types/repoLocation';
 import { Section } from './SettingsComponents';
 
-interface ValidateDevFolderResponse {
-  ok: true;
-  canonical_path: string;
-}
-
-interface LocationErrorResponse {
-  ok?: false;
-  repo_id: string;
-  operation: string;
-  code: LocationErrorCode;
-  message: string;
-}
-
-interface ScanDevFolderSummary {
-  ok: true;
-  discovered: number;
-  healthy: number;
-  degraded: number;
-  skipped: number;
-  partial: boolean;
-}
-
-const LOCATION_ERROR_CODES = [
-  'path_missing',
-  'remote_mismatch',
-  'permission_denied',
-  'invalid_url',
-  'invalid_path',
-  'destination_required',
-  'destination_conflict',
-  'clone_failed',
-  'auth_failed',
-  'cancelled',
-  'delete_failed',
-  'scan_partial',
-] as const satisfies readonly LocationErrorCode[];
-
-function isRecord(data: unknown): data is Record<string, unknown> {
-  return typeof data === 'object' && data !== null;
-}
-
-function isLocationErrorCode(code: unknown): code is LocationErrorCode {
-  return LOCATION_ERROR_CODES.includes(
-    code as (typeof LOCATION_ERROR_CODES)[number],
-  );
-}
-
-function parseValidateDevFolderResponse(
-  data: unknown,
-): Result<ValidateDevFolderResponse, Fault> {
-  if (
-    isRecord(data) &&
-    data.ok === true &&
-    typeof data.canonical_path === 'string'
-  ) {
-    return ok({ ok: true, canonical_path: data.canonical_path });
-  }
-
-  return err(
-    new Fault('Dev folder validation returned an invalid response.').withTag(
-      'VALIDATION_ERROR',
-    ),
-  );
-}
-
-function parseScanDevFolderSummary(
-  data: unknown,
-): Result<ScanDevFolderSummary, Fault> {
-  if (
-    isRecord(data) &&
-    data.ok === true &&
-    typeof data.discovered === 'number' &&
-    typeof data.healthy === 'number' &&
-    typeof data.degraded === 'number' &&
-    typeof data.skipped === 'number' &&
-    typeof data.partial === 'boolean'
-  ) {
-    return ok({
-      ok: true,
-      discovered: data.discovered,
-      healthy: data.healthy,
-      degraded: data.degraded,
-      skipped: data.skipped,
-      partial: data.partial,
-    });
-  }
-
-  const message =
-    isRecord(data) && typeof data.message === 'string'
-      ? data.message
-      : 'Scan failed.';
-  return err(new Fault(message).withTag('VALIDATION_ERROR'));
-}
-
-function isLocationErrorResponse(data: unknown): data is LocationErrorResponse {
-  return (
-    isRecord(data) &&
-    data.ok !== true &&
-    typeof data.repo_id === 'string' &&
-    typeof data.operation === 'string' &&
-    isLocationErrorCode(data.code) &&
-    typeof data.message === 'string'
-  );
-}
+type ScanDevFolderSummary = ScanDevFolderResult;
 
 function scanStatusText(scan: ScanDevFolderSummary | null): string {
   if (scan === null) {
@@ -121,36 +22,6 @@ function scanStatusText(scan: ScanDevFolderSummary | null): string {
 
   const partial = scan.partial ? ' Partial scan; check the logs.' : '';
   return `${scan.discovered} discovered, ${scan.healthy} healthy, ${scan.degraded} degraded, ${scan.skipped} skipped.${partial}`;
-}
-
-function requestFault(error: unknown): Fault {
-  const message =
-    error instanceof Error && error.message.trim() !== ''
-      ? error.message
-      : typeof error === 'string' && error.trim() !== ''
-        ? error
-        : 'Bistro could not reach the sync engine. Try again.';
-  return new Fault(message).withTag('CONNECTION_ERROR').withCause(error);
-}
-
-function pickFolderResult(): ResultAsync<string | null, Fault> {
-  if (window.electron?.pickFolder === undefined) {
-    return ResultAsync.fromSafePromise(
-      Promise.resolve<string | null>(null),
-    ).andThen(() =>
-      err(
-        new Fault('Folder picker is unavailable.').withTag(
-          'FOLDER_PICKER_ERROR',
-        ),
-      ),
-    );
-  }
-
-  return ResultAsync.fromPromise(window.electron.pickFolder(), (cause) =>
-    new Fault('Dev folder could not be changed.')
-      .withTag('FOLDER_PICKER_ERROR')
-      .withCause(cause),
-  );
 }
 
 export function RepositoriesSection() {
@@ -164,10 +35,9 @@ export function RepositoriesSection() {
 
   const scanDevFolder = useCallback(
     (path: string): ResultAsync<ScanDevFolderSummary, Fault> =>
-      wsClient
-        .request('SCAN_DEV_FOLDER', { path, reason: 'settings' })
-        .mapErr(requestFault)
-        .andThen(parseScanDevFolderSummary)
+      call(() => DevFolderScan.Scan({ path, reason: 'settings' }), {
+        timeoutMs: null,
+      })
         .map((summary) => {
           setScanResult(summary);
           setErrorMessage(null);
@@ -182,37 +52,21 @@ export function RepositoriesSection() {
 
   const handleChange = (): void => {
     setIsChanging(true);
-    pickFolderResult()
+    call(() => Shell.PickFolder())
+      .map((path) => (path === '' ? null : path))
       .andThen((path) => {
         if (path === null) {
-          return ResultAsync.fromSafePromise(Promise.resolve(null));
+          return okAsync(null);
         }
 
-        return wsClient
-          .request('VALIDATE_DEV_FOLDER', { path })
-          .mapErr(requestFault)
-          .andThen((response) => {
-            if (isLocationErrorResponse(response)) {
-              return err(
-                new Fault(response.message).withTag('VALIDATION_ERROR'),
-              );
-            }
-
-            return parseValidateDevFolderResponse(response);
-          })
-          .andThen((response: ValidateDevFolderResponse) =>
+        return call(() => DevFolderScan.Validate({ path }))
+          .andThen((response) =>
             updateSettings({
               repositories: {
                 ...repositories,
                 devFolderPath: response.canonical_path,
               },
-            })
-              .mapErr((cause) =>
-                new Fault('Dev folder could not be changed.')
-                  .withTag('SETTINGS_ERROR')
-                  .withCause(cause),
-              )
-              .map(() => response.canonical_path),
+            }).map(() => response.canonical_path),
           )
           .andThen(scanDevFolder)
           .map(() => null);

@@ -35,30 +35,10 @@ it('blocks editor, browser and quit IPC only for bench_keys=1', async () => {
   vi.stubGlobal('document', { dispatchEvent });
   vi.stubGlobal('location', { search: '?bench_keys=1' });
   vi.resetModules();
-  const { guardBenchWrite, guardBenchWsMessage, isKeysBench } = await import(
-    './benchSafety'
-  );
+  const { guardBenchWrite, isKeysBench } = await import('./benchSafety');
   const { openInEditor } = await import('../services/editor');
   const { openUrlInBrowser } = await import('./openUrl');
 
-  expect(
-    guardBenchWsMessage('SET_CLASSIFICATION_SETTINGS', {
-      mode: 'rules',
-      dismissal_scope: 'local',
-    }).isOk(),
-  ).toBe(true);
-  for (const settings of [
-    { mode: 'rules+llm', dismissal_scope: 'local' },
-    { mode: 'rules', dismissal_scope: 'local+provider' },
-    { mode: 'rules' },
-  ]) {
-    expect(
-      guardBenchWsMessage(
-        'SET_CLASSIFICATION_SETTINGS',
-        settings,
-      )._unsafeUnwrapErr().tag,
-    ).toBe('BENCH_WRITE_BLOCKED');
-  }
   dispatchEvent.mockClear();
 
   const browser = await openUrlInBrowser('https://example.com');
@@ -76,7 +56,7 @@ it('blocks editor, browser and quit IPC only for bench_keys=1', async () => {
   expect(open).not.toHaveBeenCalled();
   expect(dispatchEvent.mock.calls.map(([event]) => event.detail.type)).toEqual([
     'engine-call',
-    'open-in-editor',
+    'engine-call',
     'app:quit',
   ]);
 
@@ -87,5 +67,4 @@ it('blocks editor, browser and quit IPC only for bench_keys=1', async () => {
   const ordinary = await import('./benchSafety');
   expect(ordinary.isKeysBench()).toBe(false);
   expect(ordinary.guardBenchWrite('app:quit').isOk()).toBe(true);
-  expect(ordinary.guardBenchWsMessage('SUBMIT_ACTION').isOk()).toBe(true);
 });

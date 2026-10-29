@@ -1,4 +1,4 @@
-import type { NavigationStyle } from '@renderer/types/electron/settings';
+import type { NavigationStyle } from '@renderer/types/settings';
 
 export type SandboxPane = 'list' | 'detail' | 'diff';
 export type SandboxStage = 'navigate' | 'review' | 'diff';

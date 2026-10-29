@@ -16,7 +16,7 @@ export function DiffFileExpertise({
     );
   }
 
-  if (expertise === undefined || expertise.experts.length === 0) {
+  if (expertise === undefined || (expertise.experts ?? []).length === 0) {
     return null;
   }
 
@@ -26,7 +26,7 @@ export function DiffFileExpertise({
         Expertise why
       </summary>
       <ul className="mt-2 space-y-1 border-l border-outline-variant/30 pl-3">
-        {expertise.experts.map((expert) => (
+        {(expertise.experts ?? []).map((expert) => (
           <li key={`${expertise.file_path}-${expert.author_email}`}>
             {formatWhy(expert)}
           </li>
