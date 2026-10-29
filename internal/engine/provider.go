@@ -166,13 +166,6 @@ func (a *App) initializeStartupProvider(ctx context.Context) {
 		return
 	}
 	a.log.Info("orchestrator initialized at startup (token from keychain)")
-	if !a.replayOnStart {
-		return
-	}
-	a.log.Info("replaying offline action queue after startup")
-	if err := a.ReplayQueuedActions(ctx); err != nil {
-		a.log.Error("startup queue replay failed", "error", err)
-	}
 }
 
 func (a *App) restoreStartupProvider() {

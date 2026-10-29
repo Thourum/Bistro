@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"testing"
@@ -15,6 +16,61 @@ import (
 	"github.com/itterno/bistro/internal/services/servicestest"
 	"github.com/itterno/bistro/internal/store/storetest"
 )
+
+type syncRestartLogHandler struct {
+	slog.Handler
+	handle func(slog.Record)
+}
+
+func (h syncRestartLogHandler) Handle(_ context.Context, record slog.Record) error {
+	h.handle(record)
+	return nil
+}
+
+func TestRunSyncLoopRestartRetainsAppliedSettings(t *testing.T) {
+	for _, autoSync := range []bool{false, true} {
+		t.Run(fmt.Sprintf("autoSync=%t", autoSync), func(t *testing.T) {
+			app := newTestApp()
+			app.autoSync = !autoSync
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			const appliedInterval = time.Minute
+			var starts []syncSettingsMsg
+			app.log = slog.New(syncRestartLogHandler{
+				Handler: slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}),
+				handle: func(record slog.Record) {
+					if record.Message == "sync trigger received" {
+						panic("restart after settings applied")
+					}
+					if record.Message != "sync loop started" {
+						return
+					}
+					var settings syncSettingsMsg
+					record.Attrs(func(attr slog.Attr) bool {
+						if attr.Key == "autoSync" {
+							settings.AutoSync = attr.Value.Bool()
+						}
+						if attr.Key == "interval" {
+							settings.Interval, _ = time.ParseDuration(attr.Value.String())
+						}
+						return true
+					})
+					starts = append(starts, settings)
+					if len(starts) == 2 {
+						cancel()
+					}
+				},
+			})
+			app.ApplySyncSettings(autoSync, appliedInterval)
+			app.syncTrigger <- ""
+			supervise(ctx, supervision{log: app.log, sleep: func(time.Duration) {}}, app.runSyncLoop)
+			want := syncSettingsMsg{AutoSync: autoSync, Interval: appliedInterval}
+			if len(starts) != 2 || starts[1] != want {
+				t.Fatalf("loop starts = %+v, want restart with %+v", starts, want)
+			}
+		})
+	}
+}
 
 func newTestApp() *App {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))

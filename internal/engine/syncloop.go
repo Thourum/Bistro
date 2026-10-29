@@ -32,6 +32,9 @@ func (a *App) applySyncSettings(settings *syncLoopSettings, latest syncSettingsM
 		case msg := <-a.syncSettings:
 			latest = msg
 		default:
+			a.syncSettingsMu.Lock()
+			a.autoSync, a.syncInterval = latest.AutoSync, latest.Interval
+			a.syncSettingsMu.Unlock()
 			a.log.Info("sync settings updated", "autoSync", latest.AutoSync, "interval", latest.Interval.String())
 			settings.autoSync = latest.AutoSync
 			settings.interval = latest.Interval
@@ -59,11 +62,10 @@ func (a *App) applyPendingSyncSettings(settings *syncLoopSettings) bool {
 
 // runSyncLoop runs the periodic sync goroutine. It exits when ctx is cancelled.
 func (a *App) runSyncLoop(ctx context.Context) {
-	settings := syncLoopSettings{
-		ticker:   time.NewTicker(a.syncInterval),
-		autoSync: a.autoSync,
-		interval: a.syncInterval,
-	}
+	a.syncSettingsMu.RLock()
+	settings := syncLoopSettings{autoSync: a.autoSync, interval: a.syncInterval}
+	a.syncSettingsMu.RUnlock()
+	settings.ticker = time.NewTicker(settings.interval)
 	if !settings.autoSync {
 		settings.ticker.Stop()
 	}

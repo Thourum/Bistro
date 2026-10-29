@@ -14,6 +14,8 @@ import (
 	"github.com/itterno/bistro/internal/prsync"
 	"github.com/itterno/bistro/internal/services"
 	"github.com/itterno/bistro/internal/services/servicestest"
+	"github.com/itterno/bistro/internal/store/actionqueue"
+	"github.com/itterno/bistro/internal/store/currentuser"
 )
 
 func TestApplyClassificationSettingsSharesServiceState(t *testing.T) {
@@ -93,6 +95,101 @@ func TestStartStopOwnsDatabaseAndLoops(t *testing.T) {
 		t.Fatal("Stop did not close database and clear services")
 	}
 	app.Stop()
+}
+
+type blockedReplayProvider struct {
+	*mock.MockProvider
+	started, cancelled, release chan struct{}
+}
+
+func (p *blockedReplayProvider) PostComment(ctx context.Context, _ string, _ int, _ string) error {
+	close(p.started)
+	<-ctx.Done()
+	close(p.cancelled)
+	<-p.release
+	return ctx.Err()
+}
+
+func TestStartReturnsDuringReplayAndStopWaits(t *testing.T) {
+	app := New(Options{DBPath: filepath.Join(t.TempDir(), "sync.db"), RulesDir: t.TempDir(), ReplayQueue: true, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := app.openDatabase(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := currentuser.New(app.db).Set(ctx, provider.GitHub, "reviewer"); err != nil {
+		t.Fatal(err)
+	}
+	if err := actionqueue.New(app.db.DB).Enqueue(ctx, &actionqueue.Action{
+		ID: "startup-replay", ActionType: "post_comment", PRID: "github:owner/repo:42", Payload: "review nit",
+		AccountProvider: provider.GitHub, AccountLogin: "reviewer",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	app.db = nil
+	prov := &blockedReplayProvider{MockProvider: mock.NewMockProvider(), started: make(chan struct{}), cancelled: make(chan struct{}), release: make(chan struct{})}
+	app.SetProvider(prov)
+	startDone := make(chan error, 1)
+	go func() { startDone <- app.Start(ctx) }()
+	startReturned := false
+	var stopDone chan struct{}
+	defer func() {
+		cancel()
+		close(prov.release)
+		if !startReturned {
+			<-startDone
+		}
+		if stopDone != nil {
+			<-stopDone
+			return
+		}
+		app.Stop()
+	}()
+	select {
+	case <-prov.started:
+	case <-ctx.Done():
+		t.Fatal("startup replay did not reach provider")
+	}
+	select {
+	case err := <-startDone:
+		startReturned = true
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("Start blocked on replay")
+	}
+	if app.Services() == nil {
+		t.Fatal("Start returned without services")
+	}
+	db := app.db
+	stopDone = make(chan struct{})
+	go func() { app.Stop(); close(stopDone) }()
+	select {
+	case <-prov.cancelled:
+	case <-ctx.Done():
+		t.Fatal("Stop did not cancel replay")
+	}
+	select {
+	case <-stopDone:
+		t.Fatal("Stop returned before replay finished")
+	default:
+	}
+	if err := db.Ping(); err != nil {
+		t.Fatalf("SQLite closed before replay finished: %v", err)
+	}
+	prov.release <- struct{}{}
+	select {
+	case <-stopDone:
+	case <-ctx.Done():
+		t.Fatal("Stop did not finish after replay exited")
+	}
+	if db.Ping() == nil {
+		t.Fatal("Stop did not close SQLite")
+	}
 }
 
 func TestSyncPartialFailuresEmitError(t *testing.T) {

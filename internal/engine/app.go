@@ -58,6 +58,7 @@ type App struct {
 	syncTrigger         chan string
 	pendingWatchSync    atomic.Bool
 	syncSettings        chan syncSettingsMsg
+	syncSettingsMu      sync.RWMutex // protects settings retained across sync-loop attempts
 	provMu              sync.RWMutex
 	syncInterval        time.Duration
 	autoSync            bool
@@ -187,6 +188,14 @@ func (a *App) Start(ctx context.Context) error {
 	a.restoreStartupProvider()
 	a.initializeStartupProvider(a.runCtx)
 	a.serviceSet = a.buildServices(a.runCtx)
+	if a.replayOnStart && a.getProvider() != nil {
+		a.startLoop(a.runCtx, "startup-replay", func(ctx context.Context) {
+			a.log.Info("replaying offline action queue after startup")
+			if err := a.ReplayQueuedActions(ctx); err != nil {
+				a.log.Error("startup queue replay failed", "error", err)
+			}
+		})
+	}
 	a.startLoop(a.runCtx, "sync", a.runSyncLoop)
 	return nil
 }
