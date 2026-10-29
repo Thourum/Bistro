@@ -1,0 +1,11 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "src/main.tsx",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "scripts/bench-large-diff.mjs"
+  ],
+  "project": ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}", "*.config.ts", "scripts/**/*.mjs"],
+  "ignore": ["src/types/window.d.ts"]
+}

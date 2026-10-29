@@ -48,8 +48,8 @@ jobs:
           echo 'bistro-ci-keyring-passphrase' | gnome-keyring-daemon --unlock
           go test -race ./...
 
-  electron:
-    name: Electron typecheck, lint, and tests
+  frontend:
+    name: Frontend typecheck, lint, and tests
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -70,17 +70,25 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        working-directory: electron
+        working-directory: frontend
         run: pnpm install --frozen-lockfile
 
       - name: Type check
-        working-directory: electron
+        working-directory: frontend
         run: pnpm type-check
 
+      - name: Build frontend assets
+        working-directory: frontend
+        run: pnpm build
+
+      - name: Verify embed entrypoint
+        working-directory: frontend
+        run: test -f dist/index.html
+
       - name: Lint
-        working-directory: electron
+        working-directory: frontend
         run: pnpm lint
 
       - name: Test
-        working-directory: electron
+        working-directory: frontend
         run: pnpm test

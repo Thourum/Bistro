@@ -1,14 +1,11 @@
 nodeLinker: hoisted
 packages:
-  - electron/
+  - frontend/
   - website/
 
 allowBuilds:
-  '@sentry/node-native-stacktrace': true
   es5-ext: false
   esbuild: true
-  fs-xattr: true
-  macos-alias: true
   vue-demi: false
 
 blockExoticSubdeps: false

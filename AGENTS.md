@@ -11,7 +11,7 @@ Authoritative references (read when relevant, don't duplicate here):
 - Product overview: `README.md`
 - Go backend package-by-package map: `docs/go-project-overview.md`
 - Roadmap / v1.0 status: `docs/ROADMAP.md`
-- Design system & UI specs: `docs/DESIGN.md` (UI mockups live in `electron/stitch_terminal_authentic_prd/`)
+- Design system & UI specs: `docs/DESIGN.md` (UI mockups live in `docs/design/stitch_terminal_authentic_prd/`)
 - User facing documentation: `website/src/pages/docs/`
 - Architecture decisions: `docs/adr/`
 
@@ -19,7 +19,7 @@ This project is early and evolving. If you change structure, commands, or conven
 
 ## Architecture
 
-The Go engine now runs in-process for the Wails migration. `internal/services` exposes typed calls and registered Wails events; the engine still owns all SQLite writes, sync, local diffs, and offline action replay. The legacy Electron sources remain until Task 13, but their removed `bistro-sync`/WebSocket backend is no longer runnable. The Wails shell entrypoint arrives in Task 14. `internal/shell.SettingsStore` owns atomic JSON settings persistence, per-leaf validation, external-edit polling, and shell-only window bounds. It has no dependency on services; `internal/services/events.go` registers its `Settings` snapshot as `settings:changed` for the future shell wiring.
+The Go engine now runs in-process for the Wails migration. `internal/services` exposes typed calls and registered Wails events; the engine still owns all SQLite writes, sync, local diffs, and offline action replay. The Electron shell has been removed; the standalone React renderer lives in `frontend/`. Legacy renderer IPC/WS calls remain pending Tasks 16–18. The Wails shell entrypoint arrives in Task 14. `internal/shell.SettingsStore` owns atomic JSON settings persistence, per-leaf validation, external-edit polling, and shell-only window bounds. It has no dependency on services; `internal/services/events.go` registers its `Settings` snapshot as `settings:changed` for the future shell wiring.
 
 `services.Shell` exposes settings, folder selection, HTTP(S) links, detached external-editor launch, app info, and quit. Task 14 constructs `Set.Shell`; the engine leaves it nil. `internal/shell` owns symlink-contained editor target resolution and OS helpers; `NewPlatform` resolves the Wails app at call time. The existing `services.Editor` remains the PR-checkout service.
 
@@ -42,28 +42,28 @@ Go tests outside package `store` share migrated in-memory databases via `interna
 ## Tech stack
 
 - **Go 1.26** — go-git, go-github, mattn/go-sqlite3, go-keyring, x/oauth2.
-- **Electron + Electron Forge + Vite** — React 19, TypeScript, TanStack (React Query / Hotkeys / Virtual / Store), Radix UI, Tailwind, Biome (lint+format), Vitest (test).
-- **Package manager: pnpm** for the Electron app. Run pnpm commands from `electron/`; the lockfile is the repo-root `pnpm-lock.yaml` (workspace defined in `pnpm-workspace.yaml`, covering `electron/` and `website/`). `minimumReleaseAge` in `pnpm-workspace.yaml` blocks package versions younger than 7 days, so a just-published release won't resolve yet. Versions live in `go.mod` and `electron/package.json` — check there, don't assume.
+- **Wails v3 shell + Vite frontend** — React 19, TypeScript, TanStack (React Query / Hotkeys / Virtual / Store), Radix UI, Tailwind, Biome (lint+format), Vitest (test).
+- **Package manager: pnpm** for the frontend. Run pnpm commands from `frontend/`; the lockfile is the repo-root `pnpm-lock.yaml` (workspace defined in `pnpm-workspace.yaml`, covering `frontend/` and `website/`). `minimumReleaseAge` in `pnpm-workspace.yaml` blocks package versions younger than 7 days, so a just-published release won't resolve yet. Versions live in `go.mod` and `frontend/package.json` — check there, don't assume.
 
 ## Conventions
 
-- **Error handling: in Electron TS/JS code, use `@thourum/fault`. NEVER write `try`/`catch` for control flow or error handling.** Return and chain `Result<T, Fault>` / `ResultAsync<T, Fault>` with tagged faults; narrow errors with `fault.tag` and use `fault.message` at display/log boundaries. Go continues to use its existing error handling. (The only `try/catch` allowed anywhere is inside throwaway context-mode MCP sandbox scripts — never in committed code.)
+- **Error handling: in frontend TS/JS code, use `@thourum/fault`. NEVER write `try`/`catch` for control flow or error handling.** Return and chain `Result<T, Fault>` / `ResultAsync<T, Fault>` with tagged faults; narrow errors with `fault.tag` and use `fault.message` at display/log boundaries. Go continues to use its existing error handling. (The only `try/catch` allowed anywhere is inside throwaway context-mode MCP sandbox scripts — never in committed code.)
 - Go owns all SQLite writes — the UI never writes the DB directly.
 - Review drafts: the engine owns `review_drafts`. `approve` / `request_changes` absorb the current user's drafts inside `Orchestrator.ApplyAction`, and `submit_review` is never queued.
 - SQLite is a cache; migrations are versioned, idempotent, embedded. Services are in-process; the only localhost listener is the temporary OAuth callback.
-- Keyboard bindings are pure config, no handlers: actions (`actionId`, label, activation) in `ACTION_CATALOG` in `electron/src/renderer/utils/keybindings.ts`, keys per navigation style (`vim` / `emacs` / `standard`) in `utils/keymaps.ts` (`KEYMAPS`, `SEQUENCE_TIMEOUT_MS`). `getEffectiveBindings(style, overrides)` resolves user override → style table → unbound; handlers live in `utils/keybindingActions.ts` (line-comment handlers in `utils/lineCommentActions.ts`, draft and resolve handlers in `utils/reviewActions.ts`), enable/scope rules in `utils/keybindingActivation.ts`; registration in `hooks/useAppHotkeys.ts`. Don't register hotkeys outside `useAppHotkeys` (textarea-local submit uses `TEXTAREA_SUBMIT_HOTKEY` / `isTextareaSubmit` from the same file). Command-palette entries dispatch the same handler by `actionId` (`getBindingAction`); palette and hotkeys share effective-route activation and the ref-backed action context in `hooks/useKeyActionContext.ts`. Palette-only actions (no key in any style) live in `ACTIONS` without a binding. Entries live in `components/commandPaletteCommands.ts`; `shortcutFor` shows a shortcut only when `isActive` permits the binding on the current route. Settings → Keyboard records overrides with `useHotkeySequenceRecorder`; recording and default resets reject conflicts via `utils/keybindingConflicts.ts`, using the runtime `isBindingEnabled` ownership gates.
+- Keyboard bindings are pure config, no handlers: actions (`actionId`, label, activation) in `ACTION_CATALOG` in `frontend/src/utils/keybindings.ts`, keys per navigation style (`vim` / `emacs` / `standard`) in `utils/keymaps.ts` (`KEYMAPS`, `SEQUENCE_TIMEOUT_MS`). `getEffectiveBindings(style, overrides)` resolves user override → style table → unbound; handlers live in `utils/keybindingActions.ts` (line-comment handlers in `utils/lineCommentActions.ts`, draft and resolve handlers in `utils/reviewActions.ts`), enable/scope rules in `utils/keybindingActivation.ts`; registration in `hooks/useAppHotkeys.ts`. Don't register hotkeys outside `useAppHotkeys` (textarea-local submit uses `TEXTAREA_SUBMIT_HOTKEY` / `isTextareaSubmit` from the same file). Command-palette entries dispatch the same handler by `actionId` (`getBindingAction`); palette and hotkeys share effective-route activation and the ref-backed action context in `hooks/useKeyActionContext.ts`. Palette-only actions (no key in any style) live in `ACTIONS` without a binding. Entries live in `components/commandPaletteCommands.ts`; `shortcutFor` shows a shortcut only when `isActive` permits the binding on the current route. Settings → Keyboard records overrides with `useHotkeySequenceRecorder`; recording and default resets reject conflicts via `utils/keybindingConflicts.ts`, using the runtime `isBindingEnabled` ownership gates.
 - Validate external data with zod at the edge, never `as` casts: WS envelopes and push events via `dataSchemas`/`parseWsMessage` in `types/wsSchemas.ts`; `wsClient.request()` responses via schemas in `types/index.ts` + `parseResponse` (`utils/error.ts`).
 - WebSocket transport lives in `services/ws/connection.ts`: use `wsClient.send` / `wsClient.request` directly, with tagged `ResultAsync` request errors. Only App's Bootstrap calls `hooks/useWebSocketConnection.ts` to own connect/disconnect. Push-event side effects live in `services/ws/events/<domain>.ts`, with an exhaustive handler table in `services/ws/events/index.ts`.
 - Renderer hooks own React state/effects and data-fetching lifecycles; plain WS/IPC requests and appStore writes live in `services/` (`readState.ts`, `prActions.ts`, `dismissals.ts`, `editor.ts`). Call services directly; don't wrap them in hooks solely for `useCallback`.
 - Large renderer pages keep feature-local pieces beside them: `pages/settings/*Section.tsx` for Settings, `use<Page>Data.ts` / `use<Page>Actions.ts` hooks and `*Sections.tsx` / `*Chrome.tsx` for PR detail and diff pages.
-- Onboarding and the first-run rail (design: `docs/superpowers/specs/2026-10-24-first-run-onboarding-rail-design.md`): pure models in `utils/onboardingRepos.ts`, `utils/onboardingSandbox.ts`, `utils/firstRunRail.ts`; WS/appStore writes in `services/onboardingSync.ts` and `services/firstRunRail.ts`. Engine services (`internal/services/`): `ReviewQueue.Get` (repo IDs are lowercase `identity.ID()`, e.g. `github:owner/name`), `DevFolderScan.Scan` (Stop cancels the call's context; a newer scan cancels its predecessor), and `Repos.List` with `cache_only` for a provider-free cached read. The Electron onboarding WS calls remain pending the renderer migration. Components that show or hide UI by a binding's enable rule use `useBindingEnabled` from `hooks/useAppHotkeys.ts`.
+- Onboarding and the first-run rail (design: `docs/superpowers/specs/2026-10-24-first-run-onboarding-rail-design.md`): pure models in `utils/onboardingRepos.ts`, `utils/onboardingSandbox.ts`, `utils/firstRunRail.ts`; WS/appStore writes in `services/onboardingSync.ts` and `services/firstRunRail.ts`. Engine services (`internal/services/`): `ReviewQueue.Get` (repo IDs are lowercase `identity.ID()`, e.g. `github:owner/name`), `DevFolderScan.Scan` (Stop cancels the call's context; a newer scan cancels its predecessor), and `Repos.List` with `cache_only` for a provider-free cached read. The legacy onboarding WS calls remain pending the renderer migration. Components that show or hide UI by a binding's enable rule use `useBindingEnabled` from `hooks/useAppHotkeys.ts`.
 - Do not assert a Go module path from memory — read it from `go.mod`.
 
 ## How to work
 
 There is no Makefile. The commands below are authoritative; ignore `make` targets in any older docs.
 
-Desktop launch/package commands are temporarily unavailable while the migration removes Electron and adds the Wails shell (Tasks 13–14). Do not run the legacy Electron launcher: `cmd/bistro-sync` and its WebSocket transport have been deleted. Engine verification remains available with the Go commands below. Runtime OAuth configuration is supplied through `engine.Options`; no engine WS port exists.
+Desktop launch/package commands are temporarily unavailable until Task 14 adds the Wails shell entrypoint. `cd frontend && pnpm dev` serves renderer assets but does not supply the native bridge. Do not run the legacy Electron launcher: `cmd/bistro-sync` and its WebSocket transport have been deleted. Engine verification remains available with the Go commands below. Runtime OAuth configuration is supplied through `engine.Options`; no engine WS port exists.
 
 Adding or changing a SQL query: edit/add a `.sql` file under `internal/store/queries/`, then regenerate (`sqlc.yaml` is at the repo root):
 
@@ -78,8 +78,8 @@ Verify a change before declaring done:
 ```bash
 # Go
 go vet ./... && go test -race ./...
-# Legacy Electron (until Task 13; package.json has no type-check script)
-cd electron && pnpm lint && pnpm test
+# Frontend
+cd frontend && pnpm type-check && pnpm lint && pnpm test && pnpm build
 ```
 
 Enable the pre-commit hook once per clone (blocks staged files over 5,000 tokens, bytes/4; skips lockfiles, sqlc output, images, and files marked generated; the error message explains how to split):
@@ -90,7 +90,7 @@ git config core.hooksPath .githooks
 
 Performance bench (ADR 0001): `BISTRO_SLIM=1 pnpm run release:macos` builds the slim variant (Electron fuses, no `.woff` duplicates). The packaged app accepts `--quit-after-ready` and `--bench-query=…`, and the renderer's `bench/` module loads only when `bench_collector` is in the URL. Seeding uses `cmd/bistro-benchseed` plus pinned PRs. The S6 keyboard driver (`run-keys.mjs` / `keys-stats.mjs`) requires passive permission/layout preflight and an explicit bounded `--limit` or `--full`; never inject keys while preflight is blocked.
 
-If a command or detail is unclear, check `electron/package.json` scripts. Do not invent workflows.
+If a command or detail is unclear, check `frontend/package.json` scripts. Do not invent workflows.
 
 ---
 
@@ -196,4 +196,4 @@ scripts/smoke-macos.sh out/Bistro-darwin-arm64/Bistro.app   # launch and check t
 pnpm run release:win                        # Windows ZIP; run on Windows (the CGO engine builds for the host only)
 ```
 
-Tagging `vX.Y.Z` (matching `electron/package.json`) runs `.github/workflows/release.yml`: security gates, then build, smoke, and a draft pre-release. Signing runs only when the `MACOS_*` / `APPLE_*` secrets exist.
+The legacy `.github/workflows/release.yml` still targets the removed Electron package and cannot publish migration builds until the Wails packaging task replaces it. Do not use it to release this branch. Historical signing used the `MACOS_*` / `APPLE_*` secrets.
