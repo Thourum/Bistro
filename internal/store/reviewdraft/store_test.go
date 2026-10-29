@@ -61,10 +61,10 @@ func TestReviewDrafts_CreateListUpdateDelete_ScopedToLogin(t *testing.T) {
 		t.Fatalf("update = %+v, %v", updated, err)
 	}
 
-	if err := drafts.Delete(ctx, "other", []string{ranged.ID}); err != nil {
+	if _, err := drafts.Delete(ctx, "other", []string{ranged.ID}); err != nil {
 		t.Fatalf("delete by other: %v", err)
 	}
-	if err := drafts.Delete(ctx, "me", []string{single.ID, "missing"}); err != nil {
+	if _, err := drafts.Delete(ctx, "me", []string{single.ID, "missing"}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	left, err := drafts.List(ctx, "pr-1", "me")
@@ -74,14 +74,14 @@ func TestReviewDrafts_CreateListUpdateDelete_ScopedToLogin(t *testing.T) {
 	if len(left) != 1 || left[0].ID != ranged.ID {
 		t.Fatalf("after delete = %+v, want only the range draft", left)
 	}
-	if err := drafts.Delete(ctx, "me", []string{ranged.ID}); err != nil {
+	if _, err := drafts.Delete(ctx, "me", []string{ranged.ID}); err != nil {
 		t.Fatalf("delete last draft: %v", err)
 	}
 	empty, err := drafts.List(ctx, "pr-1", "me")
 	if err != nil || empty == nil || len(empty) != 0 {
 		t.Fatalf("empty list = %+v, %v, want non-nil empty slice", empty, err)
 	}
-	if err := drafts.Delete(ctx, "me", nil); err != nil {
+	if _, err := drafts.Delete(ctx, "me", nil); err != nil {
 		t.Fatalf("delete no drafts: %v", err)
 	}
 }
@@ -137,8 +137,8 @@ func TestReviewDrafts_DeleteRollsBackOnFailure(t *testing.T) {
 	}
 	mustExec(t, db, `CREATE TRIGGER fail_second_delete BEFORE DELETE ON review_drafts
 		WHEN OLD.id = 'second' BEGIN SELECT RAISE(ABORT, 'blocked delete'); END`)
-	if err := drafts.Delete(ctx, "me", []string{"first", "second"}); err == nil {
-		t.Fatal("expected delete to fail")
+	if deleted, err := drafts.Delete(ctx, "me", []string{"first", "second"}); err == nil || deleted != 0 {
+		t.Fatalf("delete = %d, %v; want zero count and failure", deleted, err)
 	}
 	remaining, err := drafts.List(ctx, "pr-1", "me")
 	if err != nil {

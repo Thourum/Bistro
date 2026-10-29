@@ -10,7 +10,7 @@ import (
 	"database/sql"
 )
 
-const deleteReviewDraft = `-- name: DeleteReviewDraft :exec
+const deleteReviewDraft = `-- name: DeleteReviewDraft :execrows
 DELETE FROM review_drafts WHERE id = ? AND login = ?
 `
 
@@ -19,9 +19,12 @@ type DeleteReviewDraftParams struct {
 	Login string `json:"login"`
 }
 
-func (q *Queries) DeleteReviewDraft(ctx context.Context, arg DeleteReviewDraftParams) error {
-	_, err := q.db.ExecContext(ctx, deleteReviewDraft, arg.ID, arg.Login)
-	return err
+func (q *Queries) DeleteReviewDraft(ctx context.Context, arg DeleteReviewDraftParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteReviewDraft, arg.ID, arg.Login)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const insertReviewDraft = `-- name: InsertReviewDraft :one

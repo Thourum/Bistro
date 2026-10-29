@@ -84,25 +84,28 @@ func (d *Store) List(ctx context.Context, prID, login string) ([]Draft, error) {
 	return drafts, nil
 }
 
-// Delete removes login's drafts with the given ids in one transaction. Ids the
-// account does not own are ignored.
-func (d *Store) Delete(ctx context.Context, login string, ids []string) error {
+// Delete removes login's drafts in one transaction and returns the committed
+// row count. Missing IDs and IDs owned by another account are ignored.
+func (d *Store) Delete(ctx context.Context, login string, ids []string) (int64, error) {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin delete review drafts: %w", err)
+		return 0, fmt.Errorf("begin delete review drafts: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck
 
 	qtx := d.queries.WithTx(tx)
+	var deleted int64
 	for _, id := range ids {
-		if err := qtx.DeleteReviewDraft(ctx, storedb.DeleteReviewDraftParams{ID: id, Login: login}); err != nil {
-			return fmt.Errorf("delete review draft %s: %w", id, err)
+		count, err := qtx.DeleteReviewDraft(ctx, storedb.DeleteReviewDraftParams{ID: id, Login: login})
+		if err != nil {
+			return 0, fmt.Errorf("delete review draft %s: %w", id, err)
 		}
+		deleted += count
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit delete review drafts: %w", err)
+		return 0, fmt.Errorf("commit delete review drafts: %w", err)
 	}
-	return nil
+	return deleted, nil
 }
 
 func draftFromRow(row storedb.ReviewDraft) Draft {

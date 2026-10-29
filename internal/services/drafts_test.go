@@ -72,9 +72,9 @@ func TestDraftSaveListDeleteEmitsNormalizedChanges(t *testing.T) {
 	if err != nil || len(listed.Drafts) != 0 {
 		t.Fatalf("list after delete = %+v, %v", listed, err)
 	}
-	// The old handler counts requested IDs and broadcasts even when no row exists.
+	// Idempotent deletion still broadcasts, but reports no affected rows.
 	deleted, err = s.Delete(ctx, DraftDeleteRequest{PRID: saved.Draft.PRID, DraftIDs: []string{"unknown"}})
-	if err != nil || deleted.Deleted != 1 || len(events.Named(EventDraftsChanged)) != 4 {
+	if err != nil || deleted.Deleted != 0 || len(events.Named(EventDraftsChanged)) != 4 {
 		t.Fatalf("unknown delete = %+v, %v; events = %+v", deleted, err, events.Events())
 	}
 }
@@ -117,5 +117,52 @@ func TestDraftIdentityFailures(t *testing.T) {
 		if !errors.As(err, &se) || se.Code != tt.code {
 			t.Fatalf("error = %v, want %s", err, tt.code)
 		}
+	}
+}
+
+func TestDraftDeleteReportsAffectedRows(t *testing.T) {
+	ctx := context.Background()
+	events := &servicestest.Recorder{}
+	drafts := reviewdraft.New(storetest.Open(t).DB)
+	service := &Drafts{Drafts: drafts, CurrentUser: draftUser("me"), Events: events}
+	owned, err := drafts.Create(ctx, "me", reviewdraft.Draft{PRID: "pr-1", Path: "a.go", Side: "RIGHT", Line: 1, Body: "mine", CommitSHA: "head"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := drafts.Create(ctx, "other", reviewdraft.Draft{PRID: "pr-1", Path: "a.go", Side: "RIGHT", Line: 1, Body: "theirs", CommitSHA: "head"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name string
+		ids  []string
+		want int
+	}{
+		{name: "unknown", ids: []string{"unknown"}, want: 0},
+		{name: "mixed owned and unknown", ids: []string{owned.ID, "unknown"}, want: 1},
+		{name: "other account", ids: []string{other.ID}, want: 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			before := len(events.Named(EventDraftsChanged))
+			result, err := service.Delete(ctx, DraftDeleteRequest{PRID: "pr-1", DraftIDs: tt.ids})
+			if err != nil || result.Deleted != tt.want {
+				t.Fatalf("deleted=%d, want %d; error=%v", result.Deleted, tt.want, err)
+			}
+			if len(events.Named(EventDraftsChanged)) != before+1 {
+				t.Fatalf("expected exactly one change event")
+			}
+		})
+	}
+	duplicate, err := drafts.Create(ctx, "me", reviewdraft.Draft{PRID: "pr-1", Path: "a.go", Side: "RIGHT", Line: 1, Body: "mine", CommitSHA: "head"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Delete(ctx, DraftDeleteRequest{PRID: "pr-1", DraftIDs: []string{duplicate.ID, duplicate.ID}})
+	if err != nil || result.Deleted != 1 {
+		t.Fatalf("duplicate delete = %+v, %v", result, err)
+	}
+	remaining, err := drafts.List(ctx, "pr-1", "other")
+	if err != nil || len(remaining) != 1 || remaining[0].ID != other.ID {
+		t.Fatalf("other account drafts = %+v, %v", remaining, err)
 	}
 }

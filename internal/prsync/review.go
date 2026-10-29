@@ -17,7 +17,7 @@ import (
 // reviewDraftStore is the subset of reviewdraft.Store review submission uses.
 type reviewDraftStore interface {
 	List(ctx context.Context, prID, login string) ([]reviewdraft.Draft, error)
-	Delete(ctx context.Context, login string, ids []string) error
+	Delete(ctx context.Context, login string, ids []string) (int64, error)
 }
 
 // draftGroup holds drafts submitted together: GitHub anchors every comment of
@@ -224,7 +224,7 @@ func (o *Orchestrator) deleteSubmittedDrafts(ctx context.Context, prID, login st
 	for _, draft := range drafts {
 		ids = append(ids, draft.ID)
 	}
-	if err := o.drafts.Delete(ctx, login, ids); err != nil {
+	if _, err := o.drafts.Delete(ctx, login, ids); err != nil {
 		// The review is on GitHub; resubmitting these drafts would duplicate it.
 		logging.FromContext(ctx).Error("submitted drafts could not be deleted", "pr_id", prID, "count", len(ids), "error", err)
 	}

@@ -18,7 +18,7 @@ type draftStore interface {
 	Create(context.Context, string, reviewdraft.Draft) (reviewdraft.Draft, error)
 	UpdateBody(context.Context, string, string, string) (reviewdraft.Draft, error)
 	List(context.Context, string, string) ([]reviewdraft.Draft, error)
-	Delete(context.Context, string, []string) error
+	Delete(context.Context, string, []string) (int64, error)
 }
 type Drafts struct {
 	Drafts      draftStore
@@ -137,7 +137,7 @@ func (s *Drafts) List(ctx context.Context, req PRRef) (DraftsResponse, error) {
 	})
 }
 
-// Delete preserves the legacy requested-ID count and notification for idempotent deletes.
+// Delete reports committed deletions and preserves notifications for idempotent deletes.
 func (s *Drafts) Delete(ctx context.Context, req DraftDeleteRequest) (DraftsDeleted, error) {
 	return guard(s.Panics, "Drafts.Delete", func() (DraftsDeleted, error) {
 		prID := NormalizeID(req.PRID)
@@ -148,10 +148,11 @@ func (s *Drafts) Delete(ctx context.Context, req DraftDeleteRequest) (DraftsDele
 		if err != nil {
 			return DraftsDeleted{}, err
 		}
-		if err := s.Drafts.Delete(ctx, login, req.DraftIDs); err != nil {
+		deleted, err := s.Drafts.Delete(ctx, login, req.DraftIDs)
+		if err != nil {
 			return DraftsDeleted{}, err
 		}
 		s.Events.Emit(EventDraftsChanged, DraftsChanged{PRID: prID})
-		return DraftsDeleted{PRID: prID, Deleted: len(req.DraftIDs)}, nil
+		return DraftsDeleted{PRID: prID, Deleted: int(deleted)}, nil
 	})
 }

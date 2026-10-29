@@ -13,5 +13,5 @@ SELECT * FROM review_drafts
 WHERE pr_id = ? AND login = ?
 ORDER BY created_at, id;
 
--- name: DeleteReviewDraft :exec
+-- name: DeleteReviewDraft :execrows
 DELETE FROM review_drafts WHERE id = ? AND login = ?;
