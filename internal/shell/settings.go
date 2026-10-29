@@ -103,6 +103,8 @@ func DefaultSettings() Settings {
 
 // SettingsStore serializes settings persistence and polling. Snapshots are copies.
 type SettingsStore struct {
+	// Serialise commits through listener delivery without holding mu (listeners call Get).
+	changeMu  sync.Mutex
 	mu        sync.Mutex
 	path      string
 	log       *slog.Logger
@@ -151,6 +153,8 @@ func (s *SettingsStore) OnChange(listener func(prev, next Settings)) {
 
 // Set retains invalid leaves and shell-owned window bounds.
 func (s *SettingsStore) Set(next Settings) (Settings, error) {
+	s.changeMu.Lock()
+	defer s.changeMu.Unlock()
 	s.mu.Lock()
 	// JSON cannot represent non-finite numbers; treat them as invalid leaves.
 	if math.IsNaN(next.Appearance.UIFontSize) || math.IsInf(next.Appearance.UIFontSize, 0) {
@@ -179,6 +183,8 @@ func (s *SettingsStore) Set(next Settings) (Settings, error) {
 
 // Reset persists defaults, including zero window bounds.
 func (s *SettingsStore) Reset() (Settings, error) {
+	s.changeMu.Lock()
+	defer s.changeMu.Unlock()
 	s.mu.Lock()
 	return s.commit(DefaultSettings())
 }
@@ -269,6 +275,8 @@ func (s *SettingsStore) Watch(ctx context.Context, every time.Duration) {
 }
 
 func (s *SettingsStore) reloadExternal() {
+	s.changeMu.Lock()
+	defer s.changeMu.Unlock()
 	s.mu.Lock()
 	info, err := os.Stat(s.path)
 	if errors.Is(err, os.ErrNotExist) {

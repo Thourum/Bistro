@@ -35,6 +35,60 @@ func assertSettings(t *testing.T, got, want Settings) {
 	}
 }
 
+func TestReloadAndSetNotifyInCommitOrder(t *testing.T) {
+	store := testStore(t)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	changes := make(chan bool, 2)
+	store.OnChange(func(_, next Settings) {
+		_ = store.Get() // Consent getters must remain safe inside a listener.
+		if next.Privacy.TelemetryEnabled {
+			close(entered)
+			<-release
+		}
+		changes <- next.Privacy.TelemetryEnabled
+	})
+	writeExternal(t, store.Path(), `{"privacy":{"telemetryEnabled":true}}`)
+	reloaded := make(chan struct{})
+	go func() { store.reloadExternal(); close(reloaded) }()
+	select {
+	case <-entered:
+	case <-time.After(testDeadline):
+		t.Fatal("reload listener did not start")
+	}
+	written := make(chan error, 1)
+	next := store.Get()
+	next.Privacy.TelemetryEnabled = false
+	go func() { _, err := store.Set(next); written <- err }()
+	// Allow the overlapping writer to reach the blocked notification.
+	select {
+	case err := <-written:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(watchPoll):
+	}
+	close(release)
+	select {
+	case <-reloaded:
+	case <-time.After(testDeadline):
+		t.Fatal("reload did not finish")
+	}
+	for _, want := range []bool{true, false} {
+		select {
+		case got := <-changes:
+			if got != want {
+				t.Fatalf("notification = %v, want %v", got, want)
+			}
+		case <-time.After(testDeadline):
+			t.Fatal("missing settings notification")
+		}
+	}
+	if store.Get().Privacy.TelemetryEnabled {
+		t.Fatal("final consent should be off")
+	}
+}
+
 func TestLoadDefaultsAndValidSiblings(t *testing.T) {
 	for _, document := range []string{"", "null", "[]", "{not json", `{"appearance":{"theme":"purple","uiFontSize":16},"bogus":{}}`} {
 		t.Run(document, func(t *testing.T) {
