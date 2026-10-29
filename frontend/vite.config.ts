@@ -25,8 +25,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@renderer': resolve(__dirname, 'src'),
-      '@shared': resolve(__dirname, 'src/shared'),
+      '@renderer': resolve(import.meta.dirname, 'src'),
+      '@shared': resolve(import.meta.dirname, 'src/shared'),
     },
     dedupe: ['react', 'react-dom'],
   },
