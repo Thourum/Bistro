@@ -143,8 +143,9 @@ func (m *mockCurrentUserReader) Get(context.Context, string) (string, bool, erro
 
 func TestPRListDefaultsAndLimitCap(t *testing.T) {
 	db := storetest.Open(t).DB
+	updatedAt := time.Now().UTC()
 	for i := range maxPRListLimit + 1 {
-		insertPRListTestPR(t, db, fmt.Sprintf("pr-%d", i), i, "head", false, time.Now().UTC())
+		insertPRListTestPR(t, db, fmt.Sprintf("pr-%d", i), i, "head", false, updatedAt.Add(-time.Duration(i)*time.Minute))
 	}
 	if _, err := db.Exec(`UPDATE prs SET state = 'closed' WHERE id = 'pr-0'`); err != nil {
 		t.Fatal(err)

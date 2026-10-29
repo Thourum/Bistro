@@ -70,12 +70,18 @@ func (s *Repos) List(ctx context.Context, req RepoListRequest) (RepoListResponse
 				return RepoListResponse{}, Errorf(CodeUnauthenticated, "not authenticated")
 			}
 			if err := refreshRepoList(reqCtx, queries, prov, logger); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return RepoListResponse{}, err
+				}
 				logger.Error("refresh repo list failed")
 				return RepoListResponse{}, Errorf(CodeInternal, "unable to load repositories")
 			}
 		}
 		repos, err := readRepoList(reqCtx, queries)
 		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return RepoListResponse{}, err
+			}
 			return RepoListResponse{}, Errorf(CodeInternal, "unable to load repositories")
 		}
 		return RepoListResponse{Repos: repos}, nil

@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
@@ -130,4 +131,31 @@ func TestReposSetWatched(t *testing.T) {
 	assertServiceCode(t, err, CodeInvalid)
 	_, err = s.SetWatched(context.Background(), SetWatchedRequest{RepoID: "missing"})
 	assertServiceCode(t, err, CodeNotFound)
+}
+
+// The provider returns the derived request context's error, not a prebuilt ServiceError.
+type deadlineRepoProvider struct{ provider.Provider }
+
+func (*deadlineRepoProvider) ListUserRepos(ctx context.Context) ([]*provider.Repo, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestReposListPreservesContextErrors(t *testing.T) {
+	t.Run("provider deadline", func(t *testing.T) {
+		db := setupRepoTestDB(t)
+		s := &Repos{DB: db, GetProvider: func() provider.Provider { return &deadlineRepoProvider{} }}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		_, err := s.List(ctx, RepoListRequest{})
+		assertServiceCode(t, err, CodeTimeout)
+	})
+	t.Run("cancelled cached read", func(t *testing.T) {
+		db := setupRepoTestDB(t)
+		s := &Repos{DB: db, GetProvider: func() provider.Provider { t.Fatal("cache read accessed provider"); return nil }}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := s.List(ctx, RepoListRequest{CacheOnly: true})
+		assertServiceCode(t, err, CodeCancelled)
+	})
 }
