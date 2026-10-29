@@ -1,0 +1,44 @@
+/* Palette, zero-radius chrome and font copied from renderer/styles/globals.css. */
+:root {
+  --bg: #f8f9fa; /* background */
+  --surface: #ffffff; /* surface-container-lowest, matching renderer dialogs */
+  --surface-2: #edeeef; /* surface-container */
+  --fg: #191c1d; /* on-surface */
+  --fg-dim: #434655; /* on-surface-variant */
+  --fg-faint: #737686; /* outline is the closest muted text token */
+  --border: #c3c6d7; /* outline-variant */
+  --accent: #004ac6; /* primary */
+  --accent-fg: #ffffff; /* on-primary */
+  --accent-dim: #dbe1ff; /* primary-fixed supplies a subdued accent surface */
+  --success: #004ac6; /* no success token; primary marks successful completion */
+  --error: #ba1a1a;
+  --warning: #943700; /* tertiary is the warm warning token */
+  --radius: 0px;
+  --radius-sm: 0px;
+  --pad: calc(4 * 0.25rem); /* p-4 from AddRepoDialog.tsx */
+  --gap: calc(2 * 0.25rem); /* gap-2 from AddRepoDialog.tsx */
+  --font: "Geist Variable", "Geist", "Inter", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0a0a0a;
+    --surface: #000000;
+    --surface-2: #151515;
+    --fg: #fafafa;
+    --fg-dim: #c0c0c0;
+    --fg-faint: #6b6b6b;
+    --border: #333333;
+    --accent: #7aa4ff;
+    --accent-fg: #000000;
+    --accent-dim: #3b82f6; /* dark primary-container; primary-fixed has no dark override */
+    --success: #7aa4ff; /* same primary mapping as light */
+    --error: #ff6e6e;
+    --warning: #943700; /* tertiary inherits the light value in globals.css */
+    --radius: 0px;
+    --radius-sm: 0px;
+    --pad: calc(4 * 0.25rem);
+    --gap: calc(2 * 0.25rem);
+    --font: "Geist Variable", "Geist", "Inter", system-ui, sans-serif;
+  }
+}
