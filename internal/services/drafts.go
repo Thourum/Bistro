@@ -107,6 +107,9 @@ func (s *Drafts) Save(ctx context.Context, req DraftSaveRequest) (DraftSaved, er
 		} else {
 			saved, err = s.Drafts.Create(ctx, login, reviewdraft.Draft{PRID: normalized.PRID, Path: req.Path, Side: req.Side, StartLine: req.StartLine, Line: req.Line, Body: body, CommitSHA: req.CommitSHA})
 		}
+		if errors.Is(err, reviewdraft.ErrNotFound) {
+			return DraftSaved{}, Errorf(CodeNotFound, "review draft not found")
+		}
 		if err != nil {
 			return DraftSaved{}, err
 		}

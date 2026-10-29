@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/store/repolocation"
@@ -104,9 +105,19 @@ func TestRepoLocationCloneCallerCancellation(t *testing.T) {
 		_, err := service.AddByURL(ctx, AddRepoByURLRequest{URL: "https://github.com/acme/api.git", Destination: locationStringPtr("cache")})
 		done <- err
 	}()
-	<-entered
+	const cancellationTestTimeout = 5 * time.Second
+	select {
+	case <-entered:
+	case <-time.After(cancellationTestTimeout):
+		t.Fatal("clone did not start")
+	}
 	cancel()
-	assertLocationError(t, <-done, "cancelled")
+	select {
+	case err := <-done:
+		assertLocationError(t, err, "cancelled")
+	case <-time.After(cancellationTestTimeout):
+		t.Fatal("clone did not honour cancellation")
+	}
 	if _, err := os.Stat(filepath.Join(cacheRoot, "acme", "api")); !os.IsNotExist(err) {
 		t.Fatalf("cancelled clone not cleaned: %v", err)
 	}

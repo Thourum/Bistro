@@ -216,7 +216,7 @@ func (s *Auth) awaitCallback(ctx context.Context, flow *authFlow) (AuthIdentity,
 
 func (s *Auth) persistAuthResult(token string) (AuthIdentity, error) {
 	if err := s.Tokens.Store(githubProvider, token); err != nil {
-		return AuthIdentity{}, WithReason(CodeInternal, "persist_failed", "failed persist token")
+		return AuthIdentity{}, WithReason(CodeInternal, "persist_failed", "failed to persist token")
 	}
 	s.SetProvider(github.NewClient(token), githubProvider)
 	identity := AuthIdentity{Provider: githubProvider}

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 )
 
@@ -107,6 +108,9 @@ func (s *PR) List(ctx context.Context, req PRListRequest) (PRListResponse, error
 		login := ""
 		if s.CurrentUser != nil {
 			resolvedLogin, found, err := s.CurrentUser.Get(ctx, githubProvider)
+			if cancellation := prListCancellation(ctx, err); cancellation != nil {
+				return PRListResponse{}, cancellation
+			}
 			if err != nil {
 				// Listing remains available without viewer-specific annotations.
 				logger.Warn("resolve current user for REQUEST_PR_LIST", "err", err)
@@ -134,9 +138,12 @@ func (s *PR) List(ctx context.Context, req PRListRequest) (PRListResponse, error
 
 		query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
 
-		rows, err := s.DB.Query(query, login, login, login, login, login, login, login, req.Limit, req.Offset)
+		rows, err := s.DB.QueryContext(ctx, query, login, login, login, login, login, login, login, req.Limit, req.Offset)
 		if err != nil {
 			logger.Error("REQUEST_PR_LIST query failed", "err", err)
+			if cancellation := prListCancellation(ctx, err); cancellation != nil {
+				return PRListResponse{}, cancellation
+			}
 			return PRListResponse{}, Errorf(CodeInternal, "unable to load pull requests")
 		}
 		defer rows.Close()
@@ -157,6 +164,9 @@ func (s *PR) List(ctx context.Context, req PRListRequest) (PRListResponse, error
 				&pr.ReviewedHeadStale, &pr.Hydrated,
 			); err != nil {
 				logger.Error("REQUEST_PR_LIST scan failed", "err", err)
+				if cancellation := prListCancellation(ctx, err); cancellation != nil {
+					return PRListResponse{}, cancellation
+				}
 				return PRListResponse{}, Errorf(CodeInternal, "unable to load pull requests")
 			}
 			pr.RequestedReviewers = decodeReviewers(logger, pr.ID, requestedReviewers)
@@ -165,11 +175,17 @@ func (s *PR) List(ctx context.Context, req PRListRequest) (PRListResponse, error
 		}
 		if err := rows.Err(); err != nil {
 			logger.Error("REQUEST_PR_LIST iteration failed", "err", err)
+			if cancellation := prListCancellation(ctx, err); cancellation != nil {
+				return PRListResponse{}, cancellation
+			}
 			return PRListResponse{}, Errorf(CodeInternal, "unable to load pull requests")
 		}
 
 		if s.TouchesYou != nil && len(prIDs) > 0 {
 			matches, err := s.TouchesYou.TouchesYouForPRs(ctx, prIDs)
+			if cancellation := prListCancellation(ctx, err); cancellation != nil {
+				return PRListResponse{}, cancellation
+			}
 			if err != nil {
 				// Expertise enrichment is optional; keep the PR list usable.
 				logger.Warn("touches_you resolution failed", "err", err)
@@ -192,6 +208,16 @@ func (s *PR) List(ctx context.Context, req PRListRequest) (PRListResponse, error
 
 		return PRListResponse{PRs: prs, Count: len(prs), HasMore: len(prs) == req.Limit, ViewerLogin: login}, nil
 	})
+}
+
+func prListCancellation(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return nil
 }
 
 // Sync returns only after the PR's hydrated details have been persisted.

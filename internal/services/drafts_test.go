@@ -78,6 +78,24 @@ func TestDraftSaveListDeleteEmitsNormalizedChanges(t *testing.T) {
 		t.Fatalf("unknown delete = %+v, %v; events = %+v", deleted, err, events.Events())
 	}
 }
+func TestDraftSaveMissingOrOtherAccountDraft(t *testing.T) {
+	ctx := context.Background()
+	drafts := reviewdraft.New(storetest.Open(t).DB)
+	owned, err := drafts.Create(ctx, "other", reviewdraft.Draft{PRID: "pr-1", Path: "a.go", Side: "RIGHT", Line: 1, Body: "mine", CommitSHA: "head"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := &servicestest.Recorder{}
+	service := &Drafts{Drafts: drafts, CurrentUser: draftUser("me"), Events: events}
+	for _, id := range []string{"missing", owned.ID} {
+		_, err := service.Save(ctx, DraftSaveRequest{PRID: "pr-1", ID: id, Body: "edit"})
+		assertServiceCode(t, err, CodeNotFound)
+	}
+	if len(events.Events()) != 0 {
+		t.Fatal("failed edit emitted a change")
+	}
+}
+
 func TestDraftsRequireAccount(t *testing.T) {
 	s := &Drafts{CurrentUser: draftUser("")}
 	for name, call := range map[string]func() error{

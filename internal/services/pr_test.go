@@ -132,6 +132,21 @@ func assertPRListSignals(t *testing.T, pr PRRow, mentioned, viewerCommented, unr
 	}
 }
 
+type cancellingPRIdentity struct{ cancel context.CancelFunc }
+
+func (r cancellingPRIdentity) Get(ctx context.Context, _ string) (string, bool, error) {
+	r.cancel()
+	return "", false, ctx.Err()
+}
+
+func TestPRListCancelledDuringIdentityResolution(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service := &PR{DB: storetest.Open(t).DB, CurrentUser: cancellingPRIdentity{cancel: cancel}}
+	_, err := service.List(ctx, PRListRequest{})
+	assertServiceCode(t, err, CodeCancelled)
+}
+
 type mockCurrentUserReader struct {
 	login string
 	found bool

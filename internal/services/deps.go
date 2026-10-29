@@ -50,7 +50,7 @@ type prCheckoutChecker interface {
 }
 
 type prLister interface {
-	Query(query string, args ...interface{}) (*sql.Rows, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 type currentUserReader interface {
