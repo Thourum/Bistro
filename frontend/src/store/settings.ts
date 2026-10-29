@@ -64,7 +64,11 @@ function writeSettingsPatch(
     classification: { ...current.classification, ...patch.classification },
     navigation: { ...current.navigation, ...patch.navigation },
     window: { ...current.window, ...patch.window },
-    keybindings: { ...current.keybindings, ...patch.keybindings },
+    keybindings: Object.fromEntries(
+      Object.entries({ ...current.keybindings, ...patch.keybindings }).filter(
+        ([, keys]) => keys != null,
+      ),
+    ),
   };
   return callWrite(() => Shell.SetSettings(merged)).map((settings) => {
     applySettings(settings);

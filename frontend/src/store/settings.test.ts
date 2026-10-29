@@ -19,6 +19,38 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+it('omits reset keyboard overrides while preserving other bindings and applying the Go response', async () => {
+  const otherBindings = { 'list.down': ['j'] };
+  settingsStore.setState(() => ({
+    ...DEFAULT_SETTINGS,
+    keybindings: otherBindings,
+  }));
+  const savedBindings = { ...otherBindings, 'list.top': ['g', 'g'] };
+  const returnedBindings = { 'list.down': ['ArrowDown'] };
+  vi.mocked(Shell.SetSettings)
+    .mockReturnValueOnce(
+      cancellable(
+        Promise.resolve({ ...DEFAULT_SETTINGS, keybindings: savedBindings }),
+      ),
+    )
+    .mockReturnValueOnce(
+      cancellable(
+        Promise.resolve({ ...DEFAULT_SETTINGS, keybindings: returnedBindings }),
+      ),
+    );
+  expect(
+    (await updateSettings({ keybindings: { 'list.top': ['g', 'g'] } })).isOk(),
+  ).toBe(true);
+  expect(settingsStore.state.keybindings).toEqual(savedBindings);
+  expect(
+    (await updateSettings({ keybindings: { 'list.top': null } })).isOk(),
+  ).toBe(true);
+  const resetPayload = vi.mocked(Shell.SetSettings).mock.calls[1]?.[0];
+  expect(resetPayload?.keybindings).toEqual(otherBindings);
+  expect(resetPayload?.keybindings).not.toHaveProperty('list.top');
+  expect(settingsStore.state.keybindings).toEqual(returnedBindings);
+});
+
 it('queues reset between pending edits', async () => {
   const first: { resolve: (settings: Settings) => void } = {
     resolve: () => undefined,
