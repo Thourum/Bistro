@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { Shell } from '@bindings/services';
+import type { Settings } from '@bindings/shell/models';
 import { DEFAULT_SETTINGS } from '@renderer/types/settings';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cancellable } from '../test/cancellable';
@@ -49,4 +50,61 @@ it('uses the validated Go response rather than the requested settings patch', as
     }),
   );
   expect(settingsStore.state.appearance.theme).toBe('light');
+});
+
+it('merges overlapping patches after the preceding write returns', async () => {
+  const first: { resolve: (settings: Settings) => void } = {
+    resolve: () => undefined,
+  };
+  const second: { resolve: (settings: Settings) => void } = {
+    resolve: () => undefined,
+  };
+  const firstPromise = new Promise<Settings>((resolve) => {
+    first.resolve = resolve;
+  });
+  const secondPromise = new Promise<Settings>((resolve) => {
+    second.resolve = resolve;
+  });
+  vi.mocked(Shell.SetSettings)
+    .mockReturnValueOnce(cancellable(firstPromise))
+    .mockReturnValueOnce(cancellable(secondPromise));
+
+  const themeWrite = updateSettings({
+    appearance: { ...DEFAULT_SETTINGS.appearance, theme: 'dark' },
+  });
+  const syncWrite = updateSettings({
+    sync: { ...DEFAULT_SETTINGS.sync, autoSync: false },
+  });
+  await vi.waitFor(() => expect(Shell.SetSettings).toHaveBeenCalledTimes(1));
+  first.resolve({
+    ...DEFAULT_SETTINGS,
+    appearance: { ...DEFAULT_SETTINGS.appearance, theme: 'dark' },
+  });
+  expect((await themeWrite).isOk()).toBe(true);
+  await vi.waitFor(() => expect(Shell.SetSettings).toHaveBeenCalledTimes(2));
+  const secondPayload = vi.mocked(Shell.SetSettings).mock.calls[1]?.[0];
+  expect(secondPayload?.appearance.theme).toBe('dark');
+  expect(secondPayload?.sync.autoSync).toBe(false);
+  second.resolve(secondPayload ?? DEFAULT_SETTINGS);
+  expect((await syncWrite).isOk()).toBe(true);
+  expect(settingsStore.state.appearance.theme).toBe('dark');
+  expect(settingsStore.state.sync.autoSync).toBe(false);
+});
+
+it('continues queued settings writes after a failed write', async () => {
+  vi.mocked(Shell.SetSettings)
+    .mockReturnValueOnce(cancellable(Promise.reject(new Error('disk full'))))
+    .mockImplementationOnce((settings) =>
+      cancellable(Promise.resolve(settings)),
+    );
+  const failedWrite = updateSettings({
+    appearance: { ...DEFAULT_SETTINGS.appearance, theme: 'dark' },
+  });
+  const nextWrite = updateSettings({
+    sync: { ...DEFAULT_SETTINGS.sync, autoSync: false },
+  });
+  expect((await failedWrite).isErr()).toBe(true);
+  expect((await nextWrite).isOk()).toBe(true);
+  expect(settingsStore.state.appearance.theme).toBe('light');
+  expect(settingsStore.state.sync.autoSync).toBe(false);
 });

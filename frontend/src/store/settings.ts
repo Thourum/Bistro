@@ -1,6 +1,6 @@
 import { Shell } from '@bindings/services';
 import { Store } from '@tanstack/store';
-import type { Fault, ResultAsync } from '@thourum/fault';
+import { type Fault, ResultAsync } from '@thourum/fault';
 import { call, callWrite } from '../services/engine/call';
 import {
   type AppSettings,
@@ -31,7 +31,18 @@ export async function initSettings(): Promise<void> {
   );
 }
 
+// Full snapshots must be merged only after the preceding shell write settles.
+const settingsWrites = { settled: Promise.resolve() };
+
 export function updateSettings(
+  patch: Partial<AppSettings>,
+): ResultAsync<void, Fault> {
+  const write = settingsWrites.settled.then(() => writeSettingsPatch(patch));
+  settingsWrites.settled = write.then(() => undefined);
+  return new ResultAsync(write);
+}
+
+function writeSettingsPatch(
   patch: Partial<AppSettings>,
 ): ResultAsync<void, Fault> {
   const current = settingsStore.state;
