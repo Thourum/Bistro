@@ -24,7 +24,7 @@ func (a *App) buildServices(ctx context.Context) *services.Set {
 	locations := repolocation.New(a.db.DB)
 	expertiseStore := expertise.NewStore(a.db.DB)
 	return &services.Set{
-		Expertise:      &services.Expertise{Engine: a.expertiseEngine, Repos: services.NewExpertiseSQLRepoStore(a.db.DB), Data: services.NewExpertiseSQLDataStore(a.db.DB, expertiseStore), Settings: services.NewExpertiseSQLSettingsStore(a.db.DB, expertiseStore), CurrentUser: a.currentUserStore, Events: a.emitter, Panics: a.panics, Log: a.log},
+		Expertise:      &services.Expertise{Engine: a.expertiseEngine, Repos: services.NewExpertiseSQLRepoStore(a.db.DB), Data: services.NewExpertiseSQLDataStore(a.db.DB, expertiseStore), Settings: services.NewExpertiseSQLSettingsStore(a.db.DB, expertiseStore), CurrentUser: a.currentUserStore, Panics: a.panics, Log: a.log},
 		Classification: &services.Classification{State: a.classificationState, Keys: a.tokenManager, OnKeyChanged: a.llmTier.ResetAuth, Panics: a.panics, Log: a.log},
 		Editor:         &services.Editor{PRs: a.db, Repos: locations, Inspector: services.GitCheckoutInspector{}, Checker: a.gitClient, Panics: a.panics, Log: a.log},
 		RepoLocation:   &services.RepoLocation{DB: a.db.DB, Store: locations, Clone: a.cloneRepoLocationRepo, CacheRoot: clonecache.Root, Locks: a.repoLocks, DeleteCacheDir: func(path string) error { return clonecache.DeleteDir(path) }, SweepOrphans: clonecache.SweepOrphans, Panics: a.panics, Log: a.log},

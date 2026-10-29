@@ -31,7 +31,6 @@ type Expertise struct {
 	Data        expertiseDataStore
 	Settings    expertiseSettingsStore
 	CurrentUser currentUserReader
-	Events      Emitter
 	Panics      PanicReporter
 	Log         *slog.Logger
 }
@@ -197,9 +196,6 @@ func (s *Expertise) SetSettings(ctx context.Context, req ExpertiseSettings) (Exp
 		}
 		if err := s.Settings.SetExpertiseSettings(ctx, settings); err != nil {
 			return ExpertiseSettings{}, err
-		}
-		if s.Events != nil {
-			s.Events.Emit(EventExpertiseSettingsUpdated, settings)
 		}
 		return settings, nil
 	})

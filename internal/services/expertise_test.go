@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/itterno/bistro/internal/services/servicestest"
 	"reflect"
 	"testing"
 	"time"
@@ -271,8 +270,7 @@ func TestExpertiseSettingsRoundTrip(t *testing.T) {
 		MinSurvivingLines: 25,
 		Excludes:          map[string][]string{"github:owner/repo": []string{"dist/**"}},
 	}}
-	events := &servicestest.Recorder{}
-	s := &Expertise{Settings: store, Events: events, Log: testRepoLogger()}
+	s := &Expertise{Settings: store, Log: testRepoLogger()}
 
 	getResp, err := s.GetSettings(context.Background())
 	if err != nil {
@@ -291,9 +289,8 @@ func TestExpertiseSettingsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("set handler: %v", err)
 	}
-	payloads := events.Named(EventExpertiseSettingsUpdated)
-	if len(payloads) != 1 || !reflect.DeepEqual(payloads[0], updated) || !reflect.DeepEqual(updated.Excludes["github:owner/repo"], []string{"vendor/**"}) || req.Excludes["GitHub:Owner/Repo"] == nil {
-		t.Fatalf("settings event or normalization incorrect: %#v", payloads)
+	if !reflect.DeepEqual(store.settings, updated) || !reflect.DeepEqual(updated.Excludes["github:owner/repo"], []string{"vendor/**"}) || req.Excludes["GitHub:Owner/Repo"] == nil {
+		t.Fatalf("returned settings or normalization incorrect: %#v", updated)
 	}
 	if store.settings.MinSurvivingLines != 60 || store.settings.AliasEmails[0] != "alice@users.noreply.github.com" {
 		t.Fatalf("settings not updated: %+v", store.settings)
