@@ -1,8 +1,8 @@
-package handler
+package services
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,53 +10,40 @@ import (
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/itterno/bistro/internal/git/remote"
+	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/scan"
 	"github.com/itterno/bistro/internal/store/repolocation"
-	"github.com/itterno/bistro/internal/ws"
-)
-
-const (
-	operationValidateDevFolder  = "validate_dev_folder"
-	operationScanDevFolder      = "scan_dev_folder"
-	operationAddRepoByURL       = "add_repo_by_url"
-	operationPruneCache         = "prune_cache"
-	operationClearCache         = "clear_cache"
-	operationDeleteCacheRepo    = "delete_cache_repo"
-	operationRecoverRepoPath    = "recover_repo_path"
-	operationRecoverRepoToCache = "recover_repo_to_cache"
 )
 
 const githubRepoURLFormat = "https://github.com/%s/%s.git"
 
-// LocationErrorPayload is the structured error envelope consumed by Electron.
-type LocationErrorPayload struct {
-	OK        bool   `json:"ok"`
-	RepoID    string `json:"repo_id"`
-	Operation string `json:"operation"`
-	Code      string `json:"code"`
-	Message   string `json:"message"`
+// RepoLocation manages local checkouts and the clone cache.
+type RepoLocation struct {
+	DB             *sql.DB
+	Store          *repolocation.Store
+	Clone          func(context.Context, string, string, bool) error
+	CacheRoot      func() (string, error)
+	Locks          *repolock.Locks
+	DeleteCacheDir func(string) error
+	SweepOrphans   func(map[string]bool) ([]string, error)
+	Panics         PanicReporter
+	Log            *slog.Logger
 }
 
-// NewValidateDevFolderHandler checks whether a development folder can be scanned.
-func NewValidateDevFolderHandler(log *slog.Logger) ws.MessageHandler {
-	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		var data struct {
-			Path string `json:"path"`
-		}
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			return nil, fmt.Errorf("invalid VALIDATE_DEV_FOLDER payload: %w", err)
-		}
-		canonicalPath, err := scan.ValidateDevFolder(data.Path)
-		if err != nil {
-			repoLocationLogger(ctx, log, msg).Warn("validate dev folder failed", "error", err)
-			return locationResponse(msg, locationError("", operationValidateDevFolder, "invalid_path", "invalid development folder path")), nil
-		}
-		return locationResponse(msg, struct {
-			OK            bool   `json:"ok"`
-			CanonicalPath string `json:"canonical_path"`
-		}{OK: true, CanonicalPath: canonicalPath}), nil
+// locationError maps a repo-location failure code onto the closed Code set,
+// keeping the original code as Reason for the UI.
+func locationError(code, message string) *ServiceError {
+	c := CodeInternal
+	switch code {
+	case "invalid_url", "destination_required", "invalid_path", "destination_conflict", "remote_mismatch", "path_missing":
+		c = CodeInvalid
+	case "auth_failed":
+		c = CodeUnauthenticated
+	case "cancelled":
+		c = CodeCancelled
 	}
+	return WithReason(c, code, message)
 }
 
 func updateScannedRepoLocations(ctx context.Context, locations *repolocation.Store, found []scan.Found) (int, int, error) {
@@ -85,43 +72,6 @@ func updateScannedRepoLocations(ctx context.Context, locations *repolocation.Sto
 		degraded++
 	}
 	return healthy, degraded, nil
-}
-
-func locationResponse(msg ws.InboundMessage, data any) map[string]any {
-	return map[string]any{"id": msg.ID, "type": msg.Type + "_RESULT", "data": data}
-}
-
-func locationError(repoID, operation, code, message string) LocationErrorPayload {
-	return LocationErrorPayload{OK: false, RepoID: repoID, Operation: operation, Code: code, Message: message}
-}
-
-type scanDevFolderPayload struct {
-	OK         bool `json:"ok"`
-	Discovered int  `json:"discovered"`
-	Healthy    int  `json:"healthy"`
-	Degraded   int  `json:"degraded"`
-	Skipped    int  `json:"skipped"`
-	Partial    bool `json:"partial"`
-}
-
-func repoSourcePayload(repoID, source string) struct {
-	OK     bool   `json:"ok"`
-	RepoID string `json:"repo_id"`
-	Source string `json:"source"`
-} {
-	return struct {
-		OK     bool   `json:"ok"`
-		RepoID string `json:"repo_id"`
-		Source string `json:"source"`
-	}{OK: true, RepoID: repoID, Source: source}
-}
-
-func repoLocationLogger(ctx context.Context, log *slog.Logger, msg ws.InboundMessage) *slog.Logger {
-	logger := logging.FromContext(ctx)
-	if log != nil {
-		logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
-	}
-	return logger
 }
 
 func isBistroRepoDirOverrideSet() bool {

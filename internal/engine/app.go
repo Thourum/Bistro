@@ -225,11 +225,9 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	a.registerReviewHandlers(stores)
 	a.registerDiffAndCheckoutHandlers(stores)
 	a.registerExpertiseHandlers(stores)
-	waitScans := a.registerRepoLocationHandlers(ctx, stores)
 	defer func() {
 		runErr = errors.Join(runErr, a.wsServer.Stop())
 		cancelRun()
-		waitScans()
 	}()
 
 	wsAddr := wsListenAddr(a.wsPort)

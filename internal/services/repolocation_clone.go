@@ -1,9 +1,8 @@
-package handler
+package services
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,8 +13,123 @@ import (
 	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/scan"
 	"github.com/itterno/bistro/internal/store/repolocation"
-	"github.com/itterno/bistro/internal/ws"
 )
+
+// RecoverPath restores a repository location.
+func (s *RepoLocation) RecoverPath(ctx context.Context, req RecoverPathRequest) error {
+	return guardErr(s.Panics, "RepoLocation.RecoverPath", func() error {
+		req.RepoID = NormalizeID(req.RepoID)
+		if req.RepoID == "" {
+			return Errorf(CodeInvalid, "repo_id is required")
+		}
+
+		location, err := s.Store.Get(ctx, req.RepoID)
+		if err != nil {
+			return err
+		}
+		if location == nil {
+			return Errorf(CodeNotFound, "repo not found")
+		}
+		canonical, err := filepath.EvalSymlinks(req.Path)
+		if err != nil {
+			serviceLogger(s.Log).Warn("recover repository path failed", "error", err)
+			if ctxErr := contextError(err); ctxErr != nil {
+				return ctxErr
+			}
+			return locationError(recoverPathErrorCode(err), "unable to read repository path")
+		}
+		matches, err := repoPathRemoteMatches(canonical, remote.Identity{Provider: location.Provider, Owner: location.Owner, Repo: location.Repo})
+		if err != nil {
+			serviceLogger(s.Log).Warn("recover repository path failed", "error", err)
+			if ctxErr := contextError(err); ctxErr != nil {
+				return ctxErr
+			}
+			return locationError(recoverPathErrorCode(err), "unable to read repository path")
+		}
+		if !matches {
+			return locationError("remote_mismatch", "path remote does not match repo")
+		}
+		if err := s.Store.UpsertLocal(ctx, location.Provider, location.Owner, location.Repo, canonical, false); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// RecoverToCache restores a repository location.
+func (s *RepoLocation) RecoverToCache(ctx context.Context, req RepoRef) error {
+	return guardErr(s.Panics, "RepoLocation.RecoverToCache", func() error {
+		req.RepoID = NormalizeID(req.RepoID)
+		if req.RepoID == "" {
+			return Errorf(CodeInvalid, "repo_id is required")
+		}
+		repoID := req.RepoID
+
+		location, err := s.Store.Get(ctx, repoID)
+		if err != nil {
+			return err
+		}
+		if location == nil {
+			return Errorf(CodeNotFound, "repo not found")
+		}
+		identity := remote.Identity{Provider: location.Provider, Owner: location.Owner, Repo: location.Repo}
+		root, err := s.CacheRoot()
+		if err != nil {
+			return err
+		}
+		destination := filepath.Join(root, identity.Owner, identity.Repo)
+		state, err := inspectDestination(destination, identity)
+		if err != nil {
+			if ctxErr := contextError(err); ctxErr != nil {
+				return ctxErr
+			}
+			serviceLogger(s.Log).Warn("inspect cache destination failed", "error", err)
+			return locationError("clone_failed", "unable to prepare cache repository")
+		}
+		if state.Matches {
+			if err := s.Store.SetCache(ctx, repoID, destination); err != nil {
+				return err
+			}
+			return nil
+		}
+		if !state.CanClone {
+			return locationError("clone_failed", state.Message)
+		}
+		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+			return err
+		}
+		createdByBistro, err := prepareCloneDestination(destination)
+		if err != nil {
+			return err
+		}
+		repoURL := fmt.Sprintf(githubRepoURLFormat, identity.Owner, identity.Repo)
+		if err := cloneRepo(ctx, s.Clone, repoURL, destination, true); err != nil {
+			logger := serviceLogger(s.Log)
+			logger.Warn("recover cache clone failed", "error", err)
+			message := "unable to clone repository"
+			if cleanupErr := cleanupBistroCreated(destination, createdByBistro, "cache", root); cleanupErr != nil {
+				logger.Warn("clone cleanup failed", "error", cleanupErr)
+				message += "; manual cleanup may be required"
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			return locationError(cloneErrorCode(err), message)
+		}
+		if !repoPathMatches(destination, identity) {
+			message := "cloned repository remote does not match repo"
+			if cleanupErr := cleanupBistroCreated(destination, createdByBistro, "cache", root); cleanupErr != nil {
+				serviceLogger(s.Log).Warn("clone cleanup failed", "error", cleanupErr)
+				message += "; manual cleanup may be required"
+			}
+			return locationError("clone_failed", message)
+		}
+		if err := s.Store.SetCache(ctx, repoID, destination); err != nil {
+			return err
+		}
+		return nil
+	})
+}
 
 func destinationRootErrorCode(err error) string {
 	if errors.Is(err, errDevFolderPathRequired) {
@@ -34,7 +148,7 @@ func recoverPathErrorCode(err error) string {
 	return "path_missing"
 }
 
-func registeredLocal(ctx context.Context, locations *repolocation.Store, repoID string) (bool, *LocationErrorPayload, error) {
+func registeredLocal(ctx context.Context, locations *repolocation.Store, repoID string) (bool, *ServiceError, error) {
 	location, err := locations.Get(ctx, repoID)
 	if err != nil {
 		return false, nil, fmt.Errorf("get repo location %s: %w", repoID, err)
@@ -53,8 +167,7 @@ func registeredLocal(ctx context.Context, locations *repolocation.Store, repoID 
 	if message == "" {
 		message = fmt.Sprintf("local repository is degraded: %s", location.LocationStatus)
 	}
-	payload := locationError(repoID, operationAddRepoByURL, code, message)
-	return false, &payload, nil
+	return false, locationError(code, message), nil
 }
 
 func targetedDevFolder(ctx context.Context, locations *repolocation.Store, identity remote.Identity, devFolder string) (bool, error) {
@@ -237,17 +350,4 @@ func valueOrEmpty(value *string) string {
 		return ""
 	}
 	return *value
-}
-
-func repoIDFromMessage(msg ws.InboundMessage, messageType string) (string, error) {
-	var data struct {
-		RepoID string `json:"repo_id"`
-	}
-	if err := json.Unmarshal(msg.Data, &data); err != nil {
-		return "", fmt.Errorf("invalid %s payload: %w", messageType, err)
-	}
-	if data.RepoID == "" {
-		return "", fmt.Errorf("%s: repo_id is required", messageType)
-	}
-	return data.RepoID, nil
 }
