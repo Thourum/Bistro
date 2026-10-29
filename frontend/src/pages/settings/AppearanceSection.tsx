@@ -21,17 +21,13 @@ export function AppearanceSection() {
           label="Light Mode"
           selected={appearance.theme === 'light'}
           variant="light"
-          onSelect={() =>
-            saveSettings({ appearance: { ...appearance, theme: 'light' } })
-          }
+          onSelect={() => saveSettings({ appearance: { theme: 'light' } })}
         />
         <ThemeCard
           label="Dark Mode"
           selected={appearance.theme === 'dark'}
           variant="dark"
-          onSelect={() =>
-            saveSettings({ appearance: { ...appearance, theme: 'dark' } })
-          }
+          onSelect={() => saveSettings({ appearance: { theme: 'dark' } })}
         />
       </div>
 
@@ -39,9 +35,7 @@ export function AppearanceSection() {
         title="High Density View"
         description="Minimize whitespace for increased data density."
         on={appearance.highDensity}
-        onChange={(on) =>
-          saveSettings({ appearance: { ...appearance, highDensity: on } })
-        }
+        onChange={(on) => saveSettings({ appearance: { highDensity: on } })}
       />
 
       <div className="border border-outline-variant/20 bg-surface p-6">
@@ -60,7 +54,6 @@ export function AppearanceSection() {
           onChange={(event) =>
             saveSettings({
               prList: {
-                ...prList,
                 view: event.target.value === 'grouped' ? 'grouped' : 'flat',
               },
             })
@@ -77,35 +70,27 @@ export function AppearanceSection() {
           label="UI Font"
           choices={UI_FONT_CHOICES}
           value={appearance.uiFont}
-          onChange={(v) =>
-            saveSettings({ appearance: { ...appearance, uiFont: v } })
-          }
+          onChange={(v) => saveSettings({ appearance: { uiFont: v } })}
         />
         <FontPicker
           label="Code Font"
           choices={CODE_FONT_CHOICES}
           value={appearance.codeFont}
-          onChange={(v) =>
-            saveSettings({ appearance: { ...appearance, codeFont: v } })
-          }
+          onChange={(v) => saveSettings({ appearance: { codeFont: v } })}
         />
         <NumberPicker
           label="UI Font Size"
           min={11}
           max={18}
           value={appearance.uiFontSize}
-          onChange={(v) =>
-            saveSettings({ appearance: { ...appearance, uiFontSize: v } })
-          }
+          onChange={(v) => saveSettings({ appearance: { uiFontSize: v } })}
         />
         <NumberPicker
           label="Code Font Size"
           min={10}
           max={18}
           value={appearance.codeFontSize}
-          onChange={(v) =>
-            saveSettings({ appearance: { ...appearance, codeFontSize: v } })
-          }
+          onChange={(v) => saveSettings({ appearance: { codeFontSize: v } })}
         />
       </div>
     </Section>

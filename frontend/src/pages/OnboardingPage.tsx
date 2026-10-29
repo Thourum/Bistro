@@ -2,7 +2,7 @@ import React from 'react';
 import { useStore } from '../hooks/useStore';
 import { setOnboardingStep } from '../services/onboardingSync';
 import { appStore } from '../store';
-import { settingsStore, updateSettings } from '../store/settings';
+import { updateSettings } from '../store/settings';
 import { isSandboxComplete } from '../utils/onboardingSandbox';
 import { OnboardingDevFolderStep } from './OnboardingDevFolderStep';
 import { OnboardingFooter } from './OnboardingFooter';
@@ -44,7 +44,6 @@ export function OnboardingPage(): React.ReactElement {
     // so isFinishing stays true until this page unmounts.
     void updateSettings({
       appearance: {
-        ...settingsStore.state.appearance,
         onboardingComplete: true,
       },
     }).match(

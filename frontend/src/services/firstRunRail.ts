@@ -34,7 +34,7 @@ export function dismissFirstRunRail(): ResultAsync<void, Fault> {
   if (appStore.state.firstRunDismissPending) return okAsync(undefined);
   setDismissPending(true);
   return updateSettings({
-    appearance: { ...settingsStore.state.appearance, tourComplete: true },
+    appearance: { tourComplete: true },
   })
     .map(() => setDismissPending(false))
     .mapErr((error) => {
@@ -46,7 +46,7 @@ export function dismissFirstRunRail(): ResultAsync<void, Fault> {
 /** `:tour`: brings the rail back with its steps reset. */
 export function showFirstRunRail(): ResultAsync<void, Fault> {
   return updateSettings({
-    appearance: { ...settingsStore.state.appearance, tourComplete: false },
+    appearance: { tourComplete: false },
   }).map(() =>
     appStore.setState((state) => ({
       ...state,

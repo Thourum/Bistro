@@ -63,7 +63,6 @@ export function RepositoriesSection() {
           .andThen((response) =>
             updateSettings({
               repositories: {
-                ...repositories,
                 devFolderPath: response.canonical_path,
               },
             }).map(() => response.canonical_path),
@@ -91,7 +90,7 @@ export function RepositoriesSection() {
     }
     setIsChanging(true);
     updateSettings({
-      repositories: { ...repositories, devFolderPath: null },
+      repositories: { devFolderPath: null },
     })
       .mapErr((cause) =>
         new Fault('Dev folder could not be cleared.')

@@ -31,11 +31,17 @@ export async function initSettings(): Promise<void> {
   );
 }
 
-// Full snapshots must be merged only after the preceding shell write settles.
+export type SettingsPatch = {
+  [K in keyof AppSettings]?: AppSettings[K] extends object
+    ? Partial<AppSettings[K]>
+    : AppSettings[K];
+};
+
+// Leaf patches must be merged only after the preceding shell write settles.
 const settingsWrites = { settled: Promise.resolve() };
 
 export function updateSettings(
-  patch: Partial<AppSettings>,
+  patch: Readonly<SettingsPatch>,
 ): ResultAsync<void, Fault> {
   const write = settingsWrites.settled.then(() => writeSettingsPatch(patch));
   settingsWrites.settled = write.then(() => undefined);
@@ -43,7 +49,7 @@ export function updateSettings(
 }
 
 function writeSettingsPatch(
-  patch: Partial<AppSettings>,
+  patch: Readonly<SettingsPatch>,
 ): ResultAsync<void, Fault> {
   const current = settingsStore.state;
   const merged: AppSettings = {
@@ -58,6 +64,7 @@ function writeSettingsPatch(
     classification: { ...current.classification, ...patch.classification },
     navigation: { ...current.navigation, ...patch.navigation },
     window: { ...current.window, ...patch.window },
+    keybindings: { ...current.keybindings, ...patch.keybindings },
   };
   return callWrite(() => Shell.SetSettings(merged)).map((settings) => {
     applySettings(settings);
@@ -66,10 +73,14 @@ function writeSettingsPatch(
 }
 
 export async function resetSettings(): Promise<void> {
-  await callWrite(() => Shell.ResetSettings()).match(
-    (settings) => applySettings(settings),
-    reportSettingsError,
+  const write = settingsWrites.settled.then(() =>
+    callWrite(() => Shell.ResetSettings()).map((settings) => {
+      applySettings(settings);
+      return undefined;
+    }),
   );
+  settingsWrites.settled = write.then(() => undefined);
+  await new ResultAsync(write).match(() => undefined, reportSettingsError);
 }
 
 export async function openSettingsFile(): Promise<void> {

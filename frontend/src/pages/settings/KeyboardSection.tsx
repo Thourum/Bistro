@@ -156,17 +156,16 @@ export function KeyboardSection() {
 
   const saveBinding = (actionId: string, keys: readonly string[]): void => {
     void updateSettings({
-      keybindings: { ...overrides, [actionId]: [...keys] },
+      keybindings: { [actionId]: [...keys] },
     }).match(() => undefined, showSettingsError);
   };
 
   const resetBinding = (actionId: string): void => {
     resetKeybinding({ style, overrides, actionId }).match(
       (keybindings) => {
-        void updateSettings({ keybindings }).match(
-          () => undefined,
-          showSettingsError,
-        );
+        void updateSettings({
+          keybindings: { [actionId]: keybindings[actionId] ?? null },
+        }).match(() => undefined, showSettingsError);
       },
       (fault) =>
         addToast({

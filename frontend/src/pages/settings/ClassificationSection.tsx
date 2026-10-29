@@ -79,7 +79,7 @@ function ClassificationChoices({ classification }: ClassificationChoicesProps) {
               aria-checked={selected}
               onClick={() =>
                 saveSettings({
-                  classification: { ...classification, mode: option.value },
+                  classification: { mode: option.value },
                 })
               }
               className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors ${
@@ -137,7 +137,6 @@ function DismissalChoices({ classification }: ClassificationChoicesProps) {
               onClick={() =>
                 saveSettings({
                   classification: {
-                    ...classification,
                     dismissalScope: option.value,
                   },
                 })

@@ -1,16 +1,15 @@
-import type { AppSettings } from '@renderer/types/settings';
 import type { Fault } from '@thourum/fault';
 import type { ReactNode } from 'react';
 import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { Switch } from '../../components/ui/switch';
-import { updateSettings } from '../../store/settings';
+import { type SettingsPatch, updateSettings } from '../../store/settings';
 
 export function showSettingsError(error: Fault): void {
   addToast({ type: 'error', message: error.message, dismissible: true });
 }
 
-export function saveSettings(patch: Partial<AppSettings>): void {
+export function saveSettings(patch: Readonly<SettingsPatch>): void {
   void updateSettings(patch).match(() => undefined, showSettingsError);
 }
 

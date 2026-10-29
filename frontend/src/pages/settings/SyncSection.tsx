@@ -17,7 +17,7 @@ export function SyncSection() {
           title="Auto Sync"
           description="Automatically refresh PRs in the background."
           on={sync.autoSync}
-          onChange={(on) => saveSettings({ sync: { ...sync, autoSync: on } })}
+          onChange={(on) => saveSettings({ sync: { autoSync: on } })}
           inline
         />
         <RowStepper
@@ -27,15 +27,13 @@ export function SyncSection() {
           min={30}
           max={3600}
           step={30}
-          onChange={(v) => saveSettings({ sync: { ...sync, syncInterval: v } })}
+          onChange={(v) => saveSettings({ sync: { syncInterval: v } })}
         />
         <RowToggle
           title="Notifications"
           description="Show toasts for new PRs and review requests."
           on={sync.notifications}
-          onChange={(on) =>
-            saveSettings({ sync: { ...sync, notifications: on } })
-          }
+          onChange={(on) => saveSettings({ sync: { notifications: on } })}
           inline
         />
       </div>

@@ -14,7 +14,7 @@ export function PrivacySection() {
           on={privacy.telemetryEnabled}
           onChange={(on) =>
             saveSettings({
-              privacy: { ...privacy, telemetryEnabled: on },
+              privacy: { telemetryEnabled: on },
             })
           }
           inline

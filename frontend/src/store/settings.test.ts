@@ -4,14 +4,55 @@ import type { Settings } from '@bindings/shell/models';
 import { DEFAULT_SETTINGS } from '@renderer/types/settings';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cancellable } from '../test/cancellable';
-import { initSettings, settingsStore, updateSettings } from './settings';
+import {
+  initSettings,
+  resetSettings,
+  settingsStore,
+  updateSettings,
+} from './settings';
 
 vi.mock('@bindings/services', () => ({
-  Shell: { GetSettings: vi.fn(), SetSettings: vi.fn() },
+  Shell: { GetSettings: vi.fn(), SetSettings: vi.fn(), ResetSettings: vi.fn() },
 }));
 afterEach(() => {
   settingsStore.setState(() => DEFAULT_SETTINGS);
   vi.clearAllMocks();
+});
+
+it('queues reset between pending edits', async () => {
+  const first: { resolve: (settings: Settings) => void } = {
+    resolve: () => undefined,
+  };
+  vi.mocked(Shell.SetSettings)
+    .mockReturnValueOnce(
+      cancellable(
+        new Promise<Settings>((resolve) => {
+          first.resolve = resolve;
+        }),
+      ),
+    )
+    .mockImplementationOnce((settings) =>
+      cancellable(Promise.resolve(settings)),
+    );
+  vi.mocked(Shell.ResetSettings).mockReturnValueOnce(
+    cancellable(Promise.resolve(DEFAULT_SETTINGS)),
+  );
+  const theme = updateSettings({ appearance: { theme: 'dark' } });
+  const reset = resetSettings();
+  const density = updateSettings({ appearance: { highDensity: true } });
+  await vi.waitFor(() => expect(Shell.SetSettings).toHaveBeenCalledTimes(1));
+  expect(Shell.ResetSettings).not.toHaveBeenCalled();
+  first.resolve({
+    ...DEFAULT_SETTINGS,
+    appearance: { ...DEFAULT_SETTINGS.appearance, theme: 'dark' },
+  });
+  await theme;
+  await reset;
+  expect((await density).isOk()).toBe(true);
+  expect(settingsStore.state.appearance).toMatchObject({
+    theme: 'light',
+    highDensity: true,
+  });
 });
 
 it('loads persisted engine settings before navigation', async () => {
@@ -89,6 +130,36 @@ it('merges overlapping patches after the preceding write returns', async () => {
   expect((await syncWrite).isOk()).toBe(true);
   expect(settingsStore.state.appearance.theme).toBe('dark');
   expect(settingsStore.state.sync.autoSync).toBe(false);
+});
+
+it('retains two pending edits in the same settings section', async () => {
+  const first: { resolve: (settings: Settings) => void } = {
+    resolve: () => undefined,
+  };
+  vi.mocked(Shell.SetSettings)
+    .mockReturnValueOnce(
+      cancellable(
+        new Promise<Settings>((resolve) => {
+          first.resolve = resolve;
+        }),
+      ),
+    )
+    .mockImplementationOnce((settings) =>
+      cancellable(Promise.resolve(settings)),
+    );
+  const theme = updateSettings({ appearance: { theme: 'dark' } });
+  const density = updateSettings({ appearance: { highDensity: true } });
+  await vi.waitFor(() => expect(Shell.SetSettings).toHaveBeenCalledTimes(1));
+  first.resolve({
+    ...DEFAULT_SETTINGS,
+    appearance: { ...DEFAULT_SETTINGS.appearance, theme: 'dark' },
+  });
+  expect((await theme).isOk()).toBe(true);
+  expect((await density).isOk()).toBe(true);
+  expect(settingsStore.state.appearance).toMatchObject({
+    theme: 'dark',
+    highDensity: true,
+  });
 });
 
 it('continues queued settings writes after a failed write', async () => {

@@ -86,6 +86,6 @@ it('keeps dismissal retryable on IPC failure and writes only the existing appear
   vi.mocked(updateSettings).mockReturnValueOnce(okAsync(undefined));
   expect((await dismissFirstRunRail()).isOk()).toBe(true);
   expect(updateSettings).toHaveBeenLastCalledWith({
-    appearance: { ...settingsStore.state.appearance, tourComplete: true },
+    appearance: { tourComplete: true },
   });
 });

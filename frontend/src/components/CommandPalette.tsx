@@ -13,7 +13,7 @@ import { handleExpertiseError } from '../services/events/expertise';
 import { showFirstRunRail } from '../services/firstRunRail';
 import { loadRepos } from '../services/repos';
 import { appStore } from '../store';
-import { settingsStore, updateSettings } from '../store/settings';
+import { updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
 import { initialUIState } from '../store/ui';
 import type { PR } from '../types';
@@ -75,7 +75,6 @@ export function CommandPalette(): React.ReactElement | null {
     appStore,
     (state: UIState) => state.visiblePRIds[state.selectedPRIndex] || undefined,
   );
-  const prList = useStore(settingsStore, (state) => state.prList);
   const recentPRs = useMemo(() => prs.slice(0, 5), [prs]);
 
   const filteredPRs = useMemo(() => {
@@ -249,10 +248,10 @@ export function CommandPalette(): React.ReactElement | null {
         setQuery('');
         return;
       case 'view-lanes':
-        updateSettingsFromCommand({ prList: { ...prList, view: 'flat' } });
+        updateSettingsFromCommand({ prList: { view: 'flat' } });
         return;
       case 'view-groups':
-        updateSettingsFromCommand({ prList: { ...prList, view: 'grouped' } });
+        updateSettingsFromCommand({ prList: { view: 'grouped' } });
         return;
       case 'open-browser': {
         const url = focusedPR === undefined ? null : prBrowserUrl(focusedPR);

@@ -18,6 +18,8 @@ function isActionType(action: string): action is ActionResult['type'] {
 
 export function handleActionComplete(data: Readonly<ActionComplete>): void {
   const action = data.action;
+  // Thread feedback belongs to the resolve service, not the pending PR review.
+  if (action === 'resolve_thread' || action === 'unresolve_thread') return;
   if (!isActionType(action)) {
     appStore.setState((state) => ({ ...state, pendingAction: null }));
     addToast({

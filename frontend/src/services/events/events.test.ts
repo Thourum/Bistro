@@ -67,6 +67,24 @@ describe('engine push handlers', () => {
     );
   });
 
+  it('leaves pending PR review feedback untouched for thread completions', () => {
+    appStore.setState((state) => ({
+      ...state,
+      pendingAction: { type: 'approve', prId: 'other-pr', startedAt: 1 },
+    }));
+    const before = appStore.state;
+    for (const action of ['resolve_thread', 'unresolve_thread']) {
+      handleActionComplete({ pr: 'pr-1', action, success: true, error: '' });
+      handleActionComplete({
+        pr: 'pr-1',
+        action,
+        success: false,
+        error: 'failed',
+      });
+      expect(appStore.state).toBe(before);
+    }
+  });
+
   it('rejects an action outside the renderer action vocabulary', () => {
     handleActionComplete({
       pr: 'pr-1',

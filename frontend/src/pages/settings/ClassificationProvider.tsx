@@ -94,7 +94,7 @@ export function ClassificationProvider({
               );
               if (provider !== undefined) {
                 saveSettings({
-                  classification: { ...classification, provider: provider.id },
+                  classification: { provider: provider.id },
                 });
               }
             }}
@@ -118,7 +118,6 @@ export function ClassificationProvider({
             onChange={(e) =>
               saveSettings({
                 classification: {
-                  ...classification,
                   model: e.target.value,
                 },
               })
@@ -139,7 +138,6 @@ export function ClassificationProvider({
             onChange={(e) =>
               saveSettings({
                 classification: {
-                  ...classification,
                   endpoint: e.target.value,
                 },
               })
