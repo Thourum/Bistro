@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/itterno/bistro/internal/engine/handler"
 	"github.com/itterno/bistro/internal/expertise"
+	"github.com/itterno/bistro/internal/services"
 )
 
 func (a *App) broadcastExpertiseEvent(eventType string, payload any) {
@@ -68,7 +68,7 @@ func (a *App) currentExpertiseIdentity(stores *expertise.Store) func(context.Con
 			}
 			return expertise.Identity{}
 		}
-		settings, err := handler.NewExpertiseSQLSettingsStore(a.db.DB, stores).ExpertiseSettings(identityCtx)
+		settings, err := services.NewExpertiseSQLSettingsStore(a.db.DB, stores).ExpertiseSettings(identityCtx)
 		if err != nil {
 			a.log.Warn("expertise identity settings lookup failed", "error", err)
 		}
@@ -87,24 +87,4 @@ func (a *App) prepareExpertise(ctx context.Context, stores *expertise.Store) {
 			a.log.Warn("expertise restart interrupted indexing failed", "error", err)
 		}
 	}()
-}
-
-func (a *App) registerExpertiseHandlers(stores runStores) {
-	expertiseRepoStore := handler.NewExpertiseSQLRepoStore(a.db.DB)
-	expertiseDataStore := handler.NewExpertiseSQLDataStore(a.db.DB, stores.expertise)
-	expertiseSettingsStore := handler.NewExpertiseSQLSettingsStore(a.db.DB, stores.expertise)
-	expertiseDeps := handler.ExpertiseHandlerDeps{
-		Engine:      a.expertiseEngine,
-		Repos:       expertiseRepoStore,
-		Data:        expertiseDataStore,
-		Settings:    expertiseSettingsStore,
-		CurrentUser: stores.currentUser,
-		Log:         a.log,
-	}
-	a.wsServer.RegisterHandler("EXPERTISE_ENABLE", handler.NewExpertiseEnableHandler(expertiseDeps))
-	a.wsServer.RegisterHandler("EXPERTISE_DISABLE", handler.NewExpertiseDisableHandler(expertiseDeps))
-	a.wsServer.RegisterHandler("GET_EXPERTISE", handler.NewGetExpertiseHandler(expertiseDeps))
-	a.wsServer.RegisterHandler("EXPERTISE_NUDGE_DISMISS", handler.NewExpertiseNudgeDismissHandler(expertiseDeps))
-	a.wsServer.RegisterHandler("GET_EXPERTISE_SETTINGS", handler.NewGetExpertiseSettingsHandler(expertiseDeps))
-	a.wsServer.RegisterHandler("SET_EXPERTISE_SETTINGS", handler.NewSetExpertiseSettingsHandler(expertiseDeps))
 }

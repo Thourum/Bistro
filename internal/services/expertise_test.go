@@ -1,14 +1,15 @@
-package handler
+package services
 
 import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/itterno/bistro/internal/services/servicestest"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/itterno/bistro/internal/expertise"
-	"github.com/itterno/bistro/internal/services"
 	"github.com/itterno/bistro/internal/store/storetest"
 )
 
@@ -38,10 +39,10 @@ func (f *fakeExpertiseEngine) GitAvailable() bool { return f.gitAvailable }
 func (f *fakeExpertiseEngine) GitUnavailableReason() string { return f.gitReason }
 
 type fakeExpertiseRepoStore struct {
-	repos map[string]expertiseRepo
+	repos map[string]ExpertiseRepo
 }
 
-func (f *fakeExpertiseRepoStore) ExpertiseRepo(_ context.Context, repoID string) (expertiseRepo, bool, error) {
+func (f *fakeExpertiseRepoStore) ExpertiseRepo(_ context.Context, repoID string) (ExpertiseRepo, bool, error) {
 	repo, ok := f.repos[repoID]
 	return repo, ok, nil
 }
@@ -98,12 +99,12 @@ func (f *fakeExpertiseDataStore) RepoState(_ context.Context, repoID string) (ex
 }
 
 type fakeExpertiseSettingsStore struct {
-	settings  expertiseSettings
+	settings  ExpertiseSettings
 	dismissed string
 	err       error
 }
 
-func (f *fakeExpertiseSettingsStore) ExpertiseSettings(_ context.Context) (expertiseSettings, error) {
+func (f *fakeExpertiseSettingsStore) ExpertiseSettings(_ context.Context) (ExpertiseSettings, error) {
 	return f.settings, f.err
 }
 
@@ -115,7 +116,7 @@ func (f *fakeExpertiseSettingsStore) DismissExpertiseNudge(_ context.Context, re
 	return nil
 }
 
-func (f *fakeExpertiseSettingsStore) SetExpertiseSettings(_ context.Context, settings expertiseSettings) error {
+func (f *fakeExpertiseSettingsStore) SetExpertiseSettings(_ context.Context, settings ExpertiseSettings) error {
 	if f.err != nil {
 		return f.err
 	}
@@ -135,40 +136,32 @@ func (f *fakeExpertiseIdentityReader) Get(_ context.Context, _ string) (string, 
 
 func TestExpertiseEnableStartsIndexingForLocalRepo(t *testing.T) {
 	engine := &fakeExpertiseEngine{gitAvailable: true}
-	repos := &fakeExpertiseRepoStore{repos: map[string]expertiseRepo{
+	repos := &fakeExpertiseRepoStore{repos: map[string]ExpertiseRepo{
 		"github:owner/repo": {RepoID: "github:owner/repo", Source: "local", LocalPath: "/tmp/repo"},
 	}}
-	h := NewExpertiseEnableHandler(ExpertiseHandlerDeps{Engine: engine, Repos: repos, Log: testRepoLogger()})
+	s := &Expertise{Engine: engine, Repos: repos, Log: testRepoLogger()}
 
-	resp, err := callHandler(t, h, "EXPERTISE_ENABLE", map[string]string{"repo_id": "github:owner/repo"})
+	err := s.Enable(context.Background(), RepoRef{RepoID: "GitHub:Owner/Repo"})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
 	if engine.enabledRepoID != "github:owner/repo" || engine.enabledRepoPath != "/tmp/repo" {
 		t.Fatalf("enabled repo/path = %q/%q", engine.enabledRepoID, engine.enabledRepoPath)
 	}
-	if responseType(resp) != "EXPERTISE_ENABLE_ACCEPTED" {
-		t.Fatalf("type = %q, want EXPERTISE_ENABLE_ACCEPTED", responseType(resp))
-	}
+
 }
 
 func TestExpertiseEnableRejectsCacheRepo(t *testing.T) {
 	engine := &fakeExpertiseEngine{gitAvailable: true}
-	repos := &fakeExpertiseRepoStore{repos: map[string]expertiseRepo{
+	repos := &fakeExpertiseRepoStore{repos: map[string]ExpertiseRepo{
 		"github:owner/repo": {RepoID: "github:owner/repo", Source: "cache", LocalPath: "/tmp/repo"},
 	}}
-	h := NewExpertiseEnableHandler(ExpertiseHandlerDeps{Engine: engine, Repos: repos, Log: testRepoLogger()})
+	s := &Expertise{Engine: engine, Repos: repos, Log: testRepoLogger()}
 
-	resp, err := callHandler(t, h, "EXPERTISE_ENABLE", map[string]string{"repo_id": "github:owner/repo"})
-	if err != nil {
-		t.Fatalf("handler: %v", err)
-	}
-	if responseType(resp) != "EXPERTISE_ERROR" {
-		t.Fatalf("type = %q, want EXPERTISE_ERROR", responseType(resp))
-	}
-	data := extractData(t, resp)
-	if data["code"] != "repo_not_local" {
-		t.Fatalf("code = %v, want repo_not_local", data["code"])
+	err := s.Enable(context.Background(), RepoRef{RepoID: "GitHub:Owner/Repo"})
+	var se *ServiceError
+	if !errors.As(err, &se) || se.Code != CodeInvalid || se.Reason != "repo_not_local" {
+		t.Fatalf("error = %v", err)
 	}
 	if engine.enabledRepoID != "" {
 		t.Fatalf("engine should not be called, got %q", engine.enabledRepoID)
@@ -177,38 +170,30 @@ func TestExpertiseEnableRejectsCacheRepo(t *testing.T) {
 
 func TestExpertiseEnableRejectsGitUnavailable(t *testing.T) {
 	engine := &fakeExpertiseEngine{gitAvailable: false, gitReason: "git not found"}
-	repos := &fakeExpertiseRepoStore{repos: map[string]expertiseRepo{
+	repos := &fakeExpertiseRepoStore{repos: map[string]ExpertiseRepo{
 		"github:owner/repo": {RepoID: "github:owner/repo", Source: "local", LocalPath: "/tmp/repo"},
 	}}
-	h := NewExpertiseEnableHandler(ExpertiseHandlerDeps{Engine: engine, Repos: repos, Log: testRepoLogger()})
+	s := &Expertise{Engine: engine, Repos: repos, Log: testRepoLogger()}
 
-	resp, err := callHandler(t, h, "EXPERTISE_ENABLE", map[string]string{"repo_id": "github:owner/repo"})
-	if err != nil {
-		t.Fatalf("handler: %v", err)
-	}
-	if responseType(resp) != "EXPERTISE_ERROR" {
-		t.Fatalf("type = %q, want EXPERTISE_ERROR", responseType(resp))
-	}
-	data := extractData(t, resp)
-	if data["code"] != "git_unavailable" {
-		t.Fatalf("code = %v, want git_unavailable", data["code"])
+	err := s.Enable(context.Background(), RepoRef{RepoID: "GitHub:Owner/Repo"})
+	var se *ServiceError
+	if !errors.As(err, &se) || se.Code != CodeInvalid || se.Reason != "git_unavailable" {
+		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestExpertiseDisableCancelsAndDisables(t *testing.T) {
 	engine := &fakeExpertiseEngine{gitAvailable: true}
-	h := NewExpertiseDisableHandler(ExpertiseHandlerDeps{Engine: engine, Log: testRepoLogger()})
+	s := &Expertise{Engine: engine, Log: testRepoLogger()}
 
-	resp, err := callHandler(t, h, "EXPERTISE_DISABLE", map[string]string{"repo_id": "github:owner/repo"})
+	err := s.Disable(context.Background(), RepoRef{RepoID: "GitHub:Owner/Repo"})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
 	if engine.disabledRepoID != "github:owner/repo" {
 		t.Fatalf("disabled repo = %q", engine.disabledRepoID)
 	}
-	if responseType(resp) != "EXPERTISE_DISABLE_ACCEPTED" {
-		t.Fatalf("type = %q, want EXPERTISE_DISABLE_ACCEPTED", responseType(resp))
-	}
+
 }
 
 func TestGetExpertiseReturnsTopExpertsAndYourRank(t *testing.T) {
@@ -224,20 +209,17 @@ func TestGetExpertiseReturnsTopExpertsAndYourRank(t *testing.T) {
 		},
 	}
 	current := &fakeExpertiseIdentityReader{login: "alice", found: true}
-	h := NewGetExpertiseHandler(ExpertiseHandlerDeps{Data: store, Settings: &fakeExpertiseSettingsStore{}, CurrentUser: current, Log: testRepoLogger()})
+	s := &Expertise{Data: store, Settings: &fakeExpertiseSettingsStore{}, CurrentUser: current, Log: testRepoLogger()}
 
-	resp, err := callHandler(t, h, "GET_EXPERTISE", map[string]string{"pr_id": "pr-1"})
+	resp, err := s.Get(context.Background(), PRRef{PRID: "pr-1"})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	if responseType(resp) != "EXPERTISE_DATA" {
-		t.Fatalf("type = %q, want EXPERTISE_DATA", responseType(resp))
+
+	if resp.Status != "ready" {
+		t.Fatalf("status = %s", resp.Status)
 	}
-	data := extractData(t, resp)
-	if data["status"] != "ready" {
-		t.Fatalf("status = %v, want ready", data["status"])
-	}
-	files := data["files"].([]expertiseFileData)
+	files := resp.Files
 	if len(files) != 1 {
 		t.Fatalf("files length = %d, want 1", len(files))
 	}
@@ -255,61 +237,63 @@ func TestGetExpertiseUnavailableWhenRepoNotIndexed(t *testing.T) {
 		state:  expertise.ExpertiseRepoState{RepoID: "github:owner/repo", Enabled: false, Status: expertise.ExpertiseStatusIdle},
 		files:  map[string][]expertise.FileExpertiseRow{"main.go": nil},
 	}
-	h := NewGetExpertiseHandler(ExpertiseHandlerDeps{Data: store, Settings: &fakeExpertiseSettingsStore{}, Log: testRepoLogger()})
+	s := &Expertise{Data: store, Settings: &fakeExpertiseSettingsStore{}, Log: testRepoLogger()}
 
-	resp, err := callHandler(t, h, "GET_EXPERTISE", map[string]string{"pr_id": "pr-1"})
+	resp, err := s.Get(context.Background(), PRRef{PRID: "pr-1"})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	data := extractData(t, resp)
-	if responseType(resp) != "EXPERTISE_DATA" || data["status"] != "unavailable" {
+	if resp.Status != "unavailable" || resp.Files == nil || len(resp.Files) != 0 {
 		t.Fatalf("response = %#v", resp)
 	}
-	if data["reason"] == "" {
+	if resp.Reason != "expertise_not_enabled" {
 		t.Fatalf("reason should be populated")
 	}
 }
 
 func TestExpertiseNudgeDismiss(t *testing.T) {
 	settings := &fakeExpertiseSettingsStore{}
-	h := NewExpertiseNudgeDismissHandler(ExpertiseHandlerDeps{Settings: settings, Log: testRepoLogger()})
+	s := &Expertise{Settings: settings, Log: testRepoLogger()}
 
-	resp, err := callHandler(t, h, "EXPERTISE_NUDGE_DISMISS", map[string]string{"repo_id": "github:owner/repo"})
+	err := s.DismissNudge(context.Background(), RepoRef{RepoID: "GitHub:Owner/Repo"})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
 	if settings.dismissed != "github:owner/repo" {
 		t.Fatalf("dismissed repo = %q", settings.dismissed)
 	}
-	if responseType(resp) != "EXPERTISE_NUDGE_DISMISSED" {
-		t.Fatalf("type = %q, want EXPERTISE_NUDGE_DISMISSED", responseType(resp))
-	}
+
 }
 
 func TestExpertiseSettingsRoundTrip(t *testing.T) {
-	store := &fakeExpertiseSettingsStore{settings: expertiseSettings{
+	store := &fakeExpertiseSettingsStore{settings: ExpertiseSettings{
 		AliasEmails:       []string{"alice@example.com"},
 		MinSurvivingLines: 25,
-		ExcludesByRepo:    map[string][]string{"github:owner/repo": []string{"dist/**"}},
+		Excludes:          map[string][]string{"github:owner/repo": []string{"dist/**"}},
 	}}
-	getHandler := NewGetExpertiseSettingsHandler(ExpertiseHandlerDeps{Settings: store, Log: testRepoLogger()})
-	setHandler := NewSetExpertiseSettingsHandler(ExpertiseHandlerDeps{Settings: store, Log: testRepoLogger()})
+	events := &servicestest.Recorder{}
+	s := &Expertise{Settings: store, Events: events, Log: testRepoLogger()}
 
-	getResp, err := callHandler(t, getHandler, "GET_EXPERTISE_SETTINGS", map[string]string{})
+	getResp, err := s.GetSettings(context.Background())
 	if err != nil {
 		t.Fatalf("get handler: %v", err)
 	}
-	if responseType(getResp) != "EXPERTISE_SETTINGS" {
-		t.Fatalf("get type = %q", responseType(getResp))
+	if getResp.MinSurvivingLines != 25 {
+		t.Fatalf("settings = %+v", getResp)
 	}
 
-	_, err = callHandler(t, setHandler, "SET_EXPERTISE_SETTINGS", expertiseSettings{
+	req := ExpertiseSettings{
 		AliasEmails:       []string{"alice@users.noreply.github.com"},
 		MinSurvivingLines: 60,
-		ExcludesByRepo:    map[string][]string{"github:owner/repo": []string{"vendor/**"}},
-	})
+		Excludes:          map[string][]string{"GitHub:Owner/Repo": {"vendor/**"}},
+	}
+	updated, err := s.SetSettings(context.Background(), req)
 	if err != nil {
 		t.Fatalf("set handler: %v", err)
+	}
+	payloads := events.Named(EventExpertiseSettingsUpdated)
+	if len(payloads) != 1 || !reflect.DeepEqual(payloads[0], updated) || !reflect.DeepEqual(updated.Excludes["github:owner/repo"], []string{"vendor/**"}) || req.Excludes["GitHub:Owner/Repo"] == nil {
+		t.Fatalf("settings event or normalization incorrect: %#v", payloads)
 	}
 	if store.settings.MinSurvivingLines != 60 || store.settings.AliasEmails[0] != "alice@users.noreply.github.com" {
 		t.Fatalf("settings not updated: %+v", store.settings)
@@ -318,9 +302,9 @@ func TestExpertiseSettingsRoundTrip(t *testing.T) {
 
 func TestSetExpertiseSettingsRejectsInvalidMinLines(t *testing.T) {
 	store := &fakeExpertiseSettingsStore{}
-	h := NewSetExpertiseSettingsHandler(ExpertiseHandlerDeps{Settings: store, Log: testRepoLogger()})
+	s := &Expertise{Settings: store, Log: testRepoLogger()}
 
-	_, err := callHandler(t, h, "SET_EXPERTISE_SETTINGS", expertiseSettings{MinSurvivingLines: 0})
+	_, err := s.SetSettings(context.Background(), ExpertiseSettings{MinSurvivingLines: 0})
 	if err == nil {
 		t.Fatalf("expected invalid min_surviving_lines error")
 	}
@@ -328,21 +312,76 @@ func TestSetExpertiseSettingsRejectsInvalidMinLines(t *testing.T) {
 
 func TestGetExpertisePropagatesStoreErrors(t *testing.T) {
 	store := &fakeExpertiseDataStore{err: errors.New("db unavailable")}
-	h := NewGetExpertiseHandler(ExpertiseHandlerDeps{Data: store, Settings: &fakeExpertiseSettingsStore{}, Log: testRepoLogger()})
+	s := &Expertise{Data: store, Settings: &fakeExpertiseSettingsStore{}, Log: testRepoLogger()}
 
-	_, err := callHandler(t, h, "GET_EXPERTISE", map[string]string{"pr_id": "pr-1"})
+	_, err := s.Get(context.Background(), PRRef{PRID: "pr-1"})
 	if err == nil {
 		t.Fatalf("expected store error")
 	}
 }
 
-func responseType(resp interface{}) string {
-	env, ok := resp.(map[string]interface{})
-	if !ok {
-		return ""
+func TestExpertiseMissingPRAndStorageFailure(t *testing.T) {
+	for _, test := range []struct {
+		cause error
+		code  Code
+	}{
+		{nil, ""}, {errors.New("db unavailable"), CodeInternal}, {context.Canceled, CodeCancelled}, {context.DeadlineExceeded, CodeTimeout},
+	} {
+		s := &Expertise{Data: &fakeExpertiseDataStore{err: test.cause}}
+		got, err := s.Get(context.Background(), PRRef{PRID: "pr-missing"})
+		if test.cause == nil {
+			if err != nil || got.Status != "unavailable" || got.Reason != "pr_not_found" || got.Files == nil || len(got.Files) != 0 {
+				t.Fatalf("missing PR = %+v, error = %v", got, err)
+			}
+			continue
+		}
+		var se *ServiceError
+		if !errors.As(err, &se) || se.Code != test.code {
+			t.Fatalf("storage error = %v", err)
+		}
 	}
-	value, _ := env["type"].(string)
-	return value
+}
+
+func TestExpertiseSQLSettingsPersistExcludesAndDismissal(t *testing.T) {
+	db := storetest.Open(t).DB
+	ctx := context.Background()
+	index := expertise.NewStore(db)
+	s := &Expertise{Settings: NewExpertiseSQLSettingsStore(db, index)}
+	defaults, err := s.GetSettings(ctx)
+	if err != nil || defaults.MinSurvivingLines != expertise.DefaultMinSurvivingLines || defaults.Excludes == nil || defaults.AliasEmails == nil {
+		t.Fatalf("defaults = %+v, error = %v", defaults, err)
+	}
+	const repoID = "github:owner/repo"
+	if err := index.UpsertFileRows(ctx, []expertise.FileExpertiseRow{
+		{RepoID: repoID, FilePath: "vendor/lib.go", AuthorEmail: "alice@example.com", SurvivingLines: 100, Score: 90, ComputedAt: time.Now(), ComputedAtSHA: "sha"},
+		{RepoID: repoID, FilePath: "main.go", AuthorEmail: "alice@example.com", SurvivingLines: 100, Score: 90, ComputedAt: time.Now(), ComputedAtSHA: "sha"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req := ExpertiseSettings{MinSurvivingLines: 60, Excludes: map[string][]string{repoID: {"vendor/**"}}}
+	updated, err := s.SetSettings(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := s.GetSettings(ctx)
+	if err != nil || !reflect.DeepEqual(loaded, updated) {
+		t.Fatalf("persisted settings = %+v, error = %v", loaded, err)
+	}
+	excluded, err := index.GetFileExpertise(ctx, repoID, "vendor/lib.go")
+	if err != nil || len(excluded) != 0 {
+		t.Fatal("excluded expertise retained")
+	}
+	retained, err := index.GetFileExpertise(ctx, repoID, "main.go")
+	if err != nil || len(retained) != 1 {
+		t.Fatal("unexcluded expertise removed")
+	}
+	if err := s.DismissNudge(ctx, RepoRef{RepoID: "GitHub:Owner/Repo"}); err != nil {
+		t.Fatal(err)
+	}
+	state, err := index.RepoState(ctx, repoID)
+	if err != nil || !state.NudgeDismissedAt.Valid {
+		t.Fatalf("dismissal not persisted: %v", err)
+	}
 }
 
 func TestRequestPRListPopulatesTouchesYou(t *testing.T) {
@@ -372,9 +411,9 @@ func TestRequestPRListPopulatesTouchesYou(t *testing.T) {
 		return expertise.Identity{Login: "alice", AliasEmails: []string{"alice@example.com"}}
 	})
 	engine := expertise.NewEngine(testRepoLogger(), expertiseStore, nil, indexer, nil)
-	s := &services.PR{DB: db, TouchesYou: engine, CurrentUser: &mockCurrentUserReader{login: "alice", found: true}, Log: testRepoLogger()}
+	s := &PR{DB: db, TouchesYou: engine, CurrentUser: &fakeExpertiseIdentityReader{login: "alice", found: true}, Log: testRepoLogger()}
 
-	resp, err := s.List(context.Background(), services.PRListRequest{Filter: "all", Limit: 10})
+	resp, err := s.List(context.Background(), PRListRequest{Filter: "all", Limit: 10})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}

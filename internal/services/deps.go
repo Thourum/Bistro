@@ -6,9 +6,48 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/itterno/bistro/internal/expertise"
+	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/prdiff"
+	"github.com/itterno/bistro/internal/store/repolocation"
 )
+
+type expertiseEngine interface {
+	Enable(context.Context, string, string) error
+	Disable(context.Context, string) error
+	GitAvailable() bool
+	GitUnavailableReason() string
+}
+
+type expertiseRepoStore interface {
+	ExpertiseRepo(context.Context, string) (ExpertiseRepo, bool, error)
+}
+
+type expertiseDataStore interface {
+	ExpertisePRRepo(context.Context, string) (string, bool, error)
+	ExpertisePRFiles(context.Context, string) ([]string, error)
+	FileExpertise(context.Context, string, string) ([]expertise.FileExpertiseRow, error)
+	RepoState(context.Context, string) (expertise.ExpertiseRepoState, bool, error)
+}
+
+type expertiseSettingsStore interface {
+	ExpertiseSettings(context.Context) (ExpertiseSettings, error)
+	DismissExpertiseNudge(context.Context, string) error
+	SetExpertiseSettings(context.Context, ExpertiseSettings) error
+}
+
+type repoLocationReader interface {
+	Get(context.Context, string) (*repolocation.Location, error)
+}
+
+type prCheckoutInspector interface {
+	InspectPRCheckout(string, string) (git.CheckoutInspection, error)
+}
+
+type prCheckoutChecker interface {
+	CheckoutPRHead(context.Context, string, string, string) error
+}
 
 type prLister interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)

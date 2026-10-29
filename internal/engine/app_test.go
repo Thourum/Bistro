@@ -1,9 +1,35 @@
 package engine
 
 import (
+	"context"
+	"github.com/itterno/bistro/internal/services"
 	"testing"
 	"time"
 )
+
+func TestApplyClassificationSettingsSharesServiceState(t *testing.T) {
+	app := newTestApp()
+	app.classificationState = services.NewClassificationState()
+	req := services.ClassificationSettings{Mode: "rules+llm", DismissalScope: "local+provider", Provider: "openai", Model: "gpt-5", Endpoint: "http://localhost"}
+	if err := app.ApplyClassificationSettings(req); err != nil {
+		t.Fatal(err)
+	}
+	if got := app.classificationState.Snapshot(); got != req {
+		t.Fatalf("App state = %+v, want %+v", got, req)
+	}
+	service := &services.Classification{State: app.classificationState}
+	next := services.ClassificationSettings{Mode: "server", DismissalScope: "local", Provider: "anthropic"}
+	got, err := service.SetSettings(context.Background(), next)
+	if err != nil || got != next || app.classificationState.Snapshot() != next {
+		t.Fatalf("service state = %+v, error = %v", got, err)
+	}
+	if err := app.ApplyClassificationSettings(services.ClassificationSettings{Mode: "invalid"}); err == nil {
+		t.Fatal("invalid App preferences accepted")
+	}
+	if app.classificationState.Snapshot() != next {
+		t.Fatal("invalid App preferences changed shared state")
+	}
+}
 
 func TestApplySyncSettingsClampsInterval(t *testing.T) {
 	for _, test := range []struct {

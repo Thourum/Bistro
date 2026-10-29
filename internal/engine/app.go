@@ -17,7 +17,6 @@ import (
 	"github.com/itterno/bistro/internal/cache"
 	"github.com/itterno/bistro/internal/classify"
 	"github.com/itterno/bistro/internal/classify/llm"
-	"github.com/itterno/bistro/internal/engine/handler"
 	"github.com/itterno/bistro/internal/expertise"
 	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/git/anchor"
@@ -87,13 +86,13 @@ type App struct {
 	// anchorResolver is set in Run() and shared across all orchestrators.
 	anchorResolver *anchor.Resolver
 	// classifier is the Phase 3 comment-classification engine provider,
-	// shared by the sync writer and the comments handler. Its mode getter
+	// shared by the sync writer and the comments service. Its mode getter
 	// reads classificationState, so a mode change lazily invalidates the
 	// rule fingerprint on the next Current() call.
 	classifier *classify.EngineProvider
 	// classificationState holds the live classification settings pushed via
 	// SET_CLASSIFICATION_SETTINGS (mode, dismissal scope, provider, model).
-	classificationState *handler.ClassificationState
+	classificationState *services.ClassificationState
 	// llmTier is the async BYOK classification tier (Phase 3.8); kicked
 	// post-sync-commit and on PR open, no-op outside LLM modes.
 	llmTier *llm.Tier
@@ -139,7 +138,7 @@ func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
 		autoSync:            true,
 		provCtx:             provCtx,
 		provCtxCancel:       provCtxCancel,
-		classificationState: handler.NewClassificationState(),
+		classificationState: services.NewClassificationState(),
 	}
 }
 
@@ -222,9 +221,6 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	a.prepareLLMTier(ctx)
 	a.initializeStartupProvider(ctx)
 	a.serviceSet = a.buildServices(ctx)
-	a.registerReviewHandlers(stores)
-	a.registerDiffAndCheckoutHandlers(stores)
-	a.registerExpertiseHandlers(stores)
 	defer func() {
 		runErr = errors.Join(runErr, a.wsServer.Stop())
 		cancelRun()
@@ -254,6 +250,13 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 		a.log.Info("context cancelled")
 	}
 	return nil
+}
+
+// ApplyClassificationSettings uses the same validation and state as service calls.
+func (a *App) ApplyClassificationSettings(settings services.ClassificationSettings) error {
+	s := services.Classification{State: a.classificationState, Panics: a.panics, Log: a.log}
+	_, err := s.SetSettings(context.Background(), settings)
+	return err
 }
 
 // ApplySyncSettings forwards sync preferences with a 30s–3600s interval clamp.

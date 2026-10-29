@@ -6,8 +6,8 @@ import (
 	"log/slog"
 
 	"github.com/itterno/bistro/internal/classify/llm"
-	"github.com/itterno/bistro/internal/engine/handler"
 	"github.com/itterno/bistro/internal/keychain"
+	"github.com/itterno/bistro/internal/services"
 )
 
 // slogPrintf adapts *slog.Logger to the llm.Logger Printf interface.
@@ -23,7 +23,7 @@ func (s slogPrintf) Printf(format string, v ...any) {
 // provider/model/key change applies to the next call without restarts.
 // The key never leaves the call path.
 type liveByokClient struct {
-	state  *handler.ClassificationState
+	state  *services.ClassificationState
 	tokens *keychain.TokenManager
 }
 

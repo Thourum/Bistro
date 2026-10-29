@@ -25,8 +25,12 @@ type DraftsChanged struct {
 	PRID string `json:"pr_id"`
 }
 
+// EventExpertiseSettingsUpdated retains the existing settings notification name.
+const EventExpertiseSettingsUpdated = "EXPERTISE_SETTINGS_UPDATED"
+
 // Direct registrations allow Wails' binding generator to discover payload types.
 func init() {
+	application.RegisterEvent[ExpertiseSettings](EventExpertiseSettingsUpdated)
 	application.RegisterEvent[DraftsChanged](EventDraftsChanged)
 	application.RegisterEvent[AuthRedirect](EventAuthRedirect)
 	application.RegisterEvent[PRsReadChanged](EventPRsReadChanged)
