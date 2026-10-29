@@ -4,9 +4,8 @@ import { emitAppEvent } from './appEvents';
 
 // Latch before user input: history/query changes cannot disable the safety guard.
 const IS_KEYS_BENCH =
-  (typeof window !== 'undefined' && window.electron?.isKeysBench === true) ||
-  (typeof location !== 'undefined' &&
-    new URLSearchParams(location.search).get('bench_keys') === '1');
+  typeof location !== 'undefined' &&
+  new URLSearchParams(location.search).get('bench_keys') === '1';
 
 /** True only for the opt-in native keyboard benchmark at renderer startup. */
 export function isKeysBench(): boolean {

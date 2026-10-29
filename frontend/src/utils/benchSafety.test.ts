@@ -11,18 +11,13 @@ vi.mock('./logger', () => ({
 
 afterEach(() => vi.unstubAllGlobals());
 
-it('keeps native benchmark refusal after query removal and renderer reload', async () => {
+it('ignores the removed Electron benchmark flag without the URL opt-in', async () => {
   vi.stubGlobal('window', { electron: { isKeysBench: true } });
   vi.stubGlobal('location', { search: '' });
-  const reloadCount = 2;
-  for (let reload = 0; reload < reloadCount; reload += 1) {
-    vi.resetModules();
-    const { isKeysBench, guardBenchWsMessage } = await import('./benchSafety');
-    expect(isKeysBench()).toBe(true);
-    expect(guardBenchWsMessage('SUBMIT_ACTION')._unsafeUnwrapErr().tag).toBe(
-      'BENCH_WRITE_BLOCKED',
-    );
-  }
+  vi.resetModules();
+  const { isKeysBench, guardBenchWrite } = await import('./benchSafety');
+  expect(isKeysBench()).toBe(false);
+  expect(guardBenchWrite('engine-call').isOk()).toBe(true);
 });
 
 it('blocks editor, browser and quit IPC only for bench_keys=1', async () => {
