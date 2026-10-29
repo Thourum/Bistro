@@ -2,8 +2,10 @@ package workerpool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 )
 
@@ -15,16 +17,24 @@ const workerQueueFactor = 2
 
 // Pool manages a pool of goroutines that process submitted tasks concurrently.
 type Pool struct {
-	taskCh    chan func()
-	wg        sync.WaitGroup
-	closeOnce sync.Once
-	log       *slog.Logger
+	taskCh     chan func()
+	wg         sync.WaitGroup
+	closeOnce  sync.Once
+	log        *slog.Logger
+	onPanic    func(any, []byte)
+	errorsMu   sync.Mutex
+	taskErrors []error
+}
+
+// Options supplies optional reporting without coupling workers to services.
+type Options struct {
+	OnPanic func(recovered any, stack []byte)
 }
 
 // New creates a new worker pool with the given number of workers.
 // If workerCount is <= 0, it defaults to DefaultWorkers.
 // If log is nil, slog.Default() is used.
-func New(workerCount int, log *slog.Logger) *Pool {
+func New(workerCount int, log *slog.Logger, options ...Options) *Pool {
 	if workerCount <= 0 {
 		workerCount = DefaultWorkers
 	}
@@ -37,6 +47,9 @@ func New(workerCount int, log *slog.Logger) *Pool {
 		log:    log,
 	}
 
+	if len(options) > 0 {
+		pool.onPanic = options[0].OnPanic
+	}
 	for i := 0; i < workerCount; i++ {
 		pool.wg.Add(1)
 		go pool.worker(i)
@@ -52,21 +65,32 @@ func (p *Pool) worker(id int) {
 	defer p.wg.Done()
 
 	for task := range p.taskCh {
-		p.safeRun(id, task)
+		if err := p.safeRun(id, task); err != nil {
+			p.errorsMu.Lock()
+			p.taskErrors = append(p.taskErrors, err)
+			p.errorsMu.Unlock()
+		}
 	}
 }
 
 // safeRun executes a single task with panic recovery so the worker survives.
-func (p *Pool) safeRun(workerID int, task func()) {
+func (p *Pool) safeRun(workerID int, task func()) (err error) {
 	defer func() {
-		if r := recover(); r != nil {
-			p.log.Error("worker panic recovered",
-				"worker_id", workerID,
-				"panic", fmt.Sprintf("%v", r),
-			)
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("worker task panicked: %v", recovered)
+			stack := debug.Stack()
+			p.log.Error("worker panic recovered", "worker_id", workerID, "stack", string(stack))
+			if p.onPanic != nil {
+				// A failing reporter must not kill a recovered worker.
+				func() {
+					defer func() { _ = recover() }()
+					p.onPanic(recovered, stack)
+				}()
+			}
 		}
 	}()
 	task()
+	return nil
 }
 
 // Submit enqueues a task for execution by the pool.
@@ -96,7 +120,9 @@ func (p *Pool) Wait(ctx context.Context) error {
 
 	select {
 	case <-done:
-		return nil
+		p.errorsMu.Lock()
+		defer p.errorsMu.Unlock()
+		return errors.Join(p.taskErrors...)
 	case <-ctx.Done():
 		p.log.Warn("worker pool wait cancelled", "error", ctx.Err())
 		return ctx.Err()

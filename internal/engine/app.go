@@ -4,14 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/itterno/bistro/internal/cache"
@@ -30,7 +27,6 @@ import (
 	"github.com/itterno/bistro/internal/store/currentuser"
 	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/store/repolocation"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 // SyncSettingsMsg carries runtime sync preferences to the sync loop.
@@ -41,15 +37,13 @@ type SyncSettingsMsg struct {
 
 type syncSettingsMsg = SyncSettingsMsg
 
-// App is the top-level orchestrator for the bistro-sync process.
+// App owns the in-process sync engine and its background lifetimes.
 type App struct {
 	log                 *slog.Logger
 	emitter             services.Emitter
 	panics              services.PanicReporter
 	serviceSet          *services.Set
 	db                  *store.DB
-	wsServer            *ws.Server
-	wsPort              int
 	dbPath              string
 	orchestrator        *prsync.Orchestrator
 	prov                provider.Provider
@@ -67,23 +61,25 @@ type App struct {
 	provMu              sync.RWMutex
 	syncInterval        time.Duration
 	autoSync            bool
-	readyWriter         io.Writer
+	runCtx              context.Context
+	cancel              context.CancelFunc
+	loops               sync.WaitGroup
 	// bridgeCancel cancels the event-bridge goroutine for the current orchestrator.
 	// Replaced each time a new orchestrator is wired up.
 	bridgeCancel context.CancelFunc
-	// replayOnStart causes Run() to replay the offline action queue after the
+	// replayOnStart causes Start() to replay the offline action queue after the
 	// production orchestrator (with DB and queue) is attached.
 	replayOnStart bool
 	// provCtx / provCtxCancel form a per-provider generation context.
-	// It is derived from the Run ctx (or context.Background before Run) and
+	// It is derived from the Start ctx (or context.Background before Start) and
 	// cancelled on every provider disconnect/replacement.  The sync loop,
 	// event bridge, and orchestrator liveness all hold a reference; cancelling
 	// it propagates to all of them simultaneously.
 	provCtx       context.Context
 	provCtxCancel context.CancelFunc
-	// currentUserStore is set in Run() and shared across all orchestrators.
+	// currentUserStore is set in Start() and shared across all orchestrators.
 	currentUserStore *currentuser.Store
-	// anchorResolver is set in Run() and shared across all orchestrators.
+	// anchorResolver is set in Start() and shared across all orchestrators.
 	anchorResolver *anchor.Resolver
 	// classifier is the Phase 3 comment-classification engine provider,
 	// shared by the sync writer and the comments service. Its mode getter
@@ -96,7 +92,7 @@ type App struct {
 	// llmTier is the async BYOK classification tier (Phase 3.8); kicked
 	// post-sync-commit and on PR open, no-op outside LLM modes.
 	llmTier *llm.Tier
-	// llmKick kicks the tier for one PR; set in Run, read by orchestrator
+	// llmKick kicks the tier for one PR; set in Start, read by orchestrator
 	// wiring (post-commit hook) and the comments handler (PR-open kick).
 	llmKick func(prID string)
 	// expertiseEngine is the Phase 4 local expertise scorer, shared by handlers
@@ -104,42 +100,6 @@ type App struct {
 	expertiseEngine *expertise.Engine
 	// resolveRepoPath maps repo IDs to local checkout paths for expertise hooks.
 	resolveRepoPath prsync.RepoPathResolver
-}
-
-// New returns a new App configured with the given WebSocket port and database path.
-// Uses default Info-level stderr logging.
-func New(wsPort int, dbPath string) *App {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	return NewWithLogger(wsPort, dbPath, logger)
-}
-
-// NewWithLogger returns a new App with a custom logger.
-func NewWithLogger(wsPort int, dbPath string, logger *slog.Logger) *App {
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		cacheDir = os.TempDir()
-	}
-	cachePath := filepath.Join(cacheDir, "bistro", "providers.json")
-	// Initialise provCtx to a live background context so sync loop / tests that
-	// access it before the first connect don't panic on a nil context.
-	provCtx, provCtxCancel := context.WithCancel(context.Background())
-	return &App{
-		log:                 logger,
-		emitter:             services.NopEmitter{},
-		wsServer:            ws.NewServerWithLogger(logger),
-		wsPort:              wsPort,
-		dbPath:              dbPath,
-		providerCache:       cache.NewProviderCache(cachePath),
-		tokenManager:        keychain.NewTokenManager(),
-		repoLocks:           repolock.New(),
-		syncTrigger:         make(chan string, 8),
-		syncSettings:        make(chan syncSettingsMsg, 4),
-		syncInterval:        5 * time.Minute,
-		autoSync:            true,
-		provCtx:             provCtx,
-		provCtxCancel:       provCtxCancel,
-		classificationState: services.NewClassificationState(),
-	}
 }
 
 // SetEmitter configures push event delivery before services are constructed.
@@ -205,51 +165,55 @@ func (a *App) prepareStores() runStores {
 	return stores
 }
 
-// Run initializes the database, starts the WebSocket server, and blocks until
-// a SIGTERM, SIGINT, or context cancellation, then shuts down.
-func (a *App) Run(ctx context.Context) (runErr error) {
-	ctx, cancelRun := context.WithCancel(ctx)
-	defer cancelRun()
+// Start prepares the engine and launches its supervised loops without blocking.
+// Call SetEmitter and SetPanicReporter before Start; Stop owns shutdown.
+func (a *App) Start(ctx context.Context) error {
+	if a.cancel != nil {
+		return errors.New("engine already started")
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err := os.MkdirAll(filepath.Dir(a.dbPath), 0o755); err != nil {
+		return fmt.Errorf("create database directory: %w", err)
+	}
 	if err := a.openDatabase(ctx); err != nil {
 		return err
 	}
-	defer func() { runErr = errors.Join(runErr, a.db.Close()) }()
-
+	a.runCtx, a.cancel = context.WithCancel(ctx)
 	stores := a.prepareStores()
-	a.prepareExpertise(ctx, stores.expertise)
-	defer a.expertiseEngine.Shutdown()
-	a.prepareLLMTier(ctx)
-	a.initializeStartupProvider(ctx)
-	a.serviceSet = a.buildServices(ctx)
-	defer func() {
-		runErr = errors.Join(runErr, a.wsServer.Stop())
-		cancelRun()
-	}()
-
-	wsAddr := wsListenAddr(a.wsPort)
-	if err := a.wsServer.Start(wsAddr); err != nil {
-		return fmt.Errorf("start ws server: %w", err)
-	}
-	actualPort := a.wsServer.Port()
-	a.log.Info("WebSocket server listening", "addr", wsAddr, "port", actualPort)
-	readyOut := a.readyWriter
-	if readyOut == nil {
-		readyOut = os.Stdout
-	}
-	if err := emitReady(readyOut, actualPort); err != nil {
-		return fmt.Errorf("emit ready signal: %w", err)
-	}
-	go a.runSyncLoop(ctx)
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
-	defer signal.Stop(sigChan)
-	select {
-	case <-sigChan:
-		a.log.Info("shutdown signal received")
-	case <-ctx.Done():
-		a.log.Info("context cancelled")
-	}
+	a.prepareExpertise(a.runCtx, stores.expertise)
+	a.prepareLLMTier(a.runCtx)
+	a.restoreStartupProvider()
+	a.initializeStartupProvider(a.runCtx)
+	a.serviceSet = a.buildServices(a.runCtx)
+	a.startLoop(a.runCtx, "sync", a.runSyncLoop)
 	return nil
+}
+
+// Stop cancels background work, waits for it, and then closes the database.
+func (a *App) Stop() {
+	if a.cancel == nil {
+		return
+	}
+	a.cancel()
+	a.provMu.Lock()
+	if a.provCtxCancel != nil {
+		a.provCtxCancel()
+	}
+	a.provMu.Unlock()
+	a.loops.Wait()
+	a.expertiseEngine.Shutdown()
+	a.llmTier.Wait()
+	if err := a.db.Close(); err != nil {
+		a.log.Error("close engine database", "error", err)
+	}
+	a.provMu.Lock()
+	a.db = nil
+	a.orchestrator = nil
+	a.provMu.Unlock()
+	a.cancel = nil
+	a.serviceSet = nil
 }
 
 // ApplyClassificationSettings uses the same validation and state as service calls.

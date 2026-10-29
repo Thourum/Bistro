@@ -19,18 +19,13 @@ This project is early and evolving. If you change structure, commands, or conven
 
 ## Architecture
 
-Two-process desktop app:
+The Go engine now runs in-process for the Wails migration. `internal/services` exposes typed calls and registered Wails events; the engine still owns all SQLite writes, sync, local diffs, and offline action replay. The legacy Electron sources remain until Task 13, but their removed `bistro-sync`/WebSocket backend is no longer runnable. The Wails shell entrypoint arrives in Task 14.
 
-1. **Go sync engine** (`bistro-sync`) — authenticates to GitHub via OAuth; syncs PR metadata, comments, CI status, and diffs into local SQLite; generates diffs locally via `go-git`; exposes a localhost WebSocket API; queues replayable write actions offline with retry. Review submissions with drafts bypass the queue; failures keep unsubmitted drafts locally. **Owns all SQLite writes.**
-2. **Electron + React UI** — requests data over WebSocket; receives push events; keyboard-first navigation via TanStack Hotkeys.
+`engine.New(Options)` constructs the engine. Set its emitter and panic reporter before `Start(ctx)`, which opens/migrates SQLite, restores the keychain provider, builds the retained service set, and launches supervised loops without blocking. `Stop()` cancels and waits for background work before closing SQLite. The shell owns single-instance enforcement; there is no engine port, flock, ready message, or stdin watchdog.
 
-Process lifecycle: Electron Forge spawns `bistro-sync`, or connects to an already-running engine on the WS port (default `8080`). The engine prints `{"event":"ready","wsPort":N}` to stdout after migrations, holds a flock on `<db>.lock` (single-instance), and watches stdin (`-exit-on-stdin-close`) so it dies when Electron dies. Deeper detail: `docs/go-project-overview.md`.
+Within `internal/engine/`, `app.go` owns store preparation and Start/Stop; `options.go` owns construction/defaults, `supervise.go` panic restart/backoff, and `provider.go`, `config.go`, `llm.go`, `expertise.go`, `bridge.go`, and `repo_location.go` own domain wiring. The WebSocket, standalone command, and handler packages are deleted.
 
-Where things live: Go module at the repo root (entry `cmd/bistro-sync/`, packages under `internal/`); Electron UI in `electron/src/` (`main/` = process + spawn + IPC + settings, `renderer/` = React app).
-
-Within `internal/engine/`, `app.go` owns the App struct, constructors, store preparation, and Run lifecycle; provider lifecycle, configuration, LLM setup, expertise, event bridging, and repo-location wiring live in `provider.go`, `config.go`, `llm.go`, `expertise.go`, `bridge.go`, and `repo_location.go` respectively. All remain in package `engine`.
-
-The Wails migration foundation lives in `internal/services` (service errors, panic guards, event emitters, identity normalization, shared request refs, and `Set`); `internal/services/servicestest.Recorder` captures events for behavior tests. `internal/engine/services.go` builds the retained service set after stores are prepared. Auth now lives in `internal/services/auth.go`: `Start` blocks, emits the registered `auth:redirect` event, and uses context cancellation instead of `AUTH_CANCEL`; auth WebSocket handlers are no longer registered. `PR`, `Sync`, `Repos`, and `ReviewQueue` also live in `internal/services`; hydration and review-queue reads block, and `App.ApplySyncSettings` clamps runtime intervals to 30–3600 seconds. Their WebSocket handlers are no longer registered. `Comments`, `Dismiss`, `Threads`, and `Drafts` now live in `internal/services` as well; their WebSocket handlers are removed. Draft writes emit the registered `drafts:changed` event, while orchestrator draft notifications remain on the legacy transport until the event bridge port. `RepoLocation` and `DevFolderScan` now live in `internal/services`; repo-location WebSocket handlers are removed. Dev-folder scans block, use caller context cancellation, and a newer scan cancels its predecessor. Cache cleanup preserves per-repo failures as result data; repo-location errors retain their legacy code in `ServiceError.Reason`. `Expertise`, `Classification`, and `Editor` now live in `internal/services`; all remaining domain WebSocket handlers are removed, and `internal/engine/handler` retains only `doc.go` until Task 9. `App.ApplyClassificationSettings` uses the same validated live state as `Classification.SetSettings`. `Expertise.SetSettings` returns the stored settings without emitting a push event; indexing and BYOK tier notifications remain on the legacy transport until the event bridge port. Handler ports follow the service port recipe in [the migration plan](docs/superpowers/plans/2026-10-28-wails3-migration/README.md); the existing WebSocket transport remains until its removal task.
+`internal/engine/services.go` builds `services.Set`; `internal/services/servicestest.Recorder` captures typed events in behavior tests. Auth uses a blocking `Auth.Start` with context cancellation and retains only the temporary OAuth callback listener. `App.ApplySyncSettings` clamps runtime intervals to 30–3600 seconds, and `App.ApplyClassificationSettings` shares the service's validated state. Draft, sync, review, expertise, and BYOK notifications all use the event registrations in `internal/services/events.go`. Service conventions and migration steps live in [the migration plan](docs/superpowers/plans/2026-10-28-wails3-migration/README.md).
 
 Within `internal/git`, `Client` owns clone/fetch/checkout operations; `anchor` resolves comment anchors, `diff` generates diffs/interdiffs and patch fingerprints (`Generate`, `Interdiff`, `PatchID`), `remote` parses repo identities (`ParseURL`, `SafeRepoID`), and `repolock` owns shared per-repo locks (`Locks`, `New`, `Key`). Interdiff takes the same `*repolock.Locks` as clone/fetch, not a `git.Client`. The current package map is in [Go project overview](docs/go-project-overview.md).
 
@@ -44,7 +39,7 @@ Go tests outside package `store` share migrated in-memory databases via `interna
 
 ## Tech stack
 
-- **Go 1.26** — go-git, go-github, gorilla/websocket, mattn/go-sqlite3, go-keyring, x/oauth2.
+- **Go 1.26** — go-git, go-github, mattn/go-sqlite3, go-keyring, x/oauth2.
 - **Electron + Electron Forge + Vite** — React 19, TypeScript, TanStack (React Query / Hotkeys / Virtual / Store), Radix UI, Tailwind, Biome (lint+format), Vitest (test).
 - **Package manager: pnpm** for the Electron app. Run pnpm commands from `electron/`; the lockfile is the repo-root `pnpm-lock.yaml` (workspace defined in `pnpm-workspace.yaml`, covering `electron/` and `website/`). `minimumReleaseAge` in `pnpm-workspace.yaml` blocks package versions younger than 7 days, so a just-published release won't resolve yet. Versions live in `go.mod` and `electron/package.json` — check there, don't assume.
 
@@ -53,7 +48,7 @@ Go tests outside package `store` share migrated in-memory databases via `interna
 - **Error handling: in Electron TS/JS code, use `@thourum/fault`. NEVER write `try`/`catch` for control flow or error handling.** Return and chain `Result<T, Fault>` / `ResultAsync<T, Fault>` with tagged faults; narrow errors with `fault.tag` and use `fault.message` at display/log boundaries. Go continues to use its existing error handling. (The only `try/catch` allowed anywhere is inside throwaway context-mode MCP sandbox scripts — never in committed code.)
 - Go owns all SQLite writes — the UI never writes the DB directly.
 - Review drafts: the engine owns `review_drafts`. `approve` / `request_changes` absorb the current user's drafts inside `Orchestrator.ApplyAction`, and `submit_review` is never queued.
-- SQLite is a cache; the WebSocket is localhost-only (origin-enforced); migrations are versioned, idempotent, embedded.
+- SQLite is a cache; migrations are versioned, idempotent, embedded. Services are in-process; the only localhost listener is the temporary OAuth callback.
 - Keyboard bindings are pure config, no handlers: actions (`actionId`, label, activation) in `ACTION_CATALOG` in `electron/src/renderer/utils/keybindings.ts`, keys per navigation style (`vim` / `emacs` / `standard`) in `utils/keymaps.ts` (`KEYMAPS`, `SEQUENCE_TIMEOUT_MS`). `getEffectiveBindings(style, overrides)` resolves user override → style table → unbound; handlers live in `utils/keybindingActions.ts` (line-comment handlers in `utils/lineCommentActions.ts`, draft and resolve handlers in `utils/reviewActions.ts`), enable/scope rules in `utils/keybindingActivation.ts`; registration in `hooks/useAppHotkeys.ts`. Don't register hotkeys outside `useAppHotkeys` (textarea-local submit uses `TEXTAREA_SUBMIT_HOTKEY` / `isTextareaSubmit` from the same file). Command-palette entries dispatch the same handler by `actionId` (`getBindingAction`); palette and hotkeys share effective-route activation and the ref-backed action context in `hooks/useKeyActionContext.ts`. Palette-only actions (no key in any style) live in `ACTIONS` without a binding. Entries live in `components/commandPaletteCommands.ts`; `shortcutFor` shows a shortcut only when `isActive` permits the binding on the current route. Settings → Keyboard records overrides with `useHotkeySequenceRecorder`; recording and default resets reject conflicts via `utils/keybindingConflicts.ts`, using the runtime `isBindingEnabled` ownership gates.
 - Validate external data with zod at the edge, never `as` casts: WS envelopes and push events via `dataSchemas`/`parseWsMessage` in `types/wsSchemas.ts`; `wsClient.request()` responses via schemas in `types/index.ts` + `parseResponse` (`utils/error.ts`).
 - WebSocket transport lives in `services/ws/connection.ts`: use `wsClient.send` / `wsClient.request` directly, with tagged `ResultAsync` request errors. Only App's Bootstrap calls `hooks/useWebSocketConnection.ts` to own connect/disconnect. Push-event side effects live in `services/ws/events/<domain>.ts`, with an exhaustive handler table in `services/ws/events/index.ts`.
@@ -66,21 +61,7 @@ Go tests outside package `store` share migrated in-memory databases via `interna
 
 There is no Makefile. The commands below are authoritative; ignore `make` targets in any older docs.
 
-Normal dev — launch the Electron app; Forge handles the Go engine (spawns one, or connects to an engine you already have running):
-
-```bash
-cd electron && pnpm start
-```
-
-Run the Go sync engine standalone (e.g. to watch its logs) — Electron will connect to it automatically:
-
-```bash
-go build -o bistro-sync ./cmd/bistro-sync && ./bistro-sync
-# or without building a binary:
-go run cmd/bistro-sync/main.go
-```
-
-Config: copy `electron/.env.example` to `electron/.env.local` (GitHub OAuth client id/secret, WS port, log level, window size).
+Desktop launch/package commands are temporarily unavailable while the migration removes Electron and adds the Wails shell (Tasks 13–14). Do not run the legacy Electron launcher: `cmd/bistro-sync` and its WebSocket transport have been deleted. Engine verification remains available with the Go commands below. Runtime OAuth configuration is supplied through `engine.Options`; no engine WS port exists.
 
 Adding or changing a SQL query: edit/add a `.sql` file under `internal/store/queries/`, then regenerate (`sqlc.yaml` is at the repo root):
 
@@ -95,8 +76,8 @@ Verify a change before declaring done:
 ```bash
 # Go
 go vet ./... && go test -race ./...
-# Electron
-cd electron && pnpm type-check && pnpm lint && pnpm test
+# Legacy Electron (until Task 13; package.json has no type-check script)
+cd electron && pnpm lint && pnpm test
 ```
 
 Enable the pre-commit hook once per clone (blocks staged files over 5,000 tokens, bytes/4; skips lockfiles, sqlc output, images, files marked generated, and raw ADR evidence (`docs/adr/data/**/*.{json,jsonl,txt,log}`); the error message explains how to split):
@@ -205,7 +186,7 @@ After /clear or /compact: knowledge base and session stats preserved. Use `ctx p
 
 ## Release
 
-Alpha install and release details: `docs/ALPHA.md`. Commands, run from `electron/`:
+Historical alpha install and release details: `docs/ALPHA.md`. These legacy commands depend on the removed standalone engine and are unavailable until Wails packaging replaces them:
 
 ```bash
 pnpm run release:macos                      # engine build + Forge make (DMG/ZIP)

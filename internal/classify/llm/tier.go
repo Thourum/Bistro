@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,6 +36,7 @@ type TierConfig struct {
 	Emit          func(eventType string, data map[string]any)
 	ServeComments func(prID string) (any, error)
 	Log           Logger
+	OnPanic       func(recovered any, stack []byte)
 }
 
 // Tier runs optional BYOK classification for unclassified PR comments.
@@ -46,6 +48,7 @@ type Tier struct {
 	emit          func(eventType string, data map[string]any)
 	serveComments func(prID string) (any, error)
 	log           Logger
+	onPanic       func(any, []byte)
 
 	authDisabled  atomic.Bool
 	sessionTokens atomic.Int64
@@ -95,6 +98,7 @@ func NewTier(config TierConfig) *Tier {
 		emit:          emit,
 		serveComments: config.ServeComments,
 		log:           logger,
+		onPanic:       config.OnPanic,
 		inflight:      make(map[string]bool),
 	}
 }
@@ -133,6 +137,11 @@ func (t *Tier) KickPR(ctx context.Context, prID string) {
 			delete(t.inflight, prID)
 			t.inflightMu.Unlock()
 		}()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				t.reportPanic(recovered)
+			}
+		}()
 		t.runBatch(prCtx, prID, mode)
 	}()
 }
@@ -169,6 +178,8 @@ func (t *Tier) runBatch(ctx context.Context, prID string, mode string) {
 	var batchTokens atomic.Int64
 	var shouldAbandon atomic.Bool
 	var workers sync.WaitGroup
+	// A batch panic must still cancel and wait for its comment jobs.
+	defer func() { cancelBatch(); workers.Wait() }()
 	semaphore := make(chan struct{}, defaultBatchConcurrency)
 
 	for _, comment := range comments {
@@ -188,6 +199,13 @@ func (t *Tier) runBatch(ctx context.Context, prID string, mode string) {
 		go func() {
 			defer workers.Done()
 			defer func() { <-semaphore }()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					shouldAbandon.Store(true)
+					cancelBatch()
+					t.reportPanic(recovered)
+				}
+			}()
 
 			tokens, err := t.processComment(batchCtx, comment)
 			if err == nil {
@@ -223,6 +241,17 @@ func (t *Tier) runBatch(ctx context.Context, prID string, mode string) {
 	}
 	t.emitCommentsReady(prID)
 	t.emitUsage()
+}
+
+func (t *Tier) reportPanic(recovered any) {
+	stack := debug.Stack()
+	t.log.Printf("llm batch failed after recovered panic; stack=%s", stack)
+	if t.onPanic != nil {
+		func() {
+			defer func() { _ = recover() }()
+			t.onPanic(recovered, stack)
+		}()
+	}
 }
 
 func (t *Tier) selectComments(ctx context.Context, prID string, mode string) ([]commentForClassification, error) {

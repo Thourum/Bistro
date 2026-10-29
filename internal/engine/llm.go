@@ -52,10 +52,25 @@ func (a *App) prepareLLMTier(ctx context.Context) {
 			s := a.classificationState.Snapshot()
 			return llm.SettingsSnapshot{Provider: s.Provider, Model: s.Model}
 		},
-		Emit: func(eventType string, data map[string]any) {
-			a.wsServer.Broadcast(wsEventMsg{Type: eventType, Data: data})
+		Emit: a.emitClassificationEvent,
+		OnPanic: func(recovered any, stack []byte) {
+			if a.panics != nil {
+				a.panics.ReportPanic("llm", recovered, stack)
+			}
 		},
 		Log: slogPrintf{a.log},
 	})
 	a.llmKick = func(prID string) { a.llmTier.KickPR(ctx, prID) }
+}
+
+func (a *App) emitClassificationEvent(eventType string, data map[string]any) {
+	d := eventData(data)
+	switch eventType {
+	case "COMMENTS_READY":
+		a.emitter.Emit(services.EventCommentsClassified, services.CommentsClassified{PRID: d.str("pr_id")})
+	case "BYOK_AUTH_FAILED":
+		a.emitter.Emit(services.EventByokAuthFailed, services.ByokAuthFailed{})
+	case "BYOK_USAGE":
+		a.emitter.Emit(services.EventByokUsage, services.ByokUsage{SessionTokens: int64(d.int("session_tokens")), EstCost: d.float("est_cost")})
+	}
 }

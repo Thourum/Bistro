@@ -15,7 +15,7 @@ import (
 	"github.com/itterno/bistro/internal/store/reviewdraft"
 )
 
-// Services returns the service set prepared by Run (Start from Task 9).
+// Services returns the service set prepared by Start.
 // The instances are retained so all calls share each domain's lifetime state.
 func (a *App) Services() *services.Set { return a.serviceSet }
 

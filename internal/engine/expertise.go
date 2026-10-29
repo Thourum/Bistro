@@ -2,29 +2,26 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/itterno/bistro/internal/expertise"
 	"github.com/itterno/bistro/internal/services"
 )
 
 func (a *App) broadcastExpertiseEvent(eventType string, payload any) {
-	a.wsServer.Broadcast(wsEventMsg{Type: eventType, Data: expertisePayloadToMap(payload)})
-}
-
-func expertisePayloadToMap(payload any) map[string]any {
-	if data, ok := payload.(map[string]any); ok {
-		return data
+	switch eventType {
+	case expertise.ExpertiseIndexProgressEvent:
+		if progress, ok := payload.(expertise.IndexProgressPayload); ok {
+			a.emitter.Emit(services.EventExpertiseProgress, services.ExpertiseProgress(progress))
+		}
+	case expertise.ExpertiseReadyEvent:
+		if ready, ok := payload.(expertise.IndexReadyPayload); ok {
+			a.emitter.Emit(services.EventExpertiseReady, services.ExpertiseReady(ready))
+		}
+	case expertise.ExpertiseErrorEvent:
+		if failure, ok := payload.(expertise.ErrorPayload); ok {
+			a.emitter.Emit(services.EventExpertiseError, services.ExpertiseError(failure))
+		}
 	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return map[string]any{"payload": payload}
-	}
-	data := map[string]any{}
-	if err := json.Unmarshal(raw, &data); err != nil {
-		return map[string]any{"payload": payload}
-	}
-	return data
 }
 
 func (a *App) broadcastExpertiseNudge(ctx context.Context, prID string) {
@@ -56,7 +53,7 @@ func (a *App) broadcastExpertiseNudge(ctx context.Context, prID string) {
 		a.log.Warn("expertise nudge count failed", "repo_id", repoID, "error", err)
 		return
 	}
-	a.wsServer.Broadcast(wsEventMsg{Type: "EXPERTISE_NUDGE", Data: map[string]any{"repo_id": repoID, "reviewed_count": count}})
+	a.emitter.Emit(services.EventExpertiseNudge, services.ExpertiseNudge{RepoID: repoID, ReviewedCount: count})
 }
 
 func (a *App) currentExpertiseIdentity(stores *expertise.Store) func(context.Context) expertise.Identity {
@@ -80,11 +77,16 @@ func (a *App) prepareExpertise(ctx context.Context, stores *expertise.Store) {
 	expertiseGit := expertise.NewGitCLI(a.log)
 	identity := a.currentExpertiseIdentity(stores)
 	indexer := expertise.NewIndexer(a.log, stores, expertiseGit, identity).WithEmitter(a.broadcastExpertiseEvent)
+	indexer.OnPanic = func(recovered any, stack []byte) {
+		if a.panics != nil {
+			a.panics.ReportPanic("expertise", recovered, stack)
+		}
+	}
 	updater := expertise.NewUpdater(a.log, stores, expertiseGit, identity)
 	a.expertiseEngine = expertise.NewEngine(a.log, stores, expertiseGit, indexer, updater)
-	go func() {
+	a.startLoop(ctx, "expertise-restart", func(ctx context.Context) {
 		if err := a.expertiseEngine.RestartInterrupted(ctx, a.resolveRepoPath); err != nil {
 			a.log.Warn("expertise restart interrupted indexing failed", "error", err)
 		}
-	}()
+	})
 }

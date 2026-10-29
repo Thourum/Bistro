@@ -2,23 +2,24 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
+	"reflect"
+
+	"github.com/itterno/bistro/internal/actions"
+	"github.com/itterno/bistro/internal/events"
+	"github.com/itterno/bistro/internal/expertise"
+	"github.com/itterno/bistro/internal/services"
+	"github.com/itterno/bistro/internal/services/servicestest"
 	"testing"
 	"time"
 
-	"github.com/itterno/bistro/internal/expertise"
-
-	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/provider/mock"
 	"github.com/itterno/bistro/internal/prsync"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 // TestStartEventBridge_NilOrchestrator verifies that startEventBridge is a
 // safe no-op when no orchestrator has been set.
 func TestStartEventBridge_NilOrchestrator(t *testing.T) {
 	app := newTestApp()
-	app.wsServer = ws.NewServerWithLogger(app.log)
 	// Must not panic.
 	app.startEventBridge(context.Background())
 }
@@ -28,13 +29,6 @@ func TestStartEventBridge_NilOrchestrator(t *testing.T) {
 // don't accumulate stale goroutines.
 func TestStartEventBridge_CancelsOldGoroutine(t *testing.T) {
 	app := newTestApp()
-	app.wsServer = ws.NewServerWithLogger(app.log)
-
-	emitter := events.NewEventEmitter()
-
-	// Stub: an orchestrator-shaped value with a real emitter.
-	sub := emitter.Subscribe()
-	_ = sub // first bridge will drain this channel
 
 	// Wire a first bridge using a tiny helper that bypasses orchestrator.
 	ctx1, cancel1 := context.WithCancel(context.Background())
@@ -58,70 +52,6 @@ func TestStartEventBridge_CancelsOldGoroutine(t *testing.T) {
 	}
 }
 
-// TestWsEventMsg_MarshalShape verifies that wsEventMsg serialises into the
-// expected {"type":..., "data":...} envelope that WS clients expect.
-func TestBroadcastExpertiseEventFlattensTypedPayload(t *testing.T) {
-	data := expertisePayloadDataForTest(expertiseReadyPayloadForTest())
-	if _, ok := data["payload"]; ok {
-		t.Fatalf("typed expertise event data contains payload wrapper: %#v", data)
-	}
-	if data["repo_id"] != "github:owner/repo" {
-		t.Fatalf("repo_id = %v, want github:owner/repo", data["repo_id"])
-	}
-	if data["indexed_sha"] != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
-		t.Fatalf("indexed_sha = %v, want sha", data["indexed_sha"])
-	}
-	if data["files_total"] != float64(3) {
-		t.Fatalf("files_total = %v, want 3", data["files_total"])
-	}
-}
-
-func expertiseReadyPayloadForTest() any {
-	return struct {
-		RepoID     string `json:"repo_id"`
-		IndexedSHA string `json:"indexed_sha"`
-		FilesTotal int    `json:"files_total"`
-	}{
-		RepoID:     "github:owner/repo",
-		IndexedSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		FilesTotal: 3,
-	}
-}
-
-func expertisePayloadDataForTest(payload any) map[string]interface{} {
-	return expertisePayloadToMap(payload)
-}
-
-var _ = expertise.ExpertiseStatusReady
-
-func TestWsEventMsg_MarshalShape(t *testing.T) {
-	msg := wsEventMsg{
-		Type: "THREAD_RESOLVED",
-		Data: map[string]interface{}{
-			"thread_id": "abc123",
-		},
-	}
-	raw, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-
-	var got map[string]interface{}
-	if err := json.Unmarshal(raw, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if got["type"] != "THREAD_RESOLVED" {
-		t.Errorf("type = %v, want THREAD_RESOLVED", got["type"])
-	}
-	data, ok := got["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("data is not a map: %T", got["data"])
-	}
-	if data["thread_id"] != "abc123" {
-		t.Errorf("data.thread_id = %v, want abc123", data["thread_id"])
-	}
-}
-
 // ── Oracle blocker: AUTH_DISCONNECT teardown ──────────────────────────────
 
 // TestSetProvider_NilClearsOrchestratorAndApplier verifies that calling
@@ -129,7 +59,6 @@ func TestWsEventMsg_MarshalShape(t *testing.T) {
 // currentApplier() returns nil and SUBMIT_ACTION is rejected cleanly.
 func TestSetProvider_NilClearsOrchestratorAndApplier(t *testing.T) {
 	app := newTestApp()
-	app.wsServer = ws.NewServerWithLogger(app.log)
 
 	// Simulate a connected state: non-nil prov stub and orchestrator.
 	app.provMu.Lock()
@@ -168,7 +97,6 @@ func TestSetProvider_NilClearsOrchestratorAndApplier(t *testing.T) {
 // active event bridge goroutine so it stops broadcasting stale events.
 func TestSetProvider_NilCancelsBridge(t *testing.T) {
 	app := newTestApp()
-	app.wsServer = ws.NewServerWithLogger(app.log)
 
 	// Install a live bridge cancel func.
 	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
@@ -227,5 +155,77 @@ func TestCurrentApplier_RequiresBothProvAndOrchestrator(t *testing.T) {
 	app.provMu.Unlock()
 	if app.currentApplier() == nil {
 		t.Error("currentApplier must return non-nil when both prov and orchestrator are set")
+	}
+}
+
+func TestBridgeEvent(t *testing.T) {
+	for _, test := range []struct {
+		typeName string
+		data     map[string]any
+		name     string
+		payload  any
+	}{
+		{"rate_limited", map[string]any{"reset_in": float64(2.5)}, services.EventRateLimited, services.RateLimited{ResetIn: 2.5}},
+		{"PR_METADATA_CHANGED", map[string]any{"pr_id": "pr", "owner": "owner", "repo": "repo", "number": int64(7), "field": "draft", "old": true, "new": false}, services.EventPRMetadataChanged, services.PRMetadataChanged{PRID: "pr", Owner: "owner", Repo: "repo", Number: 7, Field: "draft", Old: "true", New: "false"}},
+		{"CI_STATUS_CHANGED", map[string]any{"pr_id": "pr", "owner": "owner", "repo": "repo", "number": float64(7), "old_status": "pending", "new_status": "success"}, services.EventCIStatusChanged, services.CIStatusChanged{PRID: "pr", Owner: "owner", Repo: "repo", Number: 7, OldStatus: "pending", NewStatus: "success"}},
+		{"THREAD_RESOLVED", map[string]any{"pr_id": "pr", "thread_id": "thread"}, services.EventThreadStateChanged, services.ThreadStateChanged{PRID: "pr", ThreadID: "thread", Resolved: true}},
+		{"THREAD_REOPENED", map[string]any{"pr_id": "pr", "thread_id": "thread", "resolved": true}, services.EventThreadStateChanged, services.ThreadStateChanged{PRID: "pr", ThreadID: "thread"}},
+		{"COMMENT_POSTED", map[string]any{"pr_id": "pr", "thread_id": "thread", "in_reply_to": "comment"}, services.EventCommentPosted, services.CommentPosted{PRID: "pr", ThreadID: "thread", InReplyTo: "comment"}},
+		{"DRAFTS_CHANGED", map[string]any{"pr_id": "pr"}, services.EventDraftsChanged, services.DraftsChanged{PRID: "pr"}},
+		{"action_complete", map[string]any{"pr": "pr", "action": actions.ApproveCommand, "success": true}, services.EventActionComplete, services.ActionComplete{PR: "pr", Action: "approve", Success: true}},
+		{"pr_approved", map[string]any{"pr_id": "pr"}, services.EventPRApproved, services.PRApproved{PRID: "pr"}},
+		{"sync_started", nil, "", nil},
+	} {
+		t.Run(test.typeName, func(t *testing.T) {
+			name, payload, ok := bridgeEvent(events.Event{Type: test.typeName, Data: test.data})
+			if ok != (test.name != "") || name != test.name || !reflect.DeepEqual(payload, test.payload) {
+				t.Fatalf("bridgeEvent = (%q, %#v, %v), want (%q, %#v)", name, payload, ok, test.name, test.payload)
+			}
+		})
+	}
+}
+
+func TestExpertiseEventsAreTyped(t *testing.T) {
+	app := newTestApp()
+	recorder := app.emitter.(*servicestest.Recorder)
+	app.broadcastExpertiseEvent(expertise.ExpertiseIndexProgressEvent, expertise.IndexProgressPayload{RepoID: "repo", FilesDone: 2, FilesTotal: 3})
+	app.broadcastExpertiseEvent(expertise.ExpertiseReadyEvent, expertise.IndexReadyPayload{RepoID: "repo", IndexedSHA: "sha", FilesTotal: 3, SkippedFiles: 1})
+	app.broadcastExpertiseEvent(expertise.ExpertiseErrorEvent, expertise.ErrorPayload{RepoID: "repo", Code: "index_error", Message: "failed"})
+	want := []servicestest.Event{
+		{Name: services.EventExpertiseProgress, Data: services.ExpertiseProgress{RepoID: "repo", FilesDone: 2, FilesTotal: 3}},
+		{Name: services.EventExpertiseReady, Data: services.ExpertiseReady{RepoID: "repo", IndexedSHA: "sha", FilesTotal: 3, SkippedFiles: 1}},
+		{Name: services.EventExpertiseError, Data: services.ExpertiseError{RepoID: "repo", Code: "index_error", Message: "failed"}},
+	}
+	if got := recorder.Events(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
+	}
+}
+
+func TestEventDataNumericKinds(t *testing.T) {
+	for _, value := range []any{int(7), int64(7), float64(7)} {
+		d := eventData{"number": value}
+		if d.int("number") != 7 || d.float("number") != 7 {
+			t.Fatalf("numeric conversion failed for %T", value)
+		}
+	}
+	if d := (eventData{}); d.str("missing") != "" || d.int("missing") != 0 || d.float("missing") != 0 {
+		t.Fatal("missing values did not default")
+	}
+}
+
+func TestClassificationEventsAreTyped(t *testing.T) {
+	app := newTestApp()
+	recorder := app.emitter.(*servicestest.Recorder)
+	app.emitClassificationEvent("COMMENTS_READY", map[string]any{"pr_id": "pr"})
+	app.emitClassificationEvent("BYOK_AUTH_FAILED", nil)
+	app.emitClassificationEvent("BYOK_USAGE", map[string]any{"session_tokens": int64(100), "est_cost": 0.25})
+	app.emitClassificationEvent("unused", nil)
+	want := []servicestest.Event{
+		{Name: services.EventCommentsClassified, Data: services.CommentsClassified{PRID: "pr"}},
+		{Name: services.EventByokAuthFailed, Data: services.ByokAuthFailed{}},
+		{Name: services.EventByokUsage, Data: services.ByokUsage{SessionTokens: 100, EstCost: 0.25}},
+	}
+	if got := recorder.Events(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
 	}
 }

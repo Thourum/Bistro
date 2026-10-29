@@ -62,7 +62,9 @@ func (o *Orchestrator) FetchPRDetails(
 
 	options := prFetchOptions{comments: includeComments, ci: includeCI, diff: includeDiff}
 	results := make([]*writer.FetchedPR, len(prs))
-	pool := workerpool.New(workerpool.DefaultWorkers, o.log)
+	pool := workerpool.New(workerpool.DefaultWorkers, o.log, workerpool.Options{OnPanic: o.onWorkerPanic})
+	// Cancellation must not leave tasks writing results or using stores after return.
+	defer func() { _ = pool.Wait(context.Background()) }()
 	for i, pr := range prs {
 		if err := pool.Submit(ctx, func() {
 			results[i] = o.fetchPR(ctx, pr, options)

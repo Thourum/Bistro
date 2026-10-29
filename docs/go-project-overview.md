@@ -2,15 +2,15 @@
 
 ## What Is This?
 
-Bistro is a local-first desktop GitHub PR review app. The Go engine (repo-root module, executable `bistro-sync`) authenticates via OAuth, syncs PR metadata/comments/CI/diffs into local SQLite, serves the Electron UI over a localhost WebSocket, and queues replayable write actions offline for retry. Review submissions with drafts bypass the queue and keep unsubmitted drafts on failure. Go owns all SQLite writes; the database is a cache, not a shared server.
+Bistro is a local-first desktop GitHub PR review app. The in-process Go engine (repo-root module) authenticates via OAuth, syncs PR metadata/comments/CI/diffs into local SQLite, exposes typed services and registered Wails events, and queues replayable write actions offline for retry. Review submissions with drafts bypass the queue and keep unsubmitted drafts on failure. Go owns all SQLite writes; the database is a cache, not a shared server.
 
 ## Current Directory Structure
 
-The module is `github.com/itterno/bistro` (`go.mod`). This map reflects the source tree as of 2026-10-28; test files and generated SQL files are omitted.
+The module is `github.com/itterno/bistro` (`go.mod`). This map reflects the source tree as of 2026-10-29; test files and generated SQL files are omitted.
 
 ```text
 ./
-├── cmd/bistro-sync/main.go        # CLI flags, logging, engine bootstrap
+├── cmd/bistro-benchseed/          # Benchmark cache seeding
 ├── internal/
 │   ├── actions/                  # PR write actions and retry
 │   │   ├── executor.go
@@ -62,18 +62,12 @@ The module is `github.com/itterno/bistro` (`go.mod`). This map reflects the sour
 │   │       └── writer.go · fetched_pr.go · rows.go · patchset.go · threads.go · diffs.go
 │   ├── scan/scanner.go           # Developer-folder repository discovery
 │   ├── engine/                   # Application wiring and lifecycle
-│   │   ├── app.go                # App, constructors, stores, Run
+│   │   ├── app.go · options.go    # App, stores, Start/Stop, defaults
 │   │   ├── provider.go · config.go · llm.go · expertise.go · bridge.go
-│   │   ├── repo_location.go · handlers.go
-│   │   ├── ready.go · wsaddr.go · syncloop.go
-│   │   ├── repo_location_resolver.go · interdiff_repo.go
-│   │   └── handler/              # Domain-specific WebSocket handlers
-│   │       └── auth.go · classification_settings.go · comments.go · dev_folder_scan.go
-│   │           diff.go · dismiss.go · drafts.go · editor.go · expertise.go · interdiff.go
-│   │           patchsets.go · pr.go · readstate.go · repo.go · review_queue.go
-│   │           repolocation.go · repolocation_add.go · repolocation_cache.go
-│   │           repolocation_clone.go · repolocation_remove.go · sync.go
-│   │           threads.go · triage.go · viewed_baseline.go
+│   │   ├── repo_location.go · services.go · supervise.go · syncloop.go
+│   │   └── repo_location_resolver.go · interdiff_repo.go
+│   ├── services/                 # Typed service methods and Wails events
+│   │   └── servicestest/recorder.go
 │   ├── store/                    # DB handle, migrations, DB query methods
 │   │   ├── db.go · migrate.go · patchsets.go · files_viewed.go · last_reviewed.go
 │   │   ├── sync_cursor.go · pr_checkout.go · review_threads.go
@@ -87,7 +81,6 @@ The module is `github.com/itterno/bistro` (`go.mod`). This map reflects the sour
 │   │   ├── db/                   # Generated sqlc code; never edit by hand
 │   │   ├── migrations/           # Embedded versioned SQL migrations
 │   │   └── queries/              # sqlc query sources
-│   └── ws/server.go · dispatch.go
 ├── sqlc.yaml
 ├── go.mod
 └── go.sum
@@ -96,9 +89,9 @@ The module is `github.com/itterno/bistro` (`go.mod`). This map reflects the sour
 ## Data Flow
 
 ```text
-Electron UI
-  └─ localhost WebSocket → ws.Server → ws.Dispatcher
-       ├─ engine/handler → provider / stores / git operations
+Wails shell / renderer (entrypoint pending Task 14)
+  └─ typed services.Set calls
+       ├─ internal/services → provider / stores / git operations
        └─ manual sync → prsync.Orchestrator ← engine/syncloop (periodic sync)
                           ├─ provider → remote PR details
                           ├─ workerpool → concurrent fetches
@@ -107,26 +100,18 @@ Electron UI
                           ├─ writer → SQLite cache
                           └─ actions + store/actionqueue → write actions/replay
 
-events.EventEmitter → engine/bridge.go → WebSocket push → Electron UI
+events.EventEmitter → engine/bridge.go → typed services events → Wails renderer
 ```
 
 ## Package-by-Package Summary
 
-### `cmd/bistro-sync` -- Entrypoint
-
-Parses CLI flags, configures structured logging, bootstraps credentials, and calls `engine.App.Run()`.
-
 ### `internal/engine` -- Application Core
 
-`app.go` owns the App struct, constructors, store preparation, and Run lifecycle. The split files remain in package `engine`: `provider.go` owns provider/orchestrator lifecycle; `config.go` owns configuration setters; `llm.go` wires BYOK classification; `expertise.go` wires indexing and handlers; `bridge.go` forwards events to WebSocket clients; `repo_location.go` wires clone/location handlers; `handlers.go` registers auth, review, diff, and checkout handlers.
+`New(Options)` constructs the engine; `Start(ctx)` opens and migrates the cache, prepares stores, restores keychain credentials, builds services, and starts supervised background work. `Stop()` cancels/waits before closing SQLite. `options.go` owns defaults, `supervise.go` restarts panicking loops with bounded backoff, and `provider.go` owns provider-generation lifetimes. `bridge.go`, `expertise.go`, `llm.go`, and `syncloop.go` emit the registered typed payloads. The shell will drive Start/Stop and own single-instance enforcement in Task 14. There is no standalone sync command or WebSocket transport.
 
-`engine/handler` contains WebSocket handlers grouped by domain, including auth, comments/threads, review drafts (`drafts.go`: `DRAFT_SAVE` / `DRAFT_DELETE` / `DRAFTS_LIST`), diffs, patchsets, triage/interdiff, PR/repo lists, read state, classification, expertise, editor actions, developer-folder scanning, and review-queue discovery. Repo-location handlers cover add/remove/recover and cache maintenance. `syncloop.go` schedules background sync; `ready.go` emits readiness payloads; `wsaddr.go` formats the listener address; `repo_location_resolver.go` and `interdiff_repo.go` resolve usable clones.
+### `internal/services` -- Typed Application API
 
-The engine acquires a lock on `<db>.lock`, migrates SQLite before announcing `{"event":"ready","wsPort":N}`, and supports `-exit-on-stdin-close` so Electron owns its lifetime. Normal app startup and verification commands live in [the agent guide](../AGENTS.md#how-to-work).
-
-### `internal/ws` -- WebSocket Transport
-
-`Server` owns listener/connections/broadcast and enforces local origins. `Dispatcher` routes JSON messages to registered `MessageHandler` functions; business logic stays in handlers/services.
+Domain service structs expose context-aware calls, normalize identities, translate failures into `ServiceError`, and recover/report service panics. `services.Set` retains shared instances; `events.go` registers payload types for generated Wails bindings. `servicestest.Recorder` captures events for tests. Normal verification commands live in [the agent guide](../AGENTS.md#how-to-work).
 
 ### `internal/provider` -- Provider Abstraction
 
@@ -140,7 +125,7 @@ Defines `Provider`, shared domain models (`PR`, `Comment`, `Repo`, `CIStatus`), 
 
 Renamed from `internal/sync` to avoid shadowing the standard library. `Orchestrator` coordinates list/fetch/write phases and single-PR sync, action dispatch, offline replay, inbox discovery, and anchor updates. Request/result types live in `request.go`; fetch logic lives in `fetch.go`; `With*` builders live in `options.go`. `review.go` handles draft-absorbing review submission: approve / request changes include the current user's drafts; `submit_review` bypasses offline/rate-limited replay and removes drafts only after GitHub accepts each commit group.
 
-- `prsync/workerpool`: `Pool`, `New`, and `DefaultWorkers` bound concurrent fetch tasks.
+- `prsync/workerpool`: `Pool`, `New`, and `DefaultWorkers` bound concurrent fetch tasks; panic errors return from Wait and invoke an optional reporting callback.
 - `prsync/writer`: `FetchedPR` is the writer input; `Writer`/`New` persist fetched metadata, comments, threads, CI, diffs, and patchsets, with classification and post-commit events.
 - `store/actionqueue` owns queue persistence; `internal/events` owns events directly (no sync alias layer).
 
@@ -152,11 +137,11 @@ Executes approve/request-changes/comment and thread actions through handlers, em
 
 ### `internal/auth` -- OAuth Flow
 
-`BuildAuthURL` constructs authorization URLs; `CallbackServer` accepts a temporary localhost redirect, exchanges the code, and validates scopes. With a configured client secret (development), `ExchangeToken` posts to GitHub directly. Without one (packaged builds), it posts `{code, redirect_uri}` to `https://get-bistro.com/api/oauth/token`, which holds the secret. `-auth-callback-timeout` controls the callback wait.
+`BuildAuthURL` constructs authorization URLs; `CallbackServer` accepts a temporary localhost redirect, exchanges the code, and validates scopes. With a configured client secret (development), `ExchangeToken` posts to GitHub directly. Without one (packaged builds), it posts `{code, redirect_uri}` to `https://get-bistro.com/api/oauth/token`, which holds the secret. `engine.Options.AuthCallbackTimeout` controls the callback wait.
 
 ### `internal/events` -- Event System
 
-Buffered pub/sub `EventEmitter`, shared by sync and action execution. The engine event bridge translates events into WebSocket pushes.
+Buffered pub/sub `EventEmitter`, shared by sync and action execution. The engine event bridge translates consumed orchestrator events into registered typed payloads.
 
 ### `internal/store` -- Database Layer
 

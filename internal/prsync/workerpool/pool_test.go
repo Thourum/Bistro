@@ -3,6 +3,7 @@ package workerpool
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -161,95 +162,32 @@ func TestWaitContextCancellation(t *testing.T) {
 	close(unblock)
 }
 
-// TestWorkerPanicRecovery verifies that a panicking task does not propagate
-// the panic and that the pool continues to process subsequent tasks.
 func TestWorkerPanicRecovery(t *testing.T) {
-	pool := New(1, nil)
-	ctx := context.Background()
-
-	result := make(chan int, 1)
-
-	// First task panics.
-	if err := pool.Submit(ctx, func() {
-		panic("deliberate test panic")
-	}); err != nil {
-		t.Fatalf("unexpected submit error: %v", err)
-	}
-
-	// Give the worker a moment to panic and recover, then submit a second task.
-	// We can't submit after Wait, so use a short sleep to allow recovery.
-	time.Sleep(50 * time.Millisecond)
-
-	// The worker should have recovered; but after a panic the worker goroutine
-	// exits (calls wg.Done). Submit to a new pool to test continued operation.
-	pool2 := New(1, nil)
-	if err := pool2.Submit(ctx, func() {
-		result <- 99
-	}); err != nil {
-		t.Fatalf("unexpected submit error on pool2: %v", err)
-	}
-
-	if err := pool2.Wait(ctx); err != nil {
-		t.Errorf("unexpected wait error: %v", err)
-	}
-
-	select {
-	case val := <-result:
-		if val != 99 {
-			t.Errorf("expected 99, got %d", val)
+	var panicCount int
+	pool := New(1, nil, Options{OnPanic: func(recovered any, stack []byte) {
+		panicCount++
+		if recovered != "deliberate test panic" || len(stack) == 0 {
+			t.Errorf("bad panic report: %v", recovered)
 		}
+	}})
+	completed := make(chan struct{}, 1)
+	ctx := context.Background()
+	if err := pool.Submit(ctx, func() { panic("deliberate test panic") }); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.Submit(ctx, func() { completed <- struct{}{} }); err != nil {
+		t.Fatal(err)
+	}
+	err := pool.Wait(ctx)
+	if err == nil || !strings.Contains(err.Error(), "panicked") {
+		t.Fatalf("Wait = %v, want panic task error", err)
+	}
+	if panicCount != 1 {
+		t.Fatalf("panic reports = %d, want 1", panicCount)
+	}
+	select {
+	case <-completed:
 	default:
-		t.Error("expected result from pool2 task")
-	}
-
-	// Original pool: Wait should complete without hanging.
-	waitDone := make(chan error, 1)
-	go func() {
-		waitDone <- pool.Wait(ctx)
-	}()
-	select {
-	case err := <-waitDone:
-		if err != nil {
-			t.Errorf("unexpected wait error from panic pool: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Error("pool.Wait() hung after worker panic — wg.Done not called")
-	}
-}
-
-// TestWorkerPanicDoesntBlockPool verifies that a panic in one worker does not
-// prevent pool.Wait() from returning.
-func TestWorkerPanicDoesntBlockPool(t *testing.T) {
-	pool := New(2, nil)
-	ctx := context.Background()
-
-	var mu context.Context = ctx
-	_ = mu
-
-	completed := make(chan struct{}, 2)
-
-	if err := pool.Submit(ctx, func() {
-		panic("worker 0 panic")
-	}); err != nil {
-		t.Fatalf("submit error: %v", err)
-	}
-	if err := pool.Submit(ctx, func() {
-		completed <- struct{}{}
-	}); err != nil {
-		t.Fatalf("submit error: %v", err)
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- pool.Wait(ctx)
-	}()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Errorf("unexpected wait error: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Error("pool.Wait() blocked forever after panic — deadlock detected")
+		t.Fatal("same worker did not complete subsequent task")
 	}
 }

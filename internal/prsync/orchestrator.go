@@ -71,7 +71,8 @@ type Orchestrator struct {
 	postCommit func(prIDs []string)
 	// postReview is optional; when set, successful local review submissions invoke it
 	// after last_reviewed_sha tracking has run.
-	postReview func(ctx context.Context, prID string)
+	postReview    func(ctx context.Context, prID string)
+	onWorkerPanic func(any, []byte)
 }
 
 const (
@@ -120,6 +121,12 @@ func NewOrchestrator(
 		git:      gitClient,
 		emitter:  events.NewEventEmitter(),
 	}
+}
+
+// WithWorkerPanicReporter installs reporting for panicking one-shot fetch tasks.
+func (o *Orchestrator) WithWorkerPanicReporter(report func(any, []byte)) *Orchestrator {
+	o.onWorkerPanic = report
+	return o
 }
 
 // shortID returns a random hex identifier for correlating a single sync cycle

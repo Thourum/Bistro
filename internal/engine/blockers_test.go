@@ -8,12 +8,12 @@ import (
 	"github.com/itterno/bistro/internal/actions"
 	"github.com/itterno/bistro/internal/provider/mock"
 	"github.com/itterno/bistro/internal/prsync"
+	"github.com/itterno/bistro/internal/services/servicestest"
 	"github.com/itterno/bistro/internal/store/storetest"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 // newFullTestApp returns an App pre-loaded with an initialised provCtx
-// (as NewWithLogger does) so blocker tests don't panic on nil context.
+// (as New does) so blocker tests don't panic on nil context.
 func newFullTestApp(t *testing.T) *App {
 	t.Helper()
 	app := newTestApp()
@@ -22,7 +22,7 @@ func newFullTestApp(t *testing.T) *App {
 	app.provCtx = provCtx
 	app.provCtxCancel = provCtxCancel
 	app.provMu.Unlock()
-	app.wsServer = ws.NewServerWithLogger(app.log)
+	app.emitter = &servicestest.Recorder{}
 	return app
 }
 
@@ -81,12 +81,12 @@ func TestTeardownProviderLocked_NameMismatch(t *testing.T) {
 }
 
 // TestKeychainStartup_DisconnectByName is the blocker-1 regression test.
-// External SetProvider(prov) before Run must record activeProviderName="github"
+// External SetProvider(prov) before Start must record activeProviderName="github"
 // so AUTH_DISCONNECT (name="github") can tear down the session.
 func TestKeychainStartup_DisconnectByName(t *testing.T) {
 	app := newFullTestApp(t)
 
-	// Simulate main.go: SetProvider before Run (db is nil, no orch created).
+	// Simulate main.go: SetProvider before Start (db is nil, no orch created).
 	app.SetProvider(mock.NewMockProvider())
 
 	app.provMu.RLock()
@@ -96,7 +96,7 @@ func TestKeychainStartup_DisconnectByName(t *testing.T) {
 		t.Errorf("activeProviderName = %q after SetProvider(prov), want \"github\"", name)
 	}
 
-	// Simulate what Run's startup block leaves in App.
+	// Simulate what Start's startup block leaves in App.
 	app.provMu.Lock()
 	app.prov = mock.NewMockProvider()
 	app.orchestrator = prsync.NewOrchestrator(nil, nil, nil, nil)
@@ -210,29 +210,9 @@ func TestProvCtx_CancelledOnDisconnect(t *testing.T) {
 	}
 }
 
-// ── Blocker 1: SetReplayOnStart defers replay into Run ────────────────────
-
-// TestSetReplayOnStart_FlagStoredOnApp verifies that SetReplayOnStart stores
-// the flag so Run() can act on it (the meaningful contract is that pre-Run
-// calls no longer attempt early replay against a nil orchestrator).
-func TestSetReplayOnStart_FlagStoredOnApp(t *testing.T) {
-	app := newFullTestApp(t)
-	if app.replayOnStart {
-		t.Error("replayOnStart should default to false")
-	}
-	app.SetReplayOnStart(true)
-	if !app.replayOnStart {
-		t.Error("replayOnStart should be true after SetReplayOnStart(true)")
-	}
-	app.SetReplayOnStart(false)
-	if app.replayOnStart {
-		t.Error("replayOnStart should be false after SetReplayOnStart(false)")
-	}
-}
-
-// TestReplayQueuedActions_NilOrchestratorIsNoop verifies the pre-Run no-op
-// is still safe (not a panic) so callers that still call it before Run don't
-// break. The documented advice is to use SetReplayOnStart instead.
+// TestReplayQueuedActions_NilOrchestratorIsNoop verifies the pre-Start no-op
+// is still safe (not a panic) so callers that still call it before Start don't
+// break. Options.ReplayQueue controls replay after Start has prepared stores.
 func TestReplayQueuedActions_NilOrchestratorIsNoop(t *testing.T) {
 	app := newFullTestApp(t)
 	if err := app.ReplayQueuedActions(context.Background()); err != nil {

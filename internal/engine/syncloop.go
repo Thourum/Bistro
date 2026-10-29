@@ -2,22 +2,21 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/itterno/bistro/internal/prsync"
+	"github.com/itterno/bistro/internal/services"
 )
 
 // broadcastSyncError surfaces a sync failure to every connected UI instead of
 // leaving it buried in the logs.
 func (a *App) broadcastSyncError(repoID string, err error) {
-	a.wsServer.Broadcast(map[string]any{
-		"type": "SYNC_ERROR",
-		"data": map[string]any{
-			"error_code": "SYNC_FAILED",
-			"message":    fmt.Sprintf("sync failed for %s: %v", repoID, err),
-		},
+	a.emitter.Emit(services.EventSyncError, services.SyncError{
+		ErrorCode: "SYNC_FAILED",
+		Message:   fmt.Sprintf("sync failed for %s: %v", repoID, err),
 	})
 }
 
@@ -156,10 +155,8 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 			)
 		}
 		if orchCtx.Err() == nil {
-			a.wsServer.Broadcast(map[string]any{
-				"type": "SYNC_COMPLETE",
-				"data": map[string]any{"scope": "inbox"},
-			})
+			a.reportSyncResult("github:inbox", result)
+			a.emitter.Emit(services.EventSyncComplete, services.SyncComplete{Scope: "inbox"})
 		}
 		return
 	}
@@ -205,6 +202,9 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 			}
 			continue
 		}
+		if orchCtx.Err() == nil {
+			a.reportSyncResult(r.id, result)
+		}
 		synced++
 		a.log.Info("syncWatchedRepos: synced",
 			"repo", r.id,
@@ -221,10 +221,7 @@ func (a *App) syncWatchedRepos(ctx context.Context) {
 
 	// Only broadcast SYNC_COMPLETE if still on the same provider.
 	if orchCtx.Err() == nil {
-		a.wsServer.Broadcast(map[string]any{
-			"type": "SYNC_COMPLETE",
-			"data": map[string]any{},
-		})
+		a.emitter.Emit(services.EventSyncComplete, services.SyncComplete{})
 	}
 }
 
@@ -313,9 +310,14 @@ func (a *App) syncSingleRepo(ctx context.Context, repoID string) {
 
 	// Only broadcast if still on the same provider.
 	if orchCtx.Err() == nil {
-		a.wsServer.Broadcast(map[string]any{
-			"type": "SYNC_COMPLETE",
-			"data": map[string]any{"repo_id": repoID},
-		})
+		a.reportSyncResult(repoID, result)
+		a.emitter.Emit(services.EventSyncComplete, services.SyncComplete{RepoID: repoID})
+	}
+}
+
+// Sync returns partial failures inside its result, including worker panic errors.
+func (a *App) reportSyncResult(repoID string, result *prsync.SyncResult) {
+	if result != nil && len(result.Errors) > 0 {
+		a.broadcastSyncError(repoID, errors.New(strings.Join(result.Errors, "; ")))
 	}
 }

@@ -12,14 +12,15 @@ import (
 	"github.com/itterno/bistro/internal/provider/mock"
 	"github.com/itterno/bistro/internal/prsync"
 	"github.com/itterno/bistro/internal/services"
+	"github.com/itterno/bistro/internal/services/servicestest"
 	"github.com/itterno/bistro/internal/store/storetest"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 func newTestApp() *App {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	return &App{
 		log:          logger,
+		emitter:      &servicestest.Recorder{},
 		syncTrigger:  make(chan string, 8),
 		syncSettings: make(chan syncSettingsMsg, 4),
 		syncInterval: 5 * time.Minute,
@@ -31,7 +32,7 @@ func TestWatchTriggerOverflowSyncsEveryNewlyWatchedRepo(t *testing.T) {
 	app := newTestApp()
 	app.autoSync = false
 	app.db = storetest.Open(t)
-	app.wsServer = ws.NewServerWithLogger(app.log)
+	recorder := app.emitter.(*servicestest.Recorder)
 	app.prov = mock.NewMockProvider().WithInboxDiscovery(&provider.InboxDiscoveryResult{}, nil)
 	app.orchestrator = prsync.NewOrchestrator(app.log, app.prov, app.db, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -52,8 +53,6 @@ func TestWatchTriggerOverflowSyncsEveryNewlyWatchedRepo(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	eventStream := app.orchestrator.GetEventChannel()
-	defer app.orchestrator.UnsubscribeEventChannel(eventStream)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -61,17 +60,18 @@ func TestWatchTriggerOverflowSyncsEveryNewlyWatchedRepo(t *testing.T) {
 	}()
 	defer func() { cancel(); <-done }()
 	seen := make(map[string]bool)
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
 	for len(seen) < repoCount {
 		select {
-		case event := <-eventStream:
-			if event.Type != "sync_started" {
-				continue
+		case <-poll.C:
+			for _, payload := range recorder.Named(services.EventSyncComplete) {
+				complete, ok := payload.(services.SyncComplete)
+				if !ok {
+					t.Fatalf("sync:complete payload = %T", payload)
+				}
+				seen[complete.RepoID] = true
 			}
-			repo, ok := event.Data["repo"].(string)
-			if !ok {
-				t.Fatalf("sync event missing repo: %+v", event)
-			}
-			seen[repo] = true
 		case <-ctx.Done():
 			t.Fatalf("synced %d of %d newly watched repos after overflow", len(seen), repoCount)
 		}

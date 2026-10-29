@@ -124,7 +124,7 @@ func TestIndexerEmitsProgressEveryTwentyFiveFiles(t *testing.T) {
 	git := newFakeIndexerGit(50)
 	ctx := context.Background()
 	now := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
-	events := make([]indexProgressPayload, 0)
+	events := make([]IndexProgressPayload, 0)
 
 	indexer := NewIndexer(newSilentExpertiseLogger(), store, git, func(context.Context) Identity {
 		return Identity{Login: aliceName, AccountEmail: aliceEmail}
@@ -135,9 +135,9 @@ func TestIndexerEmitsProgressEveryTwentyFiveFiles(t *testing.T) {
 		if eventType != ExpertiseIndexProgressEvent {
 			return
 		}
-		progress, ok := payload.(indexProgressPayload)
+		progress, ok := payload.(IndexProgressPayload)
 		if !ok {
-			t.Fatalf("progress payload type = %T, want indexProgressPayload", payload)
+			t.Fatalf("progress payload type = %T, want IndexProgressPayload", payload)
 		}
 		events = append(events, progress)
 	}

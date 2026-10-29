@@ -237,7 +237,7 @@ func (engine *Engine) startIndex(repoID, repoPath string) {
 	go func() {
 		defer close(done)
 		defer engine.clearRunning(repoID, generation)
-		if err := engine.indexer.Index(ctx, repoID, repoPath); err != nil {
+		if err := engine.indexer.indexJob(ctx, repoID, repoPath); err != nil {
 			if errors.Is(err, context.Canceled) {
 				engine.finishCanceledIndex(repoID)
 				return

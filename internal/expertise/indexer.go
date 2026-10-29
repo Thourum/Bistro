@@ -3,8 +3,10 @@ package expertise
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -53,22 +55,23 @@ type Indexer struct {
 	emit     func(eventType string, payload any)
 	Now      func() time.Time
 	Workers  int
+	OnPanic  func(recovered any, stack []byte)
 }
 
-type indexProgressPayload struct {
+type IndexProgressPayload struct {
 	RepoID     string `json:"repo_id"`
 	FilesDone  int    `json:"files_done"`
 	FilesTotal int    `json:"files_total"`
 }
 
-type indexReadyPayload struct {
+type IndexReadyPayload struct {
 	RepoID       string `json:"repo_id"`
 	IndexedSHA   string `json:"indexed_sha"`
 	FilesTotal   int    `json:"files_total"`
 	SkippedFiles int    `json:"skipped_files"`
 }
 
-type expertiseErrorPayload struct {
+type ErrorPayload struct {
 	RepoID  string `json:"repo_id"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -158,7 +161,7 @@ func (indexer *Indexer) Index(ctx context.Context, repoID, repoPath string) erro
 	if err := indexer.store.SetRepoState(ctx, readyState); err != nil {
 		return indexer.finishWithError(ctx, repoID, err)
 	}
-	indexer.emitEvent(ExpertiseReadyEvent, indexReadyPayload{RepoID: repoID, IndexedSHA: headSHA, FilesTotal: len(files), SkippedFiles: indexResult.skipped})
+	indexer.emitEvent(ExpertiseReadyEvent, IndexReadyPayload{RepoID: repoID, IndexedSHA: headSHA, FilesTotal: len(files), SkippedFiles: indexResult.skipped})
 	return nil
 }
 
@@ -225,6 +228,11 @@ func (indexer *Indexer) indexableFiles(ctx context.Context, repoID, repoPath str
 
 func (indexer *Indexer) indexFiles(ctx context.Context, repoID, repoPath string, files []string, signals expertiseSignals) (indexFilesResult, error) {
 	results := indexer.blameFiles(ctx, repoPath, files, signals)
+	// Even a failed index owns its workers until they finish.
+	defer func() {
+		for range results {
+		}
+	}()
 	rows := make([]FileExpertiseRow, 0)
 	processed := 0
 	skipped := 0
@@ -234,6 +242,10 @@ func (indexer *Indexer) indexFiles(ctx context.Context, repoID, repoPath string,
 		}
 		processed++
 		if result.err != nil {
+			var panicErr *indexPanicError
+			if errors.As(result.err, &panicErr) {
+				return indexFilesResult{}, result.err
+			}
 			skipped++
 			indexer.log.Warn("skipping expertise file after blame failure", "repo_id", repoID, "file_path", result.filePath, "error", result.err)
 		} else {
@@ -244,7 +256,7 @@ func (indexer *Indexer) indexFiles(ctx context.Context, repoID, repoPath string,
 			if err := indexer.store.SetProgress(ctx, repoID, processed, len(files)); err != nil {
 				return indexFilesResult{}, err
 			}
-			indexer.emitEvent(ExpertiseIndexProgressEvent, indexProgressPayload{RepoID: repoID, FilesDone: processed, FilesTotal: len(files)})
+			indexer.emitEvent(ExpertiseIndexProgressEvent, IndexProgressPayload{RepoID: repoID, FilesDone: processed, FilesTotal: len(files)})
 			if ctx.Err() != nil {
 				return indexFilesResult{}, indexer.finishWithCanceled(ctx, repoID, ctx.Err())
 			}
@@ -264,12 +276,7 @@ func (indexer *Indexer) blameFiles(ctx context.Context, repoPath string, files [
 		go func() {
 			defer wg.Done()
 			for file := range jobs {
-				blame, total, err := indexer.git.BlameFile(ctx, repoPath, file)
-				if err != nil {
-					results <- indexFileResult{filePath: file, err: err}
-					continue
-				}
-				results <- indexFileResult{filePath: file, rows: buildFileExpertiseRows(file, blame, total, signals)}
+				results <- indexer.blameFile(ctx, repoPath, file, signals)
 			}
 		}()
 	}
@@ -291,6 +298,50 @@ func (indexer *Indexer) blameFiles(ctx context.Context, repoPath string, files [
 	}()
 
 	return results
+}
+
+type indexPanicError struct{ recovered any }
+
+func (err *indexPanicError) Error() string {
+	return fmt.Sprintf("expertise job panicked: %v", err.recovered)
+}
+
+func (indexer *Indexer) reportPanic(recovered any) error {
+	stack := debug.Stack()
+	indexer.log.Error("expertise job panic recovered", "stack", string(stack))
+	if indexer.OnPanic != nil {
+		func() {
+			defer func() { _ = recover() }()
+			indexer.OnPanic(recovered, stack)
+		}()
+	}
+	return &indexPanicError{recovered: recovered}
+}
+
+func (indexer *Indexer) blameFile(ctx context.Context, repoPath, file string, signals expertiseSignals) (result indexFileResult) {
+	result.filePath = file
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result.err = indexer.reportPanic(recovered)
+		}
+	}()
+	blame, total, err := indexer.git.BlameFile(ctx, repoPath, file)
+	if err != nil {
+		result.err = err
+		return result
+	}
+	result.rows = buildFileExpertiseRows(file, blame, total, signals)
+	return result
+}
+
+// indexJob converts a one-shot indexing panic into persisted failure state.
+func (indexer *Indexer) indexJob(ctx context.Context, repoID, repoPath string) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = indexer.finishWithError(ctx, repoID, indexer.reportPanic(recovered))
+		}
+	}()
+	return indexer.Index(ctx, repoID, repoPath)
 }
 
 func (indexer *Indexer) workerCount(fileCount int) int {
@@ -317,7 +368,7 @@ func (indexer *Indexer) finishWithError(ctx context.Context, repoID string, err 
 	if setErr := indexer.store.SetRepoState(context.WithoutCancel(ctx), state); setErr != nil {
 		return fmt.Errorf("%w; additionally failed to set expertise error state: %v", err, setErr)
 	}
-	indexer.emitEvent(ExpertiseErrorEvent, expertiseErrorPayload{RepoID: repoID, Code: state.ErrorCode.String, Message: err.Error()})
+	indexer.emitEvent(ExpertiseErrorEvent, ErrorPayload{RepoID: repoID, Code: state.ErrorCode.String, Message: err.Error()})
 	return err
 }
 

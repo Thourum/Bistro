@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/provider/github"
 	"github.com/itterno/bistro/internal/prsync"
 	"github.com/itterno/bistro/internal/services"
 	"github.com/itterno/bistro/internal/store/actionqueue"
@@ -41,9 +42,12 @@ func (a *App) teardownProviderLocked(name string) {
 // attachOrchestratorLocked creates, wires, and stores a new orchestrator for
 // the given provider, then starts the event bridge. Cancels any previous
 // per-provider context first so all stale goroutines stop.
-// runCtx is the context passed to Run(); it provides the lifetime ceiling for
+// runCtx is the context passed to Start(); it provides the lifetime ceiling for
 // the new per-provider context. Must be called with a.provMu held for writing.
 func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Provider, name string) {
+	if runCtx.Err() != nil {
+		return
+	}
 	// Cancel previous per-provider context (stops stale syncs/bridge/actions).
 	if a.provCtxCancel != nil {
 		a.provCtxCancel()
@@ -53,6 +57,11 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 	diffStore := prdiff.New(a.db.DB)
 	a.orchestrator = prsync.NewOrchestrator(a.log, prov, a.db, a.gitClient).
 		WithDiffStore(diffStore).
+		WithWorkerPanicReporter(func(recovered any, stack []byte) {
+			if a.panics != nil {
+				a.panics.ReportPanic("workerpool", recovered, stack)
+			}
+		}).
 		WithReviewTracking(a.currentUserStore, a.db).
 		WithAnchorResolver(a.anchorResolver).
 		WithActionQueue(actionqueue.New(a.db.DB)).
@@ -92,12 +101,16 @@ func (a *App) SetProvider(prov provider.Provider) {
 
 	// Record the provider name so AUTH_DISCONNECT can match it later.
 	// This covers the keychain-startup path (main.go calls SetProvider before
-	// Run) which otherwise leaves activeProviderName empty.
+	// Start) which otherwise leaves activeProviderName empty.
 	a.prov = prov
 	a.activeProviderName = "github"
 
 	if a.db != nil {
-		a.attachOrchestratorLocked(context.Background(), prov, "github")
+		ctx := a.runCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		a.attachOrchestratorLocked(ctx, prov, "github")
 	}
 }
 
@@ -162,18 +175,21 @@ func (a *App) initializeStartupProvider(ctx context.Context) {
 	}
 }
 
-// SetReplayOnStart configures whether Run() should replay the offline action
-// queue after the production orchestrator is attached (DB open, queue wired).
-// This replaces pre-Run calls to ReplayQueuedActions which are always no-ops
-// because the orchestrator does not exist before Run opens the database.
-func (a *App) SetReplayOnStart(replay bool) {
-	a.replayOnStart = replay
+func (a *App) restoreStartupProvider() {
+	if a.getProvider() != nil {
+		return
+	}
+	if token := a.githubToken(); token != "" {
+		a.provMu.Lock()
+		a.prov = github.NewClient(token)
+		a.activeProviderName = "github"
+		a.provMu.Unlock()
+	}
 }
 
 // ReplayQueuedActions replays any pending offline queue actions.
 // It is a no-op when the orchestrator has not been set up.
-// Prefer SetReplayOnStart so replay happens inside Run() after the database and
-// queue are initialised; calling this before Run() is always a no-op.
+// Options.ReplayQueue replays at startup after the database and queue are ready.
 func (a *App) ReplayQueuedActions(ctx context.Context) error {
 	a.provMu.RLock()
 	orchestrator := a.orchestrator
