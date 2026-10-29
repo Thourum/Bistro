@@ -111,8 +111,6 @@ export function useBindingActivationContext(
       activeOverlay,
       sandboxPane,
       screen,
-      isSpawned,
-      isConnected,
       onboardingStep,
       isScanning,
       isChoosingFolder,
