@@ -5,7 +5,7 @@
 		<key>CFBundleExecutable</key>
 		<string>bistro</string>
 		<key>CFBundleGetInfoString</key>
-		<string>Local-first code review</string>
+		<string>Local-first code review @VERSION@</string>
 		<key>CFBundleIconFile</key>
 		<string>icons</string>
 		<key>CFBundleIconName</key>
@@ -17,9 +17,9 @@
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
-		<string>0.1.0-alpha.1</string>
+		<string>@NUMERIC_VERSION@</string>
 		<key>CFBundleVersion</key>
-		<string>0.1.0-alpha.1</string>
+		<string>@NUMERIC_VERSION@</string>
 		<key>LSMinimumSystemVersion</key>
 		<string>11.0.0</string>
 		<key>NSHighResolutionCapable</key>

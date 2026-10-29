@@ -103,8 +103,6 @@ jobs:
         shell: bash
     env:
       CGO_ENABLED: "1"
-      GITHUB_CLIENT_ID: ${{ secrets.BISTRO_GITHUB_CLIENT_ID }}
-      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -112,6 +110,9 @@ jobs:
           persist-credentials: false
 
       - name: Verify release inputs
+        env:
+          GITHUB_CLIENT_ID: ${{ secrets.BISTRO_GITHUB_CLIENT_ID }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
           : "${GITHUB_CLIENT_ID:?secret BISTRO_GITHUB_CLIENT_ID is required to embed the OAuth client ID in the app}"
           if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
@@ -199,6 +200,9 @@ jobs:
         run: mkdir -p frontend/dist && echo '<!doctype html>' > frontend/dist/index.html
 
       - name: Build and package the app
+        env:
+          GITHUB_CLIENT_ID: ${{ secrets.BISTRO_GITHUB_CLIENT_ID }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: wails3 task ${{ matrix.task }}
 
       - name: Sign and notarize the macOS app
@@ -286,7 +290,7 @@ jobs:
             echo
             echo 'macOS builds are signed and notarized when signing and Apple credentials are configured. For **unsigned** builds, right-click > Open the app the first time, or run `xattr -dr com.apple.quarantine /Applications/Bistro.app`. See docs/ALPHA.md.'
             echo
-            echo "Auto-updates are off by default. Verify downloads against SHA256SUMS."
+            echo "Tagged builds check for updates at launch and every six hours, including pre-releases, and verify updates against SHA256SUMS. Dev and untagged builds do not auto-update."
           } > "$RUNNER_TEMP/release-notes.md"
 
       - name: Create draft pre-release

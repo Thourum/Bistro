@@ -39,9 +39,9 @@ How to split a file:
   4. Keep the original as the thin entry point that imports/re-exports the pieces
      (Go: same package, just new files; no import changes needed).
   5. Aim for each file under ~${MAX_TOKENS} tokens (~${MAX_BYTES} bytes); stage the new files and re-commit.
-  6. Run: cd electron && pnpm type-check && pnpm lint && pnpm test  (Go: go vet ./... && go test ./...)
+  6. Run: cd frontend && pnpm type-check && pnpm lint && pnpm test  (Go: go vet ./... && go test -race ./...)
 
-Not splittable (fixtures, prose docs)? Commit with --no-verify and say why in the message.
+Not splittable (fixtures, prose docs)? Stop and ask the maintainer how to split it; do not bypass this hook.
 MSG
 } >&2
 exit 1

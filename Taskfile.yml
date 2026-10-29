@@ -7,10 +7,8 @@ vars:
   VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
   GOOS: '{{.GOOS | default OS}}'
   VERSION: '{{.BISTRO_VERSION | default "dev"}}'
+  NUMERIC_VERSION: '{{if eq .VERSION "dev"}}0.0.0{{else}}{{regexReplaceAll "[-+].*$" .VERSION ""}}{{end}}'
   LDFLAGS: '-X main.version={{.VERSION}} -X main.embeddedGitHubClientID={{.GITHUB_CLIENT_ID}} -X main.sentryDSN={{.SENTRY_DSN}}'
-
-env:
-  BISTRO_VERSION: '{{.VERSION}}'
 
 includes:
   common: ./build/Taskfile.yml
@@ -21,7 +19,7 @@ includes:
 tasks:
   setup:docker:
     cmds:
-      - docker build -t wails-cross -f build/docker/Dockerfile.cross build/docker/
+      - docker build --platform linux/{{.ARCH | default ARCH}} -t wails-cross -f build/docker/Dockerfile.cross build/docker/
 
   generate:
     cmds:
