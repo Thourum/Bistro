@@ -1,7 +1,0 @@
-Installed .app allocated size (du -sk):
-297168	/Users/samuelasvanyi/.t3/worktrees/bistro/t3-6ef81aaa/electron/out/current/Bistro-darwin-arm64/Bistro.app
-
-App binary stat bytes: 33968
-DMG stat bytes: 102227881
-DMG allocated size (du -sk):
-99832	/Users/samuelasvanyi/.t3/worktrees/bistro/t3-6ef81aaa/electron/out/current/make/dmg/arm64/Bistro-0.1.0-alpha.1-arm64.dmg

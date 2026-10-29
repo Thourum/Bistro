@@ -1,4 +1,0 @@
-Targets: Safari 16.1
-Files checked: 239
-
-

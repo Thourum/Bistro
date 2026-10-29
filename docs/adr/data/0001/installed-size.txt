@@ -1,5 +1,0 @@
-0.1.0-alpha.1
-334380	/Applications/Bistro.app
-293580	/Applications/Bistro.app/Contents/Frameworks
-20940	/Applications/Bistro.app/Contents/Resources/app.asar
-18148	/Applications/Bistro.app/Contents/Resources/go-bin

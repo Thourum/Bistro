@@ -1,2 +1,0 @@
-70624	gate4/wails-spike/build/BistroWails.app
-DMG stat bytes: 28023742

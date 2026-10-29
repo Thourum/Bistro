@@ -13,7 +13,7 @@ Authoritative references (read when relevant, don't duplicate here):
 - Roadmap / v1.0 status: `docs/ROADMAP.md`
 - Design system & UI specs: `docs/DESIGN.md` (UI mockups live in `electron/stitch_terminal_authentic_prd/`)
 - User facing documentation: `website/src/pages/docs/`
-- Architecture decisions: `docs/adr/` (raw evidence and repro scripts in `docs/adr/data/NNNN/`)
+- Architecture decisions: `docs/adr/`
 
 This project is early and evolving. If you change structure, commands, or conventions, update this file in the same change.
 
@@ -80,13 +80,13 @@ go vet ./... && go test -race ./...
 cd electron && pnpm lint && pnpm test
 ```
 
-Enable the pre-commit hook once per clone (blocks staged files over 5,000 tokens, bytes/4; skips lockfiles, sqlc output, images, files marked generated, and raw ADR evidence (`docs/adr/data/**/*.{json,jsonl,txt,log}`); the error message explains how to split):
+Enable the pre-commit hook once per clone (blocks staged files over 5,000 tokens, bytes/4; skips lockfiles, sqlc output, images, and files marked generated; the error message explains how to split):
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-Performance bench (ADR 0001): `BISTRO_SLIM=1 pnpm run release:macos` builds the slim variant (Electron fuses, no `.woff` duplicates). The packaged app accepts `--quit-after-ready` and `--bench-query=…`, and the renderer's `bench/` module loads only when `bench_collector` is in the URL. Seeding (`cmd/bistro-benchseed` plus pinned PRs) and the measurement drivers are documented in `docs/adr/data/0001/harness/README.md`. Its S6 keyboard driver (`run-keys.mjs` / `keys-stats.mjs`) requires passive permission/layout preflight and an explicit bounded `--limit` or `--full`; never inject keys while preflight is blocked.
+Performance bench (ADR 0001): `BISTRO_SLIM=1 pnpm run release:macos` builds the slim variant (Electron fuses, no `.woff` duplicates). The packaged app accepts `--quit-after-ready` and `--bench-query=…`, and the renderer's `bench/` module loads only when `bench_collector` is in the URL. Seeding uses `cmd/bistro-benchseed` plus pinned PRs. The S6 keyboard driver (`run-keys.mjs` / `keys-stats.mjs`) requires passive permission/layout preflight and an explicit bounded `--limit` or `--full`; never inject keys while preflight is blocked.
 
 If a command or detail is unclear, check `electron/package.json` scripts. Do not invent workflows.
 

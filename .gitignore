@@ -63,3 +63,6 @@ electron/src/renderer/.vite/
 
 # Disposable tool output
 /.superpowers/
+
+# ADR raw evidence and bench harness: kept locally, not in git
+docs/adr/data/
