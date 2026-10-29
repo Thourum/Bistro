@@ -6,6 +6,7 @@ import (
 	"github.com/itterno/bistro/internal/engine/handler"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/prsync"
+	"github.com/itterno/bistro/internal/services"
 	"github.com/itterno/bistro/internal/store/actionqueue"
 	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/store/reviewdraft"
@@ -132,8 +133,8 @@ func (a *App) currentApplier() handler.ActionApplier {
 
 // currentPRSyncer returns the live orchestrator as a PRSyncer under a read
 // lock, or nil when no provider is authenticated. Satisfies
-// handler.PRSyncerGetter (same lifecycle rules as currentApplier).
-func (a *App) currentPRSyncer() handler.PRSyncer {
+// the PR service (same lifecycle rules as currentApplier).
+func (a *App) currentPRSyncer() services.PRSyncer {
 	a.provMu.RLock()
 	defer a.provMu.RUnlock()
 	if a.prov == nil || a.orchestrator == nil {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/itterno/bistro/internal/expertise"
+	"github.com/itterno/bistro/internal/services"
 	"github.com/itterno/bistro/internal/store/storetest"
 )
 
@@ -371,14 +372,13 @@ func TestRequestPRListPopulatesTouchesYou(t *testing.T) {
 		return expertise.Identity{Login: "alice", AliasEmails: []string{"alice@example.com"}}
 	})
 	engine := expertise.NewEngine(testRepoLogger(), expertiseStore, nil, indexer, nil)
-	h := NewRequestPRListHandlerWithExpertise(db, engine, &mockCurrentUserReader{login: "alice", found: true}, testRepoLogger())
+	s := &services.PR{DB: db, TouchesYou: engine, CurrentUser: &mockCurrentUserReader{login: "alice", found: true}, Log: testRepoLogger()}
 
-	resp, err := callHandler(t, h, "REQUEST_PR_LIST", map[string]interface{}{"filter": "all", "limit": 10})
+	resp, err := s.List(context.Background(), services.PRListRequest{Filter: "all", Limit: 10})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	data := extractData(t, resp)
-	prs := data["prs"].([]prRow)
+	prs := resp.PRs
 	got := map[string]bool{}
 	for _, pr := range prs {
 		got[pr.ID] = pr.TouchesYou

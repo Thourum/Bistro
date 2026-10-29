@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"github.com/itterno/bistro/internal/store/dismissal"
 	"github.com/itterno/bistro/internal/store/reviewdraft"
 
@@ -9,12 +8,7 @@ import (
 	"github.com/itterno/bistro/internal/git/diff"
 )
 
-func (a *App) registerReviewHandlers(ctx context.Context, stores runStores) func() {
-	requestQueue, waitQueue := handler.NewRequestReviewQueueHandler(handler.ReviewQueueDeps{
-		Context: ctx, GetProvider: a.currentProviderSnapshot, DB: a.db.DB,
-		Broadcast: a.wsServer.Broadcast, Log: a.log,
-	})
-	a.wsServer.RegisterHandler("REQUEST_REVIEW_QUEUE", requestQueue)
+func (a *App) registerReviewHandlers(stores runStores) {
 	// REQUEST_DIFF: enriched with per-file content_hash and viewed flag.
 	a.wsServer.RegisterHandler("REQUEST_DIFF", handler.NewRequestDiffHandlerWithDeps(handler.DiffHandlerDeps{
 		DiffStore:   stores.diff,
@@ -22,7 +16,6 @@ func (a *App) registerReviewHandlers(ctx context.Context, stores runStores) func
 		CurrentUser: stores.currentUser,
 		Log:         a.log,
 	}))
-	a.wsServer.RegisterHandler("REQUEST_PR_LIST", handler.NewRequestPRListHandlerWithExpertise(a.db.DB, a.expertiseEngine, stores.currentUser, a.log))
 	a.wsServer.RegisterHandler("REQUEST_COMMENTS",
 		handler.NewRequestCommentsHandlerWithLLMKick(a.db.DB, a.log, a.classifier, a.llmKick))
 	dismissDeps := handler.DismissDeps{
@@ -41,14 +34,7 @@ func (a *App) registerReviewHandlers(ctx context.Context, stores runStores) func
 		handler.NewSetByokKeyHandler(a.tokenManager, a.llmTier.ResetAuth, a.log))
 	a.wsServer.RegisterHandler("DELETE_BYOK_KEY",
 		handler.NewDeleteByokKeyHandler(a.tokenManager, a.llmTier.ResetAuth, a.log))
-	a.wsServer.RegisterHandler("REQUEST_REPO_LIST",
-		handler.NewRequestRepoListHandler(a.getProvider, a.db.DB, a.log))
-	a.wsServer.RegisterHandler("TOGGLE_WATCH_REPO",
-		handler.NewToggleWatchHandler(a.db.DB, handler.WatchSyncTrigger{Queue: a.syncTrigger, Pending: &a.pendingWatchSync}, a.log))
-	a.wsServer.RegisterHandler("FORCE_SYNC", handler.NewForceSyncHandler(a.syncTrigger, a.log))
-	a.wsServer.RegisterHandler("REQUEST_PR_SYNC", handler.NewRequestPRSyncHandler(a.currentPRSyncer, a.log))
-	a.wsServer.RegisterHandler("SET_SYNC_SETTINGS", handler.NewSetSyncSettingsHandler(a.syncSettings, a.log))
-	return waitQueue
+
 }
 
 func (a *App) registerDiffAndCheckoutHandlers(stores runStores) {

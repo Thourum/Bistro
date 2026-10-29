@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
+	"os"
 	"testing"
 
 	"github.com/itterno/bistro/internal/ws"
@@ -239,4 +241,8 @@ func TestRequestCommentsHandler_MissingPRID(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for missing pr_id, got nil")
 	}
+}
+
+func testRepoLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }

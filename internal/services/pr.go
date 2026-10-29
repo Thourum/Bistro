@@ -1,29 +1,23 @@
-package handler
+package services
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log/slog"
-
-	"github.com/itterno/bistro/internal/logging"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 const (
 	defaultPRListLimit = 100
 	maxPRListLimit     = 200
-	githubProvider     = "github"
 )
 
-type prListRequest struct {
+type PRListRequest struct {
 	Filter string `json:"filter"`
 	Limit  int    `json:"limit"`
 	Offset int    `json:"offset"`
 }
 
-type prRow struct {
+type PRRow struct {
 	ID                 string   `json:"id"`
 	Provider           string   `json:"provider"`
 	Owner              string   `json:"owner"`
@@ -55,13 +49,21 @@ type prRow struct {
 	Hydrated           int      `json:"hydrated"`
 }
 
-// prLister is the subset of *sql.DB needed to list PRs.
-type prLister interface {
-	Query(query string, args ...interface{}) (*sql.Rows, error)
+type PRListResponse struct {
+	PRs         []PRRow `json:"prs"`
+	Count       int     `json:"count"`
+	HasMore     bool    `json:"has_more"`
+	ViewerLogin string  `json:"viewer_login"`
 }
 
-type touchesYouResolver interface {
-	TouchesYouForPRs(ctx context.Context, prIDs []string) (map[string]bool, error)
+// PR serves cached lists and blocking on-demand hydration.
+type PR struct {
+	DB          prLister
+	CurrentUser currentUserReader
+	TouchesYou  touchesYouResolver
+	GetSyncer   func() PRSyncer
+	Panics      PanicReporter
+	Log         *slog.Logger
 }
 
 // decodeReviewers parses the requested_reviewers JSON column. NULL (rows
@@ -81,40 +83,17 @@ func decodeReviewers(logger *slog.Logger, prID string, raw *string) []string {
 	return reviewers
 }
 
-func prListErrorResponse(requestID string) map[string]interface{} {
-	return map[string]interface{}{
-		"id":   requestID,
-		"type": "PR_LIST_READY",
-		"data": map[string]interface{}{
-			"prs":      []interface{}{},
-			"count":    0,
-			"has_more": false,
-			"error":    "unable to load pull requests",
-		},
-	}
-}
-
-// NewRequestPRListHandler serves PR lists without expertise enrichment.
-func NewRequestPRListHandler(db prLister, cu currentUserReader, log *slog.Logger) ws.MessageHandler {
-	return NewRequestPRListHandlerWithExpertise(db, nil, cu, log)
-}
-
-// NewRequestPRListHandlerWithExpertise includes optional touches-you enrichment.
-func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouResolver, cu currentUserReader, log *slog.Logger) ws.MessageHandler {
-	return func(ctx context.Context, msg ws.InboundMessage) (interface{}, error) {
-		logger := logging.FromContext(ctx)
-		if log != nil {
-			logger = log.With("request_id", msg.ID, "msg_type", msg.Type)
+// List keeps viewer annotations and optional expertise enrichment available offline.
+func (s *PR) List(ctx context.Context, req PRListRequest) (PRListResponse, error) {
+	return guard(s.Panics, "PR.List", func() (PRListResponse, error) {
+		logger := serviceLogger(s.Log)
+		if err := ctx.Err(); err != nil {
+			return PRListResponse{}, err
 		}
-
-		var req prListRequest
-		if err := json.Unmarshal(msg.Data, &req); err != nil {
-			return nil, fmt.Errorf("invalid REQUEST_PR_LIST payload: %w", err)
-		}
-
-		if req.Limit <= 0 || req.Limit > maxPRListLimit {
+		if req.Limit <= 0 {
 			req.Limit = defaultPRListLimit
 		}
+		req.Limit = min(req.Limit, maxPRListLimit)
 		if req.Offset < 0 {
 			req.Offset = 0
 		}
@@ -126,8 +105,8 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 		)
 
 		login := ""
-		if cu != nil {
-			resolvedLogin, found, err := cu.Get(ctx, githubProvider)
+		if s.CurrentUser != nil {
+			resolvedLogin, found, err := s.CurrentUser.Get(ctx, githubProvider)
 			if err != nil {
 				// Listing remains available without viewer-specific annotations.
 				logger.Warn("resolve current user for REQUEST_PR_LIST", "err", err)
@@ -155,17 +134,17 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 
 		query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
 
-		rows, err := db.Query(query, login, login, login, login, login, login, login, req.Limit, req.Offset)
+		rows, err := s.DB.Query(query, login, login, login, login, login, login, login, req.Limit, req.Offset)
 		if err != nil {
 			logger.Error("REQUEST_PR_LIST query failed", "err", err)
-			return prListErrorResponse(msg.ID), nil
+			return PRListResponse{}, Errorf(CodeInternal, "unable to load pull requests")
 		}
 		defer rows.Close()
 
-		var prs []prRow
+		var prs []PRRow
 		prIDs := []string{}
 		for rows.Next() {
-			var pr prRow
+			var pr PRRow
 			var requestedReviewers *string
 			if err := rows.Scan(
 				&pr.ID, &pr.Provider, &pr.Owner, &pr.Repo, &pr.Number,
@@ -178,7 +157,7 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 				&pr.ReviewedHeadStale, &pr.Hydrated,
 			); err != nil {
 				logger.Error("REQUEST_PR_LIST scan failed", "err", err)
-				return prListErrorResponse(msg.ID), nil
+				return PRListResponse{}, Errorf(CodeInternal, "unable to load pull requests")
 			}
 			pr.RequestedReviewers = decodeReviewers(logger, pr.ID, requestedReviewers)
 			prs = append(prs, pr)
@@ -186,11 +165,11 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 		}
 		if err := rows.Err(); err != nil {
 			logger.Error("REQUEST_PR_LIST iteration failed", "err", err)
-			return prListErrorResponse(msg.ID), nil
+			return PRListResponse{}, Errorf(CodeInternal, "unable to load pull requests")
 		}
 
-		if touchesYou != nil && len(prIDs) > 0 {
-			matches, err := touchesYou.TouchesYouForPRs(ctx, prIDs)
+		if s.TouchesYou != nil && len(prIDs) > 0 {
+			matches, err := s.TouchesYou.TouchesYouForPRs(ctx, prIDs)
 			if err != nil {
 				// Expertise enrichment is optional; keep the PR list usable.
 				logger.Warn("touches_you resolution failed", "err", err)
@@ -202,7 +181,7 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 		}
 
 		if prs == nil {
-			prs = []prRow{}
+			prs = []PRRow{}
 		}
 
 		logger.Debug("pr list ready",
@@ -211,15 +190,30 @@ func NewRequestPRListHandlerWithExpertise(db prLister, touchesYou touchesYouReso
 			"has_more", len(prs) == req.Limit,
 		)
 
-		return map[string]interface{}{
-			"id":   msg.ID,
-			"type": "PR_LIST_READY",
-			"data": map[string]interface{}{
-				"prs":          prs,
-				"count":        len(prs),
-				"has_more":     len(prs) == req.Limit,
-				"viewer_login": login,
-			},
-		}, nil
-	}
+		return PRListResponse{PRs: prs, Count: len(prs), HasMore: len(prs) == req.Limit, ViewerLogin: login}, nil
+	})
+}
+
+// Sync returns only after the PR's hydrated details have been persisted.
+func (s *PR) Sync(ctx context.Context, req PRRef) (PRRef, error) {
+	return guard(s.Panics, "PR.Sync", func() (PRRef, error) {
+		req.PRID = NormalizeID(req.PRID)
+		if req.PRID == "" {
+			return PRRef{}, Errorf(CodeInvalid, "pr_id is required")
+		}
+		if err := ctx.Err(); err != nil {
+			return PRRef{}, err
+		}
+		var syncer PRSyncer
+		if s.GetSyncer != nil {
+			syncer = s.GetSyncer()
+		}
+		if syncer == nil {
+			return PRRef{}, Errorf(CodeUnauthenticated, "no authenticated provider")
+		}
+		if err := syncer.SyncPR(ctx, req.PRID); err != nil {
+			return PRRef{}, err
+		}
+		return req, nil
+	})
 }

@@ -34,9 +34,13 @@ import (
 	"github.com/itterno/bistro/internal/ws"
 )
 
-// syncSettingsMsg is an alias for the handler type to keep the field
-// declaration readable within the server package.
-type syncSettingsMsg = handler.SyncSettingsMsg
+// SyncSettingsMsg carries runtime sync preferences to the sync loop.
+type SyncSettingsMsg struct {
+	AutoSync bool
+	Interval time.Duration
+}
+
+type syncSettingsMsg = SyncSettingsMsg
 
 // App is the top-level orchestrator for the bistro-sync process.
 type App struct {
@@ -218,14 +222,13 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 	a.prepareLLMTier(ctx)
 	a.initializeStartupProvider(ctx)
 	a.serviceSet = a.buildServices(ctx)
-	waitReviewQueue := a.registerReviewHandlers(ctx, stores)
+	a.registerReviewHandlers(stores)
 	a.registerDiffAndCheckoutHandlers(stores)
 	a.registerExpertiseHandlers(stores)
 	waitScans := a.registerRepoLocationHandlers(ctx, stores)
 	defer func() {
 		runErr = errors.Join(runErr, a.wsServer.Stop())
 		cancelRun()
-		waitReviewQueue()
 		waitScans()
 	}()
 
@@ -253,4 +256,14 @@ func (a *App) Run(ctx context.Context) (runErr error) {
 		a.log.Info("context cancelled")
 	}
 	return nil
+}
+
+// ApplySyncSettings forwards sync preferences with a 30s–3600s interval clamp.
+func (a *App) ApplySyncSettings(autoSync bool, interval time.Duration) {
+	interval = min(max(interval, 30*time.Second), time.Hour)
+	select {
+	case a.syncSettings <- SyncSettingsMsg{AutoSync: autoSync, Interval: interval}:
+	default:
+		a.log.Warn("sync settings update dropped; channel full")
+	}
 }

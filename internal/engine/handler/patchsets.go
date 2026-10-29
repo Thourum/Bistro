@@ -11,6 +11,8 @@ import (
 	"github.com/itterno/bistro/internal/ws"
 )
 
+const githubProvider = "github"
+
 // patchsetLister is the DB subset required by NewListPatchsetsHandler.
 type patchsetLister interface {
 	ListPatchsets(ctx context.Context, prID string) ([]store.Patchset, error)

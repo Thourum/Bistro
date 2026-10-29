@@ -2,17 +2,16 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/itterno/bistro/internal/engine/handler"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
 	"github.com/itterno/bistro/internal/prsync"
+	"github.com/itterno/bistro/internal/services"
 	"github.com/itterno/bistro/internal/store/storetest"
 	"github.com/itterno/bistro/internal/ws"
 )
@@ -45,11 +44,11 @@ func TestWatchTriggerOverflowSyncsEveryNewlyWatchedRepo(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	watch := handler.NewToggleWatchHandler(app.db.DB, handler.WatchSyncTrigger{Queue: app.syncTrigger, Pending: &app.pendingWatchSync}, app.log)
+	watch := &services.Repos{DB: app.db.DB, SyncTrigger: services.WatchSyncTrigger{Queue: app.syncTrigger, Pending: &app.pendingWatchSync}, Log: app.log}
 	// The loop is busy: fill its buffer before allowing it to receive.
 	for i := range repoCount {
-		payload := json.RawMessage(fmt.Sprintf(`{"repo_id":"github:acme/repo-%d","watched":true}`, i))
-		if _, err := watch(ctx, ws.InboundMessage{Type: "TOGGLE_WATCH_REPO", Data: payload}); err != nil {
+		watched := true
+		if _, err := watch.SetWatched(ctx, services.SetWatchedRequest{RepoID: fmt.Sprintf("github:acme/repo-%d", i), Watched: &watched}); err != nil {
 			t.Fatal(err)
 		}
 	}

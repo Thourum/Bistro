@@ -1,8 +1,9 @@
-package handler
+package services
 
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -41,26 +42,20 @@ func TestRequestPRListIncludesInboxSignals(t *testing.T) {
 		}
 	}
 
-	markRead := NewMarkPRsReadHandler(db, viewer, &spyBroadcaster{}, testRepoLogger())
-	if _, err := markRead(context.Background(), markPRsReadRequest(t, []string{"read"})); err != nil {
-		t.Fatalf("mark read: %v", err)
+	if _, err := db.Exec(`INSERT INTO pr_read_state (pr_id, login, last_read_at) VALUES ('read', 'alice', ?)`, time.Now().UTC()); err != nil {
+		t.Fatal(err)
 	}
-
-	handler := NewRequestPRListHandlerWithExpertise(db, nil, viewer, testRepoLogger())
-	response, err := callHandler(t, handler, "REQUEST_PR_LIST", map[string]any{"filter": "all", "limit": 10})
+	s := &PR{DB: db, CurrentUser: viewer}
+	response, err := s.List(context.Background(), PRListRequest{Filter: "all", Limit: 10})
 	if err != nil {
-		t.Fatalf("REQUEST_PR_LIST: %v", err)
+		t.Fatal(err)
 	}
-	data := extractData(t, response)
-	if got := data["viewer_login"]; got != "alice" {
-		t.Fatalf("viewer_login = %v, want alice", got)
+	if response.ViewerLogin != "alice" {
+		t.Fatalf("viewer = %q", response.ViewerLogin)
 	}
+	prs := response.PRs
 
-	prs, ok := data["prs"].([]prRow)
-	if !ok {
-		t.Fatalf("prs = %T, want []prRow", data["prs"])
-	}
-	byID := make(map[string]prRow, len(prs))
+	byID := make(map[string]PRRow, len(prs))
 	for _, pr := range prs {
 		byID[pr.ID] = pr
 	}
@@ -78,17 +73,15 @@ func TestRequestPRListUsesAnonymousDefaultsWithoutCurrentUser(t *testing.T) {
 	insertPRListTestPR(t, db, "mentioned", 1, "head-mentioned", true, updatedAt)
 	insertPRListTestComment(t, db, "mentioned", "alice")
 
-	handler := NewRequestPRListHandlerWithExpertise(db, nil, &mockCurrentUserReader{found: false}, testRepoLogger())
-	response, err := callHandler(t, handler, "REQUEST_PR_LIST", map[string]any{"filter": "all", "limit": 10})
+	s := &PR{DB: db, CurrentUser: &mockCurrentUserReader{found: false}}
+	response, err := s.List(context.Background(), PRListRequest{Filter: "all", Limit: 10})
 	if err != nil {
-		t.Fatalf("REQUEST_PR_LIST: %v", err)
+		t.Fatal(err)
 	}
-	data := extractData(t, response)
-	if got := data["viewer_login"]; got != "" {
-		t.Fatalf("viewer_login = %v, want empty string", got)
+	if response.ViewerLogin != "" {
+		t.Fatalf("viewer = %q", response.ViewerLogin)
 	}
-
-	prs := data["prs"].([]prRow)
+	prs := response.PRs
 	if len(prs) != 1 {
 		t.Fatalf("PR count = %d, want 1", len(prs))
 	}
@@ -105,21 +98,9 @@ func TestRequestPRListReturnsErrorWhenRowScanFails(t *testing.T) {
 		t.Fatalf("insert malformed PR: %v", err)
 	}
 
-	handler := NewRequestPRListHandler(db, &mockCurrentUserReader{found: false}, testRepoLogger())
-	response, err := callHandler(t, handler, "REQUEST_PR_LIST", map[string]any{"filter": "all", "limit": 10})
-	if err != nil {
-		t.Fatalf("REQUEST_PR_LIST: %v", err)
-	}
-	data := extractData(t, response)
-	if got := data["count"]; got != 0 {
-		t.Errorf("count = %v, want 0", got)
-	}
-	if got, ok := data["prs"].([]interface{}); !ok || len(got) != 0 {
-		t.Errorf("prs = %#v, want empty list", data["prs"])
-	}
-	if got, ok := data["error"].(string); !ok || got == "" {
-		t.Errorf("error = %#v, want non-empty string", data["error"])
-	}
+	_, err := (&PR{DB: db}).List(context.Background(), PRListRequest{Filter: "all", Limit: 10})
+	assertServiceCode(t, err, CodeInternal)
+
 }
 
 func insertPRListTestPR(t *testing.T, db *sql.DB, prID string, number int, headSHA string, mentioned bool, updatedAt time.Time) {
@@ -142,11 +123,58 @@ func insertPRListTestComment(t *testing.T, db *sql.DB, prID, author string) {
 	}
 }
 
-func assertPRListSignals(t *testing.T, pr prRow, mentioned, viewerCommented, unread, reviewedHeadStale bool) {
+func assertPRListSignals(t *testing.T, pr PRRow, mentioned, viewerCommented, unread, reviewedHeadStale bool) {
 	t.Helper()
 	if pr.Mentioned != mentioned || pr.ViewerCommented != viewerCommented || pr.Unread != unread || pr.ReviewedHeadStale != reviewedHeadStale {
 		t.Errorf("signals for %s = mentioned:%t viewer_commented:%t unread:%t reviewed_head_stale:%t, want mentioned:%t viewer_commented:%t unread:%t reviewed_head_stale:%t",
 			pr.ID, pr.Mentioned, pr.ViewerCommented, pr.Unread, pr.ReviewedHeadStale,
 			mentioned, viewerCommented, unread, reviewedHeadStale)
+	}
+}
+
+type mockCurrentUserReader struct {
+	login string
+	found bool
+}
+
+func (m *mockCurrentUserReader) Get(context.Context, string) (string, bool, error) {
+	return m.login, m.found, nil
+}
+
+func TestPRListDefaultsAndLimitCap(t *testing.T) {
+	db := storetest.Open(t).DB
+	for i := range maxPRListLimit + 1 {
+		insertPRListTestPR(t, db, fmt.Sprintf("pr-%d", i), i, "head", false, time.Now().UTC())
+	}
+	if _, err := db.Exec(`UPDATE prs SET state = 'closed' WHERE id = 'pr-0'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE prs SET draft = 1 WHERE id = 'pr-1'`); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name    string
+		request PRListRequest
+		want    int
+	}{
+		{"default", PRListRequest{Offset: -1}, defaultPRListLimit},
+		{"cap", PRListRequest{Filter: "all", Limit: maxPRListLimit + 1}, maxPRListLimit},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response, err := (&PR{DB: db}).List(context.Background(), test.request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(response.PRs) != test.want || response.Count != test.want || !response.HasMore {
+				t.Fatalf("unexpected count: %+v", response)
+			}
+			if test.name == "default" {
+				for _, pr := range response.PRs {
+					if pr.State != "open" || pr.Draft != 0 {
+						t.Fatalf("default filter returned %+v", pr)
+					}
+				}
+			}
+		})
 	}
 }

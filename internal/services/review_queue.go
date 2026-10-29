@@ -1,111 +1,67 @@
-package handler
+package services
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
 	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/provider"
 	storedb "github.com/itterno/bistro/internal/store/db"
-	"github.com/itterno/bistro/internal/ws"
 )
 
 const reviewQueueTimeout = 30 * time.Second
 const reviewQueueError = "Unable to read review requests. Try again later."
 
-// ReviewQueueDeps binds queue reads to the run and provider lifetimes.
-type ReviewQueueDeps struct {
+// ReviewQueue reads and persists discovery within caller and provider lifetimes.
+type ReviewQueue struct {
 	Context     context.Context
 	GetProvider func() (provider.Provider, context.Context)
 	DB          *sql.DB
-	Broadcast   func(any)
 	Log         *slog.Logger
+	Panics      PanicReporter
 }
 
-// NewRequestReviewQueueHandler starts queue discovery without blocking the socket.
-// The returned wait function seals registration and joins all queue workers.
-func NewRequestReviewQueueHandler(deps ReviewQueueDeps) (request ws.MessageHandler, wait func()) {
-	var lifecycle sync.Mutex
-	var workers sync.WaitGroup
-	isClosing := false
-	wait = func() {
-		lifecycle.Lock()
-		isClosing = true
-		lifecycle.Unlock()
-		workers.Wait()
-	}
-	request = func(_ context.Context, msg ws.InboundMessage) (interface{}, error) {
-		if err := validateReviewQueuePayload(msg.Data); err != nil {
-			deps.Log.Error("invalid review queue payload", "request_id", msg.ID, "error", err)
-			return reviewQueueErrorResponse(msg.ID, reviewQueueError), nil
-		}
-		prov, providerCtx := deps.GetProvider()
+// Get blocks until discovery and its repository transaction have completed.
+func (s *ReviewQueue) Get(ctx context.Context) (provider.ReviewQueue, error) {
+	return guard(s.Panics, "ReviewQueue.Get", func() (provider.ReviewQueue, error) {
+		prov, providerCtx := s.GetProvider()
 		if prov == nil || providerCtx == nil {
-			return reviewQueueErrorResponse(msg.ID, "not authenticated"), nil
+			return provider.ReviewQueue{}, Errorf(CodeUnauthenticated, "not authenticated")
 		}
 		queueProvider, ok := prov.(provider.ReviewQueueProvider)
 		if !ok {
-			deps.Log.Error("provider does not support review queue", "request_id", msg.ID)
-			return reviewQueueErrorResponse(msg.ID, reviewQueueError), nil
+			return provider.ReviewQueue{}, Errorf(CodeInvalid, "provider does not support review queue")
 		}
-		lifecycle.Lock()
-		if isClosing || deps.Context.Err() != nil {
-			lifecycle.Unlock()
-			return nil, nil
+		searchCtx, cancel := context.WithTimeout(ctx, reviewQueueTimeout)
+		defer cancel()
+		detachProvider := context.AfterFunc(providerCtx, cancel)
+		defer detachProvider()
+		if s.Context != nil {
+			detachRun := context.AfterFunc(s.Context, cancel)
+			defer detachRun()
+			if err := s.Context.Err(); err != nil {
+				return provider.ReviewQueue{}, err
+			}
 		}
-		workers.Add(1)
-		lifecycle.Unlock()
-		go func() {
-			defer workers.Done()
-			readReviewQueue(providerCtx, deps, queueProvider, msg.ID)
-		}()
-		return nil, nil
-	}
-	return request, wait
-}
-
-func validateReviewQueuePayload(payload json.RawMessage) error {
-	payload = bytes.TrimSpace(payload)
-	if len(payload) == 0 {
-		return nil
-	}
-	if payload[0] != '{' {
-		return errors.New("review queue payload must be an empty object")
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(payload, &fields); err != nil {
-		return errors.New("review queue payload is invalid JSON")
-	}
-	if len(fields) != 0 {
-		return errors.New("review queue payload must be an empty object")
-	}
-	return nil
-}
-
-func readReviewQueue(providerCtx context.Context, deps ReviewQueueDeps, queueProvider provider.ReviewQueueProvider, requestID string) {
-	searchCtx, stopSearch := context.WithTimeout(providerCtx, reviewQueueTimeout)
-	defer stopSearch()
-	detach := context.AfterFunc(deps.Context, stopSearch)
-	defer detach()
-	queue, err := fetchAndPersistReviewQueue(searchCtx, deps.DB, queueProvider)
-	if deps.Context.Err() != nil || providerCtx.Err() != nil {
-		return
-	}
-	if err != nil {
-		deps.Log.Error("read review queue failed", "request_id", requestID, "error", reviewQueueLogError(err))
-		deps.Broadcast(reviewQueueErrorResponse(requestID, reviewQueueError))
-		return
-	}
-	deps.Broadcast(map[string]any{"id": requestID, "type": "REVIEW_QUEUE_READY", "data": queue})
+		if err := providerCtx.Err(); err != nil {
+			return provider.ReviewQueue{}, err
+		}
+		queue, err := fetchAndPersistReviewQueue(searchCtx, s.DB, queueProvider)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return provider.ReviewQueue{}, err
+			}
+			serviceLogger(s.Log).Error("read review queue failed", "error", reviewQueueLogError(err))
+			return provider.ReviewQueue{}, Errorf(CodeInternal, reviewQueueError)
+		}
+		return *queue, nil
+	})
 }
 
 // GitHub errors include the search URL (and login) and raw response content.
@@ -129,10 +85,6 @@ func reviewQueueLogError(err error) string {
 		return fmt.Sprintf("GitHub HTTP status %d", responseError.Response.StatusCode)
 	}
 	return fmt.Sprintf("failure (%T)", err)
-}
-
-func reviewQueueErrorResponse(requestID, message string) map[string]any {
-	return map[string]any{"id": requestID, "type": "REVIEW_QUEUE_READY", "data": map[string]string{"error": message}}
 }
 
 func fetchAndPersistReviewQueue(ctx context.Context, database *sql.DB, queueProvider provider.ReviewQueueProvider) (*provider.ReviewQueue, error) {
