@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"embed"
 	"flag"
@@ -24,7 +23,11 @@ import (
 var assets embed.FS
 
 var version = "dev"
-var embeddedGitHubClientID string
+
+// embeddedGitHubClientID defaults to Bistro's own public OAuth app, whose
+// secret lives on get-bistro.com. Override with GITHUB_CLIENT_ID or -ldflags -X.
+// The client ID is public; the client secret must never be embedded.
+var embeddedGitHubClientID = "Ov23li9pgeFw42MTBEvT"
 var sentryDSN string
 
 func main() {
@@ -92,13 +95,14 @@ func run(args []string) error {
 	quit.quit = app.Quit
 	snapshot := settings.Get()
 	syncSettings := effectiveSyncSettings(snapshot.Sync, *smoke)
+	clientID, clientSecret := resolveGitHubOAuthCredentials()
 	eng := engine.New(engine.Options{
 		DBPath: filepath.Join(dataDir, "sync.db"), Log: log,
 		AutoSync:           syncSettings.AutoSync,
 		SyncInterval:       time.Duration(syncSettings.SyncInterval * float64(time.Second)),
 		ReplayQueue:        !*smoke,
-		GitHubClientID:     cmp.Or(os.Getenv("GITHUB_CLIENT_ID"), embeddedGitHubClientID),
-		GitHubClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+		GitHubClientID:     clientID,
+		GitHubClientSecret: clientSecret,
 	})
 	eng.SetEmitter(services.EmitterFunc(func(name string, data any) { app.Event.Emit(name, data) }))
 	eng.SetPanicReporter(reporter)
@@ -149,6 +153,15 @@ func run(args []string) error {
 		return fmt.Errorf("smoke ended before window runtime was ready")
 	}
 	return nil
+}
+
+func resolveGitHubOAuthCredentials() (clientID, clientSecret string) {
+	clientID = os.Getenv("GITHUB_CLIENT_ID")
+	if clientID == "" {
+		// A secret alone must not route Bistro's embedded app to direct exchange.
+		return embeddedGitHubClientID, ""
+	}
+	return clientID, os.Getenv("GITHUB_CLIENT_SECRET")
 }
 
 func resolveDataDir(smoke bool) (string, error) {

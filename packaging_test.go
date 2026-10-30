@@ -24,15 +24,16 @@ func TestReleasePackagingResolvesVersionScopeAndArchitecture(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct {
-		task string
-		args []string
-		want []string
+		task       string
+		args       []string
+		want       []string
+		wantAbsent string
 	}{
-		{"package:darwin", nil, []string{"-X main.version=0.2.0-alpha.2", "s/@NUMERIC_VERSION@/0.2.0/g", "s/@VERSION@/0.2.0-alpha.2/g"}},
-		{"package:windows", []string{"CGO_ENABLED=0"}, []string{"-X main.version=0.2.0-alpha.2", "-DINFO_PRODUCTVERSION=0.2.0", "-DWAILS_INSTALL_SCOPE=user -DREQUEST_EXECUTION_LEVEL=user", "s/@NUMERIC_VERSION@/0.2.0/g"}},
-		{"package:linux", []string{"DOCKER_MOUNTS="}, []string{"--platform linux/amd64", "-X main.version=0.2.0-alpha.2"}},
-		{"linux:build:docker", []string{"ARCH=arm64", "DOCKER_MOUNTS="}, []string{"--platform linux/arm64"}},
-		{"setup:docker", []string{"ARCH=amd64"}, []string{"--platform linux/amd64"}},
+		{"package:darwin", nil, []string{"-X main.version=0.2.0-alpha.2", "s/@NUMERIC_VERSION@/0.2.0/g", "s/@VERSION@/0.2.0-alpha.2/g"}, "embeddedGitHubClientID="},
+		{"package:windows", []string{"CGO_ENABLED=0"}, []string{"-X main.version=0.2.0-alpha.2", "-DINFO_PRODUCTVERSION=0.2.0", "-DWAILS_INSTALL_SCOPE=user -DREQUEST_EXECUTION_LEVEL=user", "s/@NUMERIC_VERSION@/0.2.0/g"}, ""},
+		{"package:linux", []string{"DOCKER_MOUNTS="}, []string{"--platform linux/amd64", "-X main.version=0.2.0-alpha.2"}, ""},
+		{"linux:build:docker", []string{"ARCH=arm64", "DOCKER_MOUNTS="}, []string{"--platform linux/arm64"}, ""},
+		{"setup:docker", []string{"ARCH=amd64"}, []string{"--platform linux/amd64"}, ""},
 	} {
 		t.Run(test.task+strings.Join(test.args, ","), func(t *testing.T) {
 			args := append([]string{"task", "-dry", test.task}, test.args...)
@@ -41,6 +42,9 @@ func TestReleasePackagingResolvesVersionScopeAndArchitecture(t *testing.T) {
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("dry run: %v\n%s", err, output)
+			}
+			if test.wantAbsent != "" && strings.Contains(string(output), test.wantAbsent) {
+				t.Fatalf("unexpected %q in resolved task\n%s", test.wantAbsent, output)
 			}
 			for _, want := range test.want {
 				if !strings.Contains(string(output), want) {

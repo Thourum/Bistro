@@ -8,6 +8,32 @@ import (
 	"github.com/itterno/bistro/internal/shell"
 )
 
+func TestResolveGitHubOAuthCredentials(t *testing.T) {
+	const overrideClientID = "custom-client-id"
+	const testClientSecret = "test-only-secret"
+	for _, test := range []struct {
+		name       string
+		clientID   string
+		secret     string
+		wantID     string
+		wantSecret string
+	}{
+		{"none", "", "", embeddedGitHubClientID, ""},
+		{"ID only", overrideClientID, "", overrideClientID, ""},
+		{"ID and secret", overrideClientID, testClientSecret, overrideClientID, testClientSecret},
+		{"secret only", "", testClientSecret, embeddedGitHubClientID, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("GITHUB_CLIENT_ID", test.clientID)
+			t.Setenv("GITHUB_CLIENT_SECRET", test.secret)
+			clientID, secret := resolveGitHubOAuthCredentials()
+			if clientID == "" || clientID != test.wantID || secret != test.wantSecret {
+				t.Fatal("OAuth credentials did not match the expected client ID and secret")
+			}
+		})
+	}
+}
+
 func TestSmokeDataDirIgnoresPersistentOverride(t *testing.T) {
 	persistentDir := filepath.Join(t.TempDir(), "persistent")
 	t.Setenv("BISTRO_DATA_DIR", persistentDir)

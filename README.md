@@ -61,9 +61,10 @@ pnpm install
 wails3 task dev
 ```
 
-Supply `GITHUB_CLIENT_ID` for local sign-in, or both `GITHUB_CLIENT_ID` and
-`GITHUB_CLIENT_SECRET` for your own OAuth app. Packaged releases embed Bistro's
-client ID; without a secret, OAuth code exchange goes through get-bistro.com.
+Sign-in works out of the box through Bistro's own OAuth app, with code exchange
+via get-bistro.com. `GITHUB_CLIENT_ID` overrides the embedded client ID. Setting
+both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in the environment exchanges
+codes directly with GitHub for your own OAuth app.
 The GitHub token lives in the OS keychain. Press `?` anytime to see the available
 keyboard actions.
 

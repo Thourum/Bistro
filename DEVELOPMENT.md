@@ -34,7 +34,7 @@ pnpm install
 wails3 task dev
 ```
 
-Development runs the native app with Vite and stores local state in `.dev-data/`. Sign-in uses Bistro's OAuth app when its client ID is supplied; packaged releases embed the release client ID. For a custom OAuth app, supply both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in the process environment. Do not commit secrets. The OAuth code exchange falls back to `https://get-bistro.com/api/oauth/token` when no client secret is configured.
+Development runs the native app with Vite and stores local state in `.dev-data/`. Sign-in works out of the box through Bistro's own OAuth app, with code exchange via `https://get-bistro.com/api/oauth/token`. `GITHUB_CLIENT_ID` overrides the embedded client ID. Only when both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set in the process environment does code exchange go directly to GitHub for your custom OAuth app. Do not commit secrets.
 
 ## Project structure
 
@@ -62,8 +62,8 @@ Frontend layout guidance lives in [frontend/CLAUDE.md](frontend/CLAUDE.md); deta
 | Variable | Meaning |
 |---|---|
 | `BISTRO_DATA_DIR` | Override the app data directory; dev sets it to repo-root `.dev-data/`. |
-| `GITHUB_CLIENT_ID` | OAuth client ID; overrides the embedded build value at runtime. |
-| `GITHUB_CLIENT_SECRET` | Optional OAuth secret for direct exchange; never commit it. |
+| `GITHUB_CLIENT_ID` | Optional override of Bistro's embedded public OAuth client ID, at build time or runtime. |
+| `GITHUB_CLIENT_SECRET` | OAuth secret for direct GitHub exchange only when `GITHUB_CLIENT_ID` is also set in the environment; never embed or commit it. |
 | `BISTRO_LOG_LEVEL` | `debug`, `info`, `warn`, or `error`; default `info`. |
 | `BISTRO_VERSION` | Build-time version stamp; default `dev`, which disables updates. |
 
