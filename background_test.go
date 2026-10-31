@@ -9,6 +9,27 @@ import (
 	"github.com/itterno/bistro/internal/tray"
 )
 
+func TestDecideCloseAction(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		ctx  closeContext
+		want closeAction
+	}{
+		{"tray ready hides", closeContext{isTrayReady: true}, closeHide},
+		{"no tray quits", closeContext{isTrayReady: false}, closeQuit},
+		{"smoke never intercepts", closeContext{isTrayReady: true, isSmoke: true}, closeQuit},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := decideCloseAction(test.ctx); got != test.want {
+				t.Fatalf("decideCloseAction(%+v) = %v, want %v", test.ctx, got, test.want)
+			}
+		})
+	}
+	if isTrayReadyOn("linux") || !isTrayReadyOn("darwin") || !isTrayReadyOn("windows") {
+		t.Fatal("tray readiness must be false only on linux")
+	}
+}
+
 type startupStatusSource struct {
 	status   services.SyncStatus
 	listener func(services.SyncStatus)

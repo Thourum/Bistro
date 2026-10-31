@@ -12,7 +12,49 @@ import (
 	"github.com/itterno/bistro/internal/tray"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+	"github.com/wailsapp/wails/v3/pkg/services/dock"
 )
+
+type closeAction int
+
+const (
+	closeQuit closeAction = iota
+	closeHide
+)
+
+type closeContext struct {
+	isTrayReady bool
+	isSmoke     bool
+}
+
+// Wails v3.0.0 only logs a failed StatusNotifierItem registration on Linux
+// (systemtray_linux.go:659-666), so there is no readiness signal there and
+// hiding could strand the app with no way back.
+func isTrayReadyOn(goos string) bool { return goos != "linux" }
+
+func decideCloseAction(c closeContext) closeAction {
+	if c.isSmoke || !c.isTrayReady {
+		return closeQuit
+	}
+	return closeHide
+}
+
+// The dock service dispatch_syncs onto the main queue, so it must never run on
+// the main thread where window hooks and tray clicks are delivered.
+func showMainWindow(dk *dock.DockService) {
+	go func() {
+		dk.ShowAppIcon()
+		application.InvokeAsync(focusMainWindow)
+	}()
+}
+
+func installCloseToTray(window *application.WebviewWindow, dk *dock.DockService) {
+	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		e.Cancel()
+		window.Hide()
+		go dk.HideAppIcon()
+	})
+}
 
 type trayDeps struct {
 	app     *application.App
