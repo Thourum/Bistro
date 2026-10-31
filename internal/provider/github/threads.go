@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	ghlib "github.com/google/go-github/v84/github"
+	"github.com/itterno/bistro/internal/logging"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/shurcooL/githubv4"
 )
@@ -148,7 +149,7 @@ func (c *Client) fetchGraphQLThreadCommentIDs(ctx context.Context, nodeID string
 // can match REST comments to canonical thread node IDs by database ID identity
 // rather than by fragile list-position heuristics.
 //
-// Returns nil, nil on any GraphQL error — callers should fall back to the
+// Returns nil and the error on any GraphQL failure — callers should fall back to the
 // REST-only provisional grouping with StateKnown=false.
 func (c *Client) fetchGraphQLThreads(ctx context.Context, owner, repo string, number int) ([]graphqlThreadInfo, error) {
 	var q struct {
@@ -244,6 +245,7 @@ func (c *Client) GetReviewThreads(ctx context.Context, prID string) ([]*provider
 	// Step 2: GraphQL enrichment — on any failure, return REST threads as-is.
 	gqlThreads, gqlErr := c.fetchGraphQLThreads(ctx, owner, repo, number)
 	if gqlErr != nil {
+		logging.FromContext(ctx).Warn("GraphQL thread enrichment failed", "owner", owner, "repo", repo, "number", number, "error", gqlErr)
 		return threads, nil
 	}
 
