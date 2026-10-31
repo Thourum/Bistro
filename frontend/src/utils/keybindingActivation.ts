@@ -206,7 +206,7 @@ export function routeBaseFromPath(pathname: string): RouteBase | null {
 
 /** An open overlay takes precedence over every route-level binding. */
 export function isActive(
-  binding: KeyBinding,
+  binding: Pick<KeyBinding, 'activation'>,
   {
     routeBase,
     activeOverlay,

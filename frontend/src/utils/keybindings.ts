@@ -128,6 +128,11 @@ const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
     activation: { routes: ['list', 'detail'] },
   },
   {
+    actionId: 'global.inbox',
+    description: 'Go to Inbox',
+    activation: { routes: ['list', 'detail', 'diff', 'settings'] },
+  },
+  {
     actionId: 'global.quit.mac',
     description: 'Quit',
     activation: { routes: ALL_ROUTES, overlays: ALL_OVERLAYS },

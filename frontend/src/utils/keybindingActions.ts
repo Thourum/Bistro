@@ -13,8 +13,6 @@ import {
   hideFirstRunRail,
   recordFirstRunAction,
 } from '../services/firstRunRail';
-import { cycleNavigationStyle } from '../services/navigationStyle';
-import { updateOnboardingSelection } from '../services/onboardingSync';
 import { approvePR } from '../services/prActions';
 import {
   cancelSignIn,
@@ -23,18 +21,13 @@ import {
   retrySignIn,
   startSignIn,
 } from '../services/signIn';
-import { appStore } from '../store';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import { emitAppEvent } from './appEvents';
 import { permitsBenchAction } from './benchSafety';
 import type { RouteBase } from './keybindings';
 import { LINE_COMMENT_ACTIONS } from './lineCommentActions';
 import { createLogger } from './logger';
-import {
-  moveOnboardingCursor,
-  selectAllOnboardingRepos,
-  toggleFocusedOnboardingRepo,
-} from './onboardingRepos';
+import { ONBOARDING_ACTIONS } from './onboardingActions';
 import { openUrlInBrowser } from './openUrl';
 import { REVIEW_ACTIONS } from './reviewActions';
 
@@ -331,43 +324,13 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'global.help': openHelp,
   'global.escape': handleEscape,
   'global.cancel': handleEscape,
-  'onboarding.continue': (context) =>
-    context.store.setState((state) => ({
-      ...state,
-      confirmingAction: 'onboarding_continue',
-    })),
-  'onboarding.repoDown': () =>
-    updateOnboardingSelection((state) => moveOnboardingCursor(state, 1)),
-  'onboarding.repoUp': () =>
-    updateOnboardingSelection((state) => moveOnboardingCursor(state, -1)),
-  'onboarding.repoToggle': () =>
-    updateOnboardingSelection(toggleFocusedOnboardingRepo),
-  'onboarding.repoAll': () =>
-    updateOnboardingSelection((state) =>
-      selectAllOnboardingRepos(state, { watched: true }),
-    ),
-  'onboarding.repoNone': () =>
-    updateOnboardingSelection((state) =>
-      selectAllOnboardingRepos(state, { watched: false }),
-    ),
-  'onboarding.repoFilter': () =>
-    appStore.setState((state) => ({
-      ...state,
-      onboardingIntent: 'focusRepoFilter',
-    })),
-  'onboarding.chooseFolder': () =>
-    appStore.setState((state) => ({
-      ...state,
-      onboardingIntent: 'chooseFolder',
-    })),
-  'onboarding.stopScan': () =>
-    appStore.setState((state) => ({ ...state, onboardingIntent: 'stopScan' })),
   'firstRun.hide': hideFirstRunRail,
-  'onboarding.nextStyle': () => cycleNavigationStyle(1),
-  'onboarding.prevStyle': () => cycleNavigationStyle(-1),
   'global.command': (context) => context.overlays.openCommand(),
   'global.settings': () => {
     void router.navigate({ to: '/settings' });
+  },
+  'global.inbox': () => {
+    void router.navigate({ to: '/prs' });
   },
   'global.quit.mac': () => {
     void call(() => Shell.Quit()).match(
@@ -536,6 +499,7 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'diff.lineComment': () => emitAppEvent('bistro:diff:line-comment'),
   ...LINE_COMMENT_ACTIONS,
   ...REVIEW_ACTIONS,
+  ...ONBOARDING_ACTIONS,
 };
 
 function findBindingAction(actionId: string): KeyAction | undefined {

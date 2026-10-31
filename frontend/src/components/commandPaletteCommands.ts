@@ -63,6 +63,12 @@ export const COMMANDS: readonly CommandItem[] = [
     shortcutActionId: 'global.settings',
   },
   {
+    id: 'inbox',
+    name: 'Go to Inbox',
+    icon: 'inbox',
+    actionId: 'global.inbox',
+  },
+  {
     id: 'sync',
     name: 'Sync now',
     description: 'Force sync all watched repos',

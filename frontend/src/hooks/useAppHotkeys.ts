@@ -44,6 +44,7 @@ import {
   useBindingActivationContext,
   useKeyActionContext,
 } from './useKeyActionContext';
+import { useMenuActions } from './useMenuActions';
 import { useStore } from './useStore';
 
 /** Sandbox actions on the onboarding route drive the fake PR, not the app. */
@@ -88,6 +89,7 @@ export function useAppHotkeys(): void {
     (binding) => binding.actionId === 'onboarding.continue',
   )?.keys;
   const { activation, makeCtx } = useKeyActionContext(continueKeys);
+  useMenuActions(activation, makeCtx);
   const activationRef = useRef(activation);
   activationRef.current = activation;
   // Weak membership identifies this dispatch without retaining DOM targets.
