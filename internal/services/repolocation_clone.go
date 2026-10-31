@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/scan"
@@ -330,8 +331,7 @@ func cloneErrorCode(err error) string {
 	if errors.Is(err, context.Canceled) {
 		return "cancelled"
 	}
-	message := strings.ToLower(err.Error())
-	if strings.Contains(message, "auth") || strings.Contains(message, "authentication") || strings.Contains(message, "authorization") {
+	if git.IsAuthError(err) {
 		return "auth_failed"
 	}
 	return "clone_failed"

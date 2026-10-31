@@ -2,14 +2,41 @@ package git
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	"github.com/itterno/bistro/internal/git/clonecache"
 )
+
+func TestCloneRepoToPathPreservesAuthErrors(t *testing.T) {
+	for _, response := range []struct {
+		status int
+		cause  error
+	}{
+		{http.StatusUnauthorized, transport.ErrAuthenticationRequired},
+		{http.StatusForbidden, transport.ErrAuthorizationFailed},
+	} {
+		t.Run(http.StatusText(response.status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(response.status)
+			}))
+			defer server.Close()
+			client := NewClient(nil)
+			client.SetTokenSource(func() string { return "" })
+			err := client.CloneRepoToPath(context.Background(), server.URL+"/acme/api.git", filepath.Join(t.TempDir(), "repo"), true)
+			if !errors.Is(err, response.cause) || !IsAuthError(err) {
+				t.Fatalf("clone lost transport sentinel: %v", err)
+			}
+		})
+	}
+}
 
 func TestNewClient(t *testing.T) {
 	cache := clonecache.New()

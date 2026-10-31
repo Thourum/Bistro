@@ -8,6 +8,7 @@ import (
 	"os"
 
 	gitlib "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/remote"
@@ -59,6 +60,11 @@ type CloneOptions struct {
 	// otherwise it falls back to the broad clone. Empty/duplicate entries are
 	// tolerated by the verifier.
 	RequiredSHAs []string
+}
+
+// IsAuthError reports whether a git transport rejected authentication or authorization.
+func IsAuthError(err error) bool {
+	return errors.Is(err, transport.ErrAuthenticationRequired) || errors.Is(err, transport.ErrAuthorizationFailed)
 }
 
 // CloneRepoToPath clones repoURL into destination. Bare clones are used for

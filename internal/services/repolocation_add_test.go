@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/repolocation"
 	"github.com/itterno/bistro/internal/store/storetest"
@@ -132,11 +134,21 @@ func TestRepoLocationAddRepoByURL(t *testing.T) {
 				return AddRepoByURLRequest{URL: "https://github.com/acme/api.git", Destination: locationStringPtr("cache"), DevFolderPath: nil}
 			},
 			arrange: func(t *testing.T, db *store.DB, root string, cloner *fakeRepoLocationCloner) {
-				cloner.err = errors.New("authentication required")
+				cloner.err = fmt.Errorf("clone repository: %w", transport.ErrAuthenticationRequired)
 			},
 			wantOK:        false,
 			wantCode:      "auth_failed",
 			wantCloneBare: boolPtr(true),
+		},
+		{
+			name: "auth in clone failure message is not an auth failure",
+			payload: func(root string) AddRepoByURLRequest {
+				return AddRepoByURLRequest{URL: "https://github.com/acme/oauth-lib.git", Destination: locationStringPtr("cache")}
+			},
+			arrange: func(t *testing.T, db *store.DB, root string, cloner *fakeRepoLocationCloner) {
+				cloner.err = errors.New("clone https://github.com/acme/oauth-lib.git: connection refused")
+			},
+			wantCode: "clone_failed",
 		},
 		{
 			name: "unsupported destination is conflict",
