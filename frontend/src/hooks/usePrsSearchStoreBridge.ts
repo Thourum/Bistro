@@ -4,7 +4,7 @@
 //
 // Direction 1 (route → store): reacts to route-search changes (deep-link on
 //   mount AND later route changes, e.g. browser back/forward). Route wins.
-// Direction 2 (store → route): after hydration, any store write (FilterMenu,
+// Direction 2 (store → route): after hydration, any store write (e.g.
 //   keybindings) is reflected in the URL via navigate({replace:true}).
 //
 // Echo-loop prevention:
