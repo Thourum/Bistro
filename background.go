@@ -39,20 +39,89 @@ func decideCloseAction(c closeContext) closeAction {
 	return closeHide
 }
 
-// The dock service dispatch_syncs onto the main queue, so it must never run on
-// the main thread where window hooks and tray clicks are delivered.
-func showMainWindow(dk *dock.DockService) {
-	go func() {
-		dk.ShowAppIcon()
-		application.InvokeAsync(focusMainWindow)
-	}()
+type visibilityActions struct {
+	show func()
+	hide func()
 }
 
-func installCloseToTray(window *application.WebviewWindow, dk *dock.DockService) {
+// Enqueue synchronously, but apply on one worker: independent goroutines can
+// reverse Dock changes. Pending requests coalesce to the latest desired state.
+// Cancellation stops idle work without making native shutdown wait for it.
+func newVisibilityRequests(ctx context.Context, actions visibilityActions) visibilityActions {
+	var mu sync.Mutex
+	var pending func()
+	wake := make(chan struct{}, 1)
+	enqueue := func(action func()) {
+		mu.Lock()
+		defer mu.Unlock()
+		if ctx.Err() != nil {
+			return
+		}
+		pending = action
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-wake:
+				mu.Lock()
+				action := pending
+				pending = nil
+				mu.Unlock()
+				if ctx.Err() != nil {
+					return
+				}
+				if action != nil {
+					action()
+				}
+			}
+		}
+	}()
+	return visibilityActions{
+		show: func() { enqueue(actions.show) },
+		hide: func() { enqueue(actions.hide) },
+	}
+}
+
+func newMainWindowVisibility(ctx context.Context, dk *dock.DockService) visibilityActions {
+	dispatch := func(action func()) {
+		application.InvokeAsync(func() {
+			if ctx.Err() == nil {
+				action()
+			}
+		})
+	}
+	return newVisibilityRequests(ctx, visibilityActions{
+		show: func() {
+			dk.ShowAppIcon()
+			dispatch(focusMainWindow)
+		},
+		hide: func() {
+			dk.HideAppIcon()
+			dispatch(func() {
+				if window, ok := application.Get().Window.GetByName("main"); ok {
+					window.Hide()
+				}
+			})
+		},
+	})
+}
+
+// The worker keeps Dock calls off the main thread and orders window callbacks
+// with them, so an earlier show cannot focus the window after a later hide.
+func showMainWindow(visibility visibilityActions) {
+	visibility.show()
+}
+
+func installCloseToTray(window *application.WebviewWindow, visibility visibilityActions) {
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		e.Cancel()
-		window.Hide()
-		go dk.HideAppIcon()
+		visibility.hide()
 	})
 }
 

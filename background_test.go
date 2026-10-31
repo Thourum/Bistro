@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,6 +29,74 @@ func TestDecideCloseAction(t *testing.T) {
 	}
 	if isTrayReadyOn("linux") || !isTrayReadyOn("darwin") || !isTrayReadyOn("windows") {
 		t.Fatal("tray readiness must be false only on linux")
+	}
+}
+
+func TestVisibilityRequestsPreserveLatestState(t *testing.T) {
+	for _, firstIsShow := range []bool{false, true} {
+		name := "hide then show"
+		if firstIsShow {
+			name = "show then hide"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			started := make(chan struct{})
+			release := make(chan struct{})
+			defer close(release)
+			finished := make(chan struct{}, 2)
+			var iconShown atomic.Bool
+			var windowShown atomic.Bool
+			apply := func(action struct{ isShow bool }) {
+				if action.isShow == firstIsShow {
+					close(started)
+					select {
+					case <-release:
+					case <-ctx.Done():
+						return
+					}
+				}
+				iconShown.Store(action.isShow)
+				windowShown.Store(action.isShow)
+				finished <- struct{}{}
+			}
+			requests := newVisibilityRequests(ctx, visibilityActions{
+				show: func() { apply(struct{ isShow bool }{isShow: true}) },
+				hide: func() { apply(struct{ isShow bool }{isShow: false}) },
+			})
+			first, second := requests.hide, requests.show
+			if firstIsShow {
+				first, second = second, first
+			}
+			const deadline = 3 * time.Second
+			first()
+			select {
+			case <-started:
+			case <-time.After(deadline):
+				t.Fatal("first visibility request did not start")
+			}
+			second()
+			// Give an incorrectly independent second worker time to overtake
+			// the blocked first request, then check the resulting final state.
+			remaining := 2
+			const orderingObservation = 20 * time.Millisecond
+			select {
+			case <-finished:
+				remaining--
+			case <-time.After(orderingObservation):
+			}
+			release <- struct{}{}
+			for range remaining {
+				select {
+				case <-finished:
+				case <-time.After(deadline):
+					t.Fatal("visibility requests did not finish")
+				}
+			}
+			if wantShown := !firstIsShow; iconShown.Load() != wantShown || windowShown.Load() != wantShown {
+				t.Fatalf("final icon shown=%v, window shown=%v; want both %v", iconShown.Load(), windowShown.Load(), wantShown)
+			}
+		})
 	}
 }
 

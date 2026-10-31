@@ -74,16 +74,17 @@ func run(args []string) error {
 	cleanup.add(flushSentry)
 	reporter := shell.SentryReporter{Log: log}
 	dk := dock.New()
+	ctx, cancel := context.WithCancel(context.Background())
+	cleanup.add(cancel)
+	visibility := newMainWindowVisibility(ctx, dk)
 	// Smoke must exercise this build, not focus an already-running Bistro.
 	var single *application.SingleInstanceOptions
 	if !*smoke {
 		single = &application.SingleInstanceOptions{
 			UniqueID:               "app.bistro.review",
-			OnSecondInstanceLaunch: func(application.SecondInstanceData) { showMainWindow(dk) },
+			OnSecondInstanceLaunch: func(application.SecondInstanceData) { showMainWindow(visibility) },
 		}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cleanup.add(cancel)
 	updates := &shell.UpdateChecks{}
 	quit := &quitCoordinator{stop: func() { cancel(); updates.Stop() }}
 	app := application.New(application.Options{
@@ -142,13 +143,13 @@ func run(args []string) error {
 	setMenu(app)
 	var trayIcon *tray.Tray
 	if !*smoke {
-		trayIcon = startTray(trayDeps{app: app, eng: eng, set: set, updates: updates, show: func() { showMainWindow(dk) }, ctx: ctx, log: log})
+		trayIcon = startTray(trayDeps{app: app, eng: eng, set: set, updates: updates, show: func() { showMainWindow(visibility) }, ctx: ctx, log: log})
 	}
 	if decideCloseAction(closeContext{isTrayReady: trayIcon != nil && isTrayReadyOn(runtime.GOOS), isSmoke: *smoke}) == closeHide {
-		installCloseToTray(window, dk)
+		installCloseToTray(window, visibility)
 	}
 	app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) {
-		showMainWindow(dk)
+		showMainWindow(visibility)
 	})
 	smokeOK := armSmoke(app, window, smokeOptions{enabled: *smoke, dataDir: dataDir, log: log})
 	// Window timers and smoke watchdog stop before their resources are closed.
