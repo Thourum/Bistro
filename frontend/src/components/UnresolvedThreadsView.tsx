@@ -16,7 +16,8 @@ import {
 } from '../types';
 import { HighlightedCode } from './HighlightedCode';
 import { Markdown } from './Markdown';
-import { type StatusKind, StatusSquare } from './StatusSquare';
+import { StatusSquare } from './StatusSquare';
+import { THREAD_LIFECYCLE } from './threadLifecycle';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 
@@ -30,47 +31,11 @@ interface Props {
   comments?: Comment[];
 }
 
-/** Sort weight for the lifecycle buckets — actionable work floats to the top. */
-const LIFECYCLE_ORDER: Record<ThreadLifecycle, number> = {
-  open: 0,
-  outdated: 1,
-  unknown: 2,
-  resolved: 3,
-};
-
-const LIFECYCLE_LABEL: Record<ThreadLifecycle, string> = {
-  open: 'Open',
-  outdated: 'Outdated',
-  unknown: 'Unknown',
-  resolved: 'Resolved',
-};
-
-/**
- * Badge variant per lifecycle. Open is the only "loud" state (amber) because
- * it is the only one demanding action; resolved is the calm accent; outdated
- * and unknown are dimmed so they recede.
- */
-const LIFECYCLE_VARIANT: Record<
-  ThreadLifecycle,
-  'open' | 'resolved' | 'outdated' | 'unknown'
-> = {
-  open: 'open',
-  resolved: 'resolved',
-  outdated: 'outdated',
-  unknown: 'unknown',
-};
-
-const LIFECYCLE_SQUARE: Record<ThreadLifecycle, StatusKind> = {
-  open: 'running',
-  resolved: 'success',
-  outdated: 'neutral',
-  unknown: 'neutral',
-};
-
 function sortThreads(threads: ReviewThread[]): ReviewThread[] {
   return [...threads].sort((a, b) => {
     const byLifecycle =
-      LIFECYCLE_ORDER[threadLifecycle(a)] - LIFECYCLE_ORDER[threadLifecycle(b)];
+      THREAD_LIFECYCLE[threadLifecycle(a)].order -
+      THREAD_LIFECYCLE[threadLifecycle(b)].order;
     if (byLifecycle !== 0) return byLifecycle;
     const byFile = a.file_path.localeCompare(b.file_path);
     if (byFile !== 0) return byFile;
@@ -253,7 +218,7 @@ const ThreadRow = forwardRef<HTMLLIElement, ThreadRowProps>(function ThreadRow(
       ref={ref}
       tabIndex={focused ? 0 : -1}
       onFocus={onFocusRow}
-      aria-label={`Thread on ${thread.file_path} line ${thread.line}, ${LIFECYCLE_LABEL[lifecycle]}`}
+      aria-label={`Thread on ${thread.file_path} line ${thread.line}, ${THREAD_LIFECYCLE[lifecycle].label}`}
       className={`group relative flex flex-col gap-3 px-8 py-4 outline-none cursor-crosshair transition-colors duration-150 ${
         focused
           ? 'bg-surface-container-low'
@@ -350,16 +315,13 @@ function LifecycleBadge({
   lifecycle: ThreadLifecycle;
 }): React.ReactElement {
   return (
-    <Badge
-      variant={LIFECYCLE_VARIANT[lifecycle]}
-      className="shrink-0 px-2 py-1"
-    >
+    <Badge variant={lifecycle} className="shrink-0 px-2 py-1">
       <StatusSquare
-        status={LIFECYCLE_SQUARE[lifecycle]}
+        status={THREAD_LIFECYCLE[lifecycle].square}
         size="w-2 h-2"
-        label={LIFECYCLE_LABEL[lifecycle]}
+        label={THREAD_LIFECYCLE[lifecycle].label}
       />
-      {LIFECYCLE_LABEL[lifecycle]}
+      {THREAD_LIFECYCLE[lifecycle].label}
     </Badge>
   );
 }

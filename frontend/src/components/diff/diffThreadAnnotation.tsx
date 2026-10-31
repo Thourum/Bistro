@@ -1,10 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type {
-  Comment,
-  CommentSeverity,
-  ReviewThread,
-  ThreadLifecycle,
-} from '../../types';
+import type { Comment, CommentSeverity, ReviewThread } from '../../types';
 import { threadLifecycle } from '../../types';
 import { commentSeverity, humanizeSource } from '../../utils/classification';
 import {
@@ -12,25 +7,12 @@ import {
   TEXTAREA_SUBMIT_HOTKEY,
 } from '../../utils/keybindings';
 import { Markdown } from '../Markdown';
-import { type StatusKind, StatusSquare } from '../StatusSquare';
+import { StatusSquare } from '../StatusSquare';
+import { THREAD_LIFECYCLE } from '../threadLifecycle';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { ShortcutBadge } from '../ui/shortcut-badge';
 import { Textarea } from '../ui/textarea';
-
-const LIFECYCLE_SQUARE = {
-  open: 'running',
-  resolved: 'success',
-  outdated: 'neutral',
-  unknown: 'neutral',
-} satisfies Record<ThreadLifecycle, StatusKind>;
-
-const LIFECYCLE_LABEL = {
-  open: 'Open',
-  resolved: 'Resolved',
-  outdated: 'Outdated',
-  unknown: 'Unknown',
-} satisfies Record<ThreadLifecycle, string>;
 
 const COMMENT_SEVERITY_STRIPE_CLASSES = {
   critical: 'border-l-error',
@@ -92,11 +74,11 @@ export function ThreadAnnotationCard({
       >
         <Badge variant={lifecycle}>
           <StatusSquare
-            status={LIFECYCLE_SQUARE[lifecycle]}
+            status={THREAD_LIFECYCLE[lifecycle].square}
             size="w-2 h-2"
-            label={LIFECYCLE_LABEL[lifecycle]}
+            label={THREAD_LIFECYCLE[lifecycle].label}
           />
-          {LIFECYCLE_LABEL[lifecycle]}
+          {THREAD_LIFECYCLE[lifecycle].label}
         </Badge>
         <span className="font-mono text-[10px] text-outline truncate">
           {thread.file_path}
