@@ -12,6 +12,8 @@ import { toggleRepoGroup } from '../store/ui';
 import type { PR, RepoInfo } from '../types';
 import { LANES, laneSections } from '../utils/lanes';
 import { findActionKeys } from '../utils/legendPresets';
+import { relativeTime } from '../utils/relativeTime';
+import { isRepoLocationDegraded } from '../utils/repoLocation';
 import { RepoRecoveryDialog } from './RepoRecoveryDialog';
 
 export type PRRepoGroup = readonly [repoKey: string, prs: PR[]];
@@ -89,18 +91,6 @@ function ciTitle(pr: PR): string {
     default:
       return 'CI UNKNOWN';
   }
-}
-
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const sec = Math.floor(diff / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hour = Math.floor(min / 60);
-  if (hour < 24) return `${hour}h ago`;
-  const day = Math.floor(hour / 24);
-  return `${day}d ago`;
 }
 
 interface PRRowProps {
@@ -235,13 +225,7 @@ function PRLaneSection({
       ) : (
         prs.map((pr, index) => {
           const repo = repoByKey.get(`${pr.owner}/${pr.repo}`) ?? null;
-          const degradedRepo =
-            repo !== null &&
-            repo.location_status !== null &&
-            repo.location_status !== undefined &&
-            repo.location_status !== 'ok'
-              ? repo
-              : null;
+          const degradedRepo = isRepoLocationDegraded(repo) ? repo : null;
           return (
             <PRRow
               key={pr.id}
@@ -453,13 +437,7 @@ export function PRListTable({
           : groups.map(([repoKey, repoPRs], idx) => {
               const collapsed = collapsedRepoKeys.includes(repoKey);
               const repo = repoByKey.get(repoKey) ?? null;
-              const degradedRepo =
-                repo !== null &&
-                repo.location_status !== null &&
-                repo.location_status !== undefined &&
-                repo.location_status !== 'ok'
-                  ? repo
-                  : null;
+              const degradedRepo = isRepoLocationDegraded(repo) ? repo : null;
               const start = cursor;
               cursor += collapsed ? 1 : repoPRs.length;
               return (

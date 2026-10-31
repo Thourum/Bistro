@@ -18,9 +18,9 @@ import {
   setOnboardingRepoFilter,
   setOnboardingRepoWatch,
 } from '../utils/onboardingRepos';
+import { isRepoLocationDegraded } from '../utils/repoLocation';
 
 const LABEL = 'mono-text text-[10px] uppercase tracking-widest';
-const HEALTHY_LOCATION = 'ok';
 const RECENT_LABEL = 'Reviewed before, active in the last 30 days';
 
 interface RowContext {
@@ -62,10 +62,7 @@ function CloneCell({
   readonly repo: RepoInfo;
   readonly isScanning: boolean;
 }): ReactElement {
-  const isDegraded =
-    repo.location_status !== null &&
-    repo.location_status !== undefined &&
-    repo.location_status !== HEALTHY_LOCATION;
+  const isDegraded = isRepoLocationDegraded(repo);
   if (isDegraded) {
     const reason = repo.location_error ?? 'Repository location unavailable.';
     return (

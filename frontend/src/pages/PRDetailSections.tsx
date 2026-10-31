@@ -20,24 +20,13 @@ import {
 import { formatWhy } from '../utils/expertise';
 import { isTextareaSubmit, TEXTAREA_SUBMIT_HOTKEY } from '../utils/keybindings';
 import { findActionKeys } from '../utils/legendPresets';
+import { relativeTime } from '../utils/relativeTime';
 
 function formatTimestamp(iso: string): string {
   return iso
     .replace('T', ' ')
     .replace(/\.\d+Z$/, '')
     .slice(0, 19);
-}
-
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const sec = Math.floor(diff / 1000);
-  if (sec < 60) return `${sec}S AGO`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}M AGO`;
-  const hour = Math.floor(min / 60);
-  if (hour < 24) return `${hour}H AGO`;
-  const day = Math.floor(hour / 24);
-  return `${day}D AGO`;
 }
 
 interface PendingDraftsNoticeProps {
@@ -343,7 +332,7 @@ export function RecentComments({
                   </span>
                 </span>
                 <span className="font-mono text-[10px] text-outline shrink-0">
-                  {relativeTime(c.created_at)}
+                  {relativeTime(c.created_at).toUpperCase()}
                 </span>
               </button>
               {!isCollapsed &&
@@ -398,7 +387,7 @@ export function RecentComments({
                     </span>
                   </span>
                   <span className="font-mono text-[10px] text-outline shrink-0">
-                    {relativeTime(c.created_at)}
+                    {relativeTime(c.created_at).toUpperCase()}
                   </span>
                 </button>
                 {isExpanded && <Markdown body={c.body} compact />}
