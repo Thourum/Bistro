@@ -1,0 +1,76 @@
+version: '3'
+
+vars:
+  APP_NAME: bistro
+  BIN_DIR: bin
+  PACKAGE_MANAGER: pnpm
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+  GOOS: '{{.GOOS | default OS}}'
+  VERSION: '{{.BISTRO_VERSION | default "dev"}}'
+  NUMERIC_VERSION: '{{if eq .VERSION "dev"}}0.0.0{{else}}{{regexReplaceAll "[-+].*$" .VERSION ""}}{{end}}'
+  LDFLAGS: '-X main.version={{.VERSION}}{{if .GITHUB_CLIENT_ID}} -X main.embeddedGitHubClientID={{.GITHUB_CLIENT_ID}}{{end}} -X main.sentryDSN={{.SENTRY_DSN}}'
+
+includes:
+  common: ./build/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+  linux: ./build/linux/Taskfile.yml
+
+tasks:
+  setup:docker:
+    cmds:
+      - docker build --platform linux/{{.ARCH | default ARCH}} -t wails-cross -f build/docker/Dockerfile.cross build/docker/
+
+  generate:
+    cmds:
+      - wails3 generate bindings -clean=true -ts -i -d frontend/bindings
+      - go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
+
+  build:
+    cmds:
+      - task: '{{.GOOS}}:build'
+
+  run:
+    cmds:
+      - task: '{{.GOOS}}:run'
+
+  dev:
+    env:
+      BISTRO_DATA_DIR: '{{.ROOT_DIR}}/.dev-data'
+    cmds:
+      - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
+
+  # Sequential: Darwin and Linux both write bin/bistro, and each task archives
+  # its binary before the next build replaces it.
+  package:
+    desc: Packages Darwin, Windows, and Linux release artifacts
+    cmds:
+      - task: package:darwin
+      - task: package:windows
+      - task: package:linux
+
+  package:darwin:
+    platforms: [darwin]
+    cmds:
+      - task: darwin:package
+        vars:
+          ARCH: arm64
+      - ditto -c -k --keepParent bin/Bistro.app bin/bistro-darwin-arm64.zip
+      - diskutil image create from --format UDZO --volumeName Bistro bin/Bistro.app bin/bistro-darwin-arm64-installer.dmg
+
+  package:windows:
+    cmds:
+      - task: windows:package
+        vars:
+          ARCH: amd64
+      - cmd: powershell -NoProfile -Command "Compress-Archive -Path bin/bistro.exe -DestinationPath bin/bistro-windows-amd64.zip -Force"
+        platforms: [windows]
+      - cmd: rm -f bin/bistro-windows-amd64.zip && zip -j bin/bistro-windows-amd64.zip bin/bistro.exe
+        platforms: [darwin, linux]
+
+  package:linux:
+    cmds:
+      - task: linux:build
+        vars:
+          ARCH: amd64
+      - tar -czf bin/bistro-linux-amd64.tar.gz -C bin bistro

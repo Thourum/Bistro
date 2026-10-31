@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<key>CFBundleExecutable</key>
+		<string>bistro</string>
+		<key>CFBundleGetInfoString</key>
+		<string>Local-first code review @VERSION@</string>
+		<key>CFBundleIconFile</key>
+		<string>icons</string>
+		<key>CFBundleIconName</key>
+		<string>appicon</string>
+		<key>CFBundleIdentifier</key>
+		<string>app.bistro.review</string>
+		<key>CFBundleName</key>
+		<string>Bistro</string>
+		<key>CFBundlePackageType</key>
+		<string>APPL</string>
+		<key>CFBundleShortVersionString</key>
+		<string>@NUMERIC_VERSION@</string>
+		<key>CFBundleVersion</key>
+		<string>@NUMERIC_VERSION@</string>
+		<key>LSMinimumSystemVersion</key>
+		<string>11.0.0</string>
+		<key>NSHighResolutionCapable</key>
+		<string>true</string>
+		<key>NSHumanReadableCopyright</key>
+		<string>Copyright 2026 Thourum</string>
+	</dict>
+</plist>

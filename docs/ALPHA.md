@@ -2,42 +2,102 @@
 
 ## Scope
 
-- macOS 12 or later, Apple Silicon (arm64) only.
-- Alpha means: expect rough edges and data resets. Bistro is not yet a stable v1.0.
+Bistro is a single-process Wails v3 desktop app. Release assets target macOS
+Apple Silicon (arm64), Windows amd64, and Linux amd64. Native webviews are
+WKWebView, WebView2, and WebKitGTK respectively. Alpha means rough edges and
+possible data resets; Bistro is not yet stable v1.0.
 
 ## Installing
 
-Releases are drafts first; a maintainer publishes them on GitHub after the smoke test passes.
+Releases are drafted by CI; the maintainer publishes them after smoke checks.
+Download from [GitHub releases](https://github.com/Thourum/Bistro/releases).
+Use only assets from a release you trust and verify their SHA-256 hashes against
+that release's `SHA256SUMS` before opening them.
 
-1. Download the `.dmg` (or `.zip`) from the GitHub release and verify it against `SHA256SUMS`:
-   `shasum -a 256 -c SHA256SUMS`
-2. Drag `Bistro.app` to `/Applications`.
-3. If the build is unsigned (the release notes say so), macOS blocks the first launch. Either right-click the app, choose **Open**, and confirm, or run:
-   `xattr -dr com.apple.quarantine /Applications/Bistro.app`
+### macOS
 
-On first use Bistro asks the macOS keychain for access to your GitHub token. It is stored in the login keychain under the `bistro-sync` service.
+1. Download `bistro-darwin-arm64-installer.dmg` (or the app archive
+   `bistro-darwin-arm64.zip`) and `SHA256SUMS`.
+2. Compare `shasum -a 256 <downloaded-file>` with the matching checksum entry.
+   If all release assets are present, `shasum -a 256 -c SHA256SUMS` verifies all.
+3. Open the DMG and drag `Bistro.app` into `/Applications`, or unpack the ZIP
+   and move the app there.
+4. If release notes identify the build as unsigned and macOS blocks it, use
+   right-click → **Open** and confirm. After checking the source and checksum,
+   you can also remove quarantine:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Bistro.app
+   ```
+
+On first sign-in macOS may request keychain access. The token remains in the
+login keychain; its retained credential service name is historically
+`bistro-sync`, not a running helper process.
+
+### Windows
+
+Download `bistro-windows-amd64-installer.exe` and `SHA256SUMS`. Check the hash
+with PowerShell `Get-FileHash <downloaded-file> -Algorithm SHA256` against the
+matching entry, then run the installer. It includes a WebView2 bootstrapper.
+The `bistro-windows-amd64.zip` archive is also available; extract it before
+running `bistro.exe`, and ensure WebView2 is installed. Unsigned alpha builds
+may trigger Windows reputation warnings; check release provenance first.
+
+### Linux
+
+Download `bistro-linux-amd64.tar.gz` and `SHA256SUMS`, compare
+`sha256sum <downloaded-file>` with its entry, then extract and run `bistro`.
+This is an application archive, not a system package; GTK 4, WebKitGTK 6.0,
+and a working Secret Service/keyring are required. Build prerequisites and the
+Ubuntu package list are in [DEVELOPMENT.md](../DEVELOPMENT.md#prerequisites).
 
 ## Updates
 
-Auto-updates are off by default. To enable them for a build, set `BISTRO_ENABLE_AUTO_UPDATES=1`. Otherwise install each alpha by hand from the release page.
+Versioned release builds check `Thourum/Bistro` GitHub releases on launch and
+every six hours, including pre-releases. The built-in Wails update window
+shows the available update and offers **Skip Version** or **Remind Me Later**,
+as well as installation. Downloads are verified against `SHA256SUMS`.
+
+Updates use `bistro-darwin-arm64.zip`, `bistro-windows-amd64.zip`, or
+`bistro-linux-amd64.tar.gz`; `*-installer.*` assets are for first installation,
+not updater payloads. Dev/untagged builds (`dev` or empty version) do not update.
+You can always install a newer alpha manually from its release page.
 
 ## Data and resets
 
-- Since this release, viewed marks are keyed on a rebase-stable patch fingerprint. Marks made before the upgrade reset once; mark files viewed again.
+Default state directories are:
 
-- Data lives in `~/Library/Application Support/Bistro/`, including the SQLite cache and the `logs/` folder.
-- Alpha builds may change the schema or wipe the cache without a migration path. Expect to delete `~/Library/Application Support/Bistro/` to recover from a bad build. The cache holds no data that is not on GitHub, but local settings and rules are lost.
+- macOS: `~/Library/Application Support/Bistro/`
+- Windows: `%AppData%\Bistro\`
+- Linux: `$XDG_CONFIG_HOME/Bistro/`, or `~/.config/Bistro/`
+
+`BISTRO_DATA_DIR` overrides the directory. It holds `sync.db`, `settings.json`,
+and `logs/bistro.log`; tokens remain in the OS keychain. Classification rules
+use the separate `os.UserConfigDir()/bistro/rules` directory (lowercase `bistro`),
+not the data-directory override. Source development uses `.dev-data/` for app state.
+
+The Wails migration does not migrate old settings. Existing DB/keychain data
+is reused only if paths and service names resolve identically. Alpha versions
+may require cache resets. Back up the data directory before a reset: drafts,
+queued offline actions, local settings, and custom rules may not be on GitHub
+and can be lost if you delete it. Viewed marks from before patch-fingerprint
+support may need to be marked again.
 
 ## Logs and reporting
 
-- Engine log: `~/Library/Application Support/Bistro/logs/bistro-sync.log`.
-- App (Electron) log: `~/Library/Logs/Bistro/` (electron-log default; confirm the file name on your build).
-- Report bugs at https://github.com/Thourum/Bistro/issues. Attach the relevant log excerpt and your macOS version. Remove tokens and repo names you do not want public.
-
-## Telemetry
-
-Usage telemetry and crash reporting are off by default. They turn on only when you opt in from Settings. Settings lists what is sent. No PR content, repo names, or usernames are sent.
+Logs are in `<data-dir>/logs/bistro.log` and stderr. Report problems at
+[GitHub issues](https://github.com/Thourum/Bistro/issues), including the app
+version and platform. Inspect logs and redact private repository details and
+credentials before sharing. Telemetry/crash reporting honors the privacy
+setting; consult the [privacy documentation](../website/src/pages/docs/privacy.mdx)
+for user-facing details.
 
 ## For maintainers
 
-Build, smoke test, and publish steps are in `CLAUDE.md` under "Release". The release workflow is `.github/workflows/release.yml`; it runs on `v*` tags and creates a draft pre-release.
+[CLAUDE.md](../CLAUDE.md#release) and
+[DEVELOPMENT.md](../DEVELOPMENT.md#packaging) describe current commands.
+`.github/workflows/release.yml` builds native bundles, runs `scripts/smoke.sh`,
+creates `SHA256SUMS`, and drafts the pre-release on `v*` tags. Signing and
+notarization are conditional on configured secrets. Do not publish or push
+release tags without explicit permission. Historical ADR measurements and
+harness paths in `docs/adr/data/` remain unchanged.

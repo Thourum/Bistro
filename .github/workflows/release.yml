@@ -16,8 +16,6 @@ concurrency:
 env:
   GO_VULNCHECK_VERSION: v1.9.0
   GITLEAKS_VERSION: v8.30.1
-  # Fail on critical advisories only until the open high-severity transitive
-  # bumps in electron/ are merged; raise to "high" after that.
   PNPM_AUDIT_LEVEL: critical
 
 jobs:
@@ -34,8 +32,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version-file: go/go.mod
-          cache-dependency-path: go/go.sum
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: Set up pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -48,6 +46,12 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ca-certificates dbus-x11 gnome-keyring libsecret-1-dev libgtk-4-dev libwebkitgtk-6.0-dev
+          mkdir -p frontend/dist && echo '<!doctype html>' > frontend/dist/index.html
 
       - name: Install scanners
         run: |
@@ -56,27 +60,49 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Scan Go call graph for known vulnerabilities
-        working-directory: go
         run: govulncheck ./...
 
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
       - name: Audit production Node dependencies
-        working-directory: electron
+        working-directory: frontend
         run: pnpm audit --prod --audit-level="$PNPM_AUDIT_LEVEL"
 
       - name: Scan git history for secrets
         run: gitleaks git --redact --no-banner --config .gitleaks.toml .
 
-  release:
-    name: Build, smoke test, and draft release
+  build:
+    name: Build and smoke test (${{ matrix.os }})
     needs: gates
-    runs-on: macos-15
+    runs-on: ${{ matrix.os }}
     environment: release
-    permissions:
-      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            task: package:darwin
+            smoke: bin/Bistro.app
+            assets: |
+              bin/bistro-darwin-arm64.zip
+              bin/bistro-darwin-arm64-installer.dmg
+          - os: windows-latest
+            task: package:windows
+            smoke: bin/bistro.exe
+            assets: |
+              bin/bistro-windows-amd64.zip
+              bin/bistro-windows-amd64-installer.exe
+          - os: ubuntu-latest
+            task: package:linux
+            smoke: bin/bistro
+            assets: bin/bistro-linux-amd64.tar.gz
+    defaults:
+      run:
+        shell: bash
     env:
       CGO_ENABLED: "1"
-      GITHUB_CLIENT_ID: ${{ secrets.BISTRO_GITHUB_CLIENT_ID }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -84,20 +110,22 @@ jobs:
           persist-credentials: false
 
       - name: Verify release inputs
+        env:
+          GITHUB_CLIENT_ID: ${{ secrets.BISTRO_GITHUB_CLIENT_ID }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
-          : "${GITHUB_CLIENT_ID:?secret BISTRO_GITHUB_CLIENT_ID is required to embed the OAuth client ID in the engine}"
-          tag_version="${GITHUB_REF_NAME#v}"
-          package_version="$(node -p "require('./electron/package.json').version")"
-          if [[ "$tag_version" != "$package_version" ]]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match electron/package.json version $package_version" >&2
+          : "${GITHUB_CLIENT_ID:?secret BISTRO_GITHUB_CLIENT_ID is required to embed the OAuth client ID in the app}"
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::expected a version tag, got $GITHUB_REF_NAME" >&2
             exit 1
           fi
+          echo "BISTRO_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version-file: go/go.mod
-          cache-dependency-path: go/go.sum
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: Set up pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -111,7 +139,32 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Install Linux native dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ca-certificates dbus-x11 gnome-keyring libsecret-1-dev libgtk-4-dev libwebkitgtk-6.0-dev xvfb
+
+      - name: Install macOS smoke timeout
+        if: matrix.os == 'macos-15'
+        run: brew install coreutils
+
+      - name: Set up Windows installer tools
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          "${env:ProgramFiles(x86)}\NSIS" >> $env:GITHUB_PATH
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
       - name: Decide whether to sign and notarize
+        if: matrix.os == 'macos-15'
         id: signing
         env:
           MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
@@ -125,7 +178,7 @@ jobs:
           fi
 
       - name: Import Developer ID certificate
-        if: steps.signing.outputs.enabled == 'true'
+        if: matrix.os == 'macos-15' && steps.signing.outputs.enabled == 'true'
         env:
           MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
@@ -140,82 +193,114 @@ jobs:
           security import "$cert" -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$keychain"
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -d user -s "$keychain"
           rm -f "$cert"
 
-      - name: Expose signing settings to Forge
-        if: steps.signing.outputs.enabled == 'true'
+      - name: Prepare embed entrypoint for binding generation
+        run: mkdir -p frontend/dist && echo '<!doctype html>' > frontend/dist/index.html
+
+      - name: Build and package the app
+        env:
+          GITHUB_CLIENT_ID: ${{ secrets.BISTRO_GITHUB_CLIENT_ID }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: wails3 task ${{ matrix.task }}
+
+      - name: Sign and notarize the macOS app
+        if: matrix.os == 'macos-15' && steps.signing.outputs.enabled == 'true'
         env:
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          {
-            echo "APPLE_SIGNING_IDENTITY=$MACOS_SIGNING_IDENTITY"
-            echo "APPLE_ID=$APPLE_ID_SECRET"
-            echo "APPLE_APP_SPECIFIC_PASSWORD=$APPLE_APP_PASSWORD"
-            echo "APPLE_TEAM_ID=$APPLE_TEAM"
-          } >> "$GITHUB_ENV"
-
-      - name: Install dependencies
-        working-directory: electron
-        run: pnpm install --frozen-lockfile
-
-      - name: Build and package the app
-        working-directory: electron
-        run: pnpm run release:macos
+          if [[ -n "$APPLE_ID_SECRET" && -n "$APPLE_APP_PASSWORD" && -n "$APPLE_TEAM" ]]; then
+            xcrun notarytool store-credentials bistro-release --apple-id "$APPLE_ID_SECRET" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM" --keychain "$RUNNER_TEMP/release.keychain-db"
+            wails3 task darwin:sign:notarize "CLI_ARGS=--identity \"$MACOS_SIGNING_IDENTITY\" --keychain-profile bistro-release"
+          else
+            wails3 task darwin:sign "CLI_ARGS=--identity \"$MACOS_SIGNING_IDENTITY\""
+            echo "::warning::Apple secrets not set; app is signed but not notarized"
+          fi
+          # Recreate both archives from the signed (and, when available, stapled) app.
+          rm -f bin/bistro-darwin-arm64.zip bin/bistro-darwin-arm64-installer.dmg
+          ditto -c -k --keepParent bin/Bistro.app bin/bistro-darwin-arm64.zip
+          diskutil image create from --format UDZO --volumeName Bistro bin/Bistro.app bin/bistro-darwin-arm64-installer.dmg
 
       - name: Smoke test the packaged app
-        working-directory: electron
-        run: scripts/smoke-macos.sh out/Bistro-darwin-arm64/Bistro.app
+        run: scripts/smoke.sh ${{ matrix.smoke }}
 
-      - name: Collect artifacts and write checksums
-        id: artifacts
+      - name: Write platform checksums
+        env:
+          ASSETS: ${{ matrix.assets }}
         run: |
-          shopt -s nullglob
-          artifacts=(electron/out/make/*.dmg electron/out/make/zip/darwin/arm64/*.zip)
-          if (( ${#artifacts[@]} == 0 )); then
-            echo "::error::no DMG or ZIP produced under electron/out/make" >&2
-            exit 1
-          fi
-          mkdir -p "$RUNNER_TEMP/release"
-          : > "$RUNNER_TEMP/release/SHA256SUMS"
-          for artifact in "${artifacts[@]}"; do
-            (cd "$(dirname "$artifact")" && shasum -a 256 "$(basename "$artifact")") >> "$RUNNER_TEMP/release/SHA256SUMS"
+          sums="$GITHUB_WORKSPACE/sums-${{ matrix.os }}.txt"
+          : > "$sums"
+          while IFS= read -r asset; do
+            [[ -n "$asset" ]] || continue
+            test -f "$asset"
+            if [[ "${{ matrix.os }}" == macos-15 ]]; then
+              (cd "$(dirname "$asset")" && shasum -a 256 "$(basename "$asset")") >> "$sums"
+            else
+              (cd "$(dirname "$asset")" && sha256sum "$(basename "$asset")") >> "$sums"
+            fi
+          done <<< "$ASSETS"
+
+      - name: Upload platform assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bistro-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            ${{ matrix.assets }}
+            sums-${{ matrix.os }}.txt
+
+      - name: Remove signing keychain
+        if: always() && matrix.os == 'macos-15'
+        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2>/dev/null || true
+
+  release:
+    name: Draft pre-release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download platform assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: bistro-*
+          merge-multiple: true
+
+      - name: Collect assets and checksums
+        run: |
+          # upload-artifact preserves bin/ because the sums file is at the root.
+          mv bin/* .
+          cat sums-*.txt > SHA256SUMS
+          for asset in bistro-darwin-arm64.zip bistro-darwin-arm64-installer.dmg bistro-windows-amd64.zip bistro-windows-amd64-installer.exe bistro-linux-amd64.tar.gz SHA256SUMS; do
+            test -f "$asset"
           done
-          printf '%s\n' "${artifacts[@]}" > "$RUNNER_TEMP/artifact-list"
+          sha256sum --check SHA256SUMS
 
       - name: Write release notes
-        env:
-          SIGNED: ${{ steps.signing.outputs.enabled }}
         run: |
           {
-            echo "Alpha build for macOS on Apple Silicon (arm64, macOS 12 or later)."
+            echo "Alpha build for macOS on Apple Silicon (arm64, macOS 11 or later), Windows (amd64), and Linux (amd64)."
             echo
-            if [[ "$SIGNED" == "true" ]]; then
-              echo "This build is signed and notarized."
-            else
-              echo 'This build is **unsigned**. Right-click > Open the app the first time, or run `xattr -dr com.apple.quarantine /Applications/Bistro.app`. See docs/ALPHA.md.'
-            fi
+            echo 'macOS builds are signed and notarized when signing and Apple credentials are configured. For **unsigned** builds, right-click > Open the app the first time, or run `xattr -dr com.apple.quarantine /Applications/Bistro.app`. See docs/ALPHA.md.'
             echo
-            echo "Auto-updates are off by default. Verify downloads against SHA256SUMS."
+            echo "Tagged builds check for updates at launch and every six hours, including pre-releases, and verify updates against SHA256SUMS. Dev and untagged builds do not auto-update."
           } > "$RUNNER_TEMP/release-notes.md"
 
       - name: Create draft pre-release
         run: |
-          artifacts=()
-          while IFS= read -r artifact; do
-            artifacts+=("$artifact")
-          done < "$RUNNER_TEMP/artifact-list"
           gh release create "$GITHUB_REF_NAME" \
             --verify-tag \
             --draft \
             --prerelease \
             --title "Bistro $GITHUB_REF_NAME" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
-            "${artifacts[@]}" \
-            "$RUNNER_TEMP/release/SHA256SUMS"
-
-      - name: Remove signing keychain
-        if: always()
-        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2>/dev/null || true
+            bistro-darwin-arm64.zip bistro-darwin-arm64-installer.dmg \
+            bistro-windows-amd64.zip bistro-windows-amd64-installer.exe \
+            bistro-linux-amd64.tar.gz SHA256SUMS
