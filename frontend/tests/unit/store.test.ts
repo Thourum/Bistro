@@ -95,7 +95,6 @@ describe('UIState', () => {
       ...initialUIState,
       selectedPRIndex: 0,
       searchQuery: '',
-      paneLayout: 'split',
       sortBy: 'updated',
       filterState: 'open',
     };
@@ -108,7 +107,6 @@ describe('UIState', () => {
       ...initialUIState,
       selectedPRIndex: 0,
       searchQuery: '',
-      paneLayout: 'split',
       sortBy: 'updated',
       filterState: 'open',
     };

@@ -29,12 +29,6 @@ export interface OnboardingSyncState {
   readonly folder: FolderScanState;
 }
 
-interface SyncStats {
-  prCount: number;
-  newPRs: number;
-  updatedPRs: number;
-}
-
 /**
  * Transient UI state (not persisted).
  *
@@ -62,8 +56,6 @@ export interface UIState {
   selectedFilePrId: string | null;
   searchQuery: string;
   isAuthenticated: boolean;
-  showFileTree: boolean;
-  paneLayout: 'list' | 'detail' | 'split';
   sortBy: 'updated' | 'created';
   filterState: 'open' | 'draft' | 'all' | 'needs_action' | 'touches_you';
   /** Onboarding style sandbox; null when the step isn't showing. */
@@ -92,7 +84,6 @@ export interface UIState {
    * navigation or a full PR-list sync.
    */
   commentsRevision: number;
-  syncStats: SyncStats | null;
   toasts: Toast[];
   isOffline: boolean;
   // OAuth auth state
@@ -215,7 +206,6 @@ export const initialUIState: UIState = {
   selectedFileIndex: 0,
   selectedFilePrId: null,
   searchQuery: '',
-  paneLayout: 'split',
   sortBy: 'updated',
   filterState: 'open',
   onboardingSandbox: null,
@@ -229,14 +219,12 @@ export const initialUIState: UIState = {
   pendingAction: null,
   actionResult: null,
   isAuthenticated: false,
-  showFileTree: false,
   engineSyncStatus: null,
   syncStatus: 'connected',
   syncError: null,
   lastSyncAt: null,
   prListRevision: 0,
   commentsRevision: 0,
-  syncStats: null,
   toasts: [],
   isOffline: false,
   authLoading: false,

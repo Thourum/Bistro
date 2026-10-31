@@ -208,8 +208,6 @@ export const COMMANDS: readonly CommandItem[] = [
   { id: 'expertise-enable', name: 'Enable expertise', icon: 'psychology' },
   { id: 'expertise-disable', name: 'Disable expertise', icon: 'psychology' },
   { id: 'focus-list', name: 'Focus PR list', icon: 'list_alt' },
-  { id: 'focus-detail', name: 'Focus PR detail', icon: 'article' },
-  { id: 'about', name: 'About BISTRO', icon: 'info' },
   {
     id: 'reset-store',
     name: 'Reset store to initial state',

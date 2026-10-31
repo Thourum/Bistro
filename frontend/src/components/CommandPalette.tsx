@@ -233,11 +233,6 @@ export function CommandPalette(): React.ReactElement | null {
         closeOverlay();
         setQuery('');
         return;
-      case 'focus-detail':
-        // Cannot navigate to detail without a prId — this command is a no-op
-        // when there is no current routed PR.
-        setQuery('');
-        return;
       case 'clear':
         appStore.setState((s) => ({
           ...s,

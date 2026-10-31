@@ -28,16 +28,6 @@ interface Props {
    * No extra fetch — these are the same comments the detail page holds.
    */
   comments?: Comment[];
-  /**
-   * Optional override for tests — lets a test assert the WS payload without a
-   * live socket. In the app this is undefined and the component uses
-   * {@link useThreadActions}.
-   */
-  sendAction?: (payload: {
-    action: 'resolve_thread' | 'unresolve_thread';
-    pr_id: string;
-    thread_id: string;
-  }) => void;
 }
 
 /** Sort weight for the lifecycle buckets — actionable work floats to the top. */
@@ -105,7 +95,6 @@ function sortThreads(threads: ReviewThread[]): ReviewThread[] {
 export function UnresolvedThreadsView({
   prId,
   comments,
-  sendAction,
 }: Props): React.ReactElement {
   const { threads, loading, error, refetch } = useReviewThreads(prId);
   const { resolveThread, unresolveThread, isThreadPending } =
@@ -146,14 +135,10 @@ export function UnresolvedThreadsView({
   const dispatchAction = useCallback(
     (action: 'resolve_thread' | 'unresolve_thread', thread: ReviewThread) => {
       if (!thread.state_known) return;
-      if (sendAction !== undefined) {
-        sendAction({ action, pr_id: prId, thread_id: thread.id });
-        return;
-      }
       if (action === 'resolve_thread') resolveThread(thread.id);
       else unresolveThread(thread.id);
     },
-    [prId, sendAction, resolveThread, unresolveThread],
+    [resolveThread, unresolveThread],
   );
 
   // Bridge threads-mode keybindings (which dispatch DOM custom events) into the
