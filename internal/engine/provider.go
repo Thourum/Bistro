@@ -37,7 +37,7 @@ func (a *App) teardownProviderLocked(name string) {
 		a.bridgeCancel()
 		a.bridgeCancel = nil
 	}
-	a.syncStatus.setSignedIn(false)
+	a.syncStatus.setSignedIn(syncSignInSettings{isSignedIn: false})
 }
 
 // attachOrchestratorLocked creates, wires, and stores a new orchestrator for
@@ -86,7 +86,7 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 	a.prov = prov
 	a.activeProviderName = name
 	a.startEventBridge(a.provCtx)
-	a.syncStatus.setSignedIn(true)
+	a.syncStatus.setSignedIn(syncSignInSettings{isSignedIn: true})
 }
 
 // SetProvider configures the GitHub provider used by the sync orchestrator.
@@ -105,7 +105,7 @@ func (a *App) SetProvider(prov provider.Provider) {
 	// This covers the keychain-startup path (main.go calls SetProvider before
 	// Start) which otherwise leaves activeProviderName empty.
 	a.prov = prov
-	a.syncStatus.setSignedIn(true)
+	a.syncStatus.setSignedIn(syncSignInSettings{isSignedIn: true})
 	a.activeProviderName = "github"
 
 	if a.db != nil {

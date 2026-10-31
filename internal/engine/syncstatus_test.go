@@ -17,9 +17,72 @@ func newTestTracker(t *testing.T) (*syncStatusTracker, *[]services.SyncStatus, *
 	tracker := newSyncStatusTracker(func(s services.SyncStatus) { published = append(published, s) })
 	tracker.now = func() time.Time { return clock }
 	tracker.afterFunc = func(_ time.Duration, f func()) func() bool { timer.fire = f; return func() bool { return true } }
-	tracker.setSignedIn(true)
-	tracker.setAutoSync(true)
+	tracker.setSignedIn(syncSignInSettings{isSignedIn: true})
+	tracker.setAutoSync(syncAutoSettings{isAutoSync: true})
 	return tracker, &published, timer, &clock
+}
+
+func TestSyncStatusPublishesConcurrentUpdatesInOrder(t *testing.T) {
+	tracker, _, _, _ := newTestTracker(t)
+	firstPublishing := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	firstDone := make(chan struct{})
+	secondStarted := make(chan struct{})
+	secondDone := make(chan struct{})
+	published := make(chan services.SyncStatus, 2)
+	tracker.publish = func(status services.SyncStatus) {
+		if status.State == services.SyncStateSyncing {
+			close(firstPublishing)
+			<-releaseFirst
+		}
+		published <- status
+	}
+	go func() { defer close(firstDone); tracker.begin() }()
+	<-firstPublishing
+	go func() {
+		defer close(secondDone)
+		close(secondStarted)
+		tracker.setSignedIn(syncSignInSettings{isSignedIn: false})
+	}()
+	<-secondStarted
+	const interleavingWindow = 100 * time.Millisecond
+	select {
+	case <-secondDone:
+		t.Error("newer update overtook the blocked publication")
+	case <-time.After(interleavingWindow):
+	}
+	close(releaseFirst)
+	<-firstDone
+	<-secondDone
+	if first := <-published; first.State != services.SyncStateSyncing {
+		t.Errorf("first publication = %+v, want syncing", first)
+	}
+	if last := <-published; last != tracker.current() {
+		t.Errorf("last publication = %+v, current = %+v", last, tracker.current())
+	}
+}
+
+func TestSyncStatusSupersededResumeCallbackKeepsNewDeadline(t *testing.T) {
+	tracker, _, _, _ := newTestTracker(t)
+	var callbacks []func()
+	tracker.afterFunc = func(_ time.Duration, callback func()) func() bool {
+		callbacks = append(callbacks, callback)
+		// The callback has already started, so stopping it cannot prevent delivery.
+		return func() bool { return false }
+	}
+	const firstResetSeconds = 30
+	const nextResetSeconds = 90
+	tracker.observe(services.EventRateLimited, services.RateLimited{ResetIn: firstResetSeconds})
+	tracker.observe(services.EventRateLimited, services.RateLimited{ResetIn: nextResetSeconds})
+	want := tracker.current()
+	callbacks[0]()
+	if got := tracker.current(); got != want {
+		t.Fatalf("superseded callback cleared newer deadline: got %+v, want %+v", got, want)
+	}
+	callbacks[1]()
+	if got := tracker.current(); got.State != services.SyncStateUpToDate || got.ResumeAt != "" {
+		t.Fatalf("current callback did not expire deadline: %+v", got)
+	}
 }
 
 func TestSyncStatusFailedPassThenRecovery(t *testing.T) {
@@ -63,7 +126,7 @@ func TestSyncStatusRateLimitRetriesAfterReset(t *testing.T) {
 	tracker.begin()
 	tracker.observe(services.EventSyncComplete, services.SyncComplete{})
 	tracker.end()
-	tracker.setAutoSync(false)
+	tracker.setAutoSync(syncAutoSettings{isAutoSync: false})
 	if got := tracker.current().State; got != services.SyncStatePaused {
 		t.Fatalf("clean pass with auto-sync off = %q, want paused", got)
 	}
@@ -91,7 +154,7 @@ func TestSyncStatusListenerPanicDoesNotInterruptPass(t *testing.T) {
 		}
 	}
 	app.OnSyncStatus(nil)
-	app.syncStatus.setSignedIn(true)
+	app.syncStatus.setSignedIn(syncSignInSettings{isSignedIn: true})
 	if got := app.SyncStatus().State; got != services.SyncStatePaused {
 		t.Fatalf("pass after panic = %q, want paused", got)
 	}
@@ -100,11 +163,11 @@ func TestSyncStatusListenerPanicDoesNotInterruptPass(t *testing.T) {
 func TestSyncStatusSignedOutWinsAndPublishesOnlyChanges(t *testing.T) {
 	tracker, published, _, _ := newTestTracker(t)
 	before := len(*published)
-	tracker.setAutoSync(true) // unchanged
+	tracker.setAutoSync(syncAutoSettings{isAutoSync: true}) // unchanged
 	if len(*published) != before {
 		t.Fatal("unchanged state was republished")
 	}
-	tracker.setSignedIn(false)
+	tracker.setSignedIn(syncSignInSettings{isSignedIn: false})
 	tracker.begin()
 	if got := tracker.current().State; got != services.SyncStateSignedOut {
 		t.Fatalf("state = %q, want signed_out", got)

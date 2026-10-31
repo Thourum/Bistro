@@ -224,8 +224,8 @@ func (a *App) Start(ctx context.Context) error {
 	a.syncSettingsMu.RLock()
 	autoSync := a.autoSync
 	a.syncSettingsMu.RUnlock()
-	a.syncStatus.setAutoSync(autoSync)
-	a.syncStatus.setSignedIn(a.getProvider() != nil)
+	a.syncStatus.setAutoSync(syncAutoSettings{isAutoSync: autoSync})
+	a.syncStatus.setSignedIn(syncSignInSettings{isSignedIn: a.getProvider() != nil})
 	a.serviceSet = a.buildServices(a.runCtx)
 	if a.replayOnStart && a.getProvider() != nil {
 		a.startLoop(a.runCtx, "startup-replay", func(ctx context.Context) {

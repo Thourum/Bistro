@@ -37,7 +37,7 @@ func (a *App) applySyncSettings(settings *syncLoopSettings, latest syncSettingsM
 			a.syncSettingsMu.Unlock()
 			a.log.Info("sync settings updated", "autoSync", latest.AutoSync, "interval", latest.Interval.String())
 			settings.autoSync = latest.AutoSync
-			a.syncStatus.setAutoSync(settings.autoSync)
+			a.syncStatus.setAutoSync(syncAutoSettings{isAutoSync: settings.autoSync})
 			settings.interval = latest.Interval
 			if settings.autoSync && settings.interval > 0 {
 				settings.ticker.Reset(settings.interval)
@@ -66,7 +66,7 @@ func (a *App) runSyncLoop(ctx context.Context) {
 	a.syncSettingsMu.RLock()
 	settings := syncLoopSettings{autoSync: a.autoSync, interval: a.syncInterval}
 	a.syncSettingsMu.RUnlock()
-	a.syncStatus.setAutoSync(settings.autoSync)
+	a.syncStatus.setAutoSync(syncAutoSettings{isAutoSync: settings.autoSync})
 	settings.ticker = time.NewTicker(settings.interval)
 	if !settings.autoSync {
 		settings.ticker.Stop()

@@ -9,21 +9,23 @@ import (
 
 // syncStatusTracker derives the tray/renderer sync state from sync-pass
 // boundaries and the outcome events those passes emit. Publishing runs outside
-// mu so listeners can never deadlock the sync loop.
+// mu; listeners must not synchronously mutate the tracker or call the engine.
 type syncStatusTracker struct {
-	mu         sync.Mutex
-	now        func() time.Time
-	afterFunc  func(time.Duration, func()) (stop func() bool)
-	publish    func(services.SyncStatus)
-	inFlight   int
-	batch      syncBatch
-	isSignedIn bool
-	isAutoSync bool
-	lastSynced time.Time
-	lastError  string
-	resumeAt   time.Time
-	stopResume func() bool
-	status     services.SyncStatus
+	mu               sync.Mutex
+	publishMu        sync.Mutex // serializes state commits and delivery without holding mu
+	now              func() time.Time
+	afterFunc        func(time.Duration, func()) (stop func() bool)
+	publish          func(services.SyncStatus)
+	inFlight         int
+	batch            syncBatch
+	isSignedIn       bool
+	isAutoSync       bool
+	lastSynced       time.Time
+	lastError        string
+	resumeAt         time.Time
+	stopResume       func() bool
+	resumeGeneration uint64
+	status           services.SyncStatus
 }
 
 type syncBatch struct {
@@ -97,12 +99,16 @@ func (t *syncStatusTracker) observe(name string, data any) {
 	})
 }
 
-func (t *syncStatusTracker) setSignedIn(isSignedIn bool) {
-	t.update(func() { t.isSignedIn = isSignedIn })
+type syncSignInSettings struct{ isSignedIn bool }
+
+type syncAutoSettings struct{ isAutoSync bool }
+
+func (t *syncStatusTracker) setSignedIn(settings syncSignInSettings) {
+	t.update(func() { t.isSignedIn = settings.isSignedIn })
 }
 
-func (t *syncStatusTracker) setAutoSync(isAutoSync bool) {
-	t.update(func() { t.isAutoSync = isAutoSync })
+func (t *syncStatusTracker) setAutoSync(settings syncAutoSettings) {
+	t.update(func() { t.isAutoSync = settings.isAutoSync })
 }
 
 func (t *syncStatusTracker) current() services.SyncStatus {
@@ -112,6 +118,7 @@ func (t *syncStatusTracker) current() services.SyncStatus {
 }
 
 func (t *syncStatusTracker) clearResumeLocked() {
+	t.resumeGeneration++
 	if t.stopResume != nil {
 		t.stopResume()
 		t.stopResume = nil
@@ -122,13 +129,20 @@ func (t *syncStatusTracker) clearResumeLocked() {
 func (t *syncStatusTracker) armResumeLocked(resumeAt time.Time) {
 	t.clearResumeLocked()
 	t.resumeAt = resumeAt
+	generation := t.resumeGeneration
 	t.stopResume = t.afterFunc(resumeAt.Sub(t.now()), func() {
-		t.update(func() { t.resumeAt = time.Time{} })
+		t.update(func() {
+			if generation == t.resumeGeneration {
+				t.clearResumeLocked()
+			}
+		})
 	})
 }
 
 // update applies one mutation, recomputes, and publishes only real changes.
 func (t *syncStatusTracker) update(mutate func()) {
+	t.publishMu.Lock()
+	defer t.publishMu.Unlock()
 	t.mu.Lock()
 	mutate()
 	next := t.computeLocked()
