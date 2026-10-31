@@ -104,11 +104,8 @@ func (c *Client) FetchRefs(ctx context.Context, localPath, baseSHA, headSHA stri
 	}
 
 	fetchOpts := &gitlib.FetchOptions{
-		Auth: c.auth(),
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
-			config.RefSpec("+refs/pull/*/head:refs/remotes/origin/pr/*"),
-		},
+		Auth:     c.auth(),
+		RefSpecs: broadRefSpecs(),
 	}
 
 	if err := repo.FetchContext(ctx, fetchOpts); err != nil && !errors.Is(err, gitlib.NoErrAlreadyUpToDate) {

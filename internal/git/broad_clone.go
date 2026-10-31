@@ -8,7 +8,6 @@ import (
 	"time"
 
 	gitlib "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 
 	"github.com/itterno/bistro/internal/git/clonecache"
@@ -56,11 +55,8 @@ func (c *Client) broadClone(ctx context.Context, log *slog.Logger, repoURL, base
 
 	// Fetch both branch heads and PR refs so base and head commits are locally available
 	fetchOpts := &gitlib.FetchOptions{
-		Auth: c.auth(),
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
-			config.RefSpec("+refs/pull/*/head:refs/remotes/origin/pr/*"),
-		},
+		Auth:     c.auth(),
+		RefSpecs: broadRefSpecs(),
 	}
 
 	fetchStart := time.Now()
