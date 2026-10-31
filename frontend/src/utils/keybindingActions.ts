@@ -12,6 +12,7 @@ import {
   hideFirstRunRail,
   recordFirstRunAction,
 } from '../services/firstRunRail';
+import { openLogFolder } from '../services/logs';
 import { approvePR } from '../services/prActions';
 import {
   cancelSignIn,
@@ -20,7 +21,6 @@ import {
   retrySignIn,
   startSignIn,
 } from '../services/signIn';
-import { addToast } from '../services/toasts';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import { emitAppEvent } from './appEvents';
 import { permitsBenchAction } from './benchSafety';
@@ -311,11 +311,7 @@ function scrollDiffToBottom(): void {
 
 const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'connecting.openLogs': () => {
-    void call(() => Shell.OpenLogFolder()).match(
-      () => undefined,
-      (fault) =>
-        addToast({ type: 'error', message: fault.message, dismissible: true }),
-    );
+    void openLogFolder();
   },
   'login.reopen': () => reopenSignIn(),
   'login.copyLink': () => copySignInLink(),

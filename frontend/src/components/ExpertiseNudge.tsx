@@ -1,8 +1,5 @@
-import { Expertise } from '@bindings/services';
-import { useCallback } from 'react';
 import { useStore } from '../hooks/useStore';
-import { callWrite, faultReason } from '../services/engine/call';
-import { handleExpertiseError } from '../services/events/expertise';
+import { dismissExpertiseNudge, enableExpertise } from '../services/expertise';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import { Button } from './ui/button';
@@ -19,36 +16,12 @@ export function ExpertiseNudge({
     (s: UIState) => s.expertiseNudges?.[repoId] ?? null,
   );
 
-  const clearNudge = useCallback(() => {
-    appStore.setState((s) => {
-      const { [repoId]: _removed, ...expertiseNudges } =
-        s.expertiseNudges ?? {};
-      return { ...s, expertiseNudges };
-    });
-  }, [repoId]);
-
   const handleEnable = (): void => {
-    void callWrite(() => Expertise.Enable({ repo_id: repoId })).match(
-      () => clearNudge(),
-      (fault) =>
-        handleExpertiseError({
-          repo_id: repoId,
-          code: faultReason(fault) ?? fault.tag ?? 'internal',
-          message: fault.message,
-        }),
-    );
+    void enableExpertise(repoId);
   };
 
   const handleDismiss = (): void => {
-    void callWrite(() => Expertise.DismissNudge({ repo_id: repoId })).match(
-      clearNudge,
-      (fault) =>
-        handleExpertiseError({
-          repo_id: repoId,
-          code: faultReason(fault) ?? fault.tag ?? 'internal',
-          message: fault.message,
-        }),
-    );
+    void dismissExpertiseNudge(repoId);
   };
 
   if (nudge === null) return null;

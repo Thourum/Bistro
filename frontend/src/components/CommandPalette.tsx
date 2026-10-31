@@ -1,4 +1,4 @@
-import { Expertise, Sync } from '@bindings/services';
+import { Sync } from '@bindings/services';
 import { useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import type React from 'react';
@@ -8,8 +8,8 @@ import { useKeyActionContext } from '../hooks/useKeyActionContext';
 import { useStore } from '../hooks/useStore';
 import { useVisiblePRs } from '../hooks/useVisiblePRs';
 import { useOverlays } from '../overlays/OverlayContext';
-import { callWrite, faultReason } from '../services/engine/call';
-import { handleExpertiseError } from '../services/events/expertise';
+import { callWrite } from '../services/engine/call';
+import { disableExpertise, enableExpertise } from '../services/expertise';
 import { showFirstRunRail } from '../services/firstRunRail';
 import { loadRepos } from '../services/repos';
 import { addToast } from '../services/toasts';
@@ -152,9 +152,7 @@ export function CommandPalette(): React.ReactElement | null {
     [routedPR, prs, selectedPRId],
   );
 
-  const sendExpertiseCommand = (
-    type: 'EXPERTISE_ENABLE' | 'EXPERTISE_DISABLE',
-  ): void => {
+  const sendExpertiseCommand = (command: typeof enableExpertise): void => {
     if (focusedPR === undefined) {
       openRepoPicker();
       setQuery('');
@@ -162,19 +160,7 @@ export function CommandPalette(): React.ReactElement | null {
     }
 
     const repoId = repoIdForPR(focusedPR);
-    void callWrite(() =>
-      type === 'EXPERTISE_ENABLE'
-        ? Expertise.Enable({ repo_id: repoId })
-        : Expertise.Disable({ repo_id: repoId }),
-    ).match(
-      () => undefined,
-      (fault) =>
-        handleExpertiseError({
-          repo_id: repoId,
-          code: faultReason(fault) ?? fault.tag ?? 'internal',
-          message: fault.message,
-        }),
-    );
+    void command(repoId);
     closeOverlay();
     setQuery('');
   };
@@ -282,10 +268,10 @@ export function CommandPalette(): React.ReactElement | null {
         setQuery('');
         return;
       case 'expertise-enable':
-        sendExpertiseCommand('EXPERTISE_ENABLE');
+        sendExpertiseCommand(enableExpertise);
         return;
       case 'expertise-disable':
-        sendExpertiseCommand('EXPERTISE_DISABLE');
+        sendExpertiseCommand(disableExpertise);
         return;
       case 'sync':
         void callWrite(() => Sync.Force({ repo_id: '' })).match(

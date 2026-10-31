@@ -1,6 +1,4 @@
-import { Shell } from '@bindings/services';
-import { call } from '../services/engine/call';
-import { addToast } from '../services/toasts';
+import { openLogFolder } from '../services/logs';
 import { ActionKeyHint } from './ui/action-key-hint';
 import { Button } from './ui/button';
 
@@ -18,15 +16,7 @@ export function ConnectingScreen(): React.ReactElement {
         <Button
           variant="outline"
           onClick={() => {
-            void call(() => Shell.OpenLogFolder()).match(
-              () => undefined,
-              (fault) =>
-                addToast({
-                  type: 'error',
-                  message: fault.message,
-                  dismissible: true,
-                }),
-            );
+            void openLogFolder();
           }}
         >
           Open log folder <ActionKeyHint actionId="connecting.openLogs" />
