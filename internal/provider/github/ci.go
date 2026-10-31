@@ -11,13 +11,13 @@ import (
 
 // getCIStatus fetches CI check runs for the given commit ref and normalizes them.
 func (c *Client) getCIStatus(ctx context.Context, owner, repo, ref string) (*provider.CIStatus, error) {
-	checks, _, err := c.gh.Checks.ListCheckRunsForRef(ctx, owner, repo, ref, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get CI status for %s/%s@%s: %w", owner, repo, ref, mapAPIError(err))
-	}
-
-	checkList := make([]*provider.Check, 0, len(checks.CheckRuns))
-	for _, ghCheck := range checks.CheckRuns {
+	const pageSize = 100
+	opts := &ghlib.ListCheckRunsOptions{ListOptions: ghlib.ListOptions{PerPage: pageSize}}
+	checkList := make([]*provider.Check, 0)
+	for ghCheck, err := range c.gh.Checks.ListCheckRunsForRefIter(ctx, owner, repo, ref, opts) {
+		if err != nil {
+			return nil, fmt.Errorf("failed to get CI status for %s/%s@%s: %w", owner, repo, ref, mapAPIError(err))
+		}
 		checkList = append(checkList, normalizeCheckRun(ghCheck))
 	}
 
