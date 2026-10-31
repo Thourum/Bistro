@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -41,6 +42,10 @@ type syncSettingsMsg = SyncSettingsMsg
 type App struct {
 	log                 *slog.Logger
 	emitter             services.Emitter
+	rawEmitter          services.Emitter
+	syncStatus          *syncStatusTracker
+	syncStatusMu        sync.Mutex
+	syncStatusListener  func(services.SyncStatus)
 	panics              services.PanicReporter
 	serviceSet          *services.Set
 	db                  *store.DB
@@ -105,7 +110,36 @@ type App struct {
 
 // SetEmitter configures push event delivery before services are constructed.
 func (a *App) SetEmitter(emitter services.Emitter) {
-	a.emitter = emitter
+	a.rawEmitter = emitter
+	a.emitter = statusEmitter{inner: emitter, tracker: a.syncStatus}
+}
+
+// SyncStatus returns the tracker's current state for first paint.
+func (a *App) SyncStatus() services.SyncStatus { return a.syncStatus.current() }
+
+// OnSyncStatus registers the shell listener; it must not call the engine synchronously.
+func (a *App) OnSyncStatus(listener func(services.SyncStatus)) {
+	a.syncStatusMu.Lock()
+	defer a.syncStatusMu.Unlock()
+	a.syncStatusListener = listener
+}
+
+func (a *App) publishSyncStatus(status services.SyncStatus) {
+	if a.rawEmitter != nil {
+		a.rawEmitter.Emit(services.EventSyncStatus, status)
+	}
+	a.syncStatusMu.Lock()
+	listener := a.syncStatusListener
+	a.syncStatusMu.Unlock()
+	if listener == nil {
+		return
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil && a.panics != nil {
+			a.panics.ReportPanic("sync-status-listener", recovered, debug.Stack())
+		}
+	}()
+	listener(status)
 }
 
 // SetPanicReporter configures reporting for recovered service panics.
@@ -187,6 +221,11 @@ func (a *App) Start(ctx context.Context) error {
 	a.prepareLLMTier(a.runCtx)
 	a.restoreStartupProvider()
 	a.initializeStartupProvider(a.runCtx)
+	a.syncSettingsMu.RLock()
+	autoSync := a.autoSync
+	a.syncSettingsMu.RUnlock()
+	a.syncStatus.setAutoSync(autoSync)
+	a.syncStatus.setSignedIn(a.getProvider() != nil)
 	a.serviceSet = a.buildServices(a.runCtx)
 	if a.replayOnStart && a.getProvider() != nil {
 		a.startLoop(a.runCtx, "startup-replay", func(ctx context.Context) {

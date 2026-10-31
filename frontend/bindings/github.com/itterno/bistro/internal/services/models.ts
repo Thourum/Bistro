@@ -597,6 +597,21 @@ export interface SyncError {
     "message": string;
 }
 
+export interface SyncStatus {
+    "state": string;
+
+    /**
+     * RFC 3339
+     */
+    "last_synced_at"?: string;
+
+    /**
+     * RFC 3339, rate_limited only
+     */
+    "resume_at"?: string;
+    "error_code"?: string;
+}
+
 export interface SyncTriggered {
     "repo_id": string;
     "queued": boolean;

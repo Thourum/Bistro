@@ -20,3 +20,10 @@ import * as $models from "./models.js";
 export function Force(req: $models.ForceSyncRequest): $CancellablePromise<$models.SyncTriggered> {
     return $Call.ByID(47206234, req);
 }
+
+/**
+ * Status reports the engine's current sync state for first paint.
+ */
+export function Status(): $CancellablePromise<$models.SyncStatus> {
+    return $Call.ByID(2324063449);
+}

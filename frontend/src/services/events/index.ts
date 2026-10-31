@@ -17,7 +17,12 @@ import {
   handleThreadStateChanged,
 } from './review';
 import { handleSettingsChanged } from './settings';
-import { handleRateLimited, handleSyncComplete, handleSyncError } from './sync';
+import {
+  handleRateLimited,
+  handleSyncComplete,
+  handleSyncError,
+  handleSyncStatus,
+} from './sync';
 
 export type EngineEvent = Exclude<keyof Events.CustomEvents, `wails:${string}`>;
 export type EngineEventHandlers = {
@@ -44,6 +49,7 @@ export const eventHandlers: EngineEventHandlers = {
   'sync:complete': handleSyncComplete,
   'sync:error': handleSyncError,
   'sync:rate-limited': handleRateLimited,
+  'sync:status': handleSyncStatus,
   'thread:state-changed': handleThreadStateChanged,
 } satisfies EngineEventHandlers;
 

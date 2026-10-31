@@ -1,3 +1,4 @@
+import type { SyncStatus } from '@bindings/services/models';
 import { Store } from '@tanstack/store';
 import type { FolderScanState } from '../services/onboardingSync';
 import type {
@@ -78,6 +79,7 @@ export interface UIState {
   confirmingAction: ConfirmingAction | null;
   pendingAction: PendingAction | null;
   actionResult: ActionResult | null;
+  engineSyncStatus: SyncStatus | null;
   // In-process engine sync state
   syncStatus: 'connected' | 'ready' | 'syncing' | 'error' | 'rate_limited';
   syncError: string | null;
@@ -226,6 +228,7 @@ export const initialUIState: UIState = {
   actionResult: null,
   isAuthenticated: false,
   showFileTree: false,
+  engineSyncStatus: null,
   syncStatus: 'connected',
   syncError: null,
   lastSyncAt: null,

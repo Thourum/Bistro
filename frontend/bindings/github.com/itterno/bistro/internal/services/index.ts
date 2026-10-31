@@ -122,6 +122,7 @@ export type {
     SetWatchedRequest,
     SyncComplete,
     SyncError,
+    SyncStatus,
     SyncTriggered,
     ThreadStateChanged,
     ThreadsResponse,

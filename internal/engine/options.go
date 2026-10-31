@@ -53,7 +53,7 @@ func New(opts Options) *App {
 	}
 	provCtx, cancel := context.WithCancel(context.Background())
 	app := &App{
-		log: opts.Log, emitter: services.NopEmitter{}, dbPath: opts.DBPath,
+		log: opts.Log, dbPath: opts.DBPath,
 		providerCache: cache.NewProviderCache(filepath.Join(cacheDir, "bistro", "providers.json")),
 		tokenManager:  keychain.NewTokenManager(),
 		syncTrigger:   make(chan string, syncTriggerBuffer),
@@ -64,6 +64,8 @@ func New(opts Options) *App {
 		provCtx: provCtx, provCtxCancel: cancel,
 		classificationState: services.NewClassificationState(),
 	}
+	app.syncStatus = newSyncStatusTracker(app.publishSyncStatus)
+	app.SetEmitter(services.NopEmitter{})
 	if opts.RulesDir == "" {
 		configDir, err := os.UserConfigDir()
 		if err != nil {

@@ -40,7 +40,7 @@ func (a *App) buildServices(ctx context.Context) *services.Set {
 		Viewed:         &services.Viewed{Viewed: a.db, CurrentUser: a.currentUserStore, DiffStore: diffStore, Baseline: a.db, Panics: a.panics, Log: a.log},
 		ReadState:      &services.ReadState{DB: a.db, CurrentUser: a.currentUserStore, Events: a.emitter, Panics: a.panics, Log: a.log},
 		PR:             &services.PR{DB: a.db.DB, CurrentUser: a.currentUserStore, TouchesYou: a.expertiseEngine, GetSyncer: a.currentPRSyncer, Panics: a.panics, Log: a.log},
-		Sync:           &services.Sync{Trigger: a.syncTrigger, Panics: a.panics, Log: a.log},
+		Sync:           &services.Sync{Trigger: a.syncTrigger, CurrentStatus: a.syncStatus.current, Panics: a.panics, Log: a.log},
 		Repos:          &services.Repos{DB: a.db.DB, GetProvider: a.getProvider, SyncTrigger: services.WatchSyncTrigger{Queue: a.syncTrigger, Pending: &a.pendingWatchSync}, Panics: a.panics, Log: a.log},
 		ReviewQueue:    &services.ReviewQueue{Context: ctx, GetProvider: a.currentProviderSnapshot, DB: a.db.DB, Panics: a.panics, Log: a.log},
 		Auth: &services.Auth{

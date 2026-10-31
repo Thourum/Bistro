@@ -34,6 +34,7 @@ declare module "@wailsio/runtime" {
             "sync:complete": services$0.SyncComplete;
             "sync:error": services$0.SyncError;
             "sync:rate-limited": services$0.RateLimited;
+            "sync:status": services$0.SyncStatus;
             "thread:state-changed": services$0.ThreadStateChanged;
         }
     }

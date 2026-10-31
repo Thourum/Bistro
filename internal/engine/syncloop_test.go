@@ -77,6 +77,7 @@ func newTestApp() *App {
 	return &App{
 		log:          logger,
 		emitter:      &servicestest.Recorder{},
+		syncStatus:   newSyncStatusTracker(nil),
 		syncTrigger:  make(chan string, 8),
 		syncSettings: make(chan syncSettingsMsg, 4),
 		syncInterval: 5 * time.Minute,

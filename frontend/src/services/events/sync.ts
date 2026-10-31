@@ -2,6 +2,7 @@ import type {
   RateLimited,
   SyncComplete,
   SyncError,
+  SyncStatus,
 } from '@bindings/services/models';
 import { addToast } from '../../components/ToastContainer';
 import { appStore } from '../../store';
@@ -39,4 +40,8 @@ export function handleRateLimited(data: Readonly<RateLimited>): void {
     syncStatus: 'rate_limited',
     syncError: `Rate limited until ${resetAt}`,
   }));
+}
+
+export function handleSyncStatus(data: Readonly<SyncStatus>): void {
+  appStore.setState((state) => ({ ...state, engineSyncStatus: data }));
 }

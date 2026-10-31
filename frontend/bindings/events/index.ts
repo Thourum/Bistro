@@ -104,6 +104,11 @@ export const SyncError = "sync:error";
 export const SyncRateLimited = "sync:rate-limited";
 
 /**
+ * Name of the custom event "sync:status".
+ */
+export const SyncStatus = "sync:status";
+
+/**
  * Name of the custom event "thread:state-changed".
  */
 export const ThreadStateChanged = "thread:state-changed";

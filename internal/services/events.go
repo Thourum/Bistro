@@ -11,6 +11,7 @@ const (
 	EventDraftsChanged      = "drafts:changed"
 	EventSyncComplete       = "sync:complete"
 	EventSyncError          = "sync:error"
+	EventSyncStatus         = "sync:status"
 	EventRateLimited        = "sync:rate-limited"
 	EventPRMetadataChanged  = "pr:metadata-changed"
 	EventCIStatusChanged    = "pr:ci-status-changed"
@@ -42,6 +43,22 @@ type PRsReadChanged struct {
 // DraftsChanged identifies the PR whose local drafts changed.
 type DraftsChanged struct {
 	PRID string `json:"pr_id"`
+}
+
+const (
+	SyncStateSignedOut   = "signed_out"
+	SyncStateSyncing     = "syncing"
+	SyncStateUpToDate    = "up_to_date"
+	SyncStatePaused      = "paused"
+	SyncStateRateLimited = "rate_limited"
+	SyncStateError       = "error"
+)
+
+type SyncStatus struct {
+	State        string `json:"state"`
+	LastSyncedAt string `json:"last_synced_at,omitempty"` // RFC 3339
+	ResumeAt     string `json:"resume_at,omitempty"`      // RFC 3339, rate_limited only
+	ErrorCode    string `json:"error_code,omitempty"`
 }
 
 type SyncComplete struct {
@@ -142,6 +159,7 @@ func init() {
 	application.RegisterEvent[DraftsChanged](EventDraftsChanged)
 	application.RegisterEvent[SyncComplete](EventSyncComplete)
 	application.RegisterEvent[SyncError](EventSyncError)
+	application.RegisterEvent[SyncStatus](EventSyncStatus)
 	application.RegisterEvent[RateLimited](EventRateLimited)
 	application.RegisterEvent[PRMetadataChanged](EventPRMetadataChanged)
 	application.RegisterEvent[CIStatusChanged](EventCIStatusChanged)
