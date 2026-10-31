@@ -40,11 +40,12 @@ type appMenu struct {
 	sequenceMu  sync.Mutex
 	sequence    int
 	isStarted   atomic.Bool
+	invoke      func(func())
 }
 
 func buildAppMenu(deps appMenuDeps) *appMenu {
 	m := &appMenu{
-		menu: application.NewMenu(), deps: deps,
+		menu: application.NewMenu(), deps: deps, invoke: application.InvokeAsync,
 		actionItems: make(map[string]*application.MenuItem),
 		themeItems:  make(map[string]*application.MenuItem),
 	}
@@ -58,7 +59,7 @@ func buildAppMenu(deps appMenuDeps) *appMenu {
 	m.buildHelpMenu()
 	deps.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		m.isStarted.Store(true)
-		m.syncAppearance(deps.settings.Get())
+		m.syncAppearance()
 	})
 	return m
 }
@@ -157,7 +158,7 @@ func (m *appMenu) updateAppearance(mutate func(*shell.Settings)) {
 	if _, err := m.deps.settings.Update(mutate); err != nil {
 		m.deps.log.Warn("menu appearance update failed", "err", err)
 		// Native clicks change checks before persistence; restore them after a failed write.
-		m.syncAppearance(m.deps.settings.Get())
+		m.syncAppearance()
 	}
 }
 
@@ -189,29 +190,30 @@ func (m *appMenu) buildHelpMenu() {
 	}
 }
 
+// Item setters update attached native items; rebuilding the root detaches their impls on Windows.
 func (m *appMenu) setEnabledActions(enabled []string) {
 	allowed := make(map[string]bool, len(enabled))
 	for _, id := range enabled {
 		allowed[id] = true
 	}
-	application.InvokeAsync(func() {
+	m.invoke(func() {
 		for id, item := range m.actionItems {
 			item.SetEnabled(allowed[id])
 		}
-		m.menu.Update()
 	})
 }
 
-func (m *appMenu) syncAppearance(settings shell.Settings) {
+func (m *appMenu) syncAppearance() {
 	// Wails cannot dispatch before Run creates the platform app; startup reconciles the latest snapshot.
 	if !m.isStarted.Load() {
 		return
 	}
-	application.InvokeAsync(func() {
+	m.invoke(func() {
+		// Reordered callbacks must reconcile current settings, not a captured older commit.
+		settings := m.deps.settings.Get()
 		for theme, item := range m.themeItems {
 			item.SetChecked(settings.Appearance.Theme == theme)
 		}
 		m.densityItem.SetChecked(settings.Appearance.HighDensity)
-		m.menu.Update()
 	})
 }

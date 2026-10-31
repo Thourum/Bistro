@@ -130,12 +130,12 @@ func run(args []string) error {
 		show: func() { showMainWindow(visibility) }, ctx: ctx, log: log, isDevBuild: version == "dev",
 	})
 	app.Menu.SetApplicationMenu(menu.menu)
-	menu.syncAppearance(settings.Get())
+	menu.syncAppearance()
 	set.Shell.OnMenuActions = menu.setEnabledActions
 	settings.OnChange(func(prev, next shell.Settings) {
 		applySettings(eng, tel, next, *smoke, log)
 		tel.TrackSettingsChanged(prev, next)
-		menu.syncAppearance(next)
+		menu.syncAppearance()
 		app.Event.Emit(services.EventSettingsChanged, next)
 	})
 	watchDone := make(chan struct{})
