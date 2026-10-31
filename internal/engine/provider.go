@@ -8,7 +8,6 @@ import (
 	"github.com/itterno/bistro/internal/prsync"
 	"github.com/itterno/bistro/internal/services"
 	"github.com/itterno/bistro/internal/store/actionqueue"
-	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/store/reviewdraft"
 )
 
@@ -55,9 +54,7 @@ func (a *App) attachOrchestratorLocked(runCtx context.Context, prov provider.Pro
 	}
 	a.provCtx, a.provCtxCancel = context.WithCancel(runCtx)
 
-	diffStore := prdiff.New(a.db.DB)
 	a.orchestrator = prsync.NewOrchestrator(a.log, prov, a.db, a.gitClient).
-		WithDiffStore(diffStore).
 		WithWorkerPanicReporter(func(recovered any, stack []byte) {
 			if a.panics != nil {
 				a.panics.ReportPanic("workerpool", recovered, stack)

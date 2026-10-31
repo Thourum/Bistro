@@ -12,9 +12,6 @@ type ReviewQueueProvider interface {
 
 // Provider abstracts operations for any Git service
 type Provider interface {
-	// Authenticate performs OAuth device flow
-	Authenticate(ctx context.Context) (token string, err error)
-
 	// ListPRs fetches list of PRs with optional filters
 	ListPRs(ctx context.Context, filters PRFilters) ([]*PR, error)
 
@@ -48,11 +45,10 @@ type Provider interface {
 
 // PRFilters defines optional PR list filters
 type PRFilters struct {
-	Owner  string // GitHub owner/org
-	Repo   string // GitHub repository name
-	State  string // "open", "closed", "merged"
-	Limit  int    // max results per page
-	Offset int    // pagination offset
+	Owner string // GitHub owner/org
+	Repo  string // GitHub repository name
+	State string // "open", "closed", "merged"
+	Limit int    // max results per page
 	// UpdatedSince bounds the list to PRs updated at or after this time.
 	// Older PRs are dropped, except that at least MinCount of the most
 	// recently updated PRs are always returned when the repo has them.

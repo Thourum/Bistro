@@ -110,14 +110,6 @@ func (m *MockProvider) WithInboxDiscovery(result *provider.InboxDiscoveryResult,
 	return &clone
 }
 
-// Authenticate returns a mock token.
-func (m *MockProvider) Authenticate(_ context.Context) (string, error) {
-	if m.err != nil {
-		return "", m.err
-	}
-	return "mock-token", nil
-}
-
 // ListPRs returns the configured PRs.
 func (m *MockProvider) ListPRs(_ context.Context, _ provider.PRFilters) ([]*provider.PR, error) {
 	if m.err != nil {

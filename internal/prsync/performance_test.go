@@ -41,10 +41,6 @@ func newReadOnlyBenchmarkProvider() *readOnlyBenchmarkProvider {
 	return &readOnlyBenchmarkProvider{inner: ghprovider.NewClient(os.Getenv("GITHUB_TOKEN"))}
 }
 
-func (p *readOnlyBenchmarkProvider) Authenticate(ctx context.Context) (string, error) {
-	return p.inner.Authenticate(ctx)
-}
-
 func (p *readOnlyBenchmarkProvider) ListPRs(ctx context.Context, filters provider.PRFilters) ([]*provider.PR, error) {
 	if filters.Owner != benchT3CodeOwner || filters.Repo != benchT3CodeRepo {
 		return nil, fmt.Errorf("read-only benchmark provider only supports %s/%s", benchT3CodeOwner, benchT3CodeRepo)

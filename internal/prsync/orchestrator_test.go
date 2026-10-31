@@ -38,7 +38,6 @@ func TestSyncResultCreation(t *testing.T) {
 	result := &SyncResult{
 		PRCount:    42,
 		UpdatedPRs: 5,
-		DiffCount:  8,
 	}
 
 	if result.PRCount != 42 {

@@ -46,7 +46,6 @@ type File struct {
 // supplied a repository path; clone/fetch timing is logged separately by sync.
 type Profile struct {
 	TotalDuration     time.Duration
-	OpenRepository    time.Duration
 	LoadCommits       time.Duration
 	LoadTrees         time.Duration
 	BuildPatch        time.Duration

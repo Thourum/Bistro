@@ -18,8 +18,6 @@ type SyncRequest struct {
 type SyncResult struct {
 	PRCount      int
 	UpdatedPRs   int
-	DeletedPRs   int
-	DiffCount    int
 	CommentCount int
 	Duration     time.Duration
 	Errors       []string

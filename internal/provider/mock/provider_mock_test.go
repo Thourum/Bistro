@@ -139,19 +139,6 @@ func TestMockPostComment(t *testing.T) {
 	}
 }
 
-func TestMockAuthenticate(t *testing.T) {
-	mp := NewMockProvider()
-
-	ctx := context.Background()
-	token, err := mp.Authenticate(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if token != "mock-token" {
-		t.Errorf("expected mock-token, got %s", token)
-	}
-}
-
 func TestMockWithError(t *testing.T) {
 	customErr := fmt.Errorf("mock error")
 	mp := NewMockProvider().WithError(customErr)

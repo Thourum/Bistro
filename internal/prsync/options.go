@@ -8,15 +8,7 @@ import (
 	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/prsync/writer"
 	"github.com/itterno/bistro/internal/store/actionqueue"
-	"github.com/itterno/bistro/internal/store/prdiff"
 )
-
-// WithDiffStore attaches a DiffStore so diffs are persisted during sync.
-// This is optional; if not set, diffs are generated but not stored.
-func (o *Orchestrator) WithDiffStore(ds *prdiff.Store) *Orchestrator {
-	o.diffStore = ds
-	return o
-}
 
 // WithReviewTracking attaches login-resolver and SHA-writer so that successful
 // review actions (approve, request-changes, comment) record last_reviewed_sha.

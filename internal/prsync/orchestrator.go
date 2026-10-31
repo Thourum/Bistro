@@ -20,7 +20,6 @@ import (
 	"github.com/itterno/bistro/internal/prsync/writer"
 	"github.com/itterno/bistro/internal/store"
 	"github.com/itterno/bistro/internal/store/actionqueue"
-	"github.com/itterno/bistro/internal/store/prdiff"
 )
 
 // ExpertiseHook receives successful PR diff sync notifications for incremental expertise updates.
@@ -41,7 +40,6 @@ type Orchestrator struct {
 	rateLimitMu     sync.RWMutex
 	rateLimitState  *provider.RateLimitState
 	queue           *actionqueue.Queue
-	diffStore       *prdiff.Store
 	expertise       ExpertiseHook
 	resolveRepoPath RepoPathResolver
 	// reviewLogin/reviewSHAWriter are optional; if set they are attached to

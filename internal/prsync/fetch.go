@@ -252,7 +252,6 @@ func (o *Orchestrator) generateDiff(ctx context.Context, result *writer.FetchedP
 		"files", len(diff.Files),
 		"binary_files", diff.Profile.BinaryFileCount,
 		"profile_total_ms", diff.Profile.TotalDuration.Milliseconds(),
-		"profile_open_repo_ms", diff.Profile.OpenRepository.Milliseconds(),
 		"profile_load_commits_ms", diff.Profile.LoadCommits.Milliseconds(),
 		"profile_load_trees_ms", diff.Profile.LoadTrees.Milliseconds(),
 		"profile_build_patch_ms", diff.Profile.BuildPatch.Milliseconds(),
