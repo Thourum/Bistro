@@ -100,6 +100,9 @@ func (s *Threads) SubmitAction(ctx context.Context, req ActionRequest) (ActionRe
 			if err := ctx.Err(); err != nil {
 				return ActionResult{}, err
 			}
+			if result.Queued {
+				return ActionResult{}, WithReason(CodeRateLimited, "action_queued", result.Error)
+			}
 			return ActionResult{}, WithReason(CodeInternal, "action_failed", result.Error)
 		}
 		return ActionResult{PRID: result.PRID, Action: string(result.Action)}, nil

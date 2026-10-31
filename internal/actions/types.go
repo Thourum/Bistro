@@ -146,6 +146,7 @@ type ActionResult struct {
 	PRID      string // PR ID
 	Action    ActionCommand
 	Success   bool
+	Queued    bool // persisted for later replay, not yet executed
 	Error     string // error message if !Success
 	Timestamp time.Time
 	Retries   int // number of retries before success/failure

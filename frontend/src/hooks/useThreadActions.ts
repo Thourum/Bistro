@@ -1,7 +1,7 @@
 import { Threads } from '@bindings/services';
 import { useCallback, useState } from 'react';
 import { addToast } from '../components/ToastContainer';
-import { callWrite } from '../services/engine/call';
+import { callWrite, faultReason } from '../services/engine/call';
 
 /**
  * Dispatches resolve / unresolve writes for review threads.
@@ -73,10 +73,10 @@ export function useThreadActions(prId: string | undefined) {
         (error) => {
           clearPending(threadId);
           const message = error.message;
-          const queued = message.includes('action queued for later replay');
+          const isQueued = faultReason(error) === 'action_queued';
           addToast({
-            type: queued ? 'warning' : 'error',
-            message: queued ? `Thread ${label} queued for retry` : message,
+            type: isQueued ? 'warning' : 'error',
+            message: isQueued ? `Thread ${label} queued for retry` : message,
             dismissible: true,
           });
         },

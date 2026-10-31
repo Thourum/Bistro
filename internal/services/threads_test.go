@@ -21,11 +21,12 @@ func (s threadTestLister) ListReviewThreads(context.Context, string) ([]store.Re
 type threadTestApplier struct {
 	captured *actions.ActionRequest
 	fail     bool
+	queued   bool
 }
 
 func (s *threadTestApplier) ApplyAction(_ context.Context, req *actions.ActionRequest) *actions.ActionResult {
 	s.captured = req
-	return &actions.ActionResult{PRID: req.PRID, Action: req.Action, Success: !s.fail, Error: "provider failed"}
+	return &actions.ActionResult{PRID: req.PRID, Action: req.Action, Success: !s.fail, Queued: s.queued, Error: "provider failed"}
 }
 func TestThreadsList(t *testing.T) {
 	s := &Threads{DB: threadTestLister{threads: []store.ReviewThreadRow{{ID: "rt-1", StateKnown: true}, {ID: "rt-2", Resolved: true}}}}
@@ -86,6 +87,11 @@ func TestSubmitActionFailuresAndLiveGetter(t *testing.T) {
 	_, err = s.SubmitAction(context.Background(), req)
 	if !errors.As(err, &se) || se.Code != CodeInternal || se.Reason != "action_failed" {
 		t.Fatalf("action error = %v", err)
+	}
+	applier.queued = true
+	_, err = s.SubmitAction(context.Background(), req)
+	if !errors.As(err, &se) || se.Code != CodeRateLimited || se.Reason != "action_queued" || se.Message != "provider failed" {
+		t.Fatalf("queued action error = %v", err)
 	}
 	req.ThreadID = ""
 	_, err = s.SubmitAction(context.Background(), req)

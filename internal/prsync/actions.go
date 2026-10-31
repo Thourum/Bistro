@@ -133,7 +133,9 @@ func (o *Orchestrator) queueRateLimitedAction(ctx context.Context, req *actions.
 		return failedActionResult(req, err.Error())
 	}
 	log.Debug("action queued", "queue_id", queuedAction.ID)
-	return failedActionResult(req, "rate limited: action queued for later replay")
+	result := failedActionResult(req, "rate limited: action queued for later replay")
+	result.Queued = true
+	return result
 }
 
 // executeAction runs an action via the executor immediately.

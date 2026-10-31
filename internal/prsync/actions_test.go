@@ -252,8 +252,8 @@ func TestApplyAction_LineLevelComment_RateLimited_Rejected(t *testing.T) {
 		Line:   42, // line-level → cannot be safely queued
 	})
 
-	if result.Success {
-		t.Error("expected failure for line-level post_comment when rate-limited")
+	if result.Success || result.Queued {
+		t.Fatalf("expected rejected, unqueued result, got %+v", result)
 	}
 	if !strings.Contains(result.Error, "line-level") {
 		t.Errorf("error must mention line-level; got: %q", result.Error)
@@ -287,8 +287,8 @@ func TestApplyAction_GeneralComment_RateLimited_Queued(t *testing.T) {
 		Line:   0, // general PR comment — safe to queue
 	})
 
-	if result.Success {
-		// rate-limited path returns failure even on success queue
+	if result.Success || !result.Queued {
+		t.Fatalf("expected queued, unexecuted result, got %+v", result)
 	}
 	if strings.Contains(result.Error, "line-level") {
 		t.Error("general comment (Line=0) must not be rejected as line-level")
@@ -300,6 +300,15 @@ func TestApplyAction_GeneralComment_RateLimited_Queued(t *testing.T) {
 	}
 	if len(pending) != 1 {
 		t.Errorf("expected 1 queued action for general comment, got %d", len(pending))
+	}
+	if err := db.DB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	failed := orch.ApplyAction(context.Background(), &actions.ActionRequest{
+		PRID: "github:owner/repo:2", Action: actions.PostCommentCommand, Body: "LGTM",
+	})
+	if failed.Success || failed.Queued || failed.Error == "" {
+		t.Fatalf("enqueue failure must not claim queued, got %+v", failed)
 	}
 }
 
