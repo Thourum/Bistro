@@ -100,7 +100,10 @@ The workspace's seven-day `minimumReleaseAge` policy exempts exactly `'@wailsio/
 # Root: build for the host
 wails3 task build
 
-# Native platform packaging
+# All three platforms, in order: Darwin, Windows, then Linux
+wails3 task package
+
+# One platform
 wails3 task package:darwin
 wails3 task package:windows
 wails3 task package:linux
@@ -109,7 +112,7 @@ wails3 task package:linux
 wails3 task setup:docker
 ```
 
-`Taskfile.yml` and platform Taskfiles in `build/` are authoritative. macOS packaging is native and arm64; Windows and Linux release artifacts target amd64. Docker-backed cross-builds require Docker and the prepared image; macOS bundles still require macOS tooling. A built frontend is embedded in the executable.
+`Taskfile.yml` and platform Taskfiles in `build/` are authoritative. `package` runs the Darwin, Windows, and Linux tasks in that order. macOS packaging is native and arm64; Windows and Linux release artifacts target amd64. Docker-backed cross-builds require Docker and the prepared image; macOS bundles still require macOS tooling. A built frontend is embedded in the executable.
 
 For a versioned local macOS bundle and smoke check:
 

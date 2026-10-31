@@ -223,7 +223,7 @@ jobs:
           # Recreate both archives from the signed (and, when available, stapled) app.
           rm -f bin/bistro-darwin-arm64.zip bin/bistro-darwin-arm64-installer.dmg
           ditto -c -k --keepParent bin/Bistro.app bin/bistro-darwin-arm64.zip
-          hdiutil create -volname Bistro -srcfolder bin/Bistro.app -ov -format UDZO bin/bistro-darwin-arm64-installer.dmg
+          diskutil image create from --format UDZO --volumeName Bistro bin/Bistro.app bin/bistro-darwin-arm64-installer.dmg
 
       - name: Smoke test the packaged app
         run: scripts/smoke.sh ${{ matrix.smoke }}

@@ -73,6 +73,7 @@ pnpm install
 wails3 task dev
 wails3 task generate
 wails3 task build
+wails3 task package
 wails3 task package:darwin
 wails3 task package:windows
 wails3 task package:linux

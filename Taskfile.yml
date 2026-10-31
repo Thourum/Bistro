@@ -40,6 +40,15 @@ tasks:
     cmds:
       - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
 
+  # Sequential: Darwin and Linux both write bin/bistro, and each task archives
+  # its binary before the next build replaces it.
+  package:
+    desc: Packages Darwin, Windows, and Linux release artifacts
+    cmds:
+      - task: package:darwin
+      - task: package:windows
+      - task: package:linux
+
   package:darwin:
     platforms: [darwin]
     cmds:
@@ -47,14 +56,17 @@ tasks:
         vars:
           ARCH: arm64
       - ditto -c -k --keepParent bin/Bistro.app bin/bistro-darwin-arm64.zip
-      - hdiutil create -volname Bistro -srcfolder bin/Bistro.app -ov -format UDZO bin/bistro-darwin-arm64-installer.dmg
+      - diskutil image create from --format UDZO --volumeName Bistro bin/Bistro.app bin/bistro-darwin-arm64-installer.dmg
 
   package:windows:
     cmds:
       - task: windows:package
         vars:
           ARCH: amd64
-      - powershell -NoProfile -Command "Compress-Archive -Path bin/bistro.exe -DestinationPath bin/bistro-windows-amd64.zip -Force"
+      - cmd: powershell -NoProfile -Command "Compress-Archive -Path bin/bistro.exe -DestinationPath bin/bistro-windows-amd64.zip -Force"
+        platforms: [windows]
+      - cmd: rm -f bin/bistro-windows-amd64.zip && zip -j bin/bistro-windows-amd64.zip bin/bistro.exe
+        platforms: [darwin, linux]
 
   package:linux:
     cmds:
