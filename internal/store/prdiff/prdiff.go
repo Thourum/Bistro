@@ -58,7 +58,16 @@ func (s *Store) Save(prID string, diffs []File) error {
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	qtx := s.queries.WithTx(tx)
+	if err := ReplaceTx(ctx, tx, prID, diffs); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ReplaceTx replaces the PR's cached files within the caller's transaction.
+// Nil or empty diffs clear existing rows; the caller owns commit and rollback.
+func ReplaceTx(ctx context.Context, tx *sql.Tx, prID string, diffs []File) error {
+	qtx := storedb.New(tx)
 
 	// Always delete first: ensures removed/renamed files and empty diffs leave no orphans.
 	if err := qtx.DeleteDiffsForPR(ctx, prID); err != nil {
@@ -85,7 +94,7 @@ func (s *Store) Save(prID string, diffs []File) error {
 		}
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 // Get returns all stored File entries for the given PR, ordered by file path.
