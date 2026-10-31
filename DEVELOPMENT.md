@@ -10,6 +10,12 @@ Wails handles single-instance enforcement. `OnShutdown` cancels the shared engin
 
 See [the Go package map](docs/go-project-overview.md) for backend details and [ADR 0001](docs/adr/0001-electron-vs-wails.md) for the historical decision and migration amendment.
 
+## Background mode
+
+When the tray is available on macOS or Windows, closing the window keeps Bistro running and syncing in the tray. On macOS, this also hides the Dock icon. Use **Show Bistro** in the tray to restore the window, or launch Bistro again. To exit, use ⌘Q on macOS, the app menu's **Quit**, or the tray's **Quit Bistro**.
+
+On Linux, closing the window quits even if the tray icon appears, because Wails does not report tray readiness there. Under `--smoke`, Bistro creates no tray and closing the window quits.
+
 ## Prerequisites
 
 - Go 1.26.1, matching root `go.mod`, with CGO and a native C compiler.

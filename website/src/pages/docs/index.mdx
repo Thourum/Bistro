@@ -21,6 +21,29 @@ review inbox over localhost.
 - **[Feedback](/docs/feedback)** — how to file bug reports, performance reports,
   and feature requests that maintainers can act on.
 
+## Tray and background sync
+
+The tray icon shows whether Bistro is idle, syncing, needs attention, or signed
+out. Its tooltip starts with `Bistro — ` and matches the status line at the top
+of the tray menu:
+
+- `Signed out`
+- `Syncing…`
+- `Up to date · synced HH:MM` (or `Up to date` before the first sync)
+- `Paused (auto-sync off)`
+- `Rate limited · retry after HH:MM`
+- `Sync error (<error_code>)`
+
+Times use your local clock. Below the status line, the menu offers **Show
+Bistro**, **Sync Now**, **Check for Updates…**, **Open Logs**, and **Quit Bistro**.
+**Sync Now** is disabled while signed out or syncing; **Check for Updates…** is
+disabled in development builds.
+
+On macOS and Windows, when the tray is available, closing the window keeps
+Bistro syncing in the background. Choose **Show Bistro** to reopen it. To exit,
+choose **Quit Bistro** in the tray, **Quit** in the app menu, or press ⌘Q on
+macOS. On Linux, closing the window quits, even if the tray icon is visible.
+
 ## Quick start
 
 Bistro is source-run first while release packaging is pending:

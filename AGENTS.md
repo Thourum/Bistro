@@ -20,7 +20,7 @@ If you change structure, commands, or conventions, update this guide in the same
 
 ## Architecture
 
-- `main.go` constructs the Wails application, embeds `frontend/dist/`, wires services, settings, events, and telemetry, and starts the engine. `window.go` owns the native window and menu.
+- `main.go` constructs the Wails application, embeds `frontend/dist/`, wires services, settings, events, and telemetry, and starts the engine. `window.go` owns the native window.
 - `internal/engine` owns SQLite writes, sync, local diffs, and offline action replay. There is no WebSocket transport or standalone engine process.
 - `internal/services` exposes one service per domain with typed context-aware methods. `ServiceError` codes are `not_found`, `unauthenticated`, `rate_limited`, `invalid`, `cancelled`, `timeout`, and `internal`; optional `Reason` identifies domain failures. `guard` / `guardErr` normalize errors and recover/report panics. `events.go` registers typed Wails events; `servicestest.Recorder` captures them in behavior tests.
 - `internal/shell` owns atomic JSON settings, external-edit polling, editor launching, platform operations, Sentry, PostHog, and the updater. `services.Shell` validates external URLs and editor requests before delegating to the platform.
@@ -30,7 +30,7 @@ Wails enforces single-instance behavior and focuses the existing window on a sec
 
 Within `internal/engine`, `app.go` owns Start/Stop, `options.go` construction/defaults, `supervise.go` panic restart/backoff, and `services.go` the retained service set. `provider.go`, `config.go`, `llm.go`, `expertise.go`, `bridge.go`, and `repo_location.go` own domain wiring. Auth uses blocking `Auth.Start` with context cancellation. `App.ApplySyncSettings` clamps intervals to 30–3600 seconds; `App.ApplyClassificationSettings` shares validated service state.
 
-`internal/tray` is the pure sync-status tray view model; native adapters consume its icon, tooltip, status line, and ordered menu items.
+`internal/tray` owns the pure sync-status view model and Wails adapter. In `package main`, `background.go` wires tray actions and ordered window/Dock visibility; `appmenu.go` owns the native app menu. The engine's `syncStatusTracker` sits behind the emitter, publishes `sync:status`, and supplies the `Sync.Status` snapshot and tray listener. Native menu clicks emit `menu:action`; the renderer reports enabled actions through `Shell.SetMenuActions`. Background mode is on only when the tray is ready (created on macOS or Windows), never on Linux or under `--smoke`; see [DEVELOPMENT.md](DEVELOPMENT.md#background-mode) for close and quit behavior.
 
 Within `internal/git`, `Client` owns clone/fetch/checkout; `anchor` resolves comment anchors, `diff` generates diffs/interdiffs and patch fingerprints, `remote` parses canonical identities, and `repolock` owns shared per-repo locks. Interdiff takes the same `*repolock.Locks` as clone/fetch, not a `git.Client`. `clonecache` depends on `remote`, never the parent package. Shared on-disk commit fixtures live in `git/gittest`.
 
@@ -54,6 +54,8 @@ Independent SQLite stores live in `internal/store/currentuser`, `dismissal`, `pr
 - Engine calls use generated `@bindings/services` methods through `call()` / `callWrite()` in `frontend/src/services/engine/call.ts`. Never call bindings directly from components. Reads use `call`; mutations and external side effects use `callWrite`, which refuses writes under `?bench_keys=1`.
 - Faults carry `code` / `reason` context. Branch on `faultReason`, never message text. Calls default to a 30-second timeout and cancel the Wails promise on expiry; `Auth.Start` and dev-folder scans disable that timeout.
 - Push events are registered in `internal/services/events.go` and handled by the exhaustive table in `frontend/src/services/events/index.ts`. `useEngine` owns subscriptions and once-only startup checks.
+- Native menu action items dispatch by `actionId`, with no native accelerators (built-in roles keep theirs). `useMenuActions` / `utils/menuActions.ts` share the hotkey and palette handlers and report enablement from `isActive` through `Shell.SetMenuActions`.
+- Never call the Wails Dock service on the main thread: `HideAppIcon` / `ShowAppIcon` synchronously dispatch there on macOS. Use the ordered visibility worker in `background.go`.
 - Generated Wails models type engine responses/events. Use zod only at genuinely external edges: settings-file leaves, URL search params, bench collector input, DOM events, and the untyped RuntimeError cause in `call.ts`; never replace validation with `as` casts.
 - After changing a bound service method or event shape, run `wails3 task generate` and commit `frontend/bindings/`. Never hand-edit generated bindings or `internal/store/db/`.
 - Hooks own React state/effects and fetching lifecycles; requests and appStore writes live in `frontend/src/services/`. Call services directly, not hooks created solely for `useCallback`.
