@@ -30,16 +30,28 @@ type RepoLocation struct {
 	Log            *slog.Logger
 }
 
+const (
+	locationInvalidURL          = "invalid_url"
+	locationDestinationRequired = "destination_required"
+	locationInvalidPath         = "invalid_path"
+	locationDestinationConflict = "destination_conflict"
+	locationRemoteMismatch      = "remote_mismatch"
+	locationPathMissing         = "path_missing"
+	locationAuthFailed          = "auth_failed"
+	locationCancelled           = "cancelled"
+	locationCloneFailed         = "clone_failed"
+)
+
 // locationError maps a repo-location failure code onto the closed Code set,
 // keeping the original code as Reason for the UI.
 func locationError(code, message string) *ServiceError {
 	c := CodeInternal
 	switch code {
-	case "invalid_url", "destination_required", "invalid_path", "destination_conflict", "remote_mismatch", "path_missing":
+	case locationInvalidURL, locationDestinationRequired, locationInvalidPath, locationDestinationConflict, locationRemoteMismatch, locationPathMissing:
 		c = CodeInvalid
-	case "auth_failed":
+	case locationAuthFailed:
 		c = CodeUnauthenticated
-	case "cancelled":
+	case locationCancelled:
 		c = CodeCancelled
 	}
 	return WithReason(c, code, message)
@@ -96,15 +108,15 @@ func healthCheckLocalRepo(ctx context.Context, row repolocation.Location) (strin
 	if err != nil {
 		logging.FromContext(ctx).Warn("local repo path stat failed", "error", err)
 		if os.IsNotExist(err) {
-			return "missing", "path_missing", "repository path not found"
+			return "missing", locationPathMissing, "repository path not found"
 		}
 		if os.IsPermission(err) {
 			return "permission_denied", "permission_denied", "repository path is not readable"
 		}
-		return "missing", "path_missing", "repository path not found"
+		return "missing", locationPathMissing, "repository path not found"
 	}
 	if !info.IsDir() {
-		return "missing", "path_missing", "path is not a directory"
+		return "missing", locationPathMissing, "path is not a directory"
 	}
 	if ok, err := canReadDir(row.LocalPath); !ok {
 		logging.FromContext(ctx).Warn("local repo path unreadable", "error", err)
@@ -112,7 +124,7 @@ func healthCheckLocalRepo(ctx context.Context, row repolocation.Location) (strin
 	}
 	identity := remote.Identity{Provider: row.Provider, Owner: row.Owner, Repo: row.Repo}
 	if !repoPathMatches(row.LocalPath, identity) {
-		return "remote_mismatch", "remote_mismatch", fmt.Sprintf("no remote matches %s", identity.ID())
+		return "remote_mismatch", locationRemoteMismatch, fmt.Sprintf("no remote matches %s", identity.ID())
 	}
 	return "ok", "", ""
 }

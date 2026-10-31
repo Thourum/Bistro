@@ -48,7 +48,7 @@ func (s *RepoLocation) RecoverPath(ctx context.Context, req RecoverPathRequest) 
 			return locationError(recoverPathErrorCode(err), "unable to read repository path")
 		}
 		if !matches {
-			return locationError("remote_mismatch", "path remote does not match repo")
+			return locationError(locationRemoteMismatch, "path remote does not match repo")
 		}
 		if err := s.Store.UpsertLocal(ctx, location.Provider, location.Owner, location.Repo, canonical, false); err != nil {
 			return err
@@ -85,7 +85,7 @@ func (s *RepoLocation) RecoverToCache(ctx context.Context, req RepoRef) error {
 				return ctxErr
 			}
 			serviceLogger(s.Log).Warn("inspect cache destination failed", "error", err)
-			return locationError("clone_failed", "unable to prepare cache repository")
+			return locationError(locationCloneFailed, "unable to prepare cache repository")
 		}
 		if state.Matches {
 			if err := s.Store.SetCache(ctx, repoID, destination); err != nil {
@@ -94,7 +94,7 @@ func (s *RepoLocation) RecoverToCache(ctx context.Context, req RepoRef) error {
 			return nil
 		}
 		if !state.CanClone {
-			return locationError("clone_failed", state.Message)
+			return locationError(locationCloneFailed, state.Message)
 		}
 		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 			return err
@@ -104,26 +104,13 @@ func (s *RepoLocation) RecoverToCache(ctx context.Context, req RepoRef) error {
 			return err
 		}
 		repoURL := remote.GitHubCloneURL(identity.Owner, identity.Repo)
-		if err := cloneRepo(ctx, s.Clone, repoURL, destination, true); err != nil {
-			logger := serviceLogger(s.Log)
-			logger.Warn("recover cache clone failed", "error", err)
-			message := "unable to clone repository"
-			if cleanupErr := cleanupBistroCreated(destination, createdByBistro, "cache", root); cleanupErr != nil {
-				logger.Warn("clone cleanup failed", "error", cleanupErr)
-				message += "; manual cleanup may be required"
-			}
-			if errors.Is(err, context.DeadlineExceeded) {
-				return err
-			}
-			return locationError(cloneErrorCode(err), message)
-		}
-		if !repoPathMatches(destination, identity) {
-			message := "cloned repository remote does not match repo"
-			if cleanupErr := cleanupBistroCreated(destination, createdByBistro, "cache", root); cleanupErr != nil {
-				serviceLogger(s.Log).Warn("clone cleanup failed", "error", cleanupErr)
-				message += "; manual cleanup may be required"
-			}
-			return locationError("clone_failed", message)
+		if err := s.cloneAndVerify(ctx, repoCloneDestination{
+			URL: repoURL, Path: destination, Identity: identity,
+			Source: "cache", Root: root, CreatedByBistro: createdByBistro,
+			FailureLog:     "recover cache clone failed",
+			MismatchReason: locationCloneFailed, MismatchMessage: "cloned repository remote does not match repo",
+		}); err != nil {
+			return err
 		}
 		if err := s.Store.SetCache(ctx, repoID, destination); err != nil {
 			return err
@@ -134,19 +121,19 @@ func (s *RepoLocation) RecoverToCache(ctx context.Context, req RepoRef) error {
 
 func destinationRootErrorCode(err error) string {
 	if errors.Is(err, errDevFolderPathRequired) {
-		return "destination_required"
+		return locationDestinationRequired
 	}
 	if errors.Is(err, errDevFolderPathInvalid) {
-		return "invalid_path"
+		return locationInvalidPath
 	}
-	return "destination_conflict"
+	return locationDestinationConflict
 }
 
 func recoverPathErrorCode(err error) string {
 	if os.IsPermission(err) || errors.Is(err, os.ErrPermission) {
 		return "permission_denied"
 	}
-	return "path_missing"
+	return locationPathMissing
 }
 
 func registeredLocal(ctx context.Context, locations *repolocation.Store, repoID string) (bool, *ServiceError, error) {
@@ -162,7 +149,7 @@ func registeredLocal(ctx context.Context, locations *repolocation.Store, repoID 
 	}
 	code := location.LocationErrorCode
 	if code == "" {
-		code = "path_missing"
+		code = locationPathMissing
 	}
 	message := location.LocationError
 	if message == "" {
@@ -318,6 +305,38 @@ func setRepoSource(ctx context.Context, db *sql.DB, locations *repolocation.Stor
 	return locations.UpsertLocal(ctx, identity.Provider, identity.Owner, identity.Repo, path, true)
 }
 
+type repoCloneDestination struct {
+	URL, Path                       string
+	Identity                        remote.Identity
+	Source, Root                    string
+	CreatedByBistro                 bool
+	FailureLog                      string
+	MismatchReason, MismatchMessage string
+}
+
+func (s *RepoLocation) cloneAndVerify(ctx context.Context, destination repoCloneDestination) error {
+	logger := serviceLogger(s.Log)
+	cleanupMessage := func(message string) string {
+		if err := cleanupBistroCreated(destination.Path, destination.CreatedByBistro, destination.Source, destination.Root); err != nil {
+			logger.Warn("clone cleanup failed", "error", err)
+			return message + "; manual cleanup may be required"
+		}
+		return message
+	}
+	if err := cloneRepo(ctx, s.Clone, destination.URL, destination.Path, destination.Source == "cache"); err != nil {
+		logger.Warn(destination.FailureLog, "error", err)
+		message := cleanupMessage("unable to clone repository")
+		if errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		return locationError(cloneErrorCode(err), message)
+	}
+	if !repoPathMatches(destination.Path, destination.Identity) {
+		return locationError(destination.MismatchReason, cleanupMessage(destination.MismatchMessage))
+	}
+	return nil
+}
+
 // cloneRepo delegates to the injected clone dependency; auth comes from the
 // shared git client's token source configured in app.go.
 func cloneRepo(ctx context.Context, clone func(context.Context, string, string, bool) error, repoURL, destination string, bare bool) error {
@@ -329,12 +348,12 @@ func cloneRepo(ctx context.Context, clone func(context.Context, string, string, 
 
 func cloneErrorCode(err error) string {
 	if errors.Is(err, context.Canceled) {
-		return "cancelled"
+		return locationCancelled
 	}
 	if git.IsAuthError(err) {
-		return "auth_failed"
+		return locationAuthFailed
 	}
-	return "clone_failed"
+	return locationCloneFailed
 }
 
 func ensureRepoRow(ctx context.Context, db *sql.DB, identity remote.Identity) error {

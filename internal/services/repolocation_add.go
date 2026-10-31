@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,7 +29,7 @@ func (s *RepoLocation) AddByURL(ctx context.Context, req AddRepoByURLRequest) (A
 		identity, err := remote.ParseURL(req.URL)
 		if err != nil {
 			serviceLogger(s.Log).Warn("parse repository URL failed", "error", err)
-			return AddRepoResult{}, locationError("invalid_url", "invalid repository URL")
+			return AddRepoResult{}, locationError(locationInvalidURL, "invalid repository URL")
 		}
 		repoID := identity.ID()
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -56,7 +55,7 @@ func (s *RepoLocation) AddByURL(ctx context.Context, req AddRepoByURLRequest) (A
 		destination := "cache"
 		if !isRepoDirOverrideSet {
 			if req.Destination == nil || *req.Destination == "" {
-				return AddRepoResult{}, locationError("destination_required", "destination is required")
+				return AddRepoResult{}, locationError(locationDestinationRequired, "destination is required")
 			}
 			destination = *req.Destination
 		}
@@ -75,7 +74,7 @@ func (s *RepoLocation) AddByURL(ctx context.Context, req AddRepoByURLRequest) (A
 			if ctxErr := contextError(err); ctxErr != nil {
 				return AddRepoResult{}, ctxErr
 			}
-			return AddRepoResult{}, locationError("destination_conflict", "unable to inspect destination")
+			return AddRepoResult{}, locationError(locationDestinationConflict, "unable to inspect destination")
 		}
 		if state.Matches {
 			if err := setRepoSource(ctx, s.DB, s.Store, identity, destinationPath, source); err != nil {
@@ -84,7 +83,7 @@ func (s *RepoLocation) AddByURL(ctx context.Context, req AddRepoByURLRequest) (A
 			return AddRepoResult{RepoID: repoID, Source: source}, nil
 		}
 		if !state.CanClone {
-			return AddRepoResult{}, locationError("destination_conflict", state.Message)
+			return AddRepoResult{}, locationError(locationDestinationConflict, state.Message)
 		}
 		if err := os.MkdirAll(filepath.Dir(destinationPath), 0o755); err != nil {
 			return AddRepoResult{}, fmt.Errorf("create destination parent: %w", err)
@@ -93,26 +92,13 @@ func (s *RepoLocation) AddByURL(ctx context.Context, req AddRepoByURLRequest) (A
 		if err != nil {
 			return AddRepoResult{}, err
 		}
-		if err := cloneRepo(ctx, s.Clone, req.URL, destinationPath, source == "cache"); err != nil {
-			logger := serviceLogger(s.Log)
-			logger.Warn("clone repository failed", "error", err)
-			message := "unable to clone repository"
-			if cleanupErr := cleanupBistroCreated(destinationPath, createdByBistro, source, rootPath); cleanupErr != nil {
-				logger.Warn("clone cleanup failed", "error", cleanupErr)
-				message += "; manual cleanup may be required"
-			}
-			if errors.Is(err, context.DeadlineExceeded) {
-				return AddRepoResult{}, err
-			}
-			return AddRepoResult{}, locationError(cloneErrorCode(err), message)
-		}
-		if !repoPathMatches(destinationPath, identity) {
-			message := "cloned repository remote does not match requested URL"
-			if cleanupErr := cleanupBistroCreated(destinationPath, createdByBistro, source, rootPath); cleanupErr != nil {
-				serviceLogger(s.Log).Warn("clone cleanup failed", "error", cleanupErr)
-				message += "; manual cleanup may be required"
-			}
-			return AddRepoResult{}, locationError("remote_mismatch", message)
+		if err := s.cloneAndVerify(ctx, repoCloneDestination{
+			URL: req.URL, Path: destinationPath, Identity: identity,
+			Source: source, Root: rootPath, CreatedByBistro: createdByBistro,
+			FailureLog:     "clone repository failed",
+			MismatchReason: locationRemoteMismatch, MismatchMessage: "cloned repository remote does not match requested URL",
+		}); err != nil {
+			return AddRepoResult{}, err
 		}
 		if err := setRepoSource(ctx, s.DB, s.Store, identity, destinationPath, source); err != nil {
 			return AddRepoResult{}, err
