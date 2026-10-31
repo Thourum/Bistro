@@ -210,7 +210,7 @@ func (o *Orchestrator) handleReplyCommentSuccess(req *actions.ActionRequest) {
 	})
 }
 
-// handleThreadActionSuccess updates local cache and emits a WS event after a
+// handleThreadActionSuccess updates local cache and emits a thread event after a
 // successful resolve/unresolve. Cache failures must not undo remote success.
 func (o *Orchestrator) handleThreadActionSuccess(ctx context.Context, req *actions.ActionRequest, log *slog.Logger) {
 	// A disconnected provider must not emit stale local state to the new session.

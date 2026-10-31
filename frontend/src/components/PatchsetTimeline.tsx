@@ -24,8 +24,6 @@ function shortSha(sha: string): string {
  *   - Click a chip to set the TO end; the FROM end stays put unless it would
  *     cross the TO end, in which case it follows.
  *   - The FROM rail lets you anchor the base of the comparison independently.
- *   - Arrow keys move the focused end; the strip is a single roving-tabindex
- *     group so it stays keyboard-first.
  */
 export function PatchsetTimeline({
   patchsets,

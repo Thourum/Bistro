@@ -25,8 +25,8 @@ function HotkeyRegistrar(): null {
 }
 
 /**
- * Bridges confirmingAction==='command' → overlays.openCommand() without
- * writing to mode. Needs OverlayProvider context (provided by RootShell).
+ * Bridges confirmingAction==='command' → overlays.openCommand().
+ * Needs OverlayProvider context (provided by RootShell).
  */
 function ConfirmingActionOverlayBridge(): null {
   const confirmingAction = useStore(

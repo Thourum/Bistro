@@ -225,7 +225,6 @@ export function CommandPalette(): React.ReactElement | null {
         );
         return;
       case 'focus-list':
-        // Navigate to /prs; route↔mode coherence effect will correct mode.
         void navigate({
           to: '/prs',
           search: (prev: Record<string, unknown>) => prev,

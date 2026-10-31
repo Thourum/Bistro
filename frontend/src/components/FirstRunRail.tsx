@@ -109,11 +109,10 @@ function RailStep({
 }
 
 /**
- * Non-modal first-review checklist beside the live inbox. Purely
+ * Non-modal first-review checklist beside the inbox, PR and diff. Purely
  * instructional: steps complete from dispatched live actions, and only
  * Hide/Close (or the firstRun.hide key) persists its dismissal.
  */
-/** Stays beside the inbox, PR and diff so the guide follows the review loop. */
 export function FirstRunRail(): React.ReactElement {
   const needsAction = useNeedsActionPRs();
   const completed = useStore(appStore, (s) => s.firstRunRail.completed);

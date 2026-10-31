@@ -9,9 +9,6 @@ import React from 'react';
  *
  * The right-hand region is reserved for global chrome (status, shortcuts, settings)
  * and is not slottable.
- *
- * Implementation: a tiny pub/sub in context — setters bump a version counter so
- * only the footer re-renders when content changes, not the whole tree.
  */
 
 type SlotId = 'left' | 'center';

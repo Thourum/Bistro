@@ -9,7 +9,7 @@ import (
 	storedb "github.com/itterno/bistro/internal/store/db"
 )
 
-// ReviewThreadRow is a row from the review_threads table, used by the WS handler.
+// ReviewThreadRow is a row from the review_threads table.
 type ReviewThreadRow struct {
 	ID         string `json:"id"`
 	PRID       string `json:"pr_id"`

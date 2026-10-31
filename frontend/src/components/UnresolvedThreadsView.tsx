@@ -79,13 +79,11 @@ function sortThreads(threads: ReviewThread[]): ReviewThread[] {
 }
 
 /**
- * The unresolved-threads surface (mode `'threads'`, reached via `gu`).
+ * The unresolved-threads overlay opened by the detail.threads action.
  *
- * Keyboard-first: `j` / `k` move the focus between threads, `r` resolves the
- * focused thread and `u` unresolves it. Those keys are registered as
- * threads-mode keybindings that dispatch DOM custom events; this component
- * listens for them so the keyboard path and the click path share one code
- * path. `Escape` (global) returns to detail.
+ * Thread keybindings dispatch DOM custom events; this component listens for
+ * them so keyboard movement and resolve/unresolve share the click path.
+ * Escape closes the overlay.
  *
  * Honesty contract: a thread whose `state_known` is false shows an "Unknown"
  * badge and exposes no resolve/unresolve control — the backend would reject
@@ -141,7 +139,7 @@ export function UnresolvedThreadsView({
     [resolveThread, unresolveThread],
   );
 
-  // Bridge threads-mode keybindings (which dispatch DOM custom events) into the
+  // Bridge thread-overlay keybindings (which dispatch DOM custom events) into the
   // focused-row actions and movement.
   useEffect(() => {
     const onResolve = (): void => {

@@ -50,7 +50,7 @@ type Orchestrator struct {
 	// user's line-comment drafts and submit_review can run.
 	drafts reviewDraftStore
 	// reviewLocks holds one *sync.Mutex per PR id so concurrent submissions
-	// from separate WebSocket connections can't both submit the same drafts.
+	// can't both submit the same drafts.
 	reviewLocks sync.Map
 	// anchorResolver is optional; when set it runs on each clone after diff
 	// generation and populates writer.FetchedPR.AnchorUpdates.
