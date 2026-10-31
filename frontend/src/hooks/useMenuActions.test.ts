@@ -12,7 +12,10 @@ import type { BindingActivationContext } from '../utils/keybindingActivation';
 import { useMenuActions } from './useMenuActions';
 
 vi.mock('../router', () => ({ router: { navigate: vi.fn() } }));
-vi.mock('../services/menu', () => ({ reportMenuActions: vi.fn() }));
+vi.mock('../services/menu', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/menu')>()),
+  reportMenuActions: vi.fn(),
+}));
 
 afterEach(() => {
   appStore.setState(() => initialUIState);

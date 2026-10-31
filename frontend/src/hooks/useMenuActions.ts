@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { reportMenuActions } from '../services/menu';
+import { createMenuActionReporter, reportMenuActions } from '../services/menu';
 import { appStore } from '../store';
 import type { KeyActionContext } from '../utils/keybindingActions';
 import type { BindingActivationContext } from '../utils/keybindingActivation';
@@ -24,18 +24,23 @@ export function useMenuActions(
     [routeBase, activeOverlay],
   );
   const menuActionRequests = useStore(appStore, (s) => s.menuActionRequests);
+  const reportLatest = useMemo(
+    () =>
+      createMenuActionReporter({
+        send: reportMenuActions,
+        onError: (fault) =>
+          log.warn({ err: fault.message }, 'menu availability report failed'),
+      }),
+    [],
+  );
 
   useEffect(() => {
     const enabled = enabledKey.split(',');
     const ids = MENU_ACTION_IDS.filter((actionId) =>
       enabled.includes(actionId),
     );
-    void reportMenuActions(ids).match(
-      () => undefined,
-      (fault) =>
-        log.warn({ err: fault.message }, 'menu availability report failed'),
-    );
-  }, [enabledKey]);
+    reportLatest(ids);
+  }, [enabledKey, reportLatest]);
 
   useEffect(() => {
     if (menuActionRequests.length === 0) return;
