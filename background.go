@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/itterno/bistro/internal/engine"
@@ -10,6 +11,7 @@ import (
 	"github.com/itterno/bistro/internal/shell"
 	"github.com/itterno/bistro/internal/tray"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 type trayDeps struct {
@@ -49,6 +51,27 @@ func startTray(deps trayDeps) *tray.Tray {
 		},
 		Quit: deps.app.Quit,
 	}, tray.ViewOptions{IsDevBuild: version == "dev", Location: time.Local}, deps.eng.SyncStatus())
-	deps.eng.OnSyncStatus(icon.Update)
+	deps.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+		activateTrayStatus(deps.eng, icon.Update)
+	})
 	return icon
+}
+
+type trayStatusSource interface {
+	SyncStatus() services.SyncStatus
+	OnSyncStatus(func(services.SyncStatus))
+}
+
+// Register before reading the snapshot so startup transitions cannot be lost.
+// Serialize reconciliation with callbacks so an older snapshot cannot win.
+func activateTrayStatus(source trayStatusSource, apply func(services.SyncStatus)) {
+	var delivery sync.Mutex
+	delivery.Lock()
+	defer delivery.Unlock()
+	source.OnSyncStatus(func(status services.SyncStatus) {
+		delivery.Lock()
+		defer delivery.Unlock()
+		apply(status)
+	})
+	apply(source.SyncStatus())
 }
