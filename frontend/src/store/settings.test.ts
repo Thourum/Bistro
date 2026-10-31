@@ -105,6 +105,14 @@ it('loads persisted engine settings before navigation', async () => {
   expect(settingsStore.state).toEqual(settings);
 });
 
+it('returns an error and retains defaults when loading engine settings fails', async () => {
+  vi.mocked(Shell.GetSettings).mockReturnValueOnce(
+    cancellable(Promise.reject(new Error('settings unavailable'))),
+  );
+  expect((await initSettings()).isErr()).toBe(true);
+  expect(settingsStore.state).toEqual(DEFAULT_SETTINGS);
+});
+
 it('uses the validated Go response rather than the requested settings patch', async () => {
   const returned = {
     ...DEFAULT_SETTINGS,

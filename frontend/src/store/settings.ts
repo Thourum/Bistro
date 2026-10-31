@@ -24,11 +24,8 @@ function reportSettingsError(fault: Fault): void {
   console.warn(`Settings: ${fault.message}`);
 }
 
-export async function initSettings(): Promise<void> {
-  await call(() => Shell.GetSettings()).match(
-    (settings) => applySettings(settings),
-    reportSettingsError,
-  );
+export function initSettings(): ResultAsync<void, Fault> {
+  return call(() => Shell.GetSettings()).map(applySettings);
 }
 
 export type SettingsPatch = {
