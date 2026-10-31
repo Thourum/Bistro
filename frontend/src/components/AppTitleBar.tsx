@@ -1,13 +1,13 @@
 import type React from 'react';
 
-const dragRegionStyle = {
-  WebkitAppRegion: 'drag',
-} as React.CSSProperties;
+const dragRegionStyle: React.CSSProperties & { '--wails-draggable': 'drag' } = {
+  '--wails-draggable': 'drag',
+};
 
 /**
- * Integrated Electron title bar.
+ * Integrated Wails title bar.
  *
- * The native frame is hidden in `main/window.ts`; this chrome reserves the
+ * The native title bar is transparent in `window.go`; this chrome reserves the
  * draggable region inside the app so the window feels like part of Bistro's
  * system shell instead of a separate OS title bar.
  */

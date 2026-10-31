@@ -17,7 +17,7 @@ func newMainWindow(app *application.App, settings *shell.SettingsStore, log *slo
 	options := application.WebviewWindowOptions{
 		Name: "main", Title: "Bistro", URL: "/", Width: 1600, Height: 900,
 		MinWidth: 960, MinHeight: 600, InitialPosition: application.WindowCentered,
-		Mac: application.MacWindow{TitleBar: application.MacTitleBarHiddenInset, InvisibleTitleBarHeight: 32},
+		Mac: application.MacWindow{TitleBar: application.MacTitleBarHidden, InvisibleTitleBarHeight: 32},
 	}
 	if bounds.Width != 0 {
 		options.Width, options.Height = bounds.Width, bounds.Height
