@@ -52,6 +52,11 @@ func (i Identity) ID() string {
 	return strings.ToLower(fmt.Sprintf("%s:%s/%s", i.Provider, i.Owner, i.Repo))
 }
 
+// GitHubCloneURL returns the HTTPS clone URL for a GitHub repository.
+func GitHubCloneURL(owner, repo string) string {
+	return fmt.Sprintf("https://%s/%s/%s.git", githubHost, owner, repo)
+}
+
 // ParseURL normalizes accepted GitHub remote URL forms.
 func ParseURL(raw string) (Identity, error) {
 	remote := strings.TrimSpace(raw)

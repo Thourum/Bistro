@@ -36,5 +36,5 @@ func (l prRepoLocator) RepoForPR(ctx context.Context, prID string) (string, stri
 		return "", "", false, nil
 	}
 	// Same URL the sync clones (sync/fetcher.go), so the repo lock matches.
-	return fmt.Sprintf("https://github.com/%s/%s.git", owner, repo), location.LocalPath, true, nil
+	return remote.GitHubCloneURL(owner, repo), location.LocalPath, true, nil
 }

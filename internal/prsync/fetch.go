@@ -218,7 +218,7 @@ func (o *Orchestrator) fetchCI(ctx context.Context, result *writer.FetchedPR, lo
 
 func (o *Orchestrator) fetchDiff(ctx context.Context, result *writer.FetchedPR, log *slog.Logger) error {
 	pr := result.PR
-	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", pr.Owner, pr.Repo)
+	cloneURL := remote.GitHubCloneURL(pr.Owner, pr.Repo)
 	// The diff and anchor reads must happen while the repo lock is held: another
 	// PR's clone of the same repo replaces the shared cache directory.
 	err := o.git.WithPRClone(ctx, cloneURL, pr.BaseSHA, pr.HeadSHA, diffCloneOptions(pr),

@@ -102,7 +102,7 @@ func (s *RepoLocation) RecoverToCache(ctx context.Context, req RepoRef) error {
 		if err != nil {
 			return err
 		}
-		repoURL := fmt.Sprintf(githubRepoURLFormat, identity.Owner, identity.Repo)
+		repoURL := remote.GitHubCloneURL(identity.Owner, identity.Repo)
 		if err := cloneRepo(ctx, s.Clone, repoURL, destination, true); err != nil {
 			logger := serviceLogger(s.Log)
 			logger.Warn("recover cache clone failed", "error", err)

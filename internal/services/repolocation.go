@@ -17,8 +17,6 @@ import (
 	"github.com/itterno/bistro/internal/store/repolocation"
 )
 
-const githubRepoURLFormat = "https://github.com/%s/%s.git"
-
 // RepoLocation manages local checkouts and the clone cache.
 type RepoLocation struct {
 	DB             *sql.DB
