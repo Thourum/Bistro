@@ -1,8 +1,7 @@
 // Route tree and auth guards.
 //
-// RouterContext is { queryClient } only — auth state is read directly
-// from appStore / settingsStore inside guards so the router never receives
-// stale context values from React props.
+// Auth state is read directly from appStore / settingsStore inside guards
+// so the router never receives stale context values from React props.
 //
 // Route tree:
 //   rootRoute        → RootShell  (OverlayProvider + hotkeys + toasts, all routes)
@@ -34,10 +33,9 @@
 //   stays true. Bootstrap invalidates → requireAuthedAndOnboarded: checked
 //   immediately (no wait), isAuthenticated:false → redirect /login. ✓
 
-import type { QueryClient } from '@tanstack/react-query';
 import {
   createHashHistory,
-  createRootRouteWithContext,
+  createRootRoute,
   createRoute,
   createRouter,
   Outlet,
@@ -57,14 +55,6 @@ import { PRDetailPage } from './pages/PRDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { appStore } from './store';
 import { settingsStore } from './store/settings';
-
-// ---------------------------------------------------------------------------
-// Router context type — auth fields are read from stores directly inside guards
-// ---------------------------------------------------------------------------
-
-export interface RouterContext {
-  queryClient: QueryClient;
-}
 
 // ---------------------------------------------------------------------------
 // Auth guard helpers
@@ -175,7 +165,7 @@ function LoginRouteComponent(): React.ReactElement {
 // Route definitions
 // ---------------------------------------------------------------------------
 
-const rootRoute = createRootRouteWithContext<RouterContext>()({
+const rootRoute = createRootRoute({
   component: RootShell,
 });
 
@@ -310,9 +300,6 @@ const history = createHashHistory();
 export const router = createRouter({
   routeTree,
   history,
-  context: {
-    queryClient: undefined as unknown as QueryClient,
-  },
 });
 
 // ---------------------------------------------------------------------------

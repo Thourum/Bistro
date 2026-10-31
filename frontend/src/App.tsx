@@ -13,11 +13,7 @@
 // The initSettings() / ready gate (Initialising screen) is kept so settings
 // are available before the router first renders.
 
-import {
-  QueryClient,
-  QueryClientProvider,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { Fault, ResultAsync } from '@thourum/fault';
 import React from 'react';
@@ -66,15 +62,14 @@ function Bootstrap(): null {
 }
 
 // ---------------------------------------------------------------------------
-// Inner — uses useQueryClient() to pass the correct client to RouterProvider
+// Inner
 // ---------------------------------------------------------------------------
 
 function Inner(): React.ReactElement {
-  const qc = useQueryClient();
   return (
     <>
       <Bootstrap />
-      <RouterProvider router={router} context={{ queryClient: qc }} />
+      <RouterProvider router={router} />
     </>
   );
 }
