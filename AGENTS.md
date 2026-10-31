@@ -30,6 +30,8 @@ Wails enforces single-instance behavior and focuses the existing window on a sec
 
 Within `internal/engine`, `app.go` owns Start/Stop, `options.go` construction/defaults, `supervise.go` panic restart/backoff, and `services.go` the retained service set. `provider.go`, `config.go`, `llm.go`, `expertise.go`, `bridge.go`, and `repo_location.go` own domain wiring. Auth uses blocking `Auth.Start` with context cancellation. `App.ApplySyncSettings` clamps intervals to 30–3600 seconds; `App.ApplyClassificationSettings` shares validated service state.
 
+`internal/tray` is the pure sync-status tray view model; native adapters consume its icon, tooltip, status line, and ordered menu items.
+
 Within `internal/git`, `Client` owns clone/fetch/checkout; `anchor` resolves comment anchors, `diff` generates diffs/interdiffs and patch fingerprints, `remote` parses canonical identities, and `repolock` owns shared per-repo locks. Interdiff takes the same `*repolock.Locks` as clone/fetch, not a `git.Client`. `clonecache` depends on `remote`, never the parent package. Shared on-disk commit fixtures live in `git/gittest`.
 
 Independent SQLite stores live in `internal/store/currentuser`, `dismissal`, `prdiff`, `repolocation`, and `reviewdraft`; the offline queue lives in `store/actionqueue`. The root `store` package retains the DB handle, migrations, and DB-bound queries. Subpackages may import `store` and `store/db`, never the reverse. Expertise persistence belongs to `internal/expertise`.
