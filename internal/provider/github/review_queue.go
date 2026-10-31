@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	REVIEW_QUEUE_PAGE_SIZE   = 100
-	RECENT_REVIEW_REPO_LIMIT = 10
-	RECENT_REVIEW_DAYS       = 30
+	reviewQueuePageSize   = 100
+	recentReviewRepoLimit = 10
+	recentReviewDays      = 30
 )
 
 // GetReviewQueue reads one search page each for requested and recent reviews.
@@ -35,14 +35,14 @@ func (c *Client) GetReviewQueue(ctx context.Context, now time.Time) (*provider.R
 		return nil, errors.New("review queue username is empty")
 	}
 	requestedQuery := "is:pr is:open archived:false review-requested:" + username
-	recentQuery := "is:pr reviewed-by:" + username + " updated:>=" + now.UTC().AddDate(0, 0, -RECENT_REVIEW_DAYS).Format("2006-01-02")
+	recentQuery := "is:pr reviewed-by:" + username + " updated:>=" + now.UTC().AddDate(0, 0, -recentReviewDays).Format("2006-01-02")
 	requested, _, err := c.gh.Search.Issues(ctx, requestedQuery,
-		&gh.SearchOptions{ListOptions: gh.ListOptions{PerPage: REVIEW_QUEUE_PAGE_SIZE}})
+		&gh.SearchOptions{ListOptions: gh.ListOptions{PerPage: reviewQueuePageSize}})
 	if err != nil {
 		return nil, fmt.Errorf("search requested reviews: %w", mapAPIError(err))
 	}
 	recent, _, err := c.gh.Search.Issues(ctx, recentQuery,
-		&gh.SearchOptions{Sort: "updated", Order: "desc", ListOptions: gh.ListOptions{PerPage: REVIEW_QUEUE_PAGE_SIZE}})
+		&gh.SearchOptions{Sort: "updated", Order: "desc", ListOptions: gh.ListOptions{PerPage: reviewQueuePageSize}})
 	if err != nil {
 		return nil, fmt.Errorf("search recent reviews: %w", mapAPIError(err))
 	}
@@ -56,17 +56,21 @@ func collectReviewQueue(requested, recent []*gh.Issue) (*provider.ReviewQueue, e
 	}
 	// Canonical IDs merge repository case variants.
 	repositories := make(map[string]string)
+	addRepository := func(id string, repository *provider.Repo) string {
+		key := strings.ToLower(id)
+		if repositories[key] == "" {
+			repositories[key] = id
+			queue.Repositories = append(queue.Repositories, repository)
+		}
+		return key
+	}
 	counts := make(map[string]int)
 	for _, issue := range requested {
 		id, repository, err := reviewQueueRepository(issue)
 		if err != nil {
 			return nil, fmt.Errorf("read requested review repository: %w", err)
 		}
-		key := strings.ToLower(id)
-		if repositories[key] == "" {
-			repositories[key] = id
-			queue.Repositories = append(queue.Repositories, repository)
-		}
+		key := addRepository(id, repository)
 		counts[repositories[key]]++
 	}
 	for id, count := range counts {
@@ -84,12 +88,8 @@ func collectReviewQueue(requested, recent []*gh.Issue) (*provider.ReviewQueue, e
 		if err != nil {
 			return nil, fmt.Errorf("read recent review repository: %w", err)
 		}
-		key := strings.ToLower(id)
-		if repositories[key] == "" {
-			repositories[key] = id
-			queue.Repositories = append(queue.Repositories, repository)
-		}
-		if !reviewed[key] && len(queue.RecentlyReviewed) < RECENT_REVIEW_REPO_LIMIT {
+		key := addRepository(id, repository)
+		if !reviewed[key] && len(queue.RecentlyReviewed) < recentReviewRepoLimit {
 			queue.RecentlyReviewed = append(queue.RecentlyReviewed, repositories[key])
 		}
 		reviewed[key] = true
