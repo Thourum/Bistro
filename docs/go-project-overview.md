@@ -164,7 +164,8 @@ Tests outside `store` use `storetest.Open(t)`; migration tests can use
 `Client` owns go-git clone/fetch/checkout/merge-base work. Focused subpackages
 own anchors, clone cache maintenance, canonical remotes, shared locks, diff
 algorithms, and test commit fixtures. `clonecache` depends on `remote`, not its
-parent. Interdiff shares `*repolock.Locks` with clone/fetch.
+parent. `repolock` depends on `clonecache` for the non-empty `BISTRO_REPO_DIR`
+override check. Interdiff shares `*repolock.Locks` with clone/fetch.
 
 PR diffs use `merge-base(base, head)..head`. Observed heads are pinned under
 `refs/bistro/<safeID>/pull/<N>/heads/<sha>` across force-pushes. `diff.PatchID`

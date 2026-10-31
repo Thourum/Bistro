@@ -102,14 +102,14 @@ func (c *Client) CloneForPR(ctx context.Context, repoURL, baseSHA, headSHA strin
 }
 
 func (c *Client) recordCacheCloned(repoURL, path string) {
-	if os.Getenv("BISTRO_REPO_DIR") != "" || c.localResolver == nil {
+	if _, hasOverride := clonecache.OverrideDir(); hasOverride || c.localResolver == nil {
 		return
 	}
 	c.localResolver.OnCacheCloned(repoURL, path)
 }
 
 func (c *Client) resolveLocal(ctx context.Context, repoURL, baseSHA, headSHA string, opts *CloneOptions) (*CloneResult, bool, error) {
-	if os.Getenv("BISTRO_REPO_DIR") != "" || c.localResolver == nil {
+	if _, hasOverride := clonecache.OverrideDir(); hasOverride || c.localResolver == nil {
 		return nil, false, nil
 	}
 	localPath, ok := c.localResolver.LocalPath(repoURL)

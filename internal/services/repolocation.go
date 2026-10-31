@@ -9,6 +9,7 @@ import (
 	"os"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/remote"
 	"github.com/itterno/bistro/internal/git/repolock"
 	"github.com/itterno/bistro/internal/logging"
@@ -75,7 +76,8 @@ func updateScannedRepoLocations(ctx context.Context, locations *repolocation.Sto
 }
 
 func isBistroRepoDirOverrideSet() bool {
-	return os.Getenv("BISTRO_REPO_DIR") != ""
+	_, hasOverride := clonecache.OverrideDir()
+	return hasOverride
 }
 
 func triggerSync(syncTrigger chan<- string, logger *slog.Logger) {

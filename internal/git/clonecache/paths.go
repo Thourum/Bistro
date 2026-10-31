@@ -9,10 +9,16 @@ import (
 // existing cache layout and preserving permissions of previously created dirs.
 const cacheDirPerm = 0755
 
+// OverrideDir returns the repo-directory override and whether it is non-empty.
+func OverrideDir() (string, bool) {
+	dir := os.Getenv("BISTRO_REPO_DIR")
+	return dir, dir != ""
+}
+
 // Root returns the absolute directory for cloned repos.
 // Priority: BISTRO_REPO_DIR env var > user cache dir / bistro/repos.
 func Root() (string, error) {
-	if envDir := os.Getenv("BISTRO_REPO_DIR"); envDir != "" {
+	if envDir, hasOverride := OverrideDir(); hasOverride {
 		if err := os.MkdirAll(envDir, cacheDirPerm); err != nil {
 			return "", err
 		}

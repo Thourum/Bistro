@@ -16,7 +16,7 @@ func RepoDir(repoURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if os.Getenv("BISTRO_REPO_DIR") != "" {
+	if _, hasOverride := OverrideDir(); hasOverride {
 		return root, nil
 	}
 	identity, err := remote.ParseURL(repoURL)
@@ -92,7 +92,7 @@ func PrepareTargetedDir(repoURL string) (string, error) {
 // instead of the canonical cache dir: either the BISTRO_REPO_DIR override is
 // active, or the URL cannot be parsed into a stable identity.
 func NeedsFreshTempDir(repoURL string) bool {
-	if os.Getenv("BISTRO_REPO_DIR") != "" {
+	if _, hasOverride := OverrideDir(); hasOverride {
 		return true
 	}
 	_, err := remote.ParseURL(repoURL)

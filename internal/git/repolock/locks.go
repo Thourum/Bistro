@@ -1,9 +1,9 @@
 package repolock
 
 import (
-	"os"
 	"sync"
 
+	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/remote"
 )
 
@@ -59,7 +59,7 @@ func (l *Locks) lockForRepo(repoID string) *sync.Mutex {
 
 // Key returns the normalized repository identity, or the raw URL for overrides and invalid remotes.
 func Key(repoURL string) string {
-	if os.Getenv("BISTRO_REPO_DIR") != "" {
+	if _, hasOverride := clonecache.OverrideDir(); hasOverride {
 		return repoURL
 	}
 	identity, err := remote.ParseURL(repoURL)
