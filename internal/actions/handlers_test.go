@@ -336,7 +336,7 @@ func TestExecute_SubmitReviewLocalSideEffects(t *testing.T) {
 		wantEventTypes []string
 	}{
 		{"approve", ReviewEventApprove, "approved", []string{"action_complete", "pr_approved"}},
-		{"request changes", ReviewEventRequestChanges, "changes_requested", []string{"action_complete", "changes_requested"}},
+		{"request changes", ReviewEventRequestChanges, "changes_requested", []string{"action_complete"}},
 		{"comment", ReviewEventComment, "pending", []string{"action_complete"}},
 	}
 	for _, tc := range cases {

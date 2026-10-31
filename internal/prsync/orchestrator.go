@@ -197,13 +197,6 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 	ctx = logging.WithLogger(ctx, log)
 	result := &SyncResult{Errors: make([]string, 0)}
 	log.Info("sync started")
-	o.emitter.Emit(&events.Event{
-		Type: "sync_started",
-		Data: map[string]interface{}{
-			"provider": req.Provider, "owner": req.Owner, "repo": req.Repo, "sync_id": syncID,
-		},
-		Timestamp: time.Now(),
-	})
 
 	fetchedPRs := o.syncListPhase(ctx, req, result)
 	fetchedPRs = o.syncDetailsPhase(ctx, req, fetchedPRs, result)
@@ -213,8 +206,6 @@ func (o *Orchestrator) Sync(ctx context.Context, req *SyncRequest) (*SyncResult,
 	log.Info("sync complete", "duration_ms", result.Duration.Milliseconds(),
 		"prs_total", result.PRCount, "prs_updated", result.UpdatedPRs,
 		"comments", result.CommentCount, "errors", len(result.Errors))
-	o.emitter.Emit(events.NewCompleteEvent(result.PRCount, result.NewPRs, result.UpdatedPRs,
-		len(result.Errors), result.Duration))
 	return result, nil
 }
 
@@ -226,7 +217,6 @@ func (o *Orchestrator) syncListPhase(ctx context.Context, req *SyncRequest, resu
 	}
 	log.Debug("phase list-prs start")
 	started := time.Now()
-	o.emitter.Emit(events.NewProgressEvent("fetching_prs", 0, 0))
 	prs, err := o.syncPRList(ctx, req)
 	phaseDuration := time.Since(started).Milliseconds()
 	if err != nil {
@@ -259,7 +249,6 @@ func (o *Orchestrator) syncDetailsPhase(ctx context.Context, req *SyncRequest, f
 	log.Debug("phase fetch-details start", "pr_count", len(fetchedPRs),
 		"include_comments", req.IncludeComments, "include_ci", req.IncludeCI, "include_diff", req.IncludeDiff)
 	started := time.Now()
-	o.emitter.Emit(events.NewProgressEvent("fetching_details", 0, len(fetchedPRs)))
 	prs := make([]*provider.PR, len(fetchedPRs))
 	for i, fetched := range fetchedPRs {
 		prs[i] = fetched.PR
@@ -290,7 +279,6 @@ func (o *Orchestrator) syncWritePhase(ctx context.Context, fetchedPRs []*writer.
 	log := logging.FromContext(ctx)
 	log.Debug("phase write-db start", "pr_count", len(fetchedPRs))
 	started := time.Now()
-	o.emitter.Emit(events.NewProgressEvent("writing_database", 0, len(fetchedPRs)))
 	writer := writer.New(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
 	if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
 		o.recordSyncPhaseError(log, result, syncPhaseError{phase: "phase write-db failed", message: "failed to write results", cause: err, durationMS: time.Since(started).Milliseconds()})
@@ -303,7 +291,6 @@ func (o *Orchestrator) recordSyncPhaseError(log *slog.Logger, result *SyncResult
 	errMsg := fmt.Sprintf("%s: %v", failure.message, failure.cause)
 	result.Errors = append(result.Errors, errMsg)
 	log.Error(failure.phase, "duration_ms", failure.durationMS, "error", failure.cause)
-	o.emitter.Emit(events.NewErrorEvent(errMsg))
 }
 
 // SyncPR fetches full details (comments, CI, diff) for a single PR and writes

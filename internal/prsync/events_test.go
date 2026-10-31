@@ -7,17 +7,6 @@ import (
 	"github.com/itterno/bistro/internal/events"
 )
 
-func TestSyncEventCreation(t *testing.T) {
-	event := &events.Event{
-		Type:      "sync_started",
-		Timestamp: time.Now(),
-	}
-
-	if event.Type != "sync_started" {
-		t.Errorf("expected type sync_started, got %s", event.Type)
-	}
-}
-
 func TestEventEmitterCreation(t *testing.T) {
 	emitter := events.NewEventEmitter()
 	if emitter == nil {
@@ -51,19 +40,5 @@ func TestEventEmitterEmit(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Error("event not received in time")
-	}
-}
-
-func TestProgressEvent(t *testing.T) {
-	event := events.NewProgressEvent("fetching_prs", 5, 50)
-	if event.Type != "sync_progress" {
-		t.Errorf("expected type sync_progress, got %s", event.Type)
-	}
-}
-
-func TestCompleteEvent(t *testing.T) {
-	event := events.NewCompleteEvent(42, 3, 5, 0, 2*time.Second)
-	if event.Type != "sync_complete" {
-		t.Errorf("expected type sync_complete, got %s", event.Type)
 	}
 }

@@ -17,7 +17,6 @@ type SyncRequest struct {
 // SyncResult contains the results of a sync operation.
 type SyncResult struct {
 	PRCount      int
-	NewPRs       int
 	UpdatedPRs   int
 	DeletedPRs   int
 	DiffCount    int

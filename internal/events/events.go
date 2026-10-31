@@ -69,34 +69,6 @@ func (e *EventEmitter) Emit(event *Event) {
 	}
 }
 
-// NewProgressEvent creates a progress event.
-func NewProgressEvent(stage string, current, total int) *Event {
-	return &Event{
-		Type: "sync_progress",
-		Data: map[string]any{
-			"stage":   stage,
-			"current": current,
-			"total":   total,
-		},
-		Timestamp: time.Now(),
-	}
-}
-
-// NewCompleteEvent creates a sync completion event.
-func NewCompleteEvent(prCount, newPRs, updatedPRs, errors int, duration time.Duration) *Event {
-	return &Event{
-		Type: "sync_complete",
-		Data: map[string]any{
-			"pr_count":    prCount,
-			"new_prs":     newPRs,
-			"updated_prs": updatedPRs,
-			"errors":      errors,
-			"duration_ms": duration.Milliseconds(),
-		},
-		Timestamp: time.Now(),
-	}
-}
-
 // NewPRMetadataChangedEvent fires when a PR's title, state, or draft flag changes.
 func NewPRMetadataChangedEvent(prID, owner, repo string, number int, field, oldVal, newVal string) *Event {
 	return &Event{
@@ -125,17 +97,6 @@ func NewCIStatusChangedEvent(prID, owner, repo string, number int, oldStatus, ne
 			"number":     number,
 			"old_status": oldStatus,
 			"new_status": newStatus,
-		},
-		Timestamp: time.Now(),
-	}
-}
-
-// NewErrorEvent creates an error event.
-func NewErrorEvent(message string) *Event {
-	return &Event{
-		Type: "sync_error",
-		Data: map[string]any{
-			"error": message,
 		},
 		Timestamp: time.Now(),
 	}

@@ -142,8 +142,8 @@ func (ae *ActionExecutor) Execute(ctx context.Context, req *ActionRequest) (*Act
 
 	ae.logResult(req, result)
 
-	// Guard 2: before emitting events (action_complete, pr_approved,
-	// changes_requested). Closes the race window between Guard 1 and here.
+	// Guard 2: before emitting events (action_complete, pr_approved).
+	// Closes the race window between Guard 1 and here.
 	if result.Success && ctx.Err() != nil {
 		result = ambiguousResult("")
 	}
@@ -255,7 +255,7 @@ func (ae *ActionExecutor) logResult(req *ActionRequest, result *ActionResult) {
 }
 
 // emitEvent broadcasts an action_complete event and, on success, an
-// action-specific event (pr_approved or changes_requested) to all subscribers.
+// pr_approved event for approvals to all subscribers.
 func (ae *ActionExecutor) emitEvent(req *ActionRequest, result *ActionResult) {
 	if ae.emitter == nil {
 		return
@@ -279,14 +279,6 @@ func (ae *ActionExecutor) emitEvent(req *ActionRequest, result *ActionResult) {
 	case ApproveCommand:
 		ae.emitter.Emit(&events.Event{
 			Type: "pr_approved",
-			Data: map[string]any{
-				"pr_id": req.PRID,
-			},
-			Timestamp: time.Now(),
-		})
-	case RequestChangesCommand:
-		ae.emitter.Emit(&events.Event{
-			Type: "changes_requested",
 			Data: map[string]any{
 				"pr_id": req.PRID,
 			},

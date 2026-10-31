@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
-	"github.com/itterno/bistro/internal/events"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/provider/mock"
 )
@@ -51,25 +49,6 @@ func TestFullSyncFlow(t *testing.T) {
 
 	if result.PRCount == 0 {
 		t.Error("should have fetched PRs")
-	}
-}
-
-func TestSyncWithEventEmitter(t *testing.T) {
-	emitter := events.NewEventEmitter()
-
-	eventCh := emitter.Subscribe()
-	defer emitter.Unsubscribe(eventCh)
-
-	event := events.NewProgressEvent("fetching_prs", 1, 10)
-	emitter.Emit(event)
-
-	select {
-	case received := <-eventCh:
-		if received.Type != "sync_progress" {
-			t.Errorf("expected sync_progress, got %s", received.Type)
-		}
-	case <-time.After(1 * time.Second):
-		t.Error("event not received")
 	}
 }
 
@@ -125,64 +104,17 @@ func TestErrorRecovery(t *testing.T) {
 	}
 }
 
-func TestOrchestratorEmitsEvents(t *testing.T) {
-	mockProvider := mock.NewMockProvider().WithPRs([]*provider.PR{
-		{ID: "github:org/repo:1", Number: 1, Title: "PR 1"},
-	})
-
-	orch := NewOrchestrator(nil, mockProvider, nil, nil)
-
-	eventCh := orch.GetEventChannel()
-
-	req := &SyncRequest{
-		Provider:        "github",
-		Owner:           "org",
-		Repo:            "repo",
-		IncludePRs:      true,
-		IncludeComments: true,
-		State:           "open",
-	}
-
-	// Collect events in background
-	var collected []*events.Event
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			select {
-			case ev, ok := <-eventCh:
-				if !ok {
-					return
-				}
-				collected = append(collected, ev)
-				if ev.Type == "sync_complete" {
-					return
-				}
-			case <-time.After(2 * time.Second):
-				return
-			}
+func TestOrchestratorDoesNotEmitUnconsumedSyncEvents(t *testing.T) {
+	for _, prov := range []*mock.MockProvider{mock.NewMockProvider(), mock.NewMockProvider().WithError(fmt.Errorf("test error"))} {
+		orch := NewOrchestrator(nil, prov, nil, nil)
+		eventCh := orch.GetEventChannel()
+		_, err := orch.Sync(context.Background(), &SyncRequest{Provider: "github", Owner: "org", Repo: "repo", IncludePRs: true})
+		orch.UnsubscribeEventChannel(eventCh)
+		if err != nil {
+			t.Fatalf("sync failed: %v", err)
 		}
-	}()
-
-	_, err := orch.Sync(context.Background(), req)
-	if err != nil {
-		t.Fatalf("sync failed: %v", err)
-	}
-
-	<-done
-
-	if len(collected) == 0 {
-		t.Error("expected at least one event emitted")
-	}
-
-	// Verify sync_complete was emitted
-	var foundComplete bool
-	for _, ev := range collected {
-		if ev.Type == "sync_complete" {
-			foundComplete = true
+		for event := range eventCh {
+			t.Errorf("unexpected event: %s", event.Type)
 		}
-	}
-	if !foundComplete {
-		t.Error("expected sync_complete event")
 	}
 }

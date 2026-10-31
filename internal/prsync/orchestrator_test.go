@@ -37,7 +37,6 @@ func TestSyncRequestValidation(t *testing.T) {
 func TestSyncResultCreation(t *testing.T) {
 	result := &SyncResult{
 		PRCount:    42,
-		NewPRs:     3,
 		UpdatedPRs: 5,
 		DiffCount:  8,
 	}
