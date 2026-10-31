@@ -136,6 +136,9 @@ func run(args []string) error {
 	})
 	window := newMainWindow(app, settings, log)
 	setMenu(app)
+	if !*smoke {
+		startTray(trayDeps{app: app, eng: eng, set: set, updates: updates, show: focusMainWindow, ctx: ctx, log: log})
+	}
 	smokeOK := armSmoke(app, window, smokeOptions{enabled: *smoke, dataDir: dataDir, log: log})
 	// Window timers and smoke watchdog stop before their resources are closed.
 	app.OnShutdown(cleanup.close)

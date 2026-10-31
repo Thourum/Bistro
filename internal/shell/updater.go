@@ -20,14 +20,20 @@ var updaterCSS string
 // UpdateChecks owns both the initial and periodic checks so shutdown can drain
 // them off the native thread before Wails tears down its windows.
 type UpdateChecks struct {
-	mu     sync.Mutex
-	cancel context.CancelFunc
-	done   chan struct{}
+	mu         sync.Mutex
+	cancel     context.CancelFunc
+	done       chan struct{}
+	manual     sync.WaitGroup
+	app        *application.App
+	ctx        context.Context
+	log        *slog.Logger
+	isStopping bool
 }
 
 // Stop cancels checks and waits for their UI work. Call only off the native thread.
 func (u *UpdateChecks) Stop() {
 	u.mu.Lock()
+	u.isStopping = true
 	cancel, done := u.cancel, u.done
 	u.mu.Unlock()
 	if cancel != nil {
@@ -36,6 +42,26 @@ func (u *UpdateChecks) Stop() {
 	if done != nil {
 		<-done
 	}
+	u.manual.Wait()
+}
+
+// CheckNow opens Wails' updater window for a user-requested check.
+// It returns false when updates are disabled or shutdown has begun.
+func (u *UpdateChecks) CheckNow() bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.app == nil || u.isStopping || u.ctx.Err() != nil {
+		return false
+	}
+	app, ctx, log := u.app, u.ctx, u.log
+	u.manual.Add(1)
+	go func() {
+		defer u.manual.Done()
+		if err := app.Updater.CheckAndInstall(ctx); err != nil && ctx.Err() == nil {
+			log.Warn("manual update check failed", "err", err)
+		}
+	}()
+	return true
 }
 
 // Start checks GitHub releases at launch and every six hours.
@@ -66,6 +92,7 @@ func (u *UpdateChecks) Start(ctx context.Context, app *application.App, version 
 		return err
 	}
 	ctx, u.cancel = context.WithCancel(ctx)
+	u.app, u.ctx, u.log = app, ctx, log
 	u.done = make(chan struct{})
 	go func() {
 		defer close(u.done)
