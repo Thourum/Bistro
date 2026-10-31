@@ -102,6 +102,8 @@ export type {
     MarkFileViewedRequest,
     MarkReadRequest,
     MarkReadResult,
+    MenuAction,
+    MenuActionsRequest,
     PRApproved,
     PRListRequest,
     PRListResponse,

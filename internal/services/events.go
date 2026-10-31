@@ -27,7 +27,16 @@ const (
 	EventByokAuthFailed     = "byok:auth-failed"
 	EventByokUsage          = "byok:usage"
 	EventSettingsChanged    = "settings:changed"
+	EventMenuAction         = "menu:action"
 )
+
+// MenuAction identifies a native menu click; Sequence distinguishes repeated clicks.
+type MenuAction struct {
+	ActionID string `json:"action_id"`
+	Sequence int    `json:"sequence"`
+}
+
+var MenuActionIDs = []string{"global.settings", "global.inbox", "global.search", "global.command", "global.help"}
 
 // AuthRedirect is emitted only after the callback listener is bound.
 type AuthRedirect struct {
@@ -154,6 +163,7 @@ type ByokUsage struct {
 
 // Direct registrations allow Wails' binding generator to discover payload types.
 func init() {
+	application.RegisterEvent[MenuAction](EventMenuAction)
 	application.RegisterEvent[AuthRedirect](EventAuthRedirect)
 	application.RegisterEvent[PRsReadChanged](EventPRsReadChanged)
 	application.RegisterEvent[DraftsChanged](EventDraftsChanged)

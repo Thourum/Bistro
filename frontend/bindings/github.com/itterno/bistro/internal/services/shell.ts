@@ -54,6 +54,13 @@ export function ResetSettings(): $CancellablePromise<shell$0.Settings> {
     return $Call.ByID(2407975038);
 }
 
+/**
+ * SetMenuActions drops unknown IDs so the native menu stays a closed set.
+ */
+export function SetMenuActions(req: $models.MenuActionsRequest): $CancellablePromise<void> {
+    return $Call.ByID(2097457238, req);
+}
+
 export function SetSettings(settings: shell$0.Settings): $CancellablePromise<shell$0.Settings> {
     return $Call.ByID(3670322081, settings);
 }

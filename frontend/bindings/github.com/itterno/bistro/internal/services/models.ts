@@ -446,6 +446,21 @@ export interface MarkReadResult {
     "marked": number;
 }
 
+/**
+ * MenuAction identifies a native menu click; Sequence distinguishes repeated clicks.
+ */
+export interface MenuAction {
+    "action_id": string;
+    "sequence": number;
+}
+
+/**
+ * MenuActionsRequest reports actions permitted by the renderer's activation rules.
+ */
+export interface MenuActionsRequest {
+    "enabled": string[] | null;
+}
+
 export interface PRApproved {
     "pr_id": string;
 }

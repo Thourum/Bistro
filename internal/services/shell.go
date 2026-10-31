@@ -12,12 +12,41 @@ import (
 
 // Shell exposes desktop settings and OS operations; the engine does not own it.
 type Shell struct {
-	Settings  *shell.SettingsStore
-	Platform  shell.Platform
-	EditorEnv func() string
-	Version   string
-	LogDir    string
-	Panics    PanicReporter
+	Settings      *shell.SettingsStore
+	Platform      shell.Platform
+	EditorEnv     func() string
+	Version       string
+	LogDir        string
+	Panics        PanicReporter
+	OnMenuActions func(enabled []string)
+}
+
+// MenuActionsRequest reports actions permitted by the renderer's activation rules.
+type MenuActionsRequest struct {
+	Enabled []string `json:"enabled"`
+}
+
+// SetMenuActions drops unknown IDs so the native menu stays a closed set.
+func (s *Shell) SetMenuActions(ctx context.Context, req MenuActionsRequest) error {
+	return guardErr(s.Panics, "Shell.SetMenuActions", func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		known := make(map[string]bool, len(MenuActionIDs))
+		for _, id := range MenuActionIDs {
+			known[id] = true
+		}
+		enabled := make([]string, 0, len(req.Enabled))
+		for _, id := range req.Enabled {
+			if known[id] {
+				enabled = append(enabled, id)
+			}
+		}
+		if s.OnMenuActions != nil {
+			s.OnMenuActions(enabled)
+		}
+		return nil
+	})
 }
 
 // AppInfo identifies the running desktop build.

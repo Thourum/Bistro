@@ -64,6 +64,11 @@ export const ExpertiseProgress = "expertise:progress";
 export const ExpertiseReady = "expertise:ready";
 
 /**
+ * Name of the custom event "menu:action".
+ */
+export const MenuAction = "menu:action";
+
+/**
  * Name of the custom event "pr:approved".
  */
 export const PrApproved = "pr:approved";

@@ -24,6 +24,32 @@ func (p *shellPlatform) OpenURL(address string) error            { p.url = addre
 func (p *shellPlatform) OpenPath(path string) error              { p.path = path; return p.err }
 func (p *shellPlatform) Quit()                                   {}
 
+func TestShellSetMenuActions(t *testing.T) {
+	var enabled []string
+	service := &Shell{OnMenuActions: func(ids []string) { enabled = ids }}
+	request := MenuActionsRequest{Enabled: append(append([]string{}, MenuActionIDs...), "unknown")}
+	if err := service.SetMenuActions(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(enabled, MenuActionIDs) {
+		t.Fatalf("enabled = %v, want %v", enabled, MenuActionIDs)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := service.SetMenuActions(ctx, MenuActionsRequest{}); err == nil {
+		t.Fatal("cancelled request succeeded")
+	}
+	if !reflect.DeepEqual(enabled, MenuActionIDs) {
+		t.Fatal("cancelled request changed enabled actions")
+	}
+	if err := service.SetMenuActions(context.Background(), MenuActionsRequest{}); err != nil || len(enabled) != 0 {
+		t.Fatalf("empty report did not clear enablement: %v, %v", enabled, err)
+	}
+	if err := (&Shell{}).SetMenuActions(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestShellOpenExternal(t *testing.T) {
 	for _, tt := range []struct {
 		address string

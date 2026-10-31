@@ -10,6 +10,7 @@ import {
   handleExpertiseProgress,
   handleExpertiseReady,
 } from './expertise';
+import { handleMenuAction } from './menu';
 import {
   handleDraftsChanged,
   handlePRApproved,
@@ -41,6 +42,7 @@ export const eventHandlers: EngineEventHandlers = {
   'expertise:nudge': handleExpertiseNudge,
   'expertise:progress': handleExpertiseProgress,
   'expertise:ready': handleExpertiseReady,
+  'menu:action': handleMenuAction,
   'pr:approved': handlePRApproved,
   'pr:ci-status-changed': handlePRListChanged,
   'pr:metadata-changed': handlePRListChanged,

@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS } from '../../types/settings';
 import { handleActionComplete } from './actions';
 import { handleCommentsClassified } from './comments';
 import { handleExpertiseError } from './expertise';
+import { handleMenuAction } from './menu';
 import { handleSettingsChanged } from './settings';
 
 const initialState = appStore.state;
@@ -15,6 +16,16 @@ beforeEach(() => {
 });
 
 describe('engine push handlers', () => {
+  it('queues repeated menu clicks without losing earlier requests', () => {
+    handleMenuAction({ action_id: 'global.inbox', sequence: 1 });
+    handleMenuAction({ action_id: 'global.inbox', sequence: 2 });
+    expect(appStore.state.menuActionRequests).toEqual([
+      { actionId: 'global.inbox', sequence: 1 },
+      { actionId: 'global.inbox', sequence: 2 },
+    ]);
+    expect(appStore.state.selectedPRIndex).toBe(initialState.selectedPRIndex);
+  });
+
   it('normalizes nullable settings overrides and preserves settings on invalid pushes', () => {
     const settings = {
       ...DEFAULT_SETTINGS,

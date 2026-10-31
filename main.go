@@ -125,9 +125,17 @@ func run(args []string) error {
 	cleanup.add(eng.Stop)
 	applySettings(eng, tel, snapshot, *smoke, log)
 	tel.TrackAppStarted(version)
+	menu := buildAppMenu(appMenuDeps{
+		app: app, settings: settings, set: set, updates: updates,
+		show: func() { showMainWindow(visibility) }, ctx: ctx, log: log, isDevBuild: version == "dev",
+	})
+	app.Menu.SetApplicationMenu(menu.menu)
+	menu.syncAppearance(settings.Get())
+	set.Shell.OnMenuActions = menu.setEnabledActions
 	settings.OnChange(func(prev, next shell.Settings) {
 		applySettings(eng, tel, next, *smoke, log)
 		tel.TrackSettingsChanged(prev, next)
+		menu.syncAppearance(next)
 		app.Event.Emit(services.EventSettingsChanged, next)
 	})
 	watchDone := make(chan struct{})
@@ -140,7 +148,6 @@ func run(args []string) error {
 		<-watchDone
 	})
 	window := newMainWindow(app, settings, log)
-	setMenu(app)
 	var trayIcon *tray.Tray
 	if !*smoke {
 		trayIcon = startTray(trayDeps{app: app, eng: eng, set: set, updates: updates, show: func() { showMainWindow(visibility) }, ctx: ctx, log: log})
@@ -231,13 +238,6 @@ func registerServices(app *application.App, set *services.Set) {
 	app.RegisterService(application.NewService(set.Sync))
 	app.RegisterService(application.NewService(set.Repos))
 	app.RegisterService(application.NewService(set.ReviewQueue))
-}
-
-func setMenu(app *application.App) {
-	menu := application.NewMenu()
-	menu.AddRole(application.AppMenu)
-	menu.AddRole(application.EditMenu)
-	app.Menu.SetApplicationMenu(menu)
 }
 
 type smokeOptions struct {

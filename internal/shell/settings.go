@@ -181,6 +181,17 @@ func (s *SettingsStore) Set(next Settings) (Settings, error) {
 	return s.commit(next)
 }
 
+// Update mutates the latest snapshot under the change lock, preserving window bounds.
+func (s *SettingsStore) Update(mutate func(*Settings)) (Settings, error) {
+	s.changeMu.Lock()
+	defer s.changeMu.Unlock()
+	s.mu.Lock()
+	next := cloneSettings(s.current)
+	mutate(&next)
+	next.Window = s.current.Window
+	return s.commit(next)
+}
+
 // Reset persists defaults, including zero window bounds.
 func (s *SettingsStore) Reset() (Settings, error) {
 	s.changeMu.Lock()
@@ -189,7 +200,7 @@ func (s *SettingsStore) Reset() (Settings, error) {
 	return s.commit(DefaultSettings())
 }
 
-// commit consumes the lock acquired by Set or Reset; failed writes leave state intact.
+// commit consumes the lock acquired by Set, Update or Reset; failed writes leave state intact.
 func (s *SettingsStore) commit(next Settings) (Settings, error) {
 	if err := s.write(next); err != nil {
 		s.mu.Unlock()

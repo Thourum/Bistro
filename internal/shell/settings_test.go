@@ -89,6 +89,42 @@ func TestReloadAndSetNotifyInCommitOrder(t *testing.T) {
 	}
 }
 
+func TestUpdatePreservesLatestSettingsAndWindow(t *testing.T) {
+	store := testStore(t)
+	bounds := WindowBounds{Width: 1000, Height: 700}
+	if err := store.SetWindow(bounds); err != nil {
+		t.Fatal(err)
+	}
+	next := store.Get()
+	next.Navigation.Style = "emacs"
+	next.Keybindings["global.inbox"] = []string{"g", "i"}
+	if _, err := store.Set(next); err != nil {
+		t.Fatal(err)
+	}
+	var notified Settings
+	store.OnChange(func(_, next Settings) { notified = next; _ = store.Get() })
+	updated, err := store.Update(func(s *Settings) {
+		s.Appearance.HighDensity = !s.Appearance.HighDensity
+		s.Window = WindowBounds{}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := next
+	want.Appearance.HighDensity = true
+	assertSettings(t, updated, want)
+	assertSettings(t, notified, want)
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	assertSettings(t, store.Get(), want)
+	store.path = filepath.Join(store.Path(), "cannot-write.json")
+	if _, err := store.Update(func(s *Settings) { s.Appearance.HighDensity = false }); err == nil {
+		t.Fatal("failed persistence succeeded")
+	}
+	assertSettings(t, store.Get(), want)
+}
+
 func TestLoadDefaultsAndValidSiblings(t *testing.T) {
 	for _, document := range []string{"", "null", "[]", "{not json", `{"appearance":{"theme":"purple","uiFontSize":16},"bogus":{}}`} {
 		t.Run(document, func(t *testing.T) {

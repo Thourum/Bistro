@@ -55,6 +55,7 @@ export type ConfirmingAction =
   | 'toggle-diff-style';
 
 export interface UIState {
+  menuActionRequests: readonly { actionId: string; sequence: number }[];
   selectedPRIndex: number;
   selectedFileIndex: number;
   /** PR whose file list `selectedFileIndex` points into; a different PR resets it. */
@@ -209,6 +210,7 @@ export interface UIState {
 }
 
 export const initialUIState: UIState = {
+  menuActionRequests: [],
   selectedPRIndex: 0,
   selectedFileIndex: 0,
   selectedFilePrId: null,

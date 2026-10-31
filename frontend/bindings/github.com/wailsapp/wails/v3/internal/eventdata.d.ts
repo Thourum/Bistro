@@ -26,6 +26,7 @@ declare module "@wailsio/runtime" {
             "expertise:nudge": services$0.ExpertiseNudge;
             "expertise:progress": services$0.ExpertiseProgress;
             "expertise:ready": services$0.ExpertiseReady;
+            "menu:action": services$0.MenuAction;
             "pr:approved": services$0.PRApproved;
             "pr:ci-status-changed": services$0.CIStatusChanged;
             "pr:metadata-changed": services$0.PRMetadataChanged;
