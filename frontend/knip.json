@@ -2,6 +2,7 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": [
     "src/main.tsx",
+    "src/components/diff/shikiWasm.ts",
     "vite.config.ts",
     "vitest.config.ts",
     "scripts/bench-large-diff.mjs"

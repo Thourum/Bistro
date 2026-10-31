@@ -1,5 +1,4 @@
 import { Fault, ResultAsync } from '@thourum/fault';
-import mermaid from 'mermaid';
 import { useEffect, useState } from 'react';
 
 type MermaidThemeMode = 'light' | 'dark';
@@ -215,7 +214,10 @@ const mermaidRenderQueue = (() => {
     source: string,
     isCancelled: () => boolean,
   ): ResultAsync<MermaidRenderResult | null, Fault> {
-    const pending = lastRender.then(() => {
+    const pending = lastRender.then(async () => {
+      if (isCancelled()) return null;
+      // Loaded on first diagram so Mermaid stays out of the startup chunk.
+      const { default: mermaid } = await import('mermaid');
       if (isCancelled()) return null;
       const colors = readMermaidColors();
       const renderId = `bistro-mermaid-${++nextId}`;

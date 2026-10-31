@@ -35,6 +35,11 @@ export default defineConfig({
       ),
       '@renderer': resolve(import.meta.dirname, 'src'),
       '@shared': resolve(import.meta.dirname, 'src/shared'),
+      // One shared onig.wasm asset for the main bundle and the diff worker.
+      'shiki/wasm': resolve(
+        import.meta.dirname,
+        'src/components/diff/shikiWasm.ts',
+      ),
     },
     dedupe: ['react', 'react-dom'],
   },
