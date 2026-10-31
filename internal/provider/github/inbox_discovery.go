@@ -125,7 +125,7 @@ func (c *Client) doSearchInboxIssuesPage(ctx context.Context, req *http.Request,
 		return c.doSearchInboxIssuesPage(ctx, unconditionalReq, query, page, false)
 	}
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("search inbox issues: %w", err)
+		return nil, "", 0, fmt.Errorf("search inbox issues: %w", mapAPIError(err))
 	}
 	respETag := ""
 	nextPage := 0

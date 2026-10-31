@@ -29,11 +29,17 @@ type ProviderError struct {
 	Type    ErrorType
 	Message string
 	Status  int // HTTP status code if applicable, 0 otherwise
+	Cause   error
 }
 
 // Error returns the provider's error message.
 func (pe *ProviderError) Error() string {
 	return pe.Message
+}
+
+// Unwrap preserves the underlying provider client's error for errors.Is and errors.As.
+func (pe *ProviderError) Unwrap() error {
+	return pe.Cause
 }
 
 // NewNotFoundError returns a ProviderError for HTTP 404 conditions.

@@ -23,7 +23,7 @@ func (c *Client) approve(ctx context.Context, owner, repo string, number int, bo
 
 	_, _, err := c.gh.PullRequests.CreateReview(ctx, owner, repo, number, review)
 	if err != nil {
-		return fmt.Errorf("failed to approve PR %s/%s#%d: %w", owner, repo, number, err)
+		return fmt.Errorf("failed to approve PR %s/%s#%d: %w", owner, repo, number, mapAPIError(err))
 	}
 
 	return nil
@@ -42,7 +42,7 @@ func (c *Client) requestChanges(ctx context.Context, owner, repo string, number 
 
 	_, _, err := c.gh.PullRequests.CreateReview(ctx, owner, repo, number, review)
 	if err != nil {
-		return fmt.Errorf("failed to request changes on PR %s/%s#%d: %w", owner, repo, number, err)
+		return fmt.Errorf("failed to request changes on PR %s/%s#%d: %w", owner, repo, number, mapAPIError(err))
 	}
 
 	return nil
@@ -75,7 +75,7 @@ func (c *Client) submitReview(ctx context.Context, owner, repo string, number in
 		review.Comments = append(review.Comments, draft)
 	}
 	if _, _, err := c.gh.PullRequests.CreateReview(ctx, owner, repo, number, review); err != nil {
-		return fmt.Errorf("failed to submit review on PR %s/%s#%d: %w", owner, repo, number, err)
+		return fmt.Errorf("failed to submit review on PR %s/%s#%d: %w", owner, repo, number, mapAPIError(err))
 	}
 	return nil
 }
@@ -110,7 +110,7 @@ func (c *Client) postComment(ctx context.Context, owner, repo string, number, li
 
 	_, _, err := c.gh.Issues.CreateComment(ctx, owner, repo, number, comment)
 	if err != nil {
-		return fmt.Errorf("failed to post comment on PR %s/%s#%d: %w", owner, repo, number, err)
+		return fmt.Errorf("failed to post comment on PR %s/%s#%d: %w", owner, repo, number, mapAPIError(err))
 	}
 
 	return nil
@@ -132,7 +132,7 @@ func (c *Client) replyToComment(ctx context.Context, owner, repo string, number 
 
 	_, _, err := c.gh.PullRequests.CreateCommentInReplyTo(ctx, owner, repo, number, body, commentID)
 	if err != nil {
-		return fmt.Errorf("failed to reply to review comment %d on PR %s/%s#%d: %w", commentID, owner, repo, number, err)
+		return fmt.Errorf("failed to reply to review comment %d on PR %s/%s#%d: %w", commentID, owner, repo, number, mapAPIError(err))
 	}
 
 	return nil
@@ -205,7 +205,7 @@ func (c *Client) listReviews(ctx context.Context, owner, repo string, number int
 	for {
 		ghReviews, resp, err := c.gh.PullRequests.ListReviews(ctx, owner, repo, number, opts)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list reviews for %s/%s#%d: %w", owner, repo, number, err)
+			return nil, fmt.Errorf("failed to list reviews for %s/%s#%d: %w", owner, repo, number, mapAPIError(err))
 		}
 
 		for _, ghReview := range ghReviews {

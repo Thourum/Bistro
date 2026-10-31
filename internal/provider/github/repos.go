@@ -21,7 +21,7 @@ func (c *Client) ListUserRepos(ctx context.Context) ([]*provider.Repo, error) {
 	for {
 		repos, resp, err := c.gh.Repositories.ListByAuthenticatedUser(ctx, opts)
 		if err != nil {
-			return nil, fmt.Errorf("list repos: %w", err)
+			return nil, fmt.Errorf("list repos: %w", mapAPIError(err))
 		}
 
 		for _, r := range repos {

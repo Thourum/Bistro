@@ -31,7 +31,7 @@ func (c *Client) listPRs(ctx context.Context, owner, repo, state string, updated
 	for {
 		ghPRs, resp, err := c.gh.PullRequests.List(ctx, owner, repo, opts)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list PRs for %s/%s: %w", owner, repo, err)
+			return nil, fmt.Errorf("failed to list PRs for %s/%s: %w", owner, repo, mapAPIError(err))
 		}
 
 		pastWindow := false
@@ -62,7 +62,7 @@ func (c *Client) listPRs(ctx context.Context, owner, repo, state string, updated
 func (c *Client) getPR(ctx context.Context, owner, repo string, number int) (*provider.PR, error) {
 	ghPR, _, err := c.gh.PullRequests.Get(ctx, owner, repo, number)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get PR %s/%s#%d: %w", owner, repo, number, err)
+		return nil, fmt.Errorf("failed to get PR %s/%s#%d: %w", owner, repo, number, mapAPIError(err))
 	}
 
 	return normalizePR(owner, repo, ghPR), nil

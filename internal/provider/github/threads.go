@@ -76,7 +76,7 @@ func (c *Client) listReviewComments(
 	for {
 		ghComments, resp, err := c.gh.PullRequests.ListComments(ctx, owner, repo, number, opts)
 		if err != nil {
-			return nil, fmt.Errorf("list review comments for %s/%s#%d: %w", owner, repo, number, err)
+			return nil, fmt.Errorf("list review comments for %s/%s#%d: %w", owner, repo, number, mapAPIError(err))
 		}
 		for _, ghc := range ghComments {
 			comments = append(comments, NormalizeReviewComment(prID, ghc))

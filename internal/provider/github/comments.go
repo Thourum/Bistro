@@ -21,7 +21,7 @@ func (c *Client) getComments(ctx context.Context, owner, repo string, number int
 	for {
 		ghComments, resp, err := c.gh.Issues.ListComments(ctx, owner, repo, number, opts)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get comments for %s/%s#%d: %w", owner, repo, number, err)
+			return nil, fmt.Errorf("failed to get comments for %s/%s#%d: %w", owner, repo, number, mapAPIError(err))
 		}
 		for _, ghComment := range ghComments {
 			result = append(result, normalizeComment(prID, ghComment))

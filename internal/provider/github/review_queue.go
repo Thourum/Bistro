@@ -39,12 +39,12 @@ func (c *Client) GetReviewQueue(ctx context.Context, now time.Time) (*provider.R
 	requested, _, err := c.gh.Search.Issues(ctx, requestedQuery,
 		&gh.SearchOptions{ListOptions: gh.ListOptions{PerPage: REVIEW_QUEUE_PAGE_SIZE}})
 	if err != nil {
-		return nil, fmt.Errorf("search requested reviews: %w", err)
+		return nil, fmt.Errorf("search requested reviews: %w", mapAPIError(err))
 	}
 	recent, _, err := c.gh.Search.Issues(ctx, recentQuery,
 		&gh.SearchOptions{Sort: "updated", Order: "desc", ListOptions: gh.ListOptions{PerPage: REVIEW_QUEUE_PAGE_SIZE}})
 	if err != nil {
-		return nil, fmt.Errorf("search recent reviews: %w", err)
+		return nil, fmt.Errorf("search recent reviews: %w", mapAPIError(err))
 	}
 	return collectReviewQueue(requested.Issues, recent.Issues)
 }

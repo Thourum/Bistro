@@ -13,7 +13,7 @@ import (
 func (c *Client) getCIStatus(ctx context.Context, owner, repo, ref string) (*provider.CIStatus, error) {
 	checks, _, err := c.gh.Checks.ListCheckRunsForRef(ctx, owner, repo, ref, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get CI status for %s/%s@%s: %w", owner, repo, ref, err)
+		return nil, fmt.Errorf("failed to get CI status for %s/%s@%s: %w", owner, repo, ref, mapAPIError(err))
 	}
 
 	checkList := make([]*provider.Check, 0, len(checks.CheckRuns))

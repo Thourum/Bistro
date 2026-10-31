@@ -56,7 +56,7 @@ func NewClient(token string) *Client {
 func (c *Client) GetUsername(ctx context.Context) (string, error) {
 	user, _, err := c.gh.Users.Get(ctx, "")
 	if err != nil {
-		return "", fmt.Errorf("failed to get authenticated user: %w", err)
+		return "", fmt.Errorf("failed to get authenticated user: %w", mapAPIError(err))
 	}
 	return user.GetLogin(), nil
 }
