@@ -99,6 +99,50 @@ type graphqlThreadInfo struct {
 	CommentDBIDs []int64 // REST numeric IDs of comments in this thread
 }
 
+const graphqlThreadPageSize = 100
+
+type graphqlThreadComments struct {
+	Nodes []struct {
+		DatabaseId int64 `graphql:"databaseId"`
+	}
+	PageInfo struct {
+		EndCursor   githubv4.String
+		HasNextPage bool
+	}
+}
+
+// fetchGraphQLThreadCommentIDs includes comments beyond the thread's initial page.
+func (c *Client) fetchGraphQLThreadCommentIDs(ctx context.Context, nodeID string, comments graphqlThreadComments) ([]int64, error) {
+	var q struct {
+		Node struct {
+			Thread struct {
+				Comments graphqlThreadComments `graphql:"comments(first: $pageSize, after: $commentsCursor)"`
+			} `graphql:"... on PullRequestReviewThread"`
+		} `graphql:"node(id: $threadID)"`
+	}
+	vars := map[string]any{
+		"threadID":       githubv4.ID(nodeID),
+		"commentsCursor": (*githubv4.String)(nil),
+		"pageSize":       githubv4.Int(graphqlThreadPageSize),
+	}
+	var commentIDs []int64
+	for {
+		for _, comment := range comments.Nodes {
+			if comment.DatabaseId != 0 {
+				commentIDs = append(commentIDs, comment.DatabaseId)
+			}
+		}
+		if !comments.PageInfo.HasNextPage {
+			return commentIDs, nil
+		}
+		vars["commentsCursor"] = githubv4.NewString(comments.PageInfo.EndCursor)
+		if err := c.gqlClient.Query(ctx, &q, vars); err != nil {
+			return nil, err
+		}
+		comments = q.Node.Thread.Comments
+	}
+}
+
 // fetchGraphQLThreads queries the GitHub GraphQL API for review thread state.
 // Each thread node includes the databaseId of every member comment so callers
 // can match REST comments to canonical thread node IDs by database ID identity
@@ -112,49 +156,54 @@ func (c *Client) fetchGraphQLThreads(ctx context.Context, owner, repo string, nu
 			PullRequest struct {
 				ReviewThreads struct {
 					Nodes []struct {
-						ID         githubv4.ID `graphql:"id"`
-						IsResolved bool        `graphql:"isResolved"`
-						IsOutdated bool        `graphql:"isOutdated"`
-						Comments   struct {
-							Nodes []struct {
-								DatabaseId int64 `graphql:"databaseId"`
-							}
-						} `graphql:"comments(first: 100)"`
+						ID         githubv4.ID           `graphql:"id"`
+						IsResolved bool                  `graphql:"isResolved"`
+						IsOutdated bool                  `graphql:"isOutdated"`
+						Comments   graphqlThreadComments `graphql:"comments(first: $pageSize)"`
 					}
-				} `graphql:"reviewThreads(first: 100)"`
+					PageInfo struct {
+						EndCursor   githubv4.String
+						HasNextPage bool
+					}
+				} `graphql:"reviewThreads(first: $pageSize, after: $threadsCursor)"`
 			} `graphql:"pullRequest(number: $number)"`
 		} `graphql:"repository(owner: $owner, name: $name)"`
 	}
 
 	vars := map[string]any{
-		"owner":  githubv4.String(owner),
-		"name":   githubv4.String(repo),
-		"number": githubv4.Int(number),
+		"owner":         githubv4.String(owner),
+		"name":          githubv4.String(repo),
+		"number":        githubv4.Int(number),
+		"threadsCursor": (*githubv4.String)(nil),
+		"pageSize":      githubv4.Int(graphqlThreadPageSize),
 	}
 
-	if err := c.gqlClient.Query(ctx, &q, vars); err != nil {
-		return nil, err
-	}
-
-	out := make([]graphqlThreadInfo, 0, len(q.Repository.PullRequest.ReviewThreads.Nodes))
-	for _, n := range q.Repository.PullRequest.ReviewThreads.Nodes {
-		nodeID, ok := n.ID.(string)
-		if !ok || nodeID == "" {
-			continue
+	out := make([]graphqlThreadInfo, 0)
+	for {
+		if err := c.gqlClient.Query(ctx, &q, vars); err != nil {
+			return nil, err
 		}
-		info := graphqlThreadInfo{
-			NodeID:     nodeID,
-			IsResolved: n.IsResolved,
-			IsOutdated: n.IsOutdated,
-		}
-		for _, nc := range n.Comments.Nodes {
-			if nc.DatabaseId != 0 {
-				info.CommentDBIDs = append(info.CommentDBIDs, nc.DatabaseId)
+		for _, n := range q.Repository.PullRequest.ReviewThreads.Nodes {
+			nodeID, ok := n.ID.(string)
+			if !ok || nodeID == "" {
+				continue
 			}
+			commentIDs, err := c.fetchGraphQLThreadCommentIDs(ctx, nodeID, n.Comments)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, graphqlThreadInfo{
+				NodeID:       nodeID,
+				IsResolved:   n.IsResolved,
+				IsOutdated:   n.IsOutdated,
+				CommentDBIDs: commentIDs,
+			})
 		}
-		out = append(out, info)
+		if !q.Repository.PullRequest.ReviewThreads.PageInfo.HasNextPage {
+			return out, nil
+		}
+		vars["threadsCursor"] = githubv4.NewString(q.Repository.PullRequest.ReviewThreads.PageInfo.EndCursor)
 	}
-	return out, nil
 }
 
 // GetReviewThreads implements provider.ThreadProvider.
