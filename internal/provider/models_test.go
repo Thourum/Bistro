@@ -48,4 +48,27 @@ func TestReviewThreadType(t *testing.T) {
 	}
 }
 
+func TestCommentPositionPredicates(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		position *int
+		want     bool
+	}{
+		{name: "absent"},
+		{name: "zero", position: ptr(0)},
+		{name: "negative", position: ptr(-1)},
+		{name: "positive", position: ptr(1), want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			comment := provider.Comment{Position: test.position, OriginalPosition: test.position}
+			if got := comment.HasCurrentPosition(); got != test.want {
+				t.Errorf("HasCurrentPosition() = %v, want %v", got, test.want)
+			}
+			if got := comment.HasOriginalPosition(); got != test.want {
+				t.Errorf("HasOriginalPosition() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func ptr(i int) *int { return &i }

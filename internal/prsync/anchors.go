@@ -118,13 +118,13 @@ func (o *Orchestrator) storedAnchorPatchsetNumbers(ctx context.Context, options 
 }
 
 func (o *Orchestrator) resolveCommentAnchor(comment *provider.Comment, state anchorResolutionState) *anchor.Result {
-	isCurrentPosition := comment.Position != nil && *comment.Position > 0
+	isCurrentPosition := comment.HasCurrentPosition()
 	commitSHA := comment.CommitSHA
 	position := 0
 	if isCurrentPosition {
 		position = *comment.Position
 	} else {
-		if comment.OriginalPosition != nil && *comment.OriginalPosition > 0 {
+		if comment.HasOriginalPosition() {
 			position = *comment.OriginalPosition
 		}
 		if comment.OriginalSHA != "" {
@@ -197,7 +197,7 @@ func selectDiffBaseSHA(options diffBaseSelection) (diffBase string, resolvedPatc
 
 // isAnchorable reports whether a review comment has a current or original position.
 func isAnchorable(comment *provider.Comment) bool {
-	hasCurrent := comment.CommitSHA != "" && comment.Position != nil && *comment.Position > 0
-	hasOriginal := comment.OriginalPosition != nil && *comment.OriginalPosition > 0
+	hasCurrent := comment.CommitSHA != "" && comment.HasCurrentPosition()
+	hasOriginal := comment.HasOriginalPosition()
 	return hasCurrent || hasOriginal
 }

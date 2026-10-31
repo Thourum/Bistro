@@ -76,6 +76,16 @@ type Comment struct {
 	UpdatedAt time.Time
 }
 
+// HasCurrentPosition reports whether the comment has a usable current diff position.
+func (c Comment) HasCurrentPosition() bool {
+	return c.Position != nil && *c.Position > 0
+}
+
+// HasOriginalPosition reports whether the comment has a usable original diff position.
+func (c Comment) HasOriginalPosition() bool {
+	return c.OriginalPosition != nil && *c.OriginalPosition > 0
+}
+
 // ReviewThread groups inline review comments under a single thread.
 // StateKnown is false when GraphQL enrichment failed and resolution state
 // could not be determined (REST-only fallback).

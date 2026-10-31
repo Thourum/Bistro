@@ -345,7 +345,7 @@ func (w *Writer) writeComments(ctx context.Context, batch *writerBatch, comments
 func commentPatchsetNumber(comment *provider.Comment, currentNumber int) int {
 	// Only current-position review comments belong to the current patchset;
 	// outdated comments must retain their original patchset on upsert.
-	if comment.Kind == "review" && comment.Position != nil && *comment.Position > 0 {
+	if comment.Kind == "review" && comment.HasCurrentPosition() {
 		return currentNumber
 	}
 	return 0
