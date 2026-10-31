@@ -13,6 +13,7 @@ import {
   useState,
 } from 'react';
 import { appStore } from '../store';
+import type { HelpSourceRoute } from '../utils/keybindings';
 
 export type OverlayKind =
   | 'command'
@@ -23,7 +24,6 @@ export type OverlayKind =
   | 'addRepo'
   | 'threads'
   | 'lineComment';
-type HelpSourceRoute = 'list' | 'detail' | 'diff';
 
 export interface OverlayContextValue {
   activeOverlay: OverlayKind | null;
@@ -123,9 +123,4 @@ export function useOverlays(): OverlayContextValue {
   const ctx = useContext(OverlayContext);
   if (!ctx) throw new Error('useOverlays must be used within OverlayProvider');
   return ctx;
-}
-
-/** Returns the overlay context or null if outside OverlayProvider. Safe to call anywhere. */
-export function useOptionalOverlays(): OverlayContextValue | null {
-  return useContext(OverlayContext);
 }

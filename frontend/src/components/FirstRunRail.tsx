@@ -9,7 +9,11 @@ import { useOverlays } from '../overlays/OverlayContext';
 import { hideFirstRunRail } from '../services/firstRunRail';
 import { appStore } from '../store';
 import type { FirstRunStep } from '../utils/firstRunRail';
-import { type KeyBinding, routeBaseFromPath } from '../utils/keybindings';
+import {
+  helpSourceFor,
+  type KeyBinding,
+  routeBaseFromPath,
+} from '../utils/keybindings';
 import { findActionKeys } from '../utils/legendPresets';
 import { Button } from './ui/button';
 import { Kbd } from './ui/kbd';
@@ -123,8 +127,7 @@ export function FirstRunRail(): React.ReactElement {
   const routeBase = useRouterState({
     select: (state) => routeBaseFromPath(state.location.pathname),
   });
-  const helpSource =
-    routeBase === 'detail' || routeBase === 'diff' ? routeBase : 'list';
+  const helpSource = helpSourceFor(routeBase);
 
   const currentIndex = STEP_ORDER.findIndex(
     (step) => !completed.includes(step),

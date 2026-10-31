@@ -7,12 +7,16 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { LoaderCircle } from 'lucide-react';
 import React from 'react';
 import { useStore } from '../hooks/useStore';
-import { useOptionalOverlays } from '../overlays/OverlayContext';
+import { useOverlays } from '../overlays/OverlayContext';
 import { appStore } from '../store';
 import { settingsStore } from '../store/settings';
 import type { UIState } from '../store/ui';
 import type { RouteBase } from '../utils/keybindings';
-import { getEffectiveBindings, routeBaseFromPath } from '../utils/keybindings';
+import {
+  getEffectiveBindings,
+  helpSourceFor,
+  routeBaseFromPath,
+} from '../utils/keybindings';
 import { buildLegendForRouteBase } from '../utils/legendPresets';
 import { useFooterSlotContent } from './FooterSlot';
 import { SyncStatusHoverCard } from './SyncStatusHoverCard';
@@ -33,7 +37,7 @@ export function AppFooter(): React.ReactElement {
   const style = useStore(settingsStore, (s) => s.navigation.style);
   const syncSettings = useStore(settingsStore, (s) => s.sync);
 
-  const overlayContext = useOptionalOverlays();
+  const overlayContext = useOverlays();
   const slots = useFooterSlotContent();
   const navigate = useNavigate();
   const routerState = useRouterState();
@@ -41,7 +45,7 @@ export function AppFooter(): React.ReactElement {
   const routeBase: RouteBase | null = routeBaseFromPath(
     routerState.location.pathname,
   );
-  const activeOverlay = overlayContext?.activeOverlay ?? null;
+  const activeOverlay = overlayContext.activeOverlay;
 
   const legendEntries = React.useMemo(() => {
     if (slots.left) return [];
@@ -56,11 +60,7 @@ export function AppFooter(): React.ReactElement {
   const isSyncing = syncStatus === 'syncing' && !isOffline;
 
   const handleShortcuts = () => {
-    if (overlayContext) {
-      const source =
-        routeBase === 'detail' || routeBase === 'diff' ? routeBase : 'list';
-      overlayContext.openHelp(source);
-    }
+    overlayContext.openHelp(helpSourceFor(routeBase));
   };
 
   return (

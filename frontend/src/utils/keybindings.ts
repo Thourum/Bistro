@@ -15,6 +15,13 @@ export type RouteBase =
   | 'onboarding'
   | 'connecting';
 
+export type HelpSourceRoute = 'list' | 'detail' | 'diff';
+
+/** Other routes use the inbox help sections. */
+export function helpSourceFor(routeBase: RouteBase | null): HelpSourceRoute {
+  return routeBase === 'detail' || routeBase === 'diff' ? routeBase : 'list';
+}
+
 export interface KeyBinding {
   /** Stable id used by settings overrides. */
   actionId: string;

@@ -24,7 +24,7 @@ import {
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import { emitAppEvent } from './appEvents';
 import { permitsBenchAction } from './benchSafety';
-import type { RouteBase } from './keybindings';
+import { helpSourceFor, type RouteBase } from './keybindings';
 import { LINE_COMMENT_ACTIONS } from './lineCommentActions';
 import { createLogger } from './logger';
 import { ONBOARDING_ACTIONS } from './onboardingActions';
@@ -126,11 +126,7 @@ function closeInlineDiffReply(context: KeyActionContext): boolean {
 }
 
 function openHelp(context: KeyActionContext): void {
-  const source =
-    context.routeBase === 'detail' || context.routeBase === 'diff'
-      ? context.routeBase
-      : 'list';
-  context.overlays.openHelp(source);
+  context.overlays.openHelp(helpSourceFor(context.routeBase));
 }
 
 function handleEscape(context: KeyActionContext): void {
