@@ -270,6 +270,10 @@ func (o *Orchestrator) syncDetailsPhase(ctx context.Context, req *SyncRequest, f
 	return details
 }
 
+func (o *Orchestrator) newWriter() *writer.Writer {
+	return writer.New(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
+}
+
 func (o *Orchestrator) syncWritePhase(ctx context.Context, fetchedPRs []*writer.FetchedPR, result *SyncResult) {
 	if len(fetchedPRs) == 0 {
 		return
@@ -277,8 +281,8 @@ func (o *Orchestrator) syncWritePhase(ctx context.Context, fetchedPRs []*writer.
 	log := logging.FromContext(ctx)
 	log.Debug("phase write-db start", "pr_count", len(fetchedPRs))
 	started := time.Now()
-	writer := writer.New(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
-	if err := writer.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
+	syncWriter := o.newWriter()
+	if err := syncWriter.WriteSyncResultsContext(ctx, fetchedPRs); err != nil {
 		o.recordSyncPhaseError(log, result, syncPhaseError{phase: "phase write-db failed", message: "failed to write results", cause: err, durationMS: time.Since(started).Milliseconds()})
 		return
 	}
@@ -318,8 +322,8 @@ func (o *Orchestrator) SyncPR(ctx context.Context, prID string) error {
 		return fmt.Errorf("hydrate %s: %w", prID, results[0].Error)
 	}
 
-	writer := writer.New(o.log, o.store).WithEmitter(o.emitter).WithClassifier(o.classifier).WithCurrentUser(o.currentUser).WithPostCommit(o.postCommit)
-	if err := writer.WriteSyncResultsContext(ctx, results); err != nil {
+	syncWriter := o.newWriter()
+	if err := syncWriter.WriteSyncResultsContext(ctx, results); err != nil {
 		return fmt.Errorf("write hydrated PR %s: %w", prID, err)
 	}
 	log.Info("pr hydrated on demand")

@@ -207,12 +207,15 @@ func (o *Orchestrator) prHeadSHA(ctx context.Context, prID string) string {
 	if o.store == nil {
 		return ""
 	}
-	var headSHA string
-	if err := o.store.QueryRowContext(ctx, `SELECT head_sha FROM prs WHERE id = ?`, prID).Scan(&headSHA); err != nil {
+	info, err := o.store.GetPRCheckoutInfo(ctx, prID)
+	if err != nil {
 		logging.FromContext(ctx).Debug("prHeadSHA: lookup failed", "pr_id", prID, "error", err)
 		return ""
 	}
-	return headSHA
+	if info == nil {
+		return ""
+	}
+	return info.HeadSHA
 }
 
 // deleteSubmittedDrafts removes drafts GitHub accepted and tells the UI.
