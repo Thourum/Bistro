@@ -55,6 +55,15 @@ describe('extractFilePath', () => {
 });
 
 describe('extractFileIdentity', () => {
+  it('retains prefixes for quoted rename paths with spaces', () => {
+    const patch = 'diff --git "a/src/old name.ts" "b/src/new name.ts"';
+
+    expect(extractFileIdentity(patch)).toEqual({
+      oldFile: 'a/src/old name.ts',
+      newFile: 'b/src/new name.ts',
+    });
+  });
+
   it('retains git prefixes and marks a deletion as new /dev/null', () => {
     const patch = [
       'diff --git a/src/removed.ts b/src/removed.ts',

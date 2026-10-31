@@ -30,6 +30,30 @@ export interface ParsedDiffFile {
   lineCount: number;
 }
 
+function parseDiffGitHeader(
+  patch: string,
+): { oldPath: string; newPath: string } | null {
+  const quotedMatch = /^diff --git "a\/(.+)" "b\/(.+)"/m.exec(patch);
+  if (quotedMatch !== null) {
+    return {
+      oldPath: quotedMatch[1] ?? '',
+      newPath: quotedMatch[2] ?? '',
+    };
+  }
+
+  // Embedded ` b/` in a filename remains ambiguous without quoted headers.
+  const headerMatch = /^diff --git a\/.+ b\/.+$/m.exec(patch);
+  if (headerMatch === null) return null;
+  const body = headerMatch[0].slice('diff --git '.length);
+  const separator = ' b/';
+  const separatorIndex = body.lastIndexOf(separator);
+  if (separatorIndex === -1) return null;
+  return {
+    oldPath: body.slice('a/'.length, separatorIndex),
+    newPath: body.slice(separatorIndex + separator.length),
+  };
+}
+
 /**
  * Extract `DiffFileIdentity` (oldFile / newFile with git `a/`/`b/` prefixes
  * or `/dev/null`) from a single-file patch chunk.
@@ -43,22 +67,10 @@ export function extractFileIdentity(patch: string): DiffFileIdentity {
   let oldFile = '/dev/null';
   let newFile = '/dev/null';
 
-  // Quoted form: diff --git "a/..." "b/..."
-  const quotedMatch = /^diff --git "a\/(.+)" "b\/(.+)"/m.exec(patch);
-  if (quotedMatch !== null) {
-    oldFile = `a/${quotedMatch[1] ?? ''}`;
-    newFile = `b/${quotedMatch[2] ?? ''}`;
-  } else {
-    // Unquoted form: diff --git a/<oldPath> b/<newPath>
-    const headerMatch = /^diff --git a\/.+ b\/.+$/m.exec(patch);
-    if (headerMatch !== null) {
-      const body = headerMatch[0].slice('diff --git '.length);
-      const bIdx = body.lastIndexOf(' b/');
-      if (bIdx !== -1) {
-        oldFile = `a/${body.slice(2, bIdx)}`; // strip leading "a/"
-        newFile = `b/${body.slice(bIdx + 3)}`; // after " b/"
-      }
-    }
+  const header = parseDiffGitHeader(patch);
+  if (header !== null) {
+    oldFile = `a/${header.oldPath}`;
+    newFile = `b/${header.newPath}`;
   }
 
   // Override with /dev/null when the unified-diff +++ / --- lines say so.
@@ -167,28 +179,12 @@ function countLines(patch: string): number {
  *  - Fallback:             `+++ b/<path>` line
  */
 export function extractFilePath(patch: string): string | null {
-  // Quoted form: diff --git "a/..." "b/..."
-  const quotedMatch = /^diff --git "a\/(.+)" "b\/(.+)"/m.exec(patch);
-  if (quotedMatch !== null) {
-    return quotedMatch[2] ?? quotedMatch[1] ?? null;
-  }
-
-  // Unquoted form: diff --git a/<oldPath> b/<newPath>
-  // The last ` b/` splits paths containing spaces, but embedded ` b/`
-  // in a filename remains ambiguous without quoted git headers.
-  const headerLineMatch = /^diff --git a\/.+ b\/.+$/m.exec(patch);
-  if (headerLineMatch !== null) {
-    const headerLine = headerLineMatch[0];
-    // Strip the leading `diff --git ` prefix then split on the LAST ` b/`
-    const withoutPrefix = headerLine.slice('diff --git '.length);
-    const lastBSlash = withoutPrefix.lastIndexOf(' b/');
-    if (lastBSlash !== -1) {
-      const bPath = withoutPrefix.slice(lastBSlash + 3); // after " b/"
-      if (bPath !== '/dev/null' && bPath !== '') return bPath;
-      // Deletion: b/ is /dev/null, return the a/ path
-      const aPath = withoutPrefix.slice(2, lastBSlash); // after "a/"
-      if (aPath !== '') return aPath;
+  const header = parseDiffGitHeader(patch);
+  if (header !== null) {
+    if (header.newPath !== '/dev/null' && header.newPath !== '') {
+      return header.newPath;
     }
+    if (header.oldPath !== '') return header.oldPath;
   }
 
   // Fallback: `+++ b/<path>` (unified diff header without git prefix)
