@@ -3,10 +3,10 @@ import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../hooks/useStore';
 import { loadRepos, setRepoWatched } from '../services/repos';
+import { addToast } from '../services/toasts';
 import { appStore } from '../store';
 import type { UIState } from '../store/ui';
 import type { RepoInfo } from '../types';
-import { addToast } from './ToastContainer';
 
 interface RepoPickerProps {
   onClose: () => void;

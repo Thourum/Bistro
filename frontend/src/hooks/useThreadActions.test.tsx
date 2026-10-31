@@ -3,12 +3,12 @@ import { Threads } from '@bindings/services';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterAll, afterEach, expect, it, vi } from 'vitest';
-import { addToast } from '../components/ToastContainer';
+import { addToast } from '../services/toasts';
 import { cancellable } from '../test/cancellable';
 import { useThreadActions } from './useThreadActions';
 
 vi.mock('@bindings/services', () => ({ Threads: { SubmitAction: vi.fn() } }));
-vi.mock('../components/ToastContainer', () => ({ addToast: vi.fn() }));
+vi.mock('../services/toasts', () => ({ addToast: vi.fn() }));
 
 // @wailsio/runtime's drag.js starts a 50 ms window.setInterval on import whose
 // first tick calls window.clearInterval; if jsdom tears down before it fires,

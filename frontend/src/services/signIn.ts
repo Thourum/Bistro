@@ -1,12 +1,12 @@
 import { Auth, type AuthIdentity, type AuthStatus } from '@bindings/services';
 import { Fault, fromThrowable, ResultAsync } from '@thourum/fault';
 import type { CancellablePromise } from '@wailsio/runtime';
-import { addToast } from '../components/ToastContainer';
 import { PROVIDERS, type ProviderId } from '../providers';
 import { appStore } from '../store';
 import { createLogger } from '../utils/logger';
 import { openUrlInBrowser } from '../utils/openUrl';
 import { call, faultReason } from './engine/call';
+import { addToast } from './toasts';
 
 const log = createLogger('SignIn');
 // The engine allows one OAuth attempt; keep its cancellation handle private.

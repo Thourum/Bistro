@@ -1,8 +1,8 @@
 import type { Fault } from '@thourum/fault';
 import type { ReactNode } from 'react';
-import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { Switch } from '../../components/ui/switch';
+import { addToast } from '../../services/toasts';
 import { type SettingsPatch, updateSettings } from '../../store/settings';
 
 export function showSettingsError(error: Fault): void {

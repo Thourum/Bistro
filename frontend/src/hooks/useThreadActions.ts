@@ -1,7 +1,7 @@
 import { Threads } from '@bindings/services';
 import { useCallback, useState } from 'react';
-import { addToast } from '../components/ToastContainer';
 import { callWrite, faultReason } from '../services/engine/call';
+import { addToast } from '../services/toasts';
 
 /**
  * Dispatches resolve / unresolve writes for review threads.

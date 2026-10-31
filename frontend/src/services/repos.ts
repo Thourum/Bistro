@@ -1,9 +1,9 @@
 import { Repos } from '@bindings/services';
 import type { Fault, ResultAsync } from '@thourum/fault';
-import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
 import type { RepoInfo } from '../types';
 import { call, callWrite } from './engine/call';
+import { addToast } from './toasts';
 
 const REPO_LIST_TIMEOUT_MS = 35_000;
 

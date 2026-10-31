@@ -3,8 +3,8 @@ import {
   type NavigationStyle,
 } from '@renderer/types/settings';
 import type { Fault, ResultAsync } from '@thourum/fault';
-import { addToast } from '../components/ToastContainer';
 import { settingsStore, updateSettings } from '../store/settings';
+import { addToast } from './toasts';
 
 /** Persist the style so the real hotkey layer switches immediately. */
 export function setNavigationStyle(

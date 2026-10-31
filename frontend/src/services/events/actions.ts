@@ -1,8 +1,8 @@
 import type { ActionComplete } from '@bindings/services/models';
-import { addToast } from '../../components/ToastContainer';
 import { appStore } from '../../store';
 import type { ActionResult } from '../../types';
 import { formatErrorMessage } from '../../utils/error';
+import { addToast } from '../toasts';
 
 const ACTION_TYPES = {
   approve: true,

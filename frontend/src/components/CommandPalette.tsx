@@ -12,6 +12,7 @@ import { callWrite, faultReason } from '../services/engine/call';
 import { handleExpertiseError } from '../services/events/expertise';
 import { showFirstRunRail } from '../services/firstRunRail';
 import { loadRepos } from '../services/repos';
+import { addToast } from '../services/toasts';
 import { appStore } from '../store';
 import { updateSettings } from '../store/settings';
 import type { UIState } from '../store/ui';
@@ -29,7 +30,6 @@ import {
   executePaletteCommand,
   shortcutFor,
 } from './commandPaletteCommands';
-import { addToast } from './ToastContainer';
 
 const log = createLogger('CommandPalette');
 

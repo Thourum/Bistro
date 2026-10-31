@@ -1,11 +1,11 @@
 import { Classification } from '@bindings/services';
 import type { ClassificationSettings } from '@renderer/types/settings';
 import { useState } from 'react';
-import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { useStore } from '../../hooks/useStore';
 import { callWrite } from '../../services/engine/call';
+import { addToast } from '../../services/toasts';
 import { appStore } from '../../store';
 import type { UIState } from '../../store/ui';
 import { saveSettings } from './SettingsComponents';

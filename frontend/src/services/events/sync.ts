@@ -4,9 +4,9 @@ import type {
   SyncError,
   SyncStatus,
 } from '@bindings/services/models';
-import { addToast } from '../../components/ToastContainer';
 import { appStore } from '../../store';
 import { formatErrorMessage } from '../../utils/error';
+import { addToast } from '../toasts';
 
 export function handleSyncComplete(_data: Readonly<SyncComplete>): void {
   appStore.setState((state) => ({

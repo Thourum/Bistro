@@ -5,7 +5,6 @@ import {
 } from '@bindings/services';
 import { type Fault, ok, type ResultAsync } from '@thourum/fault';
 import type { CancellablePromise } from '@wailsio/runtime';
-import { addToast } from '../components/ToastContainer';
 import type {
   ScanDevFolderResult,
   ValidateDevFolderResult,
@@ -22,6 +21,7 @@ import {
 } from '../utils/onboardingRepos';
 import { call } from './engine/call';
 import { loadRepos, setRepoWatched } from './repos';
+import { addToast } from './toasts';
 
 const REVIEW_QUEUE_TIMEOUT_MS = 35_000;
 const log = createLogger('OnboardingSync');

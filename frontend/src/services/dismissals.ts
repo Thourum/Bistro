@@ -1,5 +1,4 @@
 import { Dismiss } from '@bindings/services';
-import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
 import {
   type DismissBatch,
@@ -9,6 +8,7 @@ import {
 } from '../utils/dismissals';
 import { createLogger } from '../utils/logger';
 import { callWrite } from './engine/call';
+import { addToast } from './toasts';
 
 const log = createLogger('dismissals');
 

@@ -1,10 +1,10 @@
 import { Auth } from '@bindings/services';
-import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { useStore } from '../../hooks/useStore';
 import { PROVIDERS, type ProviderId } from '../../providers';
 import { callWrite } from '../../services/engine/call';
 import { handleAuthStatus, startSignIn } from '../../services/signIn';
+import { addToast } from '../../services/toasts';
 import { appStore } from '../../store';
 import type { UIState } from '../../store/ui';
 import { Section } from './SettingsComponents';

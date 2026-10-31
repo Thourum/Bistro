@@ -1,6 +1,6 @@
 import { Shell } from '@bindings/services';
 import { call } from '../services/engine/call';
-import { addToast } from './ToastContainer';
+import { addToast } from '../services/toasts';
 import { ActionKeyHint } from './ui/action-key-hint';
 import { Button } from './ui/button';
 

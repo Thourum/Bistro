@@ -1,11 +1,11 @@
 import { type Fault, okAsync, type ResultAsync } from '@thourum/fault';
-import { addToast } from '../components/ToastContainer';
 import { appStore } from '../store';
 import { settingsStore, updateSettings } from '../store/settings';
 import {
   INITIAL_FIRST_RUN_RAIL,
   reduceFirstRunRail,
 } from '../utils/firstRunRail';
+import { addToast } from './toasts';
 
 function setDismissPending(firstRunDismissPending: boolean): void {
   appStore.setState((state) => ({ ...state, firstRunDismissPending }));

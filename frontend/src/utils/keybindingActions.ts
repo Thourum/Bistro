@@ -1,7 +1,6 @@
 import { Shell } from '@bindings/services';
 import type { Store } from '@tanstack/store';
 import { draftIdFromKey } from '../components/diff/diffAnnotations';
-import { addToast } from '../components/ToastContainer';
 import type {
   OverlayContextValue,
   OverlayKind,
@@ -21,6 +20,7 @@ import {
   retrySignIn,
   startSignIn,
 } from '../services/signIn';
+import { addToast } from '../services/toasts';
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import { emitAppEvent } from './appEvents';
 import { permitsBenchAction } from './benchSafety';

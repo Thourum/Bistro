@@ -1,7 +1,7 @@
 import type { AuthRedirect } from '@bindings/services/models';
-import { addToast } from '../../components/ToastContainer';
 import { appStore } from '../../store';
 import { openUrlInBrowser } from '../../utils/openUrl';
+import { addToast } from '../toasts';
 
 export function handleAuthRedirect(data: Readonly<AuthRedirect>): void {
   if (!appStore.state.authLoading) return;

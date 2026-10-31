@@ -1,8 +1,8 @@
 import { ReadState, Viewed } from '@bindings/services';
-import { addToast } from '../components/ToastContainer';
 import type { FileViewedAck, PRsReadAck } from '../types';
 import { createLogger } from '../utils/logger';
 import { callWrite, faultReason } from './engine/call';
+import { addToast } from './toasts';
 
 const log = createLogger('readState');
 

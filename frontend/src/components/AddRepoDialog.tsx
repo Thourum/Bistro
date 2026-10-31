@@ -2,8 +2,8 @@ import { RepoLocation } from '@bindings/services';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { callWrite, faultReason } from '../services/engine/call';
+import { addToast } from '../services/toasts';
 import { settingsStore } from '../store/settings';
-import { addToast } from './ToastContainer';
 
 type Destination = 'dev_folder' | 'cache';
 type Step = 'url' | 'destination';

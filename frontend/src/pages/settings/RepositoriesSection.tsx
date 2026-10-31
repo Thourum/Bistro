@@ -6,10 +6,10 @@ import {
 import { Fault, okAsync, type ResultAsync } from '@thourum/fault';
 import { useCallback, useState } from 'react';
 import { CacheUsageCard } from '../../components/CacheUsageCard';
-import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { useStore } from '../../hooks/useStore';
 import { call } from '../../services/engine/call';
+import { addToast } from '../../services/toasts';
 import { settingsStore, updateSettings } from '../../store/settings';
 import { Section } from './SettingsComponents';
 

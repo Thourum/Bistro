@@ -5,11 +5,11 @@ import {
 import { Fault, ResultAsync } from '@thourum/fault';
 import { useEffect, useMemo } from 'react';
 import { NavigationStylePicker } from '../../components/NavigationStylePicker';
-import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { Kbd } from '../../components/ui/kbd';
 import { useStore } from '../../hooks/useStore';
 import { setNavigationStyle } from '../../services/navigationStyle';
+import { addToast } from '../../services/toasts';
 import { appStore } from '../../store';
 import {
   openSettingsFile,

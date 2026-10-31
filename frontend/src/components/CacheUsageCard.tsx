@@ -6,7 +6,7 @@ import {
 import type { Fault, ResultAsync } from '@thourum/fault';
 import { useCallback, useEffect, useState } from 'react';
 import { call, callWrite } from '../services/engine/call';
-import { addToast } from './ToastContainer';
+import { addToast } from '../services/toasts';
 
 const DELETE_FAILED_MESSAGE = 'Something went wrong, check the logs';
 const CLEAR_CACHE_CONFIRM_MESSAGE = 'Clear all cached repos?';

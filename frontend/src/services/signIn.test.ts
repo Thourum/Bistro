@@ -9,7 +9,7 @@ import { cancelSignIn, checkAuth, startSignIn } from './signIn';
 
 const { Start, Check } = vi.hoisted(() => ({ Start: vi.fn(), Check: vi.fn() }));
 vi.mock('@bindings/services', () => ({ Auth: { Start, Check } }));
-vi.mock('../components/ToastContainer', () => ({ addToast: vi.fn() }));
+vi.mock('./toasts', () => ({ addToast: vi.fn() }));
 vi.mock('../utils/openUrl', () => ({
   openUrlInBrowser: vi.fn(() => okAsync(undefined)),
 }));

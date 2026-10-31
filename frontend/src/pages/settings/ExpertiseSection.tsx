@@ -1,11 +1,11 @@
 import { Expertise } from '@bindings/services';
 import { useEffect, useState } from 'react';
-import { addToast } from '../../components/ToastContainer';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { useStore } from '../../hooks/useStore';
 import { call, callWrite } from '../../services/engine/call';
+import { addToast } from '../../services/toasts';
 import { appStore } from '../../store';
 import type { UIState } from '../../store/ui';
 import type { ExpertiseSettingsPayload } from '../../types';

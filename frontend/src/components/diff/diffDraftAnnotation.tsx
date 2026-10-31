@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useEffectiveBindings } from '../../hooks/useEffectiveBindings';
 import { useOverlays } from '../../overlays/OverlayContext';
 import { saveDraft } from '../../services/reviewDrafts';
+import { addToast } from '../../services/toasts';
 import type { ReviewDraft } from '../../types';
 import {
   isTextareaSubmit,
@@ -14,7 +15,6 @@ import {
   type LineCommentState,
 } from '../../utils/lineCommentCursor';
 import { Markdown } from '../Markdown';
-import { addToast } from '../ToastContainer';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { ShortcutBadge } from '../ui/shortcut-badge';

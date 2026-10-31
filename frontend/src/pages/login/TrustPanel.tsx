@@ -1,5 +1,5 @@
 import type React from 'react';
-import { addToast } from '../../components/ToastContainer';
+import { addToast } from '../../services/toasts';
 import { openUrlInBrowser } from '../../utils/openUrl';
 
 const SOURCE_URL = 'https://github.com/Thourum/Bistro';

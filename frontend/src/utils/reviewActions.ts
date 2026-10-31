@@ -1,7 +1,7 @@
 import { draftIdFromKey } from '../components/diff/diffAnnotations';
-import { addToast } from '../components/ToastContainer';
 import { submitReview } from '../services/prActions';
 import { deleteDrafts } from '../services/reviewDrafts';
+import { addToast } from '../services/toasts';
 import { settingsStore } from '../store/settings';
 import type { KeyActionContext } from './keybindingActions';
 import { getEffectiveBindings } from './keybindings';

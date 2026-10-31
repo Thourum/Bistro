@@ -4,9 +4,9 @@ import type {
   ExpertiseProgress,
   ExpertiseReady,
 } from '@bindings/services/models';
-import { addToast } from '../../components/ToastContainer';
 import { appStore } from '../../store';
 import type { ExpertiseRepoStatus } from '../../types';
+import { addToast } from '../toasts';
 
 function mergeExpertiseStatus(status: Readonly<ExpertiseRepoStatus>): void {
   appStore.setState((state) => ({

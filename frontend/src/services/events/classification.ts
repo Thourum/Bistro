@@ -1,6 +1,6 @@
 import type { ByokAuthFailed, ByokUsage } from '@bindings/services/models';
-import { addToast } from '../../components/ToastContainer';
 import { appStore } from '../../store';
+import { addToast } from '../toasts';
 
 export function handleByokUsage(data: Readonly<ByokUsage>): void {
   appStore.setState((state) => ({

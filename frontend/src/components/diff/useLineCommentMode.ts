@@ -3,6 +3,7 @@ import type { CodeViewHandle } from '@pierre/diffs/react';
 import { useEffect, useMemo, useRef } from 'react';
 import { useStore } from '../../hooks/useStore';
 import { useOverlays } from '../../overlays/OverlayContext';
+import { addToast } from '../../services/toasts';
 import { appStore } from '../../store';
 import type { ReviewDraft } from '../../types';
 import {
@@ -13,7 +14,6 @@ import {
   listCommentableLines,
   toAnnotationSide,
 } from '../../utils/lineCommentCursor';
-import { addToast } from '../ToastContainer';
 import {
   type DiffAnnotationMeta,
   draftIdFromKey,

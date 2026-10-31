@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useStore } from '../hooks/useStore';
+import { dismissToast, type Toast } from '../services/toasts';
 import { appStore } from '../store';
-import type { Toast } from '../types';
 
 const AUTO_DISMISS_MS = 5000;
 
@@ -18,27 +18,6 @@ const TOAST_ICONS: Record<Toast['type'], string> = {
   info: 'ℹ',
   warning: '⚠',
 };
-
-function dismissToast(id: string): void {
-  appStore.setState((s) => ({
-    ...s,
-    toasts: s.toasts.filter((t) => t.id !== id),
-  }));
-}
-
-/**
- * Add a toast to the store queue (max 3, oldest dropped first).
- */
-export function addToast(toast: Omit<Toast, 'id'>): void {
-  const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  appStore.setState((s) => {
-    const next = [...s.toasts, { ...toast, id }];
-    return {
-      ...s,
-      toasts: next.length > 3 ? next.slice(next.length - 3) : next,
-    };
-  });
-}
 
 interface ToastItemProps {
   toast: Toast;
