@@ -154,6 +154,10 @@ func run(args []string) error {
 	}
 	if decideCloseAction(closeContext{isTrayReady: trayIcon != nil && isTrayReadyOn(runtime.GOOS), isSmoke: *smoke}) == closeHide {
 		installCloseToTray(window, visibility)
+	} else if !*smoke {
+		// Wails cleanup calls Window.Close after OnShutdown; remove the hook
+		// first so those closes cannot request Quit again.
+		app.OnShutdown(installCloseToQuit(window, app.Quit))
 	}
 	app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) {
 		showMainWindow(visibility)

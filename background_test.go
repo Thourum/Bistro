@@ -9,6 +9,8 @@ import (
 
 	"github.com/itterno/bistro/internal/services"
 	"github.com/itterno/bistro/internal/tray"
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 func TestDecideCloseAction(t *testing.T) {
@@ -29,6 +31,29 @@ func TestDecideCloseAction(t *testing.T) {
 	}
 	if isTrayReadyOn("linux") || !isTrayReadyOn("darwin") || !isTrayReadyOn("windows") {
 		t.Fatal("tray readiness must be false only on linux")
+	}
+}
+
+func TestMainWindowCloseRequestsQuitUntilShutdown(t *testing.T) {
+	window := application.NewWindow(application.WebviewWindowOptions{})
+	quitRequests := 0
+	removeHook := installCloseToQuit(window, func() { quitRequests++ })
+	ordinaryCloses := 0
+	// Observe whether closing was intercepted without needing a native window.
+	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		ordinaryCloses++
+		event.Cancel()
+	})
+	window.HandleWindowEvent(uint(events.Common.WindowClosing))
+	if quitRequests != 1 || ordinaryCloses != 0 {
+		t.Fatalf("main close: quit requests=%d, ordinary closes=%d", quitRequests, ordinaryCloses)
+	}
+
+	// OnShutdown removes the hook before Wails cleanup closes its windows.
+	removeHook()
+	window.HandleWindowEvent(uint(events.Common.WindowClosing))
+	if quitRequests != 1 || ordinaryCloses != 1 {
+		t.Fatalf("shutdown close re-entered quit: quit requests=%d, ordinary closes=%d", quitRequests, ordinaryCloses)
 	}
 }
 

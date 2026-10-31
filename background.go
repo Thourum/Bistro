@@ -125,6 +125,13 @@ func installCloseToTray(window *application.WebviewWindow, visibility visibility
 	})
 }
 
+func installCloseToQuit(window *application.WebviewWindow, quit func()) func() {
+	return window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		e.Cancel()
+		quit()
+	})
+}
+
 type trayDeps struct {
 	app     *application.App
 	eng     *engine.App
