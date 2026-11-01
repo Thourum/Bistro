@@ -1,182 +1,141 @@
 # Developing Bistro
 
-Technical guide for building, running, and contributing to Bistro. For the
-product overview, see the [README](README.md); for the feature plan, see
-[docs/ROADMAP.md](docs/ROADMAP.md).
+For product context, see [README.md](README.md). [CLAUDE.md](CLAUDE.md) is the authoritative agent guide for conventions and verification; this document covers local setup and operation.
 
 ## Architecture
 
-```
-GitHub API
-    |
-    v
-Go sync engine (bistro-sync)
-    |-- fetches PRs, reviews, comments via the GitHub API
-    |-- clones PR base/head and generates diffs locally via go-git
-    |-- writes to SQLite (local cache, engine owns all writes)
-    |-- emits real-time events over a localhost WebSocket
-    |
-    v
-Electron + React UI
-    |-- requests data over WebSocket (REQUEST_PR_LIST, REQUEST_DIFF, …)
-    |-- receives push events for live updates (SYNC_COMPLETE, SYNC_ERROR, …)
-    |-- keyboard-first navigation via TanStack Hotkeys
-```
+Bistro is one Wails v3.0.0 application process. `main.go` embeds the Vite build, creates the native window, starts `internal/engine`, and binds `internal/services`. The React renderer calls generated TypeScript bindings through `frontend/src/services/engine/call.ts` and receives typed Wails events. Go owns all SQLite writes, local Git operations, sync, and offline action replay. `internal/shell` owns settings, platform/editor integration, telemetry, and updates.
 
-No server. Everything runs locally. SQLite is a cache, not a shared database.
+Wails handles single-instance enforcement. `OnShutdown` cancels the shared engine/shell context and stops updater checks; deferred `engine.Stop()` waits for background work and closes SQLite after the Wails run loop returns. There is no standalone sync binary, ready-line handshake, engine port, or WebSocket transport. Only sign-in uses a temporary OAuth loopback callback listener.
 
-### Process lifecycle
+See [the Go package map](docs/go-project-overview.md) for backend details and [ADR 0001](docs/adr/0001-electron-vs-wails.md) for the historical decision and migration amendment.
 
-- Electron spawns `bistro-sync` with `-ws-port 0`; the engine binds a random
-  port and prints `{"event":"ready","wsPort":N}` to stdout **after** SQLite
-  migrations complete. Electron blocks on this line, then passes the port to
-  the renderer synchronously via preload `additionalArguments`.
-- The engine holds a `flock` on `<db>.lock` — a second instance on the same
-  database exits immediately with a clear error.
-- The engine watches stdin (`-exit-on-stdin-close`): if the Electron process
-  dies — however it dies — the pipe closes and the engine exits, so orphaned
-  processes can't hold the database.
+## Background mode
+
+When the tray is available on macOS or Windows, closing the window keeps Bistro running and syncing in the tray. On macOS, this also hides the Dock icon. Use **Show Bistro** in the tray to restore the window, or launch Bistro again. To exit, use ⌘Q on macOS, the app menu's **Quit**, or the tray's **Quit Bistro**.
+
+On Linux, closing the window quits even if the tray icon appears, because Wails does not report tray readiness there. Under `--smoke`, Bistro creates no tray and closing the window quits.
 
 ## Prerequisites
 
-- Go 1.26.x, matching `go/go.mod`
-- Node 18+
-- pnpm (the workspace uses `nodeLinker: hoisted` — required by electron-forge)
+- Go 1.26.1, matching root `go.mod`, with CGO and a native C compiler.
+- Node compatible with installed Vite (`^20.19.0 || >=22.12.0`) and pnpm. The root lockfile and workspace cover `frontend/` and `website/`.
+- Wails CLI pinned to the Go runtime version:
 
-## Quick Start
+  ```bash
+  go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+  ```
 
-```bash
-# Install Electron dependencies
-cd electron && pnpm install
+  Ensure Go's binary directory is on PATH. The CLI includes its task runner; no separate `task` binary is needed.
+- macOS: Xcode Command Line Tools; the native webview is WKWebView.
+- Windows: a CGO-capable compiler and WebView2; packaging also needs NSIS. The installer includes the WebView2 bootstrapper.
+- Linux: GTK 4 / WebKitGTK 6.0 development libraries and keyring support. The release workflow installs `build-essential`, `ca-certificates`, `dbus-x11`, `gnome-keyring`, `libsecret-1-dev`, `libgtk-4-dev`, and `libwebkitgtk-6.0-dev` on Ubuntu.
 
-# Build the Go sync engine
-pnpm build
+## Quick start
 
-# Run the app (spawns the Go engine automatically)
-pnpm start
-```
-
-To run the Go engine separately (e.g. under Delve), set
-`BISTRO_SKIP_GO_SPAWN=1` for Electron and start the engine yourself:
+From the repository root:
 
 ```bash
-cd go && ./bistro-sync -ws-port 8080 -log-level debug
-BISTRO_SKIP_GO_SPAWN=1 WS_PORT=8080 pnpm start   # in electron/
+pnpm install
+wails3 task dev
 ```
 
-## Project Structure
+Development runs the native app with Vite and stores local state in `.dev-data/`. Sign-in works out of the box through Bistro's own OAuth app, with code exchange via `https://get-bistro.com/api/oauth/token`. `GITHUB_CLIENT_ID` overrides the embedded client ID. Only when both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set in the process environment does code exchange go directly to GitHub for your custom OAuth app. Do not commit secrets.
 
+## Project structure
+
+```text
+main.go, window.go     Wails entrypoint, lifecycle, native window/menu
+internal/engine/       In-process engine and domain wiring
+internal/services/     Typed methods, errors, registered events
+internal/shell/        Settings, editor/platform, telemetry, updater
+internal/prsync/       Sync orchestration, workerpool, writer
+internal/git/          Local clone, diff, anchor, and cache operations
+internal/store/        SQLite, migrations, SQL queries, generated sqlc output
+frontend/src/          React pages, components, hooks, stores, services, utils
+frontend/bindings/     Committed generated Wails TypeScript bindings
+frontend/tests/        Vitest support and behavioral suites
+build/                 Platform Taskfiles, icons, signing/installer resources
+scripts/smoke.sh        Bounded native smoke check
+website/               Documentation/marketing site (separate workspace package)
+docs/                  Design, roadmap, architecture decisions
 ```
-bistro/
-├── go/                        Go sync engine
-│   ├── cmd/bistro-sync/       Binary entry point
-│   └── internal/
-│       ├── provider/          Provider interface + github/ implementation
-│       ├── sync/              PR sync orchestration, worker pool, writer
-│       ├── git/               Clone + diff generation (go-git)
-│       ├── store/             SQLite read/write, embedded migrations
-│       ├── ws/                WebSocket server + dispatcher
-│       ├── actions/           Approve, comment, request-changes (+ offline queue)
-│       ├── logging/           slog context propagation helpers
-│       ├── keychain/          OS keychain token storage
-│       └── server/            App orchestrator, sync loop, WS handlers
-├── electron/                  Electron + React UI
-│   ├── src/main/              Main process (go-spawn, IPC, settings)
-│   ├── src/renderer/          React app (pages, components, hooks, stores)
-│   │   ├── utils/keybindings.ts   All keyboard bindings (pure config)
-│   │   └── hooks/useAppHotkeys.ts Registration via TanStack Hotkeys
-│   └── tests/unit/            Vitest suites
-├── design/                    Architecture and API docs
-└── docs/                      ROADMAP.md, session UPDATE files
-```
+
+Frontend layout guidance lives in [frontend/CLAUDE.md](frontend/CLAUDE.md); detailed conventions live in the root guide.
 
 ## Configuration
 
-### Electron environment (`electron/.env.local`)
+| Variable | Meaning |
+|---|---|
+| `BISTRO_DATA_DIR` | Override the app data directory; dev sets it to repo-root `.dev-data/`. |
+| `GITHUB_CLIENT_ID` | Optional override of Bistro's embedded public OAuth client ID, at build time or runtime. |
+| `GITHUB_CLIENT_SECRET` | OAuth secret for direct GitHub exchange only when `GITHUB_CLIENT_ID` is also set in the environment; never embed or commit it. |
+| `BISTRO_LOG_LEVEL` | `debug`, `info`, `warn`, or `error`; default `info`. |
+| `BISTRO_VERSION` | Build-time version stamp; default `dev`, which disables updates. |
 
-```
-WS_PORT=0                      # 0 = engine picks a free port (default)
-GO_LOG_LEVEL=debug             # dev default is debug; prod default info
-GITHUB_CLIENT_ID=              # From https://github.com/settings/developers
-GITHUB_CLIENT_SECRET=          # Keep secret, never commit
-WINDOW_WIDTH=1600
-WINDOW_HEIGHT=900
-```
+Without an override, data lives under `os.UserConfigDir()/Bistro`: `~/Library/Application Support/Bistro/` on macOS, `%AppData%\Bistro\` on Windows, and `$XDG_CONFIG_HOME/Bistro/` (or `~/.config/Bistro/`) on Linux. It contains `sync.db`, `settings.json`, and `logs/bistro.log`. GitHub tokens stay in the OS keychain.
 
-### Go sync engine flags
+Settings changes are validated and atomically persisted by Go; external edits are polled. Open the file from Settings. Keyboard overrides map action IDs to hotkey arrays: one entry is a key, multiple entries form a sequence, and an empty array unbinds. Action IDs live in `frontend/src/utils/keybindings.ts`, with defaults per navigation style in `utils/keymaps.ts`.
 
-```
--ws-port              int     WebSocket port; 0 = random, reported via ready signal (default: 8080)
--db-path              string  SQLite database path (default: ./data/sync.db)
--log-level            string  debug | info | warn | error (default: info)
--log-file             string  Log file path; omit to use stderr only
--replay-queue         bool    Replay offline action queue on startup (default: true)
--exit-on-stdin-close  bool    Exit when stdin closes (set by Electron)
-```
-
-### User settings
-
-The app writes `settings.json` to Electron's `userData` directory (open it via
-`:settings` → "Open settings file"). Keybinding overrides map a stable
-`actionId` to an array of TanStack hotkey strings:
-
-```json
-{
-  "keybindings": {
-    "list.down": ["x"],          // rebind to a single key
-    "list.top": ["g", "g"],      // two entries = a sequence
-    "list.star": []              // empty = unbind
-  }
-}
-```
-
-Action ids and defaults live in `electron/src/renderer/utils/keybindings.ts`.
-
-## Testing
+## Generation and verification
 
 ```bash
-(cd go && go test ./...) && (cd electron && pnpm test)    # All tests
-cd go && go test ./...                                    # Go tests only
-cd electron && pnpm test                                  # Electron tests only
+# Root: regenerate committed Wails bindings and sqlc output
+wails3 task generate
 
-cd go && go test -race ./...                          # race detector
-cd electron && pnpm exec tsc --noEmit && pnpm test    # typecheck + vitest
+# Root: backend checks
+go vet ./... && go test -race ./...
+
+# Renderer checks
+cd frontend && pnpm type-check && pnpm lint && pnpm test
 ```
+
+For SQL-only generation, edit `internal/store/queries/*.sql` and run `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate` from the root. Never hand-edit `internal/store/db/` or `frontend/bindings/`.
+
+The workspace's seven-day `minimumReleaseAge` policy exempts exactly `'@wailsio/runtime@3.0.0'`, approved on 2026-10-29 to keep the JS runtime aligned with Go. See [CLAUDE.md](CLAUDE.md#tech-stack) before changing dependency policy.
 
 ## Packaging
 
 ```bash
-cd electron && pnpm package     # package the Electron app locally
-cd electron && pnpm release:macos   # create a macOS DMG
-cd electron && pnpm release:win     # create a Windows zip
+# Root: build for the host
+wails3 task build
+
+# All three platforms, in order: Darwin, Windows, then Linux
+wails3 task package
+
+# One platform
+wails3 task package:darwin
+wails3 task package:windows
+wails3 task package:linux
+
+# Prepare the Docker image used by cross-build tasks
+wails3 task setup:docker
 ```
+
+`Taskfile.yml` and platform Taskfiles in `build/` are authoritative. `package` runs the Darwin, Windows, and Linux tasks in that order. macOS packaging is native and arm64; Windows and Linux release artifacts target amd64. Docker-backed cross-builds require Docker and the prepared image; macOS bundles still require macOS tooling. A built frontend is embedded in the executable.
+
+For a versioned local macOS bundle and smoke check:
+
+```bash
+BISTRO_VERSION=0.0.0-local wails3 task package:darwin
+scripts/smoke.sh bin/Bistro.app
+```
+
+The smoke script also accepts `bin/bistro.exe` or `bin/bistro`. It runs `--smoke` with a bounded timeout, isolated temporary data, and no sync/replay/telemetry/updates. Linux needs `xvfb-run`; macOS needs GNU `timeout` or `gtimeout`. This is a native-window/runtime check, not an authenticated review-flow test.
+
+The [release workflow](.github/workflows/release.yml) runs security gates, builds and smoke-tests all three platforms, and creates a draft pre-release with platform archives, installers, and `SHA256SUMS`. Signing/notarization is conditional on configured secrets. Installation and updater behavior are in [docs/ALPHA.md](docs/ALPHA.md). Publishing or pushing a release tag requires explicit permission.
 
 ## Debugging
 
-- Dev builds spawn the engine at `-log-level debug`: every sync phase, per-PR
-  fetch step, and GitHub HTTP call (with rate-limit headers) is logged.
-- Engine logs go to stderr (visible in the Electron terminal) and to
-  `go/logs/bistro-sync.log` in dev.
-- Renderer request timeouts report the socket state and pending request count.
-- Sync failures are broadcast to the UI as `SYNC_ERROR` — a silent hang is a
-  bug, not a known failure mode.
-- "another bistro-sync instance is already using …" on startup means a
-  previous engine still holds the DB lock — find it with
-  `lsof go/sync.db` and kill it.
+- Set `BISTRO_LOG_LEVEL=debug` for scoped engine logs. Logs go to stderr and `<data-dir>/logs/bistro.log`; review them for private data before sharing.
+- Renderer calls use structured service codes/reasons, cancellation, and a default 30-second timeout. Auth and folder scans deliberately have no renderer timeout.
+- Typed sync errors reach the UI through registered events. A silent hang is a bug, not expected behavior.
+- A second normal launch focuses the running window. Use isolated `--smoke` for automated native checks rather than competing for app state.
 
-## Key Design Decisions
+## Key design decisions
 
-- **SQLite as local cache** — the Go engine owns all writes; the UI reads via
-  WebSocket request/response against the same cache. WAL mode, pooled
-  connections, bounded `busy_timeout`.
-- **Local diff generation** — PR base/head are cloned (cached) and diffed with
-  go-git, with clone auth from the OS keychain. This is the foundation for
-  rebase-surviving review features (see ROADMAP Phase 2).
-- **Keyboard config as data** — bindings are pure config (`keybindings.ts`);
-  dispatch, sequence handling, and display formatting are delegated to
-  TanStack Hotkeys. The footer legend, help overlay, and settings page all
-  derive from the same config, so remaps show up everywhere.
-- **Offline queue** — actions (approve, comment) are queued in SQLite when the
-  API is unavailable and replayed on startup/reconnect.
-- **Virtualized diff canvas** — TanStack Virtual mounts only the file blocks
-  near the viewport, so 100+ file diffs stay responsive.
+- **SQLite as local cache:** Go owns writes, WAL mode, pooled connections, and bounded busy timeouts; the UI reads via typed services.
+- **Local diffs:** go-git clones/caches PR commits and generates merge-base diffs, with patch fingerprints for rebase-stable viewed marks.
+- **Keyboard config as data:** palette, help, footer, and settings derive from the same action catalog and effective keymaps.
+- **Offline replay:** replayable actions queue in SQLite when GitHub is unavailable. Draft review submission does not queue and preserves drafts on failure.
+- **Virtualized diffs:** only nearby file blocks mount, keeping large reviews responsive.

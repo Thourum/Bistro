@@ -1,0 +1,46 @@
+import { resolve } from 'node:path';
+import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
+import wails from '@wailsio/runtime/plugins/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  root: 'src',
+  base: './',
+  build: { outDir: '../dist', emptyOutDir: true },
+  plugins: [react(), tailwindcss(), wails('../bindings')],
+  // The diff highlighter's lazy WASM imports require code-splitting workers.
+  worker: { format: 'es' },
+  server: {
+    host: '127.0.0.1',
+    port: Number(process.env.WAILS_VITE_PORT) || 9245,
+    strictPort: true,
+  },
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(
+      process.env.BISTRO_VERSION ?? 'dev',
+    ),
+    'import.meta.env.VITE_SENTRY_DSN': JSON.stringify(
+      process.env.SENTRY_DSN ?? '',
+    ),
+    'import.meta.env.VITE_SENTRY_ENABLED': JSON.stringify(
+      String(Boolean(process.env.SENTRY_DSN)),
+    ),
+  },
+  resolve: {
+    alias: {
+      '@bindings': resolve(
+        import.meta.dirname,
+        'bindings/github.com/itterno/bistro/internal',
+      ),
+      '@renderer': resolve(import.meta.dirname, 'src'),
+      '@shared': resolve(import.meta.dirname, 'src/shared'),
+      // One shared onig.wasm asset for the main bundle and the diff worker.
+      'shiki/wasm': resolve(
+        import.meta.dirname,
+        'src/components/diff/shikiWasm.ts',
+      ),
+    },
+    dedupe: ['react', 'react-dom'],
+  },
+});

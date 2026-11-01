@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=Bistro
+Comment=Keyboard-first GitHub PR review client
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/bistro %u
+Terminal=false
+Type=Application
+Icon=bistro
+Categories=Utility;
+StartupWMClass=bistro
+
+ 

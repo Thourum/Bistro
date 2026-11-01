@@ -1,0 +1,61 @@
+version: '3'
+
+tasks:
+  go:mod:tidy:
+    internal: true
+    run: once
+    cmds:
+      - go mod tidy
+
+  install:frontend:deps:
+    run: once
+    dir: frontend
+    sources:
+      - package.json
+      - ../pnpm-lock.yaml
+    generates:
+      - node_modules
+    cmds:
+      - pnpm install --frozen-lockfile
+
+  build:frontend:
+    # Universal builds share bindings and dist, so these writes must run once.
+    run: once
+    deps:
+      - task: install:frontend:deps
+      - task: generate:bindings
+    cmds:
+      - task: frontend:run
+    env:
+      BISTRO_VERSION: '{{.VERSION}}'
+
+  frontend:run:
+    dir: frontend
+    cmds:
+      - pnpm build
+
+  generate:bindings:
+    run: once
+    cmds:
+      - wails3 generate bindings -clean=true -ts -i -d frontend/bindings
+
+  generate:icons:
+    # Task 13 supplied the product icons; do not replace them with template assets.
+    cmds:
+      - test -f build/darwin/icons.icns && test -f build/windows/icon.ico
+
+  dev:frontend:
+    deps:
+      - task: install:frontend:deps
+    cmds:
+      - task: frontend:dev:pnpm
+
+  frontend:dev:pnpm:
+    dir: frontend
+    cmds:
+      - pnpm dev --port {{.VITE_PORT}} --strictPort
+
+  update:build-assets:
+    dir: build
+    cmds:
+      - wails3 update build-assets -name Bistro -binaryname bistro -config config.yml -dir .

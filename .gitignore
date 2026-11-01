@@ -4,8 +4,13 @@ node_modules/
 # Build output
 dist/
 build/
-# Electron macOS packaging config (entitlements) lives in electron/build/ and must be tracked
-!electron/build/
+!/build/
+/bin/
+/.dev-data/
+/.task/
+/frontend/dist/
+/go/dist/
+/go/logs/
 
 # IDE
 .idea/*
@@ -28,20 +33,27 @@ Thumbs.db
 logs/
 
 # Go
-go/bistro-sync
-go/data/
+/bistro-sync
+/data/
+*.exe
+*.dll
+*.dylib
+*.test
+/.go/
 *.db
 *.db-journal
 *.db-wal
+*.db-shm
 *.db.lock
 
 # Node compile cache
 node-compile-cache/
 
-# Electron Forge
+# Legacy Electron leftovers (kept locally during migration)
 electron/out/
 electron/.vite/
 electron/src/renderer/.vite/
+frontend/src/.vite/
 
 # Worktrees
 .worktrees/
@@ -51,3 +63,6 @@ electron/src/renderer/.vite/
 
 # Disposable tool output
 /.superpowers/
+
+# ADR raw evidence and bench harness: kept locally, not in git
+docs/adr/data/

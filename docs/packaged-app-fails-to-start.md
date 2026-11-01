@@ -2,6 +2,12 @@
 
 The packaged `Bistro.app` behaves differently from `pnpm start`. The Forge Vite plugin packs only `.vite/` into `app.asar`: no `node_modules`, no `assets/`. Anything the main process loads at runtime has to be bundled by Vite or shipped as a Forge `extraResource`.
 
+## Wails smoke waits for runtime readiness
+
+Symptom: `./bin/bistro --smoke` initializes SQLite, then exits 2 after 60 seconds waiting for the window runtime. Cause: installing the Wails Vite plugin does not initialize the runtime; it only augments runtime imports with generated event types. The legacy renderer initially imported no `@wailsio/runtime`, so nothing sent `wails:runtime:ready`.
+
+Tested: the production build timed out before the import; adding the runtime entry import in `frontend/src/main.tsx`, rebuilding with `wails3 task build`, and rerunning smoke exited 0 in about one second. Keep that import even before service calls migrate from WebSocket. See `AGENTS.md` for current Wails commands; the Electron diagnostics below are historical.
+
 ## Diagnose
 
 - Electron log: `~/Library/Logs/Bistro/main.log`. Engine log: `~/Library/Application Support/Bistro/logs/bistro-sync.log`.
