@@ -71,6 +71,16 @@ type CommentDismissal struct {
 	DismissedAt     time.Time `json:"dismissed_at"`
 }
 
+type CommitsViewed struct {
+	PrID            string    `json:"pr_id"`
+	PatchKey        string    `json:"patch_key"`
+	Occurrences     int64     `json:"occurrences"`
+	AccountProvider string    `json:"account_provider"`
+	AccountLogin    string    `json:"account_login"`
+	Login           string    `json:"login"`
+	ViewedAt        time.Time `json:"viewed_at"`
+}
+
 type CurrentUser struct {
 	Provider string `json:"provider"`
 	Login    string `json:"login"`
