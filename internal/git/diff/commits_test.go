@@ -180,13 +180,46 @@ func TestGetRangeCommit_RejectsCommitOutsideRange(t *testing.T) {
 	}
 }
 
-func TestListCommitRange_ClockSkewExcludesAlreadyVisitedBaseAncestors(t *testing.T) {
+func TestListCommitRange_DoesNotVisitDeepSharedHistory(t *testing.T) {
+	f := newCommitFixture(t)
+	root := f.commit(fixtureCommit{file: "f.txt", content: "root\n", message: "root"})
+	var base plumbing.Hash
+	const sharedHistoryLength = 20
+	for i := 0; i < sharedHistoryLength; i++ {
+		base = f.commit(fixtureCommit{file: "f.txt", content: fmt.Sprintf("%d\n", i), message: "base history"})
+	}
+	head := f.commit(fixtureCommit{file: "feature.txt", content: "feature\n", message: "feature"})
+	// Missing deep history makes an unbounded walk fail instead of merely slow.
+	rootSHA := root.String()
+	if err := os.Remove(filepath.Join(f.path, ".git", "objects", rootSHA[:2], rootSHA[2:])); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ListCommitRange(repolock.New(), f.request(head, base))
+	if err != nil || !slices.Equal(rangeSHAs(got), []string{head.String()}) {
+		t.Fatalf("bounded walk: range=%v err=%v, want only head", rangeSHAs(got), err)
+	}
+	commit, err := f.repo.CommitObject(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentSHA := commit.ParentHashes[0].String()
+	if err := os.Remove(filepath.Join(f.path, ".git", "objects", parentSHA[:2], parentSHA[2:])); err != nil {
+		t.Fatal(err)
+	}
+	empty, err := ListCommitRange(repolock.New(), f.request(base, base))
+	if err != nil || len(empty.Commits) != 0 || empty.Truncated {
+		t.Fatalf("identical endpoints must not visit parents: %+v, %v", empty, err)
+	}
+}
+
+func TestListCommitRange_ClockSkewWithinSlopExcludesVisitedBaseAncestors(t *testing.T) {
 	f := newCommitFixture(t)
 	root := f.commit(fixtureCommit{file: "base.txt", content: "base\n", message: "root"})
-	f.tick = f.tick.Add(-24 * time.Hour)
+	const clockSkew = 2 * time.Minute
+	f.tick = f.tick.Add(-clockSkew)
 	base := f.commit(fixtureCommit{file: "main.txt", content: "main\n", message: "base with old clock"})
 	f.reset(root)
-	f.tick = f.tick.Add(48 * time.Hour)
+	f.tick = f.tick.Add(2 * clockSkew)
 	head := f.commit(fixtureCommit{file: "feature.txt", content: "feature\n", message: "feature"})
 	got, err := ListCommitRange(repolock.New(), f.request(head, base))
 	if err != nil || !slices.Equal(rangeSHAs(got), []string{head.String()}) {

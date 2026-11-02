@@ -15,6 +15,10 @@ import (
 const (
 	flagHead uint8 = 1 << iota
 	flagBase
+
+	// Match git revision.c's SLOP: tolerate limited out-of-order timestamps
+	// without reading all shared repository history on each request.
+	commitWalkSlop = 5
 )
 
 type commitQueue []*object.Commit
@@ -54,6 +58,9 @@ func rangeCommits(repo *gitlib.Repository, headSHA, mergeBaseSHA string) ([]*obj
 	if err != nil {
 		return nil, err
 	}
+	if headSHA == mergeBaseSHA {
+		return []*object.Commit{}, nil
+	}
 	base, err := loadRangeCommit(repo, mergeBaseSHA)
 	if err != nil {
 		return nil, err
@@ -61,17 +68,10 @@ func rangeCommits(repo *gitlib.Repository, headSHA, mergeBaseSHA string) ([]*obj
 	flags := map[plumbing.Hash]uint8{head.Hash: flagHead}
 	flags[base.Hash] |= flagBase
 	seen := map[plumbing.Hash]*object.Commit{head.Hash: head, base.Hash: base}
-	queue := &commitQueue{head}
-	if base.Hash != head.Hash {
-		heap.Push(queue, base)
-	}
-	// Drain both colours: committer timestamps may run backwards, so an
-	// all-base frontier can still have already-visited head-only ancestors.
-	for queue.Len() > 0 {
-		commit := heap.Pop(queue).(*object.Commit)
-		if err := paintRangeParents(repo, commit, rangePaint{flags: flags, seen: seen, queue: queue}); err != nil {
-			return nil, err
-		}
+	paint := rangePaint{flags: flags, seen: seen, queue: &commitQueue{head}}
+	heap.Push(paint.queue, base)
+	if err := paintRange(repo, paint); err != nil {
+		return nil, err
 	}
 	var candidates []*object.Commit
 	for hash, c := range seen {
@@ -86,6 +86,36 @@ type rangePaint struct {
 	flags map[plumbing.Hash]uint8
 	seen  map[plumbing.Hash]*object.Commit
 	queue *commitQueue
+}
+
+func paintRange(repo *gitlib.Repository, paint rangePaint) error {
+	slop := commitWalkSlop
+	// ponytail: skew beyond five all-base pops is unsupported, as in git;
+	// an exact skew-independent walk would need a reachability index.
+	for paint.queue.Len() > 0 {
+		if anyHeadOnly(*paint.queue, paint.flags) {
+			slop = commitWalkSlop
+		} else {
+			if slop == 0 {
+				break
+			}
+			slop--
+		}
+		commit := heap.Pop(paint.queue).(*object.Commit)
+		if err := paintRangeParents(repo, commit, paint); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func anyHeadOnly(queue commitQueue, flags map[plumbing.Hash]uint8) bool {
+	for _, commit := range queue {
+		if flags[commit.Hash]&flagBase == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func paintRangeParents(repo *gitlib.Repository, commit *object.Commit, paint rangePaint) error {
