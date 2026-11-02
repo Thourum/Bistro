@@ -3,6 +3,7 @@ import type React from 'react';
 import { useEffect, useRef } from 'react';
 import { StatusSquare } from '../components/StatusSquare';
 import { useStore } from '../hooks/useStore';
+import { selectCommitIndex } from '../services/commits';
 import { appStore } from '../store';
 import { relativeTime } from '../utils/relativeTime';
 import { useCommitsData } from './useCommitsData';
@@ -84,12 +85,7 @@ export function CommitsPage(): React.ReactElement {
                 to="/prs/$prId/commits/$sha"
                 params={{ prId, sha: commit.sha }}
                 search={{ file: '', side: 'right' }}
-                onClick={() =>
-                  appStore.setState((state) => ({
-                    ...state,
-                    selectedCommitIndex: index,
-                  }))
-                }
+                onClick={() => selectCommitIndex(index)}
                 aria-current={index === selectedIndex ? 'true' : undefined}
                 className="flex-1 min-w-0"
               >

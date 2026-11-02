@@ -5,7 +5,12 @@ import {
   useRef,
   useState,
 } from 'react';
-import { loadCommits, setCommitViewed } from '../services/commits';
+import {
+  clearCommitList,
+  loadCommits,
+  setCommitList,
+  setCommitViewed,
+} from '../services/commits';
 import { appStore } from '../store';
 import type { CommitsResult, CommitViewedAck } from '../types';
 import { COMMIT_TOGGLE_VIEWED_EVENT } from '../utils/commitNavigation';
@@ -35,7 +40,7 @@ export function useCommitsData(
   useLayoutEffect(() => {
     void prId;
     void selectedSha;
-    appStore.setState((state) => ({ ...state, commitShas: [] }));
+    clearCommitList();
   }, [prId, selectedSha]);
 
   useEffect(() => {
@@ -53,17 +58,7 @@ export function useCommitsData(
         setResult(payload);
         setLoading(false);
         const shas = (payload.commits ?? []).map((commit) => commit.sha);
-        appStore.setState((state) => ({
-          ...state,
-          commitShas: shas,
-          selectedCommitIndex:
-            selectedSha === undefined
-              ? Math.min(
-                  Math.max(state.selectedCommitIndex, 0),
-                  Math.max(0, shas.length - 1),
-                )
-              : Math.max(0, shas.indexOf(selectedSha)),
-        }));
+        setCommitList(shas, selectedSha);
       },
       (fault) => {
         if (!scope.active) return;

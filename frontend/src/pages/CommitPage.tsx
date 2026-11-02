@@ -1,11 +1,14 @@
 import { Link, useParams, useSearch } from '@tanstack/react-router';
 import type React from 'react';
-import { useCallback, useLayoutEffect, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { DiffView } from '../components/diff/DiffView';
 import { StatusSquare } from '../components/StatusSquare';
 import { usePRList } from '../hooks/usePRList';
 import { useStore } from '../hooks/useStore';
-import { appStore } from '../store';
+import {
+  resetCommitDiffState,
+  setCommitDiffFileKeys,
+} from '../services/commits';
 import { settingsStore } from '../store/settings';
 import { relativeTime } from '../utils/relativeTime';
 import { prBrowserUrl } from '../utils/triage';
@@ -35,16 +38,8 @@ export function CommitPage(): React.ReactElement {
   useLayoutEffect(() => {
     void prId;
     void sha;
-    appStore.setState((state) => ({
-      ...state,
-      diffFileKeys: [],
-      diffCollapseOverrides: [],
-      hideWhitespaceHunks: false,
-    }));
+    resetCommitDiffState();
   }, [prId, sha]);
-  const handleFilesResolved = useCallback((canonicalKeys: string[]): void => {
-    appStore.setState((state) => ({ ...state, diffFileKeys: canonicalKeys }));
-  }, []);
 
   return (
     <main className="flex-1 flex flex-col overflow-hidden bg-surface text-on-surface">
@@ -143,7 +138,7 @@ export function CommitPage(): React.ReactElement {
             diffStyle={diffStyle}
             findQuery={findQuery}
             selectedFileKey={file}
-            onFilesResolved={handleFilesResolved}
+            onFilesResolved={setCommitDiffFileKeys}
             syncFileSelection
             prBrowserUrl={pr === undefined ? null : prBrowserUrl(pr)}
             headSha={sha}
