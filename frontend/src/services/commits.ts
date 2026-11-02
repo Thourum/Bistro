@@ -11,6 +11,41 @@ import { call, callWrite, faultReason } from './engine/call';
 import { addToast } from './toasts';
 
 const log = createLogger('commits');
+const listCache = new Map<string, CommitsResult>();
+const listInFlight = new Map<string, ResultAsync<CommitsResult, Fault>>();
+const diffInFlight = new Map<string, ResultAsync<CommitDiffResult, Fault>>();
+
+function shareRequest<T>(
+  inFlight: Map<string, ResultAsync<T, Fault>>,
+  key: string,
+  start: () => ResultAsync<T, Fault>,
+): ResultAsync<T, Fault> {
+  const existing = inFlight.get(key);
+  if (existing !== undefined) return existing;
+  const request = start();
+  inFlight.set(key, request);
+  void request.match(
+    () => inFlight.delete(key),
+    () => inFlight.delete(key),
+  );
+  return request;
+}
+
+function listKey(login: string, prId: string): string {
+  return `${login}\u0000${prId}`;
+}
+
+export function cachedCommitList(prId: string): CommitsResult | undefined {
+  return listCache.get(listKey(appStore.state.viewerLogin, prId));
+}
+
+export function cacheCommitList(
+  login: string,
+  prId: string,
+  result: CommitsResult,
+): void {
+  listCache.set(listKey(login, prId), result);
+}
 
 /** Clears stale route navigation without losing the list selection. */
 export function clearCommitList(): void {
@@ -54,14 +89,23 @@ export function setCommitDiffFileKeys(keys: readonly string[]): void {
 }
 
 export function loadCommits(prId: string): ResultAsync<CommitsResult, Fault> {
-  return call(() => Commits.List({ pr_id: prId }));
+  const key = listKey(appStore.state.viewerLogin, prId);
+  return shareRequest(listInFlight, key, () =>
+    call(() => Commits.List({ pr_id: prId })).map((result) => {
+      if (result.available) listCache.set(key, result);
+      else listCache.delete(key);
+      return result;
+    }),
+  );
 }
 
 export function loadCommitDiff(
   prId: string,
   sha: string,
 ): ResultAsync<CommitDiffResult, Fault> {
-  return call(() => Commits.Get({ pr_id: prId, sha }));
+  return shareRequest(diffInFlight, `${prId}:${sha}`, () =>
+    call(() => Commits.Get({ pr_id: prId, sha })),
+  );
 }
 
 /** Returns the ack, or null after toasting the reason (UI rolls back). */

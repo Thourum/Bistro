@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 import { parseCodeViewFiles } from '../components/diff/diffCodeViewItems';
 import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
+import { cachedCommitList } from '../services/commits';
 import { appStore } from '../store';
 import { cancellable } from '../test/cancellable';
+import { deferred } from '../test/deferred';
 import type { CommitsResult } from '../types';
 import {
   COMMIT_TOGGLE_VIEWED_EVENT,
@@ -277,5 +279,121 @@ it('discards late PR lists, clamps the cursor, and toggles the selected row', as
     false,
     true,
   ]);
+  await act(async () => root.unmount());
+});
+
+it('shares StrictMode requests and revalidates only after each diff settles', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const firstDiff = deferred<{
+    diff: string;
+    is_merge: boolean;
+  }>();
+  const nextDiff = deferred<{ diff: string; is_merge: boolean }>();
+  const list = deferred<CommitsResult>();
+  Get.mockImplementationOnce(() => cancellable(firstDiff.promise));
+  Get.mockImplementationOnce(() => cancellable(nextDiff.promise));
+  List.mockImplementationOnce(() => cancellable(list.promise));
+  List.mockImplementationOnce(() => cancellable(Promise.resolve(COMMIT_LIST)));
+  const root = createRoot(document.createElement('div'));
+  const seen: ReturnType<typeof useCommitData>[] = [];
+  const onData = (data: ReturnType<typeof useCommitData>): void => {
+    seen.push(data);
+  };
+  await act(async () =>
+    root.render(
+      <StrictMode>
+        <CommitProbe sha="first" onData={onData} />
+      </StrictMode>,
+    ),
+  );
+  expect(Get).toHaveBeenCalledOnce();
+  expect(List).not.toHaveBeenCalled();
+  await act(async () => firstDiff.resolve({ diff: '', is_merge: true }));
+  expect(seen.at(-1)).toMatchObject({
+    loading: false,
+    diff: { is_merge: true },
+  });
+  expect(List).toHaveBeenCalledOnce();
+  await act(async () => list.resolve(COMMIT_LIST));
+  await act(async () =>
+    root.render(
+      <StrictMode>
+        <CommitProbe sha="last" onData={onData} />
+      </StrictMode>,
+    ),
+  );
+  expect(List).toHaveBeenCalledOnce();
+  expect(appStore.state.selectedCommitIndex).toBe(1);
+  await act(async () => nextDiff.resolve({ diff: 'next', is_merge: false }));
+  expect(List).toHaveBeenCalledTimes(2);
+  await act(async () => root.unmount());
+});
+
+it('preserves pending optimistic viewed marks during list revalidation', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  List.mockImplementationOnce(() => cancellable(Promise.resolve(COMMIT_LIST)));
+  const nextDiff = deferred<{ diff: string }>();
+  Get.mockImplementationOnce(() => cancellable(Promise.resolve({ diff: '' })));
+  Get.mockImplementationOnce(() => cancellable(nextDiff.promise));
+  List.mockImplementationOnce(() => cancellable(Promise.resolve(COMMIT_LIST)));
+  const viewed = deferred<{
+    pr_id: string;
+    sha: string;
+    viewed: boolean;
+  }>();
+  SetViewed.mockImplementationOnce(() => cancellable(viewed.promise));
+  const root = createRoot(document.createElement('div'));
+  const seen: ReturnType<typeof useCommitData>[] = [];
+  const onData = (data: ReturnType<typeof useCommitData>): void => {
+    seen.push(data);
+  };
+  await act(async () =>
+    root.render(<CommitProbe sha="first" onData={onData} />),
+  );
+  await act(async () =>
+    document.dispatchEvent(new Event(COMMIT_TOGGLE_VIEWED_EVENT)),
+  );
+  await act(async () =>
+    root.render(<CommitProbe sha="last" onData={onData} />),
+  );
+  await act(async () => nextDiff.resolve({ diff: 'next' }));
+  expect(cachedCommitList('pr-1')?.commits?.[0]?.viewed).toBe(true);
+  await act(async () =>
+    viewed.resolve({ pr_id: 'pr-1', sha: 'first', viewed: true }),
+  );
+  await act(async () => root.unmount());
+});
+
+it('resets on account changes and keeps late viewed rollback in its original cache', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  appStore.setState((state) => ({ ...state, viewerLogin: 'old-account' }));
+  List.mockImplementationOnce(() => cancellable(Promise.resolve(COMMIT_LIST)));
+  const viewed = deferred<unknown>();
+  SetViewed.mockImplementationOnce(() => cancellable(viewed.promise));
+  const newList = deferred<CommitsResult>();
+  List.mockImplementationOnce(() => cancellable(newList.promise));
+  const root = createRoot(document.createElement('div'));
+  const seen: ReturnType<typeof useCommitsData>[] = [];
+  await act(async () =>
+    root.render(
+      <ListProbe prId="account-pr" onData={(data) => seen.push(data)} />,
+    ),
+  );
+  await act(async () =>
+    document.dispatchEvent(new Event(COMMIT_TOGGLE_VIEWED_EVENT)),
+  );
+  expect(seen.at(-1)?.result?.commits?.[0]?.viewed).toBe(true);
+  await act(async () =>
+    appStore.setState((state) => ({ ...state, viewerLogin: 'new-account' })),
+  );
+  expect(seen.at(-1)?.result).toBeNull();
+  await act(async () => viewed.reject(new Error('offline')));
+  expect(seen.at(-1)?.result).toBeNull();
+  await act(async () => newList.resolve(COMMIT_LIST));
+  expect(seen.at(-1)?.result?.commits?.[0]?.viewed).toBe(false);
+  expect(cachedCommitList('account-pr')?.commits?.[0]?.viewed).toBe(false);
+  await act(async () => root.unmount());
+  appStore.setState((state) => ({ ...state, viewerLogin: 'old-account' }));
+  expect(cachedCommitList('account-pr')?.commits?.[0]?.viewed).toBe(false);
   await act(async () => root.unmount());
 });

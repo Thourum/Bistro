@@ -5,7 +5,10 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useStore } from '../hooks/useStore';
 import {
+  cacheCommitList,
+  cachedCommitList,
   clearCommitList,
   loadCommits,
   setCommitList,
@@ -28,48 +31,85 @@ interface CommitsData {
 export function useCommitsData(
   prId: string,
   selectedSha?: string,
+  options?: { revalidateAfter?: unknown },
 ): CommitsData {
-  const [result, setResult] = useState<CommitsResult | null>(null);
-  const [loading, setLoading] = useState(true);
+  const login = useStore(appStore, (state) => state.viewerLogin);
+  const revalidateAfter =
+    options === undefined ? true : options.revalidateAfter;
+  const [result, setResult] = useState<CommitsResult | null>(
+    () => cachedCommitList(prId) ?? null,
+  );
+  const [loading, setLoading] = useState(result === null);
   const [error, setError] = useState<string | null>(null);
   const resultRef = useRef(result);
   resultRef.current = result;
-  const scopeRef = useRef({ prId, selectedSha, active: true });
+  const scopeRef = useRef({ prId, login, active: true });
   const pendingRef = useRef(new Set<string>());
 
   useLayoutEffect(() => {
-    void prId;
-    void selectedSha;
-    clearCommitList();
-  }, [prId, selectedSha]);
-
-  useEffect(() => {
-    const scope = { prId, selectedSha, active: true };
+    const scope = { prId, login, active: true };
     scopeRef.current = scope;
     pendingRef.current = new Set();
-    resultRef.current = null;
-    setResult(null);
-    setLoading(true);
+    const cached = cachedCommitList(prId) ?? null;
+    resultRef.current = cached;
+    setResult(cached);
+    setLoading(cached === null);
     setError(null);
+    clearCommitList();
+    return () => {
+      scope.active = false;
+    };
+  }, [prId, login]);
+
+  useLayoutEffect(() => {
+    const scope = scopeRef.current;
+    if (scope.prId !== prId || scope.login !== login) return;
+    const current = resultRef.current;
+    if (current === null || current !== result) return;
+    setCommitList(
+      (current.commits ?? []).map((commit) => commit.sha),
+      selectedSha,
+    );
+  }, [prId, login, result, selectedSha]);
+
+  useEffect(() => {
+    if (revalidateAfter === null || revalidateAfter === false) return;
+    const scope = scopeRef.current;
+    if (scope.login !== login) return;
+    let active = true;
     void loadCommits(prId).match(
       (payload) => {
-        if (!scope.active) return;
-        resultRef.current = payload;
-        setResult(payload);
+        if (!active || !scope.active || scopeRef.current !== scope) return;
+        const current = resultRef.current;
+        const next = {
+          ...payload,
+          commits:
+            payload.commits?.map((commit) => {
+              if (!pendingRef.current.has(commit.sha)) return commit;
+              const optimistic = current?.commits?.find(
+                (entry) => entry.sha === commit.sha,
+              );
+              return optimistic === undefined
+                ? commit
+                : { ...commit, viewed: optimistic.viewed };
+            }) ?? null,
+        };
+        if (next.available) cacheCommitList(scope.login, prId, next);
+        resultRef.current = next;
+        setResult(next);
         setLoading(false);
-        const shas = (payload.commits ?? []).map((commit) => commit.sha);
-        setCommitList(shas, selectedSha);
+        setError(null);
       },
       (fault) => {
-        if (!scope.active) return;
+        if (!active || !scope.active || scopeRef.current !== scope) return;
         setError(fault.message);
         setLoading(false);
       },
     );
     return () => {
-      scope.active = false;
+      active = false;
     };
-  }, [prId, selectedSha]);
+  }, [prId, login, revalidateAfter]);
 
   const updateViewed = useCallback(
     async (sha: string, viewed: boolean): Promise<CommitViewedAck | null> => {
@@ -79,13 +119,16 @@ export function useCommitsData(
       if (
         !scope.active ||
         scope.prId !== prId ||
+        scope.login !== login ||
         commit === undefined ||
         pendingRef.current.has(sha)
       )
         return null;
       pendingRef.current.add(sha);
+      let scopedResult = previous;
       const applyViewed = (value: boolean): void => {
-        const current = resultRef.current;
+        const isCurrent = scope.active && scopeRef.current === scope;
+        const current = isCurrent ? resultRef.current : scopedResult;
         if (current === null) return;
         const next = {
           ...current,
@@ -93,17 +136,20 @@ export function useCommitsData(
             entry.sha === sha ? { ...entry, viewed: value } : entry,
           ),
         };
+        scopedResult = next;
+        cacheCommitList(scope.login, prId, next);
+        if (!isCurrent) return;
         resultRef.current = next;
         setResult(next);
       };
       applyViewed(viewed);
       const ack = await setCommitViewed(prId, sha, viewed);
+      applyViewed(ack?.viewed ?? commit.viewed);
       if (!scope.active || scopeRef.current !== scope) return null;
       pendingRef.current.delete(sha);
-      applyViewed(ack?.viewed ?? commit.viewed);
       return ack;
     },
-    [prId],
+    [prId, login],
   );
 
   const toggleViewed = useCallback(

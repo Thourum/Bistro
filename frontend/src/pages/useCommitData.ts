@@ -28,26 +28,47 @@ interface CommitData {
 
 /** List metadata and the commit patch are requested independently. */
 export function useCommitData(prId: string, sha: string): CommitData {
-  const commits = useCommitsData(prId, sha);
   const navigate = useNavigate();
-  const [diffState, setDiffState] = useState({
+  const [response, setDiffState] = useState({
+    prId,
+    sha,
     diff: null as CommitDiffResult | null,
     loading: true,
     error: null as string | null,
     notInPr: false,
   });
+  const diffState =
+    response.prId === prId && response.sha === sha
+      ? response
+      : { diff: null, loading: true, error: null, notInPr: false };
   useEffect(() => {
     let isActive = true;
-    setDiffState({ diff: null, loading: true, error: null, notInPr: false });
+    setDiffState({
+      prId,
+      sha,
+      diff: null,
+      loading: true,
+      error: null,
+      notInPr: false,
+    });
     void loadCommitDiff(prId, sha).match(
       (diff) => {
         if (!isActive) return;
-        setDiffState({ diff, loading: false, error: null, notInPr: false });
+        setDiffState({
+          prId,
+          sha,
+          diff,
+          loading: false,
+          error: null,
+          notInPr: false,
+        });
       },
       (fault) => {
         if (!isActive) return;
         const notInPr = faultReason(fault) === 'commit_not_in_pr';
         setDiffState({
+          prId,
+          sha,
           diff: null,
           loading: false,
           error: notInPr ? null : fault.message,
@@ -60,6 +81,9 @@ export function useCommitData(prId: string, sha: string): CommitData {
     };
   }, [prId, sha]);
 
+  const commits = useCommitsData(prId, sha, {
+    revalidateAfter: diffState.diff ?? diffState.error ?? diffState.notInPr,
+  });
   const oversizedPatchBytes = useMemo(
     () =>
       new Map(
@@ -111,7 +135,7 @@ export function useCommitData(prId: string, sha: string): CommitData {
     position,
     ...diffState,
     oversizedPatchBytes,
-    loading: commits.loading || diffState.loading,
+    loading: diffState.loading,
     error: commits.error ?? diffState.error,
     unavailableReason:
       commits.result?.available === false

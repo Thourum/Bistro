@@ -117,7 +117,7 @@ export function CommitPage(): React.ReactElement {
           <CommitMessage>Could not load commit: {error}</CommitMessage>
         ) : unavailableReason !== null ? (
           <CommitMessage>{unavailableReason}</CommitMessage>
-        ) : commit?.is_merge ? (
+        ) : commit?.is_merge || diff?.is_merge ? (
           <CommitMessage>
             Merge commit — its diff is not shown. Edits made while resolving
             conflicts live only in the merge, so they appear in the combined
