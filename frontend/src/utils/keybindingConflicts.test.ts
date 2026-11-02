@@ -4,7 +4,12 @@ import {
   findKeybindingConflicts,
   resetKeybinding,
 } from './keybindingConflicts';
-import { getEffectiveBindings, type KeyBinding } from './keybindings';
+import {
+  getEffectiveBindings,
+  helpSourceFor,
+  type KeyBinding,
+  routeBaseFromPath,
+} from './keybindings';
 import { KEYMAPS } from './keymaps';
 
 const DEFAULT_KEYBINDINGS = getEffectiveBindings('vim', {});
@@ -32,6 +37,12 @@ function scopedBinding(activation: KeyBinding['activation']): KeyBinding {
 }
 
 describe('findKeybindingConflicts', () => {
+  it('recognizes commit routes and maps their help to detail / diff', () => {
+    expect(routeBaseFromPath('/prs/p/commits')).toBe('commits');
+    expect(routeBaseFromPath('/prs/p/commits/abc')).toBe('commit');
+    expect(helpSourceFor('commits')).toBe('detail');
+    expect(helpSourceFor('commit')).toBe('diff');
+  });
   it.each(Object.keys(KEYMAPS) as (keyof typeof KEYMAPS)[])(
     'finds no conflicts among the %s defaults',
     (style) => {

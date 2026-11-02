@@ -24,6 +24,8 @@ import {
 import { toggleRepoGroup, type UIState } from '../store/ui';
 import { emitAppEvent } from './appEvents';
 import { permitsBenchAction } from './benchSafety';
+import { COMMIT_ACTIONS, openCommits } from './commitActions';
+import { shaFromCommitPath } from './commitNavigation';
 import { helpSourceFor, type RouteBase } from './keybindings';
 import { LINE_COMMENT_ACTIONS } from './lineCommentActions';
 import { createLogger } from './logger';
@@ -140,6 +142,15 @@ function handleEscape(context: KeyActionContext): void {
     context.overlays.closeOverlay();
     return;
   }
+  if (routeBase === 'commit') {
+    openCommits(context);
+    return;
+  }
+  if (routeBase === 'commits') {
+    if (context.prId === undefined) return;
+    void router.navigate({ to: '/prs/$prId', params: { prId: context.prId } });
+    return;
+  }
   if (routeBase === 'diff') {
     if (closeInlineDiffReply(context)) return;
     if (context.prId !== undefined) {
@@ -235,6 +246,17 @@ function selectDiffFile(context: KeyActionContext, delta: 1 | -1): void {
   if (context.prId === undefined) return;
   const file = diffFileKeys[nextIndex];
   if (file === undefined) return;
+  if (context.routeBase === 'commit') {
+    const sha = shaFromCommitPath(context.location.pathname);
+    if (sha === null) return;
+    void router.navigate({
+      to: '/prs/$prId/commits/$sha',
+      params: { prId: context.prId, sha },
+      search: { file, side: 'right' },
+      replace: true,
+    });
+    return;
+  }
   void router.navigate({
     to: '/prs/$prId/diff',
     params: { prId: context.prId },
@@ -394,6 +416,7 @@ const ACTIONS: Readonly<Record<string, KeyAction>> = {
   'detail.nextFile': (context) => selectDetailFile(context, 1),
   'detail.prevFile': (context) => selectDetailFile(context, -1),
   'detail.viewDiff': viewDiff,
+  ...COMMIT_ACTIONS,
   'detail.threads': (context) => context.overlays.openThreads(),
   'detail.dismissNits': () => emitAppEvent('bistro:comments:dismiss-nits'),
   'detail.dismissBots': () => emitAppEvent('bistro:comments:dismiss-bots'),

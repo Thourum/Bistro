@@ -121,6 +121,13 @@ export const COMMANDS: readonly CommandItem[] = [
     diffOnly: true,
   },
   {
+    id: 'commits',
+    name: 'Review commits one time',
+    icon: 'commit',
+    actionId: 'detail.commits',
+    prOnly: true,
+  },
+  {
     id: 'review-approve',
     name: 'Approve',
     description: 'Includes pending drafts',

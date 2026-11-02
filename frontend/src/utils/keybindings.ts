@@ -4,6 +4,7 @@ import type {
 } from '@renderer/types/settings';
 import type { OverlayKind } from '../overlays/OverlayContext';
 import { PROVIDERS } from '../providers';
+import { COMMIT_BINDINGS } from './commitKeybindings';
 import { KEYMAPS } from './keymaps';
 
 export type RouteBase =
@@ -19,9 +20,21 @@ export type RouteBase =
 
 export type HelpSourceRoute = 'list' | 'detail' | 'diff';
 
+const HELP_SOURCE_ROUTES = {
+  list: 'list',
+  detail: 'detail',
+  diff: 'diff',
+  commits: 'detail',
+  commit: 'diff',
+  settings: 'list',
+  login: 'list',
+  onboarding: 'list',
+  connecting: 'list',
+} as const satisfies Record<RouteBase, HelpSourceRoute>;
+
 /** Other routes use the inbox help sections. */
 export function helpSourceFor(routeBase: RouteBase | null): HelpSourceRoute {
-  return routeBase === 'detail' || routeBase === 'diff' ? routeBase : 'list';
+  return HELP_SOURCE_ROUTES[routeBase ?? 'list'];
 }
 
 export interface KeyBinding {
@@ -100,7 +113,8 @@ const ALL_OVERLAYS: readonly OverlayKind[] = [
 const LIST = { routes: ['list'] } as const;
 const DETAIL = { routes: ['detail'] } as const;
 const DIFF = { routes: ['diff'] } as const;
-const SCROLL = { routes: ['detail', 'diff'] } as const;
+const SCROLL = { routes: ['detail', 'diff', 'commit'] } as const;
+const DIFF_VIEWS = { routes: ['diff', 'commit'] } as const;
 const FILTER = { overlays: ['filter'] } as const;
 const THREADS = { overlays: ['threads'] } as const;
 const LINE_COMMENT = { overlays: ['lineComment'] } as const;
@@ -109,13 +123,21 @@ const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
   {
     actionId: 'global.help',
     description: 'Help',
-    activation: { routes: ['list', 'detail', 'diff'] },
+    activation: { routes: ['list', 'detail', 'diff', 'commits', 'commit'] },
   },
   {
     actionId: 'global.escape',
     description: 'Back / Cancel',
     activation: {
-      routes: ['list', 'detail', 'diff', 'settings', 'onboarding'],
+      routes: [
+        'list',
+        'detail',
+        'diff',
+        'commits',
+        'commit',
+        'settings',
+        'onboarding',
+      ],
       overlays: ALL_OVERLAYS,
     },
   },
@@ -123,7 +145,15 @@ const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
     actionId: 'global.cancel',
     description: 'Back / Cancel',
     activation: {
-      routes: ['list', 'detail', 'diff', 'settings', 'onboarding'],
+      routes: [
+        'list',
+        'detail',
+        'diff',
+        'commits',
+        'commit',
+        'settings',
+        'onboarding',
+      ],
       overlays: ALL_OVERLAYS,
     },
     hidden: true,
@@ -131,7 +161,7 @@ const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
   {
     actionId: 'global.command',
     description: 'Commands',
-    activation: { routes: ['list', 'detail', 'diff'] },
+    activation: { routes: ['list', 'detail', 'diff', 'commits', 'commit'] },
   },
   {
     actionId: 'global.settings',
@@ -141,7 +171,9 @@ const GLOBAL_BINDINGS: readonly BindingDefinition[] = [
   {
     actionId: 'global.inbox',
     description: 'Go to Inbox',
-    activation: { routes: ['list', 'detail', 'diff', 'settings'] },
+    activation: {
+      routes: ['list', 'detail', 'diff', 'commits', 'commit', 'settings'],
+    },
   },
   {
     actionId: 'global.quit.mac',
@@ -368,6 +400,7 @@ const LIST_BINDINGS: readonly BindingDefinition[] = [
 ];
 
 const DETAIL_BINDINGS: readonly BindingDefinition[] = [
+  ...COMMIT_BINDINGS,
   {
     actionId: 'detail.nextFile',
     description: 'Next file',
@@ -467,22 +500,22 @@ const DETAIL_BINDINGS: readonly BindingDefinition[] = [
   {
     actionId: 'diff.toggleStyle',
     description: 'Toggle side-by-side',
-    activation: DIFF,
+    activation: DIFF_VIEWS,
   },
   {
     actionId: 'diff.openFileBrowser',
     description: 'Open file (in Browser)',
-    activation: DIFF,
+    activation: DIFF_VIEWS,
   },
   {
     actionId: 'diff.toggleCollapse',
     description: 'Collapse / expand file',
-    activation: DIFF,
+    activation: DIFF_VIEWS,
   },
   {
     actionId: 'diff.toggleWhitespace',
     description: 'Hide whitespace-only hunks',
-    activation: DIFF,
+    activation: DIFF_VIEWS,
   },
   {
     actionId: 'diff.markViewed',
@@ -507,7 +540,7 @@ const DETAIL_BINDINGS: readonly BindingDefinition[] = [
   {
     actionId: 'review.toggleResolve',
     description: 'Resolve / unresolve thread',
-    activation: SCROLL,
+    activation: { routes: ['detail', 'diff'] },
   },
 ];
 
@@ -602,12 +635,12 @@ const SCROLL_BINDINGS: readonly BindingDefinition[] = [
   {
     actionId: 'diff.nextFile',
     description: 'Next file',
-    activation: DIFF,
+    activation: DIFF_VIEWS,
   },
   {
     actionId: 'diff.prevFile',
     description: 'Previous file',
-    activation: DIFF,
+    activation: DIFF_VIEWS,
   },
   {
     actionId: 'diff.nextComment',

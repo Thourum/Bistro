@@ -93,12 +93,17 @@ export function CommandPalette(): React.ReactElement | null {
     const q = query.trim().toLowerCase();
     return COMMANDS.map(
       (command): CommandItem =>
-        command.id === 'review-submit'
+        command.id === 'commits'
           ? {
               ...command,
-              name: `Submit review (${draftCount} ${draftCount === 1 ? 'draft' : 'drafts'})`,
+              actionId: isDiffRoute ? 'diff.commits' : 'detail.commits',
             }
-          : command,
+          : command.id === 'review-submit'
+            ? {
+                ...command,
+                name: `Submit review (${draftCount} ${draftCount === 1 ? 'draft' : 'drafts'})`,
+              }
+            : command,
     ).filter((cmd) => {
       if (cmd.dev === true && !isDev) return false;
       if (cmd.diffOnly === true && !isDiffRoute) return false;
