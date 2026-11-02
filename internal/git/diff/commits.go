@@ -6,12 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/go-git/go-billy/v5/osfs"
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -136,11 +133,13 @@ func GetRangeCommit(locks *repolock.Locks, req CommitRangeRequest, sha string) (
 // openRangeRepo keeps pack descriptors open for the read; without it go-git
 // re-opens the packfile for every object (~30% of a range diff's CPU).
 func openRangeRepo(path string) (*gitlib.Repository, func(), error) {
-	dot := path
-	if info, err := os.Stat(filepath.Join(path, ".git")); err == nil && info.IsDir() {
-		dot = filepath.Join(path, ".git")
+	resolved, err := gitlib.PlainOpen(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open repo %s: %w", path, err)
 	}
-	storage := filesystem.NewStorageWithOptions(osfs.New(dot), cache.NewObjectLRUDefault(),
+	// PlainOpen resolves bare repositories, .git directories, and gitdir files.
+	resolvedStorage := resolved.Storer.(*filesystem.Storage)
+	storage := filesystem.NewStorageWithOptions(resolvedStorage.Filesystem(), cache.NewObjectLRUDefault(),
 		filesystem.Options{KeepDescriptors: true})
 	repo, err := gitlib.Open(storage, nil)
 	if err != nil {

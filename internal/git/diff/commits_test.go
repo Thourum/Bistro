@@ -10,9 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-billy/v5/osfs"
 	gitlib "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/itterno/bistro/internal/git/repolock"
 )
@@ -206,6 +209,26 @@ func TestCommitStats_PackedBareRepository(t *testing.T) {
 	commit, err := GetRangeCommit(repolock.New(), req, head.String())
 	if err != nil || commit.Diff == nil || statsOf(head.String(), *commit.Diff) != computed[0] {
 		t.Fatalf("packed bare commit diff = %+v, %v", commit.Diff, err)
+	}
+}
+
+func TestGetRangeCommit_SeparateGitDir(t *testing.T) {
+	f := &commitFixture{t: t, path: t.TempDir(), tick: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+	gitDir := t.TempDir()
+	storage := filesystem.NewStorage(osfs.New(gitDir), cache.NewObjectLRUDefault())
+	repo, err := gitlib.Init(storage, osfs.New(f.path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.repo = repo
+	base := f.commit(fixtureCommit{file: "f.txt", content: "old\n", message: "base"})
+	head := f.commit(fixtureCommit{file: "f.txt", content: "new\n", message: "change"})
+	if _, err := gitlib.PlainOpen(f.path); err != nil {
+		t.Fatalf("fixture must open with PlainOpen: %v", err)
+	}
+	got, err := GetRangeCommit(repolock.New(), f.request(head, base), head.String())
+	if err != nil || got.SHA != head.String() || got.Diff == nil || got.Diff.Additions != 1 || got.Diff.Deletions != 1 {
+		t.Fatalf("separate-git-dir commit = %+v, diff=%+v, err=%v", got, got.Diff, err)
 	}
 }
 
