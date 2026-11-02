@@ -279,6 +279,7 @@ export interface CommitDiffResponse {
     "available": boolean;
     "reason": string;
     "diff": string;
+    "files": DiffFile[] | null;
     "additions": number;
     "deletions": number;
 }

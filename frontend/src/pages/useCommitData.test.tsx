@@ -2,6 +2,8 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
+import { parseCodeViewFiles } from '../components/diff/diffCodeViewItems';
+import { splitUnifiedDiff } from '../components/diff/diffPathUtils';
 import { appStore } from '../store';
 import { cancellable } from '../test/cancellable';
 import type { CommitsResult } from '../types';
@@ -139,6 +141,64 @@ it('optimistically marks, rolls back on failure, and advances only after the ack
   );
   expect(seen.at(-1)?.commit?.viewed).toBe(true);
   expect(navigate).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+});
+
+it('classifies omitted commit patches as unavailable rather than zero-hunk text files', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const oversizedBytes = 600 * 1024;
+  const patch = `diff --git a/image.png b/image.png
+Binary files a/image.png and b/image.png differ
+diff --git a/old.txt b/huge.txt
+`;
+  List.mockImplementation(() => cancellable(Promise.resolve(COMMIT_LIST)));
+  Get.mockImplementation(() =>
+    cancellable(
+      Promise.resolve({
+        diff: patch,
+        files: [
+          {
+            path: 'image.png',
+            is_binary: true,
+            diff_status: 'ok',
+            patch_bytes: 0,
+          },
+          {
+            path: 'huge.txt',
+            old_path: 'old.txt',
+            is_binary: false,
+            diff_status: 'truncated',
+            patch_bytes: oversizedBytes,
+          },
+        ],
+      }),
+    ),
+  );
+  const seen: ReturnType<typeof useCommitData>[] = [];
+  const root = createRoot(document.createElement('div'));
+  await act(async () =>
+    root.render(<CommitProbe sha="first" onData={(data) => seen.push(data)} />),
+  );
+  const data = seen.at(-1);
+  expect(data?.oversizedPatchBytes).toEqual(
+    new Map([['huge.txt', oversizedBytes]]),
+  );
+  const classified = parseCodeViewFiles(
+    splitUnifiedDiff(data?.diff?.diff ?? ''),
+    data?.oversizedPatchBytes,
+  );
+  expect(classified.parsedFiles).toEqual([]);
+  expect(classified.unrenderableFiles).toEqual([
+    expect.objectContaining({
+      file: expect.objectContaining({ path: 'image.png' }),
+      reason: 'binary',
+    }),
+    expect.objectContaining({
+      file: expect.objectContaining({ path: 'huge.txt' }),
+      reason: 'too-large',
+      patchBytes: oversizedBytes,
+    }),
+  ]);
   await act(async () => root.unmount());
 });
 

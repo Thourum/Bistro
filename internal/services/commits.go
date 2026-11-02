@@ -54,13 +54,14 @@ type CommitRequest struct {
 }
 
 type CommitDiffResponse struct {
-	PRID      string `json:"pr_id"`
-	SHA       string `json:"sha"`
-	Available bool   `json:"available"`
-	Reason    string `json:"reason"`
-	Diff      string `json:"diff"`
-	Additions int    `json:"additions"`
-	Deletions int    `json:"deletions"`
+	PRID      string     `json:"pr_id"`
+	SHA       string     `json:"sha"`
+	Available bool       `json:"available"`
+	Reason    string     `json:"reason"`
+	Diff      string     `json:"diff"`
+	Files     []DiffFile `json:"files"`
+	Additions int        `json:"additions"`
+	Deletions int        `json:"deletions"`
 }
 
 type SetCommitViewedRequest struct {
@@ -138,7 +139,7 @@ func (s *Commits) Get(ctx context.Context, req CommitRequest) (CommitDiffRespons
 		if err != nil {
 			return CommitDiffResponse{}, err
 		}
-		resp := CommitDiffResponse{PRID: prID, SHA: sha}
+		resp := CommitDiffResponse{PRID: prID, SHA: sha, Files: []DiffFile{}}
 		rangeReq, reason, err := s.rangeRequest(ctx, prID)
 		if err != nil || reason != "" {
 			resp.Reason = reason
@@ -155,6 +156,14 @@ func (s *Commits) Get(ctx context.Context, req CommitRequest) (CommitDiffRespons
 		resp.Available = true
 		if commit.Diff != nil {
 			resp.Diff, resp.Additions, resp.Deletions = commit.Diff.Unified, commit.Diff.Additions, commit.Diff.Deletions
+			for _, file := range commit.Diff.Files {
+				resp.Files = append(resp.Files, DiffFile{
+					Path: file.Path, Status: file.Status, OldPath: file.OldPath,
+					IsBinary: file.Binary, IsTruncated: file.Truncated, DiffStatus: string(file.DiffStatus),
+					PatchBytes: file.PatchBytes, HunkCount: file.HunkCount,
+					Additions: file.AddedLines, Deletions: file.RemovedLines,
+				})
+			}
 		}
 		return resp, nil
 	})

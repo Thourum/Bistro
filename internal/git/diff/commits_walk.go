@@ -90,7 +90,7 @@ type rangePaint struct {
 
 func paintRange(repo *gitlib.Repository, paint rangePaint) error {
 	slop := commitWalkSlop
-	// ponytail: skew beyond five all-base pops is unsupported, as in git;
+	// Like git, this walk does not support skew beyond five all-base pops;
 	// an exact skew-independent walk would need a reachability index.
 	for paint.queue.Len() > 0 {
 		if anyHeadOnly(*paint.queue, paint.flags) {

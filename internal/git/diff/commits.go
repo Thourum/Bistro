@@ -35,7 +35,7 @@ type CommitDiff struct {
 	Unified   string
 	Additions int
 	Deletions int
-	PatchID   string // commit fingerprint: sha256 over file PatchIDs
+	PatchID   string // commit fingerprint: sha256 over file identities and PatchIDs
 }
 
 // RangeCommit contains metadata and an optional single-parent diff.
@@ -174,17 +174,21 @@ func commitDiff(c *object.Commit) (CommitDiff, error) {
 	return d, nil
 }
 
-// Empty (binary/truncated) patches need a header to keep the file visible,
-// matching prdiff.Store.GetUnified.
+// Omitted patches need headers to keep files visible; binary markers let the
+// renderer distinguish unavailable binary content from empty text diffs.
 func unifiedPatch(files []*File) string {
 	var b strings.Builder
 	for _, f := range files {
+		oldPath := f.Path
+		if f.OldPath != "" {
+			oldPath = f.OldPath
+		}
 		if !strings.HasPrefix(f.Patch, "diff --git ") {
-			oldPath := f.Path
-			if f.OldPath != "" {
-				oldPath = f.OldPath
-			}
 			fmt.Fprintf(&b, "diff --git a/%s b/%s\n", oldPath, f.Path)
+		}
+		if f.Binary {
+			fmt.Fprintf(&b, "Binary files a/%s and b/%s differ\n", oldPath, f.Path)
+			continue
 		}
 		b.WriteString(f.Patch)
 		if f.Patch != "" && !strings.HasSuffix(f.Patch, "\n") {
@@ -197,7 +201,8 @@ func unifiedPatch(files []*File) string {
 func commitPatchID(files []*File) string {
 	ids := make([]string, len(files))
 	for i, f := range files {
-		ids[i] = f.PatchID
+		// Binary PatchIDs identify blob transitions, not the affected paths.
+		ids[i] = strings.Join([]string{f.Status, f.OldPath, f.Path, f.PatchID}, "\x00")
 	}
 	sum := sha256.Sum256([]byte(strings.Join(ids, "\n")))
 	return hex.EncodeToString(sum[:])

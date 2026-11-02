@@ -263,13 +263,39 @@ func TestCommitDiff_RootAndContentPreservingRebase(t *testing.T) {
 	}
 }
 
+func TestCommitDiff_BinaryPathRewriteChangesCommitFingerprint(t *testing.T) {
+	f := newCommitFixture(t)
+	f.commit(fixtureCommit{file: "a.png", content: "\x00old", message: "first binary"})
+	base := f.commit(fixtureCommit{file: "b.png", content: "\x00old", message: "second binary"})
+	first := f.commit(fixtureCommit{file: "a.png", content: "\x00new", message: "change a"})
+	original, err := GetRangeCommit(repolock.New(), f.request(first, base), first.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.reset(base)
+	rewritten := f.commit(fixtureCommit{file: "b.png", content: "\x00new", message: "change b"})
+	got, err := GetRangeCommit(repolock.New(), f.request(rewritten, base), rewritten.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if original.Diff == nil || got.Diff == nil || len(original.Diff.Files) != 1 || len(got.Diff.Files) != 1 {
+		t.Fatalf("expected two single-file diffs: %+v, %+v", original.Diff, got.Diff)
+	}
+	if !original.Diff.Files[0].Binary || !got.Diff.Files[0].Binary || original.Diff.Files[0].PatchID != got.Diff.Files[0].PatchID {
+		t.Fatal("fixture must retain identical binary blob transitions and per-file fingerprints")
+	}
+	if original.Diff.PatchID == got.Diff.PatchID {
+		t.Fatal("rewriting a binary change onto a different path must reset the commit fingerprint")
+	}
+}
+
 func TestUnifiedPatch_KeepsUnavailableFilePatchesVisible(t *testing.T) {
 	files := []*File{
 		{Path: "binary.dat", Binary: true},
 		{Path: "new.txt", OldPath: "old.txt", Truncated: true},
 		{Path: "text.txt", Patch: "diff --git a/text.txt b/text.txt\n+text"},
 	}
-	want := "diff --git a/binary.dat b/binary.dat\ndiff --git a/old.txt b/new.txt\ndiff --git a/text.txt b/text.txt\n+text\n"
+	want := "diff --git a/binary.dat b/binary.dat\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/old.txt b/new.txt\ndiff --git a/text.txt b/text.txt\n+text\n"
 	if got := unifiedPatch(files); got != want {
 		t.Fatalf("unified = %q, want %q", got, want)
 	}

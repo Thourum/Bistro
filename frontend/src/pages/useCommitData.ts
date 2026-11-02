@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadCommitDiff } from '../services/commits';
 import { faultReason } from '../services/engine/call';
 import type {
@@ -18,6 +18,7 @@ interface CommitData {
   commit: CommitSummary | null;
   position: CommitPosition | null;
   diff: CommitDiffResult | null;
+  oversizedPatchBytes: ReadonlyMap<string, number>;
   loading: boolean;
   error: string | null;
   notInPr: boolean;
@@ -59,6 +60,15 @@ export function useCommitData(prId: string, sha: string): CommitData {
     };
   }, [prId, sha]);
 
+  const oversizedPatchBytes = useMemo(
+    () =>
+      new Map(
+        (diffState.diff?.files ?? [])
+          .filter((file) => !file.is_binary && file.diff_status !== 'ok')
+          .map((file) => [file.path, file.patch_bytes]),
+      ),
+    [diffState.diff],
+  );
   const listed = commits.result?.commits ?? [];
   const commit = listed.find((entry) => entry.sha === sha) ?? null;
   const position = commitPosition(
@@ -100,6 +110,7 @@ export function useCommitData(prId: string, sha: string): CommitData {
     commit,
     position,
     ...diffState,
+    oversizedPatchBytes,
     loading: commits.loading || diffState.loading,
     error: commits.error ?? diffState.error,
     unavailableReason:

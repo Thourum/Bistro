@@ -23,6 +23,7 @@ export function CommitPage(): React.ReactElement {
     commit,
     position,
     diff,
+    oversizedPatchBytes,
     loading,
     error,
     notInPr,
@@ -134,6 +135,7 @@ export function CommitPage(): React.ReactElement {
           <DiffView
             key={`${prId}:${sha}`}
             diff={diff?.diff ?? ''}
+            oversizedPatchBytes={oversizedPatchBytes}
             theme={theme}
             diffStyle={diffStyle}
             findQuery={findQuery}

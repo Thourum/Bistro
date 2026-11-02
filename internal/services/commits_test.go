@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -172,11 +173,21 @@ func TestCommitsGet_ResolvesFallbackAndPreservesDiff(t *testing.T) {
 		if req.RepoURL != "repo-url" || req.RepoPath != "repo-path" || req.HeadSHA != "head" || req.MergeBaseSHA != "fallback" || gotSHA != sha {
 			t.Fatalf("Commit arguments = %+v, %q", req, gotSHA)
 		}
-		return diff.RangeCommit{Diff: &diff.CommitDiff{Unified: "patch", Additions: 2, Deletions: 1}}, nil
+		return diff.RangeCommit{Diff: &diff.CommitDiff{Unified: "patch", Additions: 2, Deletions: 1, Files: []*diff.File{
+			{Path: "image.png", Status: "binary", Binary: true, DiffStatus: diff.StatusOK},
+			{Path: "new.txt", OldPath: "old.txt", Status: "renamed", Truncated: true, DiffStatus: diff.StatusTruncated, PatchBytes: 600 * 1024, HunkCount: 1, AddedLines: 2, RemovedLines: 1},
+		}}}, nil
 	}
 	resp, err := s.Get(context.Background(), CommitRequest{PRID: "github:O/R:1", SHA: strings.ToUpper(sha)})
 	if err != nil || !resp.Available || resp.PRID != commitsTestPRID || resp.SHA != sha || resp.Diff != "patch" || resp.Additions != 2 || resp.Deletions != 1 {
 		t.Fatalf("Get = %+v, %v", resp, err)
+	}
+	wantFiles := []DiffFile{
+		{Path: "image.png", Status: "binary", IsBinary: true, DiffStatus: "ok"},
+		{Path: "new.txt", OldPath: "old.txt", Status: "renamed", IsTruncated: true, DiffStatus: "truncated", PatchBytes: 600 * 1024, HunkCount: 1, Additions: 2, Deletions: 1},
+	}
+	if !reflect.DeepEqual(resp.Files, wantFiles) {
+		t.Fatalf("files = %+v, want %+v", resp.Files, wantFiles)
 	}
 }
 
