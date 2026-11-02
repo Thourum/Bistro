@@ -188,6 +188,10 @@ func (s *Commits) SetViewed(ctx context.Context, req SetCommitViewedRequest) (Co
 			if cerr := contextError(err); cerr != nil {
 				return CommitViewed{}, cerr
 			}
+			if errors.Is(err, diff.ErrHeadUnavailable) {
+				reason, _ := rangeFailure(ctx, err)
+				return CommitViewed{}, Errorf(CodeInvalid, "%s", reason)
+			}
 			logging.FromContext(ctx).Warn("commits: range failed", "error", err)
 			return CommitViewed{}, Errorf(CodeInternal, "could not list commits")
 		}

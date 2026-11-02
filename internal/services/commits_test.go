@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -203,6 +204,25 @@ func TestCommitsList_MapsRangeFailures(t *testing.T) {
 				t.Fatalf("List = %+v, %v", resp, err)
 			}
 		})
+	}
+}
+
+func TestCommitsSetViewed_MissingLocalObjects_ReturnsInvalid(t *testing.T) {
+	s := newCommitsTestService(t)
+	s.Range = func(diff.CommitRangeRequest) (diff.CommitRange, error) {
+		return diff.CommitRange{}, fmt.Errorf("load range: %w", diff.ErrHeadUnavailable)
+	}
+	_, err := s.SetViewed(context.Background(), SetCommitViewedRequest{
+		PRID: commitsTestPRID, SHA: strings.Repeat("a", 40), Viewed: true,
+	})
+	assertCommitError(t, err, CodeInvalid, "")
+	resp, listErr := s.List(context.Background(), PRRef{PRID: commitsTestPRID})
+	if listErr != nil || err.Error() != Errorf(CodeInvalid, "%s", resp.Reason).Error() || resp.Reason != "the PR head or merge base is not in the local repository" {
+		t.Fatalf("SetViewed error = %v; List = %+v, %v", err, resp, listErr)
+	}
+	stored, storeErr := s.Viewed.List(context.Background(), commitsTestPRID, "me")
+	if storeErr != nil || len(stored) != 0 {
+		t.Fatalf("unavailable range persisted marks: %v, %v", stored, storeErr)
 	}
 }
 
