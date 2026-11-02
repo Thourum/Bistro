@@ -51,6 +51,8 @@ export type ConfirmingAction =
 export interface UIState {
   menuActionRequests: readonly { actionId: string; sequence: number }[];
   selectedPRIndex: number;
+  commitShas: string[];
+  selectedCommitIndex: number;
   selectedFileIndex: number;
   /** PR whose file list `selectedFileIndex` points into; a different PR resets it. */
   selectedFilePrId: string | null;
@@ -203,6 +205,8 @@ export interface UIState {
 export const initialUIState: UIState = {
   menuActionRequests: [],
   selectedPRIndex: 0,
+  commitShas: [],
+  selectedCommitIndex: 0,
   selectedFileIndex: 0,
   selectedFilePrId: null,
   searchQuery: '',

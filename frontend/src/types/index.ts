@@ -3,6 +3,10 @@ import type { ReviewThreadRow as ReviewThread } from '@bindings/store/models';
 
 export type {
   CommentRow as Comment,
+  CommitDiffResponse as CommitDiffResult,
+  CommitSummary,
+  CommitsResponse as CommitsResult,
+  CommitViewed as CommitViewedAck,
   DiffFile,
   ExpertiseData as ExpertiseDataPayload,
   ExpertiseExpert,

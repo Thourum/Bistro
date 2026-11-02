@@ -37,6 +37,8 @@ const FOOTER_LEGEND_PRESETS_BY_ROUTE = {
     'diff.toggleStyle',
     'global.escape',
   ],
+  commits: ['global.escape'],
+  commit: ['global.escape'],
   settings: ['global.escape'],
   // Login and onboarding footers show no legend (empty chrome).
   login: [],

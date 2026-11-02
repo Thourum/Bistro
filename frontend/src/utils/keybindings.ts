@@ -10,6 +10,8 @@ export type RouteBase =
   | 'list'
   | 'detail'
   | 'diff'
+  | 'commits'
+  | 'commit'
   | 'settings'
   | 'login'
   | 'onboarding'
@@ -78,6 +80,8 @@ export const ALL_ROUTES: readonly RouteBase[] = [
   'list',
   'detail',
   'diff',
+  'commits',
+  'commit',
   'settings',
   'login',
   'onboarding',
