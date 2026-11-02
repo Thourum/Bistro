@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -59,8 +60,19 @@ type CommitRange struct {
 // ListCommitRange serializes range reads with repository fetches and maintenance.
 func ListCommitRange(locks *repolock.Locks, req CommitRangeRequest) (CommitRange, error) {
 	var out CommitRange
+	started := time.Now()
+	var lockWait, walk time.Duration
+	diffed := 0
+	defer func() {
+		slog.Debug("commit range timing", "op", "list", "with_diffs", req.WithDiffs,
+			"lock_wait_ms", lockWait.Milliseconds(), "walk_ms", walk.Milliseconds(),
+			"diff_ms", (time.Since(started) - lockWait - walk).Milliseconds(),
+			"commits", len(out.Commits), "diffed", diffed)
+	}()
 	err := locks.WithRepo(repolock.Key(req.RepoURL), func() error {
+		lockWait = time.Since(started)
 		commits, truncated, err := cappedRange(req)
+		walk = time.Since(started) - lockWait
 		if err != nil {
 			return err
 		}
@@ -74,6 +86,7 @@ func ListCommitRange(locks *repolock.Locks, req CommitRangeRequest) (CommitRange
 					return err
 				}
 				rc.Diff = &d
+				diffed++
 			}
 			out.Commits = append(out.Commits, rc)
 		}
@@ -86,8 +99,17 @@ func ListCommitRange(locks *repolock.Locks, req CommitRangeRequest) (CommitRange
 // (nil for merges); ErrCommitNotInRange when sha is not in it.
 func GetRangeCommit(locks *repolock.Locks, req CommitRangeRequest, sha string) (RangeCommit, error) {
 	var out RangeCommit
+	started := time.Now()
+	var lockWait, walk time.Duration
+	defer func() {
+		slog.Debug("commit range timing", "op", "get", "sha", sha,
+			"lock_wait_ms", lockWait.Milliseconds(), "walk_ms", walk.Milliseconds(),
+			"diff_ms", (time.Since(started) - lockWait - walk).Milliseconds())
+	}()
 	err := locks.WithRepo(repolock.Key(req.RepoURL), func() error {
+		lockWait = time.Since(started)
 		commits, _, err := cappedRange(req)
+		walk = time.Since(started) - lockWait
 		if err != nil {
 			return err
 		}

@@ -90,6 +90,7 @@ type commitViewedStore interface {
 func (s *Commits) List(ctx context.Context, req PRRef) (CommitsResponse, error) {
 	return guard(s.Panics, "Commits.List", func() (CommitsResponse, error) {
 		ctx := logging.WithLogger(ctx, serviceLogger(s.Log))
+		defer logCallTiming(ctx, "Commits.List", time.Now())
 		prID := NormalizeID(req.PRID)
 		if prID == "" {
 			return CommitsResponse{}, Errorf(CodeInvalid, "pr_id is required")
@@ -135,6 +136,7 @@ func (s *Commits) List(ctx context.Context, req PRRef) (CommitsResponse, error) 
 func (s *Commits) Get(ctx context.Context, req CommitRequest) (CommitDiffResponse, error) {
 	return guard(s.Panics, "Commits.Get", func() (CommitDiffResponse, error) {
 		ctx := logging.WithLogger(ctx, serviceLogger(s.Log))
+		defer logCallTiming(ctx, "Commits.Get", time.Now())
 		prID, sha, err := validateCommitRequest(req)
 		if err != nil {
 			return CommitDiffResponse{}, err
@@ -173,6 +175,7 @@ func (s *Commits) Get(ctx context.Context, req CommitRequest) (CommitDiffRespons
 func (s *Commits) SetViewed(ctx context.Context, req SetCommitViewedRequest) (CommitViewed, error) {
 	return guard(s.Panics, "Commits.SetViewed", func() (CommitViewed, error) {
 		ctx := logging.WithLogger(ctx, serviceLogger(s.Log))
+		defer logCallTiming(ctx, "Commits.SetViewed", time.Now())
 		prID, sha, err := validateCommitRequest(CommitRequest{PRID: req.PRID, SHA: req.SHA})
 		if err != nil {
 			return CommitViewed{}, err
@@ -296,4 +299,8 @@ func (s *Commits) login(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return login, nil
+}
+
+func logCallTiming(ctx context.Context, method string, started time.Time) {
+	logging.FromContext(ctx).Debug("service call timing", "method", method, "duration_ms", time.Since(started).Milliseconds())
 }

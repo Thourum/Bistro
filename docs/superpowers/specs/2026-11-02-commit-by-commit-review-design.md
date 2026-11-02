@@ -24,7 +24,8 @@ Out of scope (v1):
 - Line comments, drafts, threads, or review actions from a commit diff. These
   stay on the combined diff page.
 - Syncing viewed-commit state to GitHub (GitHub has no such concept).
-- Precomputing commits during sync, or caching commit diffs.
+- Caching full commit patches (the per-commit diff stays computed on demand;
+  only list statistics are precomputed — see Amendment 1).
 - Fetching commits from the GitHub API.
 
 ## Approach
@@ -236,3 +237,89 @@ Each test must fail if the behavior breaks.
 - `AGENTS.md`: add the `Commits` service and the `commitviewed` store to the
   architecture notes and the independent-stores list.
 - `website/src/pages/docs/`: document the commit views and new shortcuts.
+
+## Amendment 1 — list performance (2026-11-02)
+
+Status: approved by the user after measurement, 2026-11-02.
+
+### Problem
+
+Measured on a cached clone (PR with 89 commits), then confirmed in the app
+with debug timing logs: `Commits.Get` takes 13 ms,
+the range walk 10 ms, and `Commits.List` 2.4 s, because `List` diffs every
+commit for stats and viewed keys. A CPU profile splits that cost between
+go-git's regexp line splitting in the unified encoder (~46%) and re-opening
+the packfile for every object read (~30%). The renderer refetched `List` on
+every commit change and showed a loading state until it returned, so each
+step between commits took seconds. In dev, React StrictMode ran each load
+effect twice; with no request sharing, opening the list ran two serialized
+`List` calls (about 4.9 s) and each commit's `Get` ran twice. The repo lock
+showed no sync contention; all waiting was behind other `List` calls.
+
+### Changes
+
+1. **Renderer.** `useCommitsData` loads the list once per PR and keeps it
+   across commit navigation; it reloads only when the PR changes or the user
+   re-enters the list (a head that moves meanwhile surfaces through `Get`'s
+   existing "no longer part of the PR" message, which links to the list). The
+   commit page renders the commit diff as soon as `Get` returns and no longer
+   waits for the list; header fields that come from the list (position,
+   viewed) fill in when it arrives. `services/commits.ts` shares in-flight
+   `List` and `Get` requests per key and keeps the last list per PR, so
+   remounts and StrictMode's double effects issue one engine call.
+   `CommitDiffResponse` gains `is_merge` so the commit page can show the
+   merge message before the list arrives.
+2. **Commit stats cache.** Migration `00039_add_commit_stats.sql`:
+
+   ```
+   commit_stats(
+     pr_id, sha, additions, deletions, file_count, patch_id, algo_version,
+     PRIMARY KEY (pr_id, sha),
+     FOREIGN KEY (pr_id) REFERENCES prs(id) ON DELETE CASCADE
+   )
+   ```
+
+   A commit SHA fixes its tree and its first parent, so its diff never
+   changes; rows are never invalidated by sync. `algo_version` is a Go
+   constant; a row with a different version counts as missing, so a future
+   change to diff options or fingerprinting recomputes instead of reusing
+   stale fingerprints. Merges get no row. Store: `internal/store/commitstats`
+   (`List(prID) map[sha]Stats`, `Upsert(prID, []Stats)`, `Prune(prID,
+   keep []sha)`), independent like `store/commitviewed`.
+3. **Sync precomputes.** In `fetchDiff`, inside the existing `WithPRClone`
+   callback (clone ready, repo lock held), after the PR diff is generated,
+   sync lists the capped range for the PR's merge-base..head, computes stats
+   only for SHAs without a current-version row, and carries all current-range
+   rows on `FetchedPR`. The writer upserts them and prunes the PR's rows for
+   SHAs outside the current range, in the same per-PR savepoint as the PR row
+   (so the FK holds for new PRs). A failure here is logged and leaves the
+   cache untouched; it never fails the PR sync.
+4. **List reads the cache.** `List` walks the range (no diffs), reads
+   `commit_stats`, computes only the missing non-merge commits under the repo
+   lock, upserts them, and builds summaries and viewed keys from the stored
+   patch IDs. `SetViewed` uses the same path. A fully warmed PR's `List`
+   costs the walk plus one query.
+5. **Packfile descriptors.** Range reads open the repository with go-git's
+   `KeepDescriptors` storage option and close it when done, so object reads
+   stop re-opening the packfile.
+
+6. **Timing logs.** `Commits.List` / `Get` / `SetViewed` and the range reads
+   log durations at debug level (lock wait, walk, diff), so a regression
+   shows up in `BISTRO_LOG_LEVEL=debug` logs.
+
+Unchanged: `Get` still computes the single commit's patch on demand; the
+viewed-key scheme; the list layout; routes and keys.
+
+### Testing
+
+- `commitstats`: upsert, list, prune, and version mismatch round-trip.
+- `services`: `List` with a warm cache does not call the per-commit diff
+  function; with a partial cache it computes only the missing SHAs and
+  stores them; viewed keys built from cached patch IDs match those from
+  computed diffs.
+- `prsync`: a synced PR leaves rows for every non-merge commit in its range,
+  a force-push prunes rows for dropped SHAs, and a stats failure does not
+  fail the PR write.
+- Renderer: utility tests only; navigation latency is checked manually in
+  `wails3 task dev` (stepping between commits must not show the list
+  loading state).
