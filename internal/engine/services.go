@@ -4,11 +4,13 @@ import (
 	"context"
 
 	"github.com/itterno/bistro/internal/expertise"
+	"github.com/itterno/bistro/internal/git"
 	"github.com/itterno/bistro/internal/git/clonecache"
 	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/scan"
 	"github.com/itterno/bistro/internal/services"
+	"github.com/itterno/bistro/internal/store/commitviewed"
 	"github.com/itterno/bistro/internal/store/dismissal"
 	"github.com/itterno/bistro/internal/store/prdiff"
 	"github.com/itterno/bistro/internal/store/repolocation"
@@ -37,12 +39,25 @@ func (a *App) buildServices(ctx context.Context) *services.Set {
 		Patchsets:      &services.Patchsets{Store: a.db, Panics: a.panics, Log: a.log},
 		Triage:         &services.Triage{Store: a.db, CurrentUser: a.currentUserStore, Panics: a.panics, Log: a.log},
 		Interdiff:      &services.Interdiff{Patchsets: a.db, Interdiff: func(req diff.InterdiffRequest) (diff.InterdiffResult, error) { return diff.Interdiff(a.repoLocks, req) }, RepoForPR: prRepoLocator{db: a.db, locations: repolocation.New(a.db.DB)}.RepoForPR, Panics: a.panics, Log: a.log},
-		Viewed:         &services.Viewed{Viewed: a.db, CurrentUser: a.currentUserStore, DiffStore: diffStore, Baseline: a.db, Panics: a.panics, Log: a.log},
-		ReadState:      &services.ReadState{DB: a.db, CurrentUser: a.currentUserStore, Events: a.emitter, Panics: a.panics, Log: a.log},
-		PR:             &services.PR{DB: a.db.DB, CurrentUser: a.currentUserStore, TouchesYou: a.expertiseEngine, GetSyncer: a.currentPRSyncer, Panics: a.panics, Log: a.log},
-		Sync:           &services.Sync{Trigger: a.syncTrigger, CurrentStatus: a.syncStatus.current, Panics: a.panics, Log: a.log},
-		Repos:          &services.Repos{DB: a.db.DB, GetProvider: a.getProvider, SyncTrigger: services.WatchSyncTrigger{Queue: a.syncTrigger, Pending: &a.pendingWatchSync}, Panics: a.panics, Log: a.log},
-		ReviewQueue:    &services.ReviewQueue{Context: ctx, GetProvider: a.currentProviderSnapshot, DB: a.db.DB, Panics: a.panics, Log: a.log},
+		Commits: &services.Commits{
+			Patchsets: a.db,
+			Range: func(req diff.CommitRangeRequest) (diff.CommitRange, error) {
+				return diff.ListCommitRange(a.repoLocks, req)
+			},
+			Commit: func(req diff.CommitRangeRequest, sha string) (diff.RangeCommit, error) {
+				return diff.GetRangeCommit(a.repoLocks, req, sha)
+			},
+			MergeBase: git.MergeBase,
+			RepoForPR: prRepoLocator{db: a.db, locations: locations}.RepoForPR,
+			Viewed:    commitviewed.New(a.db.DB), CurrentUser: a.currentUserStore,
+			Panics: a.panics, Log: a.log,
+		},
+		Viewed:      &services.Viewed{Viewed: a.db, CurrentUser: a.currentUserStore, DiffStore: diffStore, Baseline: a.db, Panics: a.panics, Log: a.log},
+		ReadState:   &services.ReadState{DB: a.db, CurrentUser: a.currentUserStore, Events: a.emitter, Panics: a.panics, Log: a.log},
+		PR:          &services.PR{DB: a.db.DB, CurrentUser: a.currentUserStore, TouchesYou: a.expertiseEngine, GetSyncer: a.currentPRSyncer, Panics: a.panics, Log: a.log},
+		Sync:        &services.Sync{Trigger: a.syncTrigger, CurrentStatus: a.syncStatus.current, Panics: a.panics, Log: a.log},
+		Repos:       &services.Repos{DB: a.db.DB, GetProvider: a.getProvider, SyncTrigger: services.WatchSyncTrigger{Queue: a.syncTrigger, Pending: &a.pendingWatchSync}, Panics: a.panics, Log: a.log},
+		ReviewQueue: &services.ReviewQueue{Context: ctx, GetProvider: a.currentProviderSnapshot, DB: a.db.DB, Panics: a.panics, Log: a.log},
 		Auth: &services.Auth{
 			Log: a.log, Tokens: a.tokenManager, Cache: a.providerCache,
 			Events: a.emitter, Panics: a.panics, SyncTrigger: a.syncTrigger,

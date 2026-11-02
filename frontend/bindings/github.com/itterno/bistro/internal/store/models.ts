@@ -15,7 +15,7 @@ export interface Patchset {
 }
 
 /**
- * ReviewThreadRow is a row from the review_threads table, used by the WS handler.
+ * ReviewThreadRow is a row from the review_threads table.
  */
 export interface ReviewThreadRow {
     "id": string;

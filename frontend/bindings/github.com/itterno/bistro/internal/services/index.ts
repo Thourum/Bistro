@@ -4,6 +4,7 @@
 import * as Auth from "./auth.js";
 import * as Classification from "./classification.js";
 import * as Comments from "./comments.js";
+import * as Commits from "./commits.js";
 import * as DevFolderScan from "./devfolderscan.js";
 import * as Diff from "./diff.js";
 import * as Dismiss from "./dismiss.js";
@@ -26,6 +27,7 @@ export {
     Auth,
     Classification,
     Comments,
+    Commits,
     DevFolderScan,
     Diff,
     Dismiss,
@@ -76,6 +78,11 @@ export type {
     CommentRow,
     CommentsClassified,
     CommentsResponse,
+    CommitDiffResponse,
+    CommitRequest,
+    CommitSummary,
+    CommitViewed,
+    CommitsResponse,
     DiffFile,
     DiffResponse,
     DismissRequest,
@@ -121,6 +128,7 @@ export type {
     RepoRow,
     ScanDevFolderRequest,
     ScanDevFolderResult,
+    SetCommitViewedRequest,
     SetWatchedRequest,
     SyncComplete,
     SyncError,

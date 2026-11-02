@@ -273,6 +273,49 @@ export interface CommentsResponse {
     "comments": CommentRow[] | null;
 }
 
+export interface CommitDiffResponse {
+    "pr_id": string;
+    "sha": string;
+    "available": boolean;
+    "reason": string;
+    "diff": string;
+    "additions": number;
+    "deletions": number;
+}
+
+export interface CommitRequest {
+    "pr_id": string;
+    "sha": string;
+}
+
+export interface CommitSummary {
+    "sha": string;
+    "parent_shas": string[] | null;
+    "subject": string;
+    "body": string;
+    "author_name": string;
+    "authored_at": string;
+    "is_merge": boolean;
+    "additions": number;
+    "deletions": number;
+    "file_count": number;
+    "viewed": boolean;
+}
+
+export interface CommitViewed {
+    "pr_id": string;
+    "sha": string;
+    "viewed": boolean;
+}
+
+export interface CommitsResponse {
+    "pr_id": string;
+    "available": boolean;
+    "reason": string;
+    "truncated": boolean;
+    "commits": CommitSummary[] | null;
+}
+
 export interface DiffFile {
     "path": string;
     "status": string;
@@ -595,6 +638,12 @@ export interface ScanDevFolderResult {
     "degraded": number;
     "skipped": number;
     "partial": boolean;
+}
+
+export interface SetCommitViewedRequest {
+    "pr_id": string;
+    "sha": string;
+    "viewed": boolean;
 }
 
 export interface SetWatchedRequest {
