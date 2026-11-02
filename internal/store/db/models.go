@@ -71,6 +71,16 @@ type CommentDismissal struct {
 	DismissedAt     time.Time `json:"dismissed_at"`
 }
 
+type CommitStat struct {
+	PrID        string `json:"pr_id"`
+	Sha         string `json:"sha"`
+	Additions   int64  `json:"additions"`
+	Deletions   int64  `json:"deletions"`
+	FileCount   int64  `json:"file_count"`
+	PatchID     string `json:"patch_id"`
+	AlgoVersion int64  `json:"algo_version"`
+}
+
 type CommitsViewed struct {
 	PrID            string    `json:"pr_id"`
 	PatchKey        string    `json:"patch_key"`

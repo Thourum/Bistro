@@ -36,7 +36,7 @@ Within `internal/git`, `Client` owns clone/fetch/checkout; `anchor` resolves com
 
 `diff` also lists a PR's `merge-base..head` commit range (capped at 250) and diffs one commit against its first parent, under the shared repo lock; `services.Commits` serves it with occurrence-aware patch-id viewed keys.
 
-Independent SQLite stores live in `internal/store/currentuser`, `commitviewed`, `dismissal`, `prdiff`, `repolocation`, and `reviewdraft`; the offline queue lives in `store/actionqueue`. The root `store` package retains the DB handle, migrations, and DB-bound queries. Subpackages may import `store` and `store/db`, never the reverse. Expertise persistence belongs to `internal/expertise`.
+Independent SQLite stores live in `internal/store/currentuser`, `commitstats`, `commitviewed`, `dismissal`, `prdiff`, `repolocation`, and `reviewdraft`; the offline queue lives in `store/actionqueue`. The root `store` package retains the DB handle, migrations, and DB-bound queries. Subpackages may import `store` and `store/db`, never the reverse. Expertise persistence belongs to `internal/expertise`.
 
 `internal/prsync` orchestrates PR sync. `prsync/workerpool` bounds concurrent fetches; `prsync/writer` owns fetched results and SQLite batch writes. Neither imports the parent package. Go tests outside `store` share migrated in-memory DBs via `internal/store/storetest.Open(t)`; version-limited tests use `store.MigrationFS()` with goose.
 
