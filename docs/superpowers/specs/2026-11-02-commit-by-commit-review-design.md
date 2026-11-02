@@ -284,15 +284,17 @@ showed no sync contention; all waiting was behind other `List` calls.
    constant; a row with a different version counts as missing, so a future
    change to diff options or fingerprinting recomputes instead of reusing
    stale fingerprints. Merges get no row. Store: `internal/store/commitstats`
-   (`List(prID) map[sha]Stats`, `Upsert(prID, []Stats)`, `Prune(prID,
-   keep []sha)`), independent like `store/commitviewed`.
+   (`List(prID, version) map[sha]Stats`, `Upsert(prID, version, []Stats)`,
+   and `ReplaceTx(tx, prID, version, []Stats)` for sync), independent like
+   `store/commitviewed`.
 3. **Sync precomputes.** In `fetchDiff`, inside the existing `WithPRClone`
    callback (clone ready, repo lock held), after the PR diff is generated,
    sync lists the capped range for the PR's merge-base..head, computes stats
    only for SHAs without a current-version row, and carries all current-range
-   rows on `FetchedPR`. The writer upserts them and prunes the PR's rows for
-   SHAs outside the current range, in the same per-PR savepoint as the PR row
-   (so the FK holds for new PRs). A failure here is logged and leaves the
+   rows on `FetchedPR`. The writer replaces the PR's rows with them (pruning
+   SHAs a force-push dropped) inside the per-PR savepoint, under a nested
+   savepoint so a failed stats write rolls back only the stats; the PR row
+   exists by then, so the FK holds for new PRs. A failure here is logged and leaves the
    cache untouched; it never fails the PR sync.
 4. **List reads the cache.** `List` walks the range (no diffs), reads
    `commit_stats`, computes only the missing non-merge commits under the repo
