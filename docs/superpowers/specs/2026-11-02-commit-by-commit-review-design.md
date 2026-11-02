@@ -153,8 +153,10 @@ commits_viewed(
 
 - Header: SHA, subject, author, date, the full message body, position
   ("commit 3/7"), and viewed state.
-- Body: a read-only `DiffView` with `syncFileSelection={false}`: no threads,
-  drafts, line comments, interdiff, or since-last-review.
+- Body: a read-only `DiffView` with no threads, drafts, line comments,
+  interdiff, or since-last-review. The route takes the diff page's `?file=`
+  search and keeps file selection synced, so the reused next/prev-file keys
+  work; it is the only `DiffView` on the page.
 - Merge commit: "Merge commit — its diff is not shown. Edits made while
   resolving conflicts live only in the merge, so they appear in the combined
   diff but in none of the listed commits. Review them there." with a link to
