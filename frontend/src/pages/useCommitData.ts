@@ -136,7 +136,7 @@ export function useCommitData(prId: string, sha: string): CommitData {
     ...diffState,
     oversizedPatchBytes,
     loading: diffState.loading,
-    error: commits.error ?? diffState.error,
+    error: diffState.diff !== null ? null : (diffState.error ?? commits.error),
     unavailableReason:
       commits.result?.available === false
         ? commits.result.reason

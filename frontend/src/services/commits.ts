@@ -14,6 +14,12 @@ const log = createLogger('commits');
 const listCache = new Map<string, CommitsResult>();
 const listInFlight = new Map<string, ResultAsync<CommitsResult, Fault>>();
 const diffInFlight = new Map<string, ResultAsync<CommitDiffResult, Fault>>();
+interface ViewedMutation {
+  generation: number;
+  pending: boolean;
+  viewed: boolean;
+}
+const viewedMutations = new Map<string, Map<string, ViewedMutation>>();
 
 function shareRequest<T>(
   inFlight: Map<string, ResultAsync<T, Fault>>,
@@ -44,7 +50,60 @@ export function cacheCommitList(
   prId: string,
   result: CommitsResult,
 ): void {
-  listCache.set(listKey(login, prId), result);
+  const key = listKey(login, prId);
+  if (result.available) listCache.set(key, result);
+  else listCache.delete(key);
+}
+
+export function beginCommitViewed(
+  login: string,
+  prId: string,
+  change: { sha: string; viewed: boolean },
+): number {
+  const key = listKey(login, prId);
+  const mutations =
+    viewedMutations.get(key) ?? new Map<string, ViewedMutation>();
+  const generation = (mutations.get(change.sha)?.generation ?? 0) + 1;
+  mutations.set(change.sha, {
+    generation,
+    pending: true,
+    viewed: change.viewed,
+  });
+  viewedMutations.set(key, mutations);
+  updateCachedViewed(key, change.sha, change.viewed);
+  return generation;
+}
+
+export function settleCommitViewed(
+  login: string,
+  prId: string,
+  change: { sha: string; viewed: boolean; generation: number },
+): boolean {
+  const key = listKey(login, prId);
+  const mutation = viewedMutations.get(key)?.get(change.sha);
+  if (mutation?.generation !== change.generation) return false;
+  mutation.pending = false;
+  mutation.viewed = change.viewed;
+  updateCachedViewed(key, change.sha, change.viewed);
+  return true;
+}
+
+function updateCachedViewed(
+  key: string,
+  sha: string,
+  viewed: boolean,
+): CommitsResult | undefined {
+  const current = listCache.get(key);
+  if (current === undefined) return undefined;
+  const next = {
+    ...current,
+    commits:
+      current.commits?.map((commit) =>
+        commit.sha === sha ? { ...commit, viewed } : commit,
+      ) ?? null,
+  };
+  listCache.set(key, next);
+  return next;
 }
 
 /** Clears stale route navigation without losing the list selection. */
@@ -89,14 +148,39 @@ export function setCommitDiffFileKeys(keys: readonly string[]): void {
 }
 
 export function loadCommits(prId: string): ResultAsync<CommitsResult, Fault> {
-  const key = listKey(appStore.state.viewerLogin, prId);
-  return shareRequest(listInFlight, key, () =>
-    call(() => Commits.List({ pr_id: prId })).map((result) => {
-      if (result.available) listCache.set(key, result);
-      else listCache.delete(key);
-      return result;
-    }),
-  );
+  const login = appStore.state.viewerLogin;
+  const key = listKey(login, prId);
+  return shareRequest(listInFlight, key, () => {
+    const startedMutations = new Map(
+      [...(viewedMutations.get(key) ?? [])].map(
+        ([sha, mutation]) => [sha, { ...mutation }] as const,
+      ),
+    );
+    return call(() => Commits.List({ pr_id: prId })).map((result) => {
+      const mutations = viewedMutations.get(key);
+      const reconciled =
+        mutations === undefined
+          ? result
+          : {
+              ...result,
+              commits:
+                result.commits?.map((commit) => {
+                  const mutation = mutations.get(commit.sha);
+                  const started = startedMutations.get(commit.sha);
+                  if (
+                    mutation === undefined ||
+                    (!mutation.pending &&
+                      !started?.pending &&
+                      mutation.generation === started?.generation)
+                  )
+                    return commit;
+                  return { ...commit, viewed: mutation.viewed };
+                }) ?? null,
+            };
+      cacheCommitList(login, prId, reconciled);
+      return reconciled;
+    });
+  });
 }
 
 export function loadCommitDiff(

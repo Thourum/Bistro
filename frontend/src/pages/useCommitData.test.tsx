@@ -397,3 +397,103 @@ it('resets on account changes and keeps late viewed rollback in its original cac
   expect(cachedCommitList('account-pr')?.commits?.[0]?.viewed).toBe(false);
   await act(async () => root.unmount());
 });
+
+it('keeps a successfully loaded diff when background list loading fails', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  Get.mockImplementationOnce(() =>
+    cancellable(Promise.resolve({ diff: 'patch' })),
+  );
+  const list = deferred<CommitsResult>();
+  List.mockImplementationOnce(() => cancellable(list.promise));
+  const root = createRoot(document.createElement('div'));
+  const seen: ReturnType<typeof useCommitData>[] = [];
+  await act(async () =>
+    root.render(<CommitProbe sha="first" onData={(data) => seen.push(data)} />),
+  );
+  await act(async () => list.reject(new Error('offline')));
+  expect(seen.at(-1)).toMatchObject({
+    diff: { diff: 'patch' },
+    error: null,
+    loading: false,
+  });
+  await act(async () => root.unmount());
+});
+
+it('preserves an acknowledged viewed write newer than an in-flight list', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  Get.mockImplementationOnce(() => cancellable(Promise.resolve({ diff: '' })));
+  List.mockImplementationOnce(() => cancellable(Promise.resolve(COMMIT_LIST)));
+  const refresh = deferred<CommitsResult>();
+  List.mockImplementationOnce(() => cancellable(refresh.promise));
+  Get.mockImplementationOnce(() =>
+    cancellable(Promise.resolve({ diff: 'last' })),
+  );
+  SetViewed.mockImplementationOnce(() =>
+    cancellable(Promise.resolve({ pr_id: 'pr-1', sha: 'last', viewed: true })),
+  );
+  const root = createRoot(document.createElement('div'));
+  const seen: ReturnType<typeof useCommitData>[] = [];
+  const onData = (data: ReturnType<typeof useCommitData>): void => {
+    seen.push(data);
+  };
+  await act(async () =>
+    root.render(<CommitProbe sha="first" onData={onData} />),
+  );
+  await act(async () =>
+    root.render(<CommitProbe sha="last" onData={onData} />),
+  );
+  await act(async () =>
+    document.dispatchEvent(new Event(COMMIT_TOGGLE_VIEWED_EVENT)),
+  );
+  await act(async () => refresh.resolve(COMMIT_LIST));
+  expect(seen.at(-1)?.commit?.viewed).toBe(true);
+  expect(cachedCommitList('pr-1')?.commits?.[1]?.viewed).toBe(true);
+  await act(async () => root.unmount());
+});
+
+it('late viewed completion patches only its SHA after remount and ignores superseded writes', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  List.mockImplementationOnce(() => cancellable(Promise.resolve(COMMIT_LIST)));
+  const oldWrite = deferred<unknown>();
+  SetViewed.mockImplementationOnce(() => cancellable(oldWrite.promise));
+  const root = createRoot(document.createElement('div'));
+  await act(async () =>
+    root.render(<ListProbe prId="remount-pr" onData={() => undefined} />),
+  );
+  await act(async () =>
+    document.dispatchEvent(new Event(COMMIT_TOGGLE_VIEWED_EVENT)),
+  );
+  await act(async () => root.unmount());
+  const newerList = {
+    ...COMMIT_LIST,
+    commits: [
+      ...(COMMIT_LIST.commits ?? []),
+      { ...COMMIT_LIST.commits?.[0], sha: 'added' },
+    ],
+  };
+  List.mockImplementationOnce(() => cancellable(Promise.resolve(newerList)));
+  const remounted = createRoot(document.createElement('div'));
+  await act(async () =>
+    remounted.render(<ListProbe prId="remount-pr" onData={() => undefined} />),
+  );
+  const secondWrite = deferred<{
+    pr_id: string;
+    sha: string;
+    viewed: boolean;
+  }>();
+  SetViewed.mockImplementationOnce(() => cancellable(secondWrite.promise));
+  await act(async () =>
+    document.dispatchEvent(new Event(COMMIT_TOGGLE_VIEWED_EVENT)),
+  );
+  await act(async () =>
+    secondWrite.resolve({ pr_id: 'remount-pr', sha: 'first', viewed: false }),
+  );
+  await act(async () =>
+    oldWrite.resolve({ pr_id: 'remount-pr', sha: 'first', viewed: true }),
+  );
+  expect(
+    cachedCommitList('remount-pr')?.commits?.map((commit) => commit.sha),
+  ).toEqual(['first', 'last', 'added']);
+  expect(cachedCommitList('remount-pr')?.commits?.[0]?.viewed).toBe(false);
+  await act(async () => remounted.unmount());
+});

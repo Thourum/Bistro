@@ -149,3 +149,60 @@ it('releases failed diff requests and keeps different SHAs independent', async (
   await services.loadCommitDiff('pr', 'sha');
   expect(Commits.Get).toHaveBeenCalledTimes(3);
 });
+
+it('never recaches an unavailable list when a pending viewed write settles', async () => {
+  const login = appStore.state.viewerLogin;
+  services.cacheCommitList(login, 'pr', COMMIT_LIST);
+  const generation = services.beginCommitViewed(login, 'pr', {
+    sha: 'sha',
+    viewed: true,
+  });
+  vi.mocked(Commits.List).mockReturnValueOnce(
+    cancellable(Promise.resolve({ ...COMMIT_LIST, available: false })),
+  );
+  await services.loadCommits('pr');
+  services.settleCommitViewed(login, 'pr', {
+    sha: 'sha',
+    viewed: true,
+    generation,
+  });
+  expect(services.cachedCommitList('pr')).toBeUndefined();
+  services.cacheCommitList(login, 'pr', { ...COMMIT_LIST, available: false });
+  expect(services.cachedCommitList('pr')).toBeUndefined();
+});
+
+it('settles a late viewed write on the latest cache without replacing other changes', () => {
+  const login = appStore.state.viewerLogin;
+  const first = {
+    sha: 'first',
+    parent_shas: [],
+    subject: '',
+    body: '',
+    author_name: '',
+    authored_at: '',
+    is_merge: false,
+    additions: 0,
+    deletions: 0,
+    file_count: 0,
+    viewed: false,
+  };
+  services.cacheCommitList(login, 'pr', { ...COMMIT_LIST, commits: [first] });
+  const generation = services.beginCommitViewed(login, 'pr', {
+    sha: 'first',
+    viewed: true,
+  });
+  const added = { ...first, sha: 'added', viewed: true };
+  services.cacheCommitList(login, 'pr', {
+    ...COMMIT_LIST,
+    commits: [{ ...first, subject: 'new subject' }, added],
+  });
+  services.settleCommitViewed(login, 'pr', {
+    sha: 'first',
+    viewed: true,
+    generation,
+  });
+  expect(services.cachedCommitList('pr')?.commits).toEqual([
+    { ...first, subject: 'new subject', viewed: true },
+    added,
+  ]);
+});

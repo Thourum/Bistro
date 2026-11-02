@@ -7,12 +7,13 @@ import {
 } from 'react';
 import { useStore } from '../hooks/useStore';
 import {
-  cacheCommitList,
+  beginCommitViewed,
   cachedCommitList,
   clearCommitList,
   loadCommits,
   setCommitList,
   setCommitViewed,
+  settleCommitViewed,
 } from '../services/commits';
 import { appStore } from '../store';
 import type { CommitsResult, CommitViewedAck } from '../types';
@@ -80,23 +81,8 @@ export function useCommitsData(
     void loadCommits(prId).match(
       (payload) => {
         if (!active || !scope.active || scopeRef.current !== scope) return;
-        const current = resultRef.current;
-        const next = {
-          ...payload,
-          commits:
-            payload.commits?.map((commit) => {
-              if (!pendingRef.current.has(commit.sha)) return commit;
-              const optimistic = current?.commits?.find(
-                (entry) => entry.sha === commit.sha,
-              );
-              return optimistic === undefined
-                ? commit
-                : { ...commit, viewed: optimistic.viewed };
-            }) ?? null,
-        };
-        if (next.available) cacheCommitList(scope.login, prId, next);
-        resultRef.current = next;
-        setResult(next);
+        resultRef.current = payload;
+        setResult(payload);
         setLoading(false);
         setError(null);
       },
@@ -125,10 +111,9 @@ export function useCommitsData(
       )
         return null;
       pendingRef.current.add(sha);
-      let scopedResult = previous;
+      const generation = beginCommitViewed(scope.login, prId, { sha, viewed });
       const applyViewed = (value: boolean): void => {
-        const isCurrent = scope.active && scopeRef.current === scope;
-        const current = isCurrent ? resultRef.current : scopedResult;
+        const current = resultRef.current;
         if (current === null) return;
         const next = {
           ...current,
@@ -136,17 +121,20 @@ export function useCommitsData(
             entry.sha === sha ? { ...entry, viewed: value } : entry,
           ),
         };
-        scopedResult = next;
-        cacheCommitList(scope.login, prId, next);
-        if (!isCurrent) return;
         resultRef.current = next;
         setResult(next);
       };
       applyViewed(viewed);
       const ack = await setCommitViewed(prId, sha, viewed);
-      applyViewed(ack?.viewed ?? commit.viewed);
+      const settledViewed = ack?.viewed ?? commit.viewed;
+      const applied = settleCommitViewed(scope.login, prId, {
+        sha,
+        viewed: settledViewed,
+        generation,
+      });
       if (!scope.active || scopeRef.current !== scope) return null;
       pendingRef.current.delete(sha);
+      if (applied) applyViewed(settledViewed);
       return ack;
     },
     [prId, login],
