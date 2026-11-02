@@ -258,17 +258,26 @@ showed no sync contention; all waiting was behind other `List` calls.
 
 ### Changes
 
-1. **Renderer.** `useCommitsData` loads the list once per PR and keeps it
-   across commit navigation; it reloads only when the PR changes or the user
-   re-enters the list (a head that moves meanwhile surfaces through `Get`'s
-   existing "no longer part of the PR" message, which links to the list). The
-   commit page renders the commit diff as soon as `Get` returns and no longer
-   waits for the list; header fields that come from the list (position,
-   viewed) fill in when it arrives. `services/commits.ts` shares in-flight
-   `List` and `Get` requests per key and keeps the last list per PR, so
-   remounts and StrictMode's double effects issue one engine call.
-   `CommitDiffResponse` gains `is_merge` so the commit page can show the
-   merge message before the list arrives.
+1. **Renderer.** `useCommitsData` keeps the list across commit navigation
+   instead of resetting it on every commit change. The commit page renders
+   the commit diff as soon as `Get` returns and no longer waits for the list;
+   header fields that come from the list (position, viewed) fill in when it
+   arrives. `services/commits.ts` shares in-flight `List` and `Get` requests
+   per key and keeps the last list per (viewer login, PR), so remounts and
+   StrictMode's double effects issue one engine call and one account never
+   sees another's viewed state; the key is fixed when a request starts, so a
+   response that lands after an account change cannot fill the new account's
+   entry. The hooks treat a viewer-login change like a PR change (reset,
+   refetch, ignore completions and rollbacks from the old account's scope).
+   Only `available: true` lists are kept; an unavailable list (clone
+   not ready) is refetched next time. The list page always refetches on
+   entry. The commit page shows the kept list at once and, after its `Get`
+   settles, refetches the list in the background (stale-while-revalidate), so
+   a head that moved while the selected commit survived (commits appended,
+   duplicates added or dropped) updates navigation and viewed state without
+   ever delaying the diff. With a warm stats cache that refetch is the walk
+   plus one query. `CommitDiffResponse` gains `is_merge` so the commit page
+   can show the merge message before the list arrives.
 2. **Commit stats cache.** Migration `00039_add_commit_stats.sql`:
 
    ```
@@ -308,6 +317,14 @@ showed no sync contention; all waiting was behind other `List` calls.
 6. **Timing logs.** `Commits.List` / `Get` / `SetViewed` and the range reads
    log durations at debug level (lock wait, walk, diff), so a regression
    shows up in `BISTRO_LOG_LEVEL=debug` logs.
+
+Latency targets assume a warm stats cache. The diffing does not disappear: a
+first sync of a PR, new commits after a push, or a `CommitStatsVersion` bump
+computes the missing stats once, inside sync's existing `WithPRClone` lock
+hold (about 1.7 s for 89 new commits after change 5), or in `List` if sync
+has not reached the PR yet. Stats are incremental, so a push of k commits
+costs k diffs. A commit read that arrives during that window waits, as it
+already does for sync's fetch.
 
 Unchanged: `Get` still computes the single commit's patch on demand; the
 viewed-key scheme; the list layout; routes and keys.

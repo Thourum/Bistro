@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: subagent-driven-development task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make opening the commit list and stepping between commits take tens of milliseconds instead of seconds.
+**Goal:** With a warm stats cache, make opening the commit list and stepping between commits take tens of milliseconds instead of seconds; the remaining diffing happens once per new commit, in sync.
 
 **Architecture:** Per-commit list statistics (+/-, file count, fingerprint) move into a SQLite cache keyed by `(pr_id, sha)`, filled by PR sync while it already holds the clone and topped up on demand by `Commits.List`. `List` walks the range without diffing and reads the cache. The renderer loads the list once per PR, shares in-flight requests, and stops blocking the commit page on the list.
 
@@ -12,7 +12,8 @@
 
 ## Global Constraints
 
-- Measured baseline (PR with 89 commits): `Get` 13 ms, range walk 10 ms, `List` 2.4 s. Targets: a warm `List` costs the walk plus one query; stepping between commits issues one `Get` and no `List`.
+- Measured baseline (PR with 89 commits): `Get` 13 ms, range walk 10 ms, `List` 2.4 s. Targets (warm cache): a `List` costs the walk plus one query; stepping between commits renders after one `Get`, and the commit page's background list refresh starts only after that `Get` settles.
+- Renderer list cache key: `${viewerLogin}\u0000${prId}` (`appStore.state.viewerLogin`), captured when the request starts. Only `available: true` lists are cached.
 - Migration file: `internal/store/migrations/00039_add_commit_stats.sql`; table `commit_stats(pr_id, sha, additions, deletions, file_count, patch_id, algo_version)`, `PRIMARY KEY (pr_id, sha)`, `FOREIGN KEY (pr_id) REFERENCES prs(id) ON DELETE CASCADE`.
 - Store package: `internal/store/commitstats`, independent like `store/commitviewed`; it may import `store` / `store/db`, never the reverse.
 - `algo_version` is the Go constant `diff.CommitStatsVersion = 1`; a row with another version counts as missing.
@@ -662,8 +663,10 @@ git commit -m "perf: precompute commit stats during PR sync"
 **Interfaces:**
 - Consumes: Task 3 `CommitDiffResponse.is_merge`.
 - Produces (in `services/commits.ts`):
-  - `loadCommits(prId: string, options?: { refresh?: boolean }): ResultAsync<CommitsResult, Fault>` — returns the cached list for `prId` unless `refresh`; concurrent calls for the same `prId` share one in-flight engine call (a `refresh` call joins an in-flight one rather than issuing another).
-  - `cacheCommitList(prId: string, result: CommitsResult): void` — replaces the cached list (used by optimistic viewed updates).
+  - `cachedCommitList(prId: string): CommitsResult | undefined` — the kept list for (current `viewerLogin`, `prId`).
+  - `loadCommits(prId: string): ResultAsync<CommitsResult, Fault>` — always calls the engine, except that concurrent calls for the same (login, PR) key share one in-flight call; on success with `available: true` it stores the result under the key captured at start.
+  - `cacheCommitList(login: string, prId: string, result: CommitsResult): void` — replaces the kept list for an explicit login (the one the hook scope started with), never the current one implicitly.
+  - `cachedCommitList(prId)` / `loadCommits(prId)` read `appStore.state.viewerLogin` at call time.
   - `loadCommitDiff(prId, sha)` — concurrent calls for the same `prId:sha` share one in-flight call; results are not cached after settling.
 
 - [ ] **Step 1: In-flight sharing and list cache**
@@ -672,6 +675,11 @@ git commit -m "perf: precompute commit stats during PR sync"
 const listCache = new Map<string, CommitsResult>();
 const listInFlight = new Map<string, ResultAsync<CommitsResult, Fault>>();
 const diffInFlight = new Map<string, ResultAsync<CommitDiffResult, Fault>>();
+
+/** Viewed state is per account: never share a list across logins. */
+function listKey(prId: string): string {
+  return `${appStore.state.viewerLogin}\u0000${prId}`;
+}
 
 /** StrictMode double effects and remounts share one engine call. */
 function shared<T>(
@@ -690,22 +698,27 @@ function shared<T>(
   return request;
 }
 
-export function loadCommits(
-  prId: string,
-  options: { refresh?: boolean } = {},
-): ResultAsync<CommitsResult, Fault> {
-  const cached = listCache.get(prId);
-  if (cached !== undefined && options.refresh !== true) return okAsync(cached);
-  return shared(listInFlight, prId, () =>
+export function cachedCommitList(prId: string): CommitsResult | undefined {
+  return listCache.get(listKey(prId));
+}
+
+export function loadCommits(prId: string): ResultAsync<CommitsResult, Fault> {
+  const key = listKey(prId); // fixed at start: a late response keeps its account
+  return shared(listInFlight, key, () =>
     call(() => Commits.List({ pr_id: prId })).map((result) => {
-      listCache.set(prId, result);
+      if (result.available) listCache.set(key, result);
+      else listCache.delete(key);
       return result;
     }),
   );
 }
 
-export function cacheCommitList(prId: string, result: CommitsResult): void {
-  listCache.set(prId, result);
+export function cacheCommitList(
+  login: string,
+  prId: string,
+  result: CommitsResult,
+): void {
+  listCache.set(`${login}\u0000${prId}`, result);
 }
 
 export function loadCommitDiff(
@@ -718,26 +731,34 @@ export function loadCommitDiff(
 }
 ```
 
-Check `@thourum/fault`'s installed API under `node_modules/@thourum/fault/` for `okAsync` and whether a `ResultAsync` can be awaited/matched more than once (the shared request is matched by every caller). If it cannot be consumed twice, store the underlying `Promise<Result<T, Fault>>` and wrap it per caller with the library's constructor for an existing promise — use whatever the installed version provides; do not add `try`/`catch`.
+Check `@thourum/fault`'s installed API under `frontend/node_modules/@thourum/fault/` to confirm a `ResultAsync` can be matched by several callers (the shared request is). If it cannot, store the underlying `Promise<Result<T, Fault>>` and wrap it per caller with the library's constructor for an existing promise. Do not add `try`/`catch`.
 
-- [ ] **Step 2: `useCommitsData` loads once per PR**
+- [ ] **Step 2: `useCommitsData` keeps the list across navigation**
 
-- The fetch effect depends on `[prId, refresh]` only, where `refresh` is a new hook argument (`useCommitsData(prId, selectedSha?, options?: { refresh?: boolean })`). `CommitsPage` passes `{ refresh: true }` (re-entering the list refetches, sharing any in-flight call); `useCommitData` passes nothing (uses the cache).
-- Do not reset `result` to `null` when `selectedSha` changes. Keep `setCommitList(shas, selectedSha)` seeding in its own effect keyed on `[result, selectedSha]`.
+- New signature: `useCommitsData(prId: string, selectedSha?: string, options?: { revalidateAfter?: unknown })`.
+- Initial state: `result = cachedCommitList(prId) ?? null`, `loading = result === null`.
+- The list page (`CommitsPage`, no `selectedSha`) fetches on mount and whenever `prId` changes: effect keyed on `[prId]`.
+- The commit page (`useCommitData`) passes `revalidateAfter: diffState.diff ?? diffState.error ?? diffState.notInPr` — i.e. a value that changes when its `Get` settles. The fetch effect is keyed on `[prId, revalidateAfter]` and does nothing while `revalidateAfter` is `null`/`false` and a cached list exists (no fetch is needed to render). When no cached list exists, it fetches immediately (the header needs it; `Get` is not blocked because the page does not wait on the list).
+- Never reset `result` to `null` on a `selectedSha` change; a new payload replaces it when it arrives. Keep `setCommitList(shas, selectedSha)` seeding in its own effect keyed on `[result, selectedSha]`.
 - Keep the `useLayoutEffect` `clearCommitList()` keyed on `[prId]` only.
-- `applyViewed` also calls `cacheCommitList(prId, next)` so the cache keeps optimistic and rolled-back viewed state.
+- The account is part of the hook's scope: read `viewerLogin` with `useStore(appStore, (s) => s.viewerLogin)`, add it to `scopeRef`'s scope object and to every effect key that today has `prId` (the layout `clearCommitList`, the fetch effect, and the state reset). A login change therefore behaves like a PR change: the displayed `result` resets to `cachedCommitList(prId)` for the new login (or `null`), pending marks are dropped, and a new fetch starts.
+- Completions check the scope they started in (`scope.active && scopeRef.current === scope`, as `updateViewed` already does) before touching state, so a late response or rollback from the previous account never reaches the active view.
+- `applyViewed` calls `cacheCommitList(scope.login, prId, next)` with the login captured in the toggle's scope, so a late rollback lands in its own account's entry.
+- While a viewed toggle is pending for a SHA, a revalidated payload must not overwrite that SHA's optimistic `viewed` value: merge `viewed` from the current result for SHAs in `pendingRef.current`.
 
 - [ ] **Step 3: Commit page doesn't wait for the list**
 
-In `useCommitData`, return `loading: diffState.loading` (not `commits.loading || diffState.loading`). In `CommitPage.tsx`, the merge branch tests `commit?.is_merge || diff?.is_merge` so a merge shows its message before the list arrives. The header already renders only when `commit !== null`.
+In `useCommitData`, return `loading: diffState.loading` (not `commits.loading || diffState.loading`) and wire `revalidateAfter` as above. In `CommitPage.tsx`, the merge branch tests `commit?.is_merge || diff?.is_merge` so a merge shows its message before the list arrives. The header already renders only when `commit !== null`.
 
 - [ ] **Step 4: Test `services/commits.test.ts`**
 
 Mock `@bindings/services` `Commits.List` / `Commits.Get` with deferred promises (follow how other `services/*.test.ts` files mock bindings). Tests:
-1. Two concurrent `loadCommits('pr')` calls issue one `Commits.List`; both resolve to the same result.
-2. After it settles, `loadCommits('pr')` issues no call (cache); `loadCommits('pr', { refresh: true })` issues one.
-3. Two concurrent `loadCommitDiff('pr', sha)` calls issue one `Commits.Get`; after settling, a third call issues a new one.
-4. A failed `List` is not cached: the next `loadCommits('pr')` calls again.
+1. Two concurrent `loadCommits('pr')` calls issue one `Commits.List`; both resolve to the same result, and `cachedCommitList('pr')` returns it.
+2. Account isolation: with `viewerLogin = 'a'`, start `loadCommits('pr')`; switch `appStore` `viewerLogin` to `'b'` before resolving; resolve. `cachedCommitList('pr')` (as `b`) is `undefined`; switching back to `a` returns the result.
+3. An `available: false` result is not kept (`cachedCommitList` is `undefined`), and replaces nothing usable: a previously kept available list for the same key is dropped.
+4. Two concurrent `loadCommitDiff('pr', sha)` calls issue one `Commits.Get`; after settling, a third call issues a new one.
+5. A failed `List` leaves the kept list unchanged.
+6. `cacheCommitList('a', 'pr', x)` while `viewerLogin` is `'b'` is visible to `cachedCommitList('pr')` only after switching back to `'a'`.
 
 Reset module state between tests (`vi.resetModules()` + dynamic import, or an exported `resetCommitCachesForTest` if the file's tests elsewhere use that pattern — prefer `vi.resetModules()`).
 
@@ -755,4 +776,4 @@ git commit -m "perf: load commit list once per PR and share in-flight commit req
 
 ## Manual verification (controller, after all tasks)
 
-Run `BISTRO_LOG_LEVEL=debug wails3 dev 2>&1 | tee /tmp/bistro-commits-after.log` from the worktree, open the same PR, press `g c`, open a commit, step with `]` four times. In the log: one `Commits.List` per list entry, a warm `List` with no `op=stats` line after sync has run, and one `Commits.Get` per step with no `Commits.List` between steps.
+Run `BISTRO_LOG_LEVEL=debug wails3 dev 2>&1 | tee /tmp/bistro-commits-after.log` from the worktree, open the same PR, press `g c`, open a commit, step with `]` four times. In the log: one `Commits.List` per list entry; after sync has run, `List` lines with no `op=stats` line; per step, one `Commits.Get` whose `lock_wait_ms` is near 0, followed by at most one background `Commits.List` that starts after the `Get` finished. Also force-push or push a commit to a test PR while on a commit page, step once, and confirm the position count updates. Cold path: on a PR not yet synced with this build, note the `pr commit stats collected` duration in the sync log.
