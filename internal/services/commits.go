@@ -101,7 +101,6 @@ func (s *Commits) List(ctx context.Context, req PRRef) (CommitsResponse, error) 
 			resp.Reason = reason
 			return resp, err
 		}
-		rangeReq.WithDiffs = true
 		commits, err := s.Range(rangeReq)
 		if err != nil {
 			resp.Reason, err = rangeFailure(ctx, err)
@@ -194,7 +193,6 @@ func (s *Commits) SetViewed(ctx context.Context, req SetCommitViewedRequest) (Co
 		if reason != "" {
 			return CommitViewed{}, Errorf(CodeInvalid, "%s", reason)
 		}
-		rangeReq.WithDiffs = true
 		commits, err := s.Range(rangeReq)
 		if err != nil {
 			if cerr := contextError(err); cerr != nil {

@@ -93,7 +93,6 @@ func TestListCommitRange_ExcludesBaseHistoryIncludingMergedMain(t *testing.T) {
 	mg := f.commit(fixtureCommit{file: "main.txt", content: "main\n", message: "Merge main", parents: []plumbing.Hash{f2, m1}})
 	f3 := f.commit(fixtureCommit{file: "c.txt", content: "c\n", message: "feat: c"})
 	req := f.request(f3, m1)
-	req.WithDiffs = true
 	got, err := ListCommitRange(repolock.New(), req)
 	if err != nil {
 		t.Fatal(err)
@@ -109,12 +108,104 @@ func TestListCommitRange_ExcludesBaseHistoryIncludingMergedMain(t *testing.T) {
 	if !got.Commits[2].IsMerge || got.Commits[2].Diff != nil || !slices.Equal(got.Commits[2].ParentSHAs, []string{f2.String(), m1.String()}) {
 		t.Fatalf("merge commit = %+v, want two parents with nil Diff", got.Commits[2])
 	}
-	if d := first.Diff; d == nil || d.Additions != 1 || d.Deletions != 0 || len(d.Files) != 1 || d.Files[0].Path != "a.txt" || !strings.Contains(d.Unified, "+a\n") || d.PatchID != commitPatchID(d.Files) {
-		t.Fatalf("first commit diff = %+v, want a.txt +1", d)
+	for _, commit := range got.Commits {
+		if commit.Diff != nil {
+			t.Fatalf("metadata-only listing includes diff for %s", commit.SHA)
+		}
+	}
+	stats, err := ComputeCommitStats(repolock.New(), req, []string{f1.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats) != 1 || stats[0].SHA != f1.String() || stats[0].Additions != 1 || stats[0].Deletions != 0 || stats[0].FileCount != 1 || stats[0].PatchID == "" {
+		t.Fatalf("first commit stats = %+v, want a.txt +1", stats)
 	}
 	merge, err := GetRangeCommit(repolock.New(), req, mg.String())
 	if err != nil || !merge.IsMerge || merge.Diff != nil {
 		t.Fatalf("get merge = %+v, %v", merge, err)
+	}
+}
+
+func TestCollectRangeStats_ReusesCachedAndSkipsMerges(t *testing.T) {
+	f := newCommitFixture(t)
+	base := f.commit(fixtureCommit{file: "base.txt", content: "base\n", message: "base"})
+	main := f.commit(fixtureCommit{file: "main.txt", content: "main\n", message: "main work"})
+	f.reset(base)
+	first := f.commit(fixtureCommit{file: "a.txt", content: "a\n", message: "first"})
+	second := f.commit(fixtureCommit{file: "b.txt", content: "b\n", message: "second"})
+	merge := f.commit(fixtureCommit{file: "main.txt", content: "main\n", message: "Merge main", parents: []plumbing.Hash{second, main}})
+	const cachedPatchID = "sentinel"
+	cached := map[string]CommitStats{first.String(): {SHA: first.String(), PatchID: cachedPatchID}}
+	got, err := CollectRangeStats(f.path, merge.String(), main.String(), cached)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].SHA != first.String() || got[1].SHA != second.String() {
+		t.Fatalf("stats = %+v, want first and second oldest first without merge", got)
+	}
+	if got[0] != cached[first.String()] {
+		t.Fatalf("cached stats = %+v, want sentinel reused", got[0])
+	}
+	computed, err := ComputeCommitStats(repolock.New(), f.request(merge, main), []string{second.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(computed) != 1 || got[1] != computed[0] {
+		t.Fatalf("uncached stats = %+v, want %+v", got[1], computed)
+	}
+}
+
+func TestComputeCommitStats_MatchesGetRangeCommit(t *testing.T) {
+	f := newCommitFixture(t)
+	base := f.commit(fixtureCommit{file: "f.txt", content: "old\n", message: "base"})
+	head := f.commit(fixtureCommit{file: "f.txt", content: "new\nextra\n", message: "change"})
+	req := f.request(head, base)
+	got, err := ComputeCommitStats(repolock.New(), req, []string{head.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := GetRangeCommit(repolock.New(), req, head.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit.Diff == nil {
+		t.Fatal("single-parent commit must have a diff")
+	}
+	want := CommitStats{SHA: head.String(), Additions: commit.Diff.Additions, Deletions: commit.Diff.Deletions, FileCount: len(commit.Diff.Files), PatchID: commit.Diff.PatchID}
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("stats = %+v, want %+v", got, want)
+	}
+}
+
+func TestCommitStats_PackedBareRepository(t *testing.T) {
+	f := newCommitFixture(t)
+	base := f.commit(fixtureCommit{file: "f.txt", content: "old\n", message: "base"})
+	first := f.commit(fixtureCommit{file: "f.txt", content: "new\n", message: "first"})
+	head := f.commit(fixtureCommit{file: "extra.txt", content: "extra\n", message: "second"})
+	req := f.request(head, base)
+	req.RepoPath = t.TempDir()
+	if _, err := gitlib.PlainClone(req.RepoPath, true, &gitlib.CloneOptions{URL: "file://" + f.path}); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := ListCommitRange(repolock.New(), req)
+	if err != nil || !slices.Equal(rangeSHAs(listed), []string{first.String(), head.String()}) {
+		t.Fatalf("packed bare range = %+v, %v", listed, err)
+	}
+	collected, err := CollectRangeStats(req.RepoPath, req.HeadSHA, req.MergeBaseSHA, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Requested order differs from the range to pin the stats API's ordering.
+	computed, err := ComputeCommitStats(repolock.New(), req, []string{head.String(), first.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(collected) != 2 || len(computed) != 2 || collected[0] != computed[1] || collected[1] != computed[0] {
+		t.Fatalf("packed bare stats: collected=%+v computed=%+v", collected, computed)
+	}
+	commit, err := GetRangeCommit(repolock.New(), req, head.String())
+	if err != nil || commit.Diff == nil || statsOf(head.String(), *commit.Diff) != computed[0] {
+		t.Fatalf("packed bare commit diff = %+v, %v", commit.Diff, err)
 	}
 }
 

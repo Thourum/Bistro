@@ -6,11 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/go-git/go-billy/v5/osfs"
 	gitlib "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/itterno/bistro/internal/git/repolock"
 )
@@ -27,7 +32,6 @@ type CommitRangeRequest struct {
 	RepoPath     string
 	HeadSHA      string
 	MergeBaseSHA string
-	WithDiffs    bool // compute Diff for every non-merge commit
 }
 
 // CommitDiff retains file metadata even when a patch exceeds the file budget.
@@ -48,7 +52,7 @@ type RangeCommit struct {
 	AuthorName string
 	AuthoredAt time.Time
 	IsMerge    bool
-	Diff       *CommitDiff // nil for merges, or when diffs were not requested
+	Diff       *CommitDiff // nil for merges and metadata-only range listings
 }
 
 // CommitRange keeps the oldest commits when the review limit is exceeded.
@@ -57,38 +61,30 @@ type CommitRange struct {
 	Truncated bool
 }
 
-// ListCommitRange serializes range reads with repository fetches and maintenance.
+// ListCommitRange returns metadata only, serialized with repository fetches and maintenance.
 func ListCommitRange(locks *repolock.Locks, req CommitRangeRequest) (CommitRange, error) {
 	var out CommitRange
 	started := time.Now()
-	var lockWait, walk time.Duration
-	diffed := 0
+	var lockWait time.Duration
 	defer func() {
-		slog.Debug("commit range timing", "op", "list", "with_diffs", req.WithDiffs,
-			"lock_wait_ms", lockWait.Milliseconds(), "walk_ms", walk.Milliseconds(),
-			"diff_ms", (time.Since(started) - lockWait - walk).Milliseconds(),
-			"commits", len(out.Commits), "diffed", diffed)
+		slog.Debug("commit range timing", "op", "list", "lock_wait_ms", lockWait.Milliseconds(),
+			"walk_ms", (time.Since(started) - lockWait).Milliseconds(), "commits", len(out.Commits))
 	}()
 	err := locks.WithRepo(repolock.Key(req.RepoURL), func() error {
 		lockWait = time.Since(started)
-		commits, truncated, err := cappedRange(req)
-		walk = time.Since(started) - lockWait
+		repo, closeRepo, err := openRangeRepo(req.RepoPath)
+		if err != nil {
+			return err
+		}
+		defer closeRepo()
+		commits, truncated, err := cappedRange(repo, req.HeadSHA, req.MergeBaseSHA)
 		if err != nil {
 			return err
 		}
 		out.Truncated = truncated
 		out.Commits = make([]RangeCommit, 0, len(commits))
 		for _, c := range commits {
-			rc := toRangeCommit(c)
-			if req.WithDiffs && !rc.IsMerge {
-				d, err := commitDiff(c)
-				if err != nil {
-					return err
-				}
-				rc.Diff = &d
-				diffed++
-			}
-			out.Commits = append(out.Commits, rc)
+			out.Commits = append(out.Commits, toRangeCommit(c))
 		}
 		return nil
 	})
@@ -108,7 +104,12 @@ func GetRangeCommit(locks *repolock.Locks, req CommitRangeRequest, sha string) (
 	}()
 	err := locks.WithRepo(repolock.Key(req.RepoURL), func() error {
 		lockWait = time.Since(started)
-		commits, _, err := cappedRange(req)
+		repo, closeRepo, err := openRangeRepo(req.RepoPath)
+		if err != nil {
+			return err
+		}
+		defer closeRepo()
+		commits, _, err := cappedRange(repo, req.HeadSHA, req.MergeBaseSHA)
 		walk = time.Since(started) - lockWait
 		if err != nil {
 			return err
@@ -132,12 +133,25 @@ func GetRangeCommit(locks *repolock.Locks, req CommitRangeRequest, sha string) (
 	return out, err
 }
 
-func cappedRange(req CommitRangeRequest) ([]*object.Commit, bool, error) {
-	repo, err := gitlib.PlainOpen(req.RepoPath)
-	if err != nil {
-		return nil, false, fmt.Errorf("open repo %s: %w", req.RepoPath, err)
+// openRangeRepo keeps pack descriptors open for the read; without it go-git
+// re-opens the packfile for every object (~30% of a range diff's CPU).
+func openRangeRepo(path string) (*gitlib.Repository, func(), error) {
+	dot := path
+	if info, err := os.Stat(filepath.Join(path, ".git")); err == nil && info.IsDir() {
+		dot = filepath.Join(path, ".git")
 	}
-	commits, err := rangeCommits(repo, req.HeadSHA, req.MergeBaseSHA)
+	storage := filesystem.NewStorageWithOptions(osfs.New(dot), cache.NewObjectLRUDefault(),
+		filesystem.Options{KeepDescriptors: true})
+	repo, err := gitlib.Open(storage, nil)
+	if err != nil {
+		_ = storage.Close()
+		return nil, nil, fmt.Errorf("open repo %s: %w", path, err)
+	}
+	return repo, func() { _ = storage.Close() }, nil
+}
+
+func cappedRange(repo *gitlib.Repository, headSHA, mergeBaseSHA string) ([]*object.Commit, bool, error) {
+	commits, err := rangeCommits(repo, headSHA, mergeBaseSHA)
 	if err != nil {
 		return nil, false, err
 	}
