@@ -137,9 +137,13 @@ These shortcuts apply only in the diff:
 ## Commits
 
 Open the oldest-first commit list from PR detail or diff, then open a commit for
-read-only review; PRs with more than 250 commits are not supported. Viewed marks
-are local. Commenting, drafts, review submission, and since-last-review modes are
-not available in commit diffs.
+read-only review. Viewed marks are stored locally and stay through a rebase when
+the commit's changes are identical; they reset when the content changes.
+
+Merge commits show no diff. Conflict-resolution edits in a merge are only in the
+combined diff. The list shows the first 250 commits; the combined diff covers the
+rest. Commenting, drafts, review submission, and since-last-review modes are not
+available in commit diffs.
 
 | Action | Vim | Emacs | Standard |
 | --- | --- | --- | --- |
