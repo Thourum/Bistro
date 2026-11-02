@@ -3,6 +3,7 @@ package writer
 import (
 	"github.com/itterno/bistro/internal/git/anchor"
 	"github.com/itterno/bistro/internal/provider"
+	"github.com/itterno/bistro/internal/store/commitstats"
 	"github.com/itterno/bistro/internal/store/prdiff"
 )
 
@@ -29,6 +30,11 @@ type FetchedPR struct {
 	// DiffComputed is true iff diff generation succeeded and DiffFiles is valid.
 	// When false, the writer must not touch pr_diffs for this result.
 	DiffComputed bool
+	// CommitStats are list statistics for every non-merge commit in the PR's
+	// capped merge-base..head range. Written only when CommitStatsComputed;
+	// the writer replaces the PR's commit_stats rows best-effort.
+	CommitStats         []commitstats.Stats
+	CommitStatsComputed bool
 	// MergeBaseSHA is the merge base the diff was generated against; empty when
 	// the diff was not computed or the merge base stayed unknown (the diff then
 	// used the base tip). Part of patchset identity.

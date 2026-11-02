@@ -312,6 +312,9 @@ func (w *Writer) writeCriticalPRData(ctx context.Context, tx *sql.Tx, result *Fe
 		}
 		counts.diffs = len(result.DiffFiles)
 	}
+	if result.CommitStatsComputed {
+		w.writeCommitStats(ctx, tx, pr.ID, result.CommitStats)
+	}
 	return counts, nil
 }
 

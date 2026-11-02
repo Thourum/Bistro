@@ -15,6 +15,7 @@ import (
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/prsync/workerpool"
 	"github.com/itterno/bistro/internal/prsync/writer"
+	"github.com/itterno/bistro/internal/store/commitstats"
 	"github.com/itterno/bistro/internal/store/prdiff"
 )
 
@@ -264,7 +265,41 @@ func (o *Orchestrator) generateDiff(ctx context.Context, result *writer.FetchedP
 	result.MergeBaseSHA = mergeBase
 	o.notifyExpertiseHook(ctx, pr, result.DiffFiles)
 	o.resolveDiffAnchors(ctx, result, clone, diffBase, log)
+	if mergeBase != "" {
+		o.collectCommitStats(ctx, result, clone, mergeBase, log)
+	}
 	return nil
+}
+
+// collectCommitStats runs with the repo lock held; failures only cost a
+// slower first commit-list open, so they never fail the PR fetch.
+func (o *Orchestrator) collectCommitStats(ctx context.Context, result *writer.FetchedPR, clone *git.CloneResult, mergeBase string, log *slog.Logger) {
+	if o.store == nil {
+		return
+	}
+	started := time.Now()
+	pr := result.PR
+	cachedRows, err := commitstats.New(o.store.DB).List(ctx, pr.ID, gitdiff.CommitStatsVersion)
+	if err != nil {
+		log.Warn("commit stats: cache read failed", "error", err)
+		return
+	}
+	cached := make(map[string]gitdiff.CommitStats, len(cachedRows))
+	for sha, r := range cachedRows {
+		cached[sha] = gitdiff.CommitStats{SHA: sha, Additions: r.Additions, Deletions: r.Deletions, FileCount: r.FileCount, PatchID: r.PatchID}
+	}
+	stats, err := gitdiff.CollectRangeStats(clone.LocalPath, pr.HeadSHA, mergeBase, cached)
+	if err != nil {
+		log.Warn("commit stats: collect failed", "error", err)
+		return
+	}
+	result.CommitStats = make([]commitstats.Stats, len(stats))
+	for i, s := range stats {
+		result.CommitStats[i] = commitstats.Stats{SHA: s.SHA, Additions: s.Additions, Deletions: s.Deletions, FileCount: s.FileCount, PatchID: s.PatchID}
+	}
+	result.CommitStatsComputed = true
+	logSubstep(log, "pr commit stats collected", time.Since(started).Milliseconds(),
+		"commits", len(stats), "cached", len(cached))
 }
 
 // resolveMergeBase returns the PR's merge base, deepening a shallow clone once

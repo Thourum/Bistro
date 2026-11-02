@@ -34,7 +34,7 @@ Within `internal/engine`, `app.go` owns Start/Stop, `options.go` construction/de
 
 Within `internal/git`, `Client` owns clone/fetch/checkout; `anchor` resolves comment anchors, `diff` generates diffs/interdiffs and patch fingerprints, `remote` parses canonical identities, and `repolock` owns shared per-repo locks. Interdiff takes the same `*repolock.Locks` as clone/fetch, not a `git.Client`. `clonecache` depends on `remote`, never the parent package; `repolock` depends on `clonecache` only for the `BISTRO_REPO_DIR` override check. Shared on-disk commit fixtures live in `git/gittest`.
 
-`diff` also lists a PR's `merge-base..head` commit range (capped at 250) and diffs one commit against its first parent, under the shared repo lock; `services.Commits` serves it with occurrence-aware patch-id viewed keys.
+`diff` also lists a PR's `merge-base..head` commit range (capped at 250) and diffs one commit against its first parent, under the shared repo lock; `services.Commits` serves it with occurrence-aware patch-id viewed keys; per-commit list stats are cached in `store/commitstats`, filled by PR sync inside `WithPRClone` and topped up by `Commits.List`.
 
 Independent SQLite stores live in `internal/store/currentuser`, `commitstats`, `commitviewed`, `dismissal`, `prdiff`, `repolocation`, and `reviewdraft`; the offline queue lives in `store/actionqueue`. The root `store` package retains the DB handle, migrations, and DB-bound queries. Subpackages may import `store` and `store/db`, never the reverse. Expertise persistence belongs to `internal/expertise`.
 
