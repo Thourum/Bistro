@@ -102,7 +102,8 @@ Migration `00038_add_commits_viewed.sql`:
 
 ```
 commits_viewed(
-  pr_id, patch_key, account_provider, account_login, login, viewed_at,
+  pr_id, patch_key, occurrences, account_provider, account_login, login,
+  viewed_at,
   PRIMARY KEY (pr_id, patch_key, account_provider, account_login, login)
 )
 ```
@@ -112,8 +113,13 @@ commits_viewed(
   same `PatchID`. A rebased commit with identical content keeps its key and
   stays viewed; any content change resets it. The ordinal keeps repeated
   identical commits (apply, revert, re-apply) as separate review steps.
-  Reordering identical commits relative to each other can swap their state;
-  this is accepted.
+- Each row also stores `occurrences`: how many commits in the range shared
+  that `PatchID` when it was marked. A commit counts as viewed only when a
+  row exists and its stored `occurrences` equals the current count. So when a
+  rewrite adds, removes, or changes one of several identical commits, all
+  commits with that fingerprint reset to unviewed instead of passing viewed
+  state between them. Commits with a unique fingerprint (count 1 before and
+  after) are unaffected.
 - For merge commits, `patch_key` is `merge:<sha>`. Merges have no shown diff to
   fingerprint, so a recreated merge resets to unviewed.
 - Queries in `internal/store/queries/commits_viewed.sql`: upsert, delete, and
@@ -213,6 +219,8 @@ Each test must fail if the behavior breaks.
     content changes.
   - Two identical commits in one range (apply, revert, re-apply) have
     separate viewed state.
+  - When a rewrite drops one of two identical commits, the remaining one
+    shows as unviewed even if the dropped one was viewed.
 - `internal/store/commitviewed`: upsert, delete, and list round-trip against
   `storetest.Open`.
 - Frontend: utility tests only (no React component tests). Cover the pure
