@@ -274,6 +274,7 @@ export interface CommentsResponse {
 }
 
 export interface CommitDiffResponse {
+    "is_merge": boolean;
     "pr_id": string;
     "sha": string;
     "available": boolean;

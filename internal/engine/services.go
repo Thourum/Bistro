@@ -10,6 +10,7 @@ import (
 	"github.com/itterno/bistro/internal/provider"
 	"github.com/itterno/bistro/internal/scan"
 	"github.com/itterno/bistro/internal/services"
+	"github.com/itterno/bistro/internal/store/commitstats"
 	"github.com/itterno/bistro/internal/store/commitviewed"
 	"github.com/itterno/bistro/internal/store/dismissal"
 	"github.com/itterno/bistro/internal/store/prdiff"
@@ -46,6 +47,10 @@ func (a *App) buildServices(ctx context.Context) *services.Set {
 			},
 			Commit: func(req diff.CommitRangeRequest, sha string) (diff.RangeCommit, error) {
 				return diff.GetRangeCommit(a.repoLocks, req, sha)
+			},
+			Stats: commitstats.New(a.db.DB),
+			ComputeStats: func(req diff.CommitRangeRequest, shas []string) ([]diff.CommitStats, error) {
+				return diff.ComputeCommitStats(a.repoLocks, req, shas)
 			},
 			MergeBase: git.MergeBase,
 			RepoForPR: prRepoLocator{db: a.db, locations: locations}.RepoForPR,

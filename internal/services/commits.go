@@ -11,19 +11,79 @@ import (
 
 	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/logging"
+	"github.com/itterno/bistro/internal/store/commitstats"
 )
 
 // Commits provides local, commit-by-commit PR review and account-scoped viewed marks.
 type Commits struct {
-	Patchsets   interdiffPatchsets
-	Range       func(diff.CommitRangeRequest) (diff.CommitRange, error)
-	Commit      func(diff.CommitRangeRequest, string) (diff.RangeCommit, error)
-	MergeBase   func(repoPath, baseSHA, headSHA string) (string, error)
-	RepoForPR   func(context.Context, string) (string, string, bool, error)
-	Viewed      commitViewedStore
-	CurrentUser currentUserReader
-	Panics      PanicReporter
-	Log         *slog.Logger
+	Patchsets    interdiffPatchsets
+	Range        func(diff.CommitRangeRequest) (diff.CommitRange, error)
+	Commit       func(diff.CommitRangeRequest, string) (diff.RangeCommit, error)
+	MergeBase    func(repoPath, baseSHA, headSHA string) (string, error)
+	RepoForPR    func(context.Context, string) (string, string, bool, error)
+	Viewed       commitViewedStore
+	Stats        commitStatsStore
+	ComputeStats func(diff.CommitRangeRequest, []string) ([]diff.CommitStats, error)
+	CurrentUser  currentUserReader
+	Panics       PanicReporter
+	Log          *slog.Logger
+}
+
+type commitStatsStore interface {
+	List(ctx context.Context, prID string, version int) (map[string]commitstats.Stats, error)
+	Upsert(ctx context.Context, prID string, version int, stats []commitstats.Stats) error
+}
+
+// statsReadError distinguishes cache failures from unavailable local git data.
+type statsReadError struct{ error }
+
+func (e statsReadError) Unwrap() error { return e.error }
+
+type statsRange struct {
+	commits diff.CommitRange
+	stats   map[string]commitstats.Stats // non-merge commits only
+}
+
+// rangeWithStats reads cached stats and computes only missing non-merge
+// commits; a failed cache write is logged because the result is still valid.
+func (s *Commits) rangeWithStats(ctx context.Context, prID string, req diff.CommitRangeRequest) (statsRange, error) {
+	commits, err := s.Range(req)
+	if err != nil {
+		return statsRange{}, err
+	}
+	stats, err := s.Stats.List(ctx, prID, diff.CommitStatsVersion)
+	if err != nil {
+		return statsRange{}, statsReadError{err}
+	}
+	var missing []string
+	for _, c := range commits.Commits {
+		if _, ok := stats[c.SHA]; !ok && !c.IsMerge {
+			missing = append(missing, c.SHA)
+		}
+	}
+	if len(missing) > 0 {
+		computed, err := s.ComputeStats(req, missing)
+		if err != nil {
+			return statsRange{}, err
+		}
+		rows := make([]commitstats.Stats, len(computed))
+		for i, c := range computed {
+			rows[i] = commitstats.Stats{SHA: c.SHA, Additions: c.Additions, Deletions: c.Deletions, FileCount: c.FileCount, PatchID: c.PatchID}
+			stats[c.SHA] = rows[i]
+		}
+		if err := s.Stats.Upsert(ctx, prID, diff.CommitStatsVersion, rows); err != nil {
+			logging.FromContext(ctx).Warn("commits: caching stats failed", "error", err)
+		}
+	}
+	return statsRange{commits: commits, stats: stats}, nil
+}
+
+func (r statsRange) patchIDs() map[string]string {
+	ids := make(map[string]string, len(r.stats))
+	for sha, st := range r.stats {
+		ids[sha] = st.PatchID
+	}
+	return ids
 }
 
 type CommitSummary struct {
@@ -54,6 +114,7 @@ type CommitRequest struct {
 }
 
 type CommitDiffResponse struct {
+	IsMerge   bool       `json:"is_merge"`
 	PRID      string     `json:"pr_id"`
 	SHA       string     `json:"sha"`
 	Available bool       `json:"available"`
@@ -101,8 +162,12 @@ func (s *Commits) List(ctx context.Context, req PRRef) (CommitsResponse, error) 
 			resp.Reason = reason
 			return resp, err
 		}
-		commits, err := s.Range(rangeReq)
+		sr, err := s.rangeWithStats(ctx, prID, rangeReq)
 		if err != nil {
+			var cacheErr statsReadError
+			if errors.As(err, &cacheErr) {
+				return resp, cacheErr.error
+			}
 			resp.Reason, err = rangeFailure(ctx, err)
 			return resp, err
 		}
@@ -116,12 +181,13 @@ func (s *Commits) List(ctx context.Context, req PRRef) (CommitsResponse, error) 
 				return CommitsResponse{}, err
 			}
 		}
-		keys := commitViewKeys(commits.Commits)
-		resp.Available, resp.Truncated = true, commits.Truncated
-		for i, commit := range commits.Commits {
+		keys := commitViewKeys(sr.commits.Commits, sr.patchIDs())
+		resp.Available, resp.Truncated = true, sr.commits.Truncated
+		for i, commit := range sr.commits.Commits {
 			summary := CommitSummary{SHA: commit.SHA, ParentSHAs: commit.ParentSHAs, Subject: commit.Subject, Body: commit.Body, AuthorName: commit.AuthorName, AuthoredAt: commit.AuthoredAt, IsMerge: commit.IsMerge}
-			if commit.Diff != nil {
-				summary.Additions, summary.Deletions, summary.FileCount = commit.Diff.Additions, commit.Diff.Deletions, len(commit.Diff.Files)
+			if !commit.IsMerge {
+				stats := sr.stats[commit.SHA]
+				summary.Additions, summary.Deletions, summary.FileCount = stats.Additions, stats.Deletions, stats.FileCount
 			}
 			occurrences, found := stored[keys[i].Key]
 			summary.Viewed = found && occurrences == keys[i].Occurrences
@@ -155,6 +221,7 @@ func (s *Commits) Get(ctx context.Context, req CommitRequest) (CommitDiffRespons
 			return resp, err
 		}
 		resp.Available = true
+		resp.IsMerge = commit.IsMerge
 		if commit.Diff != nil {
 			resp.Diff, resp.Additions, resp.Deletions = commit.Diff.Unified, commit.Diff.Additions, commit.Diff.Deletions
 			for _, file := range commit.Diff.Files {
@@ -193,8 +260,12 @@ func (s *Commits) SetViewed(ctx context.Context, req SetCommitViewedRequest) (Co
 		if reason != "" {
 			return CommitViewed{}, Errorf(CodeInvalid, "%s", reason)
 		}
-		commits, err := s.Range(rangeReq)
+		sr, err := s.rangeWithStats(ctx, prID, rangeReq)
 		if err != nil {
+			var cacheErr statsReadError
+			if errors.As(err, &cacheErr) {
+				return CommitViewed{}, cacheErr.error
+			}
 			if cerr := contextError(err); cerr != nil {
 				return CommitViewed{}, cerr
 			}
@@ -205,11 +276,12 @@ func (s *Commits) SetViewed(ctx context.Context, req SetCommitViewedRequest) (Co
 			logging.FromContext(ctx).Warn("commits: range failed", "error", err)
 			return CommitViewed{}, Errorf(CodeInternal, "could not list commits")
 		}
-		for i, commit := range commits.Commits {
+		keys := commitViewKeys(sr.commits.Commits, sr.patchIDs())
+		for i, commit := range sr.commits.Commits {
 			if commit.SHA != sha {
 				continue
 			}
-			key := commitViewKeys(commits.Commits)[i]
+			key := keys[i]
 			if req.Viewed {
 				err = s.Viewed.Mark(ctx, prID, login, key.Key, key.Occurrences)
 			} else {

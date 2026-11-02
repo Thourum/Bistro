@@ -11,6 +11,7 @@ import (
 
 	"github.com/itterno/bistro/internal/git/diff"
 	"github.com/itterno/bistro/internal/store"
+	"github.com/itterno/bistro/internal/store/commitstats"
 	"github.com/itterno/bistro/internal/store/commitviewed"
 	"github.com/itterno/bistro/internal/store/storetest"
 )
@@ -41,7 +42,12 @@ func newCommitsTestService(t *testing.T) *Commits {
 		},
 		CurrentUser: &mockCurrentUserReader{login: "me", found: true},
 		Viewed:      commitviewed.New(db),
-		Log:         testRepoLogger(),
+		Stats:       commitstats.New(db),
+		ComputeStats: func(diff.CommitRangeRequest, []string) ([]diff.CommitStats, error) {
+			t.Fatal("unexpected stats computation")
+			return nil, nil
+		},
+		Log: testRepoLogger(),
 	}
 }
 
@@ -79,22 +85,20 @@ func TestCommitsList_NoLocalCopy_Unavailable(t *testing.T) {
 func TestCommitsViewed_SurvivesRebaseWithIdenticalContent(t *testing.T) {
 	s := newCommitsTestService(t)
 	sha1, sha2, sha3 := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40)
-	commits := []diff.RangeCommit{{SHA: sha1, Diff: &diff.CommitDiff{PatchID: "p"}}}
-	s.Range = func(req diff.CommitRangeRequest) (diff.CommitRange, error) {
-		if !req.WithDiffs {
-			t.Fatal("viewed keys require WithDiffs")
-		}
+	commits := []diff.RangeCommit{{SHA: sha1}}
+	s.ComputeStats = fakeCommitStats(map[string]string{sha1: "p", sha2: "p", sha3: "q"})
+	s.Range = func(diff.CommitRangeRequest) (diff.CommitRange, error) {
 		return diff.CommitRange{Commits: commits}, nil
 	}
 	marked, err := s.SetViewed(context.Background(), SetCommitViewedRequest{PRID: commitsTestPRID, SHA: sha1, Viewed: true})
 	if err != nil || !marked.Viewed || marked.SHA != sha1 {
 		t.Fatalf("SetViewed = %+v, %v", marked, err)
 	}
-	commits[0] = diff.RangeCommit{SHA: sha2, Diff: &diff.CommitDiff{PatchID: "p"}}
+	commits[0] = diff.RangeCommit{SHA: sha2}
 	assertCommitViewed(t, s, []bool{true})
-	commits[0] = diff.RangeCommit{SHA: sha3, Diff: &diff.CommitDiff{PatchID: "q"}}
+	commits[0] = diff.RangeCommit{SHA: sha3}
 	assertCommitViewed(t, s, []bool{false})
-	commits[0] = diff.RangeCommit{SHA: sha2, Diff: &diff.CommitDiff{PatchID: "p"}}
+	commits[0] = diff.RangeCommit{SHA: sha2}
 	if _, err := s.SetViewed(context.Background(), SetCommitViewedRequest{PRID: commitsTestPRID, SHA: sha2, Viewed: false}); err != nil {
 		t.Fatal(err)
 	}
@@ -104,10 +108,8 @@ func TestCommitsViewed_SurvivesRebaseWithIdenticalContent(t *testing.T) {
 func TestCommitsViewed_DuplicatesStaySeparateAndResetOnRewrite(t *testing.T) {
 	s := newCommitsTestService(t)
 	sha1, sha2, rewritten := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40)
-	commits := []diff.RangeCommit{
-		{SHA: sha1, Diff: &diff.CommitDiff{PatchID: "p"}},
-		{SHA: sha2, Diff: &diff.CommitDiff{PatchID: "p"}},
-	}
+	commits := []diff.RangeCommit{{SHA: sha1}, {SHA: sha2}}
+	s.ComputeStats = fakeCommitStats(map[string]string{sha1: "p", sha2: "p", rewritten: "p"})
 	s.Range = func(diff.CommitRangeRequest) (diff.CommitRange, error) {
 		return diff.CommitRange{Commits: commits}, nil
 	}
@@ -115,7 +117,7 @@ func TestCommitsViewed_DuplicatesStaySeparateAndResetOnRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCommitViewed(t, s, []bool{true, false})
-	commits = []diff.RangeCommit{{SHA: rewritten, Diff: &diff.CommitDiff{PatchID: "p"}}}
+	commits = []diff.RangeCommit{{SHA: rewritten}}
 	assertCommitViewed(t, s, []bool{false})
 }
 

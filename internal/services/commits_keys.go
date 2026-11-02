@@ -12,23 +12,23 @@ type commitViewKey struct {
 	Occurrences int
 }
 
-// commitViewKeys returns keys aligned with commits. Missing diffs must be merges:
-// callers request WithDiffs so ordinary commits always have a fingerprint.
-func commitViewKeys(commits []diff.RangeCommit) []commitViewKey {
+// commitViewKeys returns keys aligned with commits; non-merge fingerprints
+// come from patchIDs (cached or freshly computed stats).
+func commitViewKeys(commits []diff.RangeCommit, patchIDs map[string]string) []commitViewKey {
 	totals := map[string]int{}
 	for _, commit := range commits {
-		if commit.Diff != nil {
-			totals[commit.Diff.PatchID]++
+		if !commit.IsMerge {
+			totals[patchIDs[commit.SHA]]++
 		}
 	}
 	seen := map[string]int{}
 	keys := make([]commitViewKey, len(commits))
 	for i, commit := range commits {
-		if commit.Diff == nil {
+		if commit.IsMerge {
 			keys[i] = commitViewKey{Key: "merge:" + commit.SHA, Occurrences: 1}
 			continue
 		}
-		id := commit.Diff.PatchID
+		id := patchIDs[commit.SHA]
 		keys[i] = commitViewKey{Key: fmt.Sprintf("%s:%d", id, seen[id]), Occurrences: totals[id]}
 		seen[id]++
 	}
