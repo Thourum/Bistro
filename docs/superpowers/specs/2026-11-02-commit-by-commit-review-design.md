@@ -14,8 +14,9 @@ order is often faster than reading the squashed result.
 In scope:
 
 - A commit list for a PR and a read-only diff for each commit.
-- Local, per-user "viewed" state per commit that survives rebases when the
-  commit's content is unchanged.
+- Local, per-user "viewed" state per commit. For non-merge commits it
+  survives rebases when the commit's content is unchanged; merge commits are
+  tracked by SHA and reset when recreated.
 - Keyboard navigation for both views.
 
 Out of scope (v1):
@@ -52,8 +53,13 @@ Behavior:
   branch (e.g. "Merge main into feature") are excluded because they are
   ancestors of the merge-base.
 - Order: topological, oldest first (parents before children).
-- Cap: at most 250 commits (matching GitHub's PR commits limit). When more
-  exist, return the oldest 250 and set `Truncated`.
+- Cap: at most 250 commits. When more exist, return the oldest 250 and set
+  `Truncated`. Rationale: `List` diffs every commit on each request (stats
+  and viewed keys need the patch), so the cap bounds that latency without a
+  cache. A PR with more than 250 commits is outside what step-by-step review
+  serves well; for those, the combined diff stays the full review path, and
+  the truncation notice links there. Raising the cap or paging is a follow-up
+  if real PRs hit it.
 - Per commit: SHA, parent SHAs, subject (first message line), body (rest of
   the message, trimmed), author name, authored-at time, `IsMerge` (more than
   one parent).
@@ -101,9 +107,15 @@ commits_viewed(
 )
 ```
 
-- `patch_key` is the commit's `PatchID` for non-merge commits, so a rebased
-  commit with identical content stays viewed and any content change resets it.
-  For merge commits it is `merge:<sha>`.
+- For non-merge commits, `patch_key` is `<PatchID>:<n>`, where `n` is the
+  zero-based count of earlier commits in the range (oldest first) with the
+  same `PatchID`. A rebased commit with identical content keeps its key and
+  stays viewed; any content change resets it. The ordinal keeps repeated
+  identical commits (apply, revert, re-apply) as separate review steps.
+  Reordering identical commits relative to each other can swap their state;
+  this is accepted.
+- For merge commits, `patch_key` is `merge:<sha>`. Merges have no shown diff to
+  fingerprint, so a recreated merge resets to unviewed.
 - Queries in `internal/store/queries/commits_viewed.sql`: upsert, delete, and
   list keys for (pr, account, login). Generated with sqlc.
 - The store is an independent subpackage like `store/prdiff`; it may import
@@ -124,8 +136,9 @@ commits_viewed(
 
 - One row per commit, oldest first: short SHA, subject, author, relative
   date, +/- and file count, a viewed square, and a `merge` tag on merges.
-- Header: "N of M viewed". When `truncated`, a notice: "showing first 250
-  commits".
+- Header: "N of M viewed". When `truncated`, a notice: "showing the first
+  250 commits; review the rest in the combined diff", linking to
+  `/prs/$prId/diff`.
 - When `available` is false, show the reason, styled like `InterdiffPane`'s
   messages.
 - j / k / Enter as on the PR list.
@@ -136,8 +149,10 @@ commits_viewed(
   ("commit 3/7"), and viewed state.
 - Body: a read-only `DiffView` with `syncFileSelection={false}`: no threads,
   drafts, line comments, interdiff, or since-last-review.
-- Merge commit: "Merge commit. Its changes come from the merged branch;
-  review them in their own commits." It can still be marked viewed.
+- Merge commit: "Merge commit — its diff is not shown. Edits made while
+  resolving conflicts live only in the merge, so they appear in the combined
+  diff but in none of the listed commits. Review them there." with a link to
+  `/prs/$prId/diff`. It can still be marked viewed.
 - If the SHA is no longer in the PR's range (the head moved), the page shows
   "this commit is no longer part of the PR" with a link to the list.
 
@@ -196,6 +211,8 @@ Each test must fail if the behavior breaks.
   - No local copy returns `available: false`.
   - Viewed survives a rebase with identical content and resets when the
     content changes.
+  - Two identical commits in one range (apply, revert, re-apply) have
+    separate viewed state.
 - `internal/store/commitviewed`: upsert, delete, and list round-trip against
   `storetest.Open`.
 - Frontend: utility tests only (no React component tests). Cover the pure
