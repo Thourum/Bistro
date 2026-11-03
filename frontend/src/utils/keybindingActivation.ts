@@ -195,6 +195,8 @@ export function continuesSequence(
 
 /** Derive the route used for binding activation from the current pathname. */
 export function routeBaseFromPath(pathname: string): RouteBase | null {
+  if (/^\/prs\/[^/]+\/commits$/.test(pathname)) return 'commits';
+  if (/^\/prs\/[^/]+\/commits\/[^/]+$/.test(pathname)) return 'commit';
   if (/^\/prs\/[^/]+\/diff$/.test(pathname)) return 'diff';
   if (/^\/prs\/[^/]+$/.test(pathname)) return 'detail';
   if (pathname === '/prs' || pathname === '/prs/') return 'list';

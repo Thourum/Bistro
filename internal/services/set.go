@@ -16,6 +16,7 @@ type Set struct {
 	Patchsets      *Patchsets
 	Triage         *Triage
 	Interdiff      *Interdiff
+	Commits        *Commits
 	Viewed         *Viewed
 	ReadState      *ReadState
 	Auth           *Auth

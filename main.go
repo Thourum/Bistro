@@ -235,6 +235,7 @@ func registerServices(app *application.App, set *services.Set) {
 	app.RegisterService(application.NewService(set.Patchsets))
 	app.RegisterService(application.NewService(set.Triage))
 	app.RegisterService(application.NewService(set.Interdiff))
+	app.RegisterService(application.NewService(set.Commits))
 	app.RegisterService(application.NewService(set.Viewed))
 	app.RegisterService(application.NewService(set.ReadState))
 	app.RegisterService(application.NewService(set.Auth))

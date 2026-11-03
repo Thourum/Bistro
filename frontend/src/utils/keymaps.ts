@@ -74,6 +74,15 @@ const SHARED_KEYS: KeyTable = {
 };
 
 const VIM_KEYS: KeyTable = {
+  'detail.commits': ['g', 'c'],
+  'diff.commits': ['g', 'c'],
+  'commits.down': 'j',
+  'commits.up': 'k',
+  'commits.open': 'Enter',
+  'commit.next': ']',
+  'commit.prev': '[',
+  'commit.toggleViewed': 'v',
+  'commit.viewedAndNext': 'Shift+V',
   ...SHARED_KEYS,
   ...jumpKeys(String),
   ...laneKeys((lane) => ['g', String(lane)]),
@@ -147,6 +156,15 @@ const VIM_KEYS: KeyTable = {
 };
 
 const EMACS_KEYS: KeyTable = {
+  'detail.commits': ['Control+C', 'Control+G'],
+  'diff.commits': ['Control+C', 'Control+G'],
+  'commits.down': 'Control+N',
+  'commits.up': 'Control+P',
+  'commits.open': 'Enter',
+  'commit.next': 'Alt+]',
+  'commit.prev': 'Alt+[',
+  'commit.toggleViewed': ['Control+C', 'Control+V'],
+  'commit.viewedAndNext': ['Control+C', 'Shift+V'],
   ...SHARED_KEYS,
   ...jumpKeys((digit) => `Alt+${digit}`),
   ...laneKeys((lane) => ['Control+C', String(lane)]),
@@ -224,6 +242,15 @@ const EMACS_KEYS: KeyTable = {
 
 /** Arrows/Home/End/PgUp/PgDn/Ctrl+Tab move; actions keep vim's plain letters. */
 const STANDARD_KEYS: KeyTable = {
+  'detail.commits': ['g', 'c'],
+  'diff.commits': ['g', 'c'],
+  'commits.down': 'ArrowDown',
+  'commits.up': 'ArrowUp',
+  'commits.open': 'Enter',
+  'commit.next': 'Alt+]',
+  'commit.prev': 'Alt+[',
+  'commit.toggleViewed': 'v',
+  'commit.viewedAndNext': 'Shift+V',
   ...SHARED_KEYS,
   'onboarding.repoDown': 'ArrowDown',
   'onboarding.repoUp': 'ArrowUp',

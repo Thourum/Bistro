@@ -16,6 +16,7 @@ import { usePRList } from '../hooks/usePRList';
 import { useReviewDrafts } from '../hooks/useReviewDrafts';
 import { useStore } from '../hooks/useStore';
 import { useOverlays } from '../overlays/OverlayContext';
+import { loadCommits } from '../services/commits';
 import {
   clearActionResult,
   postComment,
@@ -120,6 +121,16 @@ export function PRDetailPage() {
     // Read state is local-only and silently drops when the WebSocket is down.
     void markPRsRead([prId]);
   }, [prId]);
+
+  // Warm the commit list so `g c` opens instantly: this fills the engine's
+  // stats cache for commits sync hasn't reached and the renderer's list
+  // cache. Waits for hydration so it never competes with the clone for the
+  // repo lock. A failure is not reported here; the commits page reloads the
+  // list and shows its own error.
+  useEffect(() => {
+    if (detailPrId === undefined || isHydrating) return;
+    void loadCommits(detailPrId);
+  }, [detailPrId, isHydrating]);
 
   const { files, comments, ciChecks, stats } = usePRDetailData(
     pr,
