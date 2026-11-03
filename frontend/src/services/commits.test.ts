@@ -23,6 +23,7 @@ afterEach(() => {
 
 const COMMIT_LIST: CommitsResult = {
   pr_id: 'pr',
+  viewer_login: initialState.viewerLogin,
   available: true,
   reason: '',
   truncated: false,
@@ -66,16 +67,17 @@ it('isolates list requests and late completions by the starting account', async 
   vi.mocked(Commits.List).mockReturnValueOnce(cancellable(pending.promise));
   const first = services.loadCommits('pr');
   appStore.setState((state) => ({ ...state, viewerLogin: 'b' }));
-  const otherAccount = { ...COMMIT_LIST, truncated: true };
+  const firstAccount = { ...COMMIT_LIST, viewer_login: 'a' };
+  const otherAccount = { ...COMMIT_LIST, viewer_login: 'b', truncated: true };
   vi.mocked(Commits.List).mockReturnValueOnce(
     cancellable(Promise.resolve(otherAccount)),
   );
   expect(await services.loadCommits('pr').unwrapOr(null)).toBe(otherAccount);
-  pending.resolve(COMMIT_LIST);
+  pending.resolve(firstAccount);
   await first;
   expect(services.cachedCommitList('pr')).toBe(otherAccount);
   appStore.setState((state) => ({ ...state, viewerLogin: 'a' }));
-  expect(services.cachedCommitList('pr')).toBe(COMMIT_LIST);
+  expect(services.cachedCommitList('pr')).toBe(firstAccount);
   expect(Commits.List).toHaveBeenCalledTimes(2);
 });
 
@@ -85,13 +87,14 @@ it('does not populate the current account cache from a previous account completi
   vi.mocked(Commits.List).mockReturnValueOnce(cancellable(pending.promise));
   const request = services.loadCommits('pr');
   appStore.setState((state) => ({ ...state, viewerLogin: 'b' }));
-  pending.resolve(COMMIT_LIST);
+  const firstAccount = { ...COMMIT_LIST, viewer_login: 'a' };
+  pending.resolve(firstAccount);
   await request;
   expect(services.cachedCommitList('pr')).toBeUndefined();
-  services.cacheCommitList('a', 'pr', COMMIT_LIST);
+  services.cacheCommitList('a', 'pr', firstAccount);
   expect(services.cachedCommitList('pr')).toBeUndefined();
   appStore.setState((state) => ({ ...state, viewerLogin: 'a' }));
-  expect(services.cachedCommitList('pr')).toBe(COMMIT_LIST);
+  expect(services.cachedCommitList('pr')).toBe(firstAccount);
 });
 
 it('evicts unavailable lists and retries failed requests', async () => {
@@ -205,4 +208,30 @@ it('settles a late viewed write on the latest cache without replacing other chan
     { ...first, subject: 'new subject', viewed: true },
     added,
   ]);
+});
+
+it('drops a list whose viewed marks belong to a different account', async () => {
+  appStore.setState((state) => ({ ...state, viewerLogin: 'starting-account' }));
+  const wrongAccount = { ...COMMIT_LIST, viewer_login: 'other-account' };
+  vi.mocked(Commits.List).mockReturnValueOnce(
+    cancellable(Promise.resolve(wrongAccount)),
+  );
+  await services.loadCommits('pr');
+  expect(services.cachedCommitList('pr')).toBeUndefined();
+});
+
+it('evicts the least recently used kept list on the twenty-first PR', () => {
+  const cacheLimit = 20;
+  for (let index = 0; index < cacheLimit; index++) {
+    services.cacheCommitList(
+      initialState.viewerLogin,
+      `pr-${index}`,
+      COMMIT_LIST,
+    );
+  }
+  expect(services.cachedCommitList('pr-0')).toBe(COMMIT_LIST);
+  services.cacheCommitList(initialState.viewerLogin, 'pr-20', COMMIT_LIST);
+  expect(services.cachedCommitList('pr-1')).toBeUndefined();
+  expect(services.cachedCommitList('pr-0')).toBe(COMMIT_LIST);
+  expect(services.cachedCommitList('pr-20')).toBe(COMMIT_LIST);
 });

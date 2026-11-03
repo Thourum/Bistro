@@ -1,6 +1,7 @@
 package diff
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"time"
@@ -30,7 +31,10 @@ func statsOf(sha string, d CommitDiff) CommitStats {
 }
 
 // ComputeCommitStats diffs the given non-merge commits under the repo lock.
-func ComputeCommitStats(locks *repolock.Locks, req CommitRangeRequest, shas []string) ([]CommitStats, error) {
+func ComputeCommitStats(ctx context.Context, locks *repolock.Locks, req CommitRangeRequest, shas []string) ([]CommitStats, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	out := make([]CommitStats, 0, len(shas))
 	started := time.Now()
 	defer func() {
@@ -38,15 +42,24 @@ func ComputeCommitStats(locks *repolock.Locks, req CommitRangeRequest, shas []st
 			"computed", len(out), "duration_ms", time.Since(started).Milliseconds())
 	}()
 	err := locks.WithRepo(repolock.Key(req.RepoURL), func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		repo, closeRepo, err := openRangeRepo(req.RepoPath)
 		if err != nil {
 			return err
 		}
 		defer closeRepo()
 		for _, sha := range shas {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			c, err := repo.CommitObject(plumbing.NewHash(sha))
 			if err != nil {
 				return fmt.Errorf("load commit %s: %w", sha, err)
+			}
+			if err := ctx.Err(); err != nil {
+				return err
 			}
 			d, err := commitDiff(c)
 			if err != nil {
@@ -61,22 +74,31 @@ func ComputeCommitStats(locks *repolock.Locks, req CommitRangeRequest, shas []st
 
 // CollectRangeStats is for callers that already hold the repo lock (sync's
 // WithPRClone callback); it must not take the lock itself.
-func CollectRangeStats(repoPath, headSHA, mergeBaseSHA string, cached map[string]CommitStats) ([]CommitStats, error) {
+func CollectRangeStats(ctx context.Context, repoPath, headSHA, mergeBaseSHA string, cached map[string]CommitStats) ([]CommitStats, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	repo, closeRepo, err := openRangeRepo(repoPath)
 	if err != nil {
 		return nil, err
 	}
 	defer closeRepo()
-	return collectRangeStats(repo, headSHA, mergeBaseSHA, cached)
+	return collectRangeStats(ctx, repo, headSHA, mergeBaseSHA, cached)
 }
 
-func collectRangeStats(repo *gitlib.Repository, headSHA, mergeBaseSHA string, cached map[string]CommitStats) ([]CommitStats, error) {
+func collectRangeStats(ctx context.Context, repo *gitlib.Repository, headSHA, mergeBaseSHA string, cached map[string]CommitStats) ([]CommitStats, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	commits, _, err := cappedRange(repo, headSHA, mergeBaseSHA)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]CommitStats, 0, len(commits))
 	for _, c := range commits {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if len(c.ParentHashes) > 1 {
 			continue
 		}

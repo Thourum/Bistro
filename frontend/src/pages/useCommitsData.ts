@@ -14,6 +14,7 @@ import {
   setCommitList,
   setCommitViewed,
   settleCommitViewed,
+  subscribeCommitList,
 } from '../services/commits';
 import { appStore } from '../store';
 import type { CommitsResult, CommitViewedAck } from '../types';
@@ -57,8 +58,16 @@ export function useCommitsData(
     setLoading(cached === null);
     setError(null);
     clearCommitList();
+    const unsubscribe = subscribeCommitList(login, prId, (payload) => {
+      if (!scope.active || scopeRef.current !== scope) return;
+      resultRef.current = payload;
+      setResult(payload);
+      setLoading(false);
+      setError(null);
+    });
     return () => {
       scope.active = false;
+      unsubscribe();
     };
   }, [prId, login]);
 
@@ -81,6 +90,10 @@ export function useCommitsData(
     void loadCommits(prId).match(
       (payload) => {
         if (!active || !scope.active || scopeRef.current !== scope) return;
+        if (payload.viewer_login !== login) {
+          setLoading(false);
+          return;
+        }
         resultRef.current = payload;
         setResult(payload);
         setLoading(false);
@@ -112,29 +125,15 @@ export function useCommitsData(
         return null;
       pendingRef.current.add(sha);
       const generation = beginCommitViewed(scope.login, prId, { sha, viewed });
-      const applyViewed = (value: boolean): void => {
-        const current = resultRef.current;
-        if (current === null) return;
-        const next = {
-          ...current,
-          commits: (current.commits ?? []).map((entry) =>
-            entry.sha === sha ? { ...entry, viewed: value } : entry,
-          ),
-        };
-        resultRef.current = next;
-        setResult(next);
-      };
-      applyViewed(viewed);
       const ack = await setCommitViewed(prId, sha, viewed);
       const settledViewed = ack?.viewed ?? commit.viewed;
-      const applied = settleCommitViewed(scope.login, prId, {
+      settleCommitViewed(scope.login, prId, {
         sha,
         viewed: settledViewed,
         generation,
       });
       if (!scope.active || scopeRef.current !== scope) return null;
       pendingRef.current.delete(sha);
-      if (applied) applyViewed(settledViewed);
       return ack;
     },
     [prId, login],

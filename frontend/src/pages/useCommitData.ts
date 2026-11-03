@@ -138,11 +138,13 @@ export function useCommitData(prId: string, sha: string): CommitData {
     loading: diffState.loading,
     error: diffState.diff !== null ? null : (diffState.error ?? commits.error),
     unavailableReason:
-      commits.result?.available === false
-        ? commits.result.reason
+      diffState.diff?.available === true
+        ? null
         : diffState.diff?.available === false
           ? diffState.diff.reason
-          : null,
+          : commits.result?.available === false
+            ? commits.result.reason
+            : null,
     toggleViewed,
   };
 }

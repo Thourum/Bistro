@@ -23,7 +23,7 @@ type Commits struct {
 	RepoForPR    func(context.Context, string) (string, string, bool, error)
 	Viewed       commitViewedStore
 	Stats        commitStatsStore
-	ComputeStats func(diff.CommitRangeRequest, []string) ([]diff.CommitStats, error)
+	ComputeStats func(context.Context, diff.CommitRangeRequest, []string) ([]diff.CommitStats, error)
 	CurrentUser  currentUserReader
 	Panics       PanicReporter
 	Log          *slog.Logger
@@ -62,7 +62,7 @@ func (s *Commits) rangeWithStats(ctx context.Context, prID string, req diff.Comm
 		}
 	}
 	if len(missing) > 0 {
-		computed, err := s.ComputeStats(req, missing)
+		computed, err := s.ComputeStats(ctx, req, missing)
 		if err != nil {
 			return statsRange{}, err
 		}
@@ -101,11 +101,12 @@ type CommitSummary struct {
 }
 
 type CommitsResponse struct {
-	PRID      string          `json:"pr_id"`
-	Available bool            `json:"available"`
-	Reason    string          `json:"reason"`
-	Truncated bool            `json:"truncated"`
-	Commits   []CommitSummary `json:"commits"`
+	ViewerLogin string          `json:"viewer_login"`
+	PRID        string          `json:"pr_id"`
+	Available   bool            `json:"available"`
+	Reason      string          `json:"reason"`
+	Truncated   bool            `json:"truncated"`
+	Commits     []CommitSummary `json:"commits"`
 }
 
 type CommitRequest struct {
@@ -156,7 +157,11 @@ func (s *Commits) List(ctx context.Context, req PRRef) (CommitsResponse, error) 
 		if prID == "" {
 			return CommitsResponse{}, Errorf(CodeInvalid, "pr_id is required")
 		}
-		resp := CommitsResponse{PRID: prID, Commits: []CommitSummary{}}
+		login, err := s.login(ctx)
+		if err != nil {
+			return CommitsResponse{}, err
+		}
+		resp := CommitsResponse{PRID: prID, ViewerLogin: login, Commits: []CommitSummary{}}
 		rangeReq, reason, err := s.rangeRequest(ctx, prID)
 		if err != nil || reason != "" {
 			resp.Reason = reason
@@ -170,10 +175,6 @@ func (s *Commits) List(ctx context.Context, req PRRef) (CommitsResponse, error) 
 			}
 			resp.Reason, err = rangeFailure(ctx, err)
 			return resp, err
-		}
-		login, err := s.login(ctx)
-		if err != nil {
-			return CommitsResponse{}, err
 		}
 		stored := map[string]int{}
 		if login != "" {

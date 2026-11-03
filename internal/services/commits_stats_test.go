@@ -11,8 +11,8 @@ import (
 	"github.com/itterno/bistro/internal/store/commitstats"
 )
 
-func fakeCommitStats(patchIDs map[string]string) func(diff.CommitRangeRequest, []string) ([]diff.CommitStats, error) {
-	return func(_ diff.CommitRangeRequest, shas []string) ([]diff.CommitStats, error) {
+func fakeCommitStats(patchIDs map[string]string) func(context.Context, diff.CommitRangeRequest, []string) ([]diff.CommitStats, error) {
+	return func(_ context.Context, _ diff.CommitRangeRequest, shas []string) ([]diff.CommitStats, error) {
 		stats := make([]diff.CommitStats, len(shas))
 		for i, sha := range shas {
 			stats[i] = diff.CommitStats{SHA: sha, PatchID: patchIDs[sha]}
@@ -55,7 +55,7 @@ func TestCommitsList_PartialCacheComputesOnlyMissingAndStores(t *testing.T) {
 		return diff.CommitRange{Commits: []diff.RangeCommit{{SHA: sha1}, {SHA: sha2}}}, nil
 	}
 	calls := 0
-	s.ComputeStats = func(req diff.CommitRangeRequest, shas []string) ([]diff.CommitStats, error) {
+	s.ComputeStats = func(_ context.Context, req diff.CommitRangeRequest, shas []string) ([]diff.CommitStats, error) {
 		calls++
 		if !reflect.DeepEqual(shas, []string{sha2}) || req.HeadSHA != "head" || req.MergeBaseSHA != "merge-base" {
 			t.Fatalf("ComputeStats = %+v, %v", req, shas)
@@ -92,7 +92,7 @@ func TestCommitsList_MergeNeverComputed(t *testing.T) {
 	s.Range = func(diff.CommitRangeRequest) (diff.CommitRange, error) {
 		return diff.CommitRange{Commits: []diff.RangeCommit{{SHA: sha}, {SHA: mergeSHA, IsMerge: true}}}, nil
 	}
-	s.ComputeStats = func(_ diff.CommitRangeRequest, shas []string) ([]diff.CommitStats, error) {
+	s.ComputeStats = func(_ context.Context, _ diff.CommitRangeRequest, shas []string) ([]diff.CommitStats, error) {
 		if !reflect.DeepEqual(shas, []string{sha}) {
 			t.Fatalf("ComputeStats SHAs = %v, want only non-merge", shas)
 		}
@@ -153,7 +153,9 @@ func TestCommits_ComputeFailureUsesGitErrorMapping(t *testing.T) {
 			s.Range = func(diff.CommitRangeRequest) (diff.CommitRange, error) {
 				return diff.CommitRange{Commits: []diff.RangeCommit{{SHA: sha}}}, nil
 			}
-			s.ComputeStats = func(diff.CommitRangeRequest, []string) ([]diff.CommitStats, error) { return nil, test.failure }
+			s.ComputeStats = func(context.Context, diff.CommitRangeRequest, []string) ([]diff.CommitStats, error) {
+				return nil, test.failure
+			}
 			resp, err := s.List(context.Background(), PRRef{PRID: commitsTestPRID})
 			if expectedReason, expectedErr := rangeFailure(context.Background(), test.failure); expectedErr != nil {
 				assertCommitError(t, err, test.code, "")
@@ -193,7 +195,7 @@ func TestCommits_CacheWriteFailurePreservesStatsAndViewedKey(t *testing.T) {
 		return diff.CommitRange{Commits: []diff.RangeCommit{{SHA: sha}}}, nil
 	}
 	s.Stats = failingCommitStatsStore{commitStatsStore: s.Stats, upsertErr: errors.New("cache write failed")}
-	s.ComputeStats = func(diff.CommitRangeRequest, []string) ([]diff.CommitStats, error) {
+	s.ComputeStats = func(context.Context, diff.CommitRangeRequest, []string) ([]diff.CommitStats, error) {
 		return []diff.CommitStats{{SHA: sha, Additions: 1, FileCount: 1, PatchID: "p"}}, nil
 	}
 	ctx := context.Background()

@@ -27,6 +27,7 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
 const initialState = appStore.state;
 const COMMIT_LIST: CommitsResult = {
   pr_id: 'pr-1',
+  viewer_login: initialState.viewerLogin,
   available: true,
   reason: '',
   truncated: false,
@@ -367,7 +368,11 @@ it('preserves pending optimistic viewed marks during list revalidation', async (
 it('resets on account changes and keeps late viewed rollback in its original cache', async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   appStore.setState((state) => ({ ...state, viewerLogin: 'old-account' }));
-  List.mockImplementationOnce(() => cancellable(Promise.resolve(COMMIT_LIST)));
+  List.mockImplementationOnce(() =>
+    cancellable(
+      Promise.resolve({ ...COMMIT_LIST, viewer_login: 'old-account' }),
+    ),
+  );
   const viewed = deferred<unknown>();
   SetViewed.mockImplementationOnce(() => cancellable(viewed.promise));
   const newList = deferred<CommitsResult>();
@@ -389,7 +394,9 @@ it('resets on account changes and keeps late viewed rollback in its original cac
   expect(seen.at(-1)?.result).toBeNull();
   await act(async () => viewed.reject(new Error('offline')));
   expect(seen.at(-1)?.result).toBeNull();
-  await act(async () => newList.resolve(COMMIT_LIST));
+  await act(async () =>
+    newList.resolve({ ...COMMIT_LIST, viewer_login: 'new-account' }),
+  );
   expect(seen.at(-1)?.result?.commits?.[0]?.viewed).toBe(false);
   expect(cachedCommitList('account-pr')?.commits?.[0]?.viewed).toBe(false);
   await act(async () => root.unmount());
@@ -398,26 +405,41 @@ it('resets on account changes and keeps late viewed rollback in its original cac
   await act(async () => root.unmount());
 });
 
-it('keeps a successfully loaded diff when background list loading fails', async () => {
-  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  Get.mockImplementationOnce(() =>
-    cancellable(Promise.resolve({ diff: 'patch' })),
-  );
-  const list = deferred<CommitsResult>();
-  List.mockImplementationOnce(() => cancellable(list.promise));
-  const root = createRoot(document.createElement('div'));
-  const seen: ReturnType<typeof useCommitData>[] = [];
-  await act(async () =>
-    root.render(<CommitProbe sha="first" onData={(data) => seen.push(data)} />),
-  );
-  await act(async () => list.reject(new Error('offline')));
-  expect(seen.at(-1)).toMatchObject({
-    diff: { diff: 'patch' },
-    error: null,
-    loading: false,
-  });
-  await act(async () => root.unmount());
-});
+it.each(['rejected', 'unavailable'] as const)(
+  'keeps a loaded diff when the background list is %s',
+  async (failure) => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    Get.mockImplementationOnce(() =>
+      cancellable(Promise.resolve({ diff: 'patch', available: true })),
+    );
+    const list = deferred<CommitsResult>();
+    List.mockImplementationOnce(() => cancellable(list.promise));
+    const root = createRoot(document.createElement('div'));
+    const seen: ReturnType<typeof useCommitData>[] = [];
+    await act(async () =>
+      root.render(
+        <CommitProbe sha="first" onData={(data) => seen.push(data)} />,
+      ),
+    );
+    await act(async () => {
+      if (failure === 'rejected') list.reject(new Error('offline'));
+      else
+        list.resolve({
+          ...COMMIT_LIST,
+          available: false,
+          reason: 'missing clone',
+          commits: [],
+        });
+    });
+    expect(seen.at(-1)).toMatchObject({
+      diff: { diff: 'patch' },
+      unavailableReason: null,
+      error: null,
+      loading: false,
+    });
+    await act(async () => root.unmount());
+  },
+);
 
 it('preserves an acknowledged viewed write newer than an in-flight list', async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });

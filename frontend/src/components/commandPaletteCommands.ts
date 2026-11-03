@@ -122,7 +122,7 @@ export const COMMANDS: readonly CommandItem[] = [
   },
   {
     id: 'commits',
-    name: 'Review commits one time',
+    name: 'Review commits one at a time',
     icon: 'commit',
     actionId: 'detail.commits',
     prOnly: true,

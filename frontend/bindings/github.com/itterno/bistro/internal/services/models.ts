@@ -311,6 +311,7 @@ export interface CommitViewed {
 }
 
 export interface CommitsResponse {
+    "viewer_login": string;
     "pr_id": string;
     "available": boolean;
     "reason": string;

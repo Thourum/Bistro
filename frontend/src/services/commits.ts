@@ -11,7 +11,11 @@ import { call, callWrite, faultReason } from './engine/call';
 import { addToast } from './toasts';
 
 const log = createLogger('commits');
+const MAX_KEPT_LISTS = 20;
 const listCache = new Map<string, CommitsResult>();
+const listListeners = new Map<string, Set<(result: CommitsResult) => void>>();
+// Generations must remain unique after settled mutation records are removed.
+const mutationSequence = { generation: 0 };
 const listInFlight = new Map<string, ResultAsync<CommitsResult, Fault>>();
 const diffInFlight = new Map<string, ResultAsync<CommitDiffResult, Fault>>();
 interface ViewedMutation {
@@ -30,10 +34,11 @@ function shareRequest<T>(
   if (existing !== undefined) return existing;
   const request = start();
   inFlight.set(key, request);
-  void request.match(
-    () => inFlight.delete(key),
-    () => inFlight.delete(key),
-  );
+  const release = (): void => {
+    inFlight.delete(key);
+    pruneSettledMutations(key);
+  };
+  void request.match(release, release);
   return request;
 }
 
@@ -42,7 +47,13 @@ function listKey(login: string, prId: string): string {
 }
 
 export function cachedCommitList(prId: string): CommitsResult | undefined {
-  return listCache.get(listKey(appStore.state.viewerLogin, prId));
+  const key = listKey(appStore.state.viewerLogin, prId);
+  const result = listCache.get(key);
+  if (result !== undefined) {
+    listCache.delete(key);
+    listCache.set(key, result);
+  }
+  return result;
 }
 
 export function cacheCommitList(
@@ -50,9 +61,44 @@ export function cacheCommitList(
   prId: string,
   result: CommitsResult,
 ): void {
-  const key = listKey(login, prId);
+  if (result.viewer_login !== login) return;
+  publishCommitList(listKey(login, prId), result);
+}
+
+function publishCommitList(key: string, result: CommitsResult): void {
+  listCache.delete(key);
   if (result.available) listCache.set(key, result);
-  else listCache.delete(key);
+  if (listCache.size > MAX_KEPT_LISTS) {
+    const oldest = listCache.keys().next().value;
+    if (oldest !== undefined) listCache.delete(oldest);
+  }
+  for (const listener of listListeners.get(key) ?? []) listener(result);
+}
+
+/** Observes kept-list changes, including writes completed after a remount. */
+export function subscribeCommitList(
+  login: string,
+  prId: string,
+  listener: (result: CommitsResult) => void,
+): () => void {
+  const key = listKey(login, prId);
+  const listeners = listListeners.get(key) ?? new Set();
+  listeners.add(listener);
+  listListeners.set(key, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) listListeners.delete(key);
+  };
+}
+
+function pruneSettledMutations(key: string): void {
+  if (listInFlight.has(key)) return;
+  const mutations = viewedMutations.get(key);
+  if (mutations === undefined) return;
+  for (const [sha, mutation] of mutations) {
+    if (!mutation.pending) mutations.delete(sha);
+  }
+  if (mutations.size === 0) viewedMutations.delete(key);
 }
 
 export function beginCommitViewed(
@@ -63,7 +109,7 @@ export function beginCommitViewed(
   const key = listKey(login, prId);
   const mutations =
     viewedMutations.get(key) ?? new Map<string, ViewedMutation>();
-  const generation = (mutations.get(change.sha)?.generation ?? 0) + 1;
+  const generation = ++mutationSequence.generation;
   mutations.set(change.sha, {
     generation,
     pending: true,
@@ -82,9 +128,13 @@ export function settleCommitViewed(
   const key = listKey(login, prId);
   const mutation = viewedMutations.get(key)?.get(change.sha);
   if (mutation?.generation !== change.generation) return false;
-  mutation.pending = false;
-  mutation.viewed = change.viewed;
+  viewedMutations.get(key)?.set(change.sha, {
+    ...mutation,
+    pending: false,
+    viewed: change.viewed,
+  });
   updateCachedViewed(key, change.sha, change.viewed);
+  pruneSettledMutations(key);
   return true;
 }
 
@@ -102,7 +152,7 @@ function updateCachedViewed(
         commit.sha === sha ? { ...commit, viewed } : commit,
       ) ?? null,
   };
-  listCache.set(key, next);
+  publishCommitList(key, next);
   return next;
 }
 
@@ -157,6 +207,7 @@ export function loadCommits(prId: string): ResultAsync<CommitsResult, Fault> {
       ),
     );
     return call(() => Commits.List({ pr_id: prId })).map((result) => {
+      if (result.viewer_login !== login) return result;
       const mutations = viewedMutations.get(key);
       const reconciled =
         mutations === undefined

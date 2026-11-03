@@ -43,7 +43,7 @@ func newCommitsTestService(t *testing.T) *Commits {
 		CurrentUser: &mockCurrentUserReader{login: "me", found: true},
 		Viewed:      commitviewed.New(db),
 		Stats:       commitstats.New(db),
-		ComputeStats: func(diff.CommitRangeRequest, []string) ([]diff.CommitStats, error) {
+		ComputeStats: func(context.Context, diff.CommitRangeRequest, []string) ([]diff.CommitStats, error) {
 			t.Fatal("unexpected stats computation")
 			return nil, nil
 		},
@@ -264,5 +264,25 @@ func assertCommitViewed(t *testing.T, s *Commits, want []bool) {
 		if resp.Commits[i].Viewed != viewed {
 			t.Errorf("commit %d viewed = %v, want %v", i, resp.Commits[i].Viewed, viewed)
 		}
+	}
+}
+
+func TestCommitsList_BindsViewedMarksBeforeRange(t *testing.T) {
+	s := newCommitsTestService(t)
+	sha := strings.Repeat("a", 40)
+	s.Range = func(diff.CommitRangeRequest) (diff.CommitRange, error) {
+		return diff.CommitRange{Commits: []diff.RangeCommit{{SHA: sha, IsMerge: true}}}, nil
+	}
+	ctx := context.Background()
+	if _, err := s.SetViewed(ctx, SetCommitViewedRequest{PRID: commitsTestPRID, SHA: sha, Viewed: true}); err != nil {
+		t.Fatal(err)
+	}
+	s.Range = func(diff.CommitRangeRequest) (diff.CommitRange, error) {
+		s.CurrentUser = &mockCurrentUserReader{login: "other", found: true}
+		return diff.CommitRange{Commits: []diff.RangeCommit{{SHA: sha, IsMerge: true}}}, nil
+	}
+	got, err := s.List(ctx, PRRef{PRID: commitsTestPRID})
+	if err != nil || got.ViewerLogin != "me" || len(got.Commits) != 1 || !got.Commits[0].Viewed {
+		t.Fatalf("List changed account during range: %+v, %v", got, err)
 	}
 }

@@ -288,7 +288,7 @@ func (o *Orchestrator) collectCommitStats(ctx context.Context, result *writer.Fe
 	for sha, r := range cachedRows {
 		cached[sha] = gitdiff.CommitStats{SHA: sha, Additions: r.Additions, Deletions: r.Deletions, FileCount: r.FileCount, PatchID: r.PatchID}
 	}
-	stats, err := gitdiff.CollectRangeStats(clone.LocalPath, pr.HeadSHA, mergeBase, cached)
+	stats, err := gitdiff.CollectRangeStats(ctx, clone.LocalPath, pr.HeadSHA, mergeBase, cached)
 	if err != nil {
 		log.Warn("commit stats: collect failed", "error", err)
 		return

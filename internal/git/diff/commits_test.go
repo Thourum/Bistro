@@ -1,6 +1,7 @@
 package diff
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -116,7 +117,7 @@ func TestListCommitRange_ExcludesBaseHistoryIncludingMergedMain(t *testing.T) {
 			t.Fatalf("metadata-only listing includes diff for %s", commit.SHA)
 		}
 	}
-	stats, err := ComputeCommitStats(repolock.New(), req, []string{f1.String()})
+	stats, err := ComputeCommitStats(context.Background(), repolock.New(), req, []string{f1.String()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +140,7 @@ func TestCollectRangeStats_ReusesCachedAndSkipsMerges(t *testing.T) {
 	merge := f.commit(fixtureCommit{file: "main.txt", content: "main\n", message: "Merge main", parents: []plumbing.Hash{second, main}})
 	const cachedPatchID = "sentinel"
 	cached := map[string]CommitStats{first.String(): {SHA: first.String(), PatchID: cachedPatchID}}
-	got, err := CollectRangeStats(f.path, merge.String(), main.String(), cached)
+	got, err := CollectRangeStats(context.Background(), f.path, merge.String(), main.String(), cached)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +150,7 @@ func TestCollectRangeStats_ReusesCachedAndSkipsMerges(t *testing.T) {
 	if got[0] != cached[first.String()] {
 		t.Fatalf("cached stats = %+v, want sentinel reused", got[0])
 	}
-	computed, err := ComputeCommitStats(repolock.New(), f.request(merge, main), []string{second.String()})
+	computed, err := ComputeCommitStats(context.Background(), repolock.New(), f.request(merge, main), []string{second.String()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +164,7 @@ func TestComputeCommitStats_MatchesGetRangeCommit(t *testing.T) {
 	base := f.commit(fixtureCommit{file: "f.txt", content: "old\n", message: "base"})
 	head := f.commit(fixtureCommit{file: "f.txt", content: "new\nextra\n", message: "change"})
 	req := f.request(head, base)
-	got, err := ComputeCommitStats(repolock.New(), req, []string{head.String()})
+	got, err := ComputeCommitStats(context.Background(), repolock.New(), req, []string{head.String()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,12 +195,12 @@ func TestCommitStats_PackedBareRepository(t *testing.T) {
 	if err != nil || !slices.Equal(rangeSHAs(listed), []string{first.String(), head.String()}) {
 		t.Fatalf("packed bare range = %+v, %v", listed, err)
 	}
-	collected, err := CollectRangeStats(req.RepoPath, req.HeadSHA, req.MergeBaseSHA, nil)
+	collected, err := CollectRangeStats(context.Background(), req.RepoPath, req.HeadSHA, req.MergeBaseSHA, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Requested order differs from the range to pin the stats API's ordering.
-	computed, err := ComputeCommitStats(repolock.New(), req, []string{head.String(), first.String()})
+	computed, err := ComputeCommitStats(context.Background(), repolock.New(), req, []string{head.String(), first.String()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,5 +413,20 @@ func TestUnifiedPatch_KeepsUnavailableFilePatchesVisible(t *testing.T) {
 	want := "diff --git a/binary.dat b/binary.dat\nBinary files a/binary.dat and b/binary.dat differ\ndiff --git a/old.txt b/new.txt\ndiff --git a/text.txt b/text.txt\n+text\n"
 	if got := unifiedPatch(files); got != want {
 		t.Fatalf("unified = %q, want %q", got, want)
+	}
+}
+
+func TestCommitStats_CancelledBeforeWork(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	// An invalid path would fail if cancellation did not precede repository work.
+	req := CommitRangeRequest{RepoPath: "missing-repository"}
+	collected, err := CollectRangeStats(ctx, req.RepoPath, req.HeadSHA, req.MergeBaseSHA, nil)
+	if !errors.Is(err, context.Canceled) || len(collected) != 0 {
+		t.Fatalf("CollectRangeStats = %v, %v", collected, err)
+	}
+	computed, err := ComputeCommitStats(ctx, repolock.New(), req, []string{"missing-commit"})
+	if !errors.Is(err, context.Canceled) || len(computed) != 0 {
+		t.Fatalf("ComputeCommitStats = %v, %v", computed, err)
 	}
 }

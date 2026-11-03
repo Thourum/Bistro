@@ -86,3 +86,52 @@ func TestWriteSyncResults_CommitStatsFailureKeepsPR(t *testing.T) {
 		t.Fatalf("patchsets = %d, want 1", patchsets)
 	}
 }
+
+func TestWriteSyncResults_CommitStatsPartialFailureRestoresOldRows(t *testing.T) {
+	db := storetest.Open(t)
+	w := New(nil, db)
+	const prNumber = 27
+	pr := makePR("github:o/r:27", prNumber, "old-head", "base")
+	old := commitstats.Stats{SHA: "old", Additions: 3, FileCount: 1, PatchID: "old-patch"}
+	if err := w.WriteSyncResults([]*FetchedPR{{PR: pr, CommitStats: []commitstats.Stats{old}, CommitStatsComputed: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TRIGGER fail_second_stat BEFORE INSERT ON commit_stats
+ WHEN NEW.sha = 'second' BEGIN SELECT RAISE(ABORT, 'boom'); END`); err != nil {
+		t.Fatal(err)
+	}
+	pr.HeadSHA = "new-head"
+	const patch = "+new line"
+	if err := w.WriteSyncResults([]*FetchedPR{{
+		PR: pr, DiffComputed: true,
+		DiffFiles:           []prdiff.File{{FilePath: "main.go", Patch: patch, Additions: 1}},
+		CommitStats:         []commitstats.Stats{{SHA: "first", PatchID: "first-patch"}, {SHA: "second", PatchID: "second-patch"}},
+		CommitStatsComputed: true,
+	}}); err != nil {
+		t.Fatalf("stats failure must not fail the write: %v", err)
+	}
+	got, err := commitstats.New(db.DB).List(context.Background(), pr.ID, gitdiff.CommitStatsVersion)
+	if err != nil || !reflect.DeepEqual(got, map[string]commitstats.Stats{"old": old}) {
+		t.Fatalf("old stats not restored: %+v, %v", got, err)
+	}
+	var head, gotPatch string
+	if err := db.QueryRow("SELECT head_sha FROM prs WHERE id = ?", pr.ID).Scan(&head); err != nil {
+		t.Fatal(err)
+	}
+	if head != pr.HeadSHA {
+		t.Fatalf("head = %q, want %q", head, pr.HeadSHA)
+	}
+	if err := db.QueryRow("SELECT patch FROM pr_diffs WHERE pr_id = ? AND file_path = 'main.go'", pr.ID).Scan(&gotPatch); err != nil {
+		t.Fatal(err)
+	}
+	if gotPatch != patch {
+		t.Fatalf("patch = %q, want %q", gotPatch, patch)
+	}
+	var patchsets int
+	if err := db.QueryRow("SELECT COUNT(*) FROM patchsets WHERE pr_id = ? AND head_sha = ?", pr.ID, pr.HeadSHA).Scan(&patchsets); err != nil {
+		t.Fatal(err)
+	}
+	if patchsets != 1 {
+		t.Fatalf("new patchsets = %d, want 1", patchsets)
+	}
+}

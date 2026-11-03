@@ -49,8 +49,8 @@ func (a *App) buildServices(ctx context.Context) *services.Set {
 				return diff.GetRangeCommit(a.repoLocks, req, sha)
 			},
 			Stats: commitstats.New(a.db.DB),
-			ComputeStats: func(req diff.CommitRangeRequest, shas []string) ([]diff.CommitStats, error) {
-				return diff.ComputeCommitStats(a.repoLocks, req, shas)
+			ComputeStats: func(ctx context.Context, req diff.CommitRangeRequest, shas []string) ([]diff.CommitStats, error) {
+				return diff.ComputeCommitStats(ctx, a.repoLocks, req, shas)
 			},
 			MergeBase: git.MergeBase,
 			RepoForPR: prRepoLocator{db: a.db, locations: locations}.RepoForPR,
