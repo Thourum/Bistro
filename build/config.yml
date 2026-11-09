@@ -7,7 +7,7 @@ info:
   description: Keyboard-first GitHub PR review client
   copyright: Copyright 2026 Thourum
   comments: Local-first code review
-  version: 0.1.0-alpha.1
+  version: 0.0.1
 
 dev_mode:
   root_path: .

@@ -8,17 +8,17 @@ Bistro is a keyboard-first, local-first desktop app for GitHub pull request revi
 
 ## Start here
 
-1. Read the product overview in [`README.md`](../README.md).
-2. Read contribution requirements in [`CONTRIBUTING.md`](../CONTRIBUTING.md), including the DCO sign-off requirement.
-3. Set up and run the app with [`DEVELOPMENT.md`](../DEVELOPMENT.md).
-4. Use [`docs/go-project-overview.md`](../docs/go-project-overview.md) when changing the sync engine or WebSocket flow.
-5. Use [`docs/ROADMAP.md`](../docs/ROADMAP.md) to understand current project priorities and known limits.
-6. Use [`design/keyboard-bindings.md`](keyboard-bindings.md) when touching review navigation, command palette behavior, or keyboard help.
-7. Use [`docs/FEEDBACK.md`](../docs/FEEDBACK.md) and [`docs/LOCAL-FIRST-PRIVACY.md`](../docs/LOCAL-FIRST-PRIVACY.md) when updating launch, privacy, or user-reporting copy.
+1. Read the product overview in [`README.md`](../../README.md).
+2. Read contribution requirements in [`CONTRIBUTING.md`](../../CONTRIBUTING.md), including the DCO sign-off requirement.
+3. Set up and run the app with [`DEVELOPMENT.md`](../../DEVELOPMENT.md).
+4. Use [`docs/go-project-overview.md`](../go-project-overview.md) when changing the sync engine or WebSocket flow.
+5. Use [`docs/ROADMAP.md`](../ROADMAP.md) to understand current project priorities and known limits.
+6. Use [`docs/design/keyboard-bindings.md`](keyboard-bindings.md) when touching review navigation, command palette behavior, or keyboard help.
+7. Use [`docs/FEEDBACK.md`](../FEEDBACK.md) and [`docs/LOCAL-FIRST-PRIVACY.md`](../LOCAL-FIRST-PRIVACY.md) when updating launch, privacy, or user-reporting copy.
 
 ## Prerequisites
 
-- Go 1.26.x, matching [`go/go.mod`](../go/go.mod).
+- Go 1.26.x, matching [`go/go.mod`](../../go/go.mod).
 - Node 18+.
 - pnpm. Run pnpm commands from `electron/`; the lockfile is `electron/pnpm-lock.yaml`.
 - A GitHub OAuth app for local development. Copy `electron/.env.example` to `electron/.env.local` and fill in the GitHub client values before testing authenticated sync.
@@ -41,7 +41,7 @@ go build -o bistro-sync ./cmd/bistro-sync
 ./bistro-sync
 ```
 
-Then run Electron with `BISTRO_SKIP_GO_SPAWN=1` as described in [`DEVELOPMENT.md`](../DEVELOPMENT.md#quick-start).
+Then run Electron with `BISTRO_SKIP_GO_SPAWN=1` as described in [`DEVELOPMENT.md`](../../DEVELOPMENT.md#quick-start).
 
 ## Repository map
 
@@ -56,10 +56,10 @@ bistro/
 
 ## License and DCO
 
-Bistro is licensed under the [GNU General Public License v3.0 only](../LICENSE).
+Bistro is licensed under the [GNU General Public License v3.0 only](../../LICENSE).
 Contributions use the Developer Certificate of Origin, not a CLA. Sign every
 commit with `git commit -s`; the full certification text is in
-[`DCO.txt`](../DCO.txt).
+[`DCO.txt`](../../DCO.txt).
 
 ## Contribution principles
 
@@ -97,7 +97,7 @@ Avoid large architecture changes as a first PR. If a change affects sync semanti
 
 ## Reporting bugs and feedback
 
-Use [`docs/FEEDBACK.md`](../docs/FEEDBACK.md) for the canonical feedback path and
+Use [`docs/FEEDBACK.md`](../FEEDBACK.md) for the canonical feedback path and
 the GitHub issue templates for structured reports.
 
 Include enough detail for a maintainer to reproduce the issue:

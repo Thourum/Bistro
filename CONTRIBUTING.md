@@ -10,7 +10,7 @@ machine.
 1. Read the product overview in [README.md](README.md).
 2. Set up the app with [DEVELOPMENT.md](DEVELOPMENT.md).
 3. Read the contributor onboarding guide in
-   [design/contribution-guide.md](design/contribution-guide.md).
+   [docs/design/contribution-guide.md](docs/design/contribution-guide.md).
 4. Check [docs/ROADMAP.md](docs/ROADMAP.md) before starting larger work.
 
 ## Contribution rules

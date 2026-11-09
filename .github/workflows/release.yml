@@ -110,11 +110,8 @@ jobs:
           persist-credentials: false
 
       - name: Verify release inputs
-        env:
-          GITHUB_CLIENT_ID: ${{ secrets.BISTRO_GITHUB_CLIENT_ID }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
-          : "${GITHUB_CLIENT_ID:?secret BISTRO_GITHUB_CLIENT_ID is required to embed the OAuth client ID in the app}"
+          # BISTRO_GITHUB_CLIENT_ID is optional: main.go embeds Bistro's public OAuth client ID by default.
           if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::expected a version tag, got $GITHUB_REF_NAME" >&2
             exit 1
