@@ -13,6 +13,8 @@
 //         /          → PrsIndexRouteComponent
 //         /$prId     → PRDetailPage
 //         /$prId/diff→ DiffPage
+//         /$prId/commits → CommitsPage
+//         /$prId/commits/$sha → CommitPage
 //       /settings    → SettingsPage
 //
 // Auth flow (no redirect loops):
@@ -48,6 +50,8 @@ import { ConnectingScreen } from './components/ConnectingScreen';
 import { PrsIndexRouteComponent } from './components/PrsIndexRouteComponent';
 import { RootShell } from './components/RootShell';
 import { useStore } from './hooks/useStore';
+import { CommitPage } from './pages/CommitPage';
+import { CommitsPage } from './pages/CommitsPage';
 import { DiffPage } from './pages/DiffPage';
 import { LoginPage } from './pages/LoginPage';
 import { OnboardingPage } from './pages/OnboardingPage';
@@ -274,6 +278,26 @@ const prDiffRoute = createRoute({
   component: DiffPage,
 });
 
+const prCommitsRoute = createRoute({
+  getParentRoute: () => prsRoute,
+  path: '$prId/commits',
+  params: { parse: ({ prId }) => ({ prId: prId.toLowerCase() }) },
+  component: CommitsPage,
+});
+
+const prCommitRoute = createRoute({
+  getParentRoute: () => prsRoute,
+  path: '$prId/commits/$sha',
+  params: {
+    parse: ({ prId, sha }) => ({
+      prId: prId.toLowerCase(),
+      sha: sha.toLowerCase(),
+    }),
+  },
+  validateSearch: diffSearchSchema,
+  component: CommitPage,
+});
+
 // /settings route
 const settingsRoute = createRoute({
   getParentRoute: () => authedRoute,
@@ -290,7 +314,13 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   onboardingRoute,
   authedRoute.addChildren([
-    prsRoute.addChildren([prsIndexRoute, prDetailRoute, prDiffRoute]),
+    prsRoute.addChildren([
+      prsIndexRoute,
+      prDetailRoute,
+      prDiffRoute,
+      prCommitsRoute,
+      prCommitRoute,
+    ]),
     settingsRoute,
   ]),
 ]);

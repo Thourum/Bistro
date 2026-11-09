@@ -1,8 +1,13 @@
 import { detectPlatform } from '@tanstack/react-hotkeys';
+import { useRouterState } from '@tanstack/react-router';
 import type React from 'react';
 import { useEffectiveBindings } from '../hooks/useEffectiveBindings';
 import { useOverlays } from '../overlays/OverlayContext';
-import type { KeyBinding, RouteBase } from '../utils/keybindings';
+import {
+  type KeyBinding,
+  type RouteBase,
+  routeBaseFromPath,
+} from '../utils/keybindings';
 import { formatBindingKeys } from '../utils/legendPresets';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Kbd } from './ui/kbd';
@@ -37,6 +42,10 @@ const NAVIGATION_IDS = new Set([
   'list.pageDown',
   'list.pageUp',
   'list.jumpTo1',
+  'commits.down',
+  'commits.up',
+  'commit.next',
+  'commit.prev',
   'detail.nextFile',
   'detail.prevFile',
   'detail.scrollLeft',
@@ -60,6 +69,11 @@ const ACTION_IDS = new Set([
   'list.draft',
   'list.mute',
   'list.star',
+  'detail.commits',
+  'diff.commits',
+  'commits.open',
+  'commit.toggleViewed',
+  'commit.viewedAndNext',
   'detail.viewDiff',
   'detail.approve',
   'detail.comment',
@@ -153,7 +167,15 @@ function buildSections(
 export function HelpOverlay(): React.ReactElement | null {
   const { activeOverlay, helpSourceRoute, closeOverlay } = useOverlays();
   const isOpen = activeOverlay === 'help';
-  const sections = buildSections(useEffectiveBindings(), helpSourceRoute);
+  const routeBase = useRouterState({
+    select: (state) => routeBaseFromPath(state.location.pathname),
+  });
+  // The saved detail/diff source cannot distinguish the read-only commit routes.
+  const sourceRoute =
+    routeBase === 'commits' || routeBase === 'commit'
+      ? routeBase
+      : helpSourceRoute;
+  const sections = buildSections(useEffectiveBindings(), sourceRoute);
 
   const handleClose = (): void => {
     closeOverlay();

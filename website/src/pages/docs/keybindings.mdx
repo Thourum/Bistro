@@ -6,7 +6,7 @@ description: Default keyboard shortcuts for reviewing pull requests in Bistro.
 # Keybindings
 
 Bistro is designed for keyboard-first GitHub pull request review. The defaults
-below come from `electron/src/renderer/utils/keymaps.ts`; the action catalog lives
+below come from `frontend/src/utils/keymaps.ts`; the action catalog lives
 in `utils/keybindings.ts`. The in-app help overlay and footer legend show your
 effective bindings, including overrides.
 
@@ -134,6 +134,33 @@ These shortcuts apply only in the diff:
 | Hide whitespace-only hunks | `w` | `Ctrl+c Ctrl+w` | `w` |
 | Mark current file viewed | `v` | `Ctrl+c Ctrl+v` | `v` |
 
+## Commits
+
+Open the oldest-first commit list from PR detail or diff, then open a commit for
+read-only review. Viewed marks are stored locally and stay through a rebase when
+the commit's changes are identical; they reset when the content changes.
+
+Merge commits show no diff. Conflict-resolution edits in a merge are only in the
+combined diff. The list shows the first 250 commits; the combined diff covers the
+rest. Commenting, drafts, review submission, and since-last-review modes are not
+available in commit diffs.
+
+| Action | Vim | Emacs | Standard |
+| --- | --- | --- | --- |
+| Open commit list (PR detail / diff) | `g c` | `Ctrl+c Ctrl+g` | `g c` |
+| Move down / up in commit list | `j` / `k` | `Ctrl+n` / `Ctrl+p` | `↓` / `↑` |
+| Open selected commit | `Enter` | `Enter` | `Enter` |
+| Next / previous commit | `]` / `[` | `Alt+]` / `Alt+[` | `Alt+]` / `Alt+[` |
+| Toggle commit viewed (list / commit diff) | `v` | `Ctrl+c Ctrl+v` | `v` |
+| Mark viewed and open next commit | `V` | `Ctrl+c Shift+v` | `V` |
+| Back to commit list / PR detail | `Esc` | `Esc` / `Ctrl+g` | `Esc` |
+
+Commit diffs also use the scrolling, next / previous file, side-by-side,
+collapse / expand, whitespace, and browser-opening shortcuts above. Browser
+opening goes to the PR's **Files changed** view. Next / previous commit stops at
+the ends of the list. **Review commits one at a time** in the command palette opens
+the list from PR detail or diff.
+
 ## Comment mode
 
 Press the line-comment key in the diff (`c`, or `Alt+;` in Emacs) to enter
@@ -212,7 +239,7 @@ arrays. You can also edit them there:
 
 :::info
 An empty array disables a binding. Default keys live in
-`electron/src/renderer/utils/keymaps.ts`; action ids live in
+`frontend/src/utils/keymaps.ts`; action ids live in
 `utils/keybindings.ts`, and activation rules live in
-`electron/src/renderer/utils/keybindingActivation.ts`.
+`frontend/src/utils/keybindingActivation.ts`.
 :::

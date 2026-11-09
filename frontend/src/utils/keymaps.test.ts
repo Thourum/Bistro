@@ -23,6 +23,8 @@ const ROUTES: readonly RouteBase[] = [
   'list',
   'detail',
   'diff',
+  'commits',
+  'commit',
   'settings',
   'login',
   'onboarding',
@@ -236,6 +238,8 @@ describe('emacs Meta bindings on macOS', () => {
     '.': 'Period',
     '/': 'Slash',
     ';': 'Semicolon',
+    '[': 'BracketLeft',
+    ']': 'BracketRight',
   };
   const codeFor = (key: string): string =>
     CODE_BY_KEY[key] ??

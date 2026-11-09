@@ -10,10 +10,7 @@ import {
   getBindingAction,
   type KeyActionContext,
 } from '../../src/utils/keybindingActions';
-import type {
-  KeyBinding,
-  RouteBase,
-} from '../../src/utils/keybindings';
+import type { KeyBinding, RouteBase } from '../../src/utils/keybindings';
 import {
   ACTION_CATALOG,
   getEffectiveBindings,
@@ -203,8 +200,8 @@ describe('vim bindings', () => {
     expect(byId('detail.prevFile').activation.routes).toEqual(['detail']);
     expect(byId('diff.nextFile').keys).toBe('Shift+J');
     expect(byId('diff.prevFile').keys).toBe('Shift+K');
-    expect(byId('diff.nextFile').activation.routes).toEqual(['diff']);
-    expect(byId('diff.prevFile').activation.routes).toEqual(['diff']);
+    expect(byId('diff.nextFile').activation.routes).toEqual(['diff', 'commit']);
+    expect(byId('diff.prevFile').activation.routes).toEqual(['diff', 'commit']);
     expect(byId('diff.nextComment').keys).toBe('n');
     expect(byId('diff.prevComment').keys).toBe('p');
     expect(byId('diff.nextComment').activation.routes).toEqual(['diff']);
