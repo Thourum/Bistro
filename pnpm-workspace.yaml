@@ -15,3 +15,7 @@ minimumReleaseAge: 10080
 # JS half of the pinned Wails v3.0.0 Go module (user-approved 2026-10-29).
 minimumReleaseAgeExclude:
   - '@wailsio/runtime@3.0.0'
+
+# GHSA-cg2g-xh64-v4q7: mermaid's transitive dompurify <3.4.17 fails the release audit gate.
+overrides:
+  'dompurify@<3.4.17': '^3.4.17'

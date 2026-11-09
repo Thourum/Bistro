@@ -1,6 +1,6 @@
 # Bistro Go backend: project overview
 
-Bistro's root Go module is `github.com/itterno/bistro` (Go 1.26.1). One Wails
+Bistro's root Go module is `github.com/itterno/bistro` (Go 1.26.10). One Wails
 v3.0.0 process hosts the native shell and in-process engine. Go authenticates,
 syncs PR metadata/comments/CI, generates local diffs, and owns all SQLite writes.
 The renderer uses generated typed bindings and registered Wails events, not a

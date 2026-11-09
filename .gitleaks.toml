@@ -4,6 +4,9 @@ title = "Bistro gitleaks config"
 useDefault = true
 
 [allowlist]
-description = "Known fake fixtures"
+description = "Known fake fixtures and historical evidence"
 # electron/tests/unit/error.test.ts and an old plan doc use this obviously fake GitHub token to test redaction.
 regexes = ['''ghp_abc123xyz''']
+# ADR harness evidence: public GitHub API dumps (40-hex IDs trip sourcegraph-access-token) and keybinding
+# "keys" fields (trip generic-api-key). Historical data that must not be rewritten.
+paths = ['''^docs/adr/data/''']
