@@ -67,15 +67,15 @@ triage, open, navigate, comment, approve, and request changes.
 - `AGENTS.md` — internal agent and architecture conventions; keep aligned with
   development docs when commands or structure change.
 - `docs/ROADMAP.md` — public feature status and roadmap boundaries.
-- `design/keyboard-bindings.md` — user-facing source for keyboard reference
+- `docs/design/keyboard-bindings.md` — user-facing source for keyboard reference
   content until a generated website page exists.
-- `design/security-model.md` — source material for public privacy/security copy.
+- `docs/design/security-model.md` — source material for public privacy/security copy.
 - `website/src/pages/docs/feedback.mdx` — public launch feedback path and triage expectations.
 - `website/src/pages/docs/privacy.mdx` — public local-first privacy explainer.
 
 ### Near-term documentation work
 
-1. **Contributor onboarding cleanup.** `design/contribution-guide.md` now points
+1. **Contributor onboarding cleanup.** `docs/design/contribution-guide.md` now points
    contributors to the canonical product, setup, architecture, roadmap, and
    keyboard references, and uses the current pnpm/source-run workflow.
 2. **Website implementation.** `website/PLAN.md` now uses the grounded launch
@@ -186,7 +186,7 @@ triage, open, navigate, comment, approve, and request changes.
 - Public docs now include a short privacy/security explainer in
   `website/src/pages/docs/privacy.mdx`, derived from the detailed security model.
 - Keyboard reference content exists; the website plan now names
-  `design/keyboard-bindings.md` as the source of truth until a generated page
+  `docs/design/keyboard-bindings.md` as the source of truth until a generated page
   exists.
 
 ## Follow-up issue candidates

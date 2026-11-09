@@ -12,7 +12,7 @@ Authoritative references (read when relevant, don't duplicate here):
 - Build, configuration, and platform prerequisites: [DEVELOPMENT.md](DEVELOPMENT.md)
 - Go package map: [docs/go-project-overview.md](docs/go-project-overview.md)
 - Roadmap / v1.0 status: [docs/ROADMAP.md](docs/ROADMAP.md)
-- Design system: [docs/DESIGN.md](docs/DESIGN.md); mockups in `docs/design/stitch_terminal_authentic_prd/`
+- Design system: [docs/DESIGN.md](docs/DESIGN.md); mockups in `docs/design/stitch_terminal_authentic_prd/`; design notes (keyboard bindings, security model, contributor guide) in `docs/design/*.md`; brand/UI-kit bundle in `docs/design-system/`
 - User-facing documentation: `website/src/pages/docs/`
 - Architecture decisions: `docs/adr/`
 

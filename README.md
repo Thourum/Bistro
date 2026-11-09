@@ -86,7 +86,7 @@ Architecture, builds, and debugging live in [DEVELOPMENT.md](DEVELOPMENT.md).
 [CLAUDE.md](CLAUDE.md) is the canonical conventions/verification guide.
 Contribution requirements, including DCO sign-off, live in
 [CONTRIBUTING.md](CONTRIBUTING.md), with onboarding in
-[design/contribution-guide.md](design/contribution-guide.md).
+[docs/design/contribution-guide.md](docs/design/contribution-guide.md).
 
 ## Privacy and feedback
 
