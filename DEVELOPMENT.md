@@ -18,7 +18,7 @@ On Linux, closing the window quits even if the tray icon appears, because Wails 
 
 ## Prerequisites
 
-- Go 1.26.1, matching root `go.mod`, with CGO and a native C compiler.
+- Go 1.26.10, matching root `go.mod`, with CGO and a native C compiler.
 - Node compatible with installed Vite (`^20.19.0 || >=22.12.0`) and pnpm. The root lockfile and workspace cover `frontend/` and `website/`.
 - Wails CLI pinned to the Go runtime version:
 
