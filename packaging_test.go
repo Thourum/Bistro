@@ -55,6 +55,33 @@ func TestReleasePackagingResolvesVersionScopeAndArchitecture(t *testing.T) {
 	}
 }
 
+// Ubuntu 26.04 runners ship the Rust uutils coreutils instead of GNU.
+func TestSmokeAcceptsUutilsTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture requires Unix")
+	}
+	fixture := t.TempDir()
+	trace := filepath.Join(fixture, "trace")
+	for name, script := range map[string]string{
+		"timeout": "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'timeout (uutils coreutils) 0.2.2'; exit 0; fi\necho uutils >> \"$TRACE\"\nshift\nexec \"$@\"\n",
+		"uname":   "#!/bin/sh\necho Darwin\n",
+		"bistro":  "#!/bin/sh\n[ \"$1\" = --smoke ]\n",
+	} {
+		if err := os.WriteFile(filepath.Join(fixture, name), []byte(script), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command("bash", "scripts/smoke.sh", filepath.Join(fixture, "bistro"))
+	cmd.Env = append(os.Environ(), "PATH="+fixture+string(os.PathListSeparator)+os.Getenv("PATH"), "TRACE="+trace)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("smoke: %v\n%s", err, output)
+	}
+	got, err := os.ReadFile(trace)
+	if err != nil || string(got) != "uutils\n" {
+		t.Fatalf("runner = %q, %v", got, err)
+	}
+}
+
 func TestSmokeRejectsWindowsTimeoutAndSelectsGNU(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture requires Unix")

@@ -56,7 +56,7 @@ tasks:
         vars:
           ARCH: arm64
       - ditto -c -k --keepParent bin/Bistro.app bin/bistro-darwin-arm64.zip
-      - diskutil image create from --format UDZO --volumeName Bistro bin/Bistro.app bin/bistro-darwin-arm64-installer.dmg
+      - hdiutil create -volname Bistro -srcfolder bin/Bistro.app -ov -format UDZO bin/bistro-darwin-arm64-installer.dmg
 
   package:windows:
     cmds:
