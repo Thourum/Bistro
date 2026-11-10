@@ -16,13 +16,13 @@ runner=()
 if [[ "$(uname -s)" == Linux ]]; then runner=(xvfb-run -a); fi
 timeout_command=''
 for candidate in timeout gtimeout; do
-  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" --version 2>/dev/null | grep -q 'GNU coreutils'; then
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" --version 2>/dev/null | grep -qE '(GNU|uutils) coreutils'; then
     timeout_command="$candidate"
     break
   fi
 done
 if [[ -z "$timeout_command" ]]; then
-  echo 'GNU coreutils timeout is required (install coreutils).' >&2
+  echo 'A coreutils timeout (GNU or uutils) is required (install coreutils).' >&2
   exit 1
 fi
 # --smoke uses its own temporary data dir and never syncs (Task 14).
