@@ -49,7 +49,7 @@ Bistro is not yet stable v1.0.
 
 ## Run from source
 
-You need Go 1.26.10, pnpm, a compatible Node runtime, the pinned Wails CLI, and
+You need Go 1.26.11, pnpm, a compatible Node runtime, the pinned Wails CLI, and
 platform build dependencies. Full prerequisites and configuration are in
 [DEVELOPMENT.md](DEVELOPMENT.md#prerequisites).
 
