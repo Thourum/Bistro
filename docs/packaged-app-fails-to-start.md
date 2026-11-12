@@ -8,6 +8,8 @@ Symptom: `./bin/bistro --smoke` initializes SQLite, then exits 2 after 60 second
 
 Tested: the production build timed out before the import; adding the runtime entry import in `frontend/src/main.tsx`, rebuilding with `wails3 task build`, and rerunning smoke exited 0 in about one second. Keep that import even before service calls migrate from WebSocket. See `AGENTS.md` for current Wails commands; the Electron diagnostics below are historical.
 
+Linux CI variant (ubuntu-26.04 runner, `scripts/smoke.sh` under `xvfb-run`): same exit 2, preceded by `Gdk-WARNING … Cannot get portal org.freedesktop.host.portal.Registry version: Timeout was reached` and a second timeout for `org.freedesktop.portal.Inhibit`. Cause: GTK 4.20+ queries the desktop portal at startup; headless Xvfb has none, so each D-Bus call waits its 25-second default and the window misses the deadline. Both calls sit behind `gdk_display_should_use_portal`, which returns early for `GDK_DEBUG=no-portals`. Resolution: `smoke.sh` sets that flag on Linux only (appending to any existing `GDK_DEBUG`); `TestSmokeDisablesGTKPortalsOnLinux` covers it. Desktop sessions with a portal are unaffected.
+
 ## Diagnose
 
 - Electron log: `~/Library/Logs/Bistro/main.log`. Engine log: `~/Library/Application Support/Bistro/logs/bistro-sync.log`.
