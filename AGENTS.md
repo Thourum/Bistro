@@ -42,7 +42,7 @@ Independent SQLite stores live in `internal/store/currentuser`, `commitstats`, `
 
 ## Tech stack
 
-- **Go 1.26.10**, module `github.com/itterno/bistro` — go-git, go-github, mattn/go-sqlite3, go-keyring, x/oauth2, sentry-go, posthog-go.
+- **Go 1.26.11**, module `github.com/itterno/bistro` — go-git, go-github, mattn/go-sqlite3, go-keyring, x/oauth2, sentry-go, posthog-go.
 - **Wails v3.0.0** and **`@wailsio/runtime` 3.0.0** — WKWebView on macOS, WebView2 on Windows, WebKitGTK on Linux.
 - **React 19 + TypeScript + Vite** — TanStack Query / Hotkeys / Virtual / Store, Radix UI, Tailwind, Biome, Vitest.
 - **pnpm** — run frontend commands from `frontend/`; the lockfile is repo-root `pnpm-lock.yaml`. `pnpm-workspace.yaml` covers `frontend/` and `website/`. Its `minimumReleaseAge` blocks versions younger than 7 days. The sole exemption is exactly `'@wailsio/runtime@3.0.0'`, approved by the user on 2026-10-29 to match the pinned Go runtime; do not broaden it. Its `overrides` lift mermaid's transitive `dompurify` past GHSA-cg2g-xh64-v4q7 for the release audit gate; drop it once mermaid requires `^3.4.17`. Read versions from `go.mod` and `frontend/package.json`.
