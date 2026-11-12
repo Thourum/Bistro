@@ -55,6 +55,34 @@ func TestReleasePackagingResolvesVersionScopeAndArchitecture(t *testing.T) {
 	}
 }
 
+// Headless Linux smoke must disable GTK portals, which otherwise stall past the smoke deadline.
+func TestSmokeDisablesGTKPortalsOnLinux(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture requires Unix")
+	}
+	fixture := t.TempDir()
+	trace := filepath.Join(fixture, "trace")
+	for name, script := range map[string]string{
+		"timeout":  "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'timeout (GNU coreutils)'; exit 0; fi\nshift\nexec \"$@\"\n",
+		"uname":    "#!/bin/sh\necho Linux\n",
+		"xvfb-run": "#!/bin/sh\nshift\nexec \"$@\"\n",
+		"bistro":   "#!/bin/sh\necho \"$GDK_DEBUG\" >> \"$TRACE\"\n",
+	} {
+		if err := os.WriteFile(filepath.Join(fixture, name), []byte(script), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command("bash", "scripts/smoke.sh", filepath.Join(fixture, "bistro"))
+	cmd.Env = append(os.Environ(), "PATH="+fixture+string(os.PathListSeparator)+os.Getenv("PATH"), "TRACE="+trace, "GDK_DEBUG=events")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("smoke: %v\n%s", err, output)
+	}
+	got, err := os.ReadFile(trace)
+	if err != nil || string(got) != "events,no-portals\n" {
+		t.Fatalf("GDK_DEBUG = %q, %v", got, err)
+	}
+}
+
 // Ubuntu 26.04 runners ship the Rust uutils coreutils instead of GNU.
 func TestSmokeAcceptsUutilsTimeout(t *testing.T) {
 	if runtime.GOOS == "windows" {

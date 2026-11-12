@@ -13,7 +13,11 @@ if [[ -d "$target" && "$target" == *.app ]]; then
   target="$bundle/Contents/MacOS/$(defaults read "$bundle/Contents/Info" CFBundleExecutable)"
 fi
 runner=()
-if [[ "$(uname -s)" == Linux ]]; then runner=(xvfb-run -a); fi
+# Headless Xvfb has no desktop portal; GTK 4.20+ otherwise blocks ~25 s per portal
+# call (host Registry, Inhibit) and the window misses the 60 s smoke deadline.
+if [[ "$(uname -s)" == Linux ]]; then
+  runner=(env "GDK_DEBUG=${GDK_DEBUG:+$GDK_DEBUG,}no-portals" xvfb-run -a)
+fi
 timeout_command=''
 for candidate in timeout gtimeout; do
   if command -v "$candidate" >/dev/null 2>&1 && "$candidate" --version 2>/dev/null | grep -qE '(GNU|uutils) coreutils'; then
